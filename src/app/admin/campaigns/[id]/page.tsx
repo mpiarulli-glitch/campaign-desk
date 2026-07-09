@@ -140,6 +140,7 @@ export default function AdminCampaignPage() {
 
   const openCount = comments.filter((c) => !c.resolved).length;
   const openOnActive = emailComments.filter((c) => !c.resolved).length;
+  const unresolvedComments = emailComments.filter((c) => !c.resolved);
   const canMarkRevisionDone =
     status === "needs_changes" || openCount > 0 || status === "draft";
   const isApproved = status === "approved";
@@ -258,6 +259,55 @@ export default function AdminCampaignPage() {
       model: data.model,
     });
     setMessage("AI drafted a revision. Scroll down in the card below to add more feedback and generate another version before applying.");
+  }
+
+  async function runAllAiRevisions() {
+    const unresolved = emailComments.filter((c) => !c.resolved);
+    if (unresolved.length === 0) return;
+
+    const combinedFeedback = unresolved
+      .map((c) => `${c.body} (from ${c.author_name})`)
+      .join("\n\n");
+
+    setAiLoadingCommentId("all");
+    setError("");
+    setMessage("");
+    setAiChat(null);
+    setChatInput("");
+
+    const first = unresolved[0];
+
+    const res = await fetch(`/api/campaigns/${id}/ai-revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commentId: first.id,
+        emailId: activeEmail.id,
+        feedback: combinedFeedback,
+      }),
+    });
+
+    setAiLoadingCommentId(null);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "AI failed to revise all feedback.");
+      return;
+    }
+
+    const data = await res.json();
+    setAiChat({
+      commentId: first.id,
+      emailId: data.emailId,
+      originalHtml: data.originalHtml,
+      currentHtml: data.revisedHtml,
+      messages: [
+        { role: "user" as const, content: "All open feedback combined:\n" + combinedFeedback },
+        { role: "assistant" as const, content: data.revisedHtml },
+      ],
+      model: data.model,
+    });
+    setMessage("AI generated one revision addressing ALL open feedback. Scroll down to add more instructions or apply.");
   }
 
   async function sendFollowUp() {
@@ -769,6 +819,19 @@ export default function AdminCampaignPage() {
                     Mark revision done
                   </button>
                 ) : null}
+                {unresolvedComments.length > 1 ? (
+                  <button
+                    className="btn btn-sm"
+                    onClick={runAllAiRevisions}
+                    disabled={
+                      saving || aiLoadingCommentId !== null || isApproved
+                    }
+                  >
+                    {aiLoadingCommentId === "all"
+                      ? "AI is revising all..."
+                      : "Use AI to make all revisions"}
+                  </button>
+                ) : null}
               </div>
               {openOnActive > 0 ? (
                 <p className="muted" style={{ margin: 0, fontSize: 13 }}>
@@ -809,11 +872,12 @@ export default function AdminCampaignPage() {
                                e.stopPropagation();
                                runAiRevision(c);
                              }}
-                             disabled={
-                               saving ||
-                               aiLoadingCommentId === c.id ||
-                               isApproved
-                             }
+                              disabled={
+                                saving ||
+                                aiLoadingCommentId === c.id ||
+                                isApproved ||
+                                aiLoadingCommentId === "all"
+                              }
                            >
 {aiLoadingCommentId === c.id
                                 ? "AI is revising..."

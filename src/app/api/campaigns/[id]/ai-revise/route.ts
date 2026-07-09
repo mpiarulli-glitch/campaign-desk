@@ -30,6 +30,7 @@ export async function POST(request: Request, { params }: Params) {
   const apply = body.apply === true;
   const revisedHtml =
     typeof body.revisedHtml === "string" ? body.revisedHtml : "";
+  const feedbackOverride = typeof body.feedback === "string" && body.feedback.trim() ? body.feedback.trim() : "";
 
   // Apply a previously generated revision
   if (apply) {
@@ -132,11 +133,14 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
+  const feedbackText = feedbackOverride || comment.body;
+  const authorText = feedbackOverride ? "Multiple reviewers (all open feedback)" : comment.author_name;
+
   try {
     const result = await reviseEmailWithGrok({
       html: targetEmail.html_content,
-      feedback: comment.body,
-      authorName: comment.author_name,
+      feedback: feedbackText,
+      authorName: authorText,
       emailTitle: targetEmail.title,
     });
 
