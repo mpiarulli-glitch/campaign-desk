@@ -817,6 +817,11 @@ button {
   text-align: center;
 }
 
+.ai-preview-card {
+  border-color: rgba(124, 92, 255, 0.35);
+  background: linear-gradient(180deg, #f6f2ff 0%, #ffffff 100%);
+}
+
 .select-clean {
   background: #ffffff;
   color: var(--text);

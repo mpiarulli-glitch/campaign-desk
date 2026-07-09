@@ -68,6 +68,17 @@ export default function AdminCampaignPage() {
   const [addingEmail, setAddingEmail] = useState(false);
   const [newEmailTitle, setNewEmailTitle] = useState("");
   const [newEmailHtml, setNewEmailHtml] = useState("");
+  const [aiLoadingCommentId, setAiLoadingCommentId] = useState<string | null>(
+    null
+  );
+  const [aiPreview, setAiPreview] = useState<{
+    commentId: string;
+    emailId: string;
+    revisedHtml: string;
+    summary: string;
+    model: string;
+    feedback: string;
+  } | null>(null);
 
   async function load(preferredEmailId?: string | null) {
     const res = await fetch(`/api/campaigns/${id}`);
@@ -203,6 +214,73 @@ export default function AdminCampaignPage() {
       }),
     });
     if (res.ok) load(activeEmailId);
+  }
+
+  async function runAiRevision(comment: Comment) {
+    if (!activeEmail) return;
+    setAiLoadingCommentId(comment.id);
+    setError("");
+    setMessage("");
+    setAiPreview(null);
+
+    const res = await fetch(`/api/campaigns/${id}/ai-revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commentId: comment.id,
+        emailId: activeEmail.id,
+      }),
+    });
+
+    setAiLoadingCommentId(null);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "AI revision failed.");
+      return;
+    }
+
+    const data = await res.json();
+    setAiPreview({
+      commentId: comment.id,
+      emailId: data.emailId,
+      revisedHtml: data.revisedHtml,
+      summary: data.summary,
+      model: data.model,
+      feedback: comment.body,
+    });
+    setMessage("Grok drafted a revision. Preview it below, then apply.");
+  }
+
+  async function applyAiRevision() {
+    if (!aiPreview) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    const res = await fetch(`/api/campaigns/${id}/ai-revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        apply: true,
+        emailId: aiPreview.emailId,
+        commentId: aiPreview.commentId,
+        revisedHtml: aiPreview.revisedHtml,
+        versionNote: `AI revision (Grok): ${aiPreview.feedback.slice(0, 80)}`,
+      }),
+    });
+
+    setSaving(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not apply AI revision.");
+      return;
+    }
+
+    setAiPreview(null);
+    setMessage("AI revision applied and feedback marked done.");
+    load(aiPreview.emailId);
   }
 
   async function markRevisionDone() {
@@ -511,6 +589,49 @@ export default function AdminCampaignPage() {
         {message ? <p className="success">{message}</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
+        {aiPreview ? (
+          <div className="card card-pad stack ai-preview-card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div>
+                <p className="eyebrow">Grok revision ready</p>
+                <strong>Review the AI draft before saving</strong>
+                <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+                  Feedback: {aiPreview.feedback}
+                </p>
+                <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+                  Model: {aiPreview.model}
+                </p>
+              </div>
+              <div className="row">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAiPreview(null)}
+                  disabled={saving}
+                >
+                  Discard
+                </button>
+                <button
+                  className="btn btn-sm"
+                  onClick={applyAiRevision}
+                  disabled={saving}
+                >
+                  {saving ? "Applying..." : "Apply AI revision"}
+                </button>
+              </div>
+            </div>
+            <div className="split-review">
+              <div className="stack">
+                <h2 className="h2">Current</h2>
+                <EmailPreview html={activeEmail.html_content} />
+              </div>
+              <div className="stack">
+                <h2 className="h2">AI draft</h2>
+                <EmailPreview html={aiPreview.revisedHtml} />
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="tabs">
           <button
             className={`tab ${tab === "feedback" ? "active" : ""}`}
@@ -586,6 +707,24 @@ export default function AdminCampaignPage() {
                       </div>
                       <div className="comment-body">{c.body}</div>
                       <div className="row" style={{ marginTop: 10 }}>
+                        {!c.resolved ? (
+                          <button
+                            className="btn btn-sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              runAiRevision(c);
+                            }}
+                            disabled={
+                              saving ||
+                              aiLoadingCommentId === c.id ||
+                              isApproved
+                            }
+                          >
+                            {aiLoadingCommentId === c.id
+                              ? "Grok is revising..."
+                              : "Use AI to make revision"}
+                          </button>
+                        ) : null}
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={(e) => {
