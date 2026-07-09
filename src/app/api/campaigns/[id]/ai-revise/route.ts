@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { reviseEmailWithGrok } from "@/lib/ai-revise";
+import { reviseEmailWithGrok, continueRevisionWithGrok } from "@/lib/ai-revise";
+import type { ChatMessage } from "@/lib/ai-revise";
 import {
   getCampaignById,
   getEmailById,
@@ -63,7 +64,48 @@ export async function POST(request: Request, { params }: Params) {
     });
   }
 
-  // Generate a revision from a comment
+  // Handle follow-up chat message
+  if (body.continue === true) {
+    const history: ChatMessage[] = Array.isArray(body.history)
+      ? body.history
+      : [];
+    const newFeedback =
+      typeof body.newFeedback === "string" ? body.newFeedback.trim() : "";
+
+    if (!emailId || !newFeedback) {
+      return NextResponse.json(
+        { error: "emailId and newFeedback are required for continuation" },
+        { status: 400 }
+      );
+    }
+
+    const email = getEmailById(emailId);
+    if (!email || email.campaign_id !== id) {
+      return NextResponse.json({ error: "Email not found" }, { status: 404 });
+    }
+
+    try {
+      const result = await continueRevisionWithGrok(
+        email.html_content,
+        email.title,
+        history,
+        newFeedback
+      );
+
+      return NextResponse.json({
+        emailId: email.id,
+        revisedHtml: result.html,
+        summary: result.summary,
+        model: result.model,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "AI continuation failed";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  // Generate first revision from a comment
   if (!commentId) {
     return NextResponse.json(
       { error: "commentId is required" },

@@ -71,14 +71,15 @@ export default function AdminCampaignPage() {
   const [aiLoadingCommentId, setAiLoadingCommentId] = useState<string | null>(
     null
   );
-  const [aiPreview, setAiPreview] = useState<{
+  const [aiChat, setAiChat] = useState<{
     commentId: string;
     emailId: string;
-    revisedHtml: string;
-    summary: string;
+    originalHtml: string;
+    currentHtml: string;
+    messages: Array<{ role: "user" | "assistant"; content: string }>;
     model: string;
-    feedback: string;
   } | null>(null);
+  const [chatInput, setChatInput] = useState("");
 
   async function load(preferredEmailId?: string | null) {
     const res = await fetch(`/api/campaigns/${id}`);
@@ -221,7 +222,8 @@ export default function AdminCampaignPage() {
     setAiLoadingCommentId(comment.id);
     setError("");
     setMessage("");
-    setAiPreview(null);
+    setAiChat(null);
+    setChatInput("");
 
     const res = await fetch(`/api/campaigns/${id}/ai-revise`, {
       method: "POST",
@@ -241,19 +243,68 @@ export default function AdminCampaignPage() {
     }
 
     const data = await res.json();
-    setAiPreview({
+    setAiChat({
       commentId: comment.id,
       emailId: data.emailId,
-      revisedHtml: data.revisedHtml,
-      summary: data.summary,
+      originalHtml: data.originalHtml,
+      currentHtml: data.revisedHtml,
+      messages: [
+        { role: "user", content: comment.body },
+        { role: "assistant", content: data.revisedHtml },
+      ],
       model: data.model,
-      feedback: comment.body,
     });
-    setMessage("Grok drafted a revision. Preview it below, then apply.");
+    setMessage("Grok drafted a revision. You can chat with it below to refine.");
+  }
+
+  async function sendFollowUp() {
+    if (!aiChat || !activeEmail || !chatInput.trim()) return;
+
+    const feedback = chatInput.trim();
+    setSaving(true);
+    setError("");
+
+    const history = aiChat.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const res = await fetch(`/api/campaigns/${id}/ai-revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        continue: true,
+        emailId: aiChat.emailId,
+        history,
+        newFeedback: feedback,
+      }),
+    });
+
+    setSaving(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Grok follow-up failed.");
+      return;
+    }
+
+    const data = await res.json();
+    const newMessages = [
+      ...aiChat.messages,
+      { role: "user" as const, content: feedback },
+      { role: "assistant" as const, content: data.revisedHtml },
+    ];
+
+    setAiChat({
+      ...aiChat,
+      currentHtml: data.revisedHtml,
+      messages: newMessages,
+    });
+    setChatInput("");
   }
 
   async function applyAiRevision() {
-    if (!aiPreview) return;
+    if (!aiChat) return;
     setSaving(true);
     setError("");
     setMessage("");
@@ -263,10 +314,10 @@ export default function AdminCampaignPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         apply: true,
-        emailId: aiPreview.emailId,
-        commentId: aiPreview.commentId,
-        revisedHtml: aiPreview.revisedHtml,
-        versionNote: `AI revision (Grok): ${aiPreview.feedback.slice(0, 80)}`,
+        emailId: aiChat.emailId,
+        commentId: aiChat.commentId,
+        revisedHtml: aiChat.currentHtml,
+        versionNote: "AI revision (Grok)",
       }),
     });
 
@@ -278,9 +329,15 @@ export default function AdminCampaignPage() {
       return;
     }
 
-    setAiPreview(null);
+    setAiChat(null);
+    setChatInput("");
     setMessage("AI revision applied and feedback marked done.");
-    load(aiPreview.emailId);
+    load(aiChat.emailId);
+  }
+
+  function discardAiChat() {
+    setAiChat(null);
+    setChatInput("");
   }
 
   async function markRevisionDone() {
@@ -589,23 +646,17 @@ export default function AdminCampaignPage() {
         {message ? <p className="success">{message}</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
-        {aiPreview ? (
+        {aiChat ? (
           <div className="card card-pad stack ai-preview-card">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div>
-                <p className="eyebrow">Grok revision ready</p>
-                <strong>Review the AI draft before saving</strong>
-                <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-                  Feedback: {aiPreview.feedback}
-                </p>
-                <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
-                  Model: {aiPreview.model}
-                </p>
+                <p className="eyebrow">Grok revision</p>
+                <strong>Iterate with Grok</strong>
               </div>
               <div className="row">
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={() => setAiPreview(null)}
+                  onClick={discardAiChat}
                   disabled={saving}
                 >
                   Discard
@@ -615,19 +666,59 @@ export default function AdminCampaignPage() {
                   onClick={applyAiRevision}
                   disabled={saving}
                 >
-                  {saving ? "Applying..." : "Apply AI revision"}
+                  {saving ? "Applying..." : "Apply this version"}
                 </button>
               </div>
             </div>
+
             <div className="split-review">
               <div className="stack">
                 <h2 className="h2">Current</h2>
                 <EmailPreview html={activeEmail.html_content} />
               </div>
               <div className="stack">
-                <h2 className="h2">AI draft</h2>
-                <EmailPreview html={aiPreview.revisedHtml} />
+                <h2 className="h2">Latest Grok version</h2>
+                <EmailPreview html={aiChat.currentHtml} />
               </div>
+            </div>
+
+            {/* Chat for refinement */}
+            <div className="stack">
+              <div style={{ maxHeight: 220, overflow: "auto", background: "#fafafa", padding: 12, borderRadius: 6, border: "1px solid #eee" }}>
+                {aiChat.messages.map((msg, idx) => (
+                  <div key={idx} style={{ marginBottom: 10 }}>
+                    <strong style={{ color: msg.role === "user" ? "#555" : "#7c5cff" }}>
+                      {msg.role === "user" ? "You" : "Grok"}:
+                    </strong>
+                    <div style={{ whiteSpace: "pre-wrap", fontSize: 13, marginTop: 2 }}>
+                      {msg.role === "assistant" ? "(Revised HTML generated)" : msg.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="row">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !saving) sendFollowUp();
+                  }}
+                  placeholder="Tell Grok what to change (e.g. make the CTA stronger, shorten the headline...)"
+                  style={{ flex: 1 }}
+                  disabled={saving}
+                />
+                <button
+                  className="btn btn-sm"
+                  onClick={sendFollowUp}
+                  disabled={saving || !chatInput.trim()}
+                >
+                  {saving ? "Thinking..." : "Send to Grok"}
+                </button>
+              </div>
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                Grok will revise the email based on your new instructions.
+              </p>
             </div>
           </div>
         ) : null}
