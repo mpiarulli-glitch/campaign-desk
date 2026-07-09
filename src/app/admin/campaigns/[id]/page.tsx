@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
+import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 
 type Attachment = {
@@ -799,12 +800,15 @@ export default function AdminCampaignPage() {
 
         {tab === "feedback" ? (
           <div className="split-review">
-            <EmailPreview
-              html={activeEmail.html_content}
-              pins={inlinePins}
-              activePinId={activePinId}
-              onSelectPin={setActivePinId}
-            />
+            <div className="stack">
+              <EmailPreview
+                html={activeEmail.html_content}
+                pins={inlinePins}
+                activePinId={activePinId}
+                onSelectPin={setActivePinId}
+              />
+              <EmailLinks html={activeEmail.html_content} />
+            </div>
             <div className="card card-pad stack">
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <h2 className="h2">{activeEmail.title}</h2>

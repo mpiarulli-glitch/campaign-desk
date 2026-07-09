@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
+import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 
 type Attachment = {
@@ -476,6 +477,7 @@ export default function ReviewPage() {
               onPlacePin={(x, y) => setPendingPin({ x, y })}
               onSelectPin={setActivePinId}
             />
+            <EmailLinks html={activeEmail.html_content} />
           </div>
 
           <div className="stack">
