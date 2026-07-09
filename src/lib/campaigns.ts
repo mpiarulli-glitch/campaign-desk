@@ -6,6 +6,7 @@ import {
   type CampaignEmail,
   type CampaignStatus,
   type Comment,
+  type CommentType,
   type CampaignVersion,
 } from "./db";
 
@@ -398,4 +399,69 @@ export function countEmails(campaignId: string): number {
     )
     .get(campaignId) as { count: number };
   return row.count;
+}
+
+export type ActivityKind = "feedback" | "approved";
+
+export interface ActivityItem {
+  kind: ActivityKind;
+  id: string;
+  campaign_id: string;
+  campaign_title: string;
+  client_name: string;
+  actor: string | null;
+  body: string | null;
+  comment_type: CommentType | null;
+  email_title: string | null;
+  resolved: number | null;
+  star_rating: number | null;
+  at: string;
+}
+
+// A unified, reverse-chronological feed of client activity across every
+// campaign: feedback left on the review link, and campaigns the client
+// approved. Derived from existing data so it always reflects full history.
+export function listActivity(limit = 100): ActivityItem[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM (
+         SELECT
+           'feedback' AS kind,
+           c.id AS id,
+           c.campaign_id AS campaign_id,
+           cam.title AS campaign_title,
+           cam.client_name AS client_name,
+           c.author_name AS actor,
+           c.body AS body,
+           c.type AS comment_type,
+           e.title AS email_title,
+           c.resolved AS resolved,
+           NULL AS star_rating,
+           c.created_at AS at
+         FROM comments c
+         JOIN campaigns cam ON cam.id = c.campaign_id
+         LEFT JOIN campaign_emails e ON e.id = c.email_id
+
+         UNION ALL
+
+         SELECT
+           'approved' AS kind,
+           cam.id AS id,
+           cam.id AS campaign_id,
+           cam.title AS campaign_title,
+           cam.client_name AS client_name,
+           NULL AS actor,
+           NULL AS body,
+           NULL AS comment_type,
+           NULL AS email_title,
+           NULL AS resolved,
+           cam.star_rating AS star_rating,
+           cam.updated_at AS at
+         FROM campaigns cam
+         WHERE cam.status = 'approved'
+       )
+       ORDER BY at DESC
+       LIMIT ?`
+    )
+    .all(limit) as ActivityItem[];
 }

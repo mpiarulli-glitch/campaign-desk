@@ -55,6 +55,9 @@ export default function AdminPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
+          <Link className="btn btn-ghost btn-sm" href="/admin/activity">
+            Activity
+          </Link>
           <Link className="btn" href="/admin/new">
             New campaign
           </Link>
