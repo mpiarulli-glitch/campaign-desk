@@ -740,7 +740,7 @@ export default function AdminCampaignPage() {
 
             {/* Follow-up input — placed under the previews */}
             <div className="stack" style={{ background: "#f0f4ff", border: "2px solid #5a3fcf", borderRadius: 6, padding: 14 }}>
-              <strong style={{ fontSize: 15, color: "#5a3fcf" }}>Add more feedback below to generate another revision (latest build)</strong>
+              <strong style={{ fontSize: 15, color: "#5a3fcf" }}>Add more feedback below to generate another revision (latest build v2 - 84ea1e7)</strong>
               <div className="row">
                 <input
                   value={chatInput}
