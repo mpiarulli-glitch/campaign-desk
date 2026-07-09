@@ -12,6 +12,7 @@ import {
   markApproved,
 } from "@/lib/campaigns";
 import type { CampaignStatus } from "@/lib/db";
+import { notifyCampaignRemoved } from "@/lib/notify";
 
 const STATUSES: CampaignStatus[] = [
   "draft",
@@ -129,9 +130,18 @@ export async function DELETE(_request: Request, { params }: Params) {
   }
 
   const { id } = await params;
+  const existing = getCampaignById(id);
   const ok = deleteCampaign(id);
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  if (existing) {
+    notifyCampaignRemoved({
+      campaignTitle: existing.title,
+      clientName: existing.client_name,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }

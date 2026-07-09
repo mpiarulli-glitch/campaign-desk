@@ -8,6 +8,7 @@ import {
   markApproved,
   countOpenComments,
 } from "@/lib/campaigns";
+import { notifyClientFeedback } from "@/lib/notify";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -130,6 +131,14 @@ export async function POST(request: Request, { params }: Params) {
     type,
     pinX,
     pinY,
+  });
+
+  notifyClientFeedback({
+    campaignTitle: campaign.title,
+    clientName: campaign.client_name,
+    authorName,
+    body: text,
+    emailTitle: targetEmail.title,
   });
 
   return NextResponse.json({ comment }, { status: 201 });
