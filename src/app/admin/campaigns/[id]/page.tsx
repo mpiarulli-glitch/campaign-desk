@@ -1,0 +1,708 @@
+"use client";
+
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Brand } from "@/components/Brand";
+import { EmailPreview } from "@/components/EmailPreview";
+import { StatusBadge } from "@/components/StatusBadge";
+
+type Comment = {
+  id: string;
+  email_id: string | null;
+  author_name: string;
+  body: string;
+  type: "general" | "inline";
+  pin_x: number | null;
+  pin_y: number | null;
+  resolved: number;
+  created_at: string;
+};
+
+type Version = {
+  id: string;
+  email_id?: string | null;
+  note: string;
+  created_at: string;
+};
+
+type EmailItem = {
+  id: string;
+  title: string;
+  html_content: string;
+  sort_order: number;
+  open_comments: number;
+};
+
+type Campaign = {
+  id: string;
+  title: string;
+  client_name: string;
+  description: string;
+  status: string;
+  magic_token: string;
+  updated_at: string;
+  review_url: string;
+  open_comments: number;
+  email_count?: number;
+};
+
+export default function AdminCampaignPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [emails, setEmails] = useState<EmailItem[]>([]);
+  const [activeEmailId, setActiveEmailId] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [htmlDraft, setHtmlDraft] = useState("");
+  const [emailTitleDraft, setEmailTitleDraft] = useState("");
+  const [versionNote, setVersionNote] = useState("");
+  const [status, setStatus] = useState("draft");
+  const [tab, setTab] = useState<"feedback" | "html" | "versions">("feedback");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [addingEmail, setAddingEmail] = useState(false);
+  const [newEmailTitle, setNewEmailTitle] = useState("");
+  const [newEmailHtml, setNewEmailHtml] = useState("");
+
+  async function load(preferredEmailId?: string | null) {
+    const res = await fetch(`/api/campaigns/${id}`);
+    if (res.status === 401) {
+      router.push("/login");
+      return;
+    }
+    if (!res.ok) {
+      setError("Campaign not found.");
+      return;
+    }
+    const data = await res.json();
+    setCampaign(data.campaign);
+    setEmails(data.emails || []);
+    setComments(data.comments || []);
+    setVersions(data.versions || []);
+    setStatus(data.campaign.status);
+
+    const nextId =
+      preferredEmailId &&
+      (data.emails || []).some((e: EmailItem) => e.id === preferredEmailId)
+        ? preferredEmailId
+        : activeEmailId &&
+            (data.emails || []).some((e: EmailItem) => e.id === activeEmailId)
+          ? activeEmailId
+          : data.emails?.[0]?.id || null;
+
+    setActiveEmailId(nextId);
+    const active = (data.emails || []).find((e: EmailItem) => e.id === nextId);
+    if (active) {
+      setHtmlDraft(active.html_content);
+      setEmailTitleDraft(active.title);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [id]);
+
+  const activeEmail = useMemo(
+    () => emails.find((e) => e.id === activeEmailId) || emails[0] || null,
+    [emails, activeEmailId]
+  );
+
+  const emailComments = useMemo(
+    () =>
+      comments.filter(
+        (c) => !activeEmail || c.email_id === activeEmail.id || !c.email_id
+      ),
+    [comments, activeEmail]
+  );
+
+  const inlinePins = useMemo(
+    () => emailComments.filter((c) => c.type === "inline"),
+    [emailComments]
+  );
+
+  const openCount = comments.filter((c) => !c.resolved).length;
+  const openOnActive = emailComments.filter((c) => !c.resolved).length;
+  const canMarkRevisionDone =
+    status === "needs_changes" || openCount > 0 || status === "draft";
+  const isApproved = status === "approved";
+
+  function selectEmail(emailId: string) {
+    setActiveEmailId(emailId);
+    setActivePinId(null);
+    const email = emails.find((e) => e.id === emailId);
+    if (email) {
+      setHtmlDraft(email.html_content);
+      setEmailTitleDraft(email.title);
+    }
+  }
+
+  async function copyLink() {
+    if (!campaign?.review_url) return;
+    await navigator.clipboard.writeText(campaign.review_url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function saveStatus(next: string) {
+    setSaving(true);
+    setMessage("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: next }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not update status.");
+      return;
+    }
+    setStatus(next);
+    setMessage("Status updated.");
+    load(activeEmailId);
+  }
+
+  async function saveHtml(e: FormEvent) {
+    e.preventDefault();
+    if (!activeEmail) return;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}/emails`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        emailId: activeEmail.id,
+        title: emailTitleDraft,
+        htmlContent: htmlDraft,
+        versionNote: versionNote || "Manual revision",
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not save HTML.");
+      return;
+    }
+    setVersionNote("");
+    setMessage("Revision saved for this email. Same review link stays live.");
+    setTab("feedback");
+    load(activeEmail.id);
+  }
+
+  async function toggleResolved(comment: Comment) {
+    const res = await fetch(`/api/campaigns/${id}/comments`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commentId: comment.id,
+        resolved: !comment.resolved,
+      }),
+    });
+    if (res.ok) load(activeEmailId);
+  }
+
+  async function markRevisionDone() {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markRevisionDone: true }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not mark revision done.");
+      return;
+    }
+    setStatus("in_review");
+    setMessage(
+      "Revision marked done. All feedback resolved and package is ready for re-review."
+    );
+    load(activeEmailId);
+  }
+
+  async function markApproved() {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markApproved: true }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not approve campaign.");
+      return;
+    }
+    setStatus("approved");
+    setMessage(
+      "Approved. The email team has been notified and feedback is closed on the review link."
+    );
+    load(activeEmailId);
+  }
+
+  async function addEmail(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/campaigns/${id}/emails`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: newEmailTitle || `Email ${emails.length + 1}`,
+        htmlContent: newEmailHtml,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not add email.");
+      return;
+    }
+    const data = await res.json();
+    setAddingEmail(false);
+    setNewEmailTitle("");
+    setNewEmailHtml("");
+    setMessage("Email added to this review package.");
+    await load(data.email?.id);
+    setTab("feedback");
+  }
+
+  async function removeActiveEmail() {
+    if (!activeEmail) return;
+    if (emails.length <= 1) {
+      setError("A package must keep at least one email.");
+      return;
+    }
+    if (!confirm(`Remove "${activeEmail.title}" from this package?`)) return;
+    const res = await fetch(`/api/campaigns/${id}/emails`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailId: activeEmail.id }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not remove email.");
+      return;
+    }
+    setMessage("Email removed.");
+    load(null);
+  }
+
+  async function removeCampaign() {
+    if (!confirm("Delete this campaign and all feedback?")) return;
+    const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
+    if (res.ok) router.push("/admin");
+  }
+
+  if (error && !campaign) {
+    return (
+      <div className="container">
+        <p className="error">{error}</p>
+        <Link href="/admin">Back to campaigns</Link>
+      </div>
+    );
+  }
+
+  if (!campaign || !activeEmail) {
+    return (
+      <div className="container">
+        <p className="muted">Loading campaign...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <Brand href="/admin" />
+        <div className="row">
+          <StatusBadge status={status} />
+          <Link className="btn btn-ghost btn-sm" href="/admin">
+            All campaigns
+          </Link>
+        </div>
+      </header>
+
+      <main className="container container-wide stack">
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+        >
+          <div>
+            <p className="eyebrow">Review package</p>
+            <h1 className="h1">{campaign.title}</h1>
+            <p className="muted" style={{ margin: "8px 0 0" }}>
+              {campaign.client_name ? `${campaign.client_name} · ` : ""}
+              {emails.length} email{emails.length === 1 ? "" : "s"} · Updated{" "}
+              {new Date(campaign.updated_at).toLocaleString()}
+            </p>
+            {campaign.description ? (
+              <p className="body-text" style={{ marginTop: 10, lineHeight: 1.6 }}>
+                {campaign.description}
+              </p>
+            ) : null}
+          </div>
+          <div className="toolbar">
+            {canMarkRevisionDone ? (
+              <button className="btn" onClick={markRevisionDone} disabled={saving}>
+                {saving ? "Saving..." : "Mark revision done"}
+              </button>
+            ) : null}
+            {!isApproved ? (
+              <button
+                className="btn btn-approve"
+                onClick={markApproved}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Approve and notify email team"}
+              </button>
+            ) : null}
+            <select
+              value={status}
+              onChange={(e) => saveStatus(e.target.value)}
+              disabled={saving}
+              className="select-clean"
+            >
+              <option value="draft">Draft</option>
+              <option value="in_review">In review</option>
+              <option value="needs_changes">Needs changes</option>
+              <option value="approved">Approved</option>
+            </select>
+            <button className="btn btn-danger btn-sm" onClick={removeCampaign}>
+              Delete
+            </button>
+          </div>
+        </div>
+
+        <div className="card card-pad stack">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong>Emails in this package</strong>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setAddingEmail((v) => !v)}
+            >
+              {addingEmail ? "Cancel" : "Add email"}
+            </button>
+          </div>
+          <div className="email-tabs">
+            {emails.map((email, index) => (
+              <button
+                key={email.id}
+                type="button"
+                className={`email-tab ${
+                  email.id === activeEmail.id ? "active" : ""
+                }`}
+                onClick={() => selectEmail(email.id)}
+              >
+                <span className="email-tab-num">{index + 1}</span>
+                <span className="email-tab-label">{email.title}</span>
+                {email.open_comments > 0 ? (
+                  <span className="email-tab-badge">{email.open_comments}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            Reviewers get one magic link and can toggle between these emails.
+            Approval covers the whole package.
+          </p>
+
+          {addingEmail ? (
+            <form className="stack" onSubmit={addEmail} style={{ marginTop: 8 }}>
+              <div className="field">
+                <label htmlFor="newEmailTitle">Email title</label>
+                <input
+                  id="newEmailTitle"
+                  value={newEmailTitle}
+                  onChange={(e) => setNewEmailTitle(e.target.value)}
+                  placeholder={`Email ${emails.length + 1}`}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="newEmailHtml">HTML</label>
+                <textarea
+                  id="newEmailHtml"
+                  value={newEmailHtml}
+                  onChange={(e) => setNewEmailHtml(e.target.value)}
+                  style={{ minHeight: 180, fontFamily: "var(--mono)", fontSize: 12 }}
+                  required
+                />
+              </div>
+              <button className="btn" type="submit" disabled={saving}>
+                {saving ? "Adding..." : "Add email to package"}
+              </button>
+            </form>
+          ) : null}
+        </div>
+
+        {canMarkRevisionDone ? (
+          <div className="card card-pad revision-done-card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div>
+                <strong>Finished the changes?</strong>
+                <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+                  Marks all open feedback resolved and sets status to In review
+                  so your boss can check the update.
+                </p>
+              </div>
+              <button className="btn" onClick={markRevisionDone} disabled={saving}>
+                {saving ? "Saving..." : "Mark revision done"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!isApproved ? (
+          <div className="card card-pad approve-card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div>
+                <strong>Ready to approve?</strong>
+                <p
+                  className="muted"
+                  style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.55 }}
+                >
+                  Click this button and let the email team know this is approved.
+                  That resolves open feedback and closes new comments on the
+                  review link.
+                </p>
+              </div>
+              <button
+                className="btn btn-approve"
+                onClick={markApproved}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Approve and notify email team"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="card card-pad approve-card is-approved">
+            <strong>This package is approved.</strong>
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+              The email team has been notified. Feedback is closed. Change the
+              status dropdown if you need to reopen it.
+            </p>
+          </div>
+        )}
+
+        <div className="card card-pad stack">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong>Magic review link</strong>
+            <button className="btn btn-secondary btn-sm" onClick={copyLink}>
+              {copied ? "Copied" : "Copy link"}
+            </button>
+          </div>
+          <div className="copy-box">
+            <code>{campaign.review_url}</code>
+          </div>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            One link for the whole package. Your boss can toggle emails inside it.
+          </p>
+        </div>
+
+        {message ? <p className="success">{message}</p> : null}
+        {error ? <p className="error">{error}</p> : null}
+
+        <div className="tabs">
+          <button
+            className={`tab ${tab === "feedback" ? "active" : ""}`}
+            onClick={() => setTab("feedback")}
+          >
+            Feedback ({emailComments.length}
+            {openOnActive ? ` · ${openOnActive} open` : ""})
+          </button>
+          <button
+            className={`tab ${tab === "html" ? "active" : ""}`}
+            onClick={() => setTab("html")}
+          >
+            Revise HTML
+          </button>
+          <button
+            className={`tab ${tab === "versions" ? "active" : ""}`}
+            onClick={() => setTab("versions")}
+          >
+            Versions ({versions.length})
+          </button>
+        </div>
+
+        {tab === "feedback" ? (
+          <div className="split-review">
+            <EmailPreview
+              html={activeEmail.html_content}
+              pins={inlinePins}
+              activePinId={activePinId}
+              onSelectPin={setActivePinId}
+            />
+            <div className="card card-pad stack">
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <h2 className="h2">{activeEmail.title}</h2>
+                {openCount > 0 ? (
+                  <button
+                    className="btn btn-sm"
+                    onClick={markRevisionDone}
+                    disabled={saving}
+                  >
+                    Mark revision done
+                  </button>
+                ) : null}
+              </div>
+              {openOnActive > 0 ? (
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  {openOnActive} open item{openOnActive === 1 ? "" : "s"} on this
+                  email
+                </p>
+              ) : null}
+              {emailComments.length === 0 ? (
+                <div className="empty">
+                  No feedback on this email yet. Share the magic link.
+                </div>
+              ) : (
+                <div className="comment-list">
+                  {emailComments.map((c, index) => (
+                    <div
+                      key={c.id}
+                      className={`comment-card ${c.resolved ? "resolved" : ""} ${
+                        activePinId === c.id ? "active" : ""
+                      }`}
+                      onClick={() => c.type === "inline" && setActivePinId(c.id)}
+                    >
+                      <div className="comment-head">
+                        <span>
+                          {c.author_name}
+                          {c.type === "inline"
+                            ? ` · Pin ${index + 1}`
+                            : " · General"}
+                          {c.resolved ? " · Done" : ""}
+                        </span>
+                        <span>{new Date(c.created_at).toLocaleString()}</span>
+                      </div>
+                      <div className="comment-body">{c.body}</div>
+                      <div className="row" style={{ marginTop: 10 }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleResolved(c);
+                          }}
+                        >
+                          {c.resolved ? "Reopen" : "Mark done"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {tab === "html" ? (
+          <form className="card card-pad stack" onSubmit={saveHtml}>
+            <p className="muted" style={{ margin: 0 }}>
+              Editing: <strong>{activeEmail.title}</strong>. Save creates a new
+              version for this email only.
+            </p>
+            <div className="field">
+              <label htmlFor="emailTitle">Email title</label>
+              <input
+                id="emailTitle"
+                value={emailTitleDraft}
+                onChange={(e) => setEmailTitleDraft(e.target.value)}
+                placeholder="Email 2 subject / label"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="versionNote">What changed?</label>
+              <input
+                id="versionNote"
+                value={versionNote}
+                onChange={(e) => setVersionNote(e.target.value)}
+                placeholder="Fixed headline and CTA color"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="html">HTML</label>
+              <textarea
+                id="html"
+                value={htmlDraft}
+                onChange={(e) => setHtmlDraft(e.target.value)}
+                style={{ minHeight: 360, fontFamily: "var(--mono)", fontSize: 12 }}
+                required
+              />
+            </div>
+            <div className="row">
+              <button className="btn" type="submit" disabled={saving}>
+                {saving ? "Saving..." : "Save revision"}
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  if (htmlDraft !== activeEmail.html_content) {
+                    setSaving(true);
+                    setError("");
+                    const saveRes = await fetch(`/api/campaigns/${id}/emails`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        emailId: activeEmail.id,
+                        title: emailTitleDraft,
+                        htmlContent: htmlDraft,
+                        versionNote: versionNote || "Manual revision",
+                      }),
+                    });
+                    setSaving(false);
+                    if (!saveRes.ok) {
+                      setError("Could not save HTML.");
+                      return;
+                    }
+                    setVersionNote("");
+                  }
+                  await markRevisionDone();
+                  setTab("feedback");
+                }}
+              >
+                Save and mark revision done
+              </button>
+              {emails.length > 1 ? (
+                <button
+                  className="btn btn-danger btn-sm"
+                  type="button"
+                  onClick={removeActiveEmail}
+                >
+                  Remove this email
+                </button>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
+
+        {tab === "versions" ? (
+          <div className="card card-pad stack">
+            {versions.length === 0 ? (
+              <div className="empty">No versions yet.</div>
+            ) : (
+              versions.map((v) => (
+                <div key={v.id} className="comment-card">
+                  <div className="comment-head">
+                    <span>{v.note || "Update"}</span>
+                    <span>{new Date(v.created_at).toLocaleString()}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
+      </main>
+    </div>
+  );
+}
