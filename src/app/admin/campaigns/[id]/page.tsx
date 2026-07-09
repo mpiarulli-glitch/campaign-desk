@@ -727,20 +727,9 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
-            <div className="split-review">
-              <div className="stack">
-                <h2 className="h2">Current</h2>
-                <EmailPreview html={activeEmail.html_content} />
-              </div>
-              <div className="stack">
-                <h2 className="h2">Latest AI version</h2>
-                <EmailPreview html={aiChat.currentHtml} />
-              </div>
-            </div>
-
-            {/* Follow-up input — placed under the previews */}
-            <div className="stack" style={{ background: "#f0f4ff", border: "2px solid #5a3fcf", borderRadius: 6, padding: 14 }}>
-              <strong style={{ fontSize: 15, color: "#5a3fcf" }}>Add more feedback below to generate another revision (latest build v2 - 84ea1e7)</strong>
+            {/* Follow-up input — right after buttons, very obvious */}
+            <div className="stack" style={{ background: "#f0f4ff", border: "3px solid #5a3fcf", borderRadius: 6, padding: 16, marginBottom: 12 }}>
+              <strong style={{ fontSize: 16, color: "#5a3fcf" }}>Talk to AI to make more revisions (latest build v2 - 99fdb4f)</strong>
               <div className="row">
                 <input
                   value={chatInput}
@@ -748,7 +737,7 @@ export default function AdminCampaignPage() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !chatLoading) sendFollowUp();
                   }}
-                  placeholder="E.g. make the headline shorter, strengthen the CTA, remove the last line, make it more direct..."
+                  placeholder="E.g. make the headline shorter, strengthen the CTA, remove the last line..."
                   style={{ flex: 1, fontSize: 14 }}
                   disabled={chatLoading}
                 />
@@ -761,18 +750,19 @@ export default function AdminCampaignPage() {
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                You can keep adding feedback and generating new versions before you click Apply.
+                Add more feedback here to iterate. The box below shows Current vs Latest.
               </p>
+            </div>
 
-              {aiChat.messages.length > 2 && (
-                <div style={{ maxHeight: 100, overflow: "auto", fontSize: 12, color: "#555", marginTop: 6 }}>
-                  {aiChat.messages.slice(2).map((msg, idx) => (
-                    <div key={idx} style={{ marginBottom: 3 }}>
-                      <strong>{msg.role === "user" ? "You said" : "AI generated"}:</strong> {msg.role === "assistant" ? "(new version)" : msg.content}
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="split-review">
+              <div className="stack">
+                <h2 className="h2">Current</h2>
+                <EmailPreview html={activeEmail.html_content} />
+              </div>
+              <div className="stack">
+                <h2 className="h2">Latest AI version</h2>
+                <EmailPreview html={aiChat.currentHtml} />
+              </div>
             </div>
           </div>
         ) : null}
@@ -819,7 +809,7 @@ export default function AdminCampaignPage() {
                     Mark revision done
                   </button>
                 ) : null}
-                {unresolvedComments.length > 1 ? (
+                {unresolvedComments.length > 0 ? (
                   <button
                     className="btn btn-sm"
                     onClick={runAllAiRevisions}
