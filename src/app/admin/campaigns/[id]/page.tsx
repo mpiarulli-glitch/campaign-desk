@@ -990,14 +990,20 @@ export default function AdminCampaignPage() {
             {versions.length === 0 ? (
               <div className="empty">No versions yet.</div>
             ) : (
-              versions.map((v) => (
-                <div key={v.id} className="comment-card">
-                  <div className="comment-head">
-                    <span>{v.note || "Update"}</span>
-                    <span>{new Date(v.created_at).toLocaleString()}</span>
+              versions.map((v) => {
+                const emailForVersion = emails.find((e) => e.id === v.email_id);
+                return (
+                  <div key={v.id} className="comment-card">
+                    <div className="comment-head">
+                      <span>
+                        {emailForVersion ? emailForVersion.title + " — " : ""}
+                        {v.note || "Update"}
+                      </span>
+                      <span>{new Date(v.created_at).toLocaleString()}</span>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         ) : null}
