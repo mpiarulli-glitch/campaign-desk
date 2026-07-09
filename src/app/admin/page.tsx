@@ -68,7 +68,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="container-wide stack">
+      <main className="container container-wide stack">
         <div className="page-hero">
           <p className="eyebrow">Dashboard</p>
           <h1 className="h1">Campaigns</h1>
