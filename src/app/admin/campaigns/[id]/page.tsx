@@ -257,7 +257,7 @@ export default function AdminCampaignPage() {
       ],
       model: data.model,
     });
-    setMessage("AI drafted a revision. Use the box at the top of this card to give more feedback and refine before applying.");
+    setMessage("AI drafted a revision. Scroll down in the card below to add more feedback and generate another version before applying.");
   }
 
   async function sendFollowUp() {
