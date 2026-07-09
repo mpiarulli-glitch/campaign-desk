@@ -729,7 +729,7 @@ export default function AdminCampaignPage() {
 
             {/* Follow-up input — right after buttons, very obvious */}
             <div className="stack" style={{ background: "#f0f4ff", border: "3px solid #5a3fcf", borderRadius: 6, padding: 16, marginBottom: 12 }}>
-              <strong style={{ fontSize: 16, color: "#5a3fcf" }}>Talk to AI to make more revisions (latest build v2 - 99fdb4f)</strong>
+              <strong style={{ fontSize: 16, color: "#5a3fcf" }}>Talk to AI to make more revisions</strong>
               <div className="row">
                 <input
                   value={chatInput}
@@ -750,7 +750,7 @@ export default function AdminCampaignPage() {
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                Add more feedback here to iterate. The box below shows Current vs Latest.
+                Type more instructions below and click send to generate an updated version. You can iterate multiple times before applying.
               </p>
             </div>
 
