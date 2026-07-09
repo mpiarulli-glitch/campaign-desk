@@ -257,7 +257,7 @@ export default function AdminCampaignPage() {
       ],
       model: data.model,
     });
-    setMessage("AI drafted a revision. Use the chat below to give more feedback and refine.");
+    setMessage("AI drafted a revision. Use the box at the top of this card to give more feedback and refine before applying.");
   }
 
   async function sendFollowUp() {
@@ -677,31 +677,9 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
-            <div className="split-review">
-              <div className="stack">
-                <h2 className="h2">Current</h2>
-                <EmailPreview html={activeEmail.html_content} />
-              </div>
-              <div className="stack">
-                <h2 className="h2">Latest AI version</h2>
-                <EmailPreview html={aiChat.currentHtml} />
-              </div>
-            </div>
-
-            {/* Follow-up chat */}
-            <div className="stack" style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
-              <strong style={{ fontSize: 14 }}>Continue the conversation with AI</strong>
-              <div style={{ maxHeight: 180, overflow: "auto", background: "#f9f9f9", padding: 10, borderRadius: 4, fontSize: 13, border: "1px solid #eee" }}>
-                {aiChat.messages.map((msg, idx) => (
-                  <div key={idx} style={{ marginBottom: 8 }}>
-                    <strong style={{ color: msg.role === "user" ? "#333" : "#7c5cff" }}>
-                      {msg.role === "user" ? "You" : "AI"}:
-                    </strong>{" "}
-                    {msg.role === "assistant" ? "(new revision generated)" : msg.content}
-                  </div>
-                ))}
-              </div>
-
+            {/* Follow-up chat — placed prominently at the top */}
+            <div className="stack" style={{ background: "#f8f6ff", border: "1px solid #d1c4ff", borderRadius: 6, padding: 12 }}>
+              <strong style={{ fontSize: 14, color: "#5a3fcf" }}>Not happy with the revision? Give AI more feedback here</strong>
               <div className="row">
                 <input
                   value={chatInput}
@@ -709,7 +687,7 @@ export default function AdminCampaignPage() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !chatLoading) sendFollowUp();
                   }}
-                  placeholder="E.g. make the headline shorter, strengthen the CTA, fix the spacing..."
+                  placeholder="E.g. make the headline shorter, strengthen the CTA, fix the spacing, remove the last line..."
                   style={{ flex: 1 }}
                   disabled={chatLoading}
                 />
@@ -722,8 +700,30 @@ export default function AdminCampaignPage() {
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                AI will generate an updated version based on your additional instructions.
+                AI will create a new version based on your additional instructions. You can keep refining before applying.
               </p>
+
+              {/* Small history log */}
+              {aiChat.messages.length > 2 && (
+                <div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, color: "#555", marginTop: 8 }}>
+                  {aiChat.messages.slice(2).map((msg, idx) => (
+                    <div key={idx} style={{ marginBottom: 4 }}>
+                      <strong>{msg.role === "user" ? "You" : "AI"}:</strong> {msg.role === "assistant" ? "(new version)" : msg.content}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="split-review">
+              <div className="stack">
+                <h2 className="h2">Current</h2>
+                <EmailPreview html={activeEmail.html_content} />
+              </div>
+              <div className="stack">
+                <h2 className="h2">Latest AI version</h2>
+                <EmailPreview html={aiChat.currentHtml} />
+              </div>
             </div>
           </div>
         ) : null}
