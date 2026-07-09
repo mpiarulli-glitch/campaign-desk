@@ -521,6 +521,84 @@ button {
   pointer-events: auto;
 }
 
+/* Dashboard two-column layout: campaigns + recent activity sidebar. */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+
+.activity-sidebar {
+  position: sticky;
+  top: 16px;
+}
+
+.activity-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.activity-sidebar-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #eef0f2;
+  text-decoration: none;
+  color: inherit;
+}
+
+.activity-sidebar-item:first-child {
+  border-top: none;
+}
+
+.activity-sidebar-item:hover {
+  opacity: 0.75;
+}
+
+.activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.activity-sidebar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-sidebar-line {
+  font-size: 13px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.activity-sidebar-meta {
+  font-size: 11px;
+  color: #8a9099;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .activity-sidebar {
+    position: static;
+  }
+}
+
 /* Browser-style status bar showing the destination of a hovered email link. */
 .link-hover-bar {
   position: fixed;

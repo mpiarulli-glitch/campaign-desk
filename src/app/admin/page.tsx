@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ActivitySidebar } from "@/components/ActivitySidebar";
 
 type CampaignRow = {
   id: string;
@@ -67,7 +68,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="container stack">
+      <main className="container-wide stack">
         <div className="page-hero">
           <p className="eyebrow">Dashboard</p>
           <h1 className="h1">Campaigns</h1>
@@ -78,43 +79,53 @@ export default function AdminPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        {loading ? (
-          <p className="muted">Loading...</p>
-        ) : campaigns.length === 0 ? (
-          <div className="empty">
-            <p>No campaigns yet.</p>
-            <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
-              Upload your first email
-            </Link>
+        <div className="dashboard-grid">
+          <div className="stack" style={{ gap: 12 }}>
+            {loading ? (
+              <p className="muted">Loading...</p>
+            ) : campaigns.length === 0 ? (
+              <div className="empty">
+                <p>No campaigns yet.</p>
+                <Link
+                  className="btn"
+                  href="/admin/new"
+                  style={{ marginTop: 12 }}
+                >
+                  Upload your first email
+                </Link>
+              </div>
+            ) : (
+              <div className="campaign-list">
+                {campaigns.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/admin/campaigns/${c.id}`}
+                    className="campaign-item"
+                  >
+                    <div>
+                      <h3>{c.title}</h3>
+                      <div className="meta">
+                        {c.client_name ? `${c.client_name} · ` : ""}
+                        {c.email_count
+                          ? `${c.email_count} email${c.email_count === 1 ? "" : "s"} · `
+                          : ""}
+                        Updated {new Date(c.updated_at).toLocaleString()}
+                        {c.open_comments > 0
+                          ? ` · ${c.open_comments} open comment${
+                              c.open_comments === 1 ? "" : "s"
+                            }`
+                          : ""}
+                      </div>
+                    </div>
+                    <StatusBadge status={c.status} />
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="campaign-list">
-            {campaigns.map((c) => (
-              <Link
-                key={c.id}
-                href={`/admin/campaigns/${c.id}`}
-                className="campaign-item"
-              >
-                <div>
-                  <h3>{c.title}</h3>
-                  <div className="meta">
-                    {c.client_name ? `${c.client_name} · ` : ""}
-                    {c.email_count
-                      ? `${c.email_count} email${c.email_count === 1 ? "" : "s"} · `
-                      : ""}
-                    Updated {new Date(c.updated_at).toLocaleString()}
-                    {c.open_comments > 0
-                      ? ` · ${c.open_comments} open comment${
-                          c.open_comments === 1 ? "" : "s"
-                        }`
-                      : ""}
-                  </div>
-                </div>
-                <StatusBadge status={c.status} />
-              </Link>
-            ))}
-          </div>
-        )}
+
+          <ActivitySidebar />
+        </div>
       </main>
     </div>
   );
