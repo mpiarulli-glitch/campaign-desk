@@ -257,7 +257,7 @@ export default function AdminCampaignPage() {
       ],
       model: data.model,
     });
-    setMessage("Grok drafted a revision. You can chat with it below to refine.");
+    setMessage("AI drafted a revision. Use the chat below to give more feedback and refine.");
   }
 
   async function sendFollowUp() {
@@ -287,7 +287,7 @@ export default function AdminCampaignPage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Grok follow-up failed.");
+      setError(data.error || "AI follow-up failed.");
       return;
     }
 
@@ -320,7 +320,7 @@ export default function AdminCampaignPage() {
         emailId: aiChat.emailId,
         commentId: aiChat.commentId,
         revisedHtml: aiChat.currentHtml,
-        versionNote: "AI revision (Grok)",
+        versionNote: "AI revision",
       }),
     });
 
@@ -651,10 +651,13 @@ export default function AdminCampaignPage() {
 
         {aiChat ? (
           <div className="card card-pad stack ai-preview-card">
+            <div style={{ background: "#fff3cd", color: "#664d03", padding: "6px 10px", borderRadius: 4, fontSize: 12, marginBottom: 8 }}>
+              ⚠️ AI revisions use paid API credits (per-token). Each revision or follow-up costs money. Use sparingly.
+            </div>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div>
-                <p className="eyebrow">Grok revision</p>
-                <strong>Iterate with Grok — keep giving feedback</strong>
+                <p className="eyebrow">AI revision</p>
+                <strong>Iterate with AI — keep giving feedback</strong>
               </div>
               <div className="row">
                 <button
@@ -680,19 +683,19 @@ export default function AdminCampaignPage() {
                 <EmailPreview html={activeEmail.html_content} />
               </div>
               <div className="stack">
-                <h2 className="h2">Latest Grok version</h2>
+                <h2 className="h2">Latest AI version</h2>
                 <EmailPreview html={aiChat.currentHtml} />
               </div>
             </div>
 
             {/* Follow-up chat */}
             <div className="stack" style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
-              <strong style={{ fontSize: 14 }}>Continue the conversation with Grok</strong>
+              <strong style={{ fontSize: 14 }}>Continue the conversation with AI</strong>
               <div style={{ maxHeight: 180, overflow: "auto", background: "#f9f9f9", padding: 10, borderRadius: 4, fontSize: 13, border: "1px solid #eee" }}>
                 {aiChat.messages.map((msg, idx) => (
                   <div key={idx} style={{ marginBottom: 8 }}>
                     <strong style={{ color: msg.role === "user" ? "#333" : "#7c5cff" }}>
-                      {msg.role === "user" ? "You" : "Grok"}:
+                      {msg.role === "user" ? "You" : "AI"}:
                     </strong>{" "}
                     {msg.role === "assistant" ? "(new revision generated)" : msg.content}
                   </div>
@@ -715,11 +718,11 @@ export default function AdminCampaignPage() {
                   onClick={sendFollowUp}
                   disabled={chatLoading || !chatInput.trim()}
                 >
-                  {chatLoading ? "Grok is thinking..." : "Send to Grok"}
+                  {chatLoading ? "AI is thinking..." : "Send to AI"}
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                Grok will generate an updated version based on your additional instructions.
+                AI will generate an updated version based on your additional instructions.
               </p>
             </div>
           </div>
@@ -800,24 +803,25 @@ export default function AdminCampaignPage() {
                       </div>
                       <div className="comment-body">{c.body}</div>
                       <div className="row" style={{ marginTop: 10 }}>
-                        {!c.resolved ? (
-                          <button
-                            className="btn btn-sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              runAiRevision(c);
-                            }}
-                            disabled={
-                              saving ||
-                              aiLoadingCommentId === c.id ||
-                              isApproved
-                            }
-                          >
-                            {aiLoadingCommentId === c.id
-                              ? "Grok is revising..."
-                              : "Use AI to make revision"}
-                          </button>
-                        ) : null}
+                         {!c.resolved ? (
+                           <button
+                             className="btn btn-sm"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               runAiRevision(c);
+                             }}
+                             disabled={
+                               saving ||
+                               aiLoadingCommentId === c.id ||
+                               isApproved
+                             }
+                           >
+{aiLoadingCommentId === c.id
+                                ? "AI is revising..."
+                                : "Use AI to make revision"}
+                           </button>
+                         ) : null}
+                         <span className="muted" style={{ fontSize: 11, alignSelf: "center" }}>costs API credits</span>
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={(e) => {

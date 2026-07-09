@@ -29,21 +29,40 @@ function extractHtml(content: string): string {
   return content.trim();
 }
 
+function getProviderConfig() {
+  if (process.env.GROQ_API_KEY) {
+    return {
+      apiKey: process.env.GROQ_API_KEY,
+      baseUrl: (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/$/, ""),
+      model: process.env.GROQ_MODEL || "llama-3.1-70b-versatile",
+      label: "Groq",
+    };
+  }
+  if (process.env.XAI_API_KEY) {
+    return {
+      apiKey: process.env.XAI_API_KEY,
+      baseUrl: (process.env.XAI_BASE_URL || "https://api.x.ai/v1").replace(/\/$/, ""),
+      model: process.env.XAI_MODEL || "grok-3",
+      label: "xAI Grok",
+    };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return {
+      apiKey: process.env.OPENAI_API_KEY,
+      baseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      label: "OpenAI",
+    };
+  }
+  throw new Error(
+    "No AI API key set. Add GROQ_API_KEY (recommended, cheapest), XAI_API_KEY, or OPENAI_API_KEY."
+  );
+}
+
 export async function reviseEmailWithGrok(
   input: AiReviseInput
 ): Promise<AiReviseResult> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "XAI_API_KEY is not set. Add your xAI/Grok API key to use AI revisions."
-    );
-  }
-
-  const model = process.env.XAI_MODEL || "grok-3";
-  const baseUrl = (process.env.XAI_BASE_URL || "https://api.x.ai/v1").replace(
-    /\/$/,
-    ""
-  );
+  const { apiKey, baseUrl, model, label } = getProviderConfig();
 
   const system = `You are an expert HTML email developer for Marketing Empire Group.
 
@@ -88,7 +107,7 @@ ${input.html}`;
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Grok request failed (${res.status}): ${text.slice(0, 300) || res.statusText}`
+      `${label} request failed (${res.status}): ${text.slice(0, 300) || res.statusText}`
     );
   }
 
@@ -99,12 +118,12 @@ ${input.html}`;
 
   const content = data.choices?.[0]?.message?.content || "";
   if (!content.trim()) {
-    throw new Error("Grok returned an empty response.");
+    throw new Error(`${label} returned an empty response.`);
   }
 
   const html = extractHtml(content);
   if (!html.includes("<") || html.length < 40) {
-    throw new Error("Grok response did not look like valid HTML.");
+    throw new Error(`${label} response did not look like valid HTML.`);
   }
 
   return {
@@ -120,18 +139,7 @@ export async function continueRevisionWithGrok(
   history: ChatMessage[],
   newFeedback: string
 ): Promise<AiReviseResult> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "XAI_API_KEY is not set. Add your xAI/Grok API key to use AI revisions."
-    );
-  }
-
-  const model = process.env.XAI_MODEL || "grok-3";
-  const baseUrl = (process.env.XAI_BASE_URL || "https://api.x.ai/v1").replace(
-    /\/$/,
-    ""
-  );
+  const { apiKey, baseUrl, model, label } = getProviderConfig();
 
   const system = `You are an expert HTML email developer for Marketing Empire Group.
 
@@ -186,7 +194,7 @@ ${originalHtml}`,
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Grok request failed (${res.status}): ${text.slice(0, 300) || res.statusText}`
+      `${label} request failed (${res.status}): ${text.slice(0, 300) || res.statusText}`
     );
   }
 
@@ -197,12 +205,12 @@ ${originalHtml}`,
 
   const content = data.choices?.[0]?.message?.content || "";
   if (!content.trim()) {
-    throw new Error("Grok returned an empty response.");
+    throw new Error(`${label} returned an empty response.`);
   }
 
   const html = extractHtml(content);
   if (!html.includes("<") || html.length < 40) {
-    throw new Error("Grok response did not look like valid HTML.");
+    throw new Error(`${label} response did not look like valid HTML.`);
   }
 
   return {
