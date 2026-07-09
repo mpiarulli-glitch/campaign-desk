@@ -677,7 +677,7 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
-            {/* Follow-up chat — placed prominently at the top */}
+            {/* Follow-up chat — placed prominently at the top. Latest update for visibility. */}
             <div className="stack" style={{ background: "#f8f6ff", border: "1px solid #d1c4ff", borderRadius: 6, padding: 12 }}>
               <strong style={{ fontSize: 14, color: "#5a3fcf" }}>Not happy with the revision? Give AI more feedback here</strong>
               <div className="row">
