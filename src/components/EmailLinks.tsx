@@ -47,7 +47,7 @@ function extractLinks(html: string): LinkRow[] {
 
 export function EmailLinks({ html }: { html: string }) {
   const links = useMemo(() => extractLinks(html), [html]);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="card card-pad stack">

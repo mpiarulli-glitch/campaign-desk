@@ -517,6 +517,35 @@ button {
   cursor: pointer;
   padding: 0;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
+  /* Stay clickable even when the pin layer is set to pass hovers through. */
+  pointer-events: auto;
+}
+
+/* Browser-style status bar showing the destination of a hovered email link. */
+.link-hover-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  max-width: min(720px, 92vw);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: #0d0d0d;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.3;
+  border-top-right-radius: 8px;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.link-hover-icon {
+  font-size: 12px;
 }
 
 .pin:hover {

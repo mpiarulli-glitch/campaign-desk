@@ -66,6 +66,11 @@ export function EmailPreview({
   const frozenHeightRef = useRef<number | null>(null);
   const [height, setHeight] = useState(700);
   const [ready, setReady] = useState(false);
+  const [hoverHref, setHoverHref] = useState<string | null>(null);
+
+  // When not placing a pin, let hovers/clicks reach the email so links are
+  // hoverable and clickable. In pin mode the overlay captures placement clicks.
+  const passThrough = !pinMode;
 
   const srcDoc = useMemo(() => {
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>
@@ -106,19 +111,51 @@ export function EmailPreview({
     frozenHeightRef.current = null;
     setReady(false);
     setHeight(700);
+    setHoverHref(null);
+
+    // Report the destination of whatever link the mouse is over, so the parent
+    // can show it in a corner bar (like a browser status bar). Requires
+    // same-origin access to the srcDoc iframe (sandbox allows it).
+    let doc: Document | null = null;
+    const onOver = (e: Event) => {
+      const target = e.target as Element | null;
+      const anchor = target?.closest?.("a[href]") as HTMLElement | null;
+      const href = anchor?.getAttribute("href")?.trim() || null;
+      setHoverHref(href && href !== "#" ? href : null);
+    };
+    const onLeave = () => setHoverHref(null);
+
+    const attachHover = () => {
+      try {
+        doc = iframe.contentDocument;
+        if (!doc) return;
+        doc.addEventListener("mouseover", onOver);
+        doc.addEventListener("mouseleave", onLeave);
+      } catch {
+        // cross-origin (shouldn't happen with srcDoc) — skip hover feature
+      }
+    };
 
     const onLoad = () => {
+      attachHover();
       void freezeHeight();
     };
 
     iframe.addEventListener("load", onLoad);
     // srcDoc may already be loaded
     if (iframe.contentDocument?.readyState === "complete") {
+      attachHover();
       void freezeHeight();
     }
 
     return () => {
       iframe.removeEventListener("load", onLoad);
+      try {
+        doc?.removeEventListener("mouseover", onOver);
+        doc?.removeEventListener("mouseleave", onLeave);
+      } catch {
+        // ignore
+      }
     };
   }, [srcDoc, freezeHeight]);
 
@@ -162,13 +199,21 @@ export function EmailPreview({
           title="Email preview"
           srcDoc={srcDoc}
           sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-          style={{ height, width: "100%" }}
+          style={{
+            height,
+            width: "100%",
+            pointerEvents: passThrough ? "auto" : "none",
+          }}
         />
         <div
           ref={pinLayerRef}
           className={`pin-layer ${pinMode && ready ? "clickable" : ""}`}
           onClick={handleClick}
-          style={{ height, width: "100%" }}
+          style={{
+            height,
+            width: "100%",
+            pointerEvents: passThrough ? "none" : "auto",
+          }}
         >
           {ready
             ? inlinePins.map((pin, index) => (
@@ -198,6 +243,14 @@ export function EmailPreview({
             : null}
         </div>
       </div>
+      {hoverHref ? (
+        <div className="link-hover-bar" title={hoverHref}>
+          <span className="link-hover-icon" aria-hidden="true">
+            🔗
+          </span>
+          {hoverHref}
+        </div>
+      ) : null}
     </div>
   );
 }
