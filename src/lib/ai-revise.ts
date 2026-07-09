@@ -50,7 +50,7 @@ function getProviderConfig() {
     return {
       apiKey: process.env.OPENAI_API_KEY,
       baseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
       label: "OpenAI",
     };
   }
