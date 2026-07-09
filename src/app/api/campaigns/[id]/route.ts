@@ -3,7 +3,7 @@ import { isAdminAuthenticated, reviewUrl } from "@/lib/auth";
 import {
   deleteCampaign,
   getCampaignById,
-  listComments,
+  listCommentsWithAttachments,
   listVersions,
   listEmails,
   updateCampaign,
@@ -47,7 +47,7 @@ export async function GET(_request: Request, { params }: Params) {
       email_count: emails.length,
     },
     emails,
-    comments: listComments(campaign.id),
+    comments: listCommentsWithAttachments(campaign.id),
     versions: listVersions(campaign.id),
   });
 }

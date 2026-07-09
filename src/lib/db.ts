@@ -55,6 +55,17 @@ export interface CampaignVersion {
   created_at: string;
 }
 
+export interface CommentAttachment {
+  id: string;
+  comment_id: string;
+  campaign_id: string;
+  mime: string;
+  data: string;
+  width: number | null;
+  height: number | null;
+  created_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -117,10 +128,25 @@ export function getDb(): Database.Database {
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS comment_attachments (
+      id TEXT PRIMARY KEY,
+      comment_id TEXT NOT NULL,
+      campaign_id TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      data TEXT NOT NULL,
+      width INTEGER,
+      height INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+      FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_campaigns_token ON campaigns(magic_token);
     CREATE INDEX IF NOT EXISTS idx_emails_campaign ON campaign_emails(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_attachments_comment ON comment_attachments(comment_id);
+    CREATE INDEX IF NOT EXISTS idx_attachments_campaign ON comment_attachments(campaign_id);
   `);
 
   migrate(db);

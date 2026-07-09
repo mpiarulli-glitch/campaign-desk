@@ -1,14 +1,55 @@
 import { NextResponse } from "next/server";
 import {
   addComment,
+  addCommentAttachment,
   getCampaignByToken,
-  listComments,
+  listCommentsWithAttachments,
   listEmails,
   updateCampaign,
   markApproved,
   countOpenComments,
 } from "@/lib/campaigns";
 import { notifyClientFeedback } from "@/lib/notify";
+
+const ALLOWED_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+const MAX_IMAGES = 6;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB per image after decode
+
+type IncomingImage = {
+  mime: string;
+  dataBase64: string;
+  width?: number;
+  height?: number;
+};
+
+// Validate and normalize the images array from a review submission.
+function parseImages(raw: unknown): IncomingImage[] {
+  if (!Array.isArray(raw)) return [];
+  const out: IncomingImage[] = [];
+  for (const item of raw.slice(0, MAX_IMAGES)) {
+    if (!item || typeof item !== "object") continue;
+    const mime = (item as Record<string, unknown>).mime;
+    const data = (item as Record<string, unknown>).dataBase64;
+    if (typeof mime !== "string" || !ALLOWED_IMAGE_MIME.has(mime)) continue;
+    if (typeof data !== "string" || data.length === 0) continue;
+    // Rough decoded-size guard (base64 is ~4/3 of raw bytes).
+    if ((data.length * 3) / 4 > MAX_IMAGE_BYTES) continue;
+    const width = (item as Record<string, unknown>).width;
+    const height = (item as Record<string, unknown>).height;
+    out.push({
+      mime,
+      dataBase64: data,
+      width: typeof width === "number" ? width : undefined,
+      height: typeof height === "number" ? height : undefined,
+    });
+  }
+  return out;
+}
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -46,7 +87,7 @@ export async function GET(_request: Request, { params }: Params) {
   return NextResponse.json({
     campaign: publicCampaign(fresh),
     emails,
-    comments: listComments(fresh.id).map((c) => ({
+    comments: listCommentsWithAttachments(fresh.id).map((c) => ({
       id: c.id,
       email_id: c.email_id,
       author_name: c.author_name,
@@ -56,6 +97,7 @@ export async function GET(_request: Request, { params }: Params) {
       pin_y: c.pin_y,
       resolved: c.resolved,
       created_at: c.created_at,
+      attachments: c.attachments,
     })),
   });
 }
@@ -98,10 +140,11 @@ export async function POST(request: Request, { params }: Params) {
   const pinX = typeof body.pinX === "number" ? body.pinX : null;
   const pinY = typeof body.pinY === "number" ? body.pinY : null;
   const emailId = typeof body.emailId === "string" ? body.emailId : null;
+  const images = parseImages(body.images);
 
-  if (!text) {
+  if (!text && images.length === 0) {
     return NextResponse.json(
-      { error: "Comment body is required" },
+      { error: "Add a comment or attach an image" },
       { status: 400 }
     );
   }
@@ -133,11 +176,26 @@ export async function POST(request: Request, { params }: Params) {
     pinY,
   });
 
+  for (const img of images) {
+    addCommentAttachment({
+      commentId: comment.id,
+      campaignId: campaign.id,
+      mime: img.mime,
+      data: img.dataBase64,
+      width: img.width ?? null,
+      height: img.height ?? null,
+    });
+  }
+
   notifyClientFeedback({
     campaignTitle: campaign.title,
     clientName: campaign.client_name,
     authorName,
-    body: text,
+    body:
+      text ||
+      (images.length === 1
+        ? "(image attached)"
+        : `(${images.length} images attached)`),
     emailTitle: targetEmail.title,
   });
 

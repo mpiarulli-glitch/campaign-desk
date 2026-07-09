@@ -6,6 +6,13 @@ import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
 import { StatusBadge } from "@/components/StatusBadge";
 
+type Attachment = {
+  id: string;
+  mime: string;
+  width: number | null;
+  height: number | null;
+};
+
 type Comment = {
   id: string;
   email_id: string | null;
@@ -16,7 +23,65 @@ type Comment = {
   pin_y: number | null;
   resolved: number;
   created_at: string;
+  attachments?: Attachment[];
 };
+
+type LocalImage = {
+  id: string;
+  dataUrl: string;
+  base64: string;
+  mime: string;
+  width: number;
+  height: number;
+};
+
+const MAX_IMAGES = 6;
+const MAX_EDGE = 1600;
+
+// Compress a picked image in the browser so uploads stay small: scale the
+// longest edge down to MAX_EDGE and re-encode as JPEG. Returns base64 (no
+// data: prefix) plus a preview data URL.
+function compressImage(file: File): Promise<LocalImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > MAX_EDGE || height > MAX_EDGE) {
+          const scale = MAX_EDGE / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas unsupported"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        resolve({
+          id:
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `${file.name}-${width}x${height}`,
+          dataUrl,
+          base64: dataUrl.split(",")[1] || "",
+          mime: "image/jpeg",
+          width,
+          height,
+        });
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 type EmailItem = {
   id: string;
@@ -53,6 +118,37 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [images, setImages] = useState<LocalImage[]>([]);
+  const [imgBusy, setImgBusy] = useState(false);
+
+  async function addFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setError("");
+    setImgBusy(true);
+    try {
+      const remaining = MAX_IMAGES - images.length;
+      const files = Array.from(fileList)
+        .filter((f) => f.type.startsWith("image/"))
+        .slice(0, Math.max(0, remaining));
+      const compressed: LocalImage[] = [];
+      for (const f of files) {
+        try {
+          compressed.push(await compressImage(f));
+        } catch {
+          // Skip any file that fails to process.
+        }
+      }
+      if (compressed.length > 0) {
+        setImages((prev) => [...prev, ...compressed].slice(0, MAX_IMAGES));
+      }
+    } finally {
+      setImgBusy(false);
+    }
+  }
+
+  function removeImage(id: string) {
+    setImages((prev) => prev.filter((i) => i.id !== id));
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem("cd_reviewer_name");
@@ -127,6 +223,12 @@ export default function ReviewPage() {
       return;
     }
 
+    if (!body.trim() && images.length === 0) {
+      setError("Add a comment or attach an image.");
+      setSubmitting(false);
+      return;
+    }
+
     const name = authorName.trim() || "Reviewer";
     localStorage.setItem("cd_reviewer_name", name);
 
@@ -140,6 +242,12 @@ export default function ReviewPage() {
         pinX: pendingPin?.x,
         pinY: pendingPin?.y,
         emailId: activeEmail.id,
+        images: images.map((i) => ({
+          mime: i.mime,
+          dataBase64: i.base64,
+          width: i.width,
+          height: i.height,
+        })),
       }),
     });
 
@@ -153,6 +261,7 @@ export default function ReviewPage() {
 
     setBody("");
     setPendingPin(null);
+    setImages([]);
     setMessage("Feedback sent. Thank you.");
     load(activeEmail.id);
   }
@@ -398,12 +507,93 @@ export default function ReviewPage() {
                         ? "What should change at this spot?"
                         : "Overall thoughts, tone, offer, CTA..."
                     }
-                    required
                   />
+                </div>
+
+                <div className="field">
+                  <label>
+                    Attach images{" "}
+                    <span className="muted" style={{ fontWeight: 400 }}>
+                      (optional, up to {MAX_IMAGES})
+                    </span>
+                  </label>
+                  {images.length > 0 ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginBottom: 8,
+                      }}
+                    >
+                      {images.map((img) => (
+                        <div
+                          key={img.id}
+                          style={{ position: "relative", lineHeight: 0 }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={img.dataUrl}
+                            alt="attachment preview"
+                            style={{
+                              width: 72,
+                              height: 72,
+                              objectFit: "cover",
+                              borderRadius: 8,
+                              border: "1px solid #e5e7eb",
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(img.id)}
+                            aria-label="Remove image"
+                            style={{
+                              position: "absolute",
+                              top: -8,
+                              right: -8,
+                              width: 22,
+                              height: 22,
+                              borderRadius: "50%",
+                              border: "none",
+                              background: "#111827",
+                              color: "#fff",
+                              cursor: "pointer",
+                              fontSize: 13,
+                              lineHeight: "22px",
+                              padding: 0,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {images.length < MAX_IMAGES ? (
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={imgBusy}
+                      onChange={(e) => {
+                        addFiles(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  ) : null}
+                  {imgBusy ? (
+                    <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+                      Processing images...
+                    </p>
+                  ) : null}
                 </div>
                 {error ? <p className="error">{error}</p> : null}
                 {message ? <p className="success">{message}</p> : null}
-                <button className="btn" type="submit" disabled={submitting}>
+                <button
+                  className="btn"
+                  type="submit"
+                  disabled={submitting || imgBusy}
+                >
                   {submitting ? "Sending..." : "Send feedback"}
                 </button>
               </form>
@@ -438,7 +628,43 @@ export default function ReviewPage() {
                         </span>
                         <span>{new Date(c.created_at).toLocaleString()}</span>
                       </div>
-                      <div className="comment-body">{c.body}</div>
+                      {c.body ? (
+                        <div className="comment-body">{c.body}</div>
+                      ) : null}
+                      {c.attachments && c.attachments.length > 0 ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 8,
+                            marginTop: 8,
+                          }}
+                        >
+                          {c.attachments.map((a) => (
+                            <a
+                              key={a.id}
+                              href={`/api/attachments/${a.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ lineHeight: 0 }}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`/api/attachments/${a.id}`}
+                                alt="feedback attachment"
+                                style={{
+                                  width: 96,
+                                  height: 96,
+                                  objectFit: "cover",
+                                  borderRadius: 8,
+                                  border: "1px solid #e5e7eb",
+                                }}
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

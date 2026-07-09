@@ -7,6 +7,7 @@ import {
   type CampaignStatus,
   type Comment,
   type CommentType,
+  type CommentAttachment,
   type CampaignVersion,
 } from "./db";
 
@@ -324,6 +325,85 @@ export function addComment(input: {
   return getDb().prepare(`SELECT * FROM comments WHERE id = ?`).get(id) as Comment;
 }
 
+// Attachment metadata (no image bytes) safe to embed in list responses.
+export interface AttachmentMeta {
+  id: string;
+  comment_id: string;
+  mime: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface CommentWithAttachments extends Comment {
+  attachments: AttachmentMeta[];
+}
+
+export function addCommentAttachment(input: {
+  commentId: string;
+  campaignId: string;
+  mime: string;
+  data: string; // base64, no data: prefix
+  width?: number | null;
+  height?: number | null;
+}): string {
+  const id = nanoid(16);
+  getDb()
+    .prepare(
+      `INSERT INTO comment_attachments
+        (id, comment_id, campaign_id, mime, data, width, height, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.commentId,
+      input.campaignId,
+      input.mime,
+      input.data,
+      input.width ?? null,
+      input.height ?? null,
+      nowIso()
+    );
+  return id;
+}
+
+// Returns the full row including image bytes. Used only by the serving route.
+export function getAttachment(id: string): CommentAttachment | null {
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM comment_attachments WHERE id = ?`)
+      .get(id) as CommentAttachment | undefined) || null
+  );
+}
+
+function attachmentMetaForCampaign(campaignId: string): Map<string, AttachmentMeta[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, comment_id, mime, width, height
+       FROM comment_attachments
+       WHERE campaign_id = ?
+       ORDER BY created_at ASC`
+    )
+    .all(campaignId) as AttachmentMeta[];
+
+  const map = new Map<string, AttachmentMeta[]>();
+  for (const row of rows) {
+    const arr = map.get(row.comment_id) || [];
+    arr.push(row);
+    map.set(row.comment_id, arr);
+  }
+  return map;
+}
+
+// Comments with their attachment metadata (no bytes) merged in.
+export function listCommentsWithAttachments(
+  campaignId: string,
+  emailId?: string
+): CommentWithAttachments[] {
+  const comments = listComments(campaignId, emailId);
+  const map = attachmentMetaForCampaign(campaignId);
+  return comments.map((c) => ({ ...c, attachments: map.get(c.id) || [] }));
+}
+
 export function setCommentResolved(
   commentId: string,
   resolved: boolean
@@ -415,6 +495,7 @@ export interface ActivityItem {
   email_title: string | null;
   resolved: number | null;
   star_rating: number | null;
+  attachment_count: number;
   at: string;
 }
 
@@ -437,6 +518,7 @@ export function listActivity(limit = 100): ActivityItem[] {
            e.title AS email_title,
            c.resolved AS resolved,
            NULL AS star_rating,
+           (SELECT COUNT(*) FROM comment_attachments a WHERE a.comment_id = c.id) AS attachment_count,
            c.created_at AS at
          FROM comments c
          JOIN campaigns cam ON cam.id = c.campaign_id
@@ -456,6 +538,7 @@ export function listActivity(limit = 100): ActivityItem[] {
            NULL AS email_title,
            NULL AS resolved,
            cam.star_rating AS star_rating,
+           0 AS attachment_count,
            cam.updated_at AS at
          FROM campaigns cam
          WHERE cam.status = 'approved'

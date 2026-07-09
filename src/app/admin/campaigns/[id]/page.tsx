@@ -7,6 +7,13 @@ import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
 import { StatusBadge } from "@/components/StatusBadge";
 
+type Attachment = {
+  id: string;
+  mime: string;
+  width: number | null;
+  height: number | null;
+};
+
 type Comment = {
   id: string;
   email_id: string | null;
@@ -17,6 +24,7 @@ type Comment = {
   pin_y: number | null;
   resolved: number;
   created_at: string;
+  attachments?: Attachment[];
 };
 
 type Version = {
@@ -853,7 +861,43 @@ export default function AdminCampaignPage() {
                         </span>
                         <span>{new Date(c.created_at).toLocaleString()}</span>
                       </div>
-                      <div className="comment-body">{c.body}</div>
+                      {c.body ? (
+                        <div className="comment-body">{c.body}</div>
+                      ) : null}
+                      {c.attachments && c.attachments.length > 0 ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 8,
+                            marginTop: 8,
+                          }}
+                        >
+                          {c.attachments.map((a) => (
+                            <a
+                              key={a.id}
+                              href={`/api/attachments/${a.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ lineHeight: 0 }}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`/api/attachments/${a.id}`}
+                                alt="feedback attachment"
+                                style={{
+                                  width: 96,
+                                  height: 96,
+                                  objectFit: "cover",
+                                  borderRadius: 8,
+                                  border: "1px solid #e5e7eb",
+                                }}
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="row" style={{ marginTop: 10 }}>
                          {!c.resolved ? (
                            <button

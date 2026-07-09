@@ -17,6 +17,7 @@ type ActivityItem = {
   email_title: string | null;
   resolved: number | null;
   star_rating: number | null;
+  attachment_count: number;
   at: string;
 };
 
@@ -213,6 +214,11 @@ export default function ActivityPage() {
                         ? "Pinned comment"
                         : "General comment"}
                       {item.resolved ? " · Resolved" : " · Open"}
+                      {item.attachment_count > 0
+                        ? ` · 📎 ${item.attachment_count} image${
+                            item.attachment_count === 1 ? "" : "s"
+                          }`
+                        : ""}
                     </div>
                   ) : null}
                 </div>
