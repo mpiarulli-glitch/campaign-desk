@@ -80,6 +80,7 @@ export default function AdminCampaignPage() {
     model: string;
   } | null>(null);
   const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   async function load(preferredEmailId?: string | null) {
     const res = await fetch(`/api/campaigns/${id}`);
@@ -146,6 +147,8 @@ export default function AdminCampaignPage() {
   function selectEmail(emailId: string) {
     setActiveEmailId(emailId);
     setActivePinId(null);
+    setAiChat(null);
+    setChatInput("");
     const email = emails.find((e) => e.id === emailId);
     if (email) {
       setHtmlDraft(email.html_content);
@@ -258,10 +261,10 @@ export default function AdminCampaignPage() {
   }
 
   async function sendFollowUp() {
-    if (!aiChat || !activeEmail || !chatInput.trim()) return;
+    if (!aiChat || !chatInput.trim()) return;
 
     const feedback = chatInput.trim();
-    setSaving(true);
+    setChatLoading(true);
     setError("");
 
     const history = aiChat.messages.map((m) => ({
@@ -280,7 +283,7 @@ export default function AdminCampaignPage() {
       }),
     });
 
-    setSaving(false);
+    setChatLoading(false);
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -651,20 +654,20 @@ export default function AdminCampaignPage() {
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div>
                 <p className="eyebrow">Grok revision</p>
-                <strong>Iterate with Grok</strong>
+                <strong>Iterate with Grok — keep giving feedback</strong>
               </div>
               <div className="row">
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={discardAiChat}
-                  disabled={saving}
+                  disabled={saving || chatLoading}
                 >
                   Discard
                 </button>
                 <button
                   className="btn btn-sm"
                   onClick={applyAiRevision}
-                  disabled={saving}
+                  disabled={saving || chatLoading}
                 >
                   {saving ? "Applying..." : "Apply this version"}
                 </button>
@@ -682,17 +685,16 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
-            {/* Chat for refinement */}
-            <div className="stack">
-              <div style={{ maxHeight: 220, overflow: "auto", background: "#fafafa", padding: 12, borderRadius: 6, border: "1px solid #eee" }}>
+            {/* Follow-up chat */}
+            <div className="stack" style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
+              <strong style={{ fontSize: 14 }}>Continue the conversation with Grok</strong>
+              <div style={{ maxHeight: 180, overflow: "auto", background: "#f9f9f9", padding: 10, borderRadius: 4, fontSize: 13, border: "1px solid #eee" }}>
                 {aiChat.messages.map((msg, idx) => (
-                  <div key={idx} style={{ marginBottom: 10 }}>
-                    <strong style={{ color: msg.role === "user" ? "#555" : "#7c5cff" }}>
+                  <div key={idx} style={{ marginBottom: 8 }}>
+                    <strong style={{ color: msg.role === "user" ? "#333" : "#7c5cff" }}>
                       {msg.role === "user" ? "You" : "Grok"}:
-                    </strong>
-                    <div style={{ whiteSpace: "pre-wrap", fontSize: 13, marginTop: 2 }}>
-                      {msg.role === "assistant" ? "(Revised HTML generated)" : msg.content}
-                    </div>
+                    </strong>{" "}
+                    {msg.role === "assistant" ? "(new revision generated)" : msg.content}
                   </div>
                 ))}
               </div>
@@ -702,22 +704,22 @@ export default function AdminCampaignPage() {
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !saving) sendFollowUp();
+                    if (e.key === "Enter" && !chatLoading) sendFollowUp();
                   }}
-                  placeholder="Tell Grok what to change (e.g. make the CTA stronger, shorten the headline...)"
+                  placeholder="E.g. make the headline shorter, strengthen the CTA, fix the spacing..."
                   style={{ flex: 1 }}
-                  disabled={saving}
+                  disabled={chatLoading}
                 />
                 <button
                   className="btn btn-sm"
                   onClick={sendFollowUp}
-                  disabled={saving || !chatInput.trim()}
+                  disabled={chatLoading || !chatInput.trim()}
                 >
-                  {saving ? "Thinking..." : "Send to Grok"}
+                  {chatLoading ? "Grok is thinking..." : "Send to Grok"}
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                Grok will revise the email based on your new instructions.
+                Grok will generate an updated version based on your additional instructions.
               </p>
             </div>
           </div>
