@@ -677,44 +677,6 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
-            {/* Follow-up chat — placed prominently at the top. Latest update for visibility. */}
-            <div className="stack" style={{ background: "#f8f6ff", border: "1px solid #d1c4ff", borderRadius: 6, padding: 12 }}>
-              <strong style={{ fontSize: 14, color: "#5a3fcf" }}>Not happy with the revision? Give AI more feedback here</strong>
-              <div className="row">
-                <input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !chatLoading) sendFollowUp();
-                  }}
-                  placeholder="E.g. make the headline shorter, strengthen the CTA, fix the spacing, remove the last line..."
-                  style={{ flex: 1 }}
-                  disabled={chatLoading}
-                />
-                <button
-                  className="btn btn-sm"
-                  onClick={sendFollowUp}
-                  disabled={chatLoading || !chatInput.trim()}
-                >
-                  {chatLoading ? "AI is thinking..." : "Send to AI"}
-                </button>
-              </div>
-              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                AI will create a new version based on your additional instructions. You can keep refining before applying.
-              </p>
-
-              {/* Small history log */}
-              {aiChat.messages.length > 2 && (
-                <div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, color: "#555", marginTop: 8 }}>
-                  {aiChat.messages.slice(2).map((msg, idx) => (
-                    <div key={idx} style={{ marginBottom: 4 }}>
-                      <strong>{msg.role === "user" ? "You" : "AI"}:</strong> {msg.role === "assistant" ? "(new version)" : msg.content}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             <div className="split-review">
               <div className="stack">
                 <h2 className="h2">Current</h2>
@@ -724,6 +686,43 @@ export default function AdminCampaignPage() {
                 <h2 className="h2">Latest AI version</h2>
                 <EmailPreview html={aiChat.currentHtml} />
               </div>
+            </div>
+
+            {/* Follow-up input — placed under the previews */}
+            <div className="stack" style={{ background: "#f0f4ff", border: "2px solid #5a3fcf", borderRadius: 6, padding: 14 }}>
+              <strong style={{ fontSize: 15, color: "#5a3fcf" }}>Add more feedback below to generate another revision</strong>
+              <div className="row">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !chatLoading) sendFollowUp();
+                  }}
+                  placeholder="E.g. make the headline shorter, strengthen the CTA, remove the last line, make it more direct..."
+                  style={{ flex: 1, fontSize: 14 }}
+                  disabled={chatLoading}
+                />
+                <button
+                  className="btn btn-sm"
+                  onClick={sendFollowUp}
+                  disabled={chatLoading || !chatInput.trim()}
+                >
+                  {chatLoading ? "Generating..." : "Send to AI for new revision"}
+                </button>
+              </div>
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                You can keep adding feedback and generating new versions before you click Apply.
+              </p>
+
+              {aiChat.messages.length > 2 && (
+                <div style={{ maxHeight: 100, overflow: "auto", fontSize: 12, color: "#555", marginTop: 6 }}>
+                  {aiChat.messages.slice(2).map((msg, idx) => (
+                    <div key={idx} style={{ marginBottom: 3 }}>
+                      <strong>{msg.role === "user" ? "You said" : "AI generated"}:</strong> {msg.role === "assistant" ? "(new version)" : msg.content}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
