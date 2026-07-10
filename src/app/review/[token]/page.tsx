@@ -789,7 +789,7 @@ export default function ReviewPage() {
                         <span>
                           {c.author_name}
                           {c.type === "inline"
-                            ? ` · Pin ${
+                            ? ` · 🦍 Pin ${
                                 inlinePins.findIndex((p) => p.id === c.id) + 1
                               }`
                             : " · General"}

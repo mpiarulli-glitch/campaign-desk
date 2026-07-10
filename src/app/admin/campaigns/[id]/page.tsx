@@ -1050,7 +1050,7 @@ export default function AdminCampaignPage() {
                 </div>
               ) : (
                 <div className="comment-list">
-                  {emailComments.map((c, index) => (
+                  {emailComments.map((c) => (
                     <div
                       key={c.id}
                       className={`comment-card ${c.resolved ? "resolved" : ""} ${
@@ -1062,7 +1062,9 @@ export default function AdminCampaignPage() {
                         <span>
                           {c.author_name}
                           {c.type === "inline"
-                            ? ` · Pin ${index + 1}`
+                            ? ` · 🦍 Pin ${
+                                inlinePins.findIndex((p) => p.id === c.id) + 1
+                              }`
                             : " · General"}
                           {c.resolved ? " · Done" : ""}
                         </span>
