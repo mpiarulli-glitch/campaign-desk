@@ -521,6 +521,160 @@ button {
   pointer-events: auto;
 }
 
+/* Subject line / preview text picker. */
+.subject-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subject-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+.subject-option:hover:not(:disabled) {
+  border-color: #9aa4b2;
+}
+
+.subject-option.chosen {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 1px #16a34a inset;
+}
+
+.subject-option:disabled {
+  cursor: default;
+}
+
+.subject-radio {
+  color: #16a34a;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.subject-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.subject-line {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.subject-preview {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+/* Admin subject-line editor rows. */
+.subject-editor-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.subject-editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.subject-editor-fields input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+/* Comment reply threads. */
+.reply-thread {
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 2px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reply {
+  font-size: 13px;
+}
+
+.reply-head {
+  font-size: 11px;
+  color: #8a9099;
+  margin-bottom: 2px;
+}
+
+.reply-body {
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.reply-admin .reply-body {
+  font-weight: 600;
+}
+
+.reply-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.reply-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+/* Device preview toggle (desktop / mobile) above the email preview. */
+.preview-devicebar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.preview-device-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: inherit;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.preview-device-btn.active {
+  background: #0d0d0d;
+  color: #fff;
+  border-color: #0d0d0d;
+}
+
 /* Dashboard two-column layout: campaigns + recent activity sidebar. */
 .dashboard-grid {
   display: grid;

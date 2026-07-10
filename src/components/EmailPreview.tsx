@@ -67,6 +67,7 @@ export function EmailPreview({
   const [height, setHeight] = useState(700);
   const [ready, setReady] = useState(false);
   const [hoverHref, setHoverHref] = useState<string | null>(null);
+  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
 
   // When not placing a pin, let hovers/clicks reach the email so links are
   // hoverable and clickable. In pin mode the overlay captures placement clicks.
@@ -159,6 +160,14 @@ export function EmailPreview({
     };
   }, [srcDoc, freezeHeight]);
 
+  // Re-measure height when switching device width: the email reflows (mobile
+  // is usually taller), so the frozen height must be recomputed.
+  useEffect(() => {
+    if (iframeRef.current?.contentDocument?.readyState === "complete") {
+      void freezeHeight();
+    }
+  }, [device, freezeHeight]);
+
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!pinMode || !onPlacePin || !ready) return;
 
@@ -185,6 +194,22 @@ export function EmailPreview({
 
   return (
     <div className="preview-frame-wrap">
+      <div className="preview-devicebar">
+        <button
+          type="button"
+          className={`preview-device-btn ${device === "desktop" ? "active" : ""}`}
+          onClick={() => setDevice("desktop")}
+        >
+          Desktop
+        </button>
+        <button
+          type="button"
+          className={`preview-device-btn ${device === "mobile" ? "active" : ""}`}
+          onClick={() => setDevice("mobile")}
+        >
+          Mobile
+        </button>
+      </div>
       {!ready ? (
         <div className="preview-loading">Loading email preview...</div>
       ) : null}
@@ -192,7 +217,11 @@ export function EmailPreview({
         className={`preview-canvas ${interactiveEmail ? "interactive" : ""} ${
           ready ? "is-ready" : "is-loading"
         }`}
-        style={{ height }}
+        style={{
+          height,
+          width: device === "mobile" ? 390 : undefined,
+          margin: device === "mobile" ? "0 auto" : undefined,
+        }}
       >
         <iframe
           ref={iframeRef}

@@ -29,8 +29,20 @@ export interface CampaignEmail {
   title: string;
   html_content: string;
   sort_order: number;
+  approved_at: string | null;
+  chosen_subject_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface EmailSubject {
+  id: string;
+  email_id: string;
+  campaign_id: string;
+  subject: string;
+  preview_text: string;
+  sort_order: number;
+  created_at: string;
 }
 
 export interface Comment {
@@ -63,6 +75,16 @@ export interface CommentAttachment {
   data: string;
   width: number | null;
   height: number | null;
+  created_at: string;
+}
+
+export interface CommentReply {
+  id: string;
+  comment_id: string;
+  campaign_id: string;
+  author_name: string;
+  body: string;
+  is_admin: number;
   created_at: string;
 }
 
@@ -141,12 +163,40 @@ export function getDb(): Database.Database {
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS email_subjects (
+      id TEXT PRIMARY KEY,
+      email_id TEXT NOT NULL,
+      campaign_id TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      preview_text TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (email_id) REFERENCES campaign_emails(id) ON DELETE CASCADE,
+      FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS comment_replies (
+      id TEXT PRIMARY KEY,
+      comment_id TEXT NOT NULL,
+      campaign_id TEXT NOT NULL,
+      author_name TEXT NOT NULL DEFAULT 'Reviewer',
+      body TEXT NOT NULL,
+      is_admin INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+      FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_campaigns_token ON campaigns(magic_token);
     CREATE INDEX IF NOT EXISTS idx_emails_campaign ON campaign_emails(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_attachments_comment ON comment_attachments(comment_id);
     CREATE INDEX IF NOT EXISTS idx_attachments_campaign ON comment_attachments(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_replies_comment ON comment_replies(comment_id);
+    CREATE INDEX IF NOT EXISTS idx_replies_campaign ON comment_replies(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_subjects_email ON email_subjects(email_id);
+    CREATE INDEX IF NOT EXISTS idx_subjects_campaign ON email_subjects(campaign_id);
   `);
 
   migrate(db);
@@ -176,6 +226,14 @@ function migrate(database: Database.Database) {
   const versionCols = tableColumns(database, "campaign_versions");
   if (!versionCols.includes("email_id")) {
     database.exec(`ALTER TABLE campaign_versions ADD COLUMN email_id TEXT`);
+  }
+
+  const emailCols = tableColumns(database, "campaign_emails");
+  if (!emailCols.includes("approved_at")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN approved_at TEXT`);
+  }
+  if (!emailCols.includes("chosen_subject_id")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN chosen_subject_id TEXT`);
   }
 
   // Move legacy single-html campaigns into campaign_emails

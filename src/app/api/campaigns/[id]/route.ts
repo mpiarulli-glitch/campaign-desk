@@ -6,6 +6,8 @@ import {
   listCommentsWithAttachments,
   listVersions,
   listEmails,
+  listEmailsWithSubjects,
+  setEmailSubjects,
   updateCampaign,
   countOpenComments,
   markRevisionDone,
@@ -34,7 +36,7 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const emails = listEmails(id).map((e) => ({
+  const emails = listEmailsWithSubjects(id).map((e) => ({
     ...e,
     open_comments: countOpenComments(id, e.id),
   }));
@@ -64,6 +66,27 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const body = await request.json().catch(() => ({}));
+
+  // Save the subject-line / preview-text options for one email.
+  if (body.setEmailSubjects && typeof body.setEmailSubjects === "object") {
+    const emailId =
+      typeof body.setEmailSubjects.emailId === "string"
+        ? body.setEmailSubjects.emailId
+        : "";
+    const options = Array.isArray(body.setEmailSubjects.options)
+      ? body.setEmailSubjects.options
+      : [];
+    if (!emailId) {
+      return NextResponse.json({ error: "emailId required" }, { status: 400 });
+    }
+    setEmailSubjects(emailId, id, options);
+    return NextResponse.json({
+      emails: listEmailsWithSubjects(id).map((e) => ({
+        ...e,
+        open_comments: countOpenComments(id, e.id),
+      })),
+    });
+  }
 
   if (body.markRevisionDone === true) {
     const campaign = markRevisionDone(id);

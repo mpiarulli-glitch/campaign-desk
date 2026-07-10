@@ -8,7 +8,9 @@ import {
   type Comment,
   type CommentType,
   type CommentAttachment,
+  type CommentReply,
   type CampaignVersion,
+  type EmailSubject,
 } from "./db";
 
 function syncCampaignPreview(campaignId: string) {
@@ -115,6 +117,87 @@ export function getEmailById(emailId: string): CampaignEmail | null {
       .prepare(`SELECT * FROM campaign_emails WHERE id = ?`)
       .get(emailId) as CampaignEmail | undefined) || null
   );
+}
+
+export interface EmailWithSubjects extends CampaignEmail {
+  subjects: EmailSubject[];
+}
+
+// All subject options for a campaign, grouped by email id.
+function subjectsForCampaign(campaignId: string): Map<string, EmailSubject[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM email_subjects WHERE campaign_id = ? ORDER BY sort_order ASC, created_at ASC`
+    )
+    .all(campaignId) as EmailSubject[];
+  const map = new Map<string, EmailSubject[]>();
+  for (const row of rows) {
+    const arr = map.get(row.email_id) || [];
+    arr.push(row);
+    map.set(row.email_id, arr);
+  }
+  return map;
+}
+
+export function listEmailsWithSubjects(campaignId: string): EmailWithSubjects[] {
+  const emails = listEmails(campaignId);
+  const map = subjectsForCampaign(campaignId);
+  return emails.map((e) => ({ ...e, subjects: map.get(e.id) || [] }));
+}
+
+// Replace all subject options for an email. Empty rows are dropped. If the
+// currently-chosen option no longer exists, the choice is cleared.
+export function setEmailSubjects(
+  emailId: string,
+  campaignId: string,
+  options: Array<{ subject: string; preview: string }>
+): EmailSubject[] {
+  const db = getDb();
+  const cleaned = options
+    .map((o) => ({
+      subject: (o.subject || "").trim(),
+      preview: (o.preview || "").trim(),
+    }))
+    .filter((o) => o.subject || o.preview);
+
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM email_subjects WHERE email_id = ?`).run(emailId);
+    const insert = db.prepare(
+      `INSERT INTO email_subjects
+        (id, email_id, campaign_id, subject, preview_text, sort_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    const ts = nowIso();
+    cleaned.forEach((o, i) => {
+      insert.run(nanoid(12), emailId, campaignId, o.subject, o.preview, i, ts);
+    });
+    // Clear a chosen option that no longer exists.
+    const chosen = getEmailById(emailId)?.chosen_subject_id;
+    if (chosen) {
+      const stillThere = db
+        .prepare(`SELECT 1 FROM email_subjects WHERE id = ?`)
+        .get(chosen);
+      if (!stillThere) {
+        db.prepare(
+          `UPDATE campaign_emails SET chosen_subject_id = NULL WHERE id = ?`
+        ).run(emailId);
+      }
+    }
+  });
+  tx();
+
+  return subjectsForCampaign(campaignId).get(emailId) || [];
+}
+
+// Client picks one subject option (or clears with null).
+export function setChosenSubject(
+  emailId: string,
+  subjectId: string | null
+): CampaignEmail | null {
+  getDb()
+    .prepare(`UPDATE campaign_emails SET chosen_subject_id = ? WHERE id = ?`)
+    .run(subjectId, emailId);
+  return getEmailById(emailId);
 }
 
 export function addEmail(input: {
@@ -336,6 +419,51 @@ export interface AttachmentMeta {
 
 export interface CommentWithAttachments extends Comment {
   attachments: AttachmentMeta[];
+  replies: CommentReply[];
+}
+
+export function addReply(input: {
+  commentId: string;
+  campaignId: string;
+  authorName?: string;
+  body: string;
+  isAdmin: boolean;
+}): CommentReply {
+  const id = nanoid(12);
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO comment_replies
+        (id, comment_id, campaign_id, author_name, body, is_admin, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.commentId,
+      input.campaignId,
+      (input.authorName || "Reviewer").trim() || "Reviewer",
+      input.body.trim(),
+      input.isAdmin ? 1 : 0,
+      ts
+    );
+  return getDb()
+    .prepare(`SELECT * FROM comment_replies WHERE id = ?`)
+    .get(id) as CommentReply;
+}
+
+function repliesForCampaign(campaignId: string): Map<string, CommentReply[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM comment_replies WHERE campaign_id = ? ORDER BY created_at ASC`
+    )
+    .all(campaignId) as CommentReply[];
+  const map = new Map<string, CommentReply[]>();
+  for (const row of rows) {
+    const arr = map.get(row.comment_id) || [];
+    arr.push(row);
+    map.set(row.comment_id, arr);
+  }
+  return map;
 }
 
 export function addCommentAttachment(input: {
@@ -400,8 +528,13 @@ export function listCommentsWithAttachments(
   emailId?: string
 ): CommentWithAttachments[] {
   const comments = listComments(campaignId, emailId);
-  const map = attachmentMetaForCampaign(campaignId);
-  return comments.map((c) => ({ ...c, attachments: map.get(c.id) || [] }));
+  const attMap = attachmentMetaForCampaign(campaignId);
+  const replyMap = repliesForCampaign(campaignId);
+  return comments.map((c) => ({
+    ...c,
+    attachments: attMap.get(c.id) || [],
+    replies: replyMap.get(c.id) || [],
+  }));
 }
 
 export function setCommentResolved(
@@ -442,7 +575,43 @@ export function markApproved(campaignId: string): Campaign | null {
   if (!existing) return null;
 
   resolveAllComments(campaignId);
+  // Stamp every email approved so per-email state matches the whole-package
+  // approval.
+  getDb()
+    .prepare(
+      `UPDATE campaign_emails SET approved_at = ? WHERE campaign_id = ? AND approved_at IS NULL`
+    )
+    .run(nowIso(), campaignId);
   return updateCampaign(campaignId, { status: "approved" });
+}
+
+// Approve (or un-approve) a single email. Returns whether every email in the
+// campaign is now approved.
+export function setEmailApproved(
+  emailId: string,
+  approved: boolean
+): { email: CampaignEmail | null; allApproved: boolean; campaignId: string } {
+  const email = getEmailById(emailId);
+  if (!email) return { email: null, allApproved: false, campaignId: "" };
+
+  getDb()
+    .prepare(`UPDATE campaign_emails SET approved_at = ? WHERE id = ?`)
+    .run(approved ? nowIso() : null, emailId);
+
+  const rows = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN approved_at IS NOT NULL THEN 1 ELSE 0 END) AS approved
+       FROM campaign_emails WHERE campaign_id = ?`
+    )
+    .get(email.campaign_id) as { total: number; approved: number };
+
+  const allApproved = rows.total > 0 && rows.approved === rows.total;
+  return {
+    email: getEmailById(emailId),
+    allApproved,
+    campaignId: email.campaign_id,
+  };
 }
 
 export function listVersions(campaignId: string): CampaignVersion[] {

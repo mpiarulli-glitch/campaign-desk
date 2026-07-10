@@ -14,6 +14,14 @@ type Attachment = {
   height: number | null;
 };
 
+type Reply = {
+  id: string;
+  author_name: string;
+  body: string;
+  is_admin: number;
+  created_at: string;
+};
+
 type Comment = {
   id: string;
   email_id: string | null;
@@ -25,6 +33,7 @@ type Comment = {
   resolved: number;
   created_at: string;
   attachments?: Attachment[];
+  replies?: Reply[];
 };
 
 type LocalImage = {
@@ -84,12 +93,21 @@ function compressImage(file: File): Promise<LocalImage> {
   });
 }
 
+type SubjectOption = {
+  id: string;
+  subject: string;
+  preview_text: string;
+};
+
 type EmailItem = {
   id: string;
   title: string;
   html_content: string;
   sort_order: number;
   open_comments: number;
+  approved_at: string | null;
+  chosen_subject_id?: string | null;
+  subjects?: SubjectOption[];
 };
 
 type Campaign = {
@@ -121,6 +139,29 @@ export default function ReviewPage() {
   const [approving, setApproving] = useState(false);
   const [images, setImages] = useState<LocalImage[]>([]);
   const [imgBusy, setImgBusy] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+
+  async function submitReply(commentId: string) {
+    const text = (replyDrafts[commentId] || "").trim();
+    if (!text) return;
+    setReplyingId(commentId);
+    const name = authorName.trim() || "Reviewer";
+    localStorage.setItem("cd_reviewer_name", name);
+    const res = await fetch(`/api/review/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ replyTo: commentId, body: text, authorName: name }),
+    });
+    setReplyingId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not send reply.");
+      return;
+    }
+    setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
+    load(activeEmailId);
+  }
 
   async function addFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -209,6 +250,45 @@ export default function ReviewPage() {
     setActivePinId(null);
     setPendingPin(null);
     setMode("general");
+  }
+
+  async function chooseSubject(emailId: string, subjectId: string) {
+    const current = emails.find((e) => e.id === emailId);
+    // Clicking the already-chosen option clears it (toggle off).
+    const next = current?.chosen_subject_id === subjectId ? null : subjectId;
+    const res = await fetch(`/api/review/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chooseSubject: { emailId, subjectId: next } }),
+    });
+    if (res.ok) load(emailId);
+  }
+
+  async function approveOneEmail(emailId: string) {
+    if (
+      !confirm(
+        "Approve this email? This tells the team this one is good to go."
+      )
+    ) {
+      return;
+    }
+    setApproving(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/review/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approveEmail: emailId }),
+    });
+    setApproving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not approve this email.");
+      return;
+    }
+    const data = await res.json();
+    setMessage(data.message || "Email approved.");
+    load(emailId);
   }
 
   async function submitComment(e: FormEvent) {
@@ -373,7 +453,9 @@ export default function ReviewPage() {
                   }`}
                   onClick={() => selectEmail(email.id)}
                 >
-                  <span className="email-tab-num">{index + 1}</span>
+                  <span className="email-tab-num">
+                    {email.approved_at ? "✓" : index + 1}
+                  </span>
                   <span className="email-tab-label">{email.title}</span>
                 </button>
               ))}
@@ -426,8 +508,22 @@ export default function ReviewPage() {
 
         <div className="split-review">
           <div className="stack">
-            <div className="row" style={{ justifyContent: "space-between" }}>
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", alignItems: "center" }}
+            >
               <h2 className="h2">{activeEmail.title}</h2>
+              {activeEmail.approved_at ? (
+                <span className="badge badge-approved">Approved</span>
+              ) : !locked ? (
+                <button
+                  className="btn btn-approve btn-sm"
+                  onClick={() => approveOneEmail(activeEmail.id)}
+                  disabled={approving}
+                >
+                  Approve this email
+                </button>
+              ) : null}
             </div>
             {!locked ? (
               <div className="toolbar">
@@ -477,6 +573,45 @@ export default function ReviewPage() {
               onPlacePin={(x, y) => setPendingPin({ x, y })}
               onSelectPin={setActivePinId}
             />
+            {activeEmail.subjects && activeEmail.subjects.length > 0 ? (
+              <div className="card card-pad stack">
+                <h2 className="h2" style={{ margin: 0 }}>
+                  Pick a subject line
+                </h2>
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  Choose the subject line and preview text you want to send.
+                  {locked ? "" : " Tap one to select it."}
+                </p>
+                <div className="subject-options">
+                  {activeEmail.subjects.map((s) => {
+                    const chosen = activeEmail.chosen_subject_id === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`subject-option ${chosen ? "chosen" : ""}`}
+                        disabled={locked}
+                        onClick={() => chooseSubject(activeEmail.id, s.id)}
+                      >
+                        <span className="subject-radio" aria-hidden>
+                          {chosen ? "●" : "○"}
+                        </span>
+                        <span className="subject-text">
+                          <span className="subject-line">
+                            {s.subject || "(no subject)"}
+                          </span>
+                          {s.preview_text ? (
+                            <span className="subject-preview">
+                              {s.preview_text}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <EmailLinks html={activeEmail.html_content} />
           </div>
 
@@ -665,6 +800,59 @@ export default function ReviewPage() {
                               />
                             </a>
                           ))}
+                        </div>
+                      ) : null}
+
+                      {c.replies && c.replies.length > 0 ? (
+                        <div className="reply-thread">
+                          {c.replies.map((r) => (
+                            <div
+                              key={r.id}
+                              className={`reply ${r.is_admin ? "reply-admin" : ""}`}
+                            >
+                              <div className="reply-head">
+                                {r.author_name}
+                                {r.is_admin ? " · Team" : ""} ·{" "}
+                                {new Date(r.created_at).toLocaleString()}
+                              </div>
+                              <div className="reply-body">{r.body}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {!locked ? (
+                        <div
+                          className="reply-form"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            value={replyDrafts[c.id] || ""}
+                            onChange={(e) =>
+                              setReplyDrafts((prev) => ({
+                                ...prev,
+                                [c.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Reply..."
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                submitReply(c.id);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled={
+                              replyingId === c.id ||
+                              !(replyDrafts[c.id] || "").trim()
+                            }
+                            onClick={() => submitReply(c.id)}
+                          >
+                            {replyingId === c.id ? "..." : "Reply"}
+                          </button>
                         </div>
                       ) : null}
                     </div>

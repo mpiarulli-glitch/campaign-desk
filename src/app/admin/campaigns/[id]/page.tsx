@@ -15,6 +15,14 @@ type Attachment = {
   height: number | null;
 };
 
+type Reply = {
+  id: string;
+  author_name: string;
+  body: string;
+  is_admin: number;
+  created_at: string;
+};
+
 type Comment = {
   id: string;
   email_id: string | null;
@@ -26,6 +34,7 @@ type Comment = {
   resolved: number;
   created_at: string;
   attachments?: Attachment[];
+  replies?: Reply[];
 };
 
 type Version = {
@@ -35,12 +44,21 @@ type Version = {
   created_at: string;
 };
 
+type SubjectOption = {
+  id: string;
+  subject: string;
+  preview_text: string;
+};
+
 type EmailItem = {
   id: string;
   title: string;
   html_content: string;
   sort_order: number;
   open_comments: number;
+  approved_at?: string | null;
+  chosen_subject_id?: string | null;
+  subjects?: SubjectOption[];
 };
 
 type Campaign = {
@@ -90,6 +108,31 @@ export default function AdminCampaignPage() {
   } | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [subjectRows, setSubjectRows] = useState<
+    { subject: string; preview: string }[]
+  >([]);
+  const [savingSubjects, setSavingSubjects] = useState(false);
+
+  async function submitReply(commentId: string) {
+    const text = (replyDrafts[commentId] || "").trim();
+    if (!text) return;
+    setReplyingId(commentId);
+    const res = await fetch(`/api/campaigns/${id}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commentId, body: text }),
+    });
+    setReplyingId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not send reply.");
+      return;
+    }
+    setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
+    load(activeEmailId);
+  }
 
   async function load(preferredEmailId?: string | null) {
     const res = await fetch(`/api/campaigns/${id}`);
@@ -133,6 +176,38 @@ export default function AdminCampaignPage() {
     () => emails.find((e) => e.id === activeEmailId) || emails[0] || null,
     [emails, activeEmailId]
   );
+
+  // Keep the subject editor in sync with whichever email is active.
+  useEffect(() => {
+    const subs = activeEmail?.subjects || [];
+    setSubjectRows(
+      subs.length
+        ? subs.map((s) => ({ subject: s.subject, preview: s.preview_text }))
+        : [{ subject: "", preview: "" }]
+    );
+  }, [activeEmail?.id, activeEmail?.subjects]);
+
+  async function saveSubjects() {
+    if (!activeEmail) return;
+    setSavingSubjects(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        setEmailSubjects: { emailId: activeEmail.id, options: subjectRows },
+      }),
+    });
+    setSavingSubjects(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save subject lines.");
+      return;
+    }
+    const data = await res.json();
+    if (data.emails) setEmails(data.emails);
+    setMessage("Subject lines saved.");
+  }
 
   const emailComments = useMemo(
     () =>
@@ -599,7 +674,9 @@ export default function AdminCampaignPage() {
                 }`}
                 onClick={() => selectEmail(email.id)}
               >
-                <span className="email-tab-num">{index + 1}</span>
+                <span className="email-tab-num">
+                  {email.approved_at ? "✓" : index + 1}
+                </span>
                 <span className="email-tab-label">{email.title}</span>
                 {email.open_comments > 0 ? (
                   <span className="email-tab-badge">{email.open_comments}</span>
@@ -808,6 +885,92 @@ export default function AdminCampaignPage() {
                 onSelectPin={setActivePinId}
               />
               <EmailLinks html={activeEmail.html_content} />
+
+              <div className="card card-pad stack">
+                <h2 className="h2" style={{ margin: 0 }}>
+                  Subject lines & preview text
+                </h2>
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  Add the options the client will choose from on the review
+                  page.
+                  {activeEmail.chosen_subject_id
+                    ? " The client has picked one (highlighted below)."
+                    : ""}
+                </p>
+                {subjectRows.map((row, i) => {
+                  const savedId = activeEmail.subjects?.[i]?.id;
+                  const isChosen =
+                    !!savedId && savedId === activeEmail.chosen_subject_id;
+                  return (
+                    <div
+                      key={i}
+                      className="subject-editor-row"
+                      style={{
+                        borderColor: isChosen ? "#16a34a" : undefined,
+                      }}
+                    >
+                      <div className="subject-editor-fields">
+                        <input
+                          value={row.subject}
+                          placeholder={`Subject option ${i + 1}`}
+                          onChange={(e) =>
+                            setSubjectRows((rows) =>
+                              rows.map((r, j) =>
+                                j === i ? { ...r, subject: e.target.value } : r
+                              )
+                            )
+                          }
+                        />
+                        <input
+                          value={row.preview}
+                          placeholder="Preview text"
+                          onChange={(e) =>
+                            setSubjectRows((rows) =>
+                              rows.map((r, j) =>
+                                j === i ? { ...r, preview: e.target.value } : r
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() =>
+                          setSubjectRows((rows) =>
+                            rows.filter((_, j) => j !== i)
+                          )
+                        }
+                        aria-label="Remove option"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() =>
+                      setSubjectRows((rows) => [
+                        ...rows,
+                        { subject: "", preview: "" },
+                      ])
+                    }
+                  >
+                    Add option
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={saveSubjects}
+                    disabled={savingSubjects}
+                  >
+                    {savingSubjects ? "Saving..." : "Save subject lines"}
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="card card-pad stack">
               <div className="row" style={{ justifyContent: "space-between" }}>
@@ -902,6 +1065,58 @@ export default function AdminCampaignPage() {
                           ))}
                         </div>
                       ) : null}
+
+                      {c.replies && c.replies.length > 0 ? (
+                        <div className="reply-thread">
+                          {c.replies.map((r) => (
+                            <div
+                              key={r.id}
+                              className={`reply ${r.is_admin ? "reply-admin" : ""}`}
+                            >
+                              <div className="reply-head">
+                                {r.author_name}
+                                {r.is_admin ? " · Team" : " · Client"} ·{" "}
+                                {new Date(r.created_at).toLocaleString()}
+                              </div>
+                              <div className="reply-body">{r.body}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div
+                        className="reply-form"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          value={replyDrafts[c.id] || ""}
+                          onChange={(e) =>
+                            setReplyDrafts((prev) => ({
+                              ...prev,
+                              [c.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Reply to the client..."
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              submitReply(c.id);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={
+                            replyingId === c.id ||
+                            !(replyDrafts[c.id] || "").trim()
+                          }
+                          onClick={() => submitReply(c.id)}
+                        >
+                          {replyingId === c.id ? "..." : "Reply"}
+                        </button>
+                      </div>
+
                       <div className="row" style={{ marginTop: 10 }}>
                          {!c.resolved ? (
                            <button

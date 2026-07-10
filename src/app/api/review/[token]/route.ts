@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import {
   addComment,
   addCommentAttachment,
+  addReply,
   getCampaignByToken,
   listCommentsWithAttachments,
   listEmails,
+  listEmailsWithSubjects,
+  setChosenSubject,
   updateCampaign,
   markApproved,
+  setEmailApproved,
   countOpenComments,
 } from "@/lib/campaigns";
 import { notifyClientFeedback } from "@/lib/notify";
@@ -76,11 +80,18 @@ export async function GET(_request: Request, { params }: Params) {
   }
 
   const fresh = getCampaignByToken(token)!;
-  const emails = listEmails(fresh.id).map((e) => ({
+  const emails = listEmailsWithSubjects(fresh.id).map((e) => ({
     id: e.id,
     title: e.title,
     html_content: e.html_content,
     sort_order: e.sort_order,
+    approved_at: e.approved_at,
+    chosen_subject_id: e.chosen_subject_id,
+    subjects: e.subjects.map((s) => ({
+      id: s.id,
+      subject: s.subject,
+      preview_text: s.preview_text,
+    })),
     open_comments: countOpenComments(fresh.id, e.id),
   }));
 
@@ -98,6 +109,7 @@ export async function GET(_request: Request, { params }: Params) {
       resolved: c.resolved,
       created_at: c.created_at,
       attachments: c.attachments,
+      replies: c.replies,
     })),
   });
 }
@@ -124,6 +136,83 @@ export async function POST(request: Request, { params }: Params) {
       campaign: publicCampaign(approved!),
       message: "Campaign approved",
     });
+  }
+
+  // Client picks a subject line / preview text for an email.
+  if (body.chooseSubject && typeof body.chooseSubject === "object") {
+    const emailId =
+      typeof body.chooseSubject.emailId === "string"
+        ? body.chooseSubject.emailId
+        : "";
+    const subjectId =
+      typeof body.chooseSubject.subjectId === "string"
+        ? body.chooseSubject.subjectId
+        : null;
+    const target = listEmailsWithSubjects(campaign.id).find(
+      (e) => e.id === emailId
+    );
+    if (!target) {
+      return NextResponse.json({ error: "Email not found" }, { status: 404 });
+    }
+    if (subjectId && !target.subjects.some((s) => s.id === subjectId)) {
+      return NextResponse.json(
+        { error: "Subject option not found" },
+        { status: 400 }
+      );
+    }
+    setChosenSubject(emailId, subjectId);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Approve a single email. When every email is approved, the whole campaign
+  // flips to approved.
+  if (typeof body.approveEmail === "string" && body.approveEmail.trim()) {
+    const target = listEmails(campaign.id).find(
+      (e) => e.id === body.approveEmail
+    );
+    if (!target) {
+      return NextResponse.json({ error: "Email not found" }, { status: 404 });
+    }
+    const { allApproved } = setEmailApproved(target.id, true);
+    if (allApproved && campaign.status !== "approved") {
+      markApproved(campaign.id);
+    }
+    const fresh = getCampaignByToken(token)!;
+    return NextResponse.json({
+      campaign: publicCampaign(fresh),
+      allApproved,
+      message: allApproved
+        ? "All emails approved. The team has been notified."
+        : "Email approved.",
+    });
+  }
+
+  // Replying to an existing comment (allowed even after approval, so the
+  // conversation can continue).
+  if (typeof body.replyTo === "string" && body.replyTo.trim()) {
+    const replyText = typeof body.body === "string" ? body.body.trim() : "";
+    if (!replyText) {
+      return NextResponse.json(
+        { error: "Reply cannot be empty" },
+        { status: 400 }
+      );
+    }
+    const parent = listCommentsWithAttachments(campaign.id).find(
+      (c) => c.id === body.replyTo
+    );
+    if (!parent) {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+    const replyAuthor =
+      typeof body.authorName === "string" ? body.authorName : "Reviewer";
+    const reply = addReply({
+      commentId: parent.id,
+      campaignId: campaign.id,
+      authorName: replyAuthor,
+      body: replyText,
+      isAdmin: false,
+    });
+    return NextResponse.json({ reply }, { status: 201 });
   }
 
   if (campaign.status === "approved") {
