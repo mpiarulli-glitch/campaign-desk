@@ -187,6 +187,26 @@ export async function POST(request: Request, { params }: Params) {
     });
   }
 
+  // Undo a single email approval (e.g. approved by accident). If the campaign
+  // had already flipped to fully approved, reopen it for review.
+  if (typeof body.unapproveEmail === "string" && body.unapproveEmail.trim()) {
+    const target = listEmails(campaign.id).find(
+      (e) => e.id === body.unapproveEmail
+    );
+    if (!target) {
+      return NextResponse.json({ error: "Email not found" }, { status: 404 });
+    }
+    setEmailApproved(target.id, false);
+    if (campaign.status === "approved") {
+      updateCampaign(campaign.id, { status: "in_review" });
+    }
+    const fresh = getCampaignByToken(token)!;
+    return NextResponse.json({
+      campaign: publicCampaign(fresh),
+      message: "Approval undone. You can leave feedback again.",
+    });
+  }
+
   // Replying to an existing comment (allowed even after approval, so the
   // conversation can continue).
   if (typeof body.replyTo === "string" && body.replyTo.trim()) {

@@ -187,6 +187,29 @@ export default function AdminCampaignPage() {
     );
   }, [activeEmail?.id, activeEmail?.subjects]);
 
+  async function toggleEmailApproved(approved: boolean) {
+    if (!activeEmail) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        setEmailApproved: { emailId: activeEmail.id, approved },
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not update approval.");
+      return;
+    }
+    const data = await res.json();
+    if (data.emails) setEmails(data.emails);
+    setMessage(approved ? "Email approved." : "Approval removed.");
+  }
+
   async function saveSubjects() {
     if (!activeEmail) return;
     setSavingSubjects(true);
@@ -975,6 +998,23 @@ export default function AdminCampaignPage() {
             <div className="card card-pad stack">
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <h2 className="h2">{activeEmail.title}</h2>
+                {activeEmail.approved_at ? (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => toggleEmailApproved(false)}
+                    disabled={saving}
+                  >
+                    Un-approve email
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => toggleEmailApproved(true)}
+                    disabled={saving}
+                  >
+                    Approve email
+                  </button>
+                )}
                 {openCount > 0 ? (
                   <button
                     className="btn btn-sm"

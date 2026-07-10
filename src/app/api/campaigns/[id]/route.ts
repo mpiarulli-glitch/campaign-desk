@@ -8,6 +8,7 @@ import {
   listEmails,
   listEmailsWithSubjects,
   setEmailSubjects,
+  setEmailApproved,
   updateCampaign,
   countOpenComments,
   markRevisionDone,
@@ -66,6 +67,31 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const body = await request.json().catch(() => ({}));
+
+  // Approve / un-approve a single email from the admin side.
+  if (body.setEmailApproved && typeof body.setEmailApproved === "object") {
+    const emailId =
+      typeof body.setEmailApproved.emailId === "string"
+        ? body.setEmailApproved.emailId
+        : "";
+    const approved = Boolean(body.setEmailApproved.approved);
+    if (!emailId) {
+      return NextResponse.json({ error: "emailId required" }, { status: 400 });
+    }
+    const { allApproved } = setEmailApproved(emailId, approved);
+    if (approved && allApproved && existing.status !== "approved") {
+      markApproved(id);
+    }
+    if (!approved && existing.status === "approved") {
+      updateCampaign(id, { status: "in_review" });
+    }
+    return NextResponse.json({
+      emails: listEmailsWithSubjects(id).map((e) => ({
+        ...e,
+        open_comments: countOpenComments(id, e.id),
+      })),
+    });
+  }
 
   // Save the subject-line / preview-text options for one email.
   if (body.setEmailSubjects && typeof body.setEmailSubjects === "object") {

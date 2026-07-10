@@ -264,6 +264,26 @@ export default function ReviewPage() {
     if (res.ok) load(emailId);
   }
 
+  async function unapproveOneEmail(emailId: string) {
+    setApproving(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/review/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unapproveEmail: emailId }),
+    });
+    setApproving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not undo approval.");
+      return;
+    }
+    const data = await res.json();
+    setMessage(data.message || "Approval undone.");
+    load(emailId);
+  }
+
   async function approveOneEmail(emailId: string) {
     if (
       !confirm(
@@ -514,7 +534,19 @@ export default function ReviewPage() {
             >
               <h2 className="h2">{activeEmail.title}</h2>
               {activeEmail.approved_at ? (
-                <span className="badge badge-approved">Approved</span>
+                <span
+                  className="row"
+                  style={{ gap: 8, alignItems: "center" }}
+                >
+                  <span className="badge badge-approved">Approved</span>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => unapproveOneEmail(activeEmail.id)}
+                    disabled={approving}
+                  >
+                    Undo
+                  </button>
+                </span>
               ) : !locked ? (
                 <button
                   className="btn btn-approve btn-sm"
