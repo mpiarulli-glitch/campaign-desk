@@ -6,7 +6,10 @@
     "dev": "next dev -p 3040",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3040",
-    "lint": "next lint"
+    "lint": "eslint src next.config.ts eslint.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck",
+    "prepare": "husky"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -23,6 +26,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.1.0",
+    "husky": "^9.1.7",
     "typescript": "^5"
   }
 }

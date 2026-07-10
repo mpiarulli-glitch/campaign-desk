@@ -30,6 +30,13 @@ Open http://localhost:3000 and sign in with your admin password.
 
 Default local password (from `.env.local` if you used the example): `campaign-desk-dev`
 
+## Git hooks
+
+Hooks are installed by `npm install`.
+
+- Before commits: `npm run check` (lint + typecheck)
+- Before pushes: `npm run build`
+
 ## Environment variables
 
 | Variable | Purpose |

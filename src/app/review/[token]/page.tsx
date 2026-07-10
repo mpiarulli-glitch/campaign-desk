@@ -774,7 +774,7 @@ export default function ReviewPage() {
                 <div className="empty">No comments on this email yet.</div>
               ) : (
                 <div className="comment-list">
-                  {emailComments.map((c, index) => (
+                  {emailComments.map((c) => (
                     <div
                       key={c.id}
                       className={`comment-card ${c.resolved ? "resolved" : ""} ${
