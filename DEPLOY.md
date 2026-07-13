@@ -3,6 +3,10 @@
 Campaign Desk needs a host with a **persistent disk** for SQLite.
 Railway is the easiest option.
 
+The Railway service is connected to this repo's `main` branch for
+auto-deploy (`railway service source connect`) — a push to `main` builds
+and deploys on its own. No manual `railway up` needed for normal changes.
+
 ## 1) Create a GitHub repo for this app
 
 From Terminal:
