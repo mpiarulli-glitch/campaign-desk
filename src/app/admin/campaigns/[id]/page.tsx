@@ -32,6 +32,7 @@ type Comment = {
   pin_x: number | null;
   pin_y: number | null;
   resolved: number;
+  channel: "internal" | "external";
   created_at: string;
   attachments?: Attachment[];
   replies?: Reply[];
@@ -72,6 +73,7 @@ type Campaign = {
   magic_token: string;
   updated_at: string;
   review_url: string;
+  external_review_url: string;
   open_comments: number;
   email_count?: number;
 };
@@ -93,6 +95,7 @@ export default function AdminCampaignPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedExternal, setCopiedExternal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addingEmail, setAddingEmail] = useState(false);
   const [newEmailTitle, setNewEmailTitle] = useState("");
@@ -327,6 +330,13 @@ export default function AdminCampaignPage() {
     await navigator.clipboard.writeText(campaign.review_url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function copyExternalLink() {
+    if (!campaign?.external_review_url) return;
+    await navigator.clipboard.writeText(campaign.external_review_url);
+    setCopiedExternal(true);
+    setTimeout(() => setCopiedExternal(false), 1500);
   }
 
   async function saveStatus(next: string) {
@@ -817,7 +827,7 @@ export default function AdminCampaignPage() {
             })}
           </div>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Reviewers get one magic link and can toggle between these emails.
+            Reviewers can toggle between these emails from either review link.
             Approval covers the whole package.
           </p>
 
@@ -901,7 +911,7 @@ export default function AdminCampaignPage() {
 
         <div className="card card-pad stack">
           <div className="row" style={{ justifyContent: "space-between" }}>
-            <strong>Magic review link</strong>
+            <strong>Internal review link</strong>
             <button className="btn btn-secondary btn-sm" onClick={copyLink}>
               {copied ? "Copied" : "Copy link"}
             </button>
@@ -910,7 +920,27 @@ export default function AdminCampaignPage() {
             <code>{campaign.review_url}</code>
           </div>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            One link for the whole package. Your boss can toggle emails inside it.
+            For your boss or team. Shows every comment, including feedback
+            left on the external link.
+          </p>
+        </div>
+
+        <div className="card card-pad stack">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong>External review link</strong>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={copyExternalLink}
+            >
+              {copiedExternal ? "Copied" : "Copy link"}
+            </button>
+          </div>
+          <div className="copy-box">
+            <code>{campaign.external_review_url}</code>
+          </div>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            For the client. They can leave feedback and approve like normal,
+            but never see comments left on the internal link.
           </p>
         </div>
 
@@ -1203,6 +1233,9 @@ export default function AdminCampaignPage() {
                               }`
                             : " · General"}
                           {c.resolved ? " · Done" : ""}
+                          <span className={`comment-channel-tag ${c.channel}`}>
+                            {c.channel === "external" ? "External" : "Internal"}
+                          </span>
                         </span>
                         <span>{new Date(c.created_at).toLocaleString()}</span>
                       </div>

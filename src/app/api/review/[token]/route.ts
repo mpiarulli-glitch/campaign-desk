@@ -3,7 +3,8 @@ import {
   addComment,
   addCommentAttachment,
   addReply,
-  getCampaignByToken,
+  getCampaignByAnyToken,
+  getCampaignById,
   listCommentsWithAttachments,
   listEmails,
   listEmailsWithSubjects,
@@ -13,6 +14,7 @@ import {
   setEmailApproved,
   countOpenComments,
 } from "@/lib/campaigns";
+import type { Campaign } from "@/lib/db";
 import { notifyClientFeedback } from "@/lib/notify";
 
 const ALLOWED_IMAGE_MIME = new Set([
@@ -57,7 +59,7 @@ function parseImages(raw: unknown): IncomingImage[] {
 
 type Params = { params: Promise<{ token: string }> };
 
-function publicCampaign(campaign: NonNullable<ReturnType<typeof getCampaignByToken>>) {
+function publicCampaign(campaign: Campaign) {
   return {
     id: campaign.id,
     title: campaign.title,
@@ -70,16 +72,21 @@ function publicCampaign(campaign: NonNullable<ReturnType<typeof getCampaignByTok
 
 export async function GET(_request: Request, { params }: Params) {
   const { token } = await params;
-  const campaign = getCampaignByToken(token);
-  if (!campaign) {
+  const match = getCampaignByAnyToken(token);
+  if (!match) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const { channel } = match;
+  const campaign = match.campaign;
 
   if (campaign.status === "draft") {
     updateCampaign(campaign.id, { status: "in_review" });
   }
 
-  const fresh = getCampaignByToken(token)!;
+  const fresh = getCampaignById(campaign.id)!;
+  // Only filter open-comment counts for the external link; internal keeps
+  // seeing the full total across both channels.
+  const countChannel = channel === "external" ? channel : undefined;
   const emails = listEmailsWithSubjects(fresh.id).map((e) => ({
     id: e.id,
     title: e.title,
@@ -92,34 +99,38 @@ export async function GET(_request: Request, { params }: Params) {
       subject: s.subject,
       preview_text: s.preview_text,
     })),
-    open_comments: countOpenComments(fresh.id, e.id),
+    open_comments: countOpenComments(fresh.id, e.id, countChannel),
   }));
 
   return NextResponse.json({
     campaign: publicCampaign(fresh),
     emails,
-    comments: listCommentsWithAttachments(fresh.id).map((c) => ({
-      id: c.id,
-      email_id: c.email_id,
-      author_name: c.author_name,
-      body: c.body,
-      type: c.type,
-      pin_x: c.pin_x,
-      pin_y: c.pin_y,
-      resolved: c.resolved,
-      created_at: c.created_at,
-      attachments: c.attachments,
-      replies: c.replies,
-    })),
+    comments: listCommentsWithAttachments(fresh.id, undefined, countChannel).map(
+      (c) => ({
+        id: c.id,
+        email_id: c.email_id,
+        author_name: c.author_name,
+        body: c.body,
+        type: c.type,
+        pin_x: c.pin_x,
+        pin_y: c.pin_y,
+        resolved: c.resolved,
+        created_at: c.created_at,
+        attachments: c.attachments,
+        replies: c.replies,
+      })
+    ),
   });
 }
 
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const campaign = getCampaignByToken(token);
-  if (!campaign) {
+  const match = getCampaignByAnyToken(token);
+  if (!match) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const { channel } = match;
+  const campaign = match.campaign;
 
   const body = await request.json().catch(() => ({}));
 
@@ -177,7 +188,7 @@ export async function POST(request: Request, { params }: Params) {
     if (allApproved && campaign.status !== "approved") {
       markApproved(campaign.id);
     }
-    const fresh = getCampaignByToken(token)!;
+    const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({
       campaign: publicCampaign(fresh),
       allApproved,
@@ -200,7 +211,7 @@ export async function POST(request: Request, { params }: Params) {
     if (campaign.status === "approved") {
       updateCampaign(campaign.id, { status: "in_review" });
     }
-    const fresh = getCampaignByToken(token)!;
+    const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({
       campaign: publicCampaign(fresh),
       message: "Approval undone. You can leave feedback again.",
@@ -221,6 +232,11 @@ export async function POST(request: Request, { params }: Params) {
       (c) => c.id === body.replyTo
     );
     if (!parent) {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+    // External link can only reply within its own comment thread, so it
+    // can't surface (or add to) an internal-only conversation.
+    if (channel === "external" && parent.channel !== "external") {
       return NextResponse.json({ error: "Comment not found" }, { status: 404 });
     }
     const replyAuthor =
@@ -283,6 +299,7 @@ export async function POST(request: Request, { params }: Params) {
     type,
     pinX,
     pinY,
+    channel,
   });
 
   for (const img of images) {

@@ -413,6 +413,28 @@ button {
   background: #edf9f3;
 }
 
+.comment-channel-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+}
+
+.comment-channel-tag.internal {
+  background: var(--bg-tint);
+  color: #007a87;
+}
+
+.comment-channel-tag.external {
+  background: #fff1c2;
+  color: #8a6200;
+}
+
 .error {
   color: var(--danger);
   font-size: 14px;

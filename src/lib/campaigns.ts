@@ -11,6 +11,7 @@ import {
   type CommentReply,
   type CampaignVersion,
   type EmailSubject,
+  type ReviewChannel,
 } from "./db";
 
 function syncCampaignPreview(campaignId: string) {
@@ -40,13 +41,14 @@ export function createCampaign(input: {
   const db = getDb();
   const id = nanoid(12);
   const magicToken = nanoid(24);
+  const externalToken = nanoid(24);
   const ts = nowIso();
   const emailId = nanoid(12);
 
   db.prepare(
     `INSERT INTO campaigns
-      (id, title, client_name, description, audience, html_content, status, magic_token, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
+      (id, title, client_name, description, audience, html_content, status, magic_token, external_token, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
   ).run(
     id,
     input.title.trim(),
@@ -55,6 +57,7 @@ export function createCampaign(input: {
     (input.audience || "").trim(),
     input.htmlContent,
     magicToken,
+    externalToken,
     ts,
     ts
   );
@@ -101,6 +104,23 @@ export function getCampaignByToken(token: string): Campaign | null {
       .prepare(`SELECT * FROM campaigns WHERE magic_token = ?`)
       .get(token) as Campaign | undefined) || null
   );
+}
+
+// Internal (magic_token) links see every comment. External (external_token)
+// links only see comments left through the external link itself, so the
+// client never sees internal team/boss feedback.
+export function getCampaignByAnyToken(
+  token: string
+): { campaign: Campaign; channel: ReviewChannel } | null {
+  const internal = getCampaignByToken(token);
+  if (internal) return { campaign: internal, channel: "internal" };
+
+  const external = getDb()
+    .prepare(`SELECT * FROM campaigns WHERE external_token = ?`)
+    .get(token) as Campaign | undefined;
+  if (external) return { campaign: external, channel: "external" };
+
+  return null;
 }
 
 export function listEmails(campaignId: string): CampaignEmail[] {
@@ -353,22 +373,29 @@ export function deleteCampaign(id: string): boolean {
   return result.changes > 0;
 }
 
-export function listComments(campaignId: string, emailId?: string): Comment[] {
+// channel filters to comments left on that link only. Omit it (as every
+// admin-facing call site does) to get comments from both channels.
+export function listComments(
+  campaignId: string,
+  emailId?: string,
+  channel?: ReviewChannel
+): Comment[] {
+  const conditions = ["campaign_id = ?"];
+  const params: string[] = [campaignId];
   if (emailId) {
-    return getDb()
-      .prepare(
-        `SELECT * FROM comments
-         WHERE campaign_id = ? AND email_id = ?
-         ORDER BY created_at ASC`
-      )
-      .all(campaignId, emailId) as Comment[];
+    conditions.push("email_id = ?");
+    params.push(emailId);
+  }
+  if (channel) {
+    conditions.push("channel = ?");
+    params.push(channel);
   }
 
   return getDb()
     .prepare(
-      `SELECT * FROM comments WHERE campaign_id = ? ORDER BY created_at ASC`
+      `SELECT * FROM comments WHERE ${conditions.join(" AND ")} ORDER BY created_at ASC`
     )
-    .all(campaignId) as Comment[];
+    .all(...params) as Comment[];
 }
 
 export function addComment(input: {
@@ -379,6 +406,7 @@ export function addComment(input: {
   type: "general" | "inline";
   pinX?: number | null;
   pinY?: number | null;
+  channel?: ReviewChannel;
 }): Comment {
   const db = getDb();
   const id = nanoid(12);
@@ -392,8 +420,8 @@ export function addComment(input: {
 
   db.prepare(
     `INSERT INTO comments
-      (id, campaign_id, email_id, author_name, body, type, pin_x, pin_y, resolved, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+      (id, campaign_id, email_id, author_name, body, type, pin_x, pin_y, resolved, channel, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     id,
     input.campaignId,
@@ -403,6 +431,7 @@ export function addComment(input: {
     input.type,
     input.type === "inline" ? (input.pinX ?? null) : null,
     input.type === "inline" ? (input.pinY ?? null) : null,
+    input.channel || "internal",
     ts
   );
 
@@ -531,9 +560,10 @@ function attachmentMetaForCampaign(campaignId: string): Map<string, AttachmentMe
 // Comments with their attachment metadata (no bytes) merged in.
 export function listCommentsWithAttachments(
   campaignId: string,
-  emailId?: string
+  emailId?: string,
+  channel?: ReviewChannel
 ): CommentWithAttachments[] {
-  const comments = listComments(campaignId, emailId);
+  const comments = listComments(campaignId, emailId, channel);
   const attMap = attachmentMetaForCampaign(campaignId);
   const replyMap = repliesForCampaign(campaignId);
   return comments.map((c) => ({
@@ -628,22 +658,25 @@ export function listVersions(campaignId: string): CampaignVersion[] {
     .all(campaignId) as CampaignVersion[];
 }
 
-export function countOpenComments(campaignId: string, emailId?: string): number {
+export function countOpenComments(
+  campaignId: string,
+  emailId?: string,
+  channel?: ReviewChannel
+): number {
+  const conditions = ["campaign_id = ?", "resolved = 0"];
+  const params: string[] = [campaignId];
   if (emailId) {
-    const row = getDb()
-      .prepare(
-        `SELECT COUNT(*) as count FROM comments
-         WHERE campaign_id = ? AND email_id = ? AND resolved = 0`
-      )
-      .get(campaignId, emailId) as { count: number };
-    return row.count;
+    conditions.push("email_id = ?");
+    params.push(emailId);
+  }
+  if (channel) {
+    conditions.push("channel = ?");
+    params.push(channel);
   }
 
   const row = getDb()
-    .prepare(
-      `SELECT COUNT(*) as count FROM comments WHERE campaign_id = ? AND resolved = 0`
-    )
-    .get(campaignId) as { count: number };
+    .prepare(`SELECT COUNT(*) as count FROM comments WHERE ${conditions.join(" AND ")}`)
+    .get(...params) as { count: number };
   return row.count;
 }
 

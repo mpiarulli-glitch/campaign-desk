@@ -47,6 +47,7 @@ export async function GET(_request: Request, { params }: Params) {
       ...campaign,
       open_comments: countOpenComments(campaign.id),
       review_url: reviewUrl(campaign.magic_token),
+      external_review_url: reviewUrl(campaign.external_token),
       email_count: emails.length,
     },
     emails,

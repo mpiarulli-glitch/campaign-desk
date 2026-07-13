@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
 
@@ -9,6 +10,7 @@ export type CampaignStatus =
   | "approved";
 
 export type CommentType = "general" | "inline";
+export type ReviewChannel = "internal" | "external";
 
 export interface Campaign {
   id: string;
@@ -19,6 +21,7 @@ export interface Campaign {
   html_content: string;
   status: CampaignStatus;
   magic_token: string;
+  external_token: string;
   star_rating: number | null;
   created_at: string;
   updated_at: string;
@@ -57,6 +60,7 @@ export interface Comment {
   pin_x: number | null;
   pin_y: number | null;
   resolved: number;
+  channel: ReviewChannel;
   created_at: string;
 }
 
@@ -116,6 +120,7 @@ export function getDb(): Database.Database {
       html_content TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'draft',
       magic_token TEXT NOT NULL UNIQUE,
+      external_token TEXT UNIQUE,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -141,6 +146,7 @@ export function getDb(): Database.Database {
       pin_x REAL,
       pin_y REAL,
       resolved INTEGER NOT NULL DEFAULT 0,
+      channel TEXT NOT NULL DEFAULT 'internal',
       created_at TEXT NOT NULL,
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
     );
@@ -226,10 +232,29 @@ function migrate(database: Database.Database) {
       `ALTER TABLE campaigns ADD COLUMN audience TEXT NOT NULL DEFAULT ''`
     );
   }
+  if (!campaignCols.includes("external_token")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN external_token TEXT`);
+  }
+  const campaignsMissingExternalToken = database
+    .prepare(`SELECT id FROM campaigns WHERE external_token IS NULL`)
+    .all() as Array<{ id: string }>;
+  if (campaignsMissingExternalToken.length) {
+    const setExternalToken = database.prepare(
+      `UPDATE campaigns SET external_token = ? WHERE id = ?`
+    );
+    for (const row of campaignsMissingExternalToken) {
+      setExternalToken.run(nanoid(24), row.id);
+    }
+  }
 
   const commentCols = tableColumns(database, "comments");
   if (!commentCols.includes("email_id")) {
     database.exec(`ALTER TABLE comments ADD COLUMN email_id TEXT`);
+  }
+  if (!commentCols.includes("channel")) {
+    database.exec(
+      `ALTER TABLE comments ADD COLUMN channel TEXT NOT NULL DEFAULT 'internal'`
+    );
   }
 
   const versionCols = tableColumns(database, "campaign_versions");
