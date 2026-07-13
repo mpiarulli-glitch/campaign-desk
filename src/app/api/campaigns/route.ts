@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     typeof body.clientName === "string" ? body.clientName : "";
   const description =
     typeof body.description === "string" ? body.description : "";
+  const audience = typeof body.audience === "string" ? body.audience : "";
   const emailTitle =
     typeof body.emailTitle === "string" ? body.emailTitle : "Email 1";
 
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
     title,
     clientName,
     description,
+    audience,
     htmlContent,
     emailTitle,
   });

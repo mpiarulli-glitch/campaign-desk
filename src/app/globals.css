@@ -1156,6 +1156,51 @@ button {
   text-align: center;
 }
 
+.email-tab-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.email-tab-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 260px;
+  background: #111111;
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+
+.email-tab-wrap:hover .email-tab-tooltip,
+.email-tab-wrap:focus-within .email-tab-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.email-tab-tooltip-row + .email-tab-tooltip-row {
+  margin-top: 8px;
+}
+
+.email-tab-tooltip-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
 .ai-preview-card {
   border-color: rgba(124, 92, 255, 0.35);
   background: linear-gradient(180deg, #f6f2ff 0%, #ffffff 100%);

@@ -33,6 +33,7 @@ export function createCampaign(input: {
   title: string;
   clientName?: string;
   description?: string;
+  audience?: string;
   htmlContent: string;
   emailTitle?: string;
 }): Campaign {
@@ -44,13 +45,14 @@ export function createCampaign(input: {
 
   db.prepare(
     `INSERT INTO campaigns
-      (id, title, client_name, description, html_content, status, magic_token, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
+      (id, title, client_name, description, audience, html_content, status, magic_token, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
   ).run(
     id,
     input.title.trim(),
     (input.clientName || "").trim(),
     (input.description || "").trim(),
+    (input.audience || "").trim(),
     input.htmlContent,
     magicToken,
     ts,
@@ -247,6 +249,7 @@ export function updateEmail(
   updates: {
     title?: string;
     htmlContent?: string;
+    purpose?: string;
     versionNote?: string;
   }
 ): CampaignEmail | null {
@@ -257,12 +260,13 @@ export function updateEmail(
   const ts = nowIso();
   const title = updates.title?.trim() ?? existing.title;
   const htmlContent = updates.htmlContent ?? existing.html_content;
+  const purpose = updates.purpose?.trim() ?? existing.purpose;
 
   db.prepare(
     `UPDATE campaign_emails
-     SET title = ?, html_content = ?, updated_at = ?
+     SET title = ?, html_content = ?, purpose = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, htmlContent, ts, emailId);
+  ).run(title, htmlContent, purpose, ts, emailId);
 
   if (updates.htmlContent && updates.htmlContent !== existing.html_content) {
     db.prepare(
@@ -303,6 +307,7 @@ export function updateCampaign(
     title?: string;
     clientName?: string;
     description?: string;
+    audience?: string;
     htmlContent?: string;
     status?: CampaignStatus;
     versionNote?: string;
@@ -317,13 +322,14 @@ export function updateCampaign(
   const title = updates.title?.trim() ?? existing.title;
   const clientName = updates.clientName?.trim() ?? existing.client_name;
   const description = updates.description?.trim() ?? existing.description;
+  const audience = updates.audience?.trim() ?? existing.audience;
   const status = updates.status ?? existing.status;
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, description = ?, status = ?, updated_at = ?
+     SET title = ?, client_name = ?, description = ?, audience = ?, status = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, clientName, description, status, ts, id);
+  ).run(title, clientName, description, audience, status, ts, id);
 
   // Legacy path: htmlContent without emailId updates first email
   if (updates.htmlContent) {

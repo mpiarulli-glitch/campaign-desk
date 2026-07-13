@@ -10,6 +10,7 @@ export default function NewCampaignPage() {
   const [title, setTitle] = useState("");
   const [clientName, setClientName] = useState("");
   const [description, setDescription] = useState("");
+  const [audience, setAudience] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
   const [fileName, setFileName] = useState("");
   const [dragActive, setDragActive] = useState(false);
@@ -33,7 +34,13 @@ export default function NewCampaignPage() {
     const res = await fetch("/api/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, clientName, description, htmlContent }),
+      body: JSON.stringify({
+        title,
+        clientName,
+        description,
+        audience,
+        htmlContent,
+      }),
     });
 
     if (res.status === 401) {
@@ -103,6 +110,16 @@ export default function NewCampaignPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Anything your boss should know before reviewing"
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="audience">Audience (optional)</label>
+            <input
+              id="audience"
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              placeholder="e.g. Past customers who bought in the last 90 days"
             />
           </div>
 

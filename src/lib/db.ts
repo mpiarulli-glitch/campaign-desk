@@ -15,6 +15,7 @@ export interface Campaign {
   title: string;
   client_name: string;
   description: string;
+  audience: string;
   html_content: string;
   status: CampaignStatus;
   magic_token: string;
@@ -28,6 +29,7 @@ export interface CampaignEmail {
   campaign_id: string;
   title: string;
   html_content: string;
+  purpose: string;
   sort_order: number;
   approved_at: string | null;
   chosen_subject_id: string | null;
@@ -110,6 +112,7 @@ export function getDb(): Database.Database {
       title TEXT NOT NULL,
       client_name TEXT NOT NULL DEFAULT '',
       description TEXT NOT NULL DEFAULT '',
+      audience TEXT NOT NULL DEFAULT '',
       html_content TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'draft',
       magic_token TEXT NOT NULL UNIQUE,
@@ -122,6 +125,7 @@ export function getDb(): Database.Database {
       campaign_id TEXT NOT NULL,
       title TEXT NOT NULL,
       html_content TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -217,6 +221,11 @@ function migrate(database: Database.Database) {
   if (!campaignCols.includes("star_rating")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN star_rating INTEGER`);
   }
+  if (!campaignCols.includes("audience")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN audience TEXT NOT NULL DEFAULT ''`
+    );
+  }
 
   const commentCols = tableColumns(database, "comments");
   if (!commentCols.includes("email_id")) {
@@ -234,6 +243,11 @@ function migrate(database: Database.Database) {
   }
   if (!emailCols.includes("chosen_subject_id")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN chosen_subject_id TEXT`);
+  }
+  if (!emailCols.includes("purpose")) {
+    database.exec(
+      `ALTER TABLE campaign_emails ADD COLUMN purpose TEXT NOT NULL DEFAULT ''`
+    );
   }
 
   // Move legacy single-html campaigns into campaign_emails

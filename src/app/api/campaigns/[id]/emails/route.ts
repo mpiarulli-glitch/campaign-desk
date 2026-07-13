@@ -89,6 +89,7 @@ export async function PATCH(request: Request, { params }: Params) {
     title: typeof body.title === "string" ? body.title : undefined,
     htmlContent:
       typeof body.htmlContent === "string" ? body.htmlContent : undefined,
+    purpose: typeof body.purpose === "string" ? body.purpose : undefined,
     versionNote:
       typeof body.versionNote === "string" ? body.versionNote : undefined,
   });

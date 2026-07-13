@@ -54,6 +54,7 @@ type EmailItem = {
   id: string;
   title: string;
   html_content: string;
+  purpose?: string;
   sort_order: number;
   open_comments: number;
   approved_at?: string | null;
@@ -66,6 +67,7 @@ type Campaign = {
   title: string;
   client_name: string;
   description: string;
+  audience: string;
   status: string;
   magic_token: string;
   updated_at: string;
@@ -114,6 +116,10 @@ export default function AdminCampaignPage() {
     { subject: string; preview: string }[]
   >([]);
   const [savingSubjects, setSavingSubjects] = useState(false);
+  const [purposeDraft, setPurposeDraft] = useState("");
+  const [savingPurpose, setSavingPurpose] = useState(false);
+  const [audienceDraft, setAudienceDraft] = useState("");
+  const [savingAudience, setSavingAudience] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -187,6 +193,14 @@ export default function AdminCampaignPage() {
     );
   }, [activeEmail?.id, activeEmail?.subjects]);
 
+  useEffect(() => {
+    setPurposeDraft(activeEmail?.purpose || "");
+  }, [activeEmail?.id, activeEmail?.purpose]);
+
+  useEffect(() => {
+    setAudienceDraft(campaign?.audience || "");
+  }, [campaign?.audience]);
+
   async function toggleEmailApproved(approved: boolean) {
     if (!activeEmail) return;
     setSaving(true);
@@ -230,6 +244,50 @@ export default function AdminCampaignPage() {
     const data = await res.json();
     if (data.emails) setEmails(data.emails);
     setMessage("Subject lines saved.");
+  }
+
+  async function savePurpose() {
+    if (!activeEmail) return;
+    setSavingPurpose(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}/emails`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailId: activeEmail.id, purpose: purposeDraft }),
+    });
+    setSavingPurpose(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save purpose.");
+      return;
+    }
+    load(activeEmail.id);
+    setMessage("Purpose saved.");
+  }
+
+  async function saveAudience() {
+    setSavingAudience(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audience: audienceDraft }),
+    });
+    setSavingAudience(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save audience.");
+      return;
+    }
+    const data = await res.json();
+    if (data.campaign) setCampaign(data.campaign);
+    setMessage("Audience saved.");
+  }
+
+  function effectiveSubject(email: EmailItem): SubjectOption | null {
+    const subs = email.subjects || [];
+    if (!subs.length) return null;
+    return subs.find((s) => s.id === email.chosen_subject_id) || subs[0];
   }
 
   const emailComments = useMemo(
@@ -644,6 +702,35 @@ export default function AdminCampaignPage() {
                 {campaign.description}
               </p>
             ) : null}
+            <div
+              className="row"
+              style={{ marginTop: 12, alignItems: "center", gap: 8 }}
+            >
+              <label
+                htmlFor="audience"
+                className="muted"
+                style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}
+              >
+                Audience
+              </label>
+              <input
+                id="audience"
+                value={audienceDraft}
+                onChange={(e) => setAudienceDraft(e.target.value)}
+                placeholder="Who this package is going to"
+                style={{ maxWidth: 340 }}
+              />
+              {audienceDraft !== (campaign.audience || "") ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={saveAudience}
+                  disabled={savingAudience}
+                >
+                  {savingAudience ? "Saving..." : "Save"}
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="toolbar">
             {canMarkRevisionDone ? (
@@ -688,24 +775,46 @@ export default function AdminCampaignPage() {
             </button>
           </div>
           <div className="email-tabs">
-            {emails.map((email, index) => (
-              <button
-                key={email.id}
-                type="button"
-                className={`email-tab ${
-                  email.id === activeEmail.id ? "active" : ""
-                }`}
-                onClick={() => selectEmail(email.id)}
-              >
-                <span className="email-tab-num">
-                  {email.approved_at ? "✓" : index + 1}
-                </span>
-                <span className="email-tab-label">{email.title}</span>
-                {email.open_comments > 0 ? (
-                  <span className="email-tab-badge">{email.open_comments}</span>
-                ) : null}
-              </button>
-            ))}
+            {emails.map((email, index) => {
+              const subject = effectiveSubject(email);
+              return (
+                <div key={email.id} className="email-tab-wrap">
+                  <button
+                    type="button"
+                    className={`email-tab ${
+                      email.id === activeEmail.id ? "active" : ""
+                    }`}
+                    onClick={() => selectEmail(email.id)}
+                  >
+                    <span className="email-tab-num">
+                      {email.approved_at ? "✓" : index + 1}
+                    </span>
+                    <span className="email-tab-label">{email.title}</span>
+                    {email.open_comments > 0 ? (
+                      <span className="email-tab-badge">
+                        {email.open_comments}
+                      </span>
+                    ) : null}
+                  </button>
+                  <div className="email-tab-tooltip">
+                    <div className="email-tab-tooltip-row">
+                      <div className="email-tab-tooltip-label">Subject</div>
+                      <div>{subject?.subject || "Not set yet"}</div>
+                    </div>
+                    <div className="email-tab-tooltip-row">
+                      <div className="email-tab-tooltip-label">
+                        Preview text
+                      </div>
+                      <div>{subject?.preview_text || "Not set yet"}</div>
+                    </div>
+                    <div className="email-tab-tooltip-row">
+                      <div className="email-tab-tooltip-label">Purpose</div>
+                      <div>{email.purpose || "Not set yet"}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             Reviewers get one magic link and can toggle between these emails.
@@ -908,6 +1017,33 @@ export default function AdminCampaignPage() {
                 onSelectPin={setActivePinId}
               />
               <EmailLinks html={activeEmail.html_content} />
+
+              <div className="card card-pad stack">
+                <h2 className="h2" style={{ margin: 0 }}>
+                  Purpose of this email
+                </h2>
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  Shown on hover over this email&apos;s tab above. Use it to
+                  note what this email is for, e.g. &quot;Announce the launch
+                  sale&quot; or &quot;Last-chance reminder.&quot;
+                </p>
+                <textarea
+                  value={purposeDraft}
+                  onChange={(e) => setPurposeDraft(e.target.value)}
+                  placeholder="What is this specific email trying to do?"
+                  style={{ minHeight: 70 }}
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={savePurpose}
+                    disabled={savingPurpose}
+                  >
+                    {savingPurpose ? "Saving..." : "Save purpose"}
+                  </button>
+                </div>
+              </div>
 
               <div className="card card-pad stack">
                 <h2 className="h2" style={{ margin: 0 }}>
