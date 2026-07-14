@@ -126,8 +126,6 @@ export default function AdminCampaignPage() {
   const [savingSubjects, setSavingSubjects] = useState(false);
   const [purposeDraft, setPurposeDraft] = useState("");
   const [savingPurpose, setSavingPurpose] = useState(false);
-  const [audienceDraft, setAudienceDraft] = useState("");
-  const [savingAudience, setSavingAudience] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -205,10 +203,6 @@ export default function AdminCampaignPage() {
     setPurposeDraft(activeEmail?.purpose || "");
   }, [activeEmail?.id, activeEmail?.purpose]);
 
-  useEffect(() => {
-    setAudienceDraft(campaign?.audience || "");
-  }, [campaign?.audience]);
-
   async function toggleEmailApproved(approved: boolean) {
     if (!activeEmail) return;
     setSaving(true);
@@ -271,25 +265,6 @@ export default function AdminCampaignPage() {
     }
     load(activeEmail.id);
     setMessage("Purpose saved.");
-  }
-
-  async function saveAudience() {
-    setSavingAudience(true);
-    setError("");
-    const res = await fetch(`/api/campaigns/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audience: audienceDraft }),
-    });
-    setSavingAudience(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not save audience.");
-      return;
-    }
-    const data = await res.json();
-    if (data.campaign) setCampaign(data.campaign);
-    setMessage("Audience saved.");
   }
 
   function effectiveSubject(email: EmailItem): SubjectOption | null {
@@ -594,26 +569,6 @@ export default function AdminCampaignPage() {
     load(activeEmailId);
   }
 
-  async function markApproved() {
-    setSaving(true);
-    setMessage("");
-    setError("");
-    const res = await fetch(`/api/campaigns/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markApproved: true }),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      setError("Could not approve campaign.");
-      return;
-    }
-    setStatus("approved");
-    setMessage(
-      "Approved. The email team has been notified and feedback is closed on the review link."
-    );
-    load(activeEmailId);
-  }
 
   async function addEmail(e: FormEvent) {
     e.preventDefault();
@@ -742,49 +697,11 @@ export default function AdminCampaignPage() {
                 {campaign.description}
               </p>
             ) : null}
-            <div
-              className="row"
-              style={{ marginTop: 12, alignItems: "center", gap: 8 }}
-            >
-              <label
-                htmlFor="audience"
-                className="muted"
-                style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}
-              >
-                Audience
-              </label>
-              <input
-                id="audience"
-                value={audienceDraft}
-                onChange={(e) => setAudienceDraft(e.target.value)}
-                placeholder="Who this package is going to"
-                style={{ maxWidth: 340 }}
-              />
-              {audienceDraft !== (campaign.audience || "") ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={saveAudience}
-                  disabled={savingAudience}
-                >
-                  {savingAudience ? "Saving..." : "Save"}
-                </button>
-              ) : null}
-            </div>
           </div>
           <div className="toolbar">
             {canMarkRevisionDone ? (
               <button className="btn" onClick={markRevisionDone} disabled={saving}>
                 {saving ? "Saving..." : "Mark revision done"}
-              </button>
-            ) : null}
-            {!isApproved ? (
-              <button
-                className="btn btn-approve"
-                onClick={markApproved}
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Approve and notify email team"}
               </button>
             ) : null}
             <select
@@ -929,42 +846,30 @@ export default function AdminCampaignPage() {
           <div className="card card-pad approve-card is-approved">
             <strong>This package is approved.</strong>
             <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-              The email team has been notified. Feedback is closed. Change the
-              status dropdown if you need to reopen it.
+              Feedback is closed. Change the status dropdown if you need to
+              reopen it.
             </p>
           </div>
-        ) : (
+        ) : canMarkRevisionDone ? (
           <div className="card next-steps-bar">
             <div className="next-steps-copy">
               <strong>Next step</strong>
               <span className="muted">
-                {canMarkRevisionDone
-                  ? "Send it back for review, or approve to notify the email team."
-                  : "Approve to notify the email team and close new comments."}
+                Resolve open feedback and send it back for review.
               </span>
             </div>
             <div className="row next-steps-actions">
-              {canMarkRevisionDone ? (
-                <button
-                  className="btn btn-secondary"
-                  onClick={markRevisionDone}
-                  disabled={saving}
-                  title="Marks all open feedback resolved and sets status to In review so your boss can check the update."
-                >
-                  {saving ? "Saving..." : "Mark revision done"}
-                </button>
-              ) : null}
               <button
-                className="btn btn-approve"
-                onClick={markApproved}
+                className="btn"
+                onClick={markRevisionDone}
                 disabled={saving}
-                title="Resolves open feedback and closes new comments on the review link."
+                title="Marks all open feedback resolved and sets status to In review so your boss can check the update."
               >
-                {saving ? "Saving..." : "Approve & notify"}
+                {saving ? "Saving..." : "Mark revision done"}
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
         <div className="card card-pad stack review-links-card">
           <strong>Review links</strong>
