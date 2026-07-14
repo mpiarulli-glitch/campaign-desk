@@ -85,6 +85,19 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [view, setView] = useState<View>("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("month");
+  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+
+  function toggleFolder(key: string) {
+    setOpenFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 
   async function load() {
     setLoading(true);
@@ -165,14 +178,20 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className={`preview-device-btn ${groupBy === "month" ? "active" : ""}`}
-                    onClick={() => setGroupBy("month")}
+                    onClick={() => {
+                      setGroupBy("month");
+                      setOpenFolders(new Set());
+                    }}
                   >
                     By month
                   </button>
                   <button
                     type="button"
                     className={`preview-device-btn ${groupBy === "client" ? "active" : ""}`}
-                    onClick={() => setGroupBy("client")}
+                    onClick={() => {
+                      setGroupBy("client");
+                      setOpenFolders(new Set());
+                    }}
                   >
                     By client
                   </button>
@@ -206,23 +225,36 @@ export default function AdminPage() {
                     ? monthGroups(campaigns)
                     : clientGroups(campaigns);
                 return (
-                  <div className="stack" style={{ gap: 20 }}>
-                    {groups.map((g) => (
-                      <div key={g.key} className="folder-group">
-                        <div className="folder-header">
-                          <span aria-hidden="true">📁</span>
-                          {g.label}
-                          <span className="muted" style={{ fontWeight: 400 }}>
-                            {g.items.length}
-                          </span>
+                  <div className="stack" style={{ gap: 12 }}>
+                    {groups.map((g) => {
+                      const isOpen = openFolders.has(g.key);
+                      return (
+                        <div key={g.key} className="folder-group">
+                          <button
+                            type="button"
+                            className="folder-header"
+                            onClick={() => toggleFolder(g.key)}
+                            aria-expanded={isOpen}
+                          >
+                            <span aria-hidden="true">{isOpen ? "📂" : "📁"}</span>
+                            {g.label}
+                            <span className="muted" style={{ fontWeight: 400 }}>
+                              {g.items.length}
+                            </span>
+                            <span className="folder-chevron" aria-hidden="true">
+                              {isOpen ? "▾" : "▸"}
+                            </span>
+                          </button>
+                          {isOpen ? (
+                            <div className="campaign-list">
+                              {g.items.map((c) => (
+                                <CampaignCard key={c.id} c={c} />
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
-                        <div className="campaign-list">
-                          {g.items.map((c) => (
-                            <CampaignCard key={c.id} c={c} />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()
