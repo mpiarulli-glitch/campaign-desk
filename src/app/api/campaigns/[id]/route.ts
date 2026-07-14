@@ -9,6 +9,7 @@ import {
   listEmailsWithSubjects,
   setEmailSubjects,
   setEmailApproved,
+  setCampaignArchived,
   updateCampaign,
   unapproveCampaign,
   countOpenComments,
@@ -113,6 +114,21 @@ export async function PATCH(request: Request, { params }: Params) {
         ...e,
         open_comments: countOpenComments(id, e.id),
       })),
+    });
+  }
+
+  if (typeof body.archived === "boolean") {
+    const campaign = setCampaignArchived(id, body.archived);
+    if (!campaign) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({
+      campaign: {
+        ...campaign,
+        open_comments: countOpenComments(id),
+        review_url: reviewUrl(campaign.magic_token),
+      },
+      message: body.archived ? "Campaign archived" : "Campaign restored",
     });
   }
 

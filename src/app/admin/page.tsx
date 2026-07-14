@@ -18,6 +18,7 @@ type CampaignRow = {
   open_comments: number;
   email_count?: number;
   magic_token: string;
+  archived_at?: string | null;
 };
 
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
@@ -55,7 +56,17 @@ function clientGroups(rows: CampaignRow[]) {
     .map(([key, items]) => ({ key, label: key, items }));
 }
 
-function CampaignCard({ c }: { c: CampaignRow }) {
+function CampaignCard({
+  c,
+  filter,
+  busyId,
+  onArchive,
+}: {
+  c: CampaignRow;
+  filter: "active" | "archived";
+  busyId: string | null;
+  onArchive: (id: string, archived: boolean) => void;
+}) {
   return (
     <Link href={`/admin/campaigns/${c.id}`} className="campaign-item">
       <div>
@@ -73,7 +84,25 @@ function CampaignCard({ c }: { c: CampaignRow }) {
             : ""}
         </div>
       </div>
-      <StatusBadge status={c.status} />
+      <div className="row" style={{ alignItems: "center", gap: 8 }}>
+        <StatusBadge status={c.status} />
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={busyId === c.id}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onArchive(c.id, filter === "active");
+          }}
+        >
+          {busyId === c.id
+            ? "..."
+            : filter === "active"
+              ? "Archive"
+              : "Restore"}
+        </button>
+      </div>
     </Link>
   );
 }
@@ -86,6 +115,8 @@ export default function AdminPage() {
   const [view, setView] = useState<View>("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("month");
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<"active" | "archived">("active");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   function toggleFolder(key: string) {
     setOpenFolders((prev) => {
@@ -99,10 +130,12 @@ export default function AdminPage() {
     });
   }
 
-  async function load() {
+  async function load(nextFilter: "active" | "archived" = filter) {
     setLoading(true);
     setError("");
-    const res = await fetch("/api/campaigns");
+    const res = await fetch(
+      `/api/campaigns${nextFilter === "archived" ? "?archived=1" : ""}`
+    );
     if (res.status === 401) {
       router.push("/login");
       return;
@@ -117,9 +150,24 @@ export default function AdminPage() {
     setLoading(false);
   }
 
-  useEffect(() => {
+  async function setArchived(id: string, archived: boolean) {
+    setBusyId(id);
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    });
+    setBusyId(null);
+    if (!res.ok) {
+      setError(archived ? "Could not archive." : "Could not restore.");
+      return;
+    }
     load();
-  }, []);
+  }
+
+  useEffect(() => {
+    load(filter);
+  }, [filter]);
 
   async function logout() {
     await fetch("/api/auth", { method: "DELETE" });
@@ -153,6 +201,21 @@ export default function AdminPage() {
         </div>
 
         {error ? <p className="error">{error}</p> : null}
+
+        <div className="tabs" style={{ marginBottom: 4 }}>
+          <button
+            className={`tab ${filter === "active" ? "active" : ""}`}
+            onClick={() => setFilter("active")}
+          >
+            Active
+          </button>
+          <button
+            className={`tab ${filter === "archived" ? "active" : ""}`}
+            onClick={() => setFilter("archived")}
+          >
+            Archived
+          </button>
+        </div>
 
         <div className="dashboard-grid">
           <div className="stack" style={{ gap: 12 }}>
@@ -202,20 +265,32 @@ export default function AdminPage() {
             {loading ? (
               <p className="muted">Loading...</p>
             ) : campaigns.length === 0 ? (
-              <div className="empty">
-                <p>No campaigns yet.</p>
-                <Link
-                  className="btn"
-                  href="/admin/new"
-                  style={{ marginTop: 12 }}
-                >
-                  Upload your first email
-                </Link>
-              </div>
+              filter === "archived" ? (
+                <div className="empty">
+                  <p>No archived campaigns.</p>
+                </div>
+              ) : (
+                <div className="empty">
+                  <p>No campaigns yet.</p>
+                  <Link
+                    className="btn"
+                    href="/admin/new"
+                    style={{ marginTop: 12 }}
+                  >
+                    Upload your first email
+                  </Link>
+                </div>
+              )
             ) : view === "all" ? (
               <div className="campaign-list">
                 {campaigns.map((c) => (
-                  <CampaignCard key={c.id} c={c} />
+                  <CampaignCard
+                    key={c.id}
+                    c={c}
+                    filter={filter}
+                    busyId={busyId}
+                    onArchive={setArchived}
+                  />
                 ))}
               </div>
             ) : (
@@ -248,7 +323,13 @@ export default function AdminPage() {
                           {isOpen ? (
                             <div className="campaign-list">
                               {g.items.map((c) => (
-                                <CampaignCard key={c.id} c={c} />
+                                <CampaignCard
+                                  key={c.id}
+                                  c={c}
+                                  filter={filter}
+                                  busyId={busyId}
+                                  onArchive={setArchived}
+                                />
                               ))}
                             </div>
                           ) : null}

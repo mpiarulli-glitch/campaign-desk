@@ -76,6 +76,7 @@ type Campaign = {
   external_review_url: string;
   open_comments: number;
   email_count?: number;
+  archived_at?: string | null;
 };
 
 export default function AdminCampaignPage() {
@@ -659,6 +660,27 @@ export default function AdminCampaignPage() {
     load(null);
   }
 
+  async function toggleArchived() {
+    if (!campaign) return;
+    const archived = !campaign.archived_at;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError(archived ? "Could not archive." : "Could not restore.");
+      return;
+    }
+    const data = await res.json();
+    if (data.campaign) setCampaign(data.campaign);
+    setMessage(archived ? "Campaign archived." : "Campaign restored.");
+  }
+
   async function removeCampaign() {
     if (!confirm("Delete this campaign and all feedback?")) return;
     const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
@@ -700,7 +722,9 @@ export default function AdminCampaignPage() {
           style={{ justifyContent: "space-between", alignItems: "flex-start" }}
         >
           <div>
-            <p className="eyebrow">Review package</p>
+            <p className="eyebrow">
+              Review package{campaign.archived_at ? " · Archived" : ""}
+            </p>
             <h1 className="h1">{campaign.title}</h1>
             <p className="muted" style={{ margin: "8px 0 0" }}>
               {campaign.client_name ? `${campaign.client_name} · ` : ""}
@@ -768,6 +792,13 @@ export default function AdminCampaignPage() {
               <option value="needs_changes">Needs changes</option>
               <option value="approved">Approved</option>
             </select>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={toggleArchived}
+              disabled={saving}
+            >
+              {campaign.archived_at ? "Restore" : "Archive"}
+            </button>
             <button className="btn btn-danger btn-sm" onClick={removeCampaign}>
               Delete
             </button>

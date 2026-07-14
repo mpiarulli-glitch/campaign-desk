@@ -3,16 +3,21 @@ import { isAdminAuthenticated } from "@/lib/auth";
 import {
   createCampaign,
   listCampaigns,
+  listArchivedCampaigns,
   countOpenComments,
   countEmails,
 } from "@/lib/campaigns";
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const campaigns = listCampaigns().map((c) => ({
+  const archived =
+    new URL(request.url).searchParams.get("archived") === "1";
+  const source = archived ? listArchivedCampaigns() : listCampaigns();
+
+  const campaigns = source.map((c) => ({
     ...c,
     open_comments: countOpenComments(c.id),
     email_count: countEmails(c.id),

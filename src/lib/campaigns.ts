@@ -84,10 +84,31 @@ export function createCampaign(input: {
   return getCampaignById(id)!;
 }
 
-export function listCampaigns(): Campaign[] {
+export function listCampaigns(includeArchived = false): Campaign[] {
+  const where = includeArchived ? "" : "WHERE archived_at IS NULL";
   return getDb()
-    .prepare(`SELECT * FROM campaigns ORDER BY updated_at DESC`)
+    .prepare(`SELECT * FROM campaigns ${where} ORDER BY updated_at DESC`)
     .all() as Campaign[];
+}
+
+export function listArchivedCampaigns(): Campaign[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM campaigns WHERE archived_at IS NOT NULL ORDER BY archived_at DESC`
+    )
+    .all() as Campaign[];
+}
+
+export function setCampaignArchived(
+  id: string,
+  archived: boolean
+): Campaign | null {
+  const existing = getCampaignById(id);
+  if (!existing) return null;
+  getDb()
+    .prepare(`UPDATE campaigns SET archived_at = ? WHERE id = ?`)
+    .run(archived ? nowIso() : null, id);
+  return getCampaignById(id);
 }
 
 export function getCampaignById(id: string): Campaign | null {

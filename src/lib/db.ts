@@ -24,6 +24,7 @@ export interface Campaign {
   external_token: string;
   star_rating: number | null;
   approved_at: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -228,6 +229,9 @@ function migrate(database: Database.Database) {
   const campaignCols = tableColumns(database, "campaigns");
   if (!campaignCols.includes("star_rating")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN star_rating INTEGER`);
+  }
+  if (!campaignCols.includes("archived_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN archived_at TEXT`);
   }
   if (!campaignCols.includes("audience")) {
     database.exec(
