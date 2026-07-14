@@ -10,6 +10,7 @@ import {
   setEmailSubjects,
   setEmailApproved,
   updateCampaign,
+  unapproveCampaign,
   countOpenComments,
   markRevisionDone,
   markApproved,
@@ -84,7 +85,7 @@ export async function PATCH(request: Request, { params }: Params) {
       markApproved(id);
     }
     if (!approved && existing.status === "approved") {
-      updateCampaign(id, { status: "in_review" });
+      unapproveCampaign(id);
     }
     return NextResponse.json({
       emails: listEmailsWithSubjects(id).map((e) => ({

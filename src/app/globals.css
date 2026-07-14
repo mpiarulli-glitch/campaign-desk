@@ -462,6 +462,21 @@ button {
   gap: 12px;
 }
 
+.folder-group {
+  display: grid;
+  gap: 10px;
+}
+
+.folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
 .campaign-item {
   position: relative;
   display: flex;

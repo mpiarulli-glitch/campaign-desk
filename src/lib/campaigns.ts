@@ -332,6 +332,7 @@ export function updateCampaign(
     status?: CampaignStatus;
     versionNote?: string;
     emailId?: string;
+    approvedAt?: string | null;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
@@ -344,12 +345,14 @@ export function updateCampaign(
   const description = updates.description?.trim() ?? existing.description;
   const audience = updates.audience?.trim() ?? existing.audience;
   const status = updates.status ?? existing.status;
+  const approvedAt =
+    updates.approvedAt !== undefined ? updates.approvedAt : existing.approved_at;
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, description = ?, audience = ?, status = ?, updated_at = ?
+     SET title = ?, client_name = ?, description = ?, audience = ?, status = ?, approved_at = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, clientName, description, audience, status, ts, id);
+  ).run(title, clientName, description, audience, status, approvedAt, ts, id);
 
   // Legacy path: htmlContent without emailId updates first email
   if (updates.htmlContent) {
@@ -613,12 +616,23 @@ export function markApproved(campaignId: string): Campaign | null {
   resolveAllComments(campaignId);
   // Stamp every email approved so per-email state matches the whole-package
   // approval.
+  const ts = nowIso();
   getDb()
     .prepare(
       `UPDATE campaign_emails SET approved_at = ? WHERE campaign_id = ? AND approved_at IS NULL`
     )
-    .run(nowIso(), campaignId);
-  return updateCampaign(campaignId, { status: "approved" });
+    .run(ts, campaignId);
+  return updateCampaign(campaignId, { status: "approved", approvedAt: ts });
+}
+
+// Move a campaign back out of "approved" (e.g. a single email got
+// un-approved). Clears approved_at so it drops out of the approvals
+// folders until it's approved again.
+export function unapproveCampaign(campaignId: string): Campaign | null {
+  return updateCampaign(campaignId, {
+    status: "in_review",
+    approvedAt: null,
+  });
 }
 
 // Approve (or un-approve) a single email. Returns whether every email in the

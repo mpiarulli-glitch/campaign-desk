@@ -11,6 +11,7 @@ import {
   setChosenSubject,
   updateCampaign,
   markApproved,
+  unapproveCampaign,
   setEmailApproved,
   countOpenComments,
 } from "@/lib/campaigns";
@@ -209,7 +210,7 @@ export async function POST(request: Request, { params }: Params) {
     }
     setEmailApproved(target.id, false);
     if (campaign.status === "approved") {
-      updateCampaign(campaign.id, { status: "in_review" });
+      unapproveCampaign(campaign.id);
     }
     const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({

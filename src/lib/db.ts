@@ -23,6 +23,7 @@ export interface Campaign {
   magic_token: string;
   external_token: string;
   star_rating: number | null;
+  approved_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -121,6 +122,7 @@ export function getDb(): Database.Database {
       status TEXT NOT NULL DEFAULT 'draft',
       magic_token TEXT NOT NULL UNIQUE,
       external_token TEXT UNIQUE,
+      approved_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -230,6 +232,14 @@ function migrate(database: Database.Database) {
   if (!campaignCols.includes("audience")) {
     database.exec(
       `ALTER TABLE campaigns ADD COLUMN audience TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (!campaignCols.includes("approved_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN approved_at TEXT`);
+    // Backfill from updated_at for campaigns that are already approved, so
+    // pre-existing approvals still land in a sensible month folder.
+    database.exec(
+      `UPDATE campaigns SET approved_at = updated_at WHERE status = 'approved' AND approved_at IS NULL`
     );
   }
   if (!campaignCols.includes("external_token")) {
