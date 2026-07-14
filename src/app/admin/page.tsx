@@ -12,6 +12,7 @@ type CampaignRow = {
   title: string;
   client_name: string;
   status: string;
+  created_at: string;
   updated_at: string;
   approved_at: string | null;
   open_comments: number;
@@ -24,14 +25,15 @@ const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-type View = "all" | "approvals";
+type View = "all" | "folders";
 type GroupBy = "client" | "month";
 
+// Grouped by the month the campaign was created/sent, not by approval date,
+// so pending and in-review campaigns land in a folder too.
 function monthGroups(rows: CampaignRow[]) {
   const map = new Map<string, { label: string; items: CampaignRow[] }>();
   for (const c of rows) {
-    if (!c.approved_at) continue;
-    const d = new Date(c.approved_at);
+    const d = new Date(c.created_at);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     if (!map.has(key)) map.set(key, { label: MONTH_FORMAT.format(d), items: [] });
     map.get(key)!.items.push(c);
@@ -152,13 +154,13 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="button"
-                  className={`preview-device-btn ${view === "approvals" ? "active" : ""}`}
-                  onClick={() => setView("approvals")}
+                  className={`preview-device-btn ${view === "folders" ? "active" : ""}`}
+                  onClick={() => setView("folders")}
                 >
-                  Approvals
+                  Folders
                 </button>
               </div>
-              {view === "approvals" ? (
+              {view === "folders" ? (
                 <div className="row" style={{ gap: 6 }}>
                   <button
                     type="button"
@@ -199,12 +201,10 @@ export default function AdminPage() {
               </div>
             ) : (
               (() => {
-                const approved = campaigns.filter((c) => c.status === "approved");
-                if (approved.length === 0) {
-                  return <div className="empty">No approvals yet.</div>;
-                }
                 const groups =
-                  groupBy === "month" ? monthGroups(approved) : clientGroups(approved);
+                  groupBy === "month"
+                    ? monthGroups(campaigns)
+                    : clientGroups(campaigns);
                 return (
                   <div className="stack" style={{ gap: 20 }}>
                     {groups.map((g) => (
