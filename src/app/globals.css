@@ -1149,6 +1149,31 @@ button {
   gap: 8px;
 }
 
+/* Both review links share one card, split into stacked rows. */
+.review-links-card {
+  gap: 14px;
+}
+
+.review-link-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-link-row + .review-link-row {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 14px;
+}
+
+.review-link-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.review-link-label .muted {
+  font-weight: 400;
+}
+
 .approve-card {
   border-color: rgba(31, 157, 99, 0.35);
   background: linear-gradient(180deg, #edf9f3 0%, #ffffff 100%);

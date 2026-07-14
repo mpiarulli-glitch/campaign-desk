@@ -966,39 +966,52 @@ export default function AdminCampaignPage() {
           </div>
         )}
 
-        <div className="card card-pad stack">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <strong>Internal review link</strong>
-            <button className="btn btn-secondary btn-sm" onClick={copyLink}>
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          </div>
-          <div className="copy-box">
-            <code>{campaign.review_url}</code>
-          </div>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            For your boss or team. Shows every comment, including feedback
-            left on the external link.
-          </p>
-        </div>
+        <div className="card card-pad stack review-links-card">
+          <strong>Review links</strong>
 
-        <div className="card card-pad stack">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <strong>External review link</strong>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={copyExternalLink}
+          <div className="review-link-row">
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", alignItems: "center" }}
             >
-              {copiedExternal ? "Copied" : "Copy link"}
-            </button>
+              <span className="review-link-label">
+                Internal <span className="muted">· boss / team</span>
+              </span>
+              <button className="btn btn-secondary btn-sm" onClick={copyLink}>
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <div className="copy-box">
+              <code>{campaign.review_url}</code>
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              Shows every comment, including feedback left on the external link.
+            </p>
           </div>
-          <div className="copy-box">
-            <code>{campaign.external_review_url}</code>
+
+          <div className="review-link-row">
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", alignItems: "center" }}
+            >
+              <span className="review-link-label">
+                External <span className="muted">· client</span>
+              </span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={copyExternalLink}
+              >
+                {copiedExternal ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <div className="copy-box">
+              <code>{campaign.external_review_url}</code>
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              For the client. They can leave feedback and approve, but never see
+              comments left on the internal link.
+            </p>
           </div>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            For the client. They can leave feedback and approve like normal,
-            but never see comments left on the internal link.
-          </p>
         </div>
 
         {message ? <p className="success">{message}</p> : null}
