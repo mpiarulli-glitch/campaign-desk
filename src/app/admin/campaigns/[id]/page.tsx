@@ -925,53 +925,44 @@ export default function AdminCampaignPage() {
           ) : null}
         </div>
 
-        {canMarkRevisionDone ? (
-          <div className="card card-pad revision-done-card">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div>
-                <strong>Finished the changes?</strong>
-                <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-                  Marks all open feedback resolved and sets status to In review
-                  so your boss can check the update.
-                </p>
-              </div>
-              <button className="btn" onClick={markRevisionDone} disabled={saving}>
-                {saving ? "Saving..." : "Mark revision done"}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {!isApproved ? (
-          <div className="card card-pad approve-card">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div>
-                <strong>Ready to approve?</strong>
-                <p
-                  className="muted"
-                  style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.55 }}
-                >
-                  Click this button and let the email team know this is approved.
-                  That resolves open feedback and closes new comments on the
-                  review link.
-                </p>
-              </div>
-              <button
-                className="btn btn-approve"
-                onClick={markApproved}
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Approve and notify email team"}
-              </button>
-            </div>
-          </div>
-        ) : (
+        {isApproved ? (
           <div className="card card-pad approve-card is-approved">
             <strong>This package is approved.</strong>
             <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
               The email team has been notified. Feedback is closed. Change the
               status dropdown if you need to reopen it.
             </p>
+          </div>
+        ) : (
+          <div className="card next-steps-bar">
+            <div className="next-steps-copy">
+              <strong>Next step</strong>
+              <span className="muted">
+                {canMarkRevisionDone
+                  ? "Send it back for review, or approve to notify the email team."
+                  : "Approve to notify the email team and close new comments."}
+              </span>
+            </div>
+            <div className="row next-steps-actions">
+              {canMarkRevisionDone ? (
+                <button
+                  className="btn btn-secondary"
+                  onClick={markRevisionDone}
+                  disabled={saving}
+                  title="Marks all open feedback resolved and sets status to In review so your boss can check the update."
+                >
+                  {saving ? "Saving..." : "Mark revision done"}
+                </button>
+              ) : null}
+              <button
+                className="btn btn-approve"
+                onClick={markApproved}
+                disabled={saving}
+                title="Resolves open feedback and closes new comments on the review link."
+              >
+                {saving ? "Saving..." : "Approve & notify"}
+              </button>
+            </div>
           </div>
         )}
 
