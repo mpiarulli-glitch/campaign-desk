@@ -1243,7 +1243,7 @@ export default function AdminCampaignPage() {
                     onClick={() => toggleEmailApproved(false)}
                     disabled={saving}
                   >
-                    Un-approve email
+                    Un-approve {activeEmail.kind === "interactive" ? "form/quiz" : "email"}
                   </button>
                 ) : (
                   <button
@@ -1251,7 +1251,7 @@ export default function AdminCampaignPage() {
                     onClick={() => toggleEmailApproved(true)}
                     disabled={saving}
                   >
-                    Approve email
+                    Approve {activeEmail.kind === "interactive" ? "form/quiz" : "email"}
                   </button>
                 )}
                 {openCount > 0 ? (

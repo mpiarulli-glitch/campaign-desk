@@ -286,9 +286,13 @@ export default function ReviewPage() {
   }
 
   async function approveOneEmail(emailId: string) {
+    const noun =
+      emails.find((e) => e.id === emailId)?.kind === "interactive"
+        ? "form/quiz"
+        : "email";
     if (
       !confirm(
-        "Approve this email? This tells the team this one is good to go."
+        `Approve this ${noun}? This tells the team this one is good to go.`
       )
     ) {
       return;
@@ -417,6 +421,9 @@ export default function ReviewPage() {
 
   const locked = campaign.status === "approved";
   const activeIndex = emails.findIndex((e) => e.id === activeEmail.id);
+  // Copy adapts per item so a quiz/form isn't called an "email".
+  const isInteractive = activeEmail.kind === "interactive";
+  const itemNoun = isInteractive ? "form/quiz" : "email";
 
   return (
     <div className="app-shell">
@@ -427,7 +434,7 @@ export default function ReviewPage() {
 
       <main className="container container-wide stack">
         <div>
-          <p className="eyebrow">Email review</p>
+          <p className="eyebrow">Review</p>
           <h1 className="h1">{campaign.title}</h1>
           <p className="muted" style={{ margin: "8px 0 0" }}>
             {campaign.client_name ? `${campaign.client_name} · ` : ""}
@@ -555,7 +562,7 @@ export default function ReviewPage() {
                   onClick={() => approveOneEmail(activeEmail.id)}
                   disabled={approving}
                 >
-                  Approve this email
+                  Approve this {itemNoun}
                 </button>
               ) : null}
             </div>
@@ -574,13 +581,13 @@ export default function ReviewPage() {
                   className={`tab ${mode === "pin" ? "active" : ""}`}
                   onClick={() => setMode("pin")}
                 >
-                  Pin on email
+                  Pin on {itemNoun}
                 </button>
                 {mode === "pin" ? (
                   <span className="muted" style={{ fontSize: 13 }}>
                     {pendingPin
                       ? "Pin placed. Write your note on the right."
-                      : "Click anywhere on the email to drop a pin."}
+                      : `Click anywhere on the ${itemNoun} to drop a pin.`}
                   </span>
                 ) : null}
               </div>
@@ -772,9 +779,9 @@ export default function ReviewPage() {
             ) : null}
 
             <div className="card card-pad stack">
-              <h2 className="h2">Comments on this email</h2>
+              <h2 className="h2">Comments on this {itemNoun}</h2>
               {emailComments.length === 0 ? (
-                <div className="empty">No comments on this email yet.</div>
+                <div className="empty">No comments on this {itemNoun} yet.</div>
               ) : (
                 <div className="comment-list">
                   {emailComments.map((c) => (
