@@ -17,8 +17,42 @@ type Props = {
   pinMode?: boolean;
   onPlacePin?: (xPercent: number, yPercent: number) => void;
   onSelectPin?: (id: string) => void;
-  interactiveEmail?: boolean;
+  // When true the content is a form/quiz: its JS runs in a sandboxed iframe so
+  // reviewers can click through it. Height is reported by the injected script
+  // (the frame is script-enabled but NOT same-origin, so we can't measure it
+  // from the parent the way we do for static emails).
+  interactive?: boolean;
 };
+
+// Injected into interactive previews. Reports the document height to the parent
+// via postMessage on load, resize, interaction, and DOM mutation, so the iframe
+// grows/shrinks as the reviewer moves through a multi-step quiz.
+const HEIGHT_SCRIPT = `<script>
+(function(){
+  function measure(){
+    return Math.max(
+      document.body ? document.body.scrollHeight : 0,
+      document.documentElement ? document.documentElement.scrollHeight : 0,
+      document.body ? document.body.offsetHeight : 0
+    );
+  }
+  var last = 0;
+  function report(){
+    var v = measure();
+    if (v && v !== last){ last = v; parent.postMessage({ __cdHeight: v }, "*"); }
+  }
+  window.addEventListener("load", report);
+  window.addEventListener("resize", report);
+  document.addEventListener("click", function(){ setTimeout(report, 60); });
+  document.addEventListener("input", function(){ setTimeout(report, 60); });
+  if (window.ResizeObserver){ try { new ResizeObserver(report).observe(document.documentElement); } catch(e){} }
+  if (window.MutationObserver){
+    try { new MutationObserver(report).observe(document.documentElement, { subtree:true, childList:true, attributes:true }); } catch(e){}
+  }
+  setInterval(report, 800);
+  report();
+})();
+<\/script>`;
 
 async function waitForImages(doc: Document): Promise<void> {
   const images = Array.from(doc.images || []);
@@ -59,7 +93,7 @@ export function EmailPreview({
   pinMode = false,
   onPlacePin,
   onSelectPin,
-  interactiveEmail = false,
+  interactive = false,
 }: Props) {
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -74,12 +108,29 @@ export function EmailPreview({
   const passThrough = !pinMode;
 
   const srcDoc = useMemo(() => {
+    if (interactive) {
+      const looksFullDoc =
+        /<html[\s>]/i.test(html) || /<!doctype/i.test(html);
+      if (looksFullDoc) {
+        // Author supplied a full document; run it as-is and just append the
+        // height reporter (before </body> when present).
+        return html.includes("</body>")
+          ? html.replace("</body>", `${HEIGHT_SCRIPT}</body>`)
+          : html + HEIGHT_SCRIPT;
+      }
+      // Bare fragment: wrap it in a clean white canvas (no email chrome) and
+      // let the quiz control its own styling.
+      return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
+        html,body{margin:0;padding:0;background:#ffffff;}
+        img{max-width:100%;height:auto;}
+      </style></head><body>${html}${HEIGHT_SCRIPT}</body></html>`;
+    }
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>
       html,body{margin:0;padding:0;background:#f4f6f8;}
       body{padding:16px 0;}
       img{max-width:100%;height:auto;}
     </style></head><body>${html}</body></html>`;
-  }, [html]);
+  }, [html, interactive]);
 
   const freezeHeight = useCallback(async () => {
     const iframe = iframeRef.current;
@@ -113,6 +164,19 @@ export function EmailPreview({
     setReady(false);
     setHeight(700);
     setHoverHref(null);
+
+    // Interactive frames are script-enabled but not same-origin, so we can't
+    // read their document. Show as soon as they load; height arrives via
+    // postMessage (see the message listener effect below).
+    if (interactive) {
+      const onLoadInteractive = () => setReady(true);
+      iframe.addEventListener("load", onLoadInteractive);
+      if (iframe.contentWindow) {
+        // srcDoc may already be loaded.
+        setReady(true);
+      }
+      return () => iframe.removeEventListener("load", onLoadInteractive);
+    }
 
     // Report the destination of whatever link the mouse is over, so the parent
     // can show it in a corner bar (like a browser status bar). Requires
@@ -158,7 +222,26 @@ export function EmailPreview({
         // ignore
       }
     };
-  }, [srcDoc, freezeHeight]);
+  }, [srcDoc, freezeHeight, interactive]);
+
+  // Interactive frames report their own height via postMessage. Match the
+  // message to this instance's iframe so multiple previews on one page (e.g.
+  // the admin "Current" vs "AI version" split) don't cross wires.
+  useEffect(() => {
+    if (!interactive) return;
+    function onMessage(e: MessageEvent) {
+      const iframe = iframeRef.current;
+      if (iframe && e.source !== iframe.contentWindow) return;
+      const data = e.data as { __cdHeight?: unknown } | null;
+      if (data && typeof data.__cdHeight === "number") {
+        const next = Math.max(300, Math.min(6000, Math.round(data.__cdHeight)));
+        setHeight(next);
+        setReady(true);
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [interactive]);
 
   // Re-measure height when switching device width: the email reflows (mobile
   // is usually taller), so the frozen height must be recomputed.
@@ -211,10 +294,12 @@ export function EmailPreview({
         </button>
       </div>
       {!ready ? (
-        <div className="preview-loading">Loading email preview...</div>
+        <div className="preview-loading">
+          {interactive ? "Loading preview..." : "Loading email preview..."}
+        </div>
       ) : null}
       <div
-        className={`preview-canvas ${interactiveEmail ? "interactive" : ""} ${
+        className={`preview-canvas ${interactive ? "interactive" : ""} ${
           ready ? "is-ready" : "is-loading"
         }`}
         style={{
@@ -225,9 +310,13 @@ export function EmailPreview({
       >
         <iframe
           ref={iframeRef}
-          title="Email preview"
+          title={interactive ? "Interactive preview" : "Email preview"}
           srcDoc={srcDoc}
-          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          sandbox={
+            interactive
+              ? "allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
+              : "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          }
           style={{
             height,
             width: "100%",

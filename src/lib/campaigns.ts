@@ -11,6 +11,7 @@ import {
   type CommentReply,
   type CampaignVersion,
   type EmailSubject,
+  type EmailKind,
   type ReviewChannel,
 } from "./db";
 
@@ -37,6 +38,7 @@ export function createCampaign(input: {
   audience?: string;
   htmlContent: string;
   emailTitle?: string;
+  kind?: EmailKind;
 }): Campaign {
   const db = getDb();
   const id = nanoid(12);
@@ -64,13 +66,14 @@ export function createCampaign(input: {
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 0, ?, ?)`
+      (id, campaign_id, title, html_content, kind, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     emailId,
     id,
     (input.emailTitle || "Email 1").trim() || "Email 1",
     input.htmlContent,
+    input.kind === "interactive" ? "interactive" : "email",
     ts,
     ts
   );
@@ -247,6 +250,7 @@ export function addEmail(input: {
   campaignId: string;
   title: string;
   htmlContent: string;
+  kind?: EmailKind;
 }): CampaignEmail | null {
   const campaign = getCampaignById(input.campaignId);
   if (!campaign) return null;
@@ -263,13 +267,14 @@ export function addEmail(input: {
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+      (id, campaign_id, title, html_content, kind, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.campaignId,
     input.title.trim() || `Email ${maxRow.max_order + 2}`,
     input.htmlContent,
+    input.kind === "interactive" ? "interactive" : "email",
     maxRow.max_order + 1,
     ts,
     ts

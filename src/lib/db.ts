@@ -11,6 +11,10 @@ export type CampaignStatus =
 
 export type CommentType = "general" | "inline";
 export type ReviewChannel = "internal" | "external";
+// "email" = static HTML email (scripts stripped in preview).
+// "interactive" = form/quiz whose JS runs in a sandboxed iframe so reviewers
+// can actually click through it.
+export type EmailKind = "email" | "interactive";
 
 export interface Campaign {
   id: string;
@@ -34,6 +38,7 @@ export interface CampaignEmail {
   campaign_id: string;
   title: string;
   html_content: string;
+  kind: EmailKind;
   purpose: string;
   sort_order: number;
   approved_at: string | null;
@@ -133,6 +138,7 @@ export function getDb(): Database.Database {
       campaign_id TEXT NOT NULL,
       title TEXT NOT NULL,
       html_content TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'email',
       purpose TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -279,6 +285,11 @@ function migrate(database: Database.Database) {
   const emailCols = tableColumns(database, "campaign_emails");
   if (!emailCols.includes("approved_at")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN approved_at TEXT`);
+  }
+  if (!emailCols.includes("kind")) {
+    database.exec(
+      `ALTER TABLE campaign_emails ADD COLUMN kind TEXT NOT NULL DEFAULT 'email'`
+    );
   }
   if (!emailCols.includes("chosen_subject_id")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN chosen_subject_id TEXT`);

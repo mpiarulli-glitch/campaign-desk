@@ -92,6 +92,7 @@ export async function GET(_request: Request, { params }: Params) {
     id: e.id,
     title: e.title,
     html_content: e.html_content,
+    kind: e.kind,
     sort_order: e.sort_order,
     approved_at: e.approved_at,
     chosen_subject_id: e.chosen_subject_id,

@@ -43,6 +43,7 @@ export async function POST(request: Request) {
   const audience = typeof body.audience === "string" ? body.audience : "";
   const emailTitle =
     typeof body.emailTitle === "string" ? body.emailTitle : "Email 1";
+  const kind = body.kind === "interactive" ? "interactive" : "email";
 
   if (!title) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
     audience,
     htmlContent,
     emailTitle,
+    kind,
   });
 
   return NextResponse.json({ campaign }, { status: 201 });

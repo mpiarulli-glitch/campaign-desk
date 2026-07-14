@@ -47,6 +47,7 @@ export async function POST(request: Request, { params }: Params) {
       : `Email ${listEmails(id).length + 1}`;
   const htmlContent =
     typeof body.htmlContent === "string" ? body.htmlContent : "";
+  const kind = body.kind === "interactive" ? "interactive" : "email";
 
   if (!htmlContent.trim()) {
     return NextResponse.json(
@@ -59,6 +60,7 @@ export async function POST(request: Request, { params }: Params) {
     campaignId: id,
     title,
     htmlContent,
+    kind,
   });
 
   return NextResponse.json({ email }, { status: 201 });

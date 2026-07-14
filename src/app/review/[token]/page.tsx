@@ -103,6 +103,7 @@ type EmailItem = {
   id: string;
   title: string;
   html_content: string;
+  kind?: "email" | "interactive";
   sort_order: number;
   open_comments: number;
   approved_at: string | null;
@@ -496,8 +497,9 @@ export default function ReviewPage() {
             <div className="card card-pad">
               <strong>How to leave feedback</strong>
               <p className="muted" style={{ margin: "6px 0 0" }}>
-                Toggle between emails above, then leave general notes or pin
-                comments on the one you are viewing.
+                {activeEmail.kind === "interactive"
+                  ? "This is an interactive form/quiz. Click through it in the preview, then leave general notes or pin comments on what you are viewing."
+                  : "Toggle between emails above, then leave general notes or pin comments on the one you are viewing."}
               </p>
             </div>
             <div className="card card-pad approve-card">
@@ -586,6 +588,7 @@ export default function ReviewPage() {
 
             <EmailPreview
               html={activeEmail.html_content}
+              interactive={activeEmail.kind === "interactive"}
               pins={[
                 ...inlinePins,
                 ...(pendingPin

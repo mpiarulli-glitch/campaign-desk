@@ -12,6 +12,7 @@ export default function NewCampaignPage() {
   const [description, setDescription] = useState("");
   const [audience, setAudience] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
+  const [kind, setKind] = useState<"email" | "interactive">("email");
   const [fileName, setFileName] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +41,7 @@ export default function NewCampaignPage() {
         description,
         audience,
         htmlContent,
+        kind,
       }),
     });
 
@@ -78,7 +80,34 @@ export default function NewCampaignPage() {
             <p className="eyebrow">New upload</p>
             <h1 className="h1">New campaign</h1>
             <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-              Upload an HTML email file or paste the markup below.
+              {kind === "interactive"
+                ? "Upload a form or quiz built in HTML. Its scripts run so reviewers can click through it."
+                : "Upload an HTML email file or paste the markup below."}
+            </p>
+          </div>
+
+          <div className="field">
+            <label>What is this?</label>
+            <div className="tabs" style={{ marginTop: 4 }}>
+              <button
+                type="button"
+                className={`tab ${kind === "email" ? "active" : ""}`}
+                onClick={() => setKind("email")}
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                className={`tab ${kind === "interactive" ? "active" : ""}`}
+                onClick={() => setKind("interactive")}
+              >
+                Form / quiz
+              </button>
+            </div>
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+              {kind === "interactive"
+                ? "Interactive: JavaScript runs in a sandboxed frame. Best for quizzes and forms."
+                : "Static email: scripts are stripped, rendered like an inbox preview."}
             </p>
           </div>
 
@@ -165,7 +194,11 @@ export default function NewCampaignPage() {
               id="html"
               value={htmlContent}
               onChange={(e) => setHtmlContent(e.target.value)}
-              placeholder="Paste full HTML email here"
+              placeholder={
+                kind === "interactive"
+                  ? "Paste the full HTML of your form or quiz (scripts included)"
+                  : "Paste full HTML email here"
+              }
               style={{ minHeight: 220, fontFamily: "var(--mono)", fontSize: 12 }}
               required
             />
