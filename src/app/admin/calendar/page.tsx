@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 
-type Model = "ecomm" | "b2b" | "home_service";
 type Status = "planned" | "scheduled" | "sent";
 
 type Send = {
@@ -15,27 +14,26 @@ type Send = {
   title: string;
   send_date: string;
   status: Status;
-  platform: string;
   note: string;
-  business_model: Model | null;
+  audience: string;
+  purpose: string;
+  offer: string;
+  subject: string;
+  preview_text: string;
 };
 
-type Client = { id: string; name: string; business_model: Model };
+type Client = { id: string; name: string };
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const MODEL_COLOR: Record<Model, string> = {
-  ecomm: "#6d28d9",
-  b2b: "#2563eb",
-  home_service: "#1f9d63",
+const STATUS_LABEL: Record<Status, string> = {
+  planned: "Planned",
+  scheduled: "Scheduled",
+  sent: "Sent",
 };
-function colorFor(model: Model | null): string {
-  return model ? MODEL_COLOR[model] : "#6b7280";
-}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
@@ -43,12 +41,18 @@ const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 const EMPTY = {
   id: "",
   clientId: "",
-  clientName: "",
   title: "",
   sendDate: "",
   status: "planned" as Status,
+  audience: "",
+  purpose: "",
+  offer: "",
+  subject: "",
+  previewText: "",
   note: "",
 };
+
+type Hover = { send: Send; top: number; left: number } | null;
 
 export default function CalendarPage() {
   const router = useRouter();
@@ -61,6 +65,8 @@ export default function CalendarPage() {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<typeof EMPTY | null>(null);
   const [saving, setSaving] = useState(false);
+  const [hover, setHover] = useState<Hover>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const startWeekday = new Date(year, month, 1).getDay();
@@ -97,48 +103,69 @@ export default function CalendarPage() {
   }, [sends, filter]);
 
   function prevMonth() {
-    if (month === 0) {
-      setYear((y) => y - 1);
-      setMonth(11);
-    } else setMonth((m) => m - 1);
+    if (month === 0) { setYear((y) => y - 1); setMonth(11); }
+    else setMonth((m) => m - 1);
   }
   function nextMonth() {
-    if (month === 11) {
-      setYear((y) => y + 1);
-      setMonth(0);
-    } else setMonth((m) => m + 1);
+    if (month === 11) { setYear((y) => y + 1); setMonth(0); }
+    else setMonth((m) => m + 1);
+  }
+  function goToday() {
+    setYear(now.getFullYear());
+    setMonth(now.getMonth());
   }
 
   function openNew(date: string) {
     setEditing({ ...EMPTY, sendDate: date });
   }
   function openEdit(s: Send) {
+    setHover(null);
     setEditing({
       id: s.id,
       clientId: s.client_id || "",
-      clientName: s.client_name,
       title: s.title,
       sendDate: s.send_date,
       status: s.status,
+      audience: s.audience,
+      purpose: s.purpose,
+      offer: s.offer,
+      subject: s.subject,
+      previewText: s.preview_text,
       note: s.note,
     });
+  }
+
+  function showHover(e: React.MouseEvent, s: Send) {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const W = 320;
+    let left = rect.right + 10;
+    if (left + W > window.innerWidth - 12) left = rect.left - W - 10;
+    if (left < 12) left = 12;
+    const top = Math.min(rect.top, window.innerHeight - 340);
+    setHover({ send: s, top: Math.max(12, top), left });
+  }
+  function hideHover() {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHover(null), 60);
   }
 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!editing) return;
-    if (!editing.title.trim()) {
-      setError("Title is required.");
-      return;
-    }
+    if (!editing.title.trim()) { setError("Email name is required."); return; }
     setSaving(true);
     setError("");
     const payload = {
       clientId: editing.clientId || null,
-      clientName: editing.clientName,
       title: editing.title,
       sendDate: editing.sendDate,
       status: editing.status,
+      audience: editing.audience,
+      purpose: editing.purpose,
+      offer: editing.offer,
+      subject: editing.subject,
+      previewText: editing.previewText,
       note: editing.note,
     };
     const res = editing.id
@@ -153,10 +180,7 @@ export default function CalendarPage() {
           body: JSON.stringify(payload),
         });
     setSaving(false);
-    if (!res.ok) {
-      setError("Could not save.");
-      return;
-    }
+    if (!res.ok) { setError("Could not save."); return; }
     setEditing(null);
     load();
   }
@@ -165,10 +189,7 @@ export default function CalendarPage() {
     if (!editing?.id) return;
     if (!confirm("Delete this send?")) return;
     const res = await fetch(`/api/calendar/${editing.id}`, { method: "DELETE" });
-    if (res.ok) {
-      setEditing(null);
-      load();
-    }
+    if (res.ok) { setEditing(null); load(); }
   }
 
   const cells: (number | null)[] = [];
@@ -185,49 +206,35 @@ export default function CalendarPage() {
         <div className="row">
           <Link className="btn btn-ghost btn-sm" href="/admin">Campaigns</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
-          <button className="btn btn-sm" onClick={() => openNew(ymd(year, month, 1))}>
-            Add send
-          </button>
+          <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
         </div>
       </header>
 
       <main className="container container-wide stack">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div className="cal-header">
           <div>
             <p className="eyebrow">Email department</p>
             <h1 className="h1">Campaign calendar</h1>
           </div>
           <div className="row">
-            <select
-              className="select-clean"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            >
+            <select className="select-clean" value={filter} onChange={(e) => setFilter(e.target.value)}>
               <option value="all">All clients</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <button className="btn btn-secondary btn-sm" onClick={prevMonth}>‹</button>
-            <strong style={{ minWidth: 150, textAlign: "center" }}>
-              {MONTHS[month]} {year}
-            </strong>
-            <button className="btn btn-secondary btn-sm" onClick={nextMonth}>›</button>
+            <div className="cal-nav">
+              <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>
+              <span className="cal-month">{MONTHS[month]} {year}</span>
+              <button className="cal-nav-btn" onClick={nextMonth} aria-label="Next month">›</button>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={goToday}>Today</button>
           </div>
-        </div>
-
-        <div className="row" style={{ gap: 16 }}>
-          {(["home_service", "b2b", "ecomm"] as Model[]).map((m) => (
-            <span key={m} className="cal-legend">
-              <span className="cal-dot" style={{ background: MODEL_COLOR[m] }} />
-              {m === "home_service" ? "Home service" : m === "b2b" ? "B2B" : "Ecommerce"}
-            </span>
-          ))}
         </div>
 
         {error ? <p className="error">{error}</p> : null}
 
-        <div className="cal-grid card">
+        <div className="cal-grid">
           {DOW.map((d) => (
             <div key={d} className="cal-dow">{d}</div>
           ))}
@@ -235,10 +242,11 @@ export default function CalendarPage() {
             if (d === null) return <div key={`b${i}`} className="cal-cell cal-empty" />;
             const date = ymd(year, month, d);
             const items = byDay.get(date) || [];
+            const isToday = date === todayYmd;
             return (
               <div
                 key={date}
-                className={`cal-cell ${date === todayYmd ? "cal-today" : ""}`}
+                className={`cal-cell ${isToday ? "cal-today" : ""}`}
                 onClick={() => openNew(date)}
               >
                 <div className="cal-daynum">{d}</div>
@@ -246,18 +254,13 @@ export default function CalendarPage() {
                   {items.map((s) => (
                     <button
                       key={s.id}
-                      className={`cal-event status-${s.status}`}
-                      style={{ borderLeftColor: colorFor(s.business_model) }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEdit(s);
-                      }}
-                      title={`${s.client_name || "No client"} — ${s.title} (${s.status})`}
+                      className={`cal-chip chip-${s.status}`}
+                      onClick={(e) => { e.stopPropagation(); openEdit(s); }}
+                      onMouseEnter={(e) => showHover(e, s)}
+                      onMouseLeave={hideHover}
                     >
-                      <span className="cal-event-title">{s.title}</span>
-                      {s.client_name ? (
-                        <span className="cal-event-client">{s.client_name}</span>
-                      ) : null}
+                      <span className="cal-chip-dot" />
+                      <span className="cal-chip-name">{s.title}</span>
                     </button>
                   ))}
                 </div>
@@ -267,36 +270,54 @@ export default function CalendarPage() {
         </div>
       </main>
 
+      {hover ? (
+        <div
+          className="cal-pop"
+          style={{ top: hover.top, left: hover.left }}
+        >
+          <div className="cal-pop-head">
+            <span className="cal-pop-title">{hover.send.title}</span>
+            <span className={`cal-pop-status chip-${hover.send.status}`}>
+              {STATUS_LABEL[hover.send.status]}
+            </span>
+          </div>
+          {hover.send.client_name ? (
+            <div className="cal-pop-client">{hover.send.client_name}</div>
+          ) : null}
+          <dl className="cal-pop-list">
+            <PopRow label="Audience" value={hover.send.audience} />
+            <PopRow label="Purpose" value={hover.send.purpose} />
+            <PopRow label="Offers being tested" value={hover.send.offer} />
+            <PopRow label="Subject line" value={hover.send.subject} />
+            <PopRow label="Preview text" value={hover.send.preview_text} />
+          </dl>
+        </div>
+      ) : null}
+
       {editing ? (
         <div className="modal-backdrop" onClick={() => setEditing(null)}>
           <div className="modal card card-pad stack" onClick={(e) => e.stopPropagation()}>
             <strong>{editing.id ? "Edit send" : "New send"}</strong>
             <form className="stack" onSubmit={save}>
               <div className="field">
-                <label>Title</label>
+                <label>Email name</label>
                 <input
                   value={editing.title}
                   onChange={(e) => setEditing({ ...editing, title: e.target.value })}
-                  placeholder="e.g. July promo blast"
+                  placeholder="e.g. Summer maintenance offer"
                   autoFocus
                 />
               </div>
               <div className="rev-form-grid">
                 <div className="field">
-                  <label>Date</label>
-                  <input
-                    type="date"
-                    value={editing.sendDate}
-                    onChange={(e) => setEditing({ ...editing, sendDate: e.target.value })}
-                  />
+                  <label>Send date</label>
+                  <input type="date" value={editing.sendDate}
+                    onChange={(e) => setEditing({ ...editing, sendDate: e.target.value })} />
                 </div>
                 <div className="field">
                   <label>Client</label>
-                  <select
-                    className="select-clean"
-                    value={editing.clientId}
-                    onChange={(e) => setEditing({ ...editing, clientId: e.target.value })}
-                  >
+                  <select className="select-clean" value={editing.clientId}
+                    onChange={(e) => setEditing({ ...editing, clientId: e.target.value })}>
                     <option value="">No client</option>
                     {clients.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -305,11 +326,8 @@ export default function CalendarPage() {
                 </div>
                 <div className="field">
                   <label>Status</label>
-                  <select
-                    className="select-clean"
-                    value={editing.status}
-                    onChange={(e) => setEditing({ ...editing, status: e.target.value as Status })}
-                  >
+                  <select className="select-clean" value={editing.status}
+                    onChange={(e) => setEditing({ ...editing, status: e.target.value as Status })}>
                     <option value="planned">Planned</option>
                     <option value="scheduled">Scheduled</option>
                     <option value="sent">Sent</option>
@@ -317,11 +335,37 @@ export default function CalendarPage() {
                 </div>
               </div>
               <div className="field">
-                <label>Note</label>
-                <input
-                  value={editing.note}
-                  onChange={(e) => setEditing({ ...editing, note: e.target.value })}
-                />
+                <label>Audience</label>
+                <input value={editing.audience}
+                  onChange={(e) => setEditing({ ...editing, audience: e.target.value })}
+                  placeholder="Who this is going to" />
+              </div>
+              <div className="field">
+                <label>Purpose of email</label>
+                <input value={editing.purpose}
+                  onChange={(e) => setEditing({ ...editing, purpose: e.target.value })}
+                  placeholder="What this email is trying to do" />
+              </div>
+              <div className="field">
+                <label>Offers being tested</label>
+                <input value={editing.offer}
+                  onChange={(e) => setEditing({ ...editing, offer: e.target.value })}
+                  placeholder="e.g. 15% off vs free install" />
+              </div>
+              <div className="field">
+                <label>Subject line</label>
+                <input value={editing.subject}
+                  onChange={(e) => setEditing({ ...editing, subject: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Preview text</label>
+                <input value={editing.previewText}
+                  onChange={(e) => setEditing({ ...editing, previewText: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Internal note</label>
+                <input value={editing.note}
+                  onChange={(e) => setEditing({ ...editing, note: e.target.value })} />
               </div>
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <div className="row">
@@ -342,6 +386,15 @@ export default function CalendarPage() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PopRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="cal-pop-row">
+      <dt>{label}</dt>
+      <dd>{value?.trim() ? value : <span className="cal-pop-empty">Not set</span>}</dd>
     </div>
   );
 }

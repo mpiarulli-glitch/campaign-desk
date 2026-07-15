@@ -131,6 +131,11 @@ export interface ScheduledSend {
   status: SendStatus;
   platform: string;
   note: string;
+  audience: string;
+  purpose: string;
+  offer: string; // offers being tested
+  subject: string;
+  preview_text: string;
   created_at: string;
   updated_at: string;
 }
@@ -308,6 +313,11 @@ export function getDb(): Database.Database {
       status TEXT NOT NULL DEFAULT 'planned',
       platform TEXT NOT NULL DEFAULT '',
       note TEXT NOT NULL DEFAULT '',
+      audience TEXT NOT NULL DEFAULT '',
+      purpose TEXT NOT NULL DEFAULT '',
+      offer TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL DEFAULT '',
+      preview_text TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE SET NULL
@@ -408,6 +418,16 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE campaign_emails ADD COLUMN purpose TEXT NOT NULL DEFAULT ''`
     );
+  }
+
+  // scheduled_sends planning fields (added after the table shipped).
+  const sendCols = tableColumns(database, "scheduled_sends");
+  for (const col of ["audience", "purpose", "offer", "subject", "preview_text"]) {
+    if (sendCols.length && !sendCols.includes(col)) {
+      database.exec(
+        `ALTER TABLE scheduled_sends ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`
+      );
+    }
   }
 
   // Move legacy single-html campaigns into campaign_emails

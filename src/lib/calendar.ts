@@ -63,6 +63,11 @@ export function createSend(input: {
   status?: SendStatus;
   platform?: string;
   note?: string;
+  audience?: string;
+  purpose?: string;
+  offer?: string;
+  subject?: string;
+  previewText?: string;
 }): ScheduledSend {
   const db = getDb();
   const id = nanoid(12);
@@ -70,8 +75,9 @@ export function createSend(input: {
   const clientId = input.clientId || null;
   db.prepare(
     `INSERT INTO scheduled_sends
-      (id, client_id, client_name, title, send_date, status, platform, note, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, client_id, client_name, title, send_date, status, platform, note,
+       audience, purpose, offer, subject, preview_text, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     clientId,
@@ -81,6 +87,11 @@ export function createSend(input: {
     normalizeStatus(input.status),
     (input.platform || "").trim(),
     (input.note || "").trim(),
+    (input.audience || "").trim(),
+    (input.purpose || "").trim(),
+    (input.offer || "").trim(),
+    (input.subject || "").trim(),
+    (input.previewText || "").trim(),
     ts,
     ts
   );
@@ -97,6 +108,11 @@ export function updateSend(
     status: SendStatus;
     platform: string;
     note: string;
+    audience: string;
+    purpose: string;
+    offer: string;
+    subject: string;
+    previewText: string;
   }>
 ): ScheduledSend | null {
   const existing = getSend(id);
@@ -111,7 +127,8 @@ export function updateSend(
   db.prepare(
     `UPDATE scheduled_sends SET
        client_id = ?, client_name = ?, title = ?, send_date = ?,
-       status = ?, platform = ?, note = ?, updated_at = ?
+       status = ?, platform = ?, note = ?, audience = ?, purpose = ?,
+       offer = ?, subject = ?, preview_text = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     clientId,
@@ -121,6 +138,11 @@ export function updateSend(
     updates.status ? normalizeStatus(updates.status) : existing.status,
     updates.platform?.trim() ?? existing.platform,
     updates.note?.trim() ?? existing.note,
+    updates.audience?.trim() ?? existing.audience,
+    updates.purpose?.trim() ?? existing.purpose,
+    updates.offer?.trim() ?? existing.offer,
+    updates.subject?.trim() ?? existing.subject,
+    updates.previewText?.trim() ?? existing.preview_text,
     nowIso(),
     id
   );

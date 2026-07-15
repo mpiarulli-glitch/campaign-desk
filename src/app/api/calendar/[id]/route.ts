@@ -21,17 +21,23 @@ export async function PATCH(request: Request, { params }: Params) {
       { status: 400 }
     );
   }
+  const optStr = (v: unknown) => (typeof v === "string" ? v : undefined);
   const send = updateSend(id, {
     clientId:
       body.clientId === null || typeof body.clientId === "string"
         ? body.clientId
         : undefined,
-    clientName: typeof body.clientName === "string" ? body.clientName : undefined,
-    title: typeof body.title === "string" ? body.title : undefined,
-    sendDate: typeof body.sendDate === "string" ? body.sendDate : undefined,
+    clientName: optStr(body.clientName),
+    title: optStr(body.title),
+    sendDate: optStr(body.sendDate),
     status: body.status,
-    platform: typeof body.platform === "string" ? body.platform : undefined,
-    note: typeof body.note === "string" ? body.note : undefined,
+    platform: optStr(body.platform),
+    note: optStr(body.note),
+    audience: optStr(body.audience),
+    purpose: optStr(body.purpose),
+    offer: optStr(body.offer),
+    subject: optStr(body.subject),
+    previewText: optStr(body.previewText),
   });
   return NextResponse.json({ send });
 }

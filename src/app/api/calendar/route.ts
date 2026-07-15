@@ -36,14 +36,20 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
   const send = createSend({
     clientId: typeof body.clientId === "string" ? body.clientId : null,
-    clientName: typeof body.clientName === "string" ? body.clientName : "",
+    clientName: str(body.clientName),
     title,
     sendDate,
     status: body.status,
-    platform: typeof body.platform === "string" ? body.platform : "",
-    note: typeof body.note === "string" ? body.note : "",
+    platform: str(body.platform),
+    note: str(body.note),
+    audience: str(body.audience),
+    purpose: str(body.purpose),
+    offer: str(body.offer),
+    subject: str(body.subject),
+    previewText: str(body.previewText),
   });
   return NextResponse.json({ send }, { status: 201 });
 }
