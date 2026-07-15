@@ -101,6 +101,44 @@ export interface CommentReply {
   created_at: string;
 }
 
+export type BusinessModel = "ecomm" | "b2b" | "home_service";
+export type MetricSource = "manual" | "ghl" | "klaviyo" | "mixed";
+
+export interface RevClient {
+  id: string;
+  name: string;
+  business_model: BusinessModel;
+  ghl_location_id: string;
+  klaviyo_account: string;
+  retainer: number;
+  monthly_cost: number;
+  ltv: number | null;
+  active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// One row per client per month. Revenue/orders are typically manual (or from
+// Klaviyo for ecomm); recipients/opens/clicks/appointments/leads come from GHL.
+export interface RevMetric {
+  id: string;
+  client_id: string;
+  month: string; // YYYY-MM
+  revenue: number;
+  orders: number;
+  appointments: number;
+  leads: number;
+  recipients: number;
+  campaigns_sent: number;
+  opens: number;
+  clicks: number;
+  revenue_source: MetricSource;
+  activity_source: MetricSource;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -205,6 +243,44 @@ export function getDb(): Database.Database {
       FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS rev_clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      business_model TEXT NOT NULL DEFAULT 'home_service',
+      ghl_location_id TEXT NOT NULL DEFAULT '',
+      klaviyo_account TEXT NOT NULL DEFAULT '',
+      retainer REAL NOT NULL DEFAULT 0,
+      monthly_cost REAL NOT NULL DEFAULT 0,
+      ltv REAL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS rev_metrics (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      revenue REAL NOT NULL DEFAULT 0,
+      orders INTEGER NOT NULL DEFAULT 0,
+      appointments INTEGER NOT NULL DEFAULT 0,
+      leads INTEGER NOT NULL DEFAULT 0,
+      recipients INTEGER NOT NULL DEFAULT 0,
+      campaigns_sent INTEGER NOT NULL DEFAULT 0,
+      opens INTEGER NOT NULL DEFAULT 0,
+      clicks INTEGER NOT NULL DEFAULT 0,
+      revenue_source TEXT NOT NULL DEFAULT 'manual',
+      activity_source TEXT NOT NULL DEFAULT 'manual',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, month),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_revmetrics_client ON rev_metrics(client_id);
+    CREATE INDEX IF NOT EXISTS idx_revmetrics_month ON rev_metrics(month);
 
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);

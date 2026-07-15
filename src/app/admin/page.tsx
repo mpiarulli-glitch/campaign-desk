@@ -182,6 +182,9 @@ export default function AdminPage() {
           <Link className="btn btn-ghost btn-sm" href="/admin/activity">
             Activity
           </Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/revenue">
+            Revenue
+          </Link>
           <Link className="btn" href="/admin/new">
             New campaign
           </Link>
