@@ -115,6 +115,9 @@ export default function RevenuePage() {
           <Link className="btn btn-ghost btn-sm" href="/admin">
             Campaigns
           </Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/calendar">
+            Calendar
+          </Link>
           <button
             className="btn btn-sm"
             onClick={() => setAdding((v) => !v)}

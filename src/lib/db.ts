@@ -118,6 +118,23 @@ export interface RevClient {
   updated_at: string;
 }
 
+export type SendStatus = "planned" | "scheduled" | "sent";
+
+// A single email send plotted on the campaign calendar. client_id is optional
+// (soft link to rev_clients); client_name is always kept as a display fallback.
+export interface ScheduledSend {
+  id: string;
+  client_id: string | null;
+  client_name: string;
+  title: string;
+  send_date: string; // YYYY-MM-DD
+  status: SendStatus;
+  platform: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // One row per client per month. Revenue/orders are typically manual (or from
 // Klaviyo for ecomm); recipients/opens/clicks/appointments/leads come from GHL.
 export interface RevMetric {
@@ -281,6 +298,23 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_revmetrics_client ON rev_metrics(client_id);
     CREATE INDEX IF NOT EXISTS idx_revmetrics_month ON rev_metrics(month);
+
+    CREATE TABLE IF NOT EXISTS scheduled_sends (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      client_name TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      send_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'planned',
+      platform TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sends_date ON scheduled_sends(send_date);
+    CREATE INDEX IF NOT EXISTS idx_sends_client ON scheduled_sends(client_id);
 
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);
