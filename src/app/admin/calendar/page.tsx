@@ -67,6 +67,8 @@ export default function CalendarPage() {
   const [saving, setSaving] = useState(false);
   const [hover, setHover] = useState<Hover>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [addingClient, setAddingClient] = useState(false);
+  const [newClient, setNewClient] = useState("");
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const startWeekday = new Date(year, month, 1).getDay();
@@ -185,6 +187,22 @@ export default function CalendarPage() {
     load();
   }
 
+  async function createClient() {
+    const name = newClient.trim();
+    if (!name) return;
+    const res = await fetch("/api/revenue/clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, businessModel: "home_service" }),
+    });
+    if (!res.ok) { setError("Could not add client."); return; }
+    const data = await res.json();
+    setNewClient("");
+    setAddingClient(false);
+    await load();
+    setEditing((ed) => (ed ? { ...ed, clientId: data.client.id } : ed));
+  }
+
   async function remove() {
     if (!editing?.id) return;
     if (!confirm("Delete this send?")) return;
@@ -205,7 +223,6 @@ export default function CalendarPage() {
         <Brand href="/admin" />
         <div className="row">
           <Link className="btn btn-ghost btn-sm" href="/admin">Campaigns</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
           <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
         </div>
       </header>
@@ -308,21 +325,43 @@ export default function CalendarPage() {
                   autoFocus
                 />
               </div>
+              <div className="field">
+                <label>Client</label>
+                {addingClient ? (
+                  <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+                    <input
+                      value={newClient}
+                      onChange={(e) => setNewClient(e.target.value)}
+                      placeholder="New client name"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); createClient(); }
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className="btn btn-sm" onClick={createClient}>Add</button>
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      onClick={() => { setAddingClient(false); setNewClient(""); }}>Cancel</button>
+                  </div>
+                ) : (
+                  <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+                    <select className="select-clean" style={{ flex: 1 }} value={editing.clientId}
+                      onChange={(e) => setEditing({ ...editing, clientId: e.target.value })}>
+                      <option value="">No client</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      onClick={() => setAddingClient(true)}>+ New</button>
+                  </div>
+                )}
+              </div>
               <div className="rev-form-grid">
                 <div className="field">
                   <label>Send date</label>
                   <input type="date" value={editing.sendDate}
                     onChange={(e) => setEditing({ ...editing, sendDate: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label>Client</label>
-                  <select className="select-clean" value={editing.clientId}
-                    onChange={(e) => setEditing({ ...editing, clientId: e.target.value })}>
-                    <option value="">No client</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
                 </div>
                 <div className="field">
                   <label>Status</label>
