@@ -788,6 +788,7 @@ button {
   display: flex;
   gap: 6px;
   justify-content: center;
+  margin-top: 14px;
   margin-bottom: 10px;
 }
 
