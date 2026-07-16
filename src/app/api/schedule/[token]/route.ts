@@ -91,6 +91,7 @@ export async function POST(request: Request, { params }: Params) {
     "participantsConsent",
     "mediaRelease",
     "propertyApproval",
+    "safetyCompliance",
     "captureRequests",
     "avoidRequests",
     "additionalNotes",

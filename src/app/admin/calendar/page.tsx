@@ -39,6 +39,7 @@ const BRIEF_LABELS: [string, string][] = [
   ["participantsConsent", "Consent to film"],
   ["mediaRelease", "Customers on camera"],
   ["propertyApproval", "Private property"],
+  ["safetyCompliance", "Safety gear / OSHA"],
   ["captureRequests", "Shots they'd like"],
   ["avoidRequests", "Avoid capturing"],
   ["additionalNotes", "Notes"],

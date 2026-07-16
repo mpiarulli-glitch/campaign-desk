@@ -406,7 +406,24 @@ export default function SchedulePage() {
               </div>
             </BriefSection>
 
-            <BriefSection num="04" title="Anything you'd like us to capture?">
+            <BriefSection num="04" title="Safety compliance">
+              <p className="brief-intro muted" style={{ margin: 0 }}>
+                As we prepare for this production, please inform us of any specific OSHA
+                regulations or safety gear required for your industry (hard hats, high
+                visibility vests, etc). It&rsquo;s crucial that both our team and yours adhere
+                to all safety guidelines to ensure a smooth and secure production process.
+              </p>
+              <div className="field">
+                <label>Required safety gear or regulations</label>
+                <input
+                  value={brief.safetyCompliance || ""}
+                  onChange={(e) => set("safetyCompliance", e.target.value)}
+                  placeholder="e.g. hard hats, hi-vis vests, steel-toe boots, site check-in"
+                />
+              </div>
+            </BriefSection>
+
+            <BriefSection num="05" title="Anything you'd like us to capture?">
               <div className="field">
                 <label>Shots or moments you&rsquo;d like</label>
                 <textarea
