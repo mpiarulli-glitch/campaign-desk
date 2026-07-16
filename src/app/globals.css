@@ -1857,3 +1857,156 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 @media (max-width: 720px) {
   .snap-metric-form { grid-template-columns: 1fr 1fr; }
 }
+
+/* ============================================ snapshot client — polished ==== */
+.snap-topbar-tag {
+  color: #9aa1ad;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Report cover */
+.snap-hero {
+  background: linear-gradient(155deg, #15171d 0%, #0b0c10 100%);
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.snap-hero-inner {
+  width: min(1400px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 36px 0 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.snap-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.snap-hero-eyebrow {
+  color: var(--accent);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+.snap-hero-title {
+  font-family: var(--font-head);
+  font-size: clamp(30px, 5vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.03;
+  margin: 0;
+  color: #fff;
+}
+.snap-hero-sub { color: #9aa1ad; margin: 12px 0 0; font-size: 14px; }
+.snap-hero-nav { display: flex; align-items: center; gap: 6px; }
+.snap-hero-nav button {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 11px;
+  font-size: 16px;
+  line-height: 1;
+}
+.snap-hero-nav button:hover { background: rgba(255, 255, 255, 0.16); }
+.snap-hero-today { font-size: 12px !important; font-weight: 700; letter-spacing: 0.04em; }
+
+.snap-glance { display: flex; gap: 10px; flex-wrap: wrap; }
+.snap-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 13px;
+  color: #c3c9d2;
+}
+.snap-chip-n { font-weight: 800; color: #fff; font-size: 15px; margin-right: 3px; }
+.snap-chip-accent {
+  background: rgba(0, 212, 232, 0.13);
+  border-color: rgba(0, 212, 232, 0.4);
+  color: #7fe9f5;
+  font-weight: 700;
+}
+
+/* Section titles with a small accent tick */
+.snap-section-title {
+  font-family: var(--font-head);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+}
+
+/* Category header with count */
+.snap-cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.snap-cat-count {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* Wins */
+.snap-win-mark { color: #e0a400; font-size: 15px; line-height: 1.5; }
+
+/* Performance cards (area sparkline) */
+.perf-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.perf-spark { width: 100%; height: 58px; display: block; margin-top: 8px; }
+.perf-head { align-items: center; }
+.perf-metric { font-size: 11px; }
+.perf-range {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.perf-delta { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
+.perf-delta.up { color: #0b6b3a; background: #dcf3e6; }
+.perf-delta.down { color: #b42318; background: #fdeceb; }
+
+.snap-footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .snap-hero-top { flex-direction: column; }
+}
+
+/* align hero to the narrower report column + fill deliverable cards */
+.snap-hero-inner { width: min(1120px, calc(100% - 40px)); }
+.snap-ro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 28px;
+}

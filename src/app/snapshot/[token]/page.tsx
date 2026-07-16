@@ -1,13 +1,12 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
-
 type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
 const STATUS_LABEL: Record<Status, string> = {
   not_started: "Not started",
@@ -76,6 +75,24 @@ export default function SnapshotClientPage() {
 
   useEffect(() => { load(week); }, [week, load]);
 
+  const updatedRows = useMemo(() => rows.filter(hasUpdate), [rows]);
+
+  // At-a-glance figures for the report header.
+  const glance = useMemo(() => {
+    const delivered = updatedRows.filter((r) => r.status === "completed" || r.status === "approved").length;
+    const active = updatedRows.filter((r) => r.status === "in_progress" || r.status === "shared").length;
+    const headline = metrics.find((m) => m.points.length >= 2) || metrics.find((m) => m.points.length > 0);
+    let headlineText: string | null = null;
+    if (headline) {
+      const pts = headline.points;
+      const latest = pts[pts.length - 1].value;
+      const firstV = pts[0].value;
+      const pct = firstV !== 0 ? Math.round(((latest - firstV) / Math.abs(firstV)) * 100) : null;
+      headlineText = pct !== null ? `${headline.metric} ${pct >= 0 ? "+" : ""}${pct}%` : headline.metric;
+    }
+    return { delivered, active, wins: wins.length, headlineText };
+  }, [updatedRows, metrics, wins]);
+
   if (notFound) {
     return (
       <div className="login-wrap">
@@ -88,48 +105,69 @@ export default function SnapshotClientPage() {
   }
 
   const grouped = groupByCategory(rows);
-  const anyUpdates = rows.some(hasUpdate);
+  const anyUpdates = updatedRows.length > 0;
+  const hasMetrics = metrics.some((m) => m.points.length > 0);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell snap-client">
       <header className="topbar">
         <Brand />
-        {accountName ? <span className="snap-client-name">{accountName}</span> : null}
+        <span className="snap-topbar-tag">Client snapshot</span>
       </header>
 
-      <main className="container container-wide stack">
-        <div className="cal-header">
-          <div>
-            <p className="eyebrow">Weekly snapshot</p>
-            <h1 className="h1">{accountName || "Account snapshot"}</h1>
+      {/* Report cover */}
+      <section className="snap-hero">
+        <div className="snap-hero-inner">
+          <div className="snap-hero-top">
+            <div>
+              <p className="snap-hero-eyebrow">Weekly snapshot</p>
+              <h1 className="snap-hero-title">{accountName || "Account snapshot"}</h1>
+              <p className="snap-hero-sub">
+                Week of {weekLabel(week)}
+                {isCurrentWeek(week) ? " · current week" : ""} · prepared by Marketing Empire Group
+              </p>
+            </div>
+            <div className="snap-hero-nav">
+              <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
+              <button onClick={() => setWeek(currentWeek())} className="snap-hero-today">This week</button>
+              <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
+            </div>
           </div>
-          <div className="cal-nav">
-            <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
-            <span className="cal-month">
-              {weekLabel(week)}{isCurrentWeek(week) ? " · This week" : ""}
-            </span>
-            <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, 1))}>›</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setWeek(currentWeek())}>This week</button>
-          </div>
-        </div>
 
+          {!loading ? (
+            <div className="snap-glance">
+              <div className="snap-chip"><span className="snap-chip-n">{glance.delivered}</span> delivered this week</div>
+              <div className="snap-chip"><span className="snap-chip-n">{glance.active}</span> in progress</div>
+              <div className="snap-chip"><span className="snap-chip-n">{glance.wins}</span> wins</div>
+              {glance.headlineText ? (
+                <div className="snap-chip snap-chip-accent">{glance.headlineText}</div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <main className="container stack" style={{ gap: 30 }}>
         {loading ? (
           <p className="muted">Loading...</p>
         ) : (
           <>
-            <div className="stack" style={{ gap: 18 }}>
+            <section className="stack" style={{ gap: 14 }}>
               <h2 className="snap-section-title">This week&apos;s work</h2>
               {rows.length === 0 ? (
                 <div className="empty"><p>No deliverables set up yet.</p></div>
               ) : !anyUpdates ? (
-                <div className="empty"><p>No updates logged for this week yet.</p></div>
+                <div className="empty"><p>No updates logged for this week yet. Check back soon.</p></div>
               ) : (
                 grouped.map(([category, catRows]) => {
                   const updated = catRows.filter(hasUpdate);
                   if (updated.length === 0) return null;
                   return (
                     <div key={category} className="snap-group">
-                      <div className="snap-cat">{category}</div>
+                      <div className="snap-cat">
+                        <span>{category}</span>
+                        <span className="snap-cat-count">{updated.length}</span>
+                      </div>
                       <div className="stack" style={{ gap: 10 }}>
                         {updated.map((r) => (
                           <div key={r.deliverable_id} className="snap-card">
@@ -142,24 +180,26 @@ export default function SnapshotClientPage() {
                                 {STATUS_LABEL[r.status]}
                               </span>
                             </div>
-                            {r.work_done.trim() ? (
-                              <div className="snap-ro">
-                                <span className="snap-ro-label">What we did</span>
-                                <p>{r.work_done}</p>
-                              </div>
-                            ) : null}
-                            {r.next_steps.trim() ? (
-                              <div className="snap-ro">
-                                <span className="snap-ro-label">Next steps</span>
-                                <p>{r.next_steps}</p>
-                              </div>
-                            ) : null}
-                            {r.notes.trim() ? (
-                              <div className="snap-ro">
-                                <span className="snap-ro-label">Notes</span>
-                                <p>{r.notes}</p>
-                              </div>
-                            ) : null}
+                            <div className="snap-ro-grid">
+                              {r.work_done.trim() ? (
+                                <div className="snap-ro">
+                                  <span className="snap-ro-label">What we did</span>
+                                  <p>{r.work_done}</p>
+                                </div>
+                              ) : null}
+                              {r.next_steps.trim() ? (
+                                <div className="snap-ro">
+                                  <span className="snap-ro-label">Next steps</span>
+                                  <p>{r.next_steps}</p>
+                                </div>
+                              ) : null}
+                              {r.notes.trim() ? (
+                                <div className="snap-ro">
+                                  <span className="snap-ro-label">Notes</span>
+                                  <p>{r.notes}</p>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -167,15 +207,15 @@ export default function SnapshotClientPage() {
                   );
                 })
               )}
-            </div>
+            </section>
 
             {wins.length > 0 ? (
-              <div className="stack" style={{ gap: 10 }}>
+              <section className="stack" style={{ gap: 14 }}>
                 <h2 className="snap-section-title">Wins</h2>
                 <div className="snap-wins">
                   {wins.map((w) => (
                     <div key={w.id} className="snap-win">
-                      <span className="snap-win-mark" aria-hidden="true">🏆</span>
+                      <span className="snap-win-mark" aria-hidden="true">★</span>
                       <div>
                         <p>{w.body}</p>
                         {w.happened_on ? <span className="snap-win-date">{w.happened_on}</span> : null}
@@ -183,15 +223,19 @@ export default function SnapshotClientPage() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             ) : null}
 
-            {metrics.some((m) => m.points.length > 0) ? (
-              <div className="stack" style={{ gap: 10 }}>
+            {hasMetrics ? (
+              <section className="stack" style={{ gap: 14 }}>
                 <h2 className="snap-section-title">Performance</h2>
                 <PerfCharts series={metrics} />
-              </div>
+              </section>
             ) : null}
+
+            <footer className="snap-footer">
+              Prepared by Marketing Empire Group · Week of {weekLabel(week)}
+            </footer>
           </>
         )}
       </main>
