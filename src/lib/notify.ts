@@ -65,6 +65,22 @@ export function notifyClientFeedback(args: {
   void postToCampfire(content);
 }
 
+// A client picked a production date on their schedule link.
+export function notifyProductionRequested(args: {
+  clientName: string;
+  sendDate: string;
+  note?: string;
+}): void {
+  const note = args.note ? `<br>Note: ${escapeHtml(args.note)}` : "";
+  const content =
+    `<strong>Production requested:</strong> ` +
+    `${escapeHtml(args.clientName)} picked <strong>${escapeHtml(args.sendDate)}</strong> ` +
+    `for their next production.${note}`;
+
+  // Fire and forget.
+  void postToCampfire(content);
+}
+
 // A campaign was deleted from the admin dashboard.
 export function notifyCampaignRemoved(args: {
   campaignTitle: string;

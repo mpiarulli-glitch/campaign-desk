@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     clientName: str(body.clientName),
     title,
     sendDate,
+    sendTime: str(body.sendTime),
     status: body.status,
     platform: str(body.platform),
     note: str(body.note),

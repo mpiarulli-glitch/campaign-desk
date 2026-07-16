@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { deleteSend, getSend, updateSend } from "@/lib/calendar";
+import { advanceLastProduction } from "@/lib/cadence";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -11,7 +12,8 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!getSend(id)) {
+  const before = getSend(id);
+  if (!before) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
@@ -30,6 +32,7 @@ export async function PATCH(request: Request, { params }: Params) {
     clientName: optStr(body.clientName),
     title: optStr(body.title),
     sendDate: optStr(body.sendDate),
+    sendTime: optStr(body.sendTime),
     status: body.status,
     platform: optStr(body.platform),
     note: optStr(body.note),
@@ -39,6 +42,17 @@ export async function PATCH(request: Request, { params }: Params) {
     subject: optStr(body.subject),
     previewText: optStr(body.previewText),
   });
+
+  if (
+    send &&
+    send.status === "sent" &&
+    before.status !== "sent" &&
+    send.client_id &&
+    send.cadence_window_start
+  ) {
+    advanceLastProduction(send.client_id, send.send_date);
+  }
+
   return NextResponse.json({ send });
 }
 

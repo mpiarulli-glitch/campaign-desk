@@ -188,6 +188,9 @@ export default function AdminPage() {
           <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">
             Snapshots
           </Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/production">
+            Production
+          </Link>
           <Link className="btn" href="/admin/new">
             New campaign
           </Link>

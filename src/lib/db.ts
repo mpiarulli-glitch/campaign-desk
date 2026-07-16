@@ -104,6 +104,9 @@ export interface CommentReply {
 export type BusinessModel = "ecomm" | "b2b" | "home_service";
 export type MetricSource = "manual" | "ghl" | "klaviyo" | "mixed";
 
+export type ColorWeek = "purple" | "red" | "blue" | "green" | "";
+export type ProductionCadence = "monthly" | "bi_monthly" | "quarterly" | "";
+
 export interface RevClient {
   id: string;
   name: string;
@@ -115,6 +118,15 @@ export interface RevClient {
   ltv: number | null;
   snapshot_token: string | null;
   active: number;
+  color_week: ColorWeek;
+  production_cadence: ProductionCadence;
+  last_production_date: string | null;
+  schedule_token: string | null;
+  contract_start: string | null;
+  contract_end: string | null;
+  blackout_dates: string;
+  contact_name: string;
+  contact_email: string;
   created_at: string;
   updated_at: string;
 }
@@ -173,7 +185,7 @@ export interface SnapshotEntry {
   updated_at: string;
 }
 
-export type SendStatus = "planned" | "scheduled" | "sent";
+export type SendStatus = "requested" | "planned" | "scheduled" | "sent";
 
 // A single email send plotted on the campaign calendar. client_id is optional
 // (soft link to rev_clients); client_name is always kept as a display fallback.
@@ -183,6 +195,7 @@ export interface ScheduledSend {
   client_name: string;
   title: string;
   send_date: string; // YYYY-MM-DD
+  send_time: string; // HH:MM (24h), "" if not time-slotted
   status: SendStatus;
   platform: string;
   note: string;
@@ -191,6 +204,24 @@ export interface ScheduledSend {
   offer: string; // offers being tested
   subject: string;
   preview_text: string;
+  // JSON string of the client's production intake brief, "" if none.
+  production_brief: string;
+  // Monday (YYYY-MM-DD) of the cadence window this send fulfills, if any.
+  cadence_window_start: string | null;
+  requested_by_client: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// One row per client per production window that has entered its reminder
+// period. Tracks the last day we emailed the client so follow-ups fire at most
+// once per day and stop when they book.
+export interface ScheduleReminder {
+  id: string;
+  client_id: string;
+  window_start: string; // Monday of the window being reminded about
+  last_sent: string; // YYYY-MM-DD of the last reminder email
+  count: number;
   created_at: string;
   updated_at: string;
 }
@@ -382,6 +413,20 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_sends_date ON scheduled_sends(send_date);
     CREATE INDEX IF NOT EXISTS idx_sends_client ON scheduled_sends(client_id);
 
+    CREATE TABLE IF NOT EXISTS schedule_reminders (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      window_start TEXT NOT NULL,
+      last_sent TEXT NOT NULL DEFAULT '',
+      count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, window_start),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reminders_client ON schedule_reminders(client_id);
+
     CREATE TABLE IF NOT EXISTS snapshot_deliverables (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
@@ -540,6 +585,43 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("snapshot_token")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN snapshot_token TEXT`);
   }
+  if (revClientCols.length && !revClientCols.includes("color_week")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN color_week TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("production_cadence")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN production_cadence TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("last_production_date")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN last_production_date TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("schedule_token")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN schedule_token TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("contract_start")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN contract_start TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("contract_end")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN contract_end TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("blackout_dates")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN blackout_dates TEXT NOT NULL DEFAULT '[]'`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("contact_name")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("contact_email")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`
+    );
+  }
 
   // scheduled_sends planning fields (added after the table shipped).
   const sendCols = tableColumns(database, "scheduled_sends");
@@ -549,6 +631,24 @@ function migrate(database: Database.Database) {
         `ALTER TABLE scheduled_sends ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`
       );
     }
+  }
+  if (sendCols.length && !sendCols.includes("cadence_window_start")) {
+    database.exec(`ALTER TABLE scheduled_sends ADD COLUMN cadence_window_start TEXT`);
+  }
+  if (sendCols.length && !sendCols.includes("send_time")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN send_time TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (sendCols.length && !sendCols.includes("production_brief")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN production_brief TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (sendCols.length && !sendCols.includes("requested_by_client")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN requested_by_client INTEGER NOT NULL DEFAULT 0`
+    );
   }
 
   // Move legacy single-html campaigns into campaign_emails

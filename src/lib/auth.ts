@@ -80,3 +80,7 @@ export function getAppUrl(): string {
 export function reviewUrl(magicToken: string): string {
   return `${getAppUrl()}/review/${magicToken}`;
 }
+
+export function scheduleUrl(scheduleToken: string): string {
+  return `${getAppUrl()}/schedule/${scheduleToken}`;
+}

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 
-type Status = "planned" | "scheduled" | "sent";
+type Status = "requested" | "planned" | "scheduled" | "sent";
 
 type Send = {
   id: string;
@@ -13,6 +13,7 @@ type Send = {
   client_name: string;
   title: string;
   send_date: string;
+  send_time: string;
   status: Status;
   note: string;
   audience: string;
@@ -20,16 +21,57 @@ type Send = {
   offer: string;
   subject: string;
   preview_text: string;
+  production_brief: string;
 };
 
 type Client = { id: string; name: string };
+
+// Ordered [key, label] pairs for rendering a submitted production brief.
+const BRIEF_LABELS: [string, string][] = [
+  ["locations", "Location(s)"],
+  ["onsiteContactName", "On-site contact"],
+  ["onsiteContactPhone", "Contact phone"],
+  ["locationState", "Location on shoot day"],
+  ["powerAccess", "Power access"],
+  ["timeRestrictions", "Time restrictions"],
+  ["parking", "Parking"],
+  ["onCameraPeople", "On camera / on site"],
+  ["participantsConsent", "Consent to film"],
+  ["mediaRelease", "Customers on camera"],
+  ["propertyApproval", "Private property"],
+  ["captureRequests", "Shots they'd like"],
+  ["avoidRequests", "Avoid capturing"],
+  ["additionalNotes", "Notes"],
+];
+
+function parseBrief(raw: string): [string, string][] {
+  if (!raw) return [];
+  try {
+    const obj = JSON.parse(raw) as Record<string, string>;
+    return BRIEF_LABELS.filter(([k]) => obj[k]).map(([k, label]) => [label, obj[k]]);
+  } catch {
+    return [];
+  }
+}
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// 24h HH:MM -> "10 AM"; blank stays blank.
+function fmtTime(hhmm: string): string {
+  if (!hhmm) return "";
+  const h = Number(hhmm.split(":")[0]);
+  if (Number.isNaN(h)) return "";
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12} ${period}`;
+}
+
 const STATUS_LABEL: Record<Status, string> = {
+  requested: "Requested",
   planned: "Planned",
   scheduled: "Scheduled",
   sent: "Sent",
@@ -43,6 +85,7 @@ const EMPTY = {
   clientId: "",
   title: "",
   sendDate: "",
+  sendTime: "",
   status: "planned" as Status,
   audience: "",
   purpose: "",
@@ -127,6 +170,7 @@ export default function CalendarPage() {
       clientId: s.client_id || "",
       title: s.title,
       sendDate: s.send_date,
+      sendTime: s.send_time || "",
       status: s.status,
       audience: s.audience,
       purpose: s.purpose,
@@ -162,6 +206,7 @@ export default function CalendarPage() {
       clientId: editing.clientId || null,
       title: editing.title,
       sendDate: editing.sendDate,
+      sendTime: editing.sendTime,
       status: editing.status,
       audience: editing.audience,
       purpose: editing.purpose,
@@ -223,6 +268,7 @@ export default function CalendarPage() {
         <Brand href="/admin" />
         <div className="row">
           <Link className="btn btn-ghost btn-sm" href="/admin">Campaigns</Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/production">Production</Link>
           <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
         </div>
       </header>
@@ -277,7 +323,9 @@ export default function CalendarPage() {
                       onMouseLeave={hideHover}
                     >
                       <span className="cal-chip-dot" />
-                      <span className="cal-chip-name">{s.title}</span>
+                      <span className="cal-chip-name">
+                        {s.send_time ? `${fmtTime(s.send_time)} · ` : ""}{s.title}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -302,6 +350,7 @@ export default function CalendarPage() {
             <div className="cal-pop-client">{hover.send.client_name}</div>
           ) : null}
           <dl className="cal-pop-list">
+            <PopRow label="Start time" value={fmtTime(hover.send.send_time)} />
             <PopRow label="Audience" value={hover.send.audience} />
             <PopRow label="Purpose" value={hover.send.purpose} />
             <PopRow label="Offers being tested" value={hover.send.offer} />
@@ -364,9 +413,20 @@ export default function CalendarPage() {
                     onChange={(e) => setEditing({ ...editing, sendDate: e.target.value })} />
                 </div>
                 <div className="field">
+                  <label>Start time</label>
+                  <select className="select-clean" value={editing.sendTime}
+                    onChange={(e) => setEditing({ ...editing, sendTime: e.target.value })}>
+                    <option value="">No time</option>
+                    {["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"].map((t) => (
+                      <option key={t} value={t}>{fmtTime(t)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
                   <label>Status</label>
                   <select className="select-clean" value={editing.status}
                     onChange={(e) => setEditing({ ...editing, status: e.target.value as Status })}>
+                    <option value="requested">Requested</option>
                     <option value="planned">Planned</option>
                     <option value="scheduled">Scheduled</option>
                     <option value="sent">Sent</option>
@@ -406,6 +466,21 @@ export default function CalendarPage() {
                 <input value={editing.note}
                   onChange={(e) => setEditing({ ...editing, note: e.target.value })} />
               </div>
+              {(() => {
+                const src = sends.find((s) => s.id === editing.id);
+                const rows = parseBrief(src?.production_brief || "");
+                if (!rows.length) return null;
+                return (
+                  <div className="cal-brief">
+                    <div className="cal-brief-head">Production brief (from client)</div>
+                    <dl className="cal-pop-list">
+                      {rows.map(([label, value]) => (
+                        <PopRow key={label} label={label} value={value} />
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })()}
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <div className="row">
                   <button className="btn" type="submit" disabled={saving}>

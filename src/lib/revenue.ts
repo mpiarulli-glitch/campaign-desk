@@ -78,6 +78,14 @@ export function updateRevClient(
     monthlyCost: number;
     ltv: number | null;
     active: boolean;
+    colorWeek: RevClient["color_week"];
+    productionCadence: RevClient["production_cadence"];
+    lastProductionDate: string | null;
+    contractStart: string | null;
+    contractEnd: string | null;
+    blackoutDates: string[];
+    contactName: string;
+    contactEmail: string;
   }>
 ): RevClient | null {
   const existing = getRevClient(id);
@@ -86,7 +94,10 @@ export function updateRevClient(
   db.prepare(
     `UPDATE rev_clients SET
        name = ?, business_model = ?, ghl_location_id = ?, klaviyo_account = ?,
-       retainer = ?, monthly_cost = ?, ltv = ?, active = ?, updated_at = ?
+       retainer = ?, monthly_cost = ?, ltv = ?, active = ?,
+       color_week = ?, production_cadence = ?, last_production_date = ?,
+       contract_start = ?, contract_end = ?, blackout_dates = ?,
+       contact_name = ?, contact_email = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     updates.name?.trim() ?? existing.name,
@@ -97,6 +108,18 @@ export function updateRevClient(
     updates.monthlyCost ?? existing.monthly_cost,
     updates.ltv === undefined ? existing.ltv : updates.ltv,
     updates.active === undefined ? existing.active : updates.active ? 1 : 0,
+    updates.colorWeek ?? existing.color_week,
+    updates.productionCadence ?? existing.production_cadence,
+    updates.lastProductionDate === undefined
+      ? existing.last_production_date
+      : updates.lastProductionDate,
+    updates.contractStart === undefined ? existing.contract_start : updates.contractStart,
+    updates.contractEnd === undefined ? existing.contract_end : updates.contractEnd,
+    updates.blackoutDates === undefined
+      ? existing.blackout_dates
+      : JSON.stringify(updates.blackoutDates),
+    updates.contactName?.trim() ?? existing.contact_name,
+    updates.contactEmail?.trim() ?? existing.contact_email,
     nowIso(),
     id
   );

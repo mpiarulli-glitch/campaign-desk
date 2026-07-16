@@ -9,7 +9,7 @@ import {
 
 export type { ScheduledSend, SendStatus };
 
-const STATUSES: SendStatus[] = ["planned", "scheduled", "sent"];
+const STATUSES: SendStatus[] = ["requested", "planned", "scheduled", "sent"];
 export const SEND_STATUSES = STATUSES;
 
 // A send joined with its client's model (for calendar color-coding). model is
@@ -60,6 +60,7 @@ export function createSend(input: {
   clientName?: string;
   title: string;
   sendDate: string;
+  sendTime?: string;
   status?: SendStatus;
   platform?: string;
   note?: string;
@@ -68,6 +69,9 @@ export function createSend(input: {
   offer?: string;
   subject?: string;
   previewText?: string;
+  productionBrief?: string;
+  cadenceWindowStart?: string | null;
+  requestedByClient?: boolean;
 }): ScheduledSend {
   const db = getDb();
   const id = nanoid(12);
@@ -75,15 +79,17 @@ export function createSend(input: {
   const clientId = input.clientId || null;
   db.prepare(
     `INSERT INTO scheduled_sends
-      (id, client_id, client_name, title, send_date, status, platform, note,
-       audience, purpose, offer, subject, preview_text, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, client_id, client_name, title, send_date, send_time, status, platform, note,
+       audience, purpose, offer, subject, preview_text, production_brief,
+       cadence_window_start, requested_by_client, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     clientId,
     resolveClientName(clientId, input.clientName || ""),
     input.title.trim(),
     input.sendDate,
+    (input.sendTime || "").trim(),
     normalizeStatus(input.status),
     (input.platform || "").trim(),
     (input.note || "").trim(),
@@ -92,6 +98,9 @@ export function createSend(input: {
     (input.offer || "").trim(),
     (input.subject || "").trim(),
     (input.previewText || "").trim(),
+    input.productionBrief || "",
+    input.cadenceWindowStart || null,
+    input.requestedByClient ? 1 : 0,
     ts,
     ts
   );
@@ -105,6 +114,7 @@ export function updateSend(
     clientName: string;
     title: string;
     sendDate: string;
+    sendTime: string;
     status: SendStatus;
     platform: string;
     note: string;
@@ -126,7 +136,7 @@ export function updateSend(
       : existing.client_name;
   db.prepare(
     `UPDATE scheduled_sends SET
-       client_id = ?, client_name = ?, title = ?, send_date = ?,
+       client_id = ?, client_name = ?, title = ?, send_date = ?, send_time = ?,
        status = ?, platform = ?, note = ?, audience = ?, purpose = ?,
        offer = ?, subject = ?, preview_text = ?, updated_at = ?
      WHERE id = ?`
@@ -135,6 +145,7 @@ export function updateSend(
     clientName,
     updates.title?.trim() ?? existing.title,
     updates.sendDate ?? existing.send_date,
+    updates.sendTime?.trim() ?? existing.send_time,
     updates.status ? normalizeStatus(updates.status) : existing.status,
     updates.platform?.trim() ?? existing.platform,
     updates.note?.trim() ?? existing.note,

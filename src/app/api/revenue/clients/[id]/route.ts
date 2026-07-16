@@ -44,6 +44,8 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
+  const COLOR_WEEKS = ["purple", "red", "blue", "green", ""];
+  const CADENCES = ["monthly", "bi_monthly", "quarterly", ""];
   const client = updateRevClient(id, {
     name: typeof body.name === "string" ? body.name : undefined,
     businessModel: MODELS.includes(body.businessModel)
@@ -59,6 +61,28 @@ export async function PATCH(request: Request, { params }: Params) {
     ltv:
       body.ltv === null || typeof body.ltv === "number" ? body.ltv : undefined,
     active: typeof body.active === "boolean" ? body.active : undefined,
+    colorWeek: COLOR_WEEKS.includes(body.colorWeek) ? body.colorWeek : undefined,
+    productionCadence: CADENCES.includes(body.productionCadence)
+      ? body.productionCadence
+      : undefined,
+    lastProductionDate:
+      body.lastProductionDate === null || typeof body.lastProductionDate === "string"
+        ? body.lastProductionDate
+        : undefined,
+    contractStart:
+      body.contractStart === null || typeof body.contractStart === "string"
+        ? body.contractStart
+        : undefined,
+    contractEnd:
+      body.contractEnd === null || typeof body.contractEnd === "string"
+        ? body.contractEnd
+        : undefined,
+    blackoutDates: Array.isArray(body.blackoutDates)
+      ? body.blackoutDates.filter((d: unknown) => typeof d === "string")
+      : undefined,
+    contactName: typeof body.contactName === "string" ? body.contactName : undefined,
+    contactEmail:
+      typeof body.contactEmail === "string" ? body.contactEmail : undefined,
   });
   return NextResponse.json({ client });
 }

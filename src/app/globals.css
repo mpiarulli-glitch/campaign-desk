@@ -445,6 +445,54 @@ button {
   font-size: 14px;
 }
 
+.badge-not_configured,
+.badge-not_due {
+  color: var(--text-muted);
+}
+
+.badge-due {
+  color: var(--warning);
+  border-color: rgba(196, 137, 0, 0.28);
+  background: #fff8e8;
+}
+
+.badge-requested {
+  color: #8a6200;
+  border-color: rgba(196, 137, 0, 0.28);
+  background: #fff1c2;
+}
+
+.badge-scheduled {
+  color: #007a87;
+  border-color: rgba(0, 212, 232, 0.35);
+  background: var(--bg-tint);
+}
+
+.badge-sent {
+  color: var(--success);
+  border-color: rgba(31, 157, 99, 0.28);
+  background: #edf9f3;
+}
+
+.badge-inactive {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.color-dot.purple { background: #8b5cf6; }
+.color-dot.red { background: #ef4444; }
+.color-dot.blue { background: #3b82f6; }
+.color-dot.green { background: #22c55e; }
+
 .grid-2 {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
@@ -1517,10 +1565,12 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.chip-requested .cal-chip-dot { background: #d946ef; }
 .chip-planned .cal-chip-dot { background: #c48900; }
 .chip-scheduled .cal-chip-dot { background: #2563eb; }
 .chip-sent .cal-chip-dot { background: var(--success); }
 .cal-chip.chip-sent { opacity: 0.62; }
+.cal-chip.chip-requested { border: 1px dashed #d946ef; }
 
 /* Hover detail card, positioned via JS (fixed). */
 .cal-pop {
@@ -1558,6 +1608,7 @@ button {
   color: var(--text-muted);
   white-space: nowrap;
 }
+.cal-pop-status.chip-requested { color: #a21caf; background: #fbe9fc; }
 .cal-pop-status.chip-planned { color: #8a6200; background: #fdf6e6; }
 .cal-pop-status.chip-scheduled { color: #1d4ed8; background: #eaf1ff; }
 .cal-pop-status.chip-sent { color: #146c43; background: #e8f6ee; }
@@ -2009,4 +2060,354 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px 28px;
+}
+
+/* ---------------------------------------------------- client scheduling page */
+.sched-main {
+  width: min(860px, calc(100% - 40px));
+  padding-bottom: 140px;
+}
+
+.sched-hero {
+  padding: 8px 0 4px;
+}
+.sched-sub {
+  margin: 10px 0 0;
+  color: var(--text-body);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 56ch;
+}
+.sched-sub strong {
+  color: var(--text);
+}
+
+.sched-grid-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.sched-grid {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-width: 520px;
+}
+.sched-row-contents {
+  display: contents;
+}
+
+/* Header cells */
+.sched-corner {
+  background: var(--bg-elevated);
+}
+.sched-daycol {
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 6px 10px;
+}
+.sched-dow {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.sched-date {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sched-daycol.is-off .sched-dow,
+.sched-daycol.is-off .sched-date {
+  color: var(--border-strong);
+}
+
+/* Time gutter */
+.sched-timelabel {
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Slot cells */
+.sched-slot {
+  background: var(--bg-elevated);
+  border: 0;
+  min-height: 46px;
+  color: var(--accent-ink);
+  font-size: 15px;
+  font-weight: 700;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.sched-slot:hover:not(:disabled) {
+  background: var(--bg-tint);
+  box-shadow: inset 0 0 0 2px rgba(0, 212, 232, 0.45);
+}
+.sched-slot:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.sched-slot.is-selected {
+  background: var(--accent);
+  color: #04333a;
+  box-shadow: inset 0 0 0 1px var(--accent-hover);
+}
+.sched-slot:disabled {
+  cursor: not-allowed;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bg-soft),
+    var(--bg-soft) 6px,
+    var(--bg-elevated) 6px,
+    var(--bg-elevated) 12px
+  );
+}
+
+/* Selection tray */
+.sched-tray {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 20px 20px;
+  background: linear-gradient(180deg, rgba(243, 245, 248, 0) 0%, var(--bg) 42%);
+  transform: translateY(12px);
+  opacity: 0.85;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  z-index: 30;
+}
+.sched-tray.is-open {
+  transform: translateY(0);
+  opacity: 1;
+}
+.sched-tray-inner {
+  width: min(860px, calc(100% - 40px));
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+  padding: 12px 14px;
+}
+.sched-tray-when {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.sched-tray-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-ink);
+}
+.sched-tray-when strong {
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sched-tray-note {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+}
+.sched-tray-note:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
+}
+.sched-tray-btn {
+  white-space: nowrap;
+}
+
+/* Notices + confirmation */
+.sched-notice {
+  padding: 24px 0;
+  max-width: 52ch;
+}
+.sched-notice .muted {
+  font-size: 16px;
+  line-height: 1.6;
+}
+.sched-confirmed {
+  text-align: center;
+  padding: 40px 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.sched-confirmed-check {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  background: #edf9f3;
+  color: var(--success);
+  font-size: 28px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sched-confirmed-when {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 4px 0 14px;
+}
+
+@media (max-width: 620px) {
+  .sched-tray-inner {
+    flex-wrap: wrap;
+  }
+  .sched-tray-note {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .sched-tray-btn {
+    width: 100%;
+    order: 4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sched-tray,
+  .sched-slot {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------- production brief (client) */
+.sched-hint {
+  text-align: center;
+  padding: 8px 0 24px;
+}
+
+.brief-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--ink);
+  color: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.brief-selected-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.brief-selected strong {
+  font-size: 16px;
+}
+.brief-selected .btn-ghost {
+  color: #cbd2dc;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.brief-selected .btn-ghost:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.brief-intro {
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 2px 0;
+}
+
+.brief-section {
+  gap: 14px;
+}
+.brief-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.brief-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  letter-spacing: 0.06em;
+}
+.brief-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.brief-guide {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-body);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.req {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--danger);
+  margin-left: 6px;
+}
+.brief-submit {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+/* Read-only production brief inside the admin send modal */
+.cal-brief {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  padding: 12px 14px;
+}
+.cal-brief-head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent-ink);
+  margin-bottom: 8px;
 }

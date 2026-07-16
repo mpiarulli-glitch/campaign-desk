@@ -8,6 +8,9 @@ import { Brand } from "@/components/Brand";
 type Model = "ecomm" | "b2b" | "home_service";
 type Fmt = "currency" | "number" | "percent" | "multiple";
 
+type ColorWeek = "purple" | "red" | "blue" | "green" | "";
+type Cadence = "monthly" | "bi_monthly" | "quarterly" | "";
+
 type Client = {
   id: string;
   name: string;
@@ -17,6 +20,34 @@ type Client = {
   retainer: number;
   monthly_cost: number;
   ltv: number | null;
+  color_week: ColorWeek;
+  production_cadence: Cadence;
+  last_production_date: string | null;
+  contract_start: string | null;
+  contract_end: string | null;
+  blackout_dates: string;
+  contact_name: string;
+  contact_email: string;
+  schedule_token: string | null;
+};
+
+type CycleStatus =
+  | "not_configured"
+  | "inactive"
+  | "not_due"
+  | "due"
+  | "requested"
+  | "scheduled"
+  | "sent";
+
+const CYCLE_STATUS_LABEL: Record<CycleStatus, string> = {
+  not_configured: "Not configured",
+  inactive: "Inactive",
+  not_due: "Not due yet",
+  due: "Due",
+  requested: "Requested",
+  scheduled: "Scheduled",
+  sent: "Sent",
 };
 
 type Metric = {
@@ -35,6 +66,15 @@ type Metric = {
 };
 
 type Kpi = { key: string; label: string; fmt: Fmt; hint: string | null; value: number | null };
+
+function fmtTime(hhmm: string): string {
+  if (!hhmm) return "";
+  const h = Number(hhmm.split(":")[0]);
+  if (Number.isNaN(h)) return "";
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12} ${period}`;
+}
 
 function fmtVal(v: number | null, fmt: Fmt): string {
   if (v === null || Number.isNaN(v)) return "—";
@@ -94,12 +134,20 @@ export default function RevenueClientPage() {
   const [kpis, setKpis] = useState<Kpi[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [tab, setTab] = useState<"overview" | "data" | "config">("overview");
+  const [tab, setTab] = useState<"overview" | "data" | "config" | "production">("overview");
   const [row, setRow] = useState({ ...EMPTY_MONTH });
   const [saving, setSaving] = useState(false);
 
   // config drafts
   const [cfg, setCfg] = useState<Partial<Client>>({});
+  const [blackoutInput, setBlackoutInput] = useState("");
+  const [cadenceInfo, setCadenceInfo] = useState<{
+    window: { start: string; end: string } | null;
+    status: CycleStatus;
+    existingSend: { sendDate: string; sendTime: string; status: string } | null;
+  } | null>(null);
+  const [scheduleLink, setScheduleLink] = useState("");
+  const [linkMessage, setLinkMessage] = useState("");
 
   async function load() {
     const res = await fetch(`/api/revenue/clients/${id}`);
@@ -113,11 +161,44 @@ export default function RevenueClientPage() {
     setMetrics(data.metrics || []);
     setKpis(data.kpis || []);
     setCfg(data.client);
+    setBlackoutInput(
+      (() => {
+        try {
+          return (JSON.parse(data.client.blackout_dates || "[]") as string[]).join(", ");
+        } catch {
+          return "";
+        }
+      })()
+    );
+  }
+
+  async function loadCadence() {
+    const res = await fetch(`/api/revenue/clients/${id}/cadence`);
+    if (res.ok) setCadenceInfo(await res.json());
   }
 
   useEffect(() => {
     load();
+    loadCadence();
   }, [id]);
+
+  async function copyScheduleLink() {
+    setLinkMessage("");
+    const res = await fetch(`/api/revenue/clients/${id}/schedule-token`);
+    if (!res.ok) {
+      setLinkMessage("Could not get link.");
+      return;
+    }
+    const data = await res.json();
+    const url = `${window.location.origin}/schedule/${data.token}`;
+    setScheduleLink(url);
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkMessage("Link copied to clipboard.");
+    } catch {
+      setLinkMessage("Link ready — copy it below.");
+    }
+  }
 
   async function saveMonth(e: FormEvent) {
     e.preventDefault();
@@ -196,6 +277,38 @@ export default function RevenueClientPage() {
     load();
   }
 
+  async function saveProduction(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    const blackoutDates = blackoutInput
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean);
+    const res = await fetch(`/api/revenue/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        colorWeek: cfg.color_week || "",
+        productionCadence: cfg.production_cadence || "",
+        lastProductionDate: cfg.last_production_date || null,
+        contractStart: cfg.contract_start || null,
+        contractEnd: cfg.contract_end || null,
+        blackoutDates,
+        contactName: cfg.contact_name || "",
+        contactEmail: cfg.contact_email || "",
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not save production cadence.");
+      return;
+    }
+    setMessage("Production cadence saved.");
+    await load();
+    await loadCadence();
+  }
+
   async function removeClient() {
     if (!confirm("Delete this client and all its metrics?")) return;
     const res = await fetch(`/api/revenue/clients/${id}`, { method: "DELETE" });
@@ -251,6 +364,9 @@ export default function RevenueClientPage() {
           </button>
           <button className={`tab ${tab === "data" ? "active" : ""}`} onClick={() => setTab("data")}>
             Monthly data
+          </button>
+          <button className={`tab ${tab === "production" ? "active" : ""}`} onClick={() => setTab("production")}>
+            Production
           </button>
           <button className={`tab ${tab === "config" ? "active" : ""}`} onClick={() => setTab("config")}>
             Settings
@@ -362,6 +478,124 @@ export default function RevenueClientPage() {
                 </table>
               </div>
             ) : null}
+          </>
+        ) : null}
+
+        {tab === "production" ? (
+          <>
+            <div className="card card-pad stack">
+              <strong>Next production window</strong>
+              {cadenceInfo?.window ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  {cadenceInfo.window.start} → {cadenceInfo.window.end}{" "}
+                  <span className={`badge badge-${cadenceInfo.status}`}>
+                    {CYCLE_STATUS_LABEL[cadenceInfo.status]}
+                  </span>
+                </p>
+              ) : (
+                <p className="muted" style={{ margin: 0 }}>
+                  Set a color week and cadence below to compute a window.
+                </p>
+              )}
+              {cadenceInfo?.existingSend ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  Current pick: {cadenceInfo.existingSend.sendDate}
+                  {cadenceInfo.existingSend.sendTime
+                    ? ` at ${fmtTime(cadenceInfo.existingSend.sendTime)}`
+                    : ""}{" "}
+                  ({cadenceInfo.existingSend.status})
+                </p>
+              ) : null}
+              <div className="row">
+                <button type="button" className="btn btn-sm" onClick={copyScheduleLink}>
+                  Copy schedule link
+                </button>
+                {linkMessage ? <span className="muted">{linkMessage}</span> : null}
+              </div>
+              {scheduleLink ? (
+                <input readOnly value={scheduleLink} onFocus={(e) => e.currentTarget.select()} />
+              ) : null}
+            </div>
+
+            <form className="card card-pad stack" onSubmit={saveProduction}>
+              <strong>Production cadence</strong>
+              <div className="rev-form-grid">
+                <div className="field">
+                  <label>Color week</label>
+                  <select
+                    className="select-clean"
+                    value={cfg.color_week || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, color_week: e.target.value as ColorWeek }))}
+                  >
+                    <option value="">Not set</option>
+                    <option value="purple">Purple</option>
+                    <option value="red">Red</option>
+                    <option value="blue">Blue</option>
+                    <option value="green">Green</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Cadence</label>
+                  <select
+                    className="select-clean"
+                    value={cfg.production_cadence || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, production_cadence: e.target.value as Cadence }))}
+                  >
+                    <option value="">Not set</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="bi_monthly">Bi-Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Last production date</label>
+                  <input
+                    type="date"
+                    value={cfg.last_production_date || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, last_production_date: e.target.value || null }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>Contract start</label>
+                  <input
+                    type="date"
+                    value={cfg.contract_start || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, contract_start: e.target.value || null }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>Contract end</label>
+                  <input
+                    type="date"
+                    value={cfg.contract_end || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, contract_end: e.target.value || null }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>Contact name</label>
+                  <input
+                    value={cfg.contact_name || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, contact_name: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>Contact email</label>
+                  <input
+                    value={cfg.contact_email || ""}
+                    onChange={(e) => setCfg((c) => ({ ...c, contact_email: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label>Blackout dates (comma-separated, YYYY-MM-DD)</label>
+                <input value={blackoutInput} onChange={(e) => setBlackoutInput(e.target.value)} placeholder="2026-12-24, 2026-12-25" />
+              </div>
+              <div className="row">
+                <button className="btn" type="submit" disabled={saving}>
+                  {saving ? "Saving..." : "Save cadence"}
+                </button>
+              </div>
+            </form>
           </>
         ) : null}
 
