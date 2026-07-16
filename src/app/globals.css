@@ -1599,3 +1599,138 @@ button {
   max-height: 90vh;
   overflow-y: auto;
 }
+
+/* ---------------------------------------------------------- Account snapshot */
+.snap-share {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.snap-client-name {
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.snap-group { display: flex; flex-direction: column; gap: 10px; }
+.snap-cat {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--border);
+}
+
+.snap-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.snap-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.snap-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.snap-cadence { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* Editable status select, colored by status */
+.snap-status-select {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+/* Read-only status pill (client view) */
+.snap-pill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+.status-not_started { color: #6b7280; background: #f1f3f5; }
+.status-in_progress { color: #8a6200; background: #fdf6e6; }
+.status-completed { color: #146c43; background: #e8f6ee; }
+.status-shared { color: #1d4ed8; background: #eaf1ff; }
+.status-approved { color: #0b6b3a; background: #dcf3e6; }
+select.snap-status-select.status-not_started { background: #f1f3f5; }
+
+.snap-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.snap-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.snap-fields label span {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.snap-fields textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 13px;
+}
+.snap-fields textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
+}
+
+.snap-ro { display: flex; flex-direction: column; gap: 2px; }
+.snap-ro-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.snap-ro p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+
+.snap-deliv-edit {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.snap-deliv-edit input {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .snap-fields { grid-template-columns: 1fr; }
+  .snap-deliv-edit { grid-template-columns: 1fr; }
+}

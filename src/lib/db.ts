@@ -113,7 +113,41 @@ export interface RevClient {
   retainer: number;
   monthly_cost: number;
   ltv: number | null;
+  snapshot_token: string | null;
   active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SnapshotStatus =
+  | "not_started"
+  | "in_progress"
+  | "completed"
+  | "shared"
+  | "approved";
+
+export interface SnapshotDeliverable {
+  id: string;
+  client_id: string;
+  category: string;
+  name: string;
+  cadence: string;
+  sort_order: number;
+  active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// One row per deliverable per week (week_start = Monday, YYYY-MM-DD).
+export interface SnapshotEntry {
+  id: string;
+  deliverable_id: string;
+  client_id: string;
+  week_start: string;
+  status: SnapshotStatus;
+  work_done: string;
+  next_steps: string;
+  notes: string;
   created_at: string;
   updated_at: string;
 }
@@ -275,6 +309,7 @@ export function getDb(): Database.Database {
       retainer REAL NOT NULL DEFAULT 0,
       monthly_cost REAL NOT NULL DEFAULT 0,
       ltv REAL,
+      snapshot_token TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -325,6 +360,39 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_sends_date ON scheduled_sends(send_date);
     CREATE INDEX IF NOT EXISTS idx_sends_client ON scheduled_sends(client_id);
+
+    CREATE TABLE IF NOT EXISTS snapshot_deliverables (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      cadence TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS snapshot_entries (
+      id TEXT PRIMARY KEY,
+      deliverable_id TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'not_started',
+      work_done TEXT NOT NULL DEFAULT '',
+      next_steps TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (deliverable_id, week_start),
+      FOREIGN KEY (deliverable_id) REFERENCES snapshot_deliverables(id) ON DELETE CASCADE,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_snapdeliv_client ON snapshot_deliverables(client_id);
+    CREATE INDEX IF NOT EXISTS idx_snapentry_deliv ON snapshot_entries(deliverable_id);
+    CREATE INDEX IF NOT EXISTS idx_snapentry_week ON snapshot_entries(client_id, week_start);
 
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);
@@ -418,6 +486,11 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE campaign_emails ADD COLUMN purpose TEXT NOT NULL DEFAULT ''`
     );
+  }
+
+  const revClientCols = tableColumns(database, "rev_clients");
+  if (revClientCols.length && !revClientCols.includes("snapshot_token")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN snapshot_token TEXT`);
   }
 
   // scheduled_sends planning fields (added after the table shipped).
