@@ -4,7 +4,23 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+
+type Win = { id: string; body: string; happened_on: string };
+type MetricRow = { id: string; metric: string; period: string; value: number; unit: string };
+
+function groupSeries(rows: MetricRow[]): MetricSeries[] {
+  const map = new Map<string, MetricSeries>();
+  for (const r of rows) {
+    let s = map.get(r.metric);
+    if (!s) { s = { metric: r.metric, unit: r.unit, points: [] }; map.set(r.metric, s); }
+    if (r.unit && !s.unit) s.unit = r.unit;
+    s.points.push({ period: r.period, value: r.value });
+  }
+  for (const s of map.values()) s.points.sort((a, b) => a.period.localeCompare(b.period));
+  return Array.from(map.values());
+}
 
 type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
 const STATUSES: { value: Status; label: string }[] = [
@@ -49,6 +65,10 @@ export default function SnapshotEditorPage() {
   const [copied, setCopied] = useState(false);
   const [managing, setManaging] = useState(false);
   const [nd, setNd] = useState({ category: "", name: "", cadence: "" });
+  const [wins, setWins] = useState<Win[]>([]);
+  const [metricsRaw, setMetricsRaw] = useState<MetricRow[]>([]);
+  const [nw, setNw] = useState({ body: "", happenedOn: "" });
+  const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
 
   const shareUrl =
     token && typeof window !== "undefined"
@@ -72,7 +92,48 @@ export default function SnapshotEditorPage() {
     setName(data.account.name);
     setDeliverables(data.deliverables || []);
     setToken(data.token || null);
+    setWins(data.wins || []);
+    setMetricsRaw(data.metricsRaw || []);
   }, [id, router]);
+
+  async function addWin(e: FormEvent) {
+    e.preventDefault();
+    if (!nw.body.trim()) return;
+    const res = await fetch("/api/snapshot/win", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId: id, body: nw.body, happenedOn: nw.happenedOn }),
+    });
+    if (!res.ok) { setError("Could not add win."); return; }
+    setNw({ body: "", happenedOn: "" });
+    loadMeta();
+  }
+  async function removeWin(winId: string) {
+    await fetch(`/api/snapshot/win/${winId}`, { method: "DELETE" });
+    loadMeta();
+  }
+  async function addMetric(e: FormEvent) {
+    e.preventDefault();
+    if (!nm.metric.trim() || !nm.period.trim() || nm.value === "") return;
+    const res = await fetch("/api/snapshot/metric", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: id,
+        metric: nm.metric,
+        period: nm.period,
+        value: Number(nm.value),
+        unit: nm.unit,
+      }),
+    });
+    if (!res.ok) { setError("Could not save metric."); return; }
+    setNm({ metric: nm.metric, period: "", value: "", unit: nm.unit });
+    loadMeta();
+  }
+  async function removeMetric(mId: string) {
+    await fetch(`/api/snapshot/metric/${mId}`, { method: "DELETE" });
+    loadMeta();
+  }
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
   useEffect(() => { fetchWeek(week); }, [week, fetchWeek]);
@@ -279,6 +340,64 @@ export default function SnapshotEditorPage() {
             ))}
           </div>
         )}
+
+        <div className="card card-pad stack">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong>Wins</strong>
+            <span className="muted" style={{ fontSize: 12 }}>Shown to the client, newest first</span>
+          </div>
+          {wins.length > 0 ? (
+            <div className="stack" style={{ gap: 8 }}>
+              {wins.map((w) => (
+                <div key={w.id} className="snap-win-edit">
+                  <span aria-hidden="true">🏆</span>
+                  <div style={{ flex: 1 }}>
+                    <div>{w.body}</div>
+                    {w.happened_on ? <span className="muted" style={{ fontSize: 12 }}>{w.happened_on}</span> : null}
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => removeWin(w.id)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>No wins yet.</p>
+          )}
+          <form className="row" style={{ gap: 8 }} onSubmit={addWin}>
+            <input style={{ flex: 1 }} value={nw.body}
+              onChange={(e) => setNw({ ...nw, body: e.target.value })}
+              placeholder="Add a win the client should see" />
+            <input type="date" value={nw.happenedOn}
+              onChange={(e) => setNw({ ...nw, happenedOn: e.target.value })} />
+            <button className="btn btn-sm" type="submit">Add win</button>
+          </form>
+        </div>
+
+        <div className="card card-pad stack">
+          <strong>Performance</strong>
+          <PerfCharts series={groupSeries(metricsRaw)} />
+          <form className="snap-metric-form" onSubmit={addMetric}>
+            <input value={nm.metric} onChange={(e) => setNm({ ...nm, metric: e.target.value })} placeholder="Metric (e.g. Leads)" />
+            <input value={nm.period} onChange={(e) => setNm({ ...nm, period: e.target.value })} placeholder="Period (YYYY-MM)" />
+            <input value={nm.value} onChange={(e) => setNm({ ...nm, value: e.target.value })} placeholder="Value" type="number" step="any" />
+            <input value={nm.unit} onChange={(e) => setNm({ ...nm, unit: e.target.value })} placeholder="Unit ($, %, blank)" />
+            <button className="btn btn-sm" type="submit">Add / update</button>
+          </form>
+          {metricsRaw.length > 0 ? (
+            <div className="snap-metric-list">
+              {metricsRaw.map((m) => (
+                <div key={m.id} className="snap-metric-row">
+                  <span><strong>{m.metric}</strong> · {m.period}</span>
+                  <span>{m.unit === "$" ? "$" : ""}{m.value.toLocaleString()}{m.unit === "%" ? "%" : ""}</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => removeMetric(m.id)}>×</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Add data points (same metric name across months builds a trend chart).
+            </p>
+          )}
+        </div>
       </main>
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountByToken, weekData } from "@/lib/snapshot";
+import { getAccountByToken, listWins, metricsSeries, weekData } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -20,5 +20,7 @@ export async function GET(request: Request, { params }: Params) {
     account: { name: account.name },
     week,
     rows: weekData(account.id, week),
+    wins: listWins(account.id),
+    metrics: metricsSeries(account.id),
   });
 }

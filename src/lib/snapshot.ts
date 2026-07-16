@@ -4,10 +4,12 @@ import {
   nowIso,
   type RevClient,
   type SnapshotDeliverable,
+  type SnapshotMetric,
   type SnapshotStatus,
+  type SnapshotWin,
 } from "./db";
 
-export type { SnapshotDeliverable, SnapshotStatus };
+export type { SnapshotDeliverable, SnapshotStatus, SnapshotWin, SnapshotMetric };
 
 export const SNAPSHOT_STATUSES: { value: SnapshotStatus; label: string }[] = [
   { value: "not_started", label: "Not started" },
@@ -289,6 +291,126 @@ export function upsertEntry(input: {
 interface SnapshotEntryResult {
   ok: boolean;
   clientId?: string;
+}
+
+/* --------------------------------------------------------------- wins */
+
+export function listWins(clientId: string): SnapshotWin[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM snapshot_wins WHERE client_id = ?
+       ORDER BY (happened_on = '') ASC, happened_on DESC, created_at DESC`
+    )
+    .all(clientId) as SnapshotWin[];
+}
+
+export function addWin(input: {
+  clientId: string;
+  body: string;
+  happenedOn?: string;
+}): SnapshotWin {
+  const db = getDb();
+  const id = nanoid(12);
+  const ts = nowIso();
+  db.prepare(
+    `INSERT INTO snapshot_wins (id, client_id, body, happened_on, sort_order, created_at)
+     VALUES (?, ?, ?, ?, 0, ?)`
+  ).run(id, input.clientId, input.body.trim(), (input.happenedOn || "").trim(), ts);
+  return db.prepare(`SELECT * FROM snapshot_wins WHERE id = ?`).get(id) as SnapshotWin;
+}
+
+export function deleteWin(id: string): boolean {
+  return getDb().prepare(`DELETE FROM snapshot_wins WHERE id = ?`).run(id).changes > 0;
+}
+
+/* ------------------------------------------------------- performance */
+
+export interface MetricSeries {
+  metric: string;
+  unit: string;
+  points: { period: string; value: number }[];
+}
+
+// All metric data points for an account, grouped into ordered series.
+export function metricsSeries(clientId: string): MetricSeries[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM snapshot_metrics WHERE client_id = ?
+       ORDER BY sort_order ASC, metric ASC, period ASC`
+    )
+    .all(clientId) as SnapshotMetric[];
+  const map = new Map<string, MetricSeries>();
+  for (const r of rows) {
+    let s = map.get(r.metric);
+    if (!s) {
+      s = { metric: r.metric, unit: r.unit, points: [] };
+      map.set(r.metric, s);
+    }
+    if (r.unit && !s.unit) s.unit = r.unit;
+    s.points.push({ period: r.period, value: r.value });
+  }
+  for (const s of map.values()) s.points.sort((a, b) => a.period.localeCompare(b.period));
+  return Array.from(map.values());
+}
+
+export function upsertMetric(input: {
+  clientId: string;
+  metric: string;
+  period: string;
+  value: number;
+  unit?: string;
+  sortOrder?: number;
+}): SnapshotMetric {
+  const db = getDb();
+  const ts = nowIso();
+  const existing = db
+    .prepare(`SELECT * FROM snapshot_metrics WHERE client_id = ? AND metric = ? AND period = ?`)
+    .get(input.clientId, input.metric.trim(), input.period.trim()) as
+    | SnapshotMetric
+    | undefined;
+  if (existing) {
+    db.prepare(
+      `UPDATE snapshot_metrics SET value = ?, unit = ?, sort_order = ?, updated_at = ? WHERE id = ?`
+    ).run(
+      input.value,
+      input.unit ?? existing.unit,
+      input.sortOrder ?? existing.sort_order,
+      ts,
+      existing.id
+    );
+    return db.prepare(`SELECT * FROM snapshot_metrics WHERE id = ?`).get(existing.id) as SnapshotMetric;
+  }
+  const id = nanoid(12);
+  db.prepare(
+    `INSERT INTO snapshot_metrics
+      (id, client_id, metric, period, value, unit, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    input.clientId,
+    input.metric.trim(),
+    input.period.trim(),
+    input.value,
+    (input.unit || "").trim(),
+    input.sortOrder ?? 0,
+    ts,
+    ts
+  );
+  return db.prepare(`SELECT * FROM snapshot_metrics WHERE id = ?`).get(id) as SnapshotMetric;
+}
+
+export function deleteMetric(id: string): boolean {
+  return getDb().prepare(`DELETE FROM snapshot_metrics WHERE id = ?`).run(id).changes > 0;
+}
+
+// Raw metric rows (with ids) for team-side management.
+export function listMetricsRaw(clientId: string): SnapshotMetric[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM snapshot_metrics WHERE client_id = ?
+       ORDER BY metric ASC, period ASC`
+    )
+    .all(clientId) as SnapshotMetric[];
 }
 
 // weeks that have any logged activity, for the client-facing week picker.

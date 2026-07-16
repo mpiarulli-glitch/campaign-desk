@@ -138,6 +138,27 @@ export interface SnapshotDeliverable {
   updated_at: string;
 }
 
+export interface SnapshotWin {
+  id: string;
+  client_id: string;
+  body: string;
+  happened_on: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface SnapshotMetric {
+  id: string;
+  client_id: string;
+  metric: string;
+  period: string; // e.g. 2026-04
+  value: number;
+  unit: string; // e.g. "$", "%", ""
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // One row per deliverable per week (week_start = Monday, YYYY-MM-DD).
 export interface SnapshotEntry {
   id: string;
@@ -393,6 +414,33 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_snapdeliv_client ON snapshot_deliverables(client_id);
     CREATE INDEX IF NOT EXISTS idx_snapentry_deliv ON snapshot_entries(deliverable_id);
     CREATE INDEX IF NOT EXISTS idx_snapentry_week ON snapshot_entries(client_id, week_start);
+
+    CREATE TABLE IF NOT EXISTS snapshot_wins (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      happened_on TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS snapshot_metrics (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      period TEXT NOT NULL,
+      value REAL NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, metric, period),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_snapwins_client ON snapshot_wins(client_id);
+    CREATE INDEX IF NOT EXISTS idx_snapmetrics_client ON snapshot_metrics(client_id);
 
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);

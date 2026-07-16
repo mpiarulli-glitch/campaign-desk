@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { getAccount, weekData } from "@/lib/snapshot";
+import { getAccount, listWins, metricsSeries, weekData } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -18,5 +18,10 @@ export async function GET(request: Request, { params }: Params) {
   if (!WEEK_RE.test(week)) {
     return NextResponse.json({ error: "week (YYYY-MM-DD) required" }, { status: 400 });
   }
-  return NextResponse.json({ week, rows: weekData(id, week) });
+  return NextResponse.json({
+    week,
+    rows: weekData(id, week),
+    wins: listWins(id),
+    metrics: metricsSeries(id),
+  });
 }

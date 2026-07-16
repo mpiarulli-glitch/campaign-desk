@@ -3,7 +3,10 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+
+type Win = { id: string; body: string; happened_on: string };
 
 type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
 const STATUS_LABEL: Record<Status, string> = {
@@ -48,6 +51,8 @@ export default function SnapshotClientPage() {
   const { token } = useParams<{ token: string }>();
   const [accountName, setAccountName] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
+  const [wins, setWins] = useState<Win[]>([]);
+  const [metrics, setMetrics] = useState<MetricSeries[]>([]);
   const [week, setWeek] = useState(currentWeek());
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -61,6 +66,8 @@ export default function SnapshotClientPage() {
         const data = await res.json();
         setAccountName(data.account.name);
         setRows(data.rows || []);
+        setWins(data.wins || []);
+        setMetrics(data.metrics || []);
       }
       setLoading(false);
     },
@@ -108,55 +115,84 @@ export default function SnapshotClientPage() {
 
         {loading ? (
           <p className="muted">Loading...</p>
-        ) : rows.length === 0 ? (
-          <div className="empty"><p>No deliverables set up yet.</p></div>
-        ) : !anyUpdates ? (
-          <div className="empty"><p>No updates logged for this week yet.</p></div>
         ) : (
-          <div className="stack" style={{ gap: 18 }}>
-            {grouped.map(([category, catRows]) => {
-              const updated = catRows.filter(hasUpdate);
-              if (updated.length === 0) return null;
-              return (
-                <div key={category} className="snap-group">
-                  <div className="snap-cat">{category}</div>
-                  <div className="stack" style={{ gap: 10 }}>
-                    {updated.map((r) => (
-                      <div key={r.deliverable_id} className="snap-card">
-                        <div className="snap-card-head">
-                          <div>
-                            <div className="snap-name">{r.name}</div>
-                            {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
+          <>
+            <div className="stack" style={{ gap: 18 }}>
+              <h2 className="snap-section-title">This week&apos;s work</h2>
+              {rows.length === 0 ? (
+                <div className="empty"><p>No deliverables set up yet.</p></div>
+              ) : !anyUpdates ? (
+                <div className="empty"><p>No updates logged for this week yet.</p></div>
+              ) : (
+                grouped.map(([category, catRows]) => {
+                  const updated = catRows.filter(hasUpdate);
+                  if (updated.length === 0) return null;
+                  return (
+                    <div key={category} className="snap-group">
+                      <div className="snap-cat">{category}</div>
+                      <div className="stack" style={{ gap: 10 }}>
+                        {updated.map((r) => (
+                          <div key={r.deliverable_id} className="snap-card">
+                            <div className="snap-card-head">
+                              <div>
+                                <div className="snap-name">{r.name}</div>
+                                {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
+                              </div>
+                              <span className={`snap-pill status-${r.status}`}>
+                                {STATUS_LABEL[r.status]}
+                              </span>
+                            </div>
+                            {r.work_done.trim() ? (
+                              <div className="snap-ro">
+                                <span className="snap-ro-label">What we did</span>
+                                <p>{r.work_done}</p>
+                              </div>
+                            ) : null}
+                            {r.next_steps.trim() ? (
+                              <div className="snap-ro">
+                                <span className="snap-ro-label">Next steps</span>
+                                <p>{r.next_steps}</p>
+                              </div>
+                            ) : null}
+                            {r.notes.trim() ? (
+                              <div className="snap-ro">
+                                <span className="snap-ro-label">Notes</span>
+                                <p>{r.notes}</p>
+                              </div>
+                            ) : null}
                           </div>
-                          <span className={`snap-pill status-${r.status}`}>
-                            {STATUS_LABEL[r.status]}
-                          </span>
-                        </div>
-                        {r.work_done.trim() ? (
-                          <div className="snap-ro">
-                            <span className="snap-ro-label">What we did</span>
-                            <p>{r.work_done}</p>
-                          </div>
-                        ) : null}
-                        {r.next_steps.trim() ? (
-                          <div className="snap-ro">
-                            <span className="snap-ro-label">Next steps</span>
-                            <p>{r.next_steps}</p>
-                          </div>
-                        ) : null}
-                        {r.notes.trim() ? (
-                          <div className="snap-ro">
-                            <span className="snap-ro-label">Notes</span>
-                            <p>{r.notes}</p>
-                          </div>
-                        ) : null}
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {wins.length > 0 ? (
+              <div className="stack" style={{ gap: 10 }}>
+                <h2 className="snap-section-title">Wins</h2>
+                <div className="snap-wins">
+                  {wins.map((w) => (
+                    <div key={w.id} className="snap-win">
+                      <span className="snap-win-mark" aria-hidden="true">🏆</span>
+                      <div>
+                        <p>{w.body}</p>
+                        {w.happened_on ? <span className="snap-win-date">{w.happened_on}</span> : null}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            ) : null}
+
+            {metrics.some((m) => m.points.length > 0) ? (
+              <div className="stack" style={{ gap: 10 }}>
+                <h2 className="snap-section-title">Performance</h2>
+                <PerfCharts series={metrics} />
+              </div>
+            ) : null}
+          </>
         )}
       </main>
     </div>

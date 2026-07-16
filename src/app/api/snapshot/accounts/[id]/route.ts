@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { getAccount, getOrCreateToken, listDeliverables } from "@/lib/snapshot";
+import {
+  getAccount,
+  getOrCreateToken,
+  listDeliverables,
+  listMetricsRaw,
+  listWins,
+} from "@/lib/snapshot";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -17,5 +23,7 @@ export async function GET(_request: Request, { params }: Params) {
     account: { id: account.id, name: account.name },
     deliverables: listDeliverables(id),
     token: getOrCreateToken(id),
+    wins: listWins(id),
+    metricsRaw: listMetricsRaw(id),
   });
 }
