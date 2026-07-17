@@ -451,13 +451,13 @@ export default function ProductionPage() {
                   <th>Email</th>
                   <th>Active</th>
                   <th>Color</th>
+                  <th>Videographer</th>
                   <th>Cadence</th>
                   <th>Last production</th>
                   <th>Scheduling window</th>
                   <th>Last email sent</th>
                   <th>Last window emailed</th>
                   <th>Status</th>
-                  <th>Videographer</th>
                   <th>Basecamp project</th>
                   <th></th>
                 </tr>
@@ -477,12 +477,6 @@ export default function ProductionPage() {
                       <>{r.client.color_week ? <span className={`color-dot ${r.client.color_week}`} /> : null}{colorLabel(r.client.color_week)}</>,
                       COLOR_OPTIONS
                     )}
-                    {editableCell(r, "production_cadence", "select", r.client.production_cadence, CADENCE_LABEL[r.client.production_cadence], CADENCE_OPTIONS)}
-                    {editableCell(r, "last_production_date", "date", r.client.last_production_date || "", fmtDate(r.client.last_production_date))}
-                    <td>{fmtWindow(r.window)}</td>
-                    <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
-                    <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
-                    <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                     {editableCell(
                       r, "videographer_id", "select", r.client.videographer_id,
                       r.client.videographer_id
@@ -490,6 +484,12 @@ export default function ProductionPage() {
                         : <span className="muted">Unassigned</span>,
                       vidOptions
                     )}
+                    {editableCell(r, "production_cadence", "select", r.client.production_cadence, CADENCE_LABEL[r.client.production_cadence], CADENCE_OPTIONS)}
+                    {editableCell(r, "last_production_date", "date", r.client.last_production_date || "", fmtDate(r.client.last_production_date))}
+                    <td>{fmtWindow(r.window)}</td>
+                    <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
+                    <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
+                    <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                     {editableCell(
                       r, "basecamp_project_id", "text", r.client.basecamp_project_id,
                       r.client.basecamp_project_id
