@@ -11,7 +11,6 @@ export function Brand({ href }: { href?: string }) {
       <div className="brand-divider" aria-hidden="true" />
       <div className="brand-copy">
         <strong>Campaign Desk</strong>
-        <span>Email review</span>
       </div>
     </>
   );
