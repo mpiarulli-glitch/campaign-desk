@@ -1,0 +1,26 @@
+name: Production scheduling reminders
+
+# Pings the reminder endpoint once a day. The endpoint figures out which
+# clients are within 3 weeks of their production window and haven't booked
+# yet, and emails them their scheduling link (once per day until they book).
+#
+# Requires a repository secret named CRON_SECRET whose value matches the
+# CRON_SECRET environment variable set on the Railway service.
+
+on:
+  schedule:
+    # 16:00 UTC daily (~9am Pacific). GitHub may delay scheduled runs a few
+    # minutes; that's fine, the job only sends once per client per day.
+    - cron: "0 16 * * *"
+  # Lets you trigger a run by hand from the Actions tab to test.
+  workflow_dispatch: {}
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminder run
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://campaign-desk-production.up.railway.app/api/cron/reminders
