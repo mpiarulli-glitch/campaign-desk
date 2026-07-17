@@ -508,23 +508,6 @@ button {
   vertical-align: middle;
 }
 
-/* Master scheduler: keep the action column visible while the wide table
-   scrolls sideways. */
-.sched-table th:last-child,
-.sched-table td:last-child {
-  position: sticky;
-  right: 0;
-  background: var(--bg-elevated);
-  box-shadow: -8px 0 8px -8px rgba(15, 23, 42, 0.18);
-  white-space: nowrap;
-}
-.sched-table thead th:last-child {
-  background: var(--bg-soft);
-}
-.sched-table .rev-row-editing > td:last-child {
-  background: var(--bg-tint);
-}
-
 .color-dot.purple { background: #8b5cf6; }
 .color-dot.red { background: #ef4444; }
 .color-dot.blue { background: #3b82f6; }
