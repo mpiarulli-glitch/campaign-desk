@@ -86,6 +86,7 @@ export function updateRevClient(
     blackoutDates: string[];
     contactName: string;
     contactEmail: string;
+    productionEnrolled: boolean;
   }>
 ): RevClient | null {
   const existing = getRevClient(id);
@@ -97,7 +98,7 @@ export function updateRevClient(
        retainer = ?, monthly_cost = ?, ltv = ?, active = ?,
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
-       contact_name = ?, contact_email = ?, updated_at = ?
+       contact_name = ?, contact_email = ?, production_enrolled = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     updates.name?.trim() ?? existing.name,
@@ -120,6 +121,11 @@ export function updateRevClient(
       : JSON.stringify(updates.blackoutDates),
     updates.contactName?.trim() ?? existing.contact_name,
     updates.contactEmail?.trim() ?? existing.contact_email,
+    updates.productionEnrolled === undefined
+      ? existing.production_enrolled
+      : updates.productionEnrolled
+        ? 1
+        : 0,
     nowIso(),
     id
   );

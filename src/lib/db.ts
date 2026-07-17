@@ -127,6 +127,9 @@ export interface RevClient {
   blackout_dates: string;
   contact_name: string;
   contact_email: string;
+  // 1 = shown on the production scheduler, 0 = removed from it (client and all
+  // other data are kept; they just don't get productions).
+  production_enrolled: number;
   created_at: string;
   updated_at: string;
 }
@@ -620,6 +623,16 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("contact_email")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("production_enrolled")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN production_enrolled INTEGER NOT NULL DEFAULT 1`
+    );
+    // Start with only clients that have a color week + cadence enrolled, so the
+    // scheduler doesn't show revenue-only accounts.
+    database.exec(
+      `UPDATE rev_clients SET production_enrolled = 0 WHERE color_week = '' OR production_cadence = ''`
     );
   }
 

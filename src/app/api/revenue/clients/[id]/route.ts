@@ -83,6 +83,10 @@ export async function PATCH(request: Request, { params }: Params) {
     contactName: typeof body.contactName === "string" ? body.contactName : undefined,
     contactEmail:
       typeof body.contactEmail === "string" ? body.contactEmail : undefined,
+    productionEnrolled:
+      typeof body.productionEnrolled === "boolean"
+        ? body.productionEnrolled
+        : undefined,
   });
   return NextResponse.json({ client });
 }

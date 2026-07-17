@@ -508,6 +508,18 @@ button {
   vertical-align: middle;
 }
 
+.removed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  font-size: 13px;
+  color: var(--text-body);
+}
+
 .color-dot.purple { background: #8b5cf6; }
 .color-dot.red { background: #ef4444; }
 .color-dot.blue { background: #3b82f6; }

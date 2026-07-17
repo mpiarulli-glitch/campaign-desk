@@ -43,6 +43,7 @@ type Client = {
   production_cadence: Cadence;
   last_production_date: string | null;
   schedule_token: string | null;
+  production_enrolled: number;
 };
 
 type Row = {
@@ -172,6 +173,19 @@ export default function ProductionPage() {
     load();
   }
 
+  async function setEnrolled(clientId: string, enrolled: boolean) {
+    const res = await fetch(`/api/revenue/clients/${clientId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productionEnrolled: enrolled }),
+    });
+    if (!res.ok) {
+      setError("Could not update production status.");
+      return;
+    }
+    load();
+  }
+
   async function copyLink(clientId: string) {
     const res = await fetch(`/api/revenue/clients/${clientId}/schedule-token`);
     if (!res.ok) {
@@ -188,11 +202,20 @@ export default function ProductionPage() {
     }
   }
 
-  const visible = useMemo(
-    () => (showInactive ? rows : rows.filter((r) => r.client.active)),
-    [rows, showInactive]
+  // Only production-enrolled clients appear in the scheduler.
+  const enrolled = useMemo(
+    () => rows.filter((r) => r.client.production_enrolled),
+    [rows]
   );
-  const activeCount = rows.filter((r) => r.client.active).length;
+  const removed = useMemo(
+    () => rows.filter((r) => !r.client.production_enrolled),
+    [rows]
+  );
+  const visible = useMemo(
+    () => (showInactive ? enrolled : enrolled.filter((r) => r.client.active)),
+    [enrolled, showInactive]
+  );
+  const activeCount = enrolled.filter((r) => r.client.active).length;
 
   const upd = (patch: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
   const stop = (e: React.MouseEvent) => e.stopPropagation();
@@ -220,7 +243,7 @@ export default function ProductionPage() {
         </div>
 
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <span className="muted">{activeCount} active · {rows.length} total</span>
+          <span className="muted">{activeCount} active · {enrolled.length} in production</span>
           <label className="row" style={{ gap: 8, cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -333,6 +356,16 @@ export default function ProductionPage() {
                           {r.client.color_week && r.client.production_cadence ? (
                             <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
                           ) : null}
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => {
+                              if (confirm(`Remove ${r.client.name} from production scheduling? This keeps the client and all their data — they just won't get productions or reminders.`)) {
+                                setEnrolled(r.client.id, false);
+                              }
+                            }}
+                          >
+                            Remove
+                          </button>
                         </div>
                         {linkMessage[r.client.id] ? (
                           <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{linkMessage[r.client.id]}</div>
@@ -345,6 +378,29 @@ export default function ProductionPage() {
             </table>
           </div>
         )}
+
+        {removed.length > 0 ? (
+          <div className="card card-pad stack">
+            <strong>Removed from production ({removed.length})</strong>
+            <p className="muted" style={{ margin: 0 }}>
+              These clients are kept in full but don&apos;t get productions or reminders.
+              Add one back anytime.
+            </p>
+            <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+              {removed.map((r) => (
+                <span key={r.client.id} className="removed-chip">
+                  {r.client.name}
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setEnrolled(r.client.id, true)}
+                  >
+                    Add to production
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   );

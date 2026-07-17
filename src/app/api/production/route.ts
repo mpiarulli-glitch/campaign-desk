@@ -26,6 +26,7 @@ export async function GET() {
         production_cadence: client.production_cadence,
         last_production_date: client.last_production_date,
         schedule_token: client.schedule_token,
+        production_enrolled: client.production_enrolled,
       },
       window,
       status,

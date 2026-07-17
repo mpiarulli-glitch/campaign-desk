@@ -140,6 +140,7 @@ export interface ReminderRunResult {
     alreadyBooked: number;
     noEmail: number;
     alreadySentToday: number;
+    removed: number;
   };
 }
 
@@ -163,10 +164,16 @@ export async function runReminders(opts?: {
       alreadyBooked: 0,
       noEmail: 0,
       alreadySentToday: 0,
+      removed: 0,
     },
   };
 
   for (const client of listRevClients(false)) {
+    // Skip clients removed from production scheduling.
+    if (!client.production_enrolled) {
+      result.skipped.removed++;
+      continue;
+    }
     if (!client.color_week || !client.production_cadence) {
       result.skipped.notConfigured++;
       continue;
