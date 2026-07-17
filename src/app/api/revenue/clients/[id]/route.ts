@@ -9,6 +9,7 @@ import {
   updateRevClient,
 } from "@/lib/revenue";
 import type { BusinessModel } from "@/lib/db";
+import { extractProjectId } from "@/lib/basecamp";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
 
@@ -86,6 +87,10 @@ export async function PATCH(request: Request, { params }: Params) {
     productionEnrolled:
       typeof body.productionEnrolled === "boolean"
         ? body.productionEnrolled
+        : undefined,
+    basecampProjectId:
+      typeof body.basecampProjectId === "string"
+        ? extractProjectId(body.basecampProjectId)
         : undefined,
   });
   return NextResponse.json({ client });

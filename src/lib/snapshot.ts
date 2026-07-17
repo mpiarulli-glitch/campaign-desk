@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import {
   getDb,
   nowIso,
+  type DeliverableKind,
   type RevClient,
   type SnapshotDeliverable,
   type SnapshotMetric,
@@ -9,7 +10,11 @@ import {
   type SnapshotWin,
 } from "./db";
 
-export type { SnapshotDeliverable, SnapshotStatus, SnapshotWin, SnapshotMetric };
+export type { DeliverableKind, SnapshotDeliverable, SnapshotStatus, SnapshotWin, SnapshotMetric };
+
+function normKind(v: unknown): DeliverableKind {
+  return v === "one_time" ? "one_time" : "recurring";
+}
 
 export const SNAPSHOT_STATUSES: { value: SnapshotStatus; label: string }[] = [
   { value: "not_started", label: "Not started" },
@@ -110,6 +115,7 @@ export function createDeliverable(input: {
   category: string;
   name: string;
   cadence: string;
+  kind?: DeliverableKind;
 }): SnapshotDeliverable {
   const db = getDb();
   const id = nanoid(12);
@@ -121,14 +127,15 @@ export function createDeliverable(input: {
     .get(input.clientId) as { m: number };
   db.prepare(
     `INSERT INTO snapshot_deliverables
-      (id, client_id, category, name, cadence, sort_order, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      (id, client_id, category, name, cadence, kind, sort_order, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     id,
     input.clientId,
     input.category.trim(),
     input.name.trim(),
     input.cadence.trim(),
+    normKind(input.kind),
     max.m + 1,
     ts,
     ts
@@ -148,20 +155,27 @@ export function getDeliverable(id: string): SnapshotDeliverable | null {
 
 export function updateDeliverable(
   id: string,
-  updates: Partial<{ category: string; name: string; cadence: string; sortOrder: number }>
+  updates: Partial<{
+    category: string;
+    name: string;
+    cadence: string;
+    kind: DeliverableKind;
+    sortOrder: number;
+  }>
 ): SnapshotDeliverable | null {
   const existing = getDeliverable(id);
   if (!existing) return null;
   getDb()
     .prepare(
       `UPDATE snapshot_deliverables
-       SET category = ?, name = ?, cadence = ?, sort_order = ?, updated_at = ?
+       SET category = ?, name = ?, cadence = ?, kind = ?, sort_order = ?, updated_at = ?
        WHERE id = ?`
     )
     .run(
       updates.category?.trim() ?? existing.category,
       updates.name?.trim() ?? existing.name,
       updates.cadence?.trim() ?? existing.cadence,
+      updates.kind ? normKind(updates.kind) : existing.kind,
       updates.sortOrder ?? existing.sort_order,
       nowIso(),
       id
@@ -411,6 +425,100 @@ export function listMetricsRaw(clientId: string): SnapshotMetric[] {
        ORDER BY metric ASC, period ASC`
     )
     .all(clientId) as SnapshotMetric[];
+}
+
+/* ------------------------------------------------ deliverable overview */
+
+// The standing state of one contracted deliverable, rolled up across every
+// week (not scoped to a single week like WeekRow).
+export interface DeliverableOverview {
+  deliverable_id: string;
+  category: string;
+  name: string;
+  cadence: string;
+  kind: DeliverableKind;
+  status: SnapshotStatus; // current standing status
+  worked_ever: boolean; // has any work been logged in any week
+  last_work_done: string; // most recent non-empty "what we did"
+  last_activity_week: string; // week_start of the most recent entry, or ""
+  completed_on: string; // for one-time items: the week it was completed, or ""
+}
+
+const DONE_STATUSES: SnapshotStatus[] = ["completed", "approved"];
+
+// All active deliverables for an account with their rolled-up status. Recurring
+// items keep their configured order; one-time setup items that are done are
+// sorted to the end so the client sees ongoing work first.
+export function deliverableOverview(clientId: string): DeliverableOverview[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT d.id AS deliverable_id, d.category, d.name, d.cadence, d.kind,
+              d.sort_order, d.created_at AS d_created,
+              e.week_start, e.status, e.work_done
+       FROM snapshot_deliverables d
+       LEFT JOIN snapshot_entries e ON e.deliverable_id = d.id
+       WHERE d.client_id = ? AND d.active = 1
+       ORDER BY d.sort_order ASC, d.created_at ASC, e.week_start ASC`
+    )
+    .all(clientId) as Array<{
+    deliverable_id: string;
+    category: string;
+    name: string;
+    cadence: string;
+    kind: string;
+    sort_order: number;
+    d_created: string;
+    week_start: string | null;
+    status: SnapshotStatus | null;
+    work_done: string | null;
+  }>;
+
+  const order: string[] = [];
+  const map = new Map<string, DeliverableOverview>();
+
+  for (const r of rows) {
+    let o = map.get(r.deliverable_id);
+    if (!o) {
+      o = {
+        deliverable_id: r.deliverable_id,
+        category: r.category,
+        name: r.name,
+        cadence: r.cadence,
+        kind: normKind(r.kind),
+        status: "not_started",
+        worked_ever: false,
+        last_work_done: "",
+        last_activity_week: "",
+        completed_on: "",
+      };
+      map.set(r.deliverable_id, o);
+      order.push(r.deliverable_id);
+    }
+    if (!r.week_start) continue; // deliverable with no entries yet
+
+    const status = normStatus(r.status);
+    const workDone = (r.work_done ?? "").trim();
+    if (workDone || status !== "not_started") o.worked_ever = true;
+
+    // rows arrive week_start ascending, so the last write wins for "latest".
+    o.last_activity_week = r.week_start;
+    o.status = status;
+    if (workDone) o.last_work_done = workDone;
+    if (DONE_STATUSES.includes(status)) o.completed_on = r.week_start;
+  }
+
+  // One-time items that are done render as "Completed" regardless of the very
+  // last week's status, and get pushed below the ongoing work.
+  const list = order.map((id) => map.get(id)!);
+  for (const o of list) {
+    if (o.kind === "one_time" && o.completed_on) o.status = "completed";
+  }
+  return list.sort((a, b) => rank(a) - rank(b));
+}
+
+// Ongoing work first; finished one-time setup last.
+function rank(o: DeliverableOverview): number {
+  return o.kind === "one_time" && o.completed_on ? 1 : 0;
 }
 
 // weeks that have any logged activity, for the client-facing week picker.

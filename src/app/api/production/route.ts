@@ -27,6 +27,7 @@ export async function GET() {
         last_production_date: client.last_production_date,
         schedule_token: client.schedule_token,
         production_enrolled: client.production_enrolled,
+        basecamp_project_id: client.basecamp_project_id,
       },
       window,
       status,

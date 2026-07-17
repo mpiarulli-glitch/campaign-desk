@@ -44,6 +44,7 @@ type Client = {
   last_production_date: string | null;
   schedule_token: string | null;
   production_enrolled: number;
+  basecamp_project_id: string;
 };
 
 type Row = {
@@ -64,7 +65,8 @@ type Field =
   | "active"
   | "color_week"
   | "production_cadence"
-  | "last_production_date";
+  | "last_production_date"
+  | "basecamp_project_id";
 
 const PATCH_KEY: Record<Field, string> = {
   name: "name",
@@ -74,6 +76,7 @@ const PATCH_KEY: Record<Field, string> = {
   color_week: "colorWeek",
   production_cadence: "productionCadence",
   last_production_date: "lastProductionDate",
+  basecamp_project_id: "basecampProjectId",
 };
 
 const COLOR_OPTIONS = [
@@ -136,6 +139,17 @@ export default function ProductionPage() {
   const [val, setVal] = useState("");
   const skipCommit = useRef(false);
 
+  const [bc, setBc] = useState<{ configured: boolean; connected: boolean } | null>(null);
+
+  async function loadBc() {
+    const res = await fetch("/api/basecamp/status");
+    if (res.ok) setBc(await res.json());
+  }
+  async function disconnectBc() {
+    await fetch("/api/basecamp/status", { method: "DELETE" });
+    loadBc();
+  }
+
   async function load() {
     setLoading(true);
     const res = await fetch("/api/production");
@@ -155,6 +169,7 @@ export default function ProductionPage() {
 
   useEffect(() => {
     load();
+    loadBc();
   }, []);
 
   function beginEdit(id: string, field: Field, current: string) {
@@ -317,6 +332,31 @@ export default function ProductionPage() {
           </label>
         </div>
 
+        {bc ? (
+          <div className="card card-pad row" style={{ justifyContent: "space-between", gap: 12 }}>
+            <span className="row" style={{ gap: 8 }}>
+              <span
+                className="color-dot"
+                style={{ background: bc.connected ? "var(--success)" : "var(--border-strong)" }}
+              />
+              <strong>Basecamp</strong>
+              <span className="muted">
+                {bc.connected
+                  ? "Connected. Scheduling cards post to each client's project."
+                  : bc.configured
+                    ? "Not connected yet."
+                    : "Not configured. Add the Basecamp integration keys on the server."}
+              </span>
+            </span>
+            {bc.configured && !bc.connected ? (
+              <a className="btn btn-sm" href="/api/basecamp/connect">Connect Basecamp</a>
+            ) : null}
+            {bc.connected ? (
+              <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
+            ) : null}
+          </div>
+        ) : null}
+
         {error ? <p className="error">{error}</p> : null}
 
         {loading ? (
@@ -339,6 +379,7 @@ export default function ProductionPage() {
                   <th>Last email sent</th>
                   <th>Last window emailed</th>
                   <th>Status</th>
+                  <th>Basecamp project</th>
                   <th></th>
                 </tr>
               </thead>
@@ -363,6 +404,12 @@ export default function ProductionPage() {
                     <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
                     <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
                     <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
+                    {editableCell(
+                      r, "basecamp_project_id", "text", r.client.basecamp_project_id,
+                      r.client.basecamp_project_id
+                        ? <span style={{ fontSize: 13 }}>{r.client.basecamp_project_id}</span>
+                        : <span className="muted">Set project</span>
+                    )}
                     <td>
                       <div className="row" style={{ gap: 6 }}>
                         {r.client.color_week && r.client.production_cadence ? (

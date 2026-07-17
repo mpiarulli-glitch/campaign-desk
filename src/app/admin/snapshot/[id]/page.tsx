@@ -31,7 +31,8 @@ const STATUSES: { value: Status; label: string }[] = [
   { value: "approved", label: "Approved" },
 ];
 
-type Deliverable = { id: string; category: string; name: string; cadence: string };
+type Kind = "recurring" | "one_time";
+type Deliverable = { id: string; category: string; name: string; cadence: string; kind: Kind };
 type Row = {
   deliverable_id: string;
   category: string;
@@ -64,7 +65,13 @@ export default function SnapshotEditorPage() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [managing, setManaging] = useState(false);
-  const [nd, setNd] = useState({ category: "", name: "", cadence: "" });
+  const [view, setView] = useState<"team" | "client">("team");
+  const [nd, setNd] = useState<{ category: string; name: string; cadence: string; kind: Kind }>({
+    category: "",
+    name: "",
+    cadence: "",
+    kind: "recurring",
+  });
   const [wins, setWins] = useState<Win[]>([]);
   const [metricsRaw, setMetricsRaw] = useState<MetricRow[]>([]);
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
@@ -166,7 +173,7 @@ export default function SnapshotEditorPage() {
       body: JSON.stringify(nd),
     });
     if (!res.ok) { setError("Could not add deliverable."); return; }
-    setNd({ category: nd.category, name: "", cadence: "" });
+    setNd({ category: nd.category, name: "", cadence: "", kind: nd.kind });
     await loadMeta();
     fetchWeek(week);
   }
@@ -203,9 +210,25 @@ export default function SnapshotEditorPage() {
         <Brand href="/admin" />
         <div className="row">
           <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">All accounts</Link>
-          <button className="btn btn-secondary btn-sm" onClick={() => setManaging((v) => !v)}>
-            {managing ? "Done editing" : "Edit deliverables"}
-          </button>
+          <div className="tabs" style={{ marginBottom: 0 }}>
+            <button
+              className={`tab ${view === "team" ? "active" : ""}`}
+              onClick={() => setView("team")}
+            >
+              Team view
+            </button>
+            <button
+              className={`tab ${view === "client" ? "active" : ""}`}
+              onClick={() => setView("client")}
+            >
+              Client view
+            </button>
+          </div>
+          {view === "team" ? (
+            <button className="btn btn-secondary btn-sm" onClick={() => setManaging((v) => !v)}>
+              {managing ? "Done editing" : "Edit deliverables"}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -215,35 +238,57 @@ export default function SnapshotEditorPage() {
             <p className="eyebrow">Account snapshot</p>
             <h1 className="h1">{name}</h1>
           </div>
-          <div className="cal-nav">
-            <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
-            <span className="cal-month">
-              {weekLabel(week)}{isCurrentWeek(week) ? " · This week" : ""}
-            </span>
-            <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, 1))}>›</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setWeek(currentWeek())}>This week</button>
-          </div>
+          {view === "team" ? (
+            <div className="cal-nav">
+              <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
+              <span className="cal-month">
+                {weekLabel(week)}{isCurrentWeek(week) ? " · This week" : ""}
+              </span>
+              <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, 1))}>›</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setWeek(currentWeek())}>This week</button>
+            </div>
+          ) : null}
         </div>
-
-        {token ? (
-          <div className="card card-pad snap-share">
-            <div>
-              <strong>Client link</strong>
-              <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
-                Read-only. Send this to the client — it always shows the latest.
-              </p>
-            </div>
-            <div className="copy-box" style={{ flex: 1, minWidth: 220 }}>
-              <code>{shareUrl}</code>
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={copyShare}>
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          </div>
-        ) : null}
 
         {error ? <p className="error">{error}</p> : null}
 
+        {view === "client" ? (
+          <div className="stack" style={{ gap: 18 }}>
+            {token ? (
+              <div className="card card-pad snap-share">
+                <div>
+                  <strong>Client link</strong>
+                  <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                    Read-only. Send this to the client — it always shows the latest.
+                  </p>
+                </div>
+                <div className="copy-box" style={{ flex: 1, minWidth: 220 }}>
+                  <code>{shareUrl}</code>
+                </div>
+                <button className="btn btn-secondary btn-sm" onClick={copyShare}>
+                  {copied ? "Copied" : "Copy link"}
+                </button>
+              </div>
+            ) : null}
+            {shareUrl ? (
+              <div className="snap-preview">
+                <div className="snap-preview-bar">
+                  <span>Exactly what the client sees at this link</span>
+                  <a className="btn btn-ghost btn-sm" href={shareUrl} target="_blank" rel="noreferrer">
+                    Open in new tab ↗
+                  </a>
+                </div>
+                <iframe
+                  key={shareUrl}
+                  className="snap-preview-frame"
+                  src={shareUrl}
+                  title="Client snapshot preview"
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : (
+        <>
         {managing ? (
           <div className="card card-pad stack">
             <strong>Deliverables</strong>
@@ -259,6 +304,11 @@ export default function SnapshotEditorPage() {
                       onBlur={(e) => e.target.value !== d.name && updateDeliverable(d.id, { name: e.target.value })} />
                     <input defaultValue={d.cadence} placeholder="Cadence (e.g. 2x/mo)"
                       onBlur={(e) => e.target.value !== d.cadence && updateDeliverable(d.id, { cadence: e.target.value })} />
+                    <select defaultValue={d.kind}
+                      onChange={(e) => updateDeliverable(d.id, { kind: e.target.value as Kind })}>
+                      <option value="recurring">Recurring</option>
+                      <option value="one_time">One-time setup</option>
+                    </select>
                     <button className="btn btn-danger btn-sm" onClick={() => removeDeliverable(d.id)}>Remove</button>
                   </div>
                 ))}
@@ -268,6 +318,10 @@ export default function SnapshotEditorPage() {
               <input value={nd.category} onChange={(e) => setNd({ ...nd, category: e.target.value })} placeholder="Category" />
               <input value={nd.name} onChange={(e) => setNd({ ...nd, name: e.target.value })} placeholder="New deliverable" />
               <input value={nd.cadence} onChange={(e) => setNd({ ...nd, cadence: e.target.value })} placeholder="Cadence" />
+              <select value={nd.kind} onChange={(e) => setNd({ ...nd, kind: e.target.value as Kind })}>
+                <option value="recurring">Recurring</option>
+                <option value="one_time">One-time setup</option>
+              </select>
               <button className="btn btn-sm" type="submit">Add</button>
             </form>
           </div>
@@ -398,6 +452,8 @@ export default function SnapshotEditorPage() {
             </p>
           )}
         </div>
+        </>
+        )}
       </main>
     </div>
   );

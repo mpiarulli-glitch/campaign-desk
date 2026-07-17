@@ -33,6 +33,7 @@ export async function POST(request: Request, { params }: Params) {
     category: typeof body.category === "string" ? body.category : "",
     name,
     cadence: typeof body.cadence === "string" ? body.cadence : "",
+    kind: body.kind === "one_time" ? "one_time" : "recurring",
   });
   return NextResponse.json({ deliverable }, { status: 201 });
 }

@@ -27,6 +27,19 @@ type Row = {
   notes: string;
 };
 
+type Overview = {
+  deliverable_id: string;
+  category: string;
+  name: string;
+  cadence: string;
+  kind: "recurring" | "one_time";
+  status: Status;
+  worked_ever: boolean;
+  last_work_done: string;
+  last_activity_week: string;
+  completed_on: string;
+};
+
 function groupByCategory(rows: Row[]): [string, Row[]][] {
   const map = new Map<string, Row[]>();
   for (const r of rows) {
@@ -50,6 +63,7 @@ export default function SnapshotClientPage() {
   const { token } = useParams<{ token: string }>();
   const [accountName, setAccountName] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
+  const [overview, setOverview] = useState<Overview[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
   const [metrics, setMetrics] = useState<MetricSeries[]>([]);
   const [week, setWeek] = useState(currentWeek());
@@ -65,6 +79,7 @@ export default function SnapshotClientPage() {
         const data = await res.json();
         setAccountName(data.account.name);
         setRows(data.rows || []);
+        setOverview(data.overview || []);
         setWins(data.wins || []);
         setMetrics(data.metrics || []);
       }
@@ -106,6 +121,20 @@ export default function SnapshotClientPage() {
 
   const grouped = groupByCategory(rows);
   const anyUpdates = updatedRows.length > 0;
+
+  // Ongoing contracted work, grouped by category; completed one-time setup
+  // items are pulled out and shown at the very bottom.
+  const setupDone = overview.filter((o) => o.kind === "one_time" && !!o.completed_on);
+  const ongoing = overview.filter((o) => !(o.kind === "one_time" && o.completed_on));
+  const ongoingGroups = (() => {
+    const map = new Map<string, Overview[]>();
+    for (const o of ongoing) {
+      const key = o.category.trim() || "Other";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(o);
+    }
+    return Array.from(map.entries());
+  })();
   const hasMetrics = metrics.some((m) => m.points.length > 0);
 
   return (
@@ -208,6 +237,67 @@ export default function SnapshotClientPage() {
                 })
               )}
             </section>
+
+            {overview.length > 0 ? (
+              <section className="stack" style={{ gap: 14 }}>
+                <h2 className="snap-section-title">Contracted deliverables</h2>
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  Everything in your agreement and where each item stands.
+                </p>
+                {ongoingGroups.map(([category, items]) => (
+                  <div key={category} className="snap-group">
+                    <div className="snap-cat">
+                      <span>{category}</span>
+                      <span className="snap-cat-count">{items.length}</span>
+                    </div>
+                    <div className="stack" style={{ gap: 10 }}>
+                      {items.map((o) => (
+                        <div key={o.deliverable_id} className="snap-card">
+                          <div className="snap-card-head">
+                            <div>
+                              <div className="snap-name">{o.name}</div>
+                              {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
+                            </div>
+                            <span className={`snap-pill status-${o.status}`}>
+                              {STATUS_LABEL[o.status]}
+                            </span>
+                          </div>
+                          <div className="snap-deliv-meta">
+                            {o.worked_ever ? "Work in progress" : "Not started yet"}
+                            {o.worked_ever && o.last_work_done ? ` · ${o.last_work_done}` : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {setupDone.length > 0 ? (
+                  <div className="snap-group">
+                    <div className="snap-cat">
+                      <span>Setup &amp; one-time work</span>
+                      <span className="snap-cat-count">{setupDone.length}</span>
+                    </div>
+                    <div className="stack" style={{ gap: 10 }}>
+                      {setupDone.map((o) => (
+                        <div key={o.deliverable_id} className="snap-card snap-card-done">
+                          <div className="snap-card-head">
+                            <div>
+                              <div className="snap-name">{o.name}</div>
+                              {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
+                            </div>
+                            <span className="snap-pill status-completed">Completed</span>
+                          </div>
+                          <div className="snap-deliv-meta">
+                            Completed · week of {weekLabel(o.completed_on)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             {wins.length > 0 ? (
               <section className="stack" style={{ gap: 14 }}>

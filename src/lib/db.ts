@@ -130,6 +130,8 @@ export interface RevClient {
   // 1 = shown on the production scheduler, 0 = removed from it (client and all
   // other data are kept; they just don't get productions).
   production_enrolled: number;
+  // Basecamp project (bucket) id where the "time to schedule" card is created.
+  basecamp_project_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -141,12 +143,17 @@ export type SnapshotStatus =
   | "shared"
   | "approved";
 
+export type DeliverableKind = "recurring" | "one_time";
+
 export interface SnapshotDeliverable {
   id: string;
   client_id: string;
   category: string;
   name: string;
   cadence: string;
+  // "one_time" deliverables are setup work that completes once, then sinks to
+  // the bottom of the client view as done.
+  kind: DeliverableKind;
   sort_order: number;
   active: number;
   created_at: string;
@@ -225,6 +232,7 @@ export interface ScheduleReminder {
   window_start: string; // Monday of the window being reminded about
   last_sent: string; // YYYY-MM-DD of the last reminder email
   count: number;
+  bc_card_at: string | null; // when the Basecamp card was created for this window
   created_at: string;
   updated_at: string;
 }
@@ -430,12 +438,19 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_reminders_client ON schedule_reminders(client_id);
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS snapshot_deliverables (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       cadence TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL DEFAULT 'recurring',
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
@@ -635,6 +650,17 @@ function migrate(database: Database.Database) {
       `UPDATE rev_clients SET production_enrolled = 0 WHERE color_week = '' OR production_cadence = ''`
     );
   }
+  if (revClientCols.length && !revClientCols.includes("basecamp_project_id")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN basecamp_project_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+
+  // Track the Basecamp "time to schedule" card per reminder window (dedupe).
+  const reminderCols = tableColumns(database, "schedule_reminders");
+  if (reminderCols.length && !reminderCols.includes("bc_card_at")) {
+    database.exec(`ALTER TABLE schedule_reminders ADD COLUMN bc_card_at TEXT`);
+  }
 
   // scheduled_sends planning fields (added after the table shipped).
   const sendCols = tableColumns(database, "scheduled_sends");
@@ -661,6 +687,14 @@ function migrate(database: Database.Database) {
   if (sendCols.length && !sendCols.includes("requested_by_client")) {
     database.exec(
       `ALTER TABLE scheduled_sends ADD COLUMN requested_by_client INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+
+  // Deliverable kind (recurring vs one-time setup), added after the table shipped.
+  const snapDelivCols = tableColumns(database, "snapshot_deliverables");
+  if (snapDelivCols.length && !snapDelivCols.includes("kind")) {
+    database.exec(
+      `ALTER TABLE snapshot_deliverables ADD COLUMN kind TEXT NOT NULL DEFAULT 'recurring'`
     );
   }
 

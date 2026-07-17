@@ -87,6 +87,7 @@ export function updateRevClient(
     contactName: string;
     contactEmail: string;
     productionEnrolled: boolean;
+    basecampProjectId: string;
   }>
 ): RevClient | null {
   const existing = getRevClient(id);
@@ -98,7 +99,8 @@ export function updateRevClient(
        retainer = ?, monthly_cost = ?, ltv = ?, active = ?,
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
-       contact_name = ?, contact_email = ?, production_enrolled = ?, updated_at = ?
+       contact_name = ?, contact_email = ?, production_enrolled = ?,
+       basecamp_project_id = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     updates.name?.trim() ?? existing.name,
@@ -126,6 +128,9 @@ export function updateRevClient(
       : updates.productionEnrolled
         ? 1
         : 0,
+    updates.basecampProjectId === undefined
+      ? existing.basecamp_project_id
+      : updates.basecampProjectId.trim(),
     nowIso(),
     id
   );

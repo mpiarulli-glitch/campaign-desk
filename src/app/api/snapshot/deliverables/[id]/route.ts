@@ -17,6 +17,10 @@ export async function PATCH(request: Request, { params }: Params) {
     category: typeof body.category === "string" ? body.category : undefined,
     name: typeof body.name === "string" ? body.name : undefined,
     cadence: typeof body.cadence === "string" ? body.cadence : undefined,
+    kind:
+      body.kind === "one_time" || body.kind === "recurring"
+        ? body.kind
+        : undefined,
     sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : undefined,
   });
   return NextResponse.json({ deliverable });

@@ -10,6 +10,7 @@ import {
 import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
+import { basecampConnected, createScheduleCard } from "./basecamp";
 
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
@@ -55,6 +56,25 @@ export function getLatestReminder(clientId: string): ScheduleReminder | null {
       )
       .get(clientId) as ScheduleReminder | undefined) || null
   );
+}
+
+// Stamp that the Basecamp card was created for this window (dedupe), creating
+// the tracking row if a reminder hasn't been recorded yet.
+function markBasecampCard(clientId: string, windowStart: string) {
+  const db = getDb();
+  const ts = nowIso();
+  const existing = getReminder(clientId, windowStart);
+  if (existing) {
+    db.prepare(
+      `UPDATE schedule_reminders SET bc_card_at = ?, updated_at = ? WHERE id = ?`
+    ).run(ts, ts, existing.id);
+  } else {
+    db.prepare(
+      `INSERT INTO schedule_reminders
+        (id, client_id, window_start, last_sent, count, bc_card_at, created_at, updated_at)
+       VALUES (?, ?, ?, '', 0, ?, ?, ?)`
+    ).run(nanoid(12), clientId, windowStart, ts, ts, ts);
+  }
 }
 
 // Record that a reminder went out today, creating the row on first send.
@@ -196,6 +216,7 @@ export interface ReminderRunResult {
   dryRun: boolean;
   sent: Array<{ client: string; email: string; window: Window; attempt: number }>;
   failed: Array<{ client: string; email: string }>;
+  basecampCards: Array<{ client: string; ok: boolean; error?: string }>;
   skipped: {
     notConfigured: number;
     notInWindow: number;
@@ -220,6 +241,7 @@ export async function runReminders(opts?: {
     dryRun,
     sent: [],
     failed: [],
+    basecampCards: [],
     skipped: {
       notConfigured: 0,
       notInWindow: 0,
@@ -256,6 +278,27 @@ export async function runReminders(opts?: {
       result.skipped.alreadyBooked++;
       continue;
     }
+
+    // Basecamp "time to schedule" card: once per window, independent of email.
+    if (!dryRun && client.basecamp_project_id && basecampConnected()) {
+      const existingCard = getReminder(client.id, window.start);
+      if (!existingCard?.bc_card_at) {
+        const bcToken = getOrCreateScheduleToken(client.id);
+        const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
+        const cardTitle = "It's time to schedule the next production";
+        const cardBody =
+          `<div><strong>${longDate(window.start)} to ${longDate(window.end)}</strong> is open for ${client.name}.</div>` +
+          (bcUrl ? `<div>Client scheduling link: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
+        try {
+          const r = await createScheduleCard(client.basecamp_project_id, cardTitle, cardBody);
+          if (r.ok) markBasecampCard(client.id, window.start);
+          result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });
+        } catch (e) {
+          result.basecampCards.push({ client: client.name, ok: false, error: (e as Error).message });
+        }
+      }
+    }
+
     if (!client.contact_email?.trim()) {
       result.skipped.noEmail++;
       continue;
