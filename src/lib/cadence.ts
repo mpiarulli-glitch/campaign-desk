@@ -42,21 +42,24 @@ export function slotLabel(hhmm: string): string {
   return `${hour12} ${period}`;
 }
 
-// How many calendar months out the target date sits from the last production
-// date for each cadence tier.
+// Cadence period, in months.
 const CADENCE_MONTHS: Record<Exclude<ProductionCadence, "">, number> = {
   monthly: 1,
   bi_monthly: 2,
   quarterly: 3,
 };
 
-// Reference Monday the color rotation is anchored to. Arbitrary but fixed —
-// every color-week calculation is relative to this date, so changing it would
-// shift every client's assigned week.
-const ANCHOR_MONDAY = "2026-01-05";
+// Which full week of the month each color PUBLISHES in (0-based):
+// Purple = 1st full week, Red = 2nd, Blue = 3rd, Green = 4th. Production
+// happens the week before the publish week.
+const COLOR_WEEK_INDEX: Record<Exclude<ColorWeek, "">, number> = {
+  purple: 0,
+  red: 1,
+  blue: 2,
+  green: 3,
+};
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const MS_PER_WEEK = 7 * MS_PER_DAY;
 
 export type CycleStatus =
   | "not_configured"
@@ -72,65 +75,60 @@ export interface Window {
   end: string; // Friday, YYYY-MM-DD
 }
 
-function parseDate(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function mondayOf(d: Date): Date {
-  // getUTCDay: 0 = Sun ... 6 = Sat. Distance back to Monday.
-  const dow = d.getUTCDay();
-  const back = dow === 0 ? 6 : dow - 1;
-  return new Date(d.getTime() - back * MS_PER_DAY);
+function addDays(d: Date, n: number): Date {
+  return new Date(d.getTime() + n * MS_PER_DAY);
 }
 
-function addMonths(ymd: string, months: number): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1 + months, d));
+// The first Monday on or after the 1st of the month = the start of the "first
+// full week." getUTCDay: 0 = Sun ... 6 = Sat.
+function firstMondayOfMonth(year: number, monthIdx0: number): Date {
+  const first = new Date(Date.UTC(year, monthIdx0, 1));
+  const dow = first.getUTCDay();
+  const add = (8 - dow) % 7; // Sun->1, Mon->0, Tue->6, Wed->5, ...
+  return new Date(Date.UTC(year, monthIdx0, 1 + add));
 }
 
-// Deterministic color for the week containing `date`, from the fixed
-// 4-week rotation anchored at ANCHOR_MONDAY.
-export function colorForWeek(date: Date): Exclude<ColorWeek, ""> {
-  const monday = mondayOf(date);
-  const anchor = parseDate(ANCHOR_MONDAY);
-  const weeksSinceAnchor = Math.round(
-    (monday.getTime() - anchor.getTime()) / MS_PER_WEEK
-  );
-  const idx = ((weeksSinceAnchor % 4) + 4) % 4;
-  return COLORS[idx];
+// The production window (Mon-Fri) for a color in a given month: the week BEFORE
+// that color's publish week. Publish week = the Nth full week of the month
+// (Purple 1st ... Green 4th); the shoot happens the week before.
+function productionWindowForMonth(
+  year: number,
+  monthIdx0: number,
+  colorIdx: number
+): Window {
+  const publishMonday = addDays(firstMondayOfMonth(year, monthIdx0), colorIdx * 7);
+  const prodMonday = addDays(publishMonday, -7);
+  return {
+    start: formatDate(prodMonday),
+    end: formatDate(addDays(prodMonday, 4)),
+  };
 }
 
-// The next occurrence (Mon-Fri) of `color`'s week on/after `fromDate`.
-function nextColorWeek(color: Exclude<ColorWeek, "">, fromDate: Date): Window {
-  let monday = mondayOf(fromDate);
-  for (let i = 0; i < 8; i++) {
-    if (colorForWeek(monday) === color) {
-      const friday = new Date(monday.getTime() + 4 * MS_PER_DAY);
-      return { start: formatDate(monday), end: formatDate(friday) };
-    }
-    monday = new Date(monday.getTime() + MS_PER_WEEK);
-  }
-  // Unreachable: a 4-color rotation always resolves within 4 weeks.
-  const friday = new Date(monday.getTime() + 4 * MS_PER_DAY);
-  return { start: formatDate(monday), end: formatDate(friday) };
-}
-
-// The client's next production window, or null if color/cadence aren't
-// configured yet.
+// The client's next production window: the next upcoming production week that
+// falls on the cadence beat measured from their last production. Steps forward
+// by the cadence interval until the window hasn't fully passed. Returns null if
+// color/cadence aren't configured.
 export function nextWindow(client: RevClient, today: string): Window | null {
   if (!client.color_week || !client.production_cadence) return null;
-  const months = CADENCE_MONTHS[client.production_cadence];
+  const period = CADENCE_MONTHS[client.production_cadence];
+  const colorIdx = COLOR_WEEK_INDEX[client.color_week];
+  const anchored = Boolean(client.last_production_date);
   const base = client.last_production_date || today;
-  const target = addMonths(base, months);
-  // Never offer a window that's already fully in the past relative to today.
-  const todayDate = parseDate(today);
-  const from = target.getTime() > todayDate.getTime() ? target : todayDate;
-  return nextColorWeek(client.color_week, from);
+  const [by, bm] = base.split("-").map(Number); // bm is 1-12
+  const baseMonthOffset = by * 12 + (bm - 1);
+  // With a last production, the next window is at least one cadence step out.
+  // Without one, the current month's window counts if it hasn't passed.
+  const startK = anchored ? 1 : 0;
+  for (let k = startK; k <= 240; k++) {
+    const m = baseMonthOffset + k * period;
+    const w = productionWindowForMonth(Math.floor(m / 12), m % 12, colorIdx);
+    if (w.end >= today) return w; // YYYY-MM-DD compares lexically
+  }
+  return null;
 }
 
 export function isBlackout(date: string, client: RevClient): boolean {

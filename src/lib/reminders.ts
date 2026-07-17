@@ -51,6 +51,21 @@ export function getReminder(
   );
 }
 
+// The client's most recent reminder across all windows — used to show
+// "last email sent" and "last window emailed" in the master scheduler.
+export function getLatestReminder(clientId: string): ScheduleReminder | null {
+  return (
+    (getDb()
+      .prepare(
+        `SELECT * FROM schedule_reminders
+         WHERE client_id = ? AND last_sent != ''
+         ORDER BY last_sent DESC, updated_at DESC
+         LIMIT 1`
+      )
+      .get(clientId) as ScheduleReminder | undefined) || null
+  );
+}
+
 // Record that a reminder went out today, creating the row on first send.
 function markReminded(clientId: string, windowStart: string, today: string) {
   const db = getDb();
