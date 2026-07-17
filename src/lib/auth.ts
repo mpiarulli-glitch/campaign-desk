@@ -16,12 +16,31 @@ function sign(value: string): string {
   return createHmac("sha256", getSecret()).update(value).digest("hex");
 }
 
+// Every valid admin password: the primary ADMIN_PASSWORD plus any additional
+// ones in ADMIN_PASSWORDS (comma-separated). All grant the same admin access;
+// separate passwords just let you give/revoke individual people access.
+function validPasswords(): string[] {
+  const list = [getAdminPassword()];
+  const extra = process.env.ADMIN_PASSWORDS;
+  if (extra) {
+    for (const p of extra.split(",").map((s) => s.trim()).filter(Boolean)) {
+      list.push(p);
+    }
+  }
+  return list;
+}
+
 export function verifyPassword(password: string): boolean {
-  const expected = getAdminPassword();
   const a = Buffer.from(password);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  return validPasswords().some((expected) => {
+    const b = Buffer.from(expected);
+    if (a.length !== b.length) return false;
+    try {
+      return timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
+  });
 }
 
 export async function createSession(): Promise<void> {
