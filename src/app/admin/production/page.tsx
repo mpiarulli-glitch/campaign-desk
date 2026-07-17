@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 
 type ColorWeek = "purple" | "red" | "blue" | "green" | "";
@@ -56,15 +56,43 @@ type Row = {
   lastWindowEmailed: string | null;
 };
 
-type Draft = {
-  name: string;
-  contact_name: string;
-  contact_email: string;
-  active: boolean;
-  color_week: ColorWeek;
-  production_cadence: Cadence;
-  last_production_date: string;
+// Which client fields can be edited inline, and how each maps to the PATCH body.
+type Field =
+  | "name"
+  | "contact_name"
+  | "contact_email"
+  | "active"
+  | "color_week"
+  | "production_cadence"
+  | "last_production_date";
+
+const PATCH_KEY: Record<Field, string> = {
+  name: "name",
+  contact_name: "contactName",
+  contact_email: "contactEmail",
+  active: "active",
+  color_week: "colorWeek",
+  production_cadence: "productionCadence",
+  last_production_date: "lastProductionDate",
 };
+
+const COLOR_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "purple", label: "Purple" },
+  { value: "red", label: "Red" },
+  { value: "blue", label: "Blue" },
+  { value: "green", label: "Green" },
+];
+const CADENCE_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "monthly", label: "Monthly" },
+  { value: "bi_monthly", label: "Bi-Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+];
+const ACTIVE_OPTIONS = [
+  { value: "1", label: "Yes" },
+  { value: "0", label: "No" },
+];
 
 function fmtDate(ymd: string | null): string {
   if (!ymd) return "—";
@@ -102,9 +130,11 @@ export default function ProductionPage() {
   const [error, setError] = useState("");
   const [linkMessage, setLinkMessage] = useState<Record<string, string>>({});
   const [showInactive, setShowInactive] = useState(true);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [saving, setSaving] = useState(false);
+
+  // Per-cell inline editing.
+  const [edit, setEdit] = useState<{ id: string; field: Field } | null>(null);
+  const [val, setVal] = useState("");
+  const skipCommit = useRef(false);
 
   async function load() {
     setLoading(true);
@@ -127,49 +157,40 @@ export default function ProductionPage() {
     load();
   }, []);
 
-  function startEdit(c: Client) {
-    setLinkMessage({});
-    setEditId(c.id);
-    setDraft({
-      name: c.name,
-      contact_name: c.contact_name || "",
-      contact_email: c.contact_email || "",
-      active: Boolean(c.active),
-      color_week: c.color_week,
-      production_cadence: c.production_cadence,
-      last_production_date: c.last_production_date || "",
-    });
+  function beginEdit(id: string, field: Field, current: string) {
+    setError("");
+    setEdit({ id, field });
+    setVal(current);
   }
 
   function cancelEdit() {
-    setEditId(null);
-    setDraft(null);
+    skipCommit.current = true;
+    setEdit(null);
   }
 
-  async function saveEdit() {
-    if (!editId || !draft) return;
-    setSaving(true);
-    setError("");
-    const res = await fetch(`/api/revenue/clients/${editId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: draft.name,
-        contactName: draft.contact_name,
-        contactEmail: draft.contact_email,
-        active: draft.active,
-        colorWeek: draft.color_week,
-        productionCadence: draft.production_cadence,
-        lastProductionDate: draft.last_production_date || null,
-      }),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      setError("Could not save changes.");
+  async function commit(override?: string) {
+    if (skipCommit.current) {
+      skipCommit.current = false;
       return;
     }
-    setEditId(null);
-    setDraft(null);
+    if (!edit) return;
+    const { id, field } = edit;
+    const raw = override !== undefined ? override : val;
+    setEdit(null);
+
+    let value: string | boolean | null = raw;
+    if (field === "active") value = raw === "1";
+    else if (field === "last_production_date") value = raw || null;
+
+    const res = await fetch(`/api/revenue/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [PATCH_KEY[field]]: value }),
+    });
+    if (!res.ok) {
+      setError("Could not save that change.");
+      return;
+    }
     load();
   }
 
@@ -202,23 +223,69 @@ export default function ProductionPage() {
     }
   }
 
-  // Only production-enrolled clients appear in the scheduler.
-  const enrolled = useMemo(
-    () => rows.filter((r) => r.client.production_enrolled),
-    [rows]
-  );
-  const removed = useMemo(
-    () => rows.filter((r) => !r.client.production_enrolled),
-    [rows]
-  );
+  const enrolled = useMemo(() => rows.filter((r) => r.client.production_enrolled), [rows]);
+  const removed = useMemo(() => rows.filter((r) => !r.client.production_enrolled), [rows]);
   const visible = useMemo(
     () => (showInactive ? enrolled : enrolled.filter((r) => r.client.active)),
     [enrolled, showInactive]
   );
   const activeCount = enrolled.filter((r) => r.client.active).length;
 
-  const upd = (patch: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
-  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  // Renders a text/date/select input for the cell currently being edited.
+  function editor(field: Field, type: "text" | "date" | "select", options?: { value: string; label: string }[]) {
+    const commonKey = (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") commit();
+      else if (e.key === "Escape") cancelEdit();
+    };
+    if (type === "select" && options) {
+      return (
+        <select
+          autoFocus
+          className="select-clean cell-input"
+          value={val}
+          onChange={(e) => {
+            setVal(e.target.value);
+            commit(e.target.value);
+          }}
+          onBlur={() => commit()}
+          onKeyDown={commonKey}
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      );
+    }
+    return (
+      <input
+        autoFocus
+        type={type}
+        className="cell-input"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={() => commit()}
+        onKeyDown={commonKey}
+      />
+    );
+  }
+
+  // A clickable, editable cell.
+  function editableCell(
+    r: Row,
+    field: Field,
+    type: "text" | "date" | "select",
+    current: string,
+    display: React.ReactNode,
+    options?: { value: string; label: string }[]
+  ) {
+    const active = edit?.id === r.client.id && edit?.field === field;
+    if (active) return <td className="cell-editing">{editor(field, type, options)}</td>;
+    return (
+      <td className="cell-clickable" title="Click to edit" onClick={() => beginEdit(r.client.id, field, current)}>
+        {display}
+      </td>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -237,19 +304,15 @@ export default function ProductionPage() {
           <h1 className="h1">Master scheduler</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Every client&apos;s color week, cadence, next production window, and reminder
-            status. Click <strong>Edit</strong> on a row to change any field inline (handy
-            if a production was scheduled manually and the last production date needs fixing).
+            status. <strong>Click any field to edit it</strong> — press Enter to save,
+            Esc to cancel. The window and reminder columns are calculated automatically.
           </p>
         </div>
 
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <span className="muted">{activeCount} active · {enrolled.length} in production</span>
           <label className="row" style={{ gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-            />
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
             <span className="muted">Show inactive</span>
           </label>
         </div>
@@ -280,100 +343,48 @@ export default function ProductionPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => {
-                  const editing = editId === r.client.id;
-                  if (editing && draft) {
-                    return (
-                      <tr key={r.client.id} className="rev-row-editing">
-                        <td><input className="cell-input" value={draft.name} onChange={(e) => upd({ name: e.target.value })} /></td>
-                        <td><input className="cell-input" value={draft.contact_name} onChange={(e) => upd({ contact_name: e.target.value })} /></td>
-                        <td><input className="cell-input" value={draft.contact_email} onChange={(e) => upd({ contact_email: e.target.value })} /></td>
-                        <td>
-                          <select className="select-clean cell-input" value={draft.active ? "1" : "0"} onChange={(e) => upd({ active: e.target.value === "1" })}>
-                            <option value="1">Yes</option>
-                            <option value="0">No</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select className="select-clean cell-input" value={draft.color_week} onChange={(e) => upd({ color_week: e.target.value as ColorWeek })}>
-                            <option value="">Not set</option>
-                            <option value="purple">Purple</option>
-                            <option value="red">Red</option>
-                            <option value="blue">Blue</option>
-                            <option value="green">Green</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select className="select-clean cell-input" value={draft.production_cadence} onChange={(e) => upd({ production_cadence: e.target.value as Cadence })}>
-                            <option value="">Not set</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="bi_monthly">Bi-Monthly</option>
-                            <option value="quarterly">Quarterly</option>
-                          </select>
-                        </td>
-                        <td><input type="date" className="cell-input" value={draft.last_production_date} onChange={(e) => upd({ last_production_date: e.target.value })} /></td>
-                        <td>{fmtWindow(r.window)}</td>
-                        <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
-                        <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
-                        <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
-                        <td>
-                          <div className="row" style={{ gap: 6 }}>
-                            <button className="btn btn-sm" disabled={saving} onClick={saveEdit}>{saving ? "Saving..." : "Save"}</button>
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={cancelEdit}>Cancel</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-                  return (
-                    <tr
-                      key={r.client.id}
-                      className="rev-row"
-                      style={{ opacity: r.client.active ? 1 : 0.55 }}
-                      onClick={() => router.push(`/admin/revenue/${r.client.id}`)}
-                    >
-                      <td><strong>{r.client.name}</strong></td>
-                      <td>{r.client.contact_name || "—"}</td>
-                      <td>
-                        {r.client.contact_email
-                          ? <span style={{ fontSize: 13 }}>{r.client.contact_email}</span>
-                          : <span className="muted">no email</span>}
-                      </td>
-                      <td>{r.client.active ? "Yes" : "No"}</td>
-                      <td>
-                        {r.client.color_week ? <span className={`color-dot ${r.client.color_week}`} /> : null}
-                        {colorLabel(r.client.color_week)}
-                      </td>
-                      <td>{CADENCE_LABEL[r.client.production_cadence]}</td>
-                      <td>{fmtDate(r.client.last_production_date)}</td>
-                      <td>{fmtWindow(r.window)}</td>
-                      <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
-                      <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
-                      <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
-                      <td onClick={stop}>
-                        <div className="row" style={{ gap: 6 }}>
-                          <button className="btn btn-secondary btn-sm" onClick={() => startEdit(r.client)}>Edit</button>
-                          {r.client.color_week && r.client.production_cadence ? (
-                            <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
-                          ) : null}
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => {
-                              if (confirm(`Remove ${r.client.name} from production scheduling? This keeps the client and all their data — they just won't get productions or reminders.`)) {
-                                setEnrolled(r.client.id, false);
-                              }
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        {linkMessage[r.client.id] ? (
-                          <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{linkMessage[r.client.id]}</div>
+                {visible.map((r) => (
+                  <tr key={r.client.id} style={{ opacity: r.client.active ? 1 : 0.55 }}>
+                    {editableCell(r, "name", "text", r.client.name, <strong>{r.client.name}</strong>)}
+                    {editableCell(r, "contact_name", "text", r.client.contact_name, r.client.contact_name || "—")}
+                    {editableCell(
+                      r, "contact_email", "text", r.client.contact_email,
+                      r.client.contact_email ? <span style={{ fontSize: 13 }}>{r.client.contact_email}</span> : <span className="muted">no email</span>
+                    )}
+                    {editableCell(r, "active", "select", r.client.active ? "1" : "0", r.client.active ? "Yes" : "No", ACTIVE_OPTIONS)}
+                    {editableCell(
+                      r, "color_week", "select", r.client.color_week,
+                      <>{r.client.color_week ? <span className={`color-dot ${r.client.color_week}`} /> : null}{colorLabel(r.client.color_week)}</>,
+                      COLOR_OPTIONS
+                    )}
+                    {editableCell(r, "production_cadence", "select", r.client.production_cadence, CADENCE_LABEL[r.client.production_cadence], CADENCE_OPTIONS)}
+                    {editableCell(r, "last_production_date", "date", r.client.last_production_date || "", fmtDate(r.client.last_production_date))}
+                    <td>{fmtWindow(r.window)}</td>
+                    <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
+                    <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
+                    <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
+                    <td>
+                      <div className="row" style={{ gap: 6 }}>
+                        {r.client.color_week && r.client.production_cadence ? (
+                          <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
                         ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => {
+                            if (confirm(`Remove ${r.client.name} from production scheduling? This keeps the client and all their data — they just won't get productions or reminders.`)) {
+                              setEnrolled(r.client.id, false);
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      {linkMessage[r.client.id] ? (
+                        <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{linkMessage[r.client.id]}</div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -390,10 +401,7 @@ export default function ProductionPage() {
               {removed.map((r) => (
                 <span key={r.client.id} className="removed-chip">
                   {r.client.name}
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setEnrolled(r.client.id, true)}
-                  >
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEnrolled(r.client.id, true)}>
                     Add to production
                   </button>
                 </span>
