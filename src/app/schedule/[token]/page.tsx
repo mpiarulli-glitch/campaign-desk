@@ -206,13 +206,14 @@ export default function SchedulePage() {
       <main className="container stack sched-main">
         <div className="sched-hero">
           <p className="eyebrow">{data.client.name}</p>
-          <h1 className="h1">Book your next production</h1>
+          <h1 className="h1">Book your next shoot</h1>
           <p className="sched-sub">
-            Pick a date and start time, then tell us a bit about the shoot. Your window is{" "}
+            Pick a date and start time, then tell us a bit about the shoot. Choose any
+            weekday from{" "}
             <strong>
               {dayNumber(data.window.start)} – {dayNumber(data.window.end)}
             </strong>
-            , weekdays 9 to 5.
+            , 9 to 5.
           </p>
         </div>
 
@@ -340,7 +341,7 @@ export default function SchedulePage() {
                   <input
                     value={brief.timeRestrictions || ""}
                     onChange={(e) => set("timeRestrictions", e.target.value)}
-                    placeholder="Any windows we should work around"
+                    placeholder="Any times we should work around"
                   />
                 </div>
                 <div className="field">

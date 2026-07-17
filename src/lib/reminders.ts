@@ -92,17 +92,17 @@ function reminderEmail(
   };
   const year = window.start.split("-")[0];
   const windowText = `${fmtLong(window.start)} – ${fmtLong(window.end)}, ${year}`;
-  const subject = "Time to schedule your next production";
-  const preheader = `Pick your date and time for the ${windowText} window. Takes about a minute.`;
+  const subject = "It's time to schedule your next shoot";
+  const preheader = "Your next shoot is coming up. Pick a day and time in about a minute.";
   const logo = "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
   const text = [
     greeting,
     "",
-    `Your next production window is here: ${windowText}.`,
-    "Pick the day and time that works best and share a few details about the shoot:",
+    "It's time to schedule your next shoot. Pick a day and time that work best and share a few quick details:",
     url,
     "",
+    `Any weekday from ${windowText} works.`,
     "It only takes a minute. Just reply to this email with any questions.",
   ].join("\n");
 
@@ -113,7 +113,9 @@ function reminderEmail(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="x-apple-disable-message-reformatting">
 <title>${subject}</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
   @media screen and (max-width:600px){
     .container{width:100% !important;}
     .px{padding-left:24px !important;padding-right:24px !important;}
@@ -136,10 +138,10 @@ function reminderEmail(
         </tr>
         <tr>
           <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">Production scheduling</p>
-            <h1 class="h1" style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:1.2;color:#111111;font-weight:normal;">Time to schedule your next production</h1>
+            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">Time to schedule</p>
+            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">It&rsquo;s time to schedule your next shoot</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Your next production window is here. Pick the day and time that work best and share a few quick details about the shoot.</p>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">You&rsquo;re coming up for your next shoot. Pick the day and time that work best for you and share a few quick details so we show up ready.</p>
           </td>
         </tr>
         <tr>
@@ -147,7 +149,7 @@ function reminderEmail(
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0fbfd;border-left:4px solid #00d4e8;border-radius:6px;">
               <tr>
                 <td style="padding:18px 22px;">
-                  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#7a7a7a;font-weight:bold;">Your production window</p>
+                  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#7a7a7a;font-weight:bold;">Pick any weekday</p>
                   <p style="margin:0;font-size:20px;font-weight:bold;color:#111111;">${windowText}</p>
                 </td>
               </tr>
