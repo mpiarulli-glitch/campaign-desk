@@ -40,6 +40,11 @@ export async function sendEmail(input: EmailInput): Promise<boolean> {
   };
   if (input.text) body.text = input.text;
   if (process.env.EMAIL_REPLY_TO) body.reply_to = process.env.EMAIL_REPLY_TO;
+  // Optional CC on every send (comma-separate for multiple addresses).
+  if (process.env.EMAIL_CC) {
+    const cc = process.env.EMAIL_CC.split(",").map((s) => s.trim()).filter(Boolean);
+    if (cc.length) body.cc = cc;
+  }
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
