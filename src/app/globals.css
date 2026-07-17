@@ -1815,11 +1815,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .snap-deliv-edit {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr auto;
+  grid-template-columns: 1fr 1.4fr 1fr 1fr auto;
   gap: 8px;
   align-items: center;
 }
-.snap-deliv-edit input {
+.snap-deliv-edit input,
+.snap-deliv-edit select {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 8px 10px;
@@ -2068,6 +2069,14 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-weight: 700;
   letter-spacing: 0;
 }
+
+/* Standing-status line under a contracted deliverable */
+.snap-deliv-meta {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.snap-card-done { opacity: 0.85; }
 
 /* Wins */
 .snap-win-mark { color: #e0a400; font-size: 15px; line-height: 1.5; }
@@ -2328,6 +2337,52 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-weight: 700;
   color: var(--text);
   margin: 4px 0 14px;
+}
+
+.sched-referral {
+  margin-top: 20px;
+  text-align: center;
+  background: var(--ink);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 30px 28px;
+  box-shadow: var(--shadow);
+}
+.sched-referral-eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.sched-referral-title {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.sched-referral-text {
+  margin: 0 auto 20px;
+  max-width: 46ch;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #c9ced8;
+}
+.sched-referral-btn {
+  display: inline-block;
+  background: var(--accent);
+  color: #04333a;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  padding: 13px 24px;
+  border-radius: var(--radius-sm);
+}
+.sched-referral-btn:hover {
+  background: var(--accent-hover);
+  color: #04333a;
 }
 
 @media (max-width: 620px) {

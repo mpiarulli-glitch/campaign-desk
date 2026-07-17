@@ -179,6 +179,24 @@ export default function SchedulePage() {
             </p>
           ) : null}
         </div>
+
+        <div className="sched-referral">
+          <p className="sched-referral-eyebrow">Did you know?</p>
+          <h2 className="sched-referral-title">Earn with our referral partner program</h2>
+          <p className="sched-referral-text">
+            Know another business that could use marketing that actually moves the
+            needle? Refer them through the Empire Partner Program and get rewarded
+            when they come on board.
+          </p>
+          <a
+            className="sched-referral-btn"
+            href="https://www.marketingempiregroup.com/empire-partner-program?rc=test-site"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Explore the Partner Program
+          </a>
+        </div>
       </>
     );
   }
