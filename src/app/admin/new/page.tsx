@@ -65,7 +65,7 @@ export default function NewCampaignPage() {
     <div className="app-shell">
       <header className="topbar">
         <Brand href="/admin" />
-        <Link className="btn btn-ghost btn-sm" href="/admin">
+        <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
           Back
         </Link>
       </header>
@@ -210,7 +210,7 @@ export default function NewCampaignPage() {
             <button className="btn" type="submit" disabled={loading}>
               {loading ? "Creating..." : "Create campaign"}
             </button>
-            <Link className="btn btn-secondary" href="/admin">
+            <Link className="btn btn-secondary" href="/admin/campaigns">
               Cancel
             </Link>
           </div>

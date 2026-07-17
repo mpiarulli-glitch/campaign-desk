@@ -268,7 +268,7 @@ export default function CalendarPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin">Campaigns</Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/production">Production</Link>
           <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
         </div>

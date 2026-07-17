@@ -652,7 +652,7 @@ export default function AdminCampaignPage() {
     return (
       <div className="container">
         <p className="error">{error}</p>
-        <Link href="/admin">Back to campaigns</Link>
+        <Link href="/admin/campaigns">Back to campaigns</Link>
       </div>
     );
   }
@@ -671,7 +671,7 @@ export default function AdminCampaignPage() {
         <Brand href="/admin" />
         <div className="row">
           <StatusBadge status={status} />
-          <Link className="btn btn-ghost btn-sm" href="/admin">
+          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
             All campaigns
           </Link>
         </div>

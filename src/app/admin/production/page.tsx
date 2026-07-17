@@ -322,7 +322,7 @@ export default function ProductionPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin">Campaigns</Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
         </div>

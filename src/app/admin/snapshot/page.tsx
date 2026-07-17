@@ -46,7 +46,7 @@ export default function SnapshotAccountsPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin">Campaigns</Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
             {adding ? "Cancel" : "Add account"}

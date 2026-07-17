@@ -112,7 +112,7 @@ export default function RevenuePage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin">
+          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
             Campaigns
           </Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/calendar">
