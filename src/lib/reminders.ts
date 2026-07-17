@@ -100,8 +100,11 @@ function reminderEmail(
   window: Window,
   url: string
 ): { subject: string; html: string; text: string } {
+  const esc = (s: string) =>
+    (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const name = client.contact_name?.trim();
-  const greeting = name ? `Hi ${name},` : "Hi there,";
+  const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
+  const company = esc(client.name);
   const fmtLong = (ymd: string) => {
     const [y, m, d] = ymd.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
@@ -112,7 +115,7 @@ function reminderEmail(
   };
   const year = window.start.split("-")[0];
   const windowText = `${fmtLong(window.start)} – ${fmtLong(window.end)}, ${year}`;
-  const subject = "It's time to schedule your next production";
+  const subject = `${client.name}: time to schedule your next production`;
   const preheader = "Your next production is coming up. Pick a day and time in about a minute.";
   const logo = "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
@@ -158,7 +161,7 @@ function reminderEmail(
         </tr>
         <tr>
           <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">Time to schedule</p>
+            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${company}</p>
             <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">It&rsquo;s time to schedule your next production</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
             <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">You&rsquo;re coming up for your next production. Pick the day and time that work best for you and share a few quick details so we show up ready.</p>
