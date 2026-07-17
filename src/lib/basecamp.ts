@@ -206,6 +206,21 @@ export async function createScheduleCard(
   }
 }
 
+// All projects (buckets) in the account, paged. Used to auto-match clients to
+// their Basecamp project by name.
+export async function listProjects(): Promise<Array<{ id: number; name: string }>> {
+  const out: Array<{ id: number; name: string }> = [];
+  for (let page = 1; page <= 30; page++) {
+    const res = await bc(`/projects.json?page=${page}`);
+    if (!res.ok) break;
+    const arr = await res.json();
+    if (!Array.isArray(arr) || arr.length === 0) break;
+    for (const p of arr) out.push({ id: p.id, name: p.name });
+    if (arr.length < 15) break;
+  }
+  return out;
+}
+
 export function disconnectBasecamp() {
   getDb().prepare(`DELETE FROM app_settings WHERE key = ?`).run("basecamp_tokens");
 }

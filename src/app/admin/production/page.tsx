@@ -149,6 +149,21 @@ export default function ProductionPage() {
     await fetch("/api/basecamp/status", { method: "DELETE" });
     loadBc();
   }
+  const [matchMsg, setMatchMsg] = useState("");
+  async function autoMatch() {
+    setMatchMsg("Matching clients to Basecamp projects...");
+    const res = await fetch("/api/basecamp/automatch", { method: "POST" });
+    if (!res.ok) {
+      setMatchMsg("Could not auto-match. Is Basecamp connected?");
+      return;
+    }
+    const d = await res.json();
+    setMatchMsg(
+      `Matched ${d.matched.length} of ${d.matched.length + d.unmatched.length}. ` +
+        (d.unmatched.length ? `Still need a project: ${d.unmatched.join(", ")}.` : "All set.")
+    );
+    load();
+  }
 
   async function load() {
     setLoading(true);
@@ -352,10 +367,14 @@ export default function ProductionPage() {
               <a className="btn btn-sm" href="/api/basecamp/connect">Connect Basecamp</a>
             ) : null}
             {bc.connected ? (
-              <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
+              <span className="row" style={{ gap: 8 }}>
+                <button className="btn btn-sm" onClick={autoMatch}>Auto-match projects</button>
+                <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
+              </span>
             ) : null}
           </div>
         ) : null}
+        {matchMsg ? <p className="muted" style={{ marginTop: -6 }}>{matchMsg}</p> : null}
 
         {error ? <p className="error">{error}</p> : null}
 
