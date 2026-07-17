@@ -214,8 +214,8 @@ export default function ProductionPage() {
           <h1 className="h1">Master scheduler</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Every client&apos;s color week, cadence, next production window, and reminder
-            status. Click <strong>Edit</strong> on a row to change any field inline (handy
-            if a production was scheduled manually and the last production date needs fixing).
+            status. <strong>Click any row to edit it</strong> inline (handy if a production
+            was scheduled manually and the last production date needs fixing).
           </p>
         </div>
 
@@ -239,7 +239,7 @@ export default function ProductionPage() {
           <div className="empty"><p>No clients to show.</p></div>
         ) : (
           <div className="card card-pad" style={{ overflowX: "auto" }}>
-            <table className="rev-table">
+            <table className="rev-table sched-table">
               <thead>
                 <tr>
                   <th>Client</th>
@@ -307,7 +307,8 @@ export default function ProductionPage() {
                       key={r.client.id}
                       className="rev-row"
                       style={{ opacity: r.client.active ? 1 : 0.55 }}
-                      onClick={() => router.push(`/admin/revenue/${r.client.id}`)}
+                      onClick={() => startEdit(r.client)}
+                      title="Click to edit"
                     >
                       <td><strong>{r.client.name}</strong></td>
                       <td>{r.client.contact_name || "—"}</td>
