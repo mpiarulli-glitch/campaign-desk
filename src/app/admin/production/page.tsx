@@ -133,6 +133,7 @@ export default function ProductionPage() {
   const [error, setError] = useState("");
   const [linkMessage, setLinkMessage] = useState<Record<string, string>>({});
   const [showInactive, setShowInactive] = useState(true);
+  const [colorFilter, setColorFilter] = useState<ColorWeek | "all">("all");
 
   // Per-cell inline editing.
   const [edit, setEdit] = useState<{ id: string; field: Field } | null>(null);
@@ -256,8 +257,11 @@ export default function ProductionPage() {
   const enrolled = useMemo(() => rows.filter((r) => r.client.production_enrolled), [rows]);
   const removed = useMemo(() => rows.filter((r) => !r.client.production_enrolled), [rows]);
   const visible = useMemo(
-    () => (showInactive ? enrolled : enrolled.filter((r) => r.client.active)),
-    [enrolled, showInactive]
+    () =>
+      enrolled
+        .filter((r) => (showInactive ? true : r.client.active))
+        .filter((r) => (colorFilter === "all" ? true : r.client.color_week === colorFilter)),
+    [enrolled, showInactive, colorFilter]
   );
   const activeCount = enrolled.filter((r) => r.client.active).length;
 
@@ -340,11 +344,32 @@ export default function ProductionPage() {
         </div>
 
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <span className="muted">{activeCount} active · {enrolled.length} in production</span>
-          <label className="row" style={{ gap: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-            <span className="muted">Show inactive</span>
-          </label>
+          <span className="muted">
+            {colorFilter === "all"
+              ? `${activeCount} active · ${enrolled.length} in production`
+              : `${visible.length} ${colorLabel(colorFilter as ColorWeek)} client${visible.length === 1 ? "" : "s"}`}
+          </span>
+          <div className="row" style={{ gap: 16 }}>
+            <label className="row" style={{ gap: 8 }}>
+              <span className="muted">Color week</span>
+              <select
+                className="select-clean"
+                style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                value={colorFilter}
+                onChange={(e) => setColorFilter(e.target.value as ColorWeek | "all")}
+              >
+                <option value="all">All colors</option>
+                <option value="purple">Purple</option>
+                <option value="red">Red</option>
+                <option value="blue">Blue</option>
+                <option value="green">Green</option>
+              </select>
+            </label>
+            <label className="row" style={{ gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              <span className="muted">Show inactive</span>
+            </label>
+          </div>
         </div>
 
         {bc ? (
