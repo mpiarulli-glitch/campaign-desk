@@ -488,6 +488,26 @@ button {
   vertical-align: middle;
 }
 
+.cell-input {
+  width: 100%;
+  min-width: 90px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.cell-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
+}
+.rev-row-editing > td {
+  background: var(--bg-tint);
+  vertical-align: middle;
+}
+
 .color-dot.purple { background: #8b5cf6; }
 .color-dot.red { background: #ef4444; }
 .color-dot.blue { background: #3b82f6; }
