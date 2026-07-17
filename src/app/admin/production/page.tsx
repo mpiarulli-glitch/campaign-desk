@@ -45,7 +45,10 @@ type Client = {
   schedule_token: string | null;
   production_enrolled: number;
   basecamp_project_id: string;
+  videographer_id: string;
 };
+
+type Videographer = { id: string; name: string; active: number };
 
 type Row = {
   client: Client;
@@ -66,7 +69,8 @@ type Field =
   | "color_week"
   | "production_cadence"
   | "last_production_date"
-  | "basecamp_project_id";
+  | "basecamp_project_id"
+  | "videographer_id";
 
 const PATCH_KEY: Record<Field, string> = {
   name: "name",
@@ -77,6 +81,7 @@ const PATCH_KEY: Record<Field, string> = {
   production_cadence: "productionCadence",
   last_production_date: "lastProductionDate",
   basecamp_project_id: "basecampProjectId",
+  videographer_id: "videographerId",
 };
 
 const COLOR_OPTIONS = [
@@ -141,6 +146,18 @@ export default function ProductionPage() {
   const skipCommit = useRef(false);
 
   const [bc, setBc] = useState<{ configured: boolean; connected: boolean } | null>(null);
+  const [videographers, setVideographers] = useState<Videographer[]>([]);
+
+  async function addVideographer() {
+    const name = (prompt("Videographer name") || "").trim();
+    if (!name) return;
+    const res = await fetch("/api/videographers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) load();
+  }
 
   async function loadBc() {
     const res = await fetch("/api/basecamp/status");
@@ -180,6 +197,7 @@ export default function ProductionPage() {
     }
     const data = await res.json();
     setRows(data.clients || []);
+    setVideographers(data.videographers || []);
     setLoading(false);
   }
 
@@ -264,6 +282,12 @@ export default function ProductionPage() {
     [enrolled, showInactive, colorFilter]
   );
   const activeCount = enrolled.filter((r) => r.client.active).length;
+
+  const vidOptions = [
+    { value: "", label: "Unassigned" },
+    ...videographers.map((v) => ({ value: v.id, label: v.name })),
+  ];
+  const vidName = (id: string) => videographers.find((v) => v.id === id)?.name || "";
 
   // Renders a text/date/select input for the cell currently being edited.
   function editor(field: Field, type: "text" | "date" | "select", options?: { value: string; label: string }[]) {
@@ -372,6 +396,16 @@ export default function ProductionPage() {
           </div>
         </div>
 
+        <div className="row" style={{ gap: 8 }}>
+          <span className="muted" style={{ fontSize: 13 }}>
+            Videographers: {videographers.length ? videographers.map((v) => v.name).join(", ") : "none yet"}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add videographer</button>
+          <span className="muted" style={{ fontSize: 12 }}>
+            One production per day each. A booked day blocks that videographer&apos;s other clients.
+          </span>
+        </div>
+
         {bc ? (
           <div className="card card-pad row" style={{ justifyContent: "space-between", gap: 12 }}>
             <span className="row" style={{ gap: 8 }}>
@@ -423,6 +457,7 @@ export default function ProductionPage() {
                   <th>Last email sent</th>
                   <th>Last window emailed</th>
                   <th>Status</th>
+                  <th>Videographer</th>
                   <th>Basecamp project</th>
                   <th></th>
                 </tr>
@@ -448,6 +483,13 @@ export default function ProductionPage() {
                     <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
                     <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
                     <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
+                    {editableCell(
+                      r, "videographer_id", "select", r.client.videographer_id,
+                      r.client.videographer_id
+                        ? vidName(r.client.videographer_id)
+                        : <span className="muted">Unassigned</span>,
+                      vidOptions
+                    )}
                     {editableCell(
                       r, "basecamp_project_id", "text", r.client.basecamp_project_id,
                       r.client.basecamp_project_id

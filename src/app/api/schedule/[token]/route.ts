@@ -10,6 +10,7 @@ import {
 } from "@/lib/cadence";
 import { createSend } from "@/lib/calendar";
 import { notifyProductionRequested } from "@/lib/notify";
+import { videographerBookedDates } from "@/lib/videographers";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -39,6 +40,10 @@ export async function GET(_request: Request, { params }: Params) {
         return [];
       }
     })(),
+    // Days their videographer is already booked (unavailable to this client).
+    videographerBooked: window
+      ? videographerBookedDates(client.videographer_id, window.start, window.end, client.id)
+      : [],
     existingSend: existing
       ? {
           sendDate: existing.send_date,
@@ -136,6 +141,15 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json(
       { error: "That day isn't available. Pick another day in the window." },
       { status: 400 }
+    );
+  }
+  // Videographer already booked that day for another client.
+  if (
+    videographerBookedDates(client.videographer_id, date, date, client.id).length > 0
+  ) {
+    return NextResponse.json(
+      { error: "That day was just taken. Please pick another day in the window." },
+      { status: 409 }
     );
   }
 

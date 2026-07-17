@@ -19,6 +19,7 @@ type Data = {
   status: CycleStatus;
   slots: string[];
   blackoutDates: string[];
+  videographerBooked: string[];
   existingSend: {
     sendDate: string;
     sendTime: string;
@@ -102,7 +103,10 @@ export default function SchedulePage() {
     () => (data?.window ? daysBetween(data.window.start, data.window.end) : []),
     [data]
   );
-  const blackout = useMemo(() => new Set(data?.blackoutDates || []), [data]);
+  const blackout = useMemo(
+    () => new Set([...(data?.blackoutDates || []), ...(data?.videographerBooked || [])]),
+    [data]
+  );
 
   function choose(date: string, time: string) {
     setPick({ date, time });

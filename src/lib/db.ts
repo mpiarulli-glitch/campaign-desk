@@ -132,6 +132,16 @@ export interface RevClient {
   production_enrolled: number;
   // Basecamp project (bucket) id where the "time to schedule" card is created.
   basecamp_project_id: string;
+  // Videographer assigned to this account (one production/day per videographer).
+  videographer_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Videographer {
+  id: string;
+  name: string;
+  active: number;
   created_at: string;
   updated_at: string;
 }
@@ -444,6 +454,14 @@ export function getDb(): Database.Database {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS videographers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS snapshot_deliverables (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
@@ -653,6 +671,11 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("basecamp_project_id")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN basecamp_project_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("videographer_id")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN videographer_id TEXT NOT NULL DEFAULT ''`
     );
   }
 

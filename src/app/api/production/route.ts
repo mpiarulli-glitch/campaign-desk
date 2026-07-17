@@ -3,6 +3,7 @@ import { isAdminAuthenticated } from "@/lib/auth";
 import { listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
+import { listVideographers } from "@/lib/videographers";
 
 export async function GET() {
   if (!(await isAdminAuthenticated())) {
@@ -28,6 +29,7 @@ export async function GET() {
         schedule_token: client.schedule_token,
         production_enrolled: client.production_enrolled,
         basecamp_project_id: client.basecamp_project_id,
+        videographer_id: client.videographer_id,
       },
       window,
       status,
@@ -41,5 +43,5 @@ export async function GET() {
       lastWindowEmailed: latestReminder?.window_start || null,
     };
   });
-  return NextResponse.json({ clients, today });
+  return NextResponse.json({ clients, today, videographers: listVideographers(false) });
 }

@@ -92,6 +92,8 @@ export async function PATCH(request: Request, { params }: Params) {
       typeof body.basecampProjectId === "string"
         ? extractProjectId(body.basecampProjectId)
         : undefined,
+    videographerId:
+      typeof body.videographerId === "string" ? body.videographerId : undefined,
   });
   return NextResponse.json({ client });
 }
