@@ -98,6 +98,7 @@ export async function POST(request: Request, { params }: Params) {
     "propertyApproval",
     "safetyCompliance",
     "captureRequests",
+    "offersPromotions",
     "avoidRequests",
     "additionalNotes",
   ] as const;

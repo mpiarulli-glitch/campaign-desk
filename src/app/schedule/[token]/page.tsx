@@ -333,7 +333,7 @@ export default function SchedulePage() {
                 <textarea
                   value={brief.locations || ""}
                   onChange={(e) => set("locations", e.target.value)}
-                  placeholder="Business name and full address. List every location, in order, if there's more than one."
+                  placeholder="Full address (business or residential). List every location, in order, if there's more than one."
                 />
               </div>
               <div className="rev-form-grid">
@@ -478,6 +478,14 @@ export default function SchedulePage() {
                   value={brief.captureRequests || ""}
                   onChange={(e) => set("captureRequests", e.target.value)}
                   placeholder="Optional. A specific service, product, space, or team member you'd love to see featured."
+                />
+              </div>
+              <div className="field">
+                <label>Any offers or promotions to highlight?</label>
+                <input
+                  value={brief.offersPromotions || ""}
+                  onChange={(e) => set("offersPromotions", e.target.value)}
+                  placeholder="Optional. A current deal, promo, or seasonal offer you want featured."
                 />
               </div>
               <div className="field">

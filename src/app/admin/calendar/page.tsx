@@ -41,6 +41,7 @@ const BRIEF_LABELS: [string, string][] = [
   ["propertyApproval", "Private property"],
   ["safetyCompliance", "Safety gear / OSHA"],
   ["captureRequests", "Shots they'd like"],
+  ["offersPromotions", "Offers / promotions"],
   ["avoidRequests", "Avoid capturing"],
   ["additionalNotes", "Notes"],
 ];
