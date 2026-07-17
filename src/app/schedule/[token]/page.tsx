@@ -78,6 +78,7 @@ export default function SchedulePage() {
   const [data, setData] = useState<Data | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [pick, setPick] = useState<{ date: string; time: string } | null>(null);
+  const [duration, setDuration] = useState<"half" | "full">("half");
   const [brief, setBrief] = useState<Brief>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -125,6 +126,7 @@ export default function SchedulePage() {
       body: JSON.stringify({
         date: pick.date,
         time: pick.time,
+        duration,
         note: brief.additionalNotes || "",
         brief,
       }),
@@ -318,6 +320,32 @@ export default function SchedulePage() {
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPick(null)}>
                 Change slot
               </button>
+            </div>
+
+            <div className="brief-duration">
+              <span className="brief-duration-label">Production length</span>
+              <div className="brief-duration-opts">
+                <button
+                  type="button"
+                  className={`brief-dur ${duration === "half" ? "is-on" : ""}`}
+                  onClick={() => setDuration("half")}
+                >
+                  4 hours
+                </button>
+                <button
+                  type="button"
+                  className={`brief-dur ${duration === "full" ? "is-on" : ""}`}
+                  onClick={() => setDuration("full")}
+                >
+                  Full day
+                </button>
+              </div>
+              <span className="brief-duration-note">
+                {duration === "full"
+                  ? "Full day runs 9:00 AM to 5:30 PM."
+                  : "A 4-hour production."}{" "}
+                Every production ends at 5:30 PM.
+              </span>
             </div>
 
             <p className="brief-intro muted">

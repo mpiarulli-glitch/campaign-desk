@@ -81,6 +81,7 @@ export async function POST(request: Request, { params }: Params) {
   const body = await request.json().catch(() => ({}));
   const date = typeof body.date === "string" ? body.date : "";
   const time = typeof body.time === "string" ? body.time : "";
+  const duration = body.duration === "full" ? "full" : "half";
   const note = typeof body.note === "string" ? body.note.trim() : "";
 
   // Known production-brief fields. Anything else on body.brief is ignored.
@@ -160,6 +161,7 @@ export async function POST(request: Request, { params }: Params) {
     title: `${client.name} production`,
     sendDate: date,
     sendTime: time,
+    duration,
     status: "requested",
     note,
     productionBrief: JSON.stringify(brief),

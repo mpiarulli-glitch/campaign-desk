@@ -117,6 +117,11 @@ export interface RevClient {
   monthly_cost: number;
   ltv: number | null;
   snapshot_token: string | null;
+  // Share token for the client-facing editorial-plan approval page.
+  calendar_token: string | null;
+  // When/who last approved the shared editorial calendar (client side).
+  calendar_approved_at: string | null;
+  calendar_approved_by: string | null;
   active: number;
   color_week: ColorWeek;
   production_cadence: ProductionCadence;
@@ -205,6 +210,16 @@ export interface SnapshotEntry {
   updated_at: string;
 }
 
+// One note per scheduled send left by the client on the shared editorial plan.
+export interface CalendarFeedback {
+  id: string;
+  send_id: string;
+  client_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SendStatus = "requested" | "planned" | "scheduled" | "sent";
 
 // A single email send plotted on the campaign calendar. client_id is optional
@@ -216,6 +231,9 @@ export interface ScheduledSend {
   title: string;
   send_date: string; // YYYY-MM-DD
   send_time: string; // HH:MM (24h), "" if not time-slotted
+  // Production length: "half" = 4 hours, "full" = full day (9:00 AM). All
+  // productions end at 5:30 PM regardless.
+  duration: string;
   status: SendStatus;
   platform: string;
   note: string;
@@ -434,6 +452,20 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_sends_date ON scheduled_sends(send_date);
     CREATE INDEX IF NOT EXISTS idx_sends_client ON scheduled_sends(client_id);
 
+    CREATE TABLE IF NOT EXISTS calendar_feedback (
+      id TEXT PRIMARY KEY,
+      send_id TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (send_id),
+      FOREIGN KEY (send_id) REFERENCES scheduled_sends(id) ON DELETE CASCADE,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calfeedback_client ON calendar_feedback(client_id);
+
     CREATE TABLE IF NOT EXISTS schedule_reminders (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
@@ -637,6 +669,15 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("schedule_token")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN schedule_token TEXT`);
   }
+  if (revClientCols.length && !revClientCols.includes("calendar_token")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_token TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("calendar_approved_at")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_approved_at TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("calendar_approved_by")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_approved_by TEXT`);
+  }
   if (revClientCols.length && !revClientCols.includes("contract_start")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN contract_start TEXT`);
   }
@@ -705,6 +746,11 @@ function migrate(database: Database.Database) {
   if (sendCols.length && !sendCols.includes("production_brief")) {
     database.exec(
       `ALTER TABLE scheduled_sends ADD COLUMN production_brief TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (sendCols.length && !sendCols.includes("duration")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN duration TEXT NOT NULL DEFAULT 'half'`
     );
   }
   if (sendCols.length && !sendCols.includes("requested_by_client")) {

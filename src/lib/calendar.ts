@@ -61,6 +61,7 @@ export function createSend(input: {
   title: string;
   sendDate: string;
   sendTime?: string;
+  duration?: string;
   status?: SendStatus;
   platform?: string;
   note?: string;
@@ -79,10 +80,10 @@ export function createSend(input: {
   const clientId = input.clientId || null;
   db.prepare(
     `INSERT INTO scheduled_sends
-      (id, client_id, client_name, title, send_date, send_time, status, platform, note,
+      (id, client_id, client_name, title, send_date, send_time, duration, status, platform, note,
        audience, purpose, offer, subject, preview_text, production_brief,
        cadence_window_start, requested_by_client, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     clientId,
@@ -90,6 +91,7 @@ export function createSend(input: {
     input.title.trim(),
     input.sendDate,
     (input.sendTime || "").trim(),
+    input.duration === "full" ? "full" : "half",
     normalizeStatus(input.status),
     (input.platform || "").trim(),
     (input.note || "").trim(),
@@ -115,6 +117,7 @@ export function updateSend(
     title: string;
     sendDate: string;
     sendTime: string;
+    duration: string;
     status: SendStatus;
     platform: string;
     note: string;
@@ -136,7 +139,7 @@ export function updateSend(
       : existing.client_name;
   db.prepare(
     `UPDATE scheduled_sends SET
-       client_id = ?, client_name = ?, title = ?, send_date = ?, send_time = ?,
+       client_id = ?, client_name = ?, title = ?, send_date = ?, send_time = ?, duration = ?,
        status = ?, platform = ?, note = ?, audience = ?, purpose = ?,
        offer = ?, subject = ?, preview_text = ?, updated_at = ?
      WHERE id = ?`
@@ -146,6 +149,7 @@ export function updateSend(
     updates.title?.trim() ?? existing.title,
     updates.sendDate ?? existing.send_date,
     updates.sendTime?.trim() ?? existing.send_time,
+    updates.duration === undefined ? existing.duration : updates.duration === "full" ? "full" : "half",
     updates.status ? normalizeStatus(updates.status) : existing.status,
     updates.platform?.trim() ?? existing.platform,
     updates.note?.trim() ?? existing.note,

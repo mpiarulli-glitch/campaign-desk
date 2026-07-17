@@ -14,6 +14,7 @@ type Send = {
   title: string;
   send_date: string;
   send_time: string;
+  duration: string;
   status: Status;
   note: string;
   audience: string;
@@ -114,6 +115,13 @@ export default function CalendarPage() {
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [addingClient, setAddingClient] = useState(false);
   const [newClient, setNewClient] = useState("");
+  const [plan, setPlan] = useState<{
+    token: string | null;
+    approvedAt: string | null;
+    approvedBy: string | null;
+    feedback: { send_id: string; body: string }[];
+  } | null>(null);
+  const [planCopied, setPlanCopied] = useState(false);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const startWeekday = new Date(year, month, 1).getDay();
@@ -137,6 +145,45 @@ export default function CalendarPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Load the editorial-plan sharing info when a single client is selected.
+  const loadPlan = useCallback(async () => {
+    if (filter === "all") { setPlan(null); return; }
+    const res = await fetch(`/api/calendar/plan/${filter}`);
+    setPlan(res.ok ? await res.json() : null);
+  }, [filter]);
+
+  useEffect(() => { loadPlan(); }, [loadPlan]);
+
+  const feedbackBySend = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of plan?.feedback || []) m.set(f.send_id, f.body);
+    return m;
+  }, [plan]);
+
+  const planUrl =
+    plan?.token && typeof window !== "undefined"
+      ? `${window.location.origin}/plan/${plan.token}`
+      : "";
+  const noteCount = plan?.feedback?.filter((f) => f.body.trim()).length || 0;
+
+  async function copyPlan() {
+    if (!planUrl) return;
+    await navigator.clipboard.writeText(planUrl);
+    setPlanCopied(true);
+    setTimeout(() => setPlanCopied(false), 1500);
+  }
+  async function planAction(action: "rotate" | "clearApproval") {
+    if (filter === "all") return;
+    if (action === "rotate" && !confirm("Make a new link? The old link will stop working.")) return;
+    if (action === "clearApproval" && !confirm("Clear the client's approval so they sign off again?")) return;
+    await fetch(`/api/calendar/plan/${filter}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    loadPlan();
+  }
 
   const byDay = useMemo(() => {
     const map = new Map<string, Send[]>();
@@ -299,6 +346,49 @@ export default function CalendarPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
+        {filter !== "all" && plan ? (
+          <div className="card card-pad plan-share">
+            <div className="plan-share-main">
+              <div className="row" style={{ gap: 10, alignItems: "center" }}>
+                <strong>Editorial plan approval</strong>
+                {plan.approvedAt ? (
+                  <span className="plan-status plan-status-ok">
+                    Approved{plan.approvedBy ? ` · ${plan.approvedBy}` : ""}
+                  </span>
+                ) : (
+                  <span className="plan-status plan-status-wait">Awaiting approval</span>
+                )}
+                {noteCount > 0 ? (
+                  <span className="plan-status plan-status-note">
+                    {noteCount} client note{noteCount === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+              </div>
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                Read-only link showing the next 90 days for the client to review and approve.
+              </p>
+              {planUrl ? (
+                <div className="copy-box" style={{ marginTop: 8 }}>
+                  <code>{planUrl}</code>
+                </div>
+              ) : null}
+            </div>
+            <div className="plan-share-actions">
+              <button className="btn btn-secondary btn-sm" onClick={copyPlan}>
+                {planCopied ? "Copied" : "Copy link"}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => planAction("rotate")}>
+                New link
+              </button>
+              {plan.approvedAt ? (
+                <button className="btn btn-ghost btn-sm" onClick={() => planAction("clearApproval")}>
+                  Reset approval
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <div className="cal-grid">
           {DOW.map((d) => (
             <div key={d} className="cal-dow">{d}</div>
@@ -319,7 +409,7 @@ export default function CalendarPage() {
                   {items.map((s) => (
                     <button
                       key={s.id}
-                      className={`cal-chip chip-${s.status}`}
+                      className={`cal-chip chip-${s.status} ${feedbackBySend.has(s.id) ? "has-note" : ""}`}
                       onClick={(e) => { e.stopPropagation(); openEdit(s); }}
                       onMouseEnter={(e) => showHover(e, s)}
                       onMouseLeave={hideHover}
@@ -328,6 +418,9 @@ export default function CalendarPage() {
                       <span className="cal-chip-name">
                         {s.send_time ? `${fmtTime(s.send_time)} · ` : ""}{s.title}
                       </span>
+                      {feedbackBySend.has(s.id) ? (
+                        <span className="cal-chip-note" title="Client left a note">💬</span>
+                      ) : null}
                     </button>
                   ))}
                 </div>
@@ -353,6 +446,14 @@ export default function CalendarPage() {
           ) : null}
           <dl className="cal-pop-list">
             <PopRow label="Start time" value={fmtTime(hover.send.send_time)} />
+            <PopRow
+              label="Length"
+              value={
+                hover.send.duration === "full"
+                  ? "Full day (9 AM – 5:30 PM)"
+                  : "4 hours (ends 5:30 PM)"
+              }
+            />
             <PopRow label="Audience" value={hover.send.audience} />
             <PopRow label="Purpose" value={hover.send.purpose} />
             <PopRow label="Offers being tested" value={hover.send.offer} />
@@ -468,6 +569,14 @@ export default function CalendarPage() {
                 <input value={editing.note}
                   onChange={(e) => setEditing({ ...editing, note: e.target.value })} />
               </div>
+              {editing.id && feedbackBySend.get(editing.id)?.trim() ? (
+                <div className="cal-brief cal-clientnote">
+                  <div className="cal-brief-head">💬 Client note on this send</div>
+                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+                    {feedbackBySend.get(editing.id)}
+                  </p>
+                </div>
+              ) : null}
               {(() => {
                 const src = sends.find((s) => s.id === editing.id);
                 const rows = parseBrief(src?.production_brief || "");
