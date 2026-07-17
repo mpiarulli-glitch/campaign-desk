@@ -92,14 +92,14 @@ function reminderEmail(
   };
   const year = window.start.split("-")[0];
   const windowText = `${fmtLong(window.start)} – ${fmtLong(window.end)}, ${year}`;
-  const subject = "It's time to schedule your next shoot";
-  const preheader = "Your next shoot is coming up. Pick a day and time in about a minute.";
+  const subject = "It's time to schedule your next production";
+  const preheader = "Your next production is coming up. Pick a day and time in about a minute.";
   const logo = "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
   const text = [
     greeting,
     "",
-    "It's time to schedule your next shoot. Pick a day and time that work best and share a few quick details:",
+    "It's time to schedule your next production. Pick a day and time that work best and share a few quick details:",
     url,
     "",
     `Any weekday from ${windowText} works.`,
@@ -139,9 +139,9 @@ function reminderEmail(
         <tr>
           <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
             <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">Time to schedule</p>
-            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">It&rsquo;s time to schedule your next shoot</h1>
+            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">It&rsquo;s time to schedule your next production</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">You&rsquo;re coming up for your next shoot. Pick the day and time that work best for you and share a few quick details so we show up ready.</p>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">You&rsquo;re coming up for your next production. Pick the day and time that work best for you and share a few quick details so we show up ready.</p>
           </td>
         </tr>
         <tr>
@@ -161,11 +161,11 @@ function reminderEmail(
             <!--[if mso]>
             <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:52px;v-text-anchor:middle;width:280px;" arcsize="12%" strokecolor="#00d4e8" fillcolor="#00d4e8">
             <w:anchorlock/>
-            <center style="color:#04333a;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Schedule my shoot</center>
+            <center style="color:#04333a;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Schedule my production</center>
             </v:roundrect>
             <![endif]-->
             <!--[if !mso]><!-->
-            <a class="cta" href="${url}" style="background-color:#00d4e8;border-radius:6px;color:#04333a;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:52px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;">Schedule my shoot</a>
+            <a class="cta" href="${url}" style="background-color:#00d4e8;border-radius:6px;color:#04333a;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:52px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;">Schedule my production</a>
             <!--<![endif]-->
           </td>
         </tr>

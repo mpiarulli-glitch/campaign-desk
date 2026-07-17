@@ -182,20 +182,45 @@ export default function SchedulePage() {
 
         <div className="sched-referral">
           <p className="sched-referral-eyebrow">Did you know?</p>
-          <h2 className="sched-referral-title">Earn with our referral partner program</h2>
+          <h2 className="sched-referral-title">Get paid to send business our way</h2>
           <p className="sched-referral-text">
-            Know another business that could use marketing that actually moves the
-            needle? Refer them through the Empire Partner Program and get rewarded
-            when they come on board.
+            Know a company that could use better marketing? Refer them to the Empire
+            Partner Program. We handle the consultation, onboarding, and all the work,
+            and you earn a recurring share for the lifetime of the client.
           </p>
+
+          <div className="sched-referral-stats">
+            <div className="sched-referral-stat">
+              <span className="sched-referral-num">5%</span>
+              <span className="sched-referral-lbl">Revenue share on every referral</span>
+            </div>
+            <div className="sched-referral-stat">
+              <span className="sched-referral-num">$5K</span>
+              <span className="sched-referral-lbl">Average earned per referral</span>
+            </div>
+            <div className="sched-referral-stat">
+              <span className="sched-referral-num">No cap</span>
+              <span className="sched-referral-lbl">Refer as many as you want</span>
+            </div>
+          </div>
+
+          <div className="sched-referral-how">
+            <span>1. Refer a business</span>
+            <span>2. We do the work</span>
+            <span>3. You get paid, automatically</span>
+          </div>
+
           <a
             className="sched-referral-btn"
             href="https://www.marketingempiregroup.com/empire-partner-program?rc=test-site"
             target="_blank"
             rel="noopener noreferrer"
           >
-            Explore the Partner Program
+            Become a partner
           </a>
+          <p className="sched-referral-fine">
+            Recurring commissions for the life of the client. Join 50+ active partners.
+          </p>
         </div>
       </>
     );
@@ -224,9 +249,9 @@ export default function SchedulePage() {
       <main className="container stack sched-main">
         <div className="sched-hero">
           <p className="eyebrow">{data.client.name}</p>
-          <h1 className="h1">Book your next shoot</h1>
+          <h1 className="h1">Book your next production</h1>
           <p className="sched-sub">
-            Pick a date and start time, then tell us a bit about the shoot. Choose any
+            Pick a date and start time, then tell us a bit about the production. Choose any
             weekday from{" "}
             <strong>
               {dayNumber(data.window.start)} – {dayNumber(data.window.end)}
@@ -293,7 +318,7 @@ export default function SchedulePage() {
 
             <p className="brief-intro muted">
               A videographer typically arrives 15–30 minutes early for setup. Only the
-              location and on-site contact are required — the rest helps us plan the shoot.
+              location and on-site contact are required — the rest helps us plan the production.
             </p>
 
             {error ? <p className="error">{error}</p> : null}
@@ -321,7 +346,7 @@ export default function SchedulePage() {
                   <input
                     value={brief.onsiteContactPhone || ""}
                     onChange={(e) => set("onsiteContactPhone", e.target.value)}
-                    placeholder="Reachable on shoot day"
+                    placeholder="Reachable on production day"
                   />
                 </div>
               </div>
@@ -330,7 +355,7 @@ export default function SchedulePage() {
             <BriefSection num="02" title="Access & environment">
               <div className="rev-form-grid">
                 <div className="field">
-                  <label>Location on shoot day</label>
+                  <label>Location on production day</label>
                   <select
                     className="select-clean"
                     value={brief.locationState || ""}
@@ -464,7 +489,7 @@ export default function SchedulePage() {
                 <textarea
                   value={brief.additionalNotes || ""}
                   onChange={(e) => set("additionalNotes", e.target.value)}
-                  placeholder="Optional. Anything that helps the shoot go smoothly."
+                  placeholder="Optional. Anything that helps the production go smoothly."
                 />
               </div>
             </BriefSection>
