@@ -29,15 +29,6 @@ function longDate(ymd: string): string {
   });
 }
 
-function shortDate(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 export function getReminder(
   clientId: string,
   windowStart: string
@@ -91,40 +82,109 @@ function reminderEmail(
 ): { subject: string; html: string; text: string } {
   const name = client.contact_name?.trim();
   const greeting = name ? `Hi ${name},` : "Hi there,";
-  const windowText = `${shortDate(window.start)} – ${shortDate(window.end)}`;
-  const subject = `Time to schedule ${client.name}'s next production`;
+  const fmtLong = (ymd: string) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  };
+  const year = window.start.split("-")[0];
+  const windowText = `${fmtLong(window.start)} – ${fmtLong(window.end)}, ${year}`;
+  const subject = "Time to schedule your next production";
+  const preheader = `Pick your date and time for the ${windowText} window. Takes about a minute.`;
+  const logo = "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
   const text = [
     greeting,
     "",
-    `Your next production window is coming up: ${windowText}.`,
-    "Pick the day and time that works best and tell us a bit about the shoot here:",
+    `Your next production window is here: ${windowText}.`,
+    "Pick the day and time that works best and share a few details about the shoot:",
     url,
     "",
-    "It only takes a minute. Reply to this email if you have any questions.",
+    "It only takes a minute. Just reply to this email with any questions.",
   ].join("\n");
 
-  const html = `
-  <div style="font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; max-width: 520px; margin: 0 auto; line-height: 1.6;">
-    <div style="text-align:center;padding:8px 0 20px;">
-      <img src="https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb1921776f532bcab29e.png" alt="Marketing Empire Group"
-           width="180" style="width:180px;max-width:70%;height:auto;display:inline-block;" />
-    </div>
-    <p>${greeting}</p>
-    <p>Your next production window is coming up:
-      <strong>${windowText}</strong>.</p>
-    <p>Pick the day and time that works best and share a few details about the shoot.</p>
-    <p style="margin: 28px 0;">
-      <a href="${url}"
-         style="background:#00d4e8;color:#04333a;text-decoration:none;font-weight:700;
-                padding:13px 22px;border-radius:8px;display:inline-block;">
-        Schedule your production
-      </a>
-    </p>
-    <p style="color:#555;font-size:14px;">Or paste this link into your browser:<br>
-      <a href="${url}" style="color:#04808d;">${url}</a></p>
-    <p style="color:#555;font-size:14px;">It only takes a minute. Just reply if you have any questions.</p>
-  </div>`.trim();
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<title>${subject}</title>
+<style>
+  @media screen and (max-width:600px){
+    .container{width:100% !important;}
+    .px{padding-left:24px !important;padding-right:24px !important;}
+    .h1{font-size:26px !important;}
+    .cta{width:100% !important;}
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${preheader}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+  <tr>
+    <td align="center" style="padding:28px 12px;">
+      <!--[if (gte mso 9)|(IE)]><table width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+      <table role="presentation" class="container" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td align="center" style="background-color:#000000;padding:26px 30px;">
+            <img src="${logo}" alt="Marketing Empire Group" width="170" style="display:block;width:170px;max-width:60%;height:auto;border:0;">
+          </td>
+        </tr>
+        <tr>
+          <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">Production scheduling</p>
+            <h1 class="h1" style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:1.2;color:#111111;font-weight:normal;">Time to schedule your next production</h1>
+            <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Your next production window is here. Pick the day and time that work best and share a few quick details about the shoot.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px" style="padding:0 44px 8px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0fbfd;border-left:4px solid #00d4e8;border-radius:6px;">
+              <tr>
+                <td style="padding:18px 22px;">
+                  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#7a7a7a;font-weight:bold;">Your production window</p>
+                  <p style="margin:0;font-size:20px;font-weight:bold;color:#111111;">${windowText}</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px" align="center" style="padding:28px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
+            <!--[if mso]>
+            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:52px;v-text-anchor:middle;width:280px;" arcsize="12%" strokecolor="#00d4e8" fillcolor="#00d4e8">
+            <w:anchorlock/>
+            <center style="color:#04333a;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Schedule your production</center>
+            </v:roundrect>
+            <![endif]-->
+            <!--[if !mso]><!-->
+            <a class="cta" href="${url}" style="background-color:#00d4e8;border-radius:6px;color:#04333a;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:52px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;">Schedule your production</a>
+            <!--<![endif]-->
+          </td>
+        </tr>
+        <tr>
+          <td class="px" align="center" style="padding:6px 44px 36px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:13px;line-height:1.6;color:#999999;">Button not working? Paste this into your browser:<br><a href="${url}" style="color:#00a3b4;word-break:break-all;">${url}</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px 44px;background-color:#fafafa;border-top:1px solid #eeeeee;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:13px;line-height:1.6;color:#999999;">It only takes a minute. Just reply to this email with any questions.</p>
+            <p style="margin:10px 0 0;font-size:12px;color:#bbbbbb;">Marketing Empire Group</p>
+          </td>
+        </tr>
+      </table>
+      <!--[if (gte mso 9)|(IE)]></td></tr></table><![endif]-->
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
 
   return { subject, html, text };
 }
