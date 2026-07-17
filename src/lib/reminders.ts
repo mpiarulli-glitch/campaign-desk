@@ -9,7 +9,7 @@ import {
 } from "./cadence";
 import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
-import { scheduleUrl, getAppUrl } from "./auth";
+import { scheduleUrl } from "./auth";
 
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
@@ -107,7 +107,7 @@ function reminderEmail(
   const html = `
   <div style="font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; max-width: 520px; margin: 0 auto; line-height: 1.6;">
     <div style="text-align:center;padding:8px 0 20px;">
-      <img src="${getAppUrl()}/meg-logo.png" alt="Marketing Empire Group"
+      <img src="https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb1921776f532bcab29e.png" alt="Marketing Empire Group"
            width="180" style="width:180px;max-width:70%;height:auto;display:inline-block;" />
     </div>
     <p>${greeting}</p>
