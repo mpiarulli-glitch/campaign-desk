@@ -23,6 +23,8 @@ export async function GET() {
         active: client.active,
         contact_name: client.contact_name,
         contact_email: client.contact_email,
+        poc: client.poc,
+        account_manager: client.account_manager,
         color_week: client.color_week,
         production_cadence: client.production_cadence,
         last_production_date: client.last_production_date,

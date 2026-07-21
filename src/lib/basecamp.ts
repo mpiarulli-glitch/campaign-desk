@@ -168,14 +168,57 @@ export interface CardResult {
   ok: boolean;
   error?: string;
   url?: string;
+  // How many of the requested assignees were actually tagged on the card.
+  assigned?: number;
+}
+
+export interface BcPerson {
+  id: number;
+  name: string;
+  email_address: string;
+}
+
+// People with access to a project. Used to resolve a POC / account manager
+// (given as an email or name) to the Basecamp person id we tag on a card.
+export async function getProjectPeople(projectId: string): Promise<BcPerson[]> {
+  if (!projectId) return [];
+  const res = await bc(`/projects/${projectId}/people.json`);
+  if (!res.ok) return [];
+  const arr = await res.json();
+  if (!Array.isArray(arr)) return [];
+  return arr.map((p) => ({
+    id: p.id,
+    name: p.name || "",
+    email_address: p.email_address || "",
+  }));
+}
+
+// Resolve free-text identifiers (email or name) to Basecamp person ids within a
+// project. An exact email match wins; otherwise an exact name, then a name that
+// contains the text. Duplicates and blanks are dropped.
+export function matchPeople(people: BcPerson[], identifiers: string[]): number[] {
+  const ids: number[] = [];
+  for (const raw of identifiers) {
+    const q = (raw || "").trim().toLowerCase();
+    if (!q) continue;
+    const hit =
+      people.find((p) => p.email_address.toLowerCase() === q) ||
+      people.find((p) => p.name.toLowerCase() === q) ||
+      people.find((p) => p.name.toLowerCase().includes(q));
+    if (hit && !ids.includes(hit.id)) ids.push(hit.id);
+  }
+  return ids;
 }
 
 // Create a card in the project's card table, in the "In progress" column
-// (falls back to the first column if none matches).
+// (falls back to the first column if none matches). If assigneeIds are given,
+// the card is assigned to those people via a follow-up update (the create
+// endpoint does not accept assignees).
 export async function createScheduleCard(
   projectId: string,
   title: string,
-  contentHtml: string
+  contentHtml: string,
+  assigneeIds?: number[]
 ): Promise<CardResult> {
   if (!projectId) return { ok: false, error: "No Basecamp project set" };
   try {
@@ -200,7 +243,16 @@ export async function createScheduleCard(
     );
     if (!cardRes.ok) return { ok: false, error: `create card ${cardRes.status}` };
     const card = await cardRes.json();
-    return { ok: true, url: card.app_url || card.url };
+
+    let assigned = 0;
+    if (assigneeIds && assigneeIds.length && card.id) {
+      const upd = await bc(`/buckets/${projectId}/card_tables/cards/${card.id}.json`, {
+        method: "PUT",
+        body: JSON.stringify({ assignee_ids: assigneeIds }),
+      });
+      if (upd.ok) assigned = assigneeIds.length;
+    }
+    return { ok: true, url: card.app_url || card.url, assigned };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

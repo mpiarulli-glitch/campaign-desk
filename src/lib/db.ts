@@ -132,6 +132,12 @@ export interface RevClient {
   blackout_dates: string;
   contact_name: string;
   contact_email: string;
+  // Point of contact tagged on the Basecamp scheduling card (email or name,
+  // matched against the project's Basecamp people).
+  poc: string;
+  // Account manager reaching out, tagged on the Basecamp scheduling card
+  // (email or name, matched against the project's Basecamp people).
+  account_manager: string;
   // 1 = shown on the production scheduler, 0 = removed from it (client and all
   // other data are kept; they just don't get productions).
   production_enrolled: number;
@@ -707,6 +713,16 @@ function migrate(database: Database.Database) {
     // scheduler doesn't show revenue-only accounts.
     database.exec(
       `UPDATE rev_clients SET production_enrolled = 0 WHERE color_week = '' OR production_cadence = ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("poc")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN poc TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("account_manager")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN account_manager TEXT NOT NULL DEFAULT ''`
     );
   }
   if (revClientCols.length && !revClientCols.includes("basecamp_project_id")) {

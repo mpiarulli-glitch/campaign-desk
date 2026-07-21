@@ -10,7 +10,12 @@ import {
 import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
-import { basecampConnected, createScheduleCard } from "./basecamp";
+import {
+  basecampConnected,
+  createScheduleCard,
+  getProjectPeople,
+  matchPeople,
+} from "./basecamp";
 
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
@@ -288,12 +293,24 @@ export async function runReminders(opts?: {
       if (!existingCard?.bc_card_at) {
         const bcToken = getOrCreateScheduleToken(client.id);
         const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
-        const cardTitle = "It's time to schedule the next production";
+        const cardTitle = "Pending Production Scheduling";
         const cardBody =
           `<div><strong>${longDate(window.start)} to ${longDate(window.end)}</strong> is open for ${client.name}.</div>` +
-          (bcUrl ? `<div>Client scheduling link: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
+          (bcUrl ? `<div>Schedule the production: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
         try {
-          const r = await createScheduleCard(client.basecamp_project_id, cardTitle, cardBody);
+          // Tag the client POC and the account manager reaching out. Resolved
+          // against the project's Basecamp people (email first, then name).
+          const people = await getProjectPeople(client.basecamp_project_id);
+          const assigneeIds = matchPeople(people, [
+            client.account_manager,
+            client.poc,
+          ]);
+          const r = await createScheduleCard(
+            client.basecamp_project_id,
+            cardTitle,
+            cardBody,
+            assigneeIds
+          );
           if (r.ok) markBasecampCard(client.id, window.start);
           result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });
         } catch (e) {

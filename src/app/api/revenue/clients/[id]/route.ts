@@ -84,6 +84,9 @@ export async function PATCH(request: Request, { params }: Params) {
     contactName: typeof body.contactName === "string" ? body.contactName : undefined,
     contactEmail:
       typeof body.contactEmail === "string" ? body.contactEmail : undefined,
+    poc: typeof body.poc === "string" ? body.poc : undefined,
+    accountManager:
+      typeof body.accountManager === "string" ? body.accountManager : undefined,
     productionEnrolled:
       typeof body.productionEnrolled === "boolean"
         ? body.productionEnrolled

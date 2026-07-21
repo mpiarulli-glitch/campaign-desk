@@ -86,6 +86,8 @@ export function updateRevClient(
     blackoutDates: string[];
     contactName: string;
     contactEmail: string;
+    poc: string;
+    accountManager: string;
     productionEnrolled: boolean;
     basecampProjectId: string;
     videographerId: string;
@@ -100,7 +102,8 @@ export function updateRevClient(
        retainer = ?, monthly_cost = ?, ltv = ?, active = ?,
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
-       contact_name = ?, contact_email = ?, production_enrolled = ?,
+       contact_name = ?, contact_email = ?, poc = ?, account_manager = ?,
+       production_enrolled = ?,
        basecamp_project_id = ?, videographer_id = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -124,6 +127,8 @@ export function updateRevClient(
       : JSON.stringify(updates.blackoutDates),
     updates.contactName?.trim() ?? existing.contact_name,
     updates.contactEmail?.trim() ?? existing.contact_email,
+    updates.poc?.trim() ?? existing.poc,
+    updates.accountManager?.trim() ?? existing.account_manager,
     updates.productionEnrolled === undefined
       ? existing.production_enrolled
       : updates.productionEnrolled

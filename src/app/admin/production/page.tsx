@@ -39,6 +39,8 @@ type Client = {
   active: number;
   contact_name: string;
   contact_email: string;
+  poc: string;
+  account_manager: string;
   color_week: ColorWeek;
   production_cadence: Cadence;
   last_production_date: string | null;
@@ -65,6 +67,8 @@ type Field =
   | "name"
   | "contact_name"
   | "contact_email"
+  | "poc"
+  | "account_manager"
   | "active"
   | "color_week"
   | "production_cadence"
@@ -76,6 +80,8 @@ const PATCH_KEY: Record<Field, string> = {
   name: "name",
   contact_name: "contactName",
   contact_email: "contactEmail",
+  poc: "poc",
+  account_manager: "accountManager",
   active: "active",
   color_week: "colorWeek",
   production_cadence: "productionCadence",
@@ -449,6 +455,8 @@ export default function ProductionPage() {
                   <th>Client</th>
                   <th>Contact</th>
                   <th>Email</th>
+                  <th>POC</th>
+                  <th>Account manager</th>
                   <th>Active</th>
                   <th>Color</th>
                   <th>Videographer</th>
@@ -470,6 +478,14 @@ export default function ProductionPage() {
                     {editableCell(
                       r, "contact_email", "text", r.client.contact_email,
                       r.client.contact_email ? <span style={{ fontSize: 13 }}>{r.client.contact_email}</span> : <span className="muted">no email</span>
+                    )}
+                    {editableCell(
+                      r, "poc", "text", r.client.poc,
+                      r.client.poc ? <span style={{ fontSize: 13 }}>{r.client.poc}</span> : <span className="muted">Set POC</span>
+                    )}
+                    {editableCell(
+                      r, "account_manager", "text", r.client.account_manager,
+                      r.client.account_manager ? <span style={{ fontSize: 13 }}>{r.client.account_manager}</span> : <span className="muted">Set manager</span>
                     )}
                     {editableCell(r, "active", "select", r.client.active ? "1" : "0", r.client.active ? "Yes" : "No", ACTIVE_OPTIONS)}
                     {editableCell(
