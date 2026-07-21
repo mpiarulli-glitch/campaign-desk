@@ -305,11 +305,15 @@ export async function runReminders(opts?: {
             client.account_manager,
             client.poc,
           ]);
+          // Due a week after the outreach card goes out, so it surfaces as
+          // overdue if nobody's followed up with the client by then.
+          const dueOn = subDays(today, -7);
           const r = await createScheduleCard(
             client.basecamp_project_id,
             cardTitle,
             cardBody,
-            assigneeIds
+            assigneeIds,
+            dueOn
           );
           if (r.ok) markBasecampCard(client.id, window.start);
           result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });

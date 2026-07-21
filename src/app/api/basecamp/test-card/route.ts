@@ -6,6 +6,8 @@ import {
   getProjectPeople,
   listProjects,
   matchPeople,
+  mentionHtml,
+  type BcPerson,
 } from "@/lib/basecamp";
 
 // Manual verification helper for the "Pending Production Scheduling" card the
@@ -43,15 +45,23 @@ export async function POST(request: Request) {
     : [];
 
   const title = "TEST: Pending Production Scheduling";
-  const contentHtml =
-    "<div><strong>This is a test card</strong> from Campaign Desk, verifying the reminder job's card creation. Safe to delete.</div>";
 
   let assigneeIds: number[] = [];
+  let matched: BcPerson[] = [];
   if (assignTo.length) {
     const people = await getProjectPeople(projectId);
     assigneeIds = matchPeople(people, assignTo);
+    matched = people.filter((p) => assigneeIds.includes(p.id));
   }
 
-  const result = await createScheduleCard(projectId, title, contentHtml, assigneeIds);
-  return NextResponse.json({ ...result, resolvedAssignees: assigneeIds.length });
+  const mentions = matched.map((p) => mentionHtml(p)).join(" ");
+  const contentHtml =
+    "<div><strong>This is a test card</strong> from Campaign Desk, verifying the reminder job's card creation. Safe to delete.</div>" +
+    (mentions ? `<div>${mentions} tagging you here too, not just as an assignee.</div>` : "");
+
+  // One week out, same as the real "time to schedule" outreach card.
+  const dueOn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const result = await createScheduleCard(projectId, title, contentHtml, assigneeIds, dueOn);
+  return NextResponse.json({ ...result, resolvedAssignees: assigneeIds.length, dueOn });
 }

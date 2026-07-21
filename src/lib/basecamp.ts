@@ -176,6 +176,9 @@ export interface BcPerson {
   id: number;
   name: string;
   email_address: string;
+  // Used to @-mention this person inline in rich text content
+  // (<bc-attachment sgid="...">). Absent for some system/bot accounts.
+  attachable_sgid?: string;
 }
 
 // People with access to a project. Used to resolve a POC / account manager
@@ -190,7 +193,15 @@ export async function getProjectPeople(projectId: string): Promise<BcPerson[]> {
     id: p.id,
     name: p.name || "",
     email_address: p.email_address || "",
+    attachable_sgid: p.attachable_sgid || undefined,
   }));
+}
+
+// Rich-text @-mention markup for a person, to embed directly in card content.
+export function mentionHtml(person: BcPerson): string {
+  return person.attachable_sgid
+    ? `<bc-attachment sgid="${person.attachable_sgid}"></bc-attachment>`
+    : `@${person.name}`;
 }
 
 // Resolve free-text identifiers (email or name) to Basecamp person ids within a
@@ -218,7 +229,8 @@ export async function createScheduleCard(
   projectId: string,
   title: string,
   contentHtml: string,
-  assigneeIds?: number[]
+  assigneeIds?: number[],
+  dueOn?: string // YYYY-MM-DD
 ): Promise<CardResult> {
   if (!projectId) return { ok: false, error: "No Basecamp project set" };
   try {
@@ -245,12 +257,15 @@ export async function createScheduleCard(
     const card = await cardRes.json();
 
     let assigned = 0;
-    if (assigneeIds && assigneeIds.length && card.id) {
+    if (card.id && ((assigneeIds && assigneeIds.length) || dueOn)) {
+      const patch: Record<string, unknown> = {};
+      if (assigneeIds && assigneeIds.length) patch.assignee_ids = assigneeIds;
+      if (dueOn) patch.due_on = dueOn;
       const upd = await bc(`/buckets/${projectId}/card_tables/cards/${card.id}.json`, {
         method: "PUT",
-        body: JSON.stringify({ assignee_ids: assigneeIds }),
+        body: JSON.stringify(patch),
       });
-      if (upd.ok) assigned = assigneeIds.length;
+      if (upd.ok && assigneeIds) assigned = assigneeIds.length;
     }
     return { ok: true, url: card.app_url || card.url, assigned };
   } catch (err) {
