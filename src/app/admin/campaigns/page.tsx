@@ -228,16 +228,12 @@ export default function AdminPage() {
 
       <main className="container container-wide stack">
         <div className="page-hero">
-          <p className="eyebrow">Email review</p>
           <h1 className="h1">Campaigns</h1>
-          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Upload HTML, share a magic link, collect feedback.
-          </p>
         </div>
 
         {error ? <p className="error">{error}</p> : null}
 
-        <div className="tabs" style={{ marginBottom: 4 }}>
+        <div className="tabs">
           <button
             className={`tab ${filter === "active" ? "active" : ""}`}
             onClick={() => setFilter("active")}
@@ -250,9 +246,7 @@ export default function AdminPage() {
           >
             Archived
           </button>
-        </div>
-
-        <div className="tabs" style={{ marginBottom: 4 }}>
+          <span className="tab-divider" aria-hidden="true" />
           {STATUS_FILTERS.map((sf) => {
             const count =
               sf.value === "all"
@@ -373,7 +367,6 @@ export default function AdminPage() {
                             onClick={() => toggleFolder(g.key)}
                             aria-expanded={isOpen}
                           >
-                            <span aria-hidden="true">{isOpen ? "📂" : "📁"}</span>
                             {g.label}
                             <span className="muted" style={{ fontWeight: 400 }}>
                               {g.items.length}

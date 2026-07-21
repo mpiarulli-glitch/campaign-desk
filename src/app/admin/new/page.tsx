@@ -77,13 +77,7 @@ export default function NewCampaignPage() {
           style={{ maxWidth: 720, margin: "0 auto" }}
         >
           <div>
-            <p className="eyebrow">New upload</p>
             <h1 className="h1">New campaign</h1>
-            <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-              {kind === "interactive"
-                ? "Upload a form or quiz built in HTML. Its scripts run so reviewers can click through it."
-                : "Upload an HTML email file or paste the markup below."}
-            </p>
           </div>
 
           <div className="field">
@@ -104,11 +98,6 @@ export default function NewCampaignPage() {
                 Form / quiz
               </button>
             </div>
-            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-              {kind === "interactive"
-                ? "Interactive: JavaScript runs in a sandboxed frame. Best for quizzes and forms."
-                : "Static email: scripts are stripped, rendered like an inbox preview."}
-            </p>
           </div>
 
           <div className="field">

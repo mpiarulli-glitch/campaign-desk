@@ -413,7 +413,7 @@ export default function AdminCampaignPage() {
       ],
       model: data.model,
     });
-    setMessage("AI drafted a revision. Scroll down in the card below to add more feedback and generate another version before applying.");
+    setMessage("AI drafted a revision below.");
   }
 
   async function runAllAiRevisions() {
@@ -462,7 +462,7 @@ export default function AdminCampaignPage() {
       ],
       model: data.model,
     });
-    setMessage("AI generated one revision addressing ALL open feedback. Scroll down to add more instructions or apply.");
+    setMessage("AI drafted a revision addressing all open feedback.");
   }
 
   async function sendFollowUp() {
@@ -783,10 +783,6 @@ export default function AdminCampaignPage() {
               );
             })}
           </div>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Reviewers can toggle between these emails from either review link.
-            Approval covers the whole package.
-          </p>
 
           {addingEmail ? (
             <form className="stack" onSubmit={addEmail} style={{ marginTop: 8 }}>
@@ -889,9 +885,6 @@ export default function AdminCampaignPage() {
             <div className="copy-box">
               <code>{campaign.review_url}</code>
             </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              Shows every comment, including feedback left on the external link.
-            </p>
           </div>
 
           <div className="review-link-row">
@@ -912,10 +905,6 @@ export default function AdminCampaignPage() {
             <div className="copy-box">
               <code>{campaign.external_review_url}</code>
             </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              For the client. They can leave feedback and approve, but never see
-              comments left on the internal link.
-            </p>
           </div>
         </div>
 
@@ -924,13 +913,11 @@ export default function AdminCampaignPage() {
 
         {aiChat ? (
           <div className="card card-pad stack ai-preview-card">
-            <div style={{ background: "#fff3cd", color: "#664d03", padding: "6px 10px", borderRadius: 4, fontSize: 12, marginBottom: 8 }}>
-              ⚠️ AI revisions use paid API credits (per-token). Each revision or follow-up costs money. Use sparingly.
-            </div>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div>
                 <p className="eyebrow">AI revision</p>
-                <strong>Iterate with AI — keep giving feedback</strong>
+                <strong>Iterate with AI</strong>
+                <span className="ai-cost-note"> · uses paid API credits</span>
               </div>
               <div className="row">
                 <button
@@ -950,9 +937,7 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
-            {/* Follow-up input — right after buttons, very obvious */}
-            <div className="stack" style={{ background: "#f0f4ff", border: "3px solid #5a3fcf", borderRadius: 6, padding: 16, marginBottom: 12 }}>
-              <strong style={{ fontSize: 16, color: "#5a3fcf" }}>Talk to AI to make more revisions</strong>
+            <div className="ai-followup-box">
               <div className="row">
                 <input
                   value={chatInput}
@@ -960,7 +945,7 @@ export default function AdminCampaignPage() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !chatLoading) sendFollowUp();
                   }}
-                  placeholder="E.g. make the headline shorter, strengthen the CTA, remove the last line..."
+                  placeholder="E.g. make the headline shorter, strengthen the CTA..."
                   style={{ flex: 1, fontSize: 14 }}
                   disabled={chatLoading}
                 />
@@ -969,12 +954,9 @@ export default function AdminCampaignPage() {
                   onClick={sendFollowUp}
                   disabled={chatLoading || !chatInput.trim()}
                 >
-                  {chatLoading ? "Generating..." : "Send to AI for new revision"}
+                  {chatLoading ? "Generating..." : "Send"}
                 </button>
               </div>
-              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                Type more instructions below and click send to generate an updated version. You can iterate multiple times before applying.
-              </p>
             </div>
 
             <div className="split-review">
@@ -1034,11 +1016,6 @@ export default function AdminCampaignPage() {
                 <h2 className="h2" style={{ margin: 0 }}>
                   Purpose of this email
                 </h2>
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                  Shown on hover over this email&apos;s tab above. Use it to
-                  note what this email is for, e.g. &quot;Announce the launch
-                  sale&quot; or &quot;Last-chance reminder.&quot;
-                </p>
                 <textarea
                   value={purposeDraft}
                   onChange={(e) => setPurposeDraft(e.target.value)}
@@ -1061,13 +1038,11 @@ export default function AdminCampaignPage() {
                 <h2 className="h2" style={{ margin: 0 }}>
                   Subject lines & preview text
                 </h2>
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                  Add the options the client will choose from on the review
-                  page.
-                  {activeEmail.chosen_subject_id
-                    ? " The client has picked one (highlighted below)."
-                    : ""}
-                </p>
+                {activeEmail.chosen_subject_id ? (
+                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                    The client has picked one, highlighted below.
+                  </p>
+                ) : null}
                 {subjectRows.map((row, i) => {
                   const savedId = activeEmail.subjects?.[i]?.id;
                   const isChosen =
@@ -1211,7 +1186,7 @@ export default function AdminCampaignPage() {
                         <span>
                           {c.author_name}
                           {c.type === "inline"
-                            ? ` · 🦍 Pin ${
+                            ? ` · Pin ${
                                 inlinePins.findIndex((p) => p.id === c.id) + 1
                               }`
                             : " · General"}
@@ -1326,13 +1301,10 @@ export default function AdminCampaignPage() {
                                 aiLoadingCommentId === "all"
                               }
                            >
-{aiLoadingCommentId === c.id
+                             {aiLoadingCommentId === c.id
                                 ? "AI is revising..."
                                 : "Use AI to make revision"}
                            </button>
-                         ) : null}
-                         {activeEmail.kind !== "interactive" ? (
-                           <span className="muted" style={{ fontSize: 11, alignSelf: "center" }}>costs API credits</span>
                          ) : null}
                         <button
                           className="btn btn-secondary btn-sm"

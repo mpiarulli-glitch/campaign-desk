@@ -501,14 +501,6 @@ export default function ReviewPage() {
           </div>
         ) : (
           <>
-            <div className="card card-pad">
-              <strong>How to leave feedback</strong>
-              <p className="muted" style={{ margin: "6px 0 0" }}>
-                {activeEmail.kind === "interactive"
-                  ? "This is an interactive form/quiz. Click through it in the preview, then leave general notes or pin comments on what you are viewing."
-                  : "Toggle between emails above, then leave general notes or pin comments on the one you are viewing."}
-              </p>
-            </div>
             <div className="card card-pad approve-card">
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <div>
@@ -517,8 +509,7 @@ export default function ReviewPage() {
                     className="muted"
                     style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.55 }}
                   >
-                    Click this button and let the email team know this is
-                    approved. That covers every email in this package.
+                    This covers every email in the package.
                   </p>
                 </div>
                 <button
@@ -799,7 +790,7 @@ export default function ReviewPage() {
                         <span>
                           {c.author_name}
                           {c.type === "inline"
-                            ? ` · 🦍 Pin ${
+                            ? ` · Pin ${
                                 inlinePins.findIndex((p) => p.id === c.id) + 1
                               }`
                             : " · General"}
