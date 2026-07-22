@@ -121,7 +121,16 @@ export default function ForecastDashboardPage() {
               <tbody>
                 {people.map((p) => (
                   <tr key={p.person}>
-                    <td><strong>{p.label}</strong></td>
+                    <td>
+                      <Link
+                        href={`/admin/forecast/${p.person}?week=${week}`}
+                        style={{ color: "inherit", textDecoration: "none" }}
+                      >
+                        <strong style={{ textDecoration: "underline", textUnderlineOffset: 3 }}>
+                          {p.label}
+                        </strong>
+                      </Link>
+                    </td>
                     <td>{p.hours}h</td>
                     <td>{p.capacity}h</td>
                     <td>
