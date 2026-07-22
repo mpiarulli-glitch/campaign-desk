@@ -10,6 +10,7 @@ import {
 } from "@/lib/revenue";
 import type { BusinessModel } from "@/lib/db";
 import { extractProjectId } from "@/lib/basecamp";
+import { contractStatus, listDeliverables } from "@/lib/snapshot";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
 
@@ -33,7 +34,13 @@ export async function GET(_request: Request, { params }: Params) {
     hint: k.hint ?? null,
     value: k.value(agg, client),
   }));
-  return NextResponse.json({ client, metrics, kpis });
+  return NextResponse.json({
+    client,
+    metrics,
+    kpis,
+    contract: contractStatus(id),
+    deliverableCount: listDeliverables(id).length,
+  });
 }
 
 export async function PATCH(request: Request, { params }: Params) {

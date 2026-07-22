@@ -9,6 +9,20 @@ import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
 type MetricRow = { id: string; metric: string; period: string; value: number; unit: string };
+type Contract = {
+  pct: number;
+  doneCount: number;
+  totalCount: number;
+  onTrack: boolean;
+  label: string;
+};
+
+function contractColor(c: Contract): string {
+  if (c.totalCount === 0) return "var(--text-muted)";
+  if (c.pct >= 90) return "var(--success)";
+  if (c.pct >= 60) return "var(--warning)";
+  return "var(--danger)";
+}
 
 function groupSeries(rows: MetricRow[]): MetricSeries[] {
   const map = new Map<string, MetricSeries>();
@@ -74,6 +88,7 @@ export default function SnapshotEditorPage() {
   });
   const [wins, setWins] = useState<Win[]>([]);
   const [metricsRaw, setMetricsRaw] = useState<MetricRow[]>([]);
+  const [contract, setContract] = useState<Contract | null>(null);
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
 
@@ -101,6 +116,7 @@ export default function SnapshotEditorPage() {
     setToken(data.token || null);
     setWins(data.wins || []);
     setMetricsRaw(data.metricsRaw || []);
+    setContract(data.contract || null);
   }, [id, router]);
 
   async function addWin(e: FormEvent) {
@@ -237,6 +253,9 @@ export default function SnapshotEditorPage() {
           <div>
             <p className="eyebrow">Account snapshot</p>
             <h1 className="h1">{name}</h1>
+            <Link className="muted" href={`/admin/revenue/${id}`} style={{ fontSize: 13 }}>
+              View revenue →
+            </Link>
           </div>
           {view === "team" ? (
             <div className="cal-nav">
@@ -251,6 +270,25 @@ export default function SnapshotEditorPage() {
         </div>
 
         {error ? <p className="error">{error}</p> : null}
+
+        {contract ? (
+          <div className="card card-pad row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <strong>Contract fulfillment this month</strong>
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                {contract.totalCount > 0
+                  ? `${contract.doneCount} of ${contract.totalCount} weekly deliverables completed so far this month.`
+                  : "No recurring deliverables tracked yet."}
+              </p>
+            </div>
+            <span style={{ color: contractColor(contract), fontWeight: 700, fontSize: 20 }}>
+              {contract.totalCount > 0 ? `${contract.pct}%` : "—"}
+              <span className="muted" style={{ marginLeft: 8, fontSize: 13, fontWeight: 400 }}>
+                {contract.label}
+              </span>
+            </span>
+          </div>
+        ) : null}
 
         {view === "client" ? (
           <div className="stack" style={{ gap: 18 }}>

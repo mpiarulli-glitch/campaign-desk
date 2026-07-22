@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import {
+  contractStatus,
   getAccount,
   getOrCreateToken,
   listDeliverables,
@@ -25,5 +26,6 @@ export async function GET(_request: Request, { params }: Params) {
     token: getOrCreateToken(id),
     wins: listWins(id),
     metricsRaw: listMetricsRaw(id),
+    contract: contractStatus(id),
   });
 }

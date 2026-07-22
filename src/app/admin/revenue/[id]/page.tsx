@@ -67,6 +67,13 @@ type Metric = {
 
 type Kpi = { key: string; label: string; fmt: Fmt; hint: string | null; value: number | null };
 
+function contractColor(pct: number, totalCount: number): string {
+  if (totalCount === 0) return "var(--text-muted)";
+  if (pct >= 90) return "var(--success)";
+  if (pct >= 60) return "var(--warning)";
+  return "var(--danger)";
+}
+
 function fmtTime(hhmm: string): string {
   if (!hhmm) return "";
   const h = Number(hhmm.split(":")[0]);
@@ -148,6 +155,14 @@ export default function RevenueClientPage() {
   } | null>(null);
   const [scheduleLink, setScheduleLink] = useState("");
   const [linkMessage, setLinkMessage] = useState("");
+  const [contract, setContract] = useState<{
+    pct: number;
+    doneCount: number;
+    totalCount: number;
+    onTrack: boolean;
+    label: string;
+  } | null>(null);
+  const [deliverableCount, setDeliverableCount] = useState(0);
 
   async function load() {
     const res = await fetch(`/api/revenue/clients/${id}`);
@@ -161,6 +176,8 @@ export default function RevenueClientPage() {
     setMetrics(data.metrics || []);
     setKpis(data.kpis || []);
     setCfg(data.client);
+    setContract(data.contract || null);
+    setDeliverableCount(data.deliverableCount || 0);
     setBlackoutInput(
       (() => {
         try {
@@ -357,6 +374,31 @@ export default function RevenueClientPage() {
 
         {message ? <p className="success">{message}</p> : null}
         {error ? <p className="error">{error}</p> : null}
+
+        <div className="card card-pad row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <strong>Account snapshot</strong>
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+              {deliverableCount} deliverable{deliverableCount === 1 ? "" : "s"} tracked
+              {contract && contract.totalCount > 0
+                ? ` · ${contract.doneCount} of ${contract.totalCount} weekly commitments met this month`
+                : ""}
+            </p>
+          </div>
+          <div className="row" style={{ gap: 16, alignItems: "center" }}>
+            {contract ? (
+              <span style={{ color: contractColor(contract.pct, contract.totalCount), fontWeight: 700, fontSize: 18 }}>
+                {contract.totalCount > 0 ? `${contract.pct}%` : "—"}
+                <span className="muted" style={{ marginLeft: 8, fontSize: 13, fontWeight: 400 }}>
+                  {contract.label}
+                </span>
+              </span>
+            ) : null}
+            <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}`}>
+              Open snapshot
+            </Link>
+          </div>
+        </div>
 
         <div className="tabs">
           <button className={`tab ${tab === "overview" ? "active" : ""}`} onClick={() => setTab("overview")}>

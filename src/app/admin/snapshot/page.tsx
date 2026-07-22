@@ -30,7 +30,9 @@ export default function SnapshotAccountsPage() {
     e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
-    const res = await fetch("/api/snapshot/accounts", {
+    // Same "add client" flow the revenue page uses, so a client only ever
+    // gets created once (see /api/revenue/clients).
+    const res = await fetch("/api/revenue/clients", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -38,7 +40,7 @@ export default function SnapshotAccountsPage() {
     setSaving(false);
     if (!res.ok) { setError("Could not add account."); return; }
     const data = await res.json();
-    router.push(`/admin/snapshot/${data.account.id}`);
+    router.push(`/admin/snapshot/${data.client.id}`);
   }
 
   return (
