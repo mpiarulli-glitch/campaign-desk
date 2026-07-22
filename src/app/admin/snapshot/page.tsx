@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { NavMenu } from "@/components/NavMenu";
 
 type Account = { id: string; name: string; deliverable_count: number };
 
@@ -48,12 +49,11 @@ export default function SnapshotAccountsPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">Behind report</Link>
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
             {adding ? "Cancel" : "Add account"}
           </button>
+          <NavMenu current="/admin/snapshot" />
         </div>
       </header>
 

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { deleteSend, getSend, updateSend } from "@/lib/calendar";
 import { advanceLastProduction } from "@/lib/cadence";
+import { getRevClient } from "@/lib/revenue";
+import { sendProductionConfirmed } from "@/lib/production-emails";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -51,6 +53,17 @@ export async function PATCH(request: Request, { params }: Params) {
     send.cadence_window_start
   ) {
     advanceLastProduction(send.client_id, send.send_date);
+  }
+
+  // A production request just got locked in — let the client know.
+  if (
+    send &&
+    before.status === "requested" &&
+    (send.status === "scheduled" || send.status === "planned") &&
+    send.client_id
+  ) {
+    const client = getRevClient(send.client_id);
+    if (client) void sendProductionConfirmed(client, send);
   }
 
   return NextResponse.json({ send });

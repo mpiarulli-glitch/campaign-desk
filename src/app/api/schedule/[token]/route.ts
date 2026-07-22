@@ -10,6 +10,7 @@ import {
 } from "@/lib/cadence";
 import { createSend } from "@/lib/calendar";
 import { notifyProductionRequested } from "@/lib/notify";
+import { sendProductionRequestReceived } from "@/lib/production-emails";
 import { videographerBookedDates } from "@/lib/videographers";
 
 type Params = { params: Promise<{ token: string }> };
@@ -170,6 +171,7 @@ export async function POST(request: Request, { params }: Params) {
   });
 
   notifyProductionRequested({ clientName: client.name, sendDate: date, note });
+  void sendProductionRequestReceived(client, send);
 
   return NextResponse.json({ send }, { status: 201 });
 }

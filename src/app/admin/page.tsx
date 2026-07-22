@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { NavMenu } from "@/components/NavMenu";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 
@@ -98,11 +99,6 @@ export default function AdminHomePage() {
     })();
   }, [router]);
 
-  async function logout() {
-    await fetch("/api/auth", { method: "DELETE" });
-    router.push("/login");
-  }
-
   // Count of things that genuinely need a person to act.
   const toDo = s
     ? s.campaigns.inReview +
@@ -116,15 +112,8 @@ export default function AdminHomePage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/production">Production</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/forecast">Forecast</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">Snapshots</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/activity">Activity</Link>
           <Link className="btn" href="/admin/new">New campaign</Link>
-          <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
+          <NavMenu current="/admin" />
         </div>
       </header>
 

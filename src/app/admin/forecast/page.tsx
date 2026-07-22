@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { NavMenu } from "@/components/NavMenu";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type PersonSummary = {
@@ -64,10 +65,7 @@ export default function ForecastDashboardPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/production">Production</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
+          <NavMenu current="/admin/forecast" />
         </div>
       </header>
 

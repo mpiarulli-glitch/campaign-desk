@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { runReminders } from "@/lib/reminders";
+import { runReminders, runShootReminders } from "@/lib/reminders";
 
 // Constant-time compare so the secret can't be probed by timing.
 function secretMatches(provided: string | null): boolean {
@@ -35,7 +35,8 @@ async function handle(request: Request) {
   const url = new URL(request.url);
   const dryRun = url.searchParams.get("dryRun") === "1";
   const result = await runReminders({ dryRun });
-  return NextResponse.json(result);
+  const shootReminders = await runShootReminders({ dryRun });
+  return NextResponse.json({ ...result, shootReminders });
 }
 
 // Support GET so simple cron pingers work, and POST for stricter setups.

@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type RevClient, type ScheduleReminder } from "./db";
+import { getDb, nowIso, type RevClient, type ScheduledSend, type ScheduleReminder } from "./db";
 import {
   findSendForWindow,
   getOrCreateScheduleToken,
@@ -7,7 +7,7 @@ import {
   todayYmd,
   type Window,
 } from "./cadence";
-import { listRevClients } from "./revenue";
+import { listRevClients, getRevClient } from "./revenue";
 import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
 import {
@@ -16,6 +16,7 @@ import {
   getProjectPeople,
   matchPeople,
 } from "./basecamp";
+import { sendProductionUpcoming } from "./production-emails";
 
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
@@ -356,6 +357,56 @@ export async function runReminders(opts?: {
       });
     } else {
       result.failed.push({ client: client.name, email: client.contact_email });
+    }
+  }
+
+  return result;
+}
+
+export interface ShootReminderRunResult {
+  today: string;
+  dryRun: boolean;
+  sent: Array<{ client: string; sendDate: string }>;
+  failed: Array<{ client: string; sendDate: string }>;
+}
+
+function markShootReminded(sendId: string) {
+  getDb()
+    .prepare(`UPDATE scheduled_sends SET shoot_reminder_sent_at = ?, updated_at = ? WHERE id = ?`)
+    .run(nowIso(), nowIso(), sendId);
+}
+
+// Emails clients a "your crew arrives tomorrow" heads-up for confirmed
+// productions happening the next day. Runs alongside the scheduling
+// reminders; dedupes via shoot_reminder_sent_at so it fires at most once.
+export async function runShootReminders(opts?: {
+  today?: string;
+  dryRun?: boolean;
+}): Promise<ShootReminderRunResult> {
+  const today = opts?.today || todayYmd();
+  const dryRun = Boolean(opts?.dryRun);
+  const tomorrow = subDays(today, -1);
+  const result: ShootReminderRunResult = { today, dryRun, sent: [], failed: [] };
+
+  const sends = getDb()
+    .prepare(
+      `SELECT * FROM scheduled_sends
+       WHERE send_date = ?
+         AND status IN ('scheduled', 'planned')
+         AND client_id IS NOT NULL
+         AND shoot_reminder_sent_at IS NULL`
+    )
+    .all(tomorrow) as ScheduledSend[];
+
+  for (const send of sends) {
+    const client = send.client_id ? getRevClient(send.client_id) : null;
+    if (!client?.contact_email?.trim()) continue;
+    const ok = dryRun ? true : await sendProductionUpcoming(client, send);
+    if (ok) {
+      if (!dryRun) markShootReminded(send.id);
+      result.sent.push({ client: client.name, sendDate: send.send_date });
+    } else {
+      result.failed.push({ client: client.name, sendDate: send.send_date });
     }
   }
 

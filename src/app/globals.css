@@ -171,6 +171,69 @@ button {
   border-radius: 6px 6px 0 0;
 }
 
+.nav-menu {
+  position: relative;
+}
+
+.nav-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-menu-caret {
+  font-size: 10px;
+}
+
+.nav-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 190px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 30;
+}
+
+.nav-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.nav-menu-item:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.nav-menu-item.is-current {
+  color: var(--accent-ink);
+  background: var(--bg-tint);
+  font-weight: 700;
+}
+
+.nav-menu-signout {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 10px;
+  color: var(--danger);
+}
+
 .container {
   width: min(1120px, calc(100% - 40px));
   margin: 0 auto;
@@ -1671,6 +1734,10 @@ button {
   font-size: 15px;
 }
 
+.cal-grid-wrap {
+  border-radius: var(--radius);
+}
+
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -1679,6 +1746,15 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .cal-grid-wrap {
+    overflow-x: auto;
+  }
+  .cal-grid {
+    min-width: 720px;
+  }
 }
 
 .cal-dow {
@@ -1773,7 +1849,8 @@ button {
   border-radius: 12px;
   box-shadow: var(--shadow-lift);
   padding: 14px 16px;
-  pointer-events: none;
+  overflow-y: auto;
+  pointer-events: auto;
   animation: calPopIn 0.09s ease-out;
 }
 @keyframes calPopIn {

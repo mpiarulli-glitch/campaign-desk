@@ -274,6 +274,8 @@ export interface ScheduledSend {
   // Monday (YYYY-MM-DD) of the cadence window this send fulfills, if any.
   cadence_window_start: string | null;
   requested_by_client: number;
+  // Set once the day-before "your crew arrives tomorrow" email has gone out.
+  shoot_reminder_sent_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -808,6 +810,12 @@ function migrate(database: Database.Database) {
   if (sendCols.length && !sendCols.includes("requested_by_client")) {
     database.exec(
       `ALTER TABLE scheduled_sends ADD COLUMN requested_by_client INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  // Dedupe flag for the day-before "your crew arrives tomorrow" email.
+  if (sendCols.length && !sendCols.includes("shoot_reminder_sent_at")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN shoot_reminder_sent_at TEXT`
     );
   }
 

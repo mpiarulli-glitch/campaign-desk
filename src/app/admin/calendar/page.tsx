@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { NavMenu } from "@/components/NavMenu";
 
 type Status = "requested" | "planned" | "scheduled" | "sent";
 
@@ -98,7 +98,7 @@ const EMPTY = {
   note: "",
 };
 
-type Hover = { send: Send; top: number; left: number } | null;
+type Hover = { send: Send; top: number; left: number; maxHeight: number } | null;
 
 export default function CalendarPage() {
   const router = useRouter();
@@ -237,12 +237,16 @@ export default function CalendarPage() {
     let left = rect.right + 10;
     if (left + W > window.innerWidth - 12) left = rect.left - W - 10;
     if (left < 12) left = 12;
-    const top = Math.min(rect.top, window.innerHeight - 340);
-    setHover({ send: s, top: Math.max(12, top), left });
+    const top = Math.max(12, Math.min(rect.top, window.innerHeight - 100));
+    const maxHeight = window.innerHeight - top - 12;
+    setHover({ send: s, top, left, maxHeight });
   }
   function hideHover() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => setHover(null), 60);
+  }
+  function keepHover() {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
   }
 
   async function save(e: FormEvent) {
@@ -316,10 +320,8 @@ export default function CalendarPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/production">Production</Link>
-          <Link className="btn btn-ghost btn-sm" href="/admin/forecast">Forecast</Link>
           <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
+          <NavMenu current="/admin/calendar" />
         </div>
       </header>
 
@@ -390,6 +392,7 @@ export default function CalendarPage() {
           </div>
         ) : null}
 
+        <div className="cal-grid-wrap">
         <div className="cal-grid">
           {DOW.map((d) => (
             <div key={d} className="cal-dow">{d}</div>
@@ -429,12 +432,15 @@ export default function CalendarPage() {
             );
           })}
         </div>
+        </div>
       </main>
 
       {hover ? (
         <div
           className="cal-pop"
-          style={{ top: hover.top, left: hover.left }}
+          style={{ top: hover.top, left: hover.left, maxHeight: hover.maxHeight }}
+          onMouseEnter={keepHover}
+          onMouseLeave={hideHover}
         >
           <div className="cal-pop-head">
             <span className="cal-pop-title">{hover.send.title}</span>

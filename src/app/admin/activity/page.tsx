@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { NavMenu } from "@/components/NavMenu";
 
 type ActivityItem = {
   kind: "feedback" | "approved";
@@ -64,11 +65,6 @@ export default function ActivityPage() {
     load();
   }, []);
 
-  async function logout() {
-    await fetch("/api/auth", { method: "DELETE" });
-    router.push("/login");
-  }
-
   const shown = items.filter((i) => filter === "all" || i.kind === filter);
 
   return (
@@ -76,15 +72,10 @@ export default function ActivityPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
-            Campaigns
-          </Link>
           <Link className="btn" href="/admin/new">
             New campaign
           </Link>
-          <button className="btn btn-ghost btn-sm" onClick={logout}>
-            Sign out
-          </button>
+          <NavMenu current="/admin/activity" />
         </div>
       </header>
 
