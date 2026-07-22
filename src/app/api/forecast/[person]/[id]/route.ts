@@ -29,6 +29,7 @@ export async function PATCH(request: Request, { params }: Params) {
     client: typeof body.client === "string" ? body.client : undefined,
     notes: typeof body.notes === "string" ? body.notes : undefined,
     hours: body.hours !== undefined ? Number(body.hours) : undefined,
+    completed: typeof body.completed === "boolean" ? body.completed : undefined,
   });
   return NextResponse.json({ task });
 }

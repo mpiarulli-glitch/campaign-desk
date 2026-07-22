@@ -84,19 +84,26 @@ export function createTask(input: {
 
 export function updateTask(
   id: string,
-  updates: Partial<{ taskDate: string; client: string; notes: string; hours: number }>
+  updates: Partial<{
+    taskDate: string;
+    client: string;
+    notes: string;
+    hours: number;
+    completed: boolean;
+  }>
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, updated_at = ? WHERE id = ?`
     )
     .run(
       updates.taskDate ?? existing.task_date,
       updates.client !== undefined ? updates.client.trim() : existing.client,
       updates.notes !== undefined ? updates.notes.trim() : existing.notes,
       updates.hours ?? existing.hours,
+      updates.completed !== undefined ? (updates.completed ? 1 : 0) : existing.completed,
       nowIso(),
       id
     );

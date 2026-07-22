@@ -164,6 +164,7 @@ export interface ForecastTask {
   client: string;
   notes: string;
   hours: number;
+  completed: number;
   created_at: string;
   updated_at: string;
 }
@@ -593,6 +594,7 @@ export function getDb(): Database.Database {
       client TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       hours REAL NOT NULL DEFAULT 0,
+      completed INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -846,6 +848,13 @@ function migrate(database: Database.Database) {
   // implicit due date from their cadence period instead).
   if (snapDelivCols.length && !snapDelivCols.includes("due_date")) {
     database.exec(`ALTER TABLE snapshot_deliverables ADD COLUMN due_date TEXT`);
+  }
+
+  const forecastCols = tableColumns(database, "forecast_tasks");
+  if (forecastCols.length && !forecastCols.includes("completed")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN completed INTEGER NOT NULL DEFAULT 0`
+    );
   }
 
   // Move legacy single-html campaigns into campaign_emails
