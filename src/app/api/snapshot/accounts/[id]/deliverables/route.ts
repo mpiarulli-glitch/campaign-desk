@@ -4,6 +4,7 @@ import { createDeliverable, getAccount, listDeliverables } from "@/lib/snapshot"
 import type { CadenceUnit } from "@/lib/db";
 
 const CADENCE_UNITS: CadenceUnit[] = ["weekly", "monthly", "quarterly"];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -38,6 +39,7 @@ export async function POST(request: Request, { params }: Params) {
     cadence: typeof body.cadence === "string" ? body.cadence : "",
     kind: body.kind === "one_time" ? "one_time" : "recurring",
     cadenceUnit: CADENCE_UNITS.includes(body.cadenceUnit) ? body.cadenceUnit : undefined,
+    dueDate: typeof body.dueDate === "string" && DATE_RE.test(body.dueDate) ? body.dueDate : null,
   });
   return NextResponse.json({ deliverable }, { status: 201 });
 }

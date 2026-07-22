@@ -4,6 +4,7 @@ import { deleteDeliverable, getDeliverable, updateDeliverable } from "@/lib/snap
 import type { CadenceUnit } from "@/lib/db";
 
 const CADENCE_UNITS: CadenceUnit[] = ["weekly", "monthly", "quarterly"];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -16,6 +17,10 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
+  let dueDate: string | null | undefined;
+  if ("dueDate" in body) {
+    dueDate = typeof body.dueDate === "string" && DATE_RE.test(body.dueDate) ? body.dueDate : null;
+  }
   const deliverable = updateDeliverable(id, {
     category: typeof body.category === "string" ? body.category : undefined,
     name: typeof body.name === "string" ? body.name : undefined,
@@ -25,6 +30,7 @@ export async function PATCH(request: Request, { params }: Params) {
         ? body.kind
         : undefined,
     cadenceUnit: CADENCE_UNITS.includes(body.cadenceUnit) ? body.cadenceUnit : undefined,
+    dueDate,
     sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : undefined,
   });
   return NextResponse.json({ deliverable });

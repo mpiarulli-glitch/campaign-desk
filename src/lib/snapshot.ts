@@ -164,6 +164,7 @@ export function createDeliverable(input: {
   cadence: string;
   kind?: DeliverableKind;
   cadenceUnit?: CadenceUnit;
+  dueDate?: string | null;
 }): SnapshotDeliverable {
   const db = getDb();
   const id = nanoid(12);
@@ -175,8 +176,8 @@ export function createDeliverable(input: {
     .get(input.clientId) as { m: number };
   db.prepare(
     `INSERT INTO snapshot_deliverables
-      (id, client_id, category, name, cadence, kind, cadence_unit, sort_order, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      (id, client_id, category, name, cadence, kind, cadence_unit, due_date, sort_order, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     id,
     input.clientId,
@@ -185,6 +186,7 @@ export function createDeliverable(input: {
     input.cadence.trim(),
     normKind(input.kind),
     normCadenceUnit(input.cadenceUnit),
+    input.dueDate || null,
     max.m + 1,
     ts,
     ts
@@ -210,6 +212,7 @@ export function updateDeliverable(
     cadence: string;
     kind: DeliverableKind;
     cadenceUnit: CadenceUnit;
+    dueDate: string | null;
     sortOrder: number;
   }>
 ): SnapshotDeliverable | null {
@@ -218,7 +221,7 @@ export function updateDeliverable(
   getDb()
     .prepare(
       `UPDATE snapshot_deliverables
-       SET category = ?, name = ?, cadence = ?, kind = ?, cadence_unit = ?, sort_order = ?, updated_at = ?
+       SET category = ?, name = ?, cadence = ?, kind = ?, cadence_unit = ?, due_date = ?, sort_order = ?, updated_at = ?
        WHERE id = ?`
     )
     .run(
@@ -227,6 +230,7 @@ export function updateDeliverable(
       updates.cadence?.trim() ?? existing.cadence,
       updates.kind ? normKind(updates.kind) : existing.kind,
       updates.cadenceUnit ? normCadenceUnit(updates.cadenceUnit) : existing.cadence_unit,
+      updates.dueDate !== undefined ? updates.dueDate || null : existing.due_date,
       updates.sortOrder ?? existing.sort_order,
       nowIso(),
       id
@@ -697,4 +701,106 @@ export function contractStatus(clientId: string): ContractStatus {
   const onTrack = pct >= 90;
   const label = pct >= 90 ? "On track" : pct >= 60 ? "Behind" : "Significantly behind";
   return { pct, doneCount, totalCount, onTrack, label };
+}
+
+/* ------------------------------------------------------------- behind */
+
+export interface BehindItem {
+  deliverable_id: string;
+  client_id: string;
+  category: string;
+  name: string;
+  kind: DeliverableKind;
+  cadence_unit: CadenceUnit | null; // null for one-time
+  due_date: string; // YYYY-MM-DD — the deadline that was missed
+  status: SnapshotStatus;
+}
+
+function subDaysYmd(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d - n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+// Deliverables that are actually overdue, not just "not done yet with time
+// left": a recurring item is only flagged once the period it was due in has
+// fully ended (a monthly item isn't behind on day 2 of the month — it's
+// behind once that month is over and it was never completed). A one-time
+// item is only flagged if it has a manually-set due date that has passed.
+export function behindDeliverablesForClient(clientId: string): BehindItem[] {
+  const today = todayYmd();
+  const deliverables = getDb()
+    .prepare(`SELECT * FROM snapshot_deliverables WHERE client_id = ? AND active = 1`)
+    .all(clientId) as SnapshotDeliverable[];
+
+  const out: BehindItem[] = [];
+  for (const d of deliverables) {
+    if (normKind(d.kind) === "one_time") {
+      if (!d.due_date || d.due_date >= today) continue; // no deadline set, or not due yet
+      const done = getDb()
+        .prepare(
+          `SELECT 1 FROM snapshot_entries WHERE deliverable_id = ? AND status IN ('completed','approved') LIMIT 1`
+        )
+        .get(d.id);
+      if (done) continue;
+      out.push({
+        deliverable_id: d.id,
+        client_id: clientId,
+        category: d.category,
+        name: d.name,
+        kind: "one_time",
+        cadence_unit: null,
+        due_date: d.due_date,
+        status: "not_started",
+      });
+      continue;
+    }
+
+    const unit = normCadenceUnit(d.cadence_unit);
+    const currentStart = periodStartFor(unit, today);
+    // Didn't exist yet during the previous period — nothing was missed.
+    if (d.created_at.slice(0, 10) >= currentStart) continue;
+    const dueDate = subDaysYmd(currentStart, 1); // last day of the period that just ended
+    const priorPeriodStart = periodStartFor(unit, dueDate);
+    const row = getDb()
+      .prepare(
+        `SELECT status FROM snapshot_entries
+         WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
+         ORDER BY week_start DESC LIMIT 1`
+      )
+      .get(d.id, priorPeriodStart, currentStart) as { status: SnapshotStatus } | undefined;
+    const status = row ? normStatus(row.status) : "not_started";
+    if (DONE_STATUSES.includes(status)) continue;
+    out.push({
+      deliverable_id: d.id,
+      client_id: clientId,
+      category: d.category,
+      name: d.name,
+      kind: "recurring",
+      cadence_unit: unit,
+      due_date: dueDate,
+      status,
+    });
+  }
+  return out;
+}
+
+export interface ClientBehindReport {
+  client_id: string;
+  client_name: string;
+  items: BehindItem[];
+}
+
+// Every active client with at least one overdue deliverable, for the
+// cross-account behind report.
+export function behindReportAllClients(): ClientBehindReport[] {
+  const clients = getDb()
+    .prepare(`SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name COLLATE NOCASE`)
+    .all() as Array<{ id: string; name: string }>;
+  const out: ClientBehindReport[] = [];
+  for (const c of clients) {
+    const items = behindDeliverablesForClient(c.id);
+    if (items.length) out.push({ client_id: c.id, client_name: c.name, items });
+  }
+  return out;
 }

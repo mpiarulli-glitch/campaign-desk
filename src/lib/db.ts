@@ -192,6 +192,10 @@ export interface SnapshotDeliverable {
   // the bottom of the client view as done.
   kind: DeliverableKind;
   cadence_unit: CadenceUnit;
+  // One-time items only: an optional manually-set deadline, used to flag it
+  // overdue on the behind report. Recurring items get an implicit due date
+  // from their cadence period instead (see periodStartFor in lib/snapshot.ts).
+  due_date: string | null;
   sort_order: number;
   active: number;
   created_at: string;
@@ -525,6 +529,7 @@ export function getDb(): Database.Database {
       cadence TEXT NOT NULL DEFAULT '',
       kind TEXT NOT NULL DEFAULT 'recurring',
       cadence_unit TEXT NOT NULL DEFAULT 'monthly',
+      due_date TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
@@ -828,6 +833,11 @@ function migrate(database: Database.Database) {
     database.exec(
       `UPDATE snapshot_deliverables SET cadence_unit = 'weekly' WHERE lower(cadence) LIKE 'week%'`
     );
+  }
+  // Optional due date for one-time deliverables (recurring items get an
+  // implicit due date from their cadence period instead).
+  if (snapDelivCols.length && !snapDelivCols.includes("due_date")) {
+    database.exec(`ALTER TABLE snapshot_deliverables ADD COLUMN due_date TEXT`);
   }
 
   // Move legacy single-html campaigns into campaign_emails

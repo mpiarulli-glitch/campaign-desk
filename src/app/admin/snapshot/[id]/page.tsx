@@ -59,6 +59,16 @@ type Deliverable = {
   cadence: string;
   kind: Kind;
   cadence_unit: CadenceUnit;
+  due_date: string | null;
+};
+type BehindItem = {
+  deliverable_id: string;
+  category: string;
+  name: string;
+  kind: Kind;
+  cadence_unit: CadenceUnit | null;
+  due_date: string;
+  status: Status;
 };
 type Row = {
   deliverable_id: string;
@@ -101,16 +111,20 @@ export default function SnapshotEditorPage() {
     cadence: string;
     kind: Kind;
     cadenceUnit: CadenceUnit;
+    dueDate: string;
   }>({
     category: "",
     name: "",
     cadence: "",
     kind: "recurring",
     cadenceUnit: "monthly",
+    dueDate: "",
   });
   const [wins, setWins] = useState<Win[]>([]);
   const [metricsRaw, setMetricsRaw] = useState<MetricRow[]>([]);
   const [contract, setContract] = useState<Contract | null>(null);
+  const [behind, setBehind] = useState<BehindItem[]>([]);
+  const [showBehindOnly, setShowBehindOnly] = useState(false);
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
 
@@ -139,6 +153,7 @@ export default function SnapshotEditorPage() {
     setWins(data.wins || []);
     setMetricsRaw(data.metricsRaw || []);
     setContract(data.contract || null);
+    setBehind(data.behind || []);
   }, [id, router]);
 
   async function addWin(e: FormEvent) {
@@ -211,17 +226,20 @@ export default function SnapshotEditorPage() {
       body: JSON.stringify(nd),
     });
     if (!res.ok) { setError("Could not add deliverable."); return; }
-    setNd({ category: nd.category, name: "", cadence: "", kind: nd.kind, cadenceUnit: nd.cadenceUnit });
+    setNd({ category: nd.category, name: "", cadence: "", kind: nd.kind, cadenceUnit: nd.cadenceUnit, dueDate: "" });
     await loadMeta();
     fetchWeek(week);
   }
 
   async function updateDeliverable(dId: string, patch: Partial<Deliverable>) {
-    const { cadence_unit, ...rest } = patch;
+    const { cadence_unit, due_date, ...rest } = patch;
+    const body: Record<string, unknown> = { ...rest };
+    if (cadence_unit) body.cadenceUnit = cadence_unit;
+    if (due_date !== undefined) body.dueDate = due_date;
     await fetch(`/api/snapshot/deliverables/${dId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cadence_unit ? { ...rest, cadenceUnit: cadence_unit } : rest),
+      body: JSON.stringify(body),
     });
     await loadMeta();
     fetchWeek(week);
@@ -241,7 +259,9 @@ export default function SnapshotEditorPage() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  const grouped = groupByCategory(rows);
+  const behindIds = new Set(behind.map((b) => b.deliverable_id));
+  const visibleRows = showBehindOnly ? rows.filter((r) => behindIds.has(r.deliverable_id)) : rows;
+  const grouped = groupByCategory(visibleRows);
 
   return (
     <div className="app-shell">
@@ -321,6 +341,23 @@ export default function SnapshotEditorPage() {
           </div>
         ) : null}
 
+        {view === "team" && behind.length > 0 ? (
+          <div className="card card-pad row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <span>
+              <strong style={{ color: "var(--danger)" }}>{behind.length}</strong>{" "}
+              deliverable{behind.length === 1 ? "" : "s"} overdue
+            </span>
+            <label className="row" style={{ gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={showBehindOnly}
+                onChange={(e) => setShowBehindOnly(e.target.checked)}
+              />
+              <span className="muted">Show only what&apos;s behind</span>
+            </label>
+          </div>
+        ) : null}
+
         {view === "client" ? (
           <div className="stack" style={{ gap: 18 }}>
             {token ? (
@@ -386,7 +423,11 @@ export default function SnapshotEditorPage() {
                           <option key={u} value={u}>{CADENCE_UNIT_LABEL[u]}</option>
                         ))}
                       </select>
-                    ) : null}
+                    ) : (
+                      <input type="date" defaultValue={d.due_date || ""}
+                        title="Optional due date — flags this overdue on the behind report"
+                        onBlur={(e) => e.target.value !== (d.due_date || "") && updateDeliverable(d.id, { due_date: e.target.value })} />
+                    )}
                     <button className="btn btn-danger btn-sm" onClick={() => removeDeliverable(d.id)}>Remove</button>
                   </div>
                 ))}
@@ -408,7 +449,11 @@ export default function SnapshotEditorPage() {
                     <option key={u} value={u}>{CADENCE_UNIT_LABEL[u]}</option>
                   ))}
                 </select>
-              ) : null}
+              ) : (
+                <input type="date" value={nd.dueDate}
+                  title="Optional due date — flags this overdue on the behind report"
+                  onChange={(e) => setNd({ ...nd, dueDate: e.target.value })} />
+              )}
               <button className="btn btn-sm" type="submit">Add</button>
             </form>
           </div>
@@ -428,7 +473,14 @@ export default function SnapshotEditorPage() {
                     <div key={r.deliverable_id} className="snap-card">
                       <div className="snap-card-head">
                         <div>
-                          <div className="snap-name">{r.name}</div>
+                          <div className="snap-name">
+                            {r.name}
+                            {behindIds.has(r.deliverable_id) ? (
+                              <span style={{ color: "var(--danger)", fontWeight: 600, fontSize: 12, marginLeft: 8 }}>
+                                OVERDUE
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="snap-cadence">
                             {r.kind === "one_time" ? "One-time" : CADENCE_UNIT_LABEL[r.cadence_unit]}
                             {r.cadence ? ` · ${r.cadence}` : ""}
