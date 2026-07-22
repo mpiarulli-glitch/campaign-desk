@@ -9,7 +9,6 @@ import {
   type SnapshotStatus,
   type SnapshotWin,
 } from "./db";
-import { addWeeks, currentWeek, mondayOf } from "./week";
 
 export type { DeliverableKind, SnapshotDeliverable, SnapshotStatus, SnapshotWin, SnapshotMetric };
 
@@ -526,24 +525,6 @@ export function weeksWithActivity(clientId: string): string[] {
 
 /* -------------------------------------------------------- contract status */
 
-// Every Monday week_start that falls within the current calendar month, from
-// the first such Monday through this week (inclusive). A partial first week
-// of the month (whose Monday lands in the prior month) is skipped, since
-// nothing was owed against this month before it started.
-function weeksSoFarThisMonth(): string[] {
-  const now = new Date();
-  const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  let w = mondayOf(new Date(now.getFullYear(), now.getMonth(), 1));
-  if (w < firstOfMonth) w = addWeeks(w, 1);
-  const today = currentWeek();
-  const weeks: string[] = [];
-  while (w <= today) {
-    weeks.push(w);
-    w = addWeeks(w, 1);
-  }
-  return weeks;
-}
-
 export interface ContractStatus {
   pct: number; // 0-100
   doneCount: number;
@@ -552,51 +533,20 @@ export interface ContractStatus {
   label: string;
 }
 
-// % of this month's recurring-deliverable commitments actually completed so
-// far: one obligation per active recurring deliverable per week elapsed this
-// month. One-time setup items don't count — they aren't a recurring promise.
+// % of active recurring deliverables currently standing as completed/approved
+// (their latest logged status — the same rollup the client-facing snapshot
+// page shows). Deliberately not tied to a weekly cadence grid: cadence is
+// free text ("Monthly", "Quarterly", blank) and accounts can carry dozens of
+// deliverables, so requiring a fresh "completed" entry every single week for
+// every one of them punishes exactly the accounts with the most deliverables.
+// One-time setup items don't count — they aren't a recurring promise.
 export function contractStatus(clientId: string): ContractStatus {
-  const deliverables = getDb()
-    .prepare(
-      `SELECT id FROM snapshot_deliverables WHERE client_id = ? AND active = 1 AND kind = 'recurring'`
-    )
-    .all(clientId) as Array<{ id: string }>;
-  if (!deliverables.length) {
+  const recurring = deliverableOverview(clientId).filter((d) => d.kind === "recurring");
+  if (!recurring.length) {
     return { pct: 0, doneCount: 0, totalCount: 0, onTrack: true, label: "No recurring deliverables" };
   }
-
-  const weeks = weeksSoFarThisMonth();
-  if (!weeks.length) {
-    return { pct: 100, doneCount: 0, totalCount: 0, onTrack: true, label: "Month just started" };
-  }
-
-  const ids = deliverables.map((d) => d.id);
-  const idPlaceholders = ids.map(() => "?").join(",");
-  const weekPlaceholders = weeks.map(() => "?").join(",");
-  const rows = getDb()
-    .prepare(
-      `SELECT deliverable_id, week_start, status FROM snapshot_entries
-       WHERE deliverable_id IN (${idPlaceholders}) AND week_start IN (${weekPlaceholders})`
-    )
-    .all(...ids, ...weeks) as Array<{
-    deliverable_id: string;
-    week_start: string;
-    status: SnapshotStatus;
-  }>;
-  const doneSet = new Set(
-    rows
-      .filter((r) => DONE_STATUSES.includes(normStatus(r.status)))
-      .map((r) => `${r.deliverable_id}:${r.week_start}`)
-  );
-
-  const totalCount = ids.length * weeks.length;
-  let doneCount = 0;
-  for (const id of ids) {
-    for (const w of weeks) {
-      if (doneSet.has(`${id}:${w}`)) doneCount++;
-    }
-  }
-
+  const doneCount = recurring.filter((d) => DONE_STATUSES.includes(d.status)).length;
+  const totalCount = recurring.length;
   const pct = Math.round((doneCount / totalCount) * 100);
   const onTrack = pct >= 90;
   const label = pct >= 90 ? "On track" : pct >= 60 ? "Behind" : "Significantly behind";

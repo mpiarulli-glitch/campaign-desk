@@ -274,10 +274,10 @@ export default function SnapshotEditorPage() {
         {contract ? (
           <div className="card card-pad row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
-              <strong>Contract fulfillment this month</strong>
+              <strong>Contract fulfillment</strong>
               <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
                 {contract.totalCount > 0
-                  ? `${contract.doneCount} of ${contract.totalCount} weekly deliverables completed so far this month.`
+                  ? `${contract.doneCount} of ${contract.totalCount} recurring deliverables currently completed.`
                   : "No recurring deliverables tracked yet."}
               </p>
             </div>

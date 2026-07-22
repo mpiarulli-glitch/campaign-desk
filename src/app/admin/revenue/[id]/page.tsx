@@ -381,7 +381,7 @@ export default function RevenueClientPage() {
             <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
               {deliverableCount} deliverable{deliverableCount === 1 ? "" : "s"} tracked
               {contract && contract.totalCount > 0
-                ? ` · ${contract.doneCount} of ${contract.totalCount} weekly commitments met this month`
+                ? ` · ${contract.doneCount} of ${contract.totalCount} recurring deliverables completed`
                 : ""}
             </p>
           </div>
