@@ -64,23 +64,12 @@ export default function PersonForecastPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, { client: string; notes: string; hours: string }>>({});
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState({ client: "", notes: "", hours: "" });
 
   function draftFor(date: string) {
     return drafts[date] || { client: "", notes: "", hours: "" };
   }
   function setDraft(date: string, patch: Partial<{ client: string; notes: string; hours: string }>) {
     setDrafts((d) => ({ ...d, [date]: { ...draftFor(date), ...patch } }));
-  }
-
-  function startEdit(task: Task) {
-    setEditingId(task.id);
-    setEditDraft({ client: task.client, notes: task.notes, hours: String(task.hours) });
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
   }
 
   async function load(w: string) {
@@ -150,27 +139,42 @@ export default function PersonForecastPage() {
     load(week);
   }
 
-  async function saveEdit(id: string) {
-    const hours = Number(editDraft.hours);
-    if (!editDraft.client.trim()) {
-      setError("Add a client for that task.");
+  async function saveField(
+    task: Task,
+    field: "client" | "notes" | "hours",
+    rawValue: string
+  ) {
+    if (field === "hours") {
+      const hours = Number(rawValue);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        setError("Hours must be a positive number.");
+        load(week);
+        return;
+      }
+      if (hours === task.hours) return;
+      setError("");
+      const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hours }),
+      });
+      if (!res.ok) setError("Could not save that task.");
+      load(week);
       return;
     }
-    if (!Number.isFinite(hours) || hours <= 0) {
-      setError("Enter how many hours that task should take.");
+    if (field === "client" && !rawValue.trim()) {
+      setError("A task needs a client.");
+      load(week);
       return;
     }
+    if (rawValue === task[field]) return;
     setError("");
-    const res = await fetch(`/api/forecast/${person}/${id}`, {
+    const res = await fetch(`/api/forecast/${person}/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client: editDraft.client, notes: editDraft.notes, hours }),
+      body: JSON.stringify({ [field]: rawValue }),
     });
-    if (!res.ok) {
-      setError("Could not save that task.");
-      return;
-    }
-    setEditingId(null);
+    if (!res.ok) setError("Could not save that task.");
     load(week);
   }
 
@@ -242,66 +246,58 @@ export default function PersonForecastPage() {
                     <p className="muted" style={{ margin: 0, fontSize: 13 }}>Nothing forecasted yet.</p>
                   ) : (
                     <div className="stack" style={{ gap: 6 }}>
-                      {tasks.map((t) =>
-                        editingId === t.id ? (
-                          <div
-                            key={t.id}
-                            className="row"
-                            style={{ gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--border)", paddingBottom: 6 }}
-                          >
-                            <input
-                              value={editDraft.client}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, client: e.target.value }))}
-                              placeholder="Client"
-                              style={{ flex: "1 1 160px" }}
-                            />
-                            <input
-                              value={editDraft.notes}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
-                              placeholder="Task notes"
-                              style={{ flex: "2 1 240px" }}
-                            />
-                            <input
-                              value={editDraft.hours}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, hours: e.target.value }))}
-                              placeholder="Hours"
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              style={{ width: 90 }}
-                            />
-                            <button className="btn btn-sm" onClick={() => saveEdit(t.id)}>Save</button>
-                            <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>Cancel</button>
-                          </div>
-                        ) : (
-                          <div
-                            key={t.id}
-                            className="row"
-                            style={{ justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--border)", paddingBottom: 6 }}
-                          >
-                            <label className="row" style={{ gap: 8, cursor: "pointer" }}>
-                              <input
-                                type="checkbox"
-                                checked={!!t.completed}
-                                onChange={() => toggleCompleted(t)}
-                              />
-                              <div style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}>
-                                <strong>{t.client}</strong>
-                                {t.notes ? <span className="muted"> — {t.notes}</span> : null}
-                              </div>
-                            </label>
-                            <div className="row" style={{ gap: 10 }}>
-                              <span className="muted">{t.hours}h</span>
-                              <button className="btn btn-ghost btn-sm" onClick={() => startEdit(t)}>
-                                Edit
-                              </button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      )}
+                      {tasks.map((t) => (
+                        <div
+                          key={t.id}
+                          className="row"
+                          style={{ gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: 6 }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!t.completed}
+                            onChange={() => toggleCompleted(t)}
+                          />
+                          <input
+                            key={`${t.id}-client`}
+                            defaultValue={t.client}
+                            onBlur={(e) => saveField(t, "client", e.target.value)}
+                            placeholder="Client"
+                            className="input-inline"
+                            style={{
+                              flex: "1 1 160px",
+                              fontWeight: 600,
+                              textDecoration: t.completed ? "line-through" : "none",
+                              opacity: t.completed ? 0.6 : 1,
+                            }}
+                          />
+                          <input
+                            key={`${t.id}-notes`}
+                            defaultValue={t.notes}
+                            onBlur={(e) => saveField(t, "notes", e.target.value)}
+                            placeholder="Task notes"
+                            className="input-inline"
+                            style={{
+                              flex: "2 1 240px",
+                              textDecoration: t.completed ? "line-through" : "none",
+                              opacity: t.completed ? 0.6 : 1,
+                            }}
+                          />
+                          <input
+                            key={`${t.id}-hours`}
+                            defaultValue={t.hours}
+                            onBlur={(e) => saveField(t, "hours", e.target.value)}
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            className="input-inline"
+                            style={{ width: 70 }}
+                          />
+                          <span className="muted">h</span>
+                          <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>
+                            Remove
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
 
