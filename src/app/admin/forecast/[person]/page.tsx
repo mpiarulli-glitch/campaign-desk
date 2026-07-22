@@ -282,7 +282,7 @@ export default function PersonForecastPage() {
                               opacity: t.completed ? 0.6 : 1,
                             }}
                           />
-                          <div className="row" style={{ gap: 0 }}>
+                          <div className="row" style={{ gap: 6 }}>
                             <input
                               key={`${t.id}-hours`}
                               defaultValue={t.hours}
