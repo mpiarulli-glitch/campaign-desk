@@ -253,6 +253,16 @@ button {
   outline: none;
 }
 
+.input-hours::-webkit-outer-spin-button,
+.input-hours::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.input-hours {
+  -moz-appearance: textfield;
+}
+
 .container {
   width: min(1120px, calc(100% - 40px));
   margin: 0 auto;
@@ -1857,6 +1867,8 @@ button {
 .chip-sent .cal-chip-dot { background: var(--success); }
 .cal-chip.chip-sent { opacity: 0.62; }
 .cal-chip.chip-requested { border: 1px dashed #d946ef; }
+.cal-chip.is-production { border-color: #0f766e; }
+.cal-chip.is-production .cal-chip-dot { background: #0f766e; }
 
 /* Hover detail card, positioned via JS (fixed). */
 .cal-pop {
@@ -1904,6 +1916,19 @@ button {
   color: var(--text-muted);
   font-weight: 600;
   margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-pop-kind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #0f766e;
+  background: #e6f7f5;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 .cal-pop-list { margin: 0; display: flex; flex-direction: column; gap: 9px; }
 .cal-pop-row { display: flex; flex-direction: column; gap: 2px; }
@@ -2936,6 +2961,28 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 16px 18px;
   box-shadow: var(--shadow);
 }
+.plan-card.is-production { border-left: 3px solid #0f766e; }
+.plan-card-title { display: flex; align-items: center; gap: 8px; }
+
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.view-toggle-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: none;
+  cursor: pointer;
+}
+.view-toggle-btn + .view-toggle-btn { border-left: 1px solid var(--border); }
+.view-toggle-btn.is-on { background: var(--ink); color: #fff; }
+
+.plan-detail-modal { width: min(480px, 100%); max-height: 90vh; overflow-y: auto; }
 .plan-card-date {
   flex-shrink: 0;
   width: 96px;

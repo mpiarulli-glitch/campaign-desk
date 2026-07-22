@@ -80,6 +80,13 @@ const STATUS_LABEL: Record<Status, string> = {
   sent: "Sent",
 };
 
+// Production shoot requests always carry a non-empty intake brief; editorial
+// content entries (blog/social/email) never do. That's the only signal we
+// have to tell the two apart, so treat it as the source of truth.
+function isProduction(s: Pick<Send, "production_brief">): boolean {
+  return !!s.production_brief?.trim();
+}
+
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
@@ -413,14 +420,15 @@ export default function CalendarPage() {
                   {items.map((s) => (
                     <button
                       key={s.id}
-                      className={`cal-chip chip-${s.status} ${feedbackBySend.has(s.id) ? "has-note" : ""}`}
+                      className={`cal-chip chip-${s.status} ${isProduction(s) ? "is-production" : ""} ${feedbackBySend.has(s.id) ? "has-note" : ""}`}
                       onClick={(e) => { e.stopPropagation(); openEdit(s); }}
                       onMouseEnter={(e) => showHover(e, s)}
                       onMouseLeave={hideHover}
                     >
                       <span className="cal-chip-dot" />
                       <span className="cal-chip-name">
-                        {s.send_time ? `${fmtTime(s.send_time)} · ` : ""}{s.title}
+                        {s.send_time ? `${fmtTime(s.send_time)} · ` : ""}
+                        {isProduction(s) ? "🎥 " : ""}{s.title}
                       </span>
                       {feedbackBySend.has(s.id) ? (
                         <span className="cal-chip-note" title="Client left a note">💬</span>
@@ -449,23 +457,31 @@ export default function CalendarPage() {
             </span>
           </div>
           {hover.send.client_name ? (
-            <div className="cal-pop-client">{hover.send.client_name}</div>
+            <div className="cal-pop-client">
+              {hover.send.client_name}
+              {isProduction(hover.send) ? (
+                <span className="cal-pop-kind">Production</span>
+              ) : null}
+            </div>
           ) : null}
           <dl className="cal-pop-list">
             <PopRow label="Start time" value={fmtTime(hover.send.send_time)} />
-            <PopRow
-              label="Length"
-              value={
-                hover.send.duration === "full"
-                  ? "Full day (9 AM – 5:30 PM)"
-                  : "4 hours (ends 5:30 PM)"
-              }
-            />
-            <PopRow label="Audience" value={hover.send.audience} />
-            <PopRow label="Purpose" value={hover.send.purpose} />
-            <PopRow label="Offers being tested" value={hover.send.offer} />
-            <PopRow label="Subject line" value={hover.send.subject} />
-            <PopRow label="Preview text" value={hover.send.preview_text} />
+            {isProduction(hover.send) ? (
+              <PopRow
+                label="Length"
+                value={
+                  hover.send.duration === "full"
+                    ? "Full day (9 AM – 5:30 PM)"
+                    : "4 hours (ends 5:30 PM)"
+                }
+              />
+            ) : (
+              <>
+                <PopRow label="Audience" value={hover.send.audience} />
+                <PopRow label="Purpose" value={hover.send.purpose} />
+                <PopRow label="Offers being tested" value={hover.send.offer} />
+              </>
+            )}
           </dl>
         </div>
       ) : null}

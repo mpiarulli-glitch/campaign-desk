@@ -282,7 +282,7 @@ export default function PersonForecastPage() {
                               opacity: t.completed ? 0.6 : 1,
                             }}
                           />
-                          <div className="row" style={{ gap: 6 }}>
+                          <div className="row" style={{ gap: 2 }}>
                             <input
                               key={`${t.id}-hours`}
                               defaultValue={t.hours}
@@ -290,8 +290,8 @@ export default function PersonForecastPage() {
                               type="number"
                               min="0"
                               step="0.5"
-                              className="input-inline"
-                              style={{ width: 50 }}
+                              className="input-inline input-hours"
+                              style={{ width: 32, padding: "3px 0 3px 5px", textAlign: "right" }}
                             />
                             <span className="muted">h</span>
                           </div>
