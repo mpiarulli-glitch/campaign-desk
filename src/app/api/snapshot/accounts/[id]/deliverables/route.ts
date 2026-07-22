@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { createDeliverable, getAccount, listDeliverables } from "@/lib/snapshot";
+import type { CadenceUnit } from "@/lib/db";
+
+const CADENCE_UNITS: CadenceUnit[] = ["weekly", "monthly", "quarterly"];
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -34,6 +37,7 @@ export async function POST(request: Request, { params }: Params) {
     name,
     cadence: typeof body.cadence === "string" ? body.cadence : "",
     kind: body.kind === "one_time" ? "one_time" : "recurring",
+    cadenceUnit: CADENCE_UNITS.includes(body.cadenceUnit) ? body.cadenceUnit : undefined,
   });
   return NextResponse.json({ deliverable }, { status: 201 });
 }

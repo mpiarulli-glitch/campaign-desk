@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import {
   getDb,
   nowIso,
+  type CadenceUnit,
   type DeliverableKind,
   type RevClient,
   type SnapshotDeliverable,
@@ -9,11 +10,52 @@ import {
   type SnapshotStatus,
   type SnapshotWin,
 } from "./db";
+import { mondayOf } from "./week";
 
-export type { DeliverableKind, SnapshotDeliverable, SnapshotStatus, SnapshotWin, SnapshotMetric };
+export type {
+  CadenceUnit,
+  DeliverableKind,
+  SnapshotDeliverable,
+  SnapshotStatus,
+  SnapshotWin,
+  SnapshotMetric,
+};
 
 function normKind(v: unknown): DeliverableKind {
   return v === "one_time" ? "one_time" : "recurring";
+}
+
+const CADENCE_UNITS: CadenceUnit[] = ["weekly", "monthly", "quarterly"];
+function normCadenceUnit(v: unknown): CadenceUnit {
+  return CADENCE_UNITS.includes(v as CadenceUnit) ? (v as CadenceUnit) : "monthly";
+}
+
+export const CADENCE_UNIT_OPTIONS: { value: CadenceUnit; label: string }[] = [
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+];
+
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// The period key a given date rolls up to for a cadence unit: the Monday for
+// weekly, the 1st of the month for monthly, the 1st month of the quarter for
+// quarterly. Two dates in the same period always map to the same key, so a
+// deliverable's status only changes when a NEW period actually starts.
+export function periodStartFor(unit: CadenceUnit, ymd: string): string {
+  const [y, m] = ymd.split("-").map(Number);
+  if (unit === "weekly") {
+    const [yy, mm, dd] = ymd.split("-").map(Number);
+    return mondayOf(new Date(yy, mm - 1, dd));
+  }
+  if (unit === "quarterly") {
+    const qStartMonth = Math.floor((m - 1) / 3) * 3 + 1;
+    return `${y}-${String(qStartMonth).padStart(2, "0")}-01`;
+  }
+  return `${y}-${String(m).padStart(2, "0")}-01`; // monthly
 }
 
 export const SNAPSHOT_STATUSES: { value: SnapshotStatus; label: string }[] = [
@@ -107,6 +149,7 @@ export function createDeliverable(input: {
   name: string;
   cadence: string;
   kind?: DeliverableKind;
+  cadenceUnit?: CadenceUnit;
 }): SnapshotDeliverable {
   const db = getDb();
   const id = nanoid(12);
@@ -118,8 +161,8 @@ export function createDeliverable(input: {
     .get(input.clientId) as { m: number };
   db.prepare(
     `INSERT INTO snapshot_deliverables
-      (id, client_id, category, name, cadence, kind, sort_order, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      (id, client_id, category, name, cadence, kind, cadence_unit, sort_order, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     id,
     input.clientId,
@@ -127,6 +170,7 @@ export function createDeliverable(input: {
     input.name.trim(),
     input.cadence.trim(),
     normKind(input.kind),
+    normCadenceUnit(input.cadenceUnit),
     max.m + 1,
     ts,
     ts
@@ -151,6 +195,7 @@ export function updateDeliverable(
     name: string;
     cadence: string;
     kind: DeliverableKind;
+    cadenceUnit: CadenceUnit;
     sortOrder: number;
   }>
 ): SnapshotDeliverable | null {
@@ -159,7 +204,7 @@ export function updateDeliverable(
   getDb()
     .prepare(
       `UPDATE snapshot_deliverables
-       SET category = ?, name = ?, cadence = ?, kind = ?, sort_order = ?, updated_at = ?
+       SET category = ?, name = ?, cadence = ?, kind = ?, cadence_unit = ?, sort_order = ?, updated_at = ?
        WHERE id = ?`
     )
     .run(
@@ -167,6 +212,7 @@ export function updateDeliverable(
       updates.name?.trim() ?? existing.name,
       updates.cadence?.trim() ?? existing.cadence,
       updates.kind ? normKind(updates.kind) : existing.kind,
+      updates.cadenceUnit ? normCadenceUnit(updates.cadenceUnit) : existing.cadence_unit,
       updates.sortOrder ?? existing.sort_order,
       nowIso(),
       id
@@ -185,13 +231,21 @@ export function deleteDeliverable(id: string): boolean {
 
 /* ------------------------------------------------------------- entries */
 
-// A deliverable joined with its entry for a specific week (defaults when the
-// team hasn't logged anything yet).
+// A deliverable joined with its entry for the period the given week falls
+// in (defaults when the team hasn't logged anything for that period yet).
+// For a monthly/quarterly deliverable, every week inside the same period
+// resolves to the same underlying entry — flipping weeks doesn't reset it,
+// and it only goes back to "not started" once a new period actually starts.
+// One-time deliverables aren't period-keyed at all: whatever was last logged
+// for them (any week) carries forward forever, same as the overview.
 export interface WeekRow {
   deliverable_id: string;
   category: string;
   name: string;
   cadence: string;
+  kind: DeliverableKind;
+  cadence_unit: CadenceUnit;
+  period_start: string;
   status: SnapshotStatus;
   work_done: string;
   next_steps: string;
@@ -199,37 +253,107 @@ export interface WeekRow {
 }
 
 export function weekData(clientId: string, weekStart: string): WeekRow[] {
-  const rows = getDb()
+  const deliverables = getDb()
     .prepare(
-      `SELECT d.id AS deliverable_id, d.category, d.name, d.cadence,
-              e.status, e.work_done, e.next_steps, e.notes
-       FROM snapshot_deliverables d
-       LEFT JOIN snapshot_entries e
-         ON e.deliverable_id = d.id AND e.week_start = ?
-       WHERE d.client_id = ? AND d.active = 1
-       ORDER BY d.sort_order ASC, d.created_at ASC`
+      `SELECT id, category, name, cadence, kind, cadence_unit
+       FROM snapshot_deliverables
+       WHERE client_id = ? AND active = 1
+       ORDER BY sort_order ASC, created_at ASC`
     )
-    .all(weekStart, clientId) as Array<{
-    deliverable_id: string;
+    .all(clientId) as Array<{
+    id: string;
     category: string;
     name: string;
     cadence: string;
-    status: SnapshotStatus | null;
-    work_done: string | null;
-    next_steps: string | null;
-    notes: string | null;
+    kind: string;
+    cadence_unit: string;
   }>;
+  if (!deliverables.length) return [];
 
-  return rows.map((r) => ({
-    deliverable_id: r.deliverable_id,
-    category: r.category,
-    name: r.name,
-    cadence: r.cadence,
-    status: r.status ?? "not_started",
-    work_done: r.work_done ?? "",
-    next_steps: r.next_steps ?? "",
-    notes: r.notes ?? "",
-  }));
+  const withPeriod = deliverables.map((d) => {
+    const kind = normKind(d.kind);
+    const cadence_unit = normCadenceUnit(d.cadence_unit);
+    return {
+      ...d,
+      kind,
+      cadence_unit,
+      // One-time items have no period; each is looked up by "latest ever".
+      period_start: kind === "one_time" ? "" : periodStartFor(cadence_unit, weekStart),
+    };
+  });
+
+  const periodKeyed = withPeriod.filter((d) => d.kind === "recurring");
+  const oneTime = withPeriod.filter((d) => d.kind === "one_time");
+  const periods = Array.from(new Set(periodKeyed.map((d) => d.period_start)));
+
+  const entryMap = new Map<
+    string,
+    { status: SnapshotStatus; work_done: string; next_steps: string; notes: string }
+  >();
+
+  if (periodKeyed.length) {
+    const rows = getDb()
+      .prepare(
+        `SELECT deliverable_id, week_start, status, work_done, next_steps, notes
+         FROM snapshot_entries
+         WHERE deliverable_id IN (${periodKeyed.map(() => "?").join(",")})
+           AND week_start IN (${periods.map(() => "?").join(",")})`
+      )
+      .all(
+        ...periodKeyed.map((d) => d.id),
+        ...periods
+      ) as Array<{
+      deliverable_id: string;
+      week_start: string;
+      status: SnapshotStatus;
+      work_done: string;
+      next_steps: string;
+      notes: string;
+    }>;
+    for (const r of rows) entryMap.set(`${r.deliverable_id}:${r.week_start}`, r);
+  }
+
+  if (oneTime.length) {
+    // Every entry ever logged for these, so the most recent (by week_start)
+    // can win regardless of which week is currently being viewed.
+    const rows = getDb()
+      .prepare(
+        `SELECT deliverable_id, week_start, status, work_done, next_steps, notes
+         FROM snapshot_entries
+         WHERE deliverable_id IN (${oneTime.map(() => "?").join(",")})
+         ORDER BY week_start ASC`
+      )
+      .all(...oneTime.map((d) => d.id)) as Array<{
+      deliverable_id: string;
+      week_start: string;
+      status: SnapshotStatus;
+      work_done: string;
+      next_steps: string;
+      notes: string;
+    }>;
+    // Ascending order means the last write per deliverable is the latest.
+    for (const r of rows) entryMap.set(`onetime:${r.deliverable_id}`, r);
+  }
+
+  return withPeriod.map((d) => {
+    const e =
+      d.kind === "one_time"
+        ? entryMap.get(`onetime:${d.id}`)
+        : entryMap.get(`${d.id}:${d.period_start}`);
+    return {
+      deliverable_id: d.id,
+      category: d.category,
+      name: d.name,
+      cadence: d.cadence,
+      kind: d.kind,
+      cadence_unit: d.cadence_unit,
+      period_start: d.kind === "one_time" ? "" : d.period_start,
+      status: e?.status ?? "not_started",
+      work_done: e?.work_done ?? "",
+      next_steps: e?.next_steps ?? "",
+      notes: e?.notes ?? "",
+    };
+  });
 }
 
 export function upsertEntry(input: {
@@ -244,11 +368,27 @@ export function upsertEntry(input: {
   if (!deliverable) return { ok: false };
   const db = getDb();
   const ts = nowIso();
-  const existing = db
-    .prepare(
-      `SELECT * FROM snapshot_entries WHERE deliverable_id = ? AND week_start = ?`
-    )
-    .get(input.deliverableId, input.weekStart) as
+
+  // One-time items have a single lifetime entry, not one per period: update
+  // whichever entry already exists (any week) instead of keying by period.
+  const isOneTime = normKind(deliverable.kind) === "one_time";
+  const periodStart = isOneTime
+    ? input.weekStart
+    : periodStartFor(normCadenceUnit(deliverable.cadence_unit), input.weekStart);
+
+  const existing = (
+    isOneTime
+      ? db
+          .prepare(
+            `SELECT * FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
+          )
+          .get(input.deliverableId)
+      : db
+          .prepare(
+            `SELECT * FROM snapshot_entries WHERE deliverable_id = ? AND week_start = ?`
+          )
+          .get(input.deliverableId, periodStart)
+  ) as
     | { id: string; status: SnapshotStatus; work_done: string; next_steps: string; notes: string }
     | undefined;
 
@@ -281,7 +421,7 @@ export function upsertEntry(input: {
       nanoid(12),
       input.deliverableId,
       deliverable.client_id,
-      input.weekStart,
+      periodStart,
       merged.status,
       merged.work_done,
       merged.next_steps,
@@ -421,18 +561,23 @@ export function listMetricsRaw(clientId: string): SnapshotMetric[] {
 /* ------------------------------------------------ deliverable overview */
 
 // The standing state of one contracted deliverable, rolled up across every
-// week (not scoped to a single week like WeekRow).
+// period (not scoped to a single week like WeekRow).
 export interface DeliverableOverview {
   deliverable_id: string;
   category: string;
   name: string;
   cadence: string;
   kind: DeliverableKind;
-  status: SnapshotStatus; // current standing status
-  worked_ever: boolean; // has any work been logged in any week
-  last_work_done: string; // most recent non-empty "what we did"
-  last_activity_week: string; // week_start of the most recent entry, or ""
-  completed_on: string; // for one-time items: the week it was completed, or ""
+  cadence_unit: CadenceUnit;
+  // For recurring items: the CURRENT period's status only — resets to
+  // "not_started" once a new week/month/quarter starts with nothing logged
+  // yet, even if the prior period was completed. For one-time items: sticky
+  // forever once done (see completed_on below).
+  status: SnapshotStatus;
+  worked_ever: boolean; // has any work been logged in any period, ever
+  last_work_done: string; // most recent non-empty "what we did", any period
+  last_activity_week: string; // period key of the most recent entry, or ""
+  completed_on: string; // for one-time items: the period it was completed, or ""
 }
 
 const DONE_STATUSES: SnapshotStatus[] = ["completed", "approved"];
@@ -443,7 +588,7 @@ const DONE_STATUSES: SnapshotStatus[] = ["completed", "approved"];
 export function deliverableOverview(clientId: string): DeliverableOverview[] {
   const rows = getDb()
     .prepare(
-      `SELECT d.id AS deliverable_id, d.category, d.name, d.cadence, d.kind,
+      `SELECT d.id AS deliverable_id, d.category, d.name, d.cadence, d.kind, d.cadence_unit,
               d.sort_order, d.created_at AS d_created,
               e.week_start, e.status, e.work_done
        FROM snapshot_deliverables d
@@ -457,6 +602,7 @@ export function deliverableOverview(clientId: string): DeliverableOverview[] {
     name: string;
     cadence: string;
     kind: string;
+    cadence_unit: string;
     sort_order: number;
     d_created: string;
     week_start: string | null;
@@ -466,6 +612,9 @@ export function deliverableOverview(clientId: string): DeliverableOverview[] {
 
   const order: string[] = [];
   const map = new Map<string, DeliverableOverview>();
+  // Every logged period's status per deliverable, so the current period can
+  // be looked up directly instead of assuming "the last row ever" is current.
+  const periodStatus = new Map<string, Map<string, SnapshotStatus>>();
 
   for (const r of rows) {
     let o = map.get(r.deliverable_id);
@@ -476,6 +625,7 @@ export function deliverableOverview(clientId: string): DeliverableOverview[] {
         name: r.name,
         cadence: r.cadence,
         kind: normKind(r.kind),
+        cadence_unit: normCadenceUnit(r.cadence_unit),
         status: "not_started",
         worked_ever: false,
         last_work_done: "",
@@ -483,6 +633,7 @@ export function deliverableOverview(clientId: string): DeliverableOverview[] {
         completed_on: "",
       };
       map.set(r.deliverable_id, o);
+      periodStatus.set(r.deliverable_id, new Map());
       order.push(r.deliverable_id);
     }
     if (!r.week_start) continue; // deliverable with no entries yet
@@ -493,16 +644,25 @@ export function deliverableOverview(clientId: string): DeliverableOverview[] {
 
     // rows arrive week_start ascending, so the last write wins for "latest".
     o.last_activity_week = r.week_start;
-    o.status = status;
     if (workDone) o.last_work_done = workDone;
     if (DONE_STATUSES.includes(status)) o.completed_on = r.week_start;
+    periodStatus.get(r.deliverable_id)!.set(r.week_start, status);
   }
 
-  // One-time items that are done render as "Completed" regardless of the very
-  // last week's status, and get pushed below the ongoing work.
   const list = order.map((id) => map.get(id)!);
+  const today = todayYmd();
   for (const o of list) {
-    if (o.kind === "one_time" && o.completed_on) o.status = "completed";
+    if (o.kind === "one_time") {
+      // One-time items that are done render as "Completed" regardless of
+      // period, and get pushed below the ongoing work.
+      if (o.completed_on) o.status = "completed";
+      continue;
+    }
+    // Recurring: only the CURRENT period's own entry counts. No entry yet
+    // for this week/month/quarter means "not started", even if a past
+    // period was completed — that's the reset a new period is supposed to be.
+    const currentPeriod = periodStartFor(o.cadence_unit, today);
+    o.status = periodStatus.get(o.deliverable_id)?.get(currentPeriod) ?? "not_started";
   }
   return list.sort((a, b) => rank(a) - rank(b));
 }

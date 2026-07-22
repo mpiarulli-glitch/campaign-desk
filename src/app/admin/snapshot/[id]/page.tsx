@@ -46,12 +46,27 @@ const STATUSES: { value: Status; label: string }[] = [
 ];
 
 type Kind = "recurring" | "one_time";
-type Deliverable = { id: string; category: string; name: string; cadence: string; kind: Kind };
+type CadenceUnit = "weekly" | "monthly" | "quarterly";
+const CADENCE_UNIT_LABEL: Record<CadenceUnit, string> = {
+  weekly: "Weekly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+};
+type Deliverable = {
+  id: string;
+  category: string;
+  name: string;
+  cadence: string;
+  kind: Kind;
+  cadence_unit: CadenceUnit;
+};
 type Row = {
   deliverable_id: string;
   category: string;
   name: string;
   cadence: string;
+  kind: Kind;
+  cadence_unit: CadenceUnit;
   status: Status;
   work_done: string;
   next_steps: string;
@@ -80,11 +95,18 @@ export default function SnapshotEditorPage() {
   const [copied, setCopied] = useState(false);
   const [managing, setManaging] = useState(false);
   const [view, setView] = useState<"team" | "client">("team");
-  const [nd, setNd] = useState<{ category: string; name: string; cadence: string; kind: Kind }>({
+  const [nd, setNd] = useState<{
+    category: string;
+    name: string;
+    cadence: string;
+    kind: Kind;
+    cadenceUnit: CadenceUnit;
+  }>({
     category: "",
     name: "",
     cadence: "",
     kind: "recurring",
+    cadenceUnit: "monthly",
   });
   const [wins, setWins] = useState<Win[]>([]);
   const [metricsRaw, setMetricsRaw] = useState<MetricRow[]>([]);
@@ -189,16 +211,17 @@ export default function SnapshotEditorPage() {
       body: JSON.stringify(nd),
     });
     if (!res.ok) { setError("Could not add deliverable."); return; }
-    setNd({ category: nd.category, name: "", cadence: "", kind: nd.kind });
+    setNd({ category: nd.category, name: "", cadence: "", kind: nd.kind, cadenceUnit: nd.cadenceUnit });
     await loadMeta();
     fetchWeek(week);
   }
 
   async function updateDeliverable(dId: string, patch: Partial<Deliverable>) {
+    const { cadence_unit, ...rest } = patch;
     await fetch(`/api/snapshot/deliverables/${dId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
+      body: JSON.stringify(cadence_unit ? { ...rest, cadenceUnit: cadence_unit } : rest),
     });
     await loadMeta();
     fetchWeek(week);
@@ -268,6 +291,14 @@ export default function SnapshotEditorPage() {
             </div>
           ) : null}
         </div>
+
+        {view === "team" ? (
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            Weekly deliverables need a status every week. Monthly and quarterly ones keep
+            whatever status you set across every week in that period, then reset to
+            &quot;Not started&quot; once the next month or quarter begins.
+          </p>
+        ) : null}
 
         {error ? <p className="error">{error}</p> : null}
 
@@ -347,6 +378,15 @@ export default function SnapshotEditorPage() {
                       <option value="recurring">Recurring</option>
                       <option value="one_time">One-time setup</option>
                     </select>
+                    {d.kind === "recurring" ? (
+                      <select defaultValue={d.cadence_unit}
+                        title="How often this resets to Not started"
+                        onChange={(e) => updateDeliverable(d.id, { cadence_unit: e.target.value as CadenceUnit })}>
+                        {(["weekly", "monthly", "quarterly"] as CadenceUnit[]).map((u) => (
+                          <option key={u} value={u}>{CADENCE_UNIT_LABEL[u]}</option>
+                        ))}
+                      </select>
+                    ) : null}
                     <button className="btn btn-danger btn-sm" onClick={() => removeDeliverable(d.id)}>Remove</button>
                   </div>
                 ))}
@@ -360,6 +400,15 @@ export default function SnapshotEditorPage() {
                 <option value="recurring">Recurring</option>
                 <option value="one_time">One-time setup</option>
               </select>
+              {nd.kind === "recurring" ? (
+                <select value={nd.cadenceUnit}
+                  title="How often this resets to Not started"
+                  onChange={(e) => setNd({ ...nd, cadenceUnit: e.target.value as CadenceUnit })}>
+                  {(["weekly", "monthly", "quarterly"] as CadenceUnit[]).map((u) => (
+                    <option key={u} value={u}>{CADENCE_UNIT_LABEL[u]}</option>
+                  ))}
+                </select>
+              ) : null}
               <button className="btn btn-sm" type="submit">Add</button>
             </form>
           </div>
@@ -380,7 +429,10 @@ export default function SnapshotEditorPage() {
                       <div className="snap-card-head">
                         <div>
                           <div className="snap-name">{r.name}</div>
-                          {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
+                          <div className="snap-cadence">
+                            {r.kind === "one_time" ? "One-time" : CADENCE_UNIT_LABEL[r.cadence_unit]}
+                            {r.cadence ? ` · ${r.cadence}` : ""}
+                          </div>
                         </div>
                         <select
                           className={`snap-status-select status-${r.status}`}

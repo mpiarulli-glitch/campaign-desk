@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { deleteDeliverable, getDeliverable, updateDeliverable } from "@/lib/snapshot";
+import type { CadenceUnit } from "@/lib/db";
+
+const CADENCE_UNITS: CadenceUnit[] = ["weekly", "monthly", "quarterly"];
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,6 +24,7 @@ export async function PATCH(request: Request, { params }: Params) {
       body.kind === "one_time" || body.kind === "recurring"
         ? body.kind
         : undefined,
+    cadenceUnit: CADENCE_UNITS.includes(body.cadenceUnit) ? body.cadenceUnit : undefined,
     sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : undefined,
   });
   return NextResponse.json({ deliverable });

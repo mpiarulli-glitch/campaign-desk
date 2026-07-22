@@ -177,6 +177,11 @@ export type SnapshotStatus =
 
 export type DeliverableKind = "recurring" | "one_time";
 
+// How often a recurring deliverable's status resets. Drives which
+// snapshot_entries row (keyed by period start) a given date maps to.
+// Meaningless for kind = "one_time" (stored but ignored).
+export type CadenceUnit = "weekly" | "monthly" | "quarterly";
+
 export interface SnapshotDeliverable {
   id: string;
   client_id: string;
@@ -186,6 +191,7 @@ export interface SnapshotDeliverable {
   // "one_time" deliverables are setup work that completes once, then sinks to
   // the bottom of the client view as done.
   kind: DeliverableKind;
+  cadence_unit: CadenceUnit;
   sort_order: number;
   active: number;
   created_at: string;
@@ -518,6 +524,7 @@ export function getDb(): Database.Database {
       name TEXT NOT NULL,
       cadence TEXT NOT NULL DEFAULT '',
       kind TEXT NOT NULL DEFAULT 'recurring',
+      cadence_unit TEXT NOT NULL DEFAULT 'monthly',
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
@@ -804,6 +811,22 @@ function migrate(database: Database.Database) {
   if (snapDelivCols.length && !snapDelivCols.includes("kind")) {
     database.exec(
       `ALTER TABLE snapshot_deliverables ADD COLUMN kind TEXT NOT NULL DEFAULT 'recurring'`
+    );
+  }
+  // Structured cadence unit (weekly/monthly/quarterly), added so a deliverable's
+  // status can reset on its own real-world period instead of every calendar
+  // week regardless of how often it's actually due. Default 'monthly' is the
+  // least punishing guess for existing rows with vague/blank free-text
+  // cadence; best-effort backfill from that text for the explicit cases.
+  if (snapDelivCols.length && !snapDelivCols.includes("cadence_unit")) {
+    database.exec(
+      `ALTER TABLE snapshot_deliverables ADD COLUMN cadence_unit TEXT NOT NULL DEFAULT 'monthly'`
+    );
+    database.exec(
+      `UPDATE snapshot_deliverables SET cadence_unit = 'quarterly' WHERE lower(cadence) LIKE 'quarter%'`
+    );
+    database.exec(
+      `UPDATE snapshot_deliverables SET cadence_unit = 'weekly' WHERE lower(cadence) LIKE 'week%'`
     );
   }
 
