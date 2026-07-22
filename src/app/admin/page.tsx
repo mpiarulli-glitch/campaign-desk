@@ -119,6 +119,7 @@ export default function AdminHomePage() {
           <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/production">Production</Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/forecast">Forecast</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">Snapshots</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/activity">Activity</Link>

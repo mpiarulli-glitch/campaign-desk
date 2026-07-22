@@ -359,6 +359,7 @@ export default function ProductionPage() {
           <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">Campaigns</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/calendar">Calendar</Link>
           <Link className="btn btn-ghost btn-sm" href="/admin/revenue">Revenue</Link>
+          <Link className="btn btn-ghost btn-sm" href="/admin/forecast">Forecast</Link>
         </div>
       </header>
 

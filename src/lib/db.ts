@@ -157,6 +157,17 @@ export interface Videographer {
   updated_at: string;
 }
 
+export interface ForecastTask {
+  id: string;
+  person: string;
+  task_date: string; // YYYY-MM-DD
+  client: string;
+  notes: string;
+  hours: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SnapshotStatus =
   | "not_started"
   | "in_progress"
@@ -560,6 +571,19 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_snapwins_client ON snapshot_wins(client_id);
     CREATE INDEX IF NOT EXISTS idx_snapmetrics_client ON snapshot_metrics(client_id);
+
+    CREATE TABLE IF NOT EXISTS forecast_tasks (
+      id TEXT PRIMARY KEY,
+      person TEXT NOT NULL,
+      task_date TEXT NOT NULL,
+      client TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      hours REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
 
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);
