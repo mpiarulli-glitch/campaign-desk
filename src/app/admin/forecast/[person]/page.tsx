@@ -282,17 +282,19 @@ export default function PersonForecastPage() {
                               opacity: t.completed ? 0.6 : 1,
                             }}
                           />
-                          <input
-                            key={`${t.id}-hours`}
-                            defaultValue={t.hours}
-                            onBlur={(e) => saveField(t, "hours", e.target.value)}
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            className="input-inline"
-                            style={{ width: 70 }}
-                          />
-                          <span className="muted">h</span>
+                          <div className="row" style={{ gap: 0 }}>
+                            <input
+                              key={`${t.id}-hours`}
+                              defaultValue={t.hours}
+                              onBlur={(e) => saveField(t, "hours", e.target.value)}
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              className="input-inline"
+                              style={{ width: 50 }}
+                            />
+                            <span className="muted">h</span>
+                          </div>
                           <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>
                             Remove
                           </button>
