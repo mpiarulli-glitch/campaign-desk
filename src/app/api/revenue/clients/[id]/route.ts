@@ -13,6 +13,7 @@ import { extractProjectId } from "@/lib/basecamp";
 import { contractStatus, listDeliverables } from "@/lib/snapshot";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
+const TIERS = ["", "standard", "premium", "vip"];
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -94,6 +95,7 @@ export async function PATCH(request: Request, { params }: Params) {
     poc: typeof body.poc === "string" ? body.poc : undefined,
     accountManager:
       typeof body.accountManager === "string" ? body.accountManager : undefined,
+    tier: TIERS.includes(body.tier) ? body.tier : undefined,
     productionEnrolled:
       typeof body.productionEnrolled === "boolean"
         ? body.productionEnrolled

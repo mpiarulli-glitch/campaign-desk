@@ -88,6 +88,7 @@ export function updateRevClient(
     contactEmail: string;
     poc: string;
     accountManager: string;
+    tier: string;
     productionEnrolled: boolean;
     basecampProjectId: string;
     videographerId: string;
@@ -102,7 +103,7 @@ export function updateRevClient(
        retainer = ?, monthly_cost = ?, ltv = ?, active = ?,
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
-       contact_name = ?, contact_email = ?, poc = ?, account_manager = ?,
+       contact_name = ?, contact_email = ?, poc = ?, account_manager = ?, tier = ?,
        production_enrolled = ?,
        basecamp_project_id = ?, videographer_id = ?, updated_at = ?
      WHERE id = ?`
@@ -129,6 +130,7 @@ export function updateRevClient(
     updates.contactEmail?.trim() ?? existing.contact_email,
     updates.poc?.trim() ?? existing.poc,
     updates.accountManager?.trim() ?? existing.account_manager,
+    updates.tier ?? existing.tier,
     updates.productionEnrolled === undefined
       ? existing.production_enrolled
       : updates.productionEnrolled

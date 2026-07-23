@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/admin/forecast", label: "Forecast" },
   { href: "/admin/snapshot", label: "Snapshots" },
   { href: "/admin/revenue", label: "Revenue" },
+  { href: "/admin/clients", label: "Clients" },
   { href: "/admin/activity", label: "Activity" },
 ];
 

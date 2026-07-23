@@ -12,6 +12,7 @@ import { deliverableOverview, getOrCreateToken as getOrCreateSnapshotToken } fro
 import { aggregate, getRevClient, kpisForModel, listMetrics } from "./revenue";
 import { planSends } from "./plan";
 import { listActivity, type ActivityItem } from "./campaigns";
+import { listOkrs, type OkrStatus } from "./okrs";
 
 /* ------------------------------------------------------- share token */
 
@@ -139,6 +140,28 @@ export function accountActivity(clientId: string, limit = 30): AccountActivityIt
     .slice(0, limit);
 }
 
+/* ------------------------------------------------------- client-visible goals */
+
+// A deliberately narrow view of an account's OKRs for the client-facing
+// dashboard: the objective, its target date, and a coarse status. Never
+// includes key results (their numeric targets/current progress) — those
+// stay admin-only, surfaced separately via src/lib/okrs.ts on the admin route.
+export interface ClientGoal {
+  id: string;
+  objective: string;
+  targetDate: string | null;
+  status: OkrStatus;
+}
+
+export function clientVisibleGoals(clientId: string): ClientGoal[] {
+  return listOkrs(clientId).map((o) => ({
+    id: o.id,
+    objective: o.objective,
+    targetDate: o.target_date,
+    status: o.status,
+  }));
+}
+
 /* --------------------------------------------------- aggregated dashboard */
 
 interface DashboardKpi {
@@ -150,12 +173,13 @@ interface DashboardKpi {
 }
 
 export interface ClientDashboardData {
-  client: { id: string; name: string };
+  client: { id: string; name: string; accountManager: string };
   production: ProductionStatus;
   snapshot: { token: string | null; overview: ReturnType<typeof deliverableOverview> };
   accountData: { kpis: DashboardKpi[] };
   calendar: ScheduledSend[];
   activity: AccountActivityItem[];
+  goals: ClientGoal[];
 }
 
 function addDaysYmd(ymd: string, n: number): string {
@@ -165,9 +189,10 @@ function addDaysYmd(ymd: string, n: number): string {
 }
 
 // The single aggregating read used by both the public dashboard route and the
-// internal admin hub route. Deliberately does NOT touch src/lib/okrs.ts —
-// the admin route merges OKRs on top of this result itself, so this function
-// can never leak internal-only data through the public token endpoint.
+// internal admin hub route. Includes clientVisibleGoals' narrow goal view
+// (objective + target date + status only) — safe for the public token route.
+// The admin route additionally merges full listOkrs() (with key results) on
+// top of this result itself; that fuller view never flows through here.
 export function getClientDashboardData(clientId: string): ClientDashboardData | null {
   const client = getRevClient(clientId);
   if (!client) return null;
@@ -184,14 +209,15 @@ export function getClientDashboardData(clientId: string): ClientDashboardData | 
   }));
 
   return {
-    client: { id: client.id, name: client.name },
+    client: { id: client.id, name: client.name, accountManager: client.account_manager },
     production: productionStatus(client),
     snapshot: {
       token: getOrCreateSnapshotToken(client.id),
       overview: deliverableOverview(client.id),
     },
     accountData: { kpis },
-    calendar: planSends(client.id, addDaysYmd(today, -14), addDaysYmd(today, 60)),
+    calendar: planSends(client.id, addDaysYmd(today, -30), addDaysYmd(today, 180)),
     activity: accountActivity(client.id),
+    goals: clientVisibleGoals(client.id),
   };
 }

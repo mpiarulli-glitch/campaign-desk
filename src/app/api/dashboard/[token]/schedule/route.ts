@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { getClientByScheduleToken } from "@/lib/cadence";
+import { getClientByDashboardToken } from "@/lib/dashboard";
 import { getSchedulingStatus, submitProductionBooking } from "@/lib/scheduling";
 
 type Params = { params: Promise<{ token: string }> };
 
+// Public, read/write via the dashboard token — same booking rules as
+// /api/schedule/[token] (see src/lib/scheduling.ts), just resolved by a
+// different token so the client dashboard doesn't need a second link.
 export async function GET(_request: Request, { params }: Params) {
   const { token } = await params;
-  const client = getClientByScheduleToken(token);
+  const client = getClientByDashboardToken(token);
   if (!client) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -15,7 +18,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const client = getClientByScheduleToken(token);
+  const client = getClientByDashboardToken(token);
   if (!client) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

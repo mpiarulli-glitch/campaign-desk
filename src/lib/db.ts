@@ -145,6 +145,8 @@ export interface RevClient {
   // Account manager reaching out, tagged on the Basecamp scheduling card
   // (email or name, matched against the project's Basecamp people).
   account_manager: string;
+  // Manually-set account tier: ""|standard|premium|vip.
+  tier: string;
   // 1 = shown on the production scheduler, 0 = removed from it (client and all
   // other data are kept; they just don't get productions).
   production_enrolled: number;
@@ -788,6 +790,11 @@ function migrate(database: Database.Database) {
   }
   if (revClientCols.length && !revClientCols.includes("dashboard_token")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN dashboard_token TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("tier")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN tier TEXT NOT NULL DEFAULT ''`
+    );
   }
   if (revClientCols.length && !revClientCols.includes("calendar_token")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_token TEXT`);

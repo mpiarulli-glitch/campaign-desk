@@ -3,9 +3,11 @@ import { getClientByDashboardToken, getClientDashboardData } from "@/lib/dashboa
 
 type Params = { params: Promise<{ token: string }> };
 
-// Public, read-only. The token is the access grant. Deliberately does not
-// import src/lib/okrs.ts anywhere in this file — OKRs are internal-only and
-// must never be reachable through this route.
+// Public, read-only. The token is the access grant. The response includes
+// `goals` — a deliberately narrow view of the account's OKRs (objective +
+// target date + status only, via clientVisibleGoals in src/lib/dashboard.ts).
+// It never includes key results (their numeric targets/current progress),
+// which stay reachable only through the admin route's full listOkrs() call.
 export async function GET(_request: Request, { params }: Params) {
   const { token } = await params;
   const client = getClientByDashboardToken(token);
