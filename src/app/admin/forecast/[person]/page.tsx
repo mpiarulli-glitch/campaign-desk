@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { NavMenu } from "@/components/NavMenu";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Task = {
@@ -64,6 +65,7 @@ export default function PersonForecastPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, { client: string; notes: string; hours: string }>>({});
+  const [role, setRole] = useState<"admin" | "forecast" | null>(null);
 
   function draftFor(date: string) {
     return drafts[date] || { client: "", notes: "", hours: "" };
@@ -96,6 +98,14 @@ export default function PersonForecastPage() {
     router.replace(`/admin/forecast/${person}?week=${week}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week, person]);
+  useEffect(() => {
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated) setRole(data.role);
+      })
+      .catch(() => {});
+  }, []);
 
   const days = useMemo(() => weekdays(week), [week]);
   const tasksByDay = useMemo(() => {
@@ -199,7 +209,10 @@ export default function PersonForecastPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/forecast">All forecasts</Link>
+          {role === "admin" ? (
+            <Link className="btn btn-ghost btn-sm" href="/admin/forecast">All forecasts</Link>
+          ) : null}
+          <NavMenu current="/admin/forecast" />
         </div>
       </header>
 

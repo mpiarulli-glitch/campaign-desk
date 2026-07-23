@@ -3,9 +3,14 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { ADMIN_PEOPLE } from "@/lib/admin-people";
+import { PEOPLE } from "@/lib/people";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<"admin" | "forecast">("admin");
+  const [adminPerson, setAdminPerson] = useState<string>("main");
+  const [person, setPerson] = useState<string>(PEOPLE[0]?.slug || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,14 +23,26 @@ export default function LoginPage() {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({
+          password,
+          adminPerson:
+            mode === "admin" && adminPerson !== "main"
+              ? adminPerson
+              : undefined,
+          person: mode === "forecast" ? person : undefined,
+        }),
       });
       if (!res.ok) {
         setError("Wrong password. Try again.");
         setLoading(false);
         return;
       }
-      router.push("/admin");
+      const data = await res.json();
+      router.push(
+        data.role === "forecast" && data.person
+          ? `/admin/forecast/${data.person}`
+          : "/admin"
+      );
       router.refresh();
     } catch {
       setError("Could not sign in. Check that the server is running.");
@@ -45,8 +62,61 @@ export default function LoginPage() {
             from your team or clients.
           </p>
         </div>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button
+            type="button"
+            className={`tab ${mode === "admin" ? "active" : ""}`}
+            onClick={() => setMode("admin")}
+          >
+            Admin
+          </button>
+          <button
+            type="button"
+            className={`tab ${mode === "forecast" ? "active" : ""}`}
+            onClick={() => setMode("forecast")}
+          >
+            Forecast
+          </button>
+        </div>
+        {mode === "admin" ? (
+          <div className="field">
+            <label htmlFor="admin-person">Account</label>
+            <select
+              id="admin-person"
+              className="select-clean"
+              value={adminPerson}
+              onChange={(e) => setAdminPerson(e.target.value)}
+            >
+              <option value="main">Main admin</option>
+              {ADMIN_PEOPLE.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        {mode === "forecast" ? (
+          <div className="field">
+            <label htmlFor="person">Your name</label>
+            <select
+              id="person"
+              className="select-clean"
+              value={person}
+              onChange={(e) => setPerson(e.target.value)}
+            >
+              {PEOPLE.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="field">
-          <label htmlFor="password">Admin password</label>
+          <label htmlFor="password">
+            {mode === "forecast" ? "Forecast password" : "Admin password"}
+          </label>
           <input
             id="password"
             type="password"

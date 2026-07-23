@@ -85,6 +85,14 @@ export default function AdminHomePage() {
   useEffect(() => {
     (async () => {
       try {
+        const auth = await fetch("/api/auth");
+        if (auth.ok) {
+          const session = await auth.json();
+          if (session.role === "forecast" && session.person) {
+            router.push(`/admin/forecast/${session.person}`);
+            return;
+          }
+        }
         const res = await fetch("/api/dashboard");
         if (res.status === 401) {
           router.push("/login");

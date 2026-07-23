@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isForecastAuthenticated } from "@/lib/auth";
 import {
   WEEKLY_CAPACITY_HOURS,
   createTask,
@@ -14,10 +14,10 @@ type Params = { params: Promise<{ person: string }> };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  const { person } = await params;
+  if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { person } = await params;
   if (!isValidPerson(person)) {
     return NextResponse.json({ error: "Unknown person" }, { status: 404 });
   }
@@ -37,10 +37,10 @@ export async function GET(request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  const { person } = await params;
+  if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { person } = await params;
   if (!isValidPerson(person)) {
     return NextResponse.json({ error: "Unknown person" }, { status: 404 });
   }

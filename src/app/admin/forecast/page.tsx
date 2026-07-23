@@ -36,6 +36,14 @@ export default function ForecastDashboardPage() {
 
   async function load(w: string) {
     setLoading(true);
+    const auth = await fetch("/api/auth");
+    if (auth.ok) {
+      const session = await auth.json();
+      if (session.role === "forecast" && session.person) {
+        router.push(`/admin/forecast/${session.person}?week=${w}`);
+        return;
+      }
+    }
     const res = await fetch(`/api/forecast?week=${w}`);
     if (res.status === 401) {
       router.push("/login");
