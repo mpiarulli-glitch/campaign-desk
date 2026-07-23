@@ -16,6 +16,12 @@ export async function GET() {
     authenticated: Boolean(session),
     role: session?.role || null,
     person: session?.person || null,
+    owner:
+      session?.role === "admin" &&
+      session.person === null,
+    impersonating:
+      session?.role === "admin" &&
+      session.impersonating,
   });
 }
 

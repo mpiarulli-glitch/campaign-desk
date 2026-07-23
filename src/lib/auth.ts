@@ -7,7 +7,12 @@ const COOKIE_NAME = "cd_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days
 
 export type Session =
-  | { role: "admin"; person: string | null; issuedAt: number }
+  | {
+      role: "admin";
+      person: string | null;
+      impersonating: boolean;
+      issuedAt: number;
+    }
   | { role: "forecast"; person: string; issuedAt: number };
 
 function getSecret(): string {
@@ -129,6 +134,15 @@ export async function createAdminAccountSession(person: string): Promise<void> {
   await setSessionCookie(`admin:${person}:${Date.now()}`);
 }
 
+export async function createAdminImpersonationSession(
+  person: string
+): Promise<void> {
+  if (!isValidAdminPerson(person)) {
+    throw new Error("Unknown admin account");
+  }
+  await setSessionCookie(`admin:${person}:impersonated:${Date.now()}`);
+}
+
 export async function createForecastSession(person: string): Promise<void> {
   await setSessionCookie(`forecast:${person}:${Date.now()}`);
 }
@@ -165,7 +179,9 @@ export async function getSession(): Promise<Session | null> {
   if (role === "admin") {
     const person = parts.length >= 3 ? parts[1] : null;
     if (person && !isValidAdminPerson(person)) return null;
-    return { role, person, issuedAt };
+    const impersonating = parts.length === 4 && parts[2] === "impersonated";
+    if (parts.length === 4 && !impersonating) return null;
+    return { role, person, impersonating, issuedAt };
   }
   if (role === "forecast") {
     const person = parts[1];
