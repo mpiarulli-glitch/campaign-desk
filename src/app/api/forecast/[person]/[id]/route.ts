@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isForecastAuthenticated } from "@/lib/auth";
 import { deleteTask, getTask, updateTask } from "@/lib/forecast";
 
 type Params = { params: Promise<{ person: string; id: string }> };
@@ -7,11 +7,12 @@ type Params = { params: Promise<{ person: string; id: string }> };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  const { person, id } = await params;
+  if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { id } = await params;
-  if (!getTask(id)) {
+  const existing = getTask(id);
+  if (!existing || existing.person !== person) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
@@ -35,10 +36,14 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  const { person, id } = await params;
+  if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { id } = await params;
+  const existing = getTask(id);
+  if (!existing || existing.person !== person) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const ok = deleteTask(id);
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

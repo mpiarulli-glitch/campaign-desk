@@ -127,6 +127,8 @@ export default function SnapshotEditorPage() {
   const [showBehindOnly, setShowBehindOnly] = useState(false);
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
+  const [role, setRole] = useState<"admin" | "forecast" | null>(null);
+  const isAdmin = role === "admin";
 
   const shareUrl =
     token && typeof window !== "undefined"
@@ -205,6 +207,14 @@ export default function SnapshotEditorPage() {
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
   useEffect(() => { fetchWeek(week); }, [week, fetchWeek]);
+  useEffect(() => {
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated) setRole(data.role);
+      })
+      .catch(() => {});
+  }, []);
 
   function patchRow(delivId: string, patch: Partial<Row>) {
     setRows((rs) => rs.map((r) => (r.deliverable_id === delivId ? { ...r, ...patch } : r)));
@@ -304,9 +314,11 @@ export default function SnapshotEditorPage() {
           <div>
             <p className="eyebrow">Account snapshot</p>
             <h1 className="h1">{name}</h1>
-            <Link className="muted" href={`/admin/revenue/${id}`} style={{ fontSize: 13 }}>
-              View revenue →
-            </Link>
+            {isAdmin ? (
+              <Link className="muted" href={`/admin/revenue/${id}`} style={{ fontSize: 13 }}>
+                View revenue →
+              </Link>
+            ) : null}
           </div>
           {view === "team" ? (
             <div className="cal-nav">

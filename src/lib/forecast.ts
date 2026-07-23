@@ -1,28 +1,12 @@
 import { nanoid } from "nanoid";
 import { getDb, nowIso, type ForecastTask } from "./db";
+import { PEOPLE, isValidPerson, personLabel } from "./people";
 import { addWeeks } from "./week";
 
 export type { ForecastTask };
-
-export const PEOPLE = [
-  { slug: "cassidy", label: "Cassidy" },
-  { slug: "carlos", label: "Carlos" },
-  { slug: "roy", label: "Roy" },
-  { slug: "michael", label: "Michael" },
-  { slug: "jack", label: "Jack" },
-  { slug: "paula", label: "Paula" },
-  { slug: "randi", label: "Randi" },
-] as const;
+export { PEOPLE, isValidPerson, personLabel };
 
 export const WEEKLY_CAPACITY_HOURS = 40;
-
-export function personLabel(slug: string): string {
-  return PEOPLE.find((p) => p.slug === slug)?.label || slug;
-}
-
-export function isValidPerson(slug: string): boolean {
-  return PEOPLE.some((p) => p.slug === slug);
-}
 
 // The five workday dates (Mon-Fri) making up a Monday-keyed week.
 export function weekdays(weekStart: string): string[] {

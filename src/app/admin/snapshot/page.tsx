@@ -16,6 +16,8 @@ export default function SnapshotAccountsPage() {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [role, setRole] = useState<"admin" | "forecast" | null>(null);
+  const isAdmin = role === "admin";
 
   async function load() {
     setLoading(true);
@@ -31,9 +33,18 @@ export default function SnapshotAccountsPage() {
     }
   }
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated) setRole(data.role);
+      })
+      .catch(() => {});
+  }, []);
 
   async function addAccount(e: FormEvent) {
     e.preventDefault();
+    if (!isAdmin) return;
     if (!name.trim()) return;
     setSaving(true);
     // Same "add client" flow the revenue page uses, so a client only ever
@@ -54,10 +65,14 @@ export default function SnapshotAccountsPage() {
       <header className="topbar">
         <Brand href="/admin" />
         <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">Behind report</Link>
-          <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
-            {adding ? "Cancel" : "Add account"}
-          </button>
+          {isAdmin ? (
+            <>
+              <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">Behind report</Link>
+              <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
+                {adding ? "Cancel" : "Add account"}
+              </button>
+            </>
+          ) : null}
           <NavMenu current="/admin/snapshot" />
         </div>
       </header>
@@ -74,7 +89,7 @@ export default function SnapshotAccountsPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        {adding ? (
+        {isAdmin && adding ? (
           <form className="card card-pad row" onSubmit={addAccount} style={{ gap: 8 }}>
             <input
               value={name}

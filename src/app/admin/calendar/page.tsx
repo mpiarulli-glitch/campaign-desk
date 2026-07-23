@@ -147,6 +147,17 @@ export default function CalendarPage() {
     feedback: { send_id: string; body: string }[];
   } | null>(null);
   const [planCopied, setPlanCopied] = useState(false);
+  const [role, setRole] = useState<"admin" | "forecast" | null>(null);
+  const isAdmin = role === "admin";
+
+  useEffect(() => {
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated) setRole(data.role);
+      })
+      .catch(() => {});
+  }, []);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const startWeekday = new Date(year, month, 1).getDay();
@@ -173,10 +184,11 @@ export default function CalendarPage() {
 
   // Load the editorial-plan sharing info when a single client is selected.
   const loadPlan = useCallback(async () => {
+    if (!isAdmin) { setPlan(null); return; }
     if (filter === "all") { setPlan(null); return; }
     const res = await fetch(`/api/calendar/plan/${filter}`);
     setPlan(res.ok ? await res.json() : null);
-  }, [filter]);
+  }, [filter, isAdmin]);
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
@@ -313,6 +325,7 @@ export default function CalendarPage() {
   }
 
   async function createClient() {
+    if (!isAdmin) return;
     const name = newClient.trim();
     if (!name) return;
     const res = await fetch("/api/revenue/clients", {
@@ -376,7 +389,7 @@ export default function CalendarPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        {filter !== "all" && plan ? (
+        {isAdmin && filter !== "all" && plan ? (
           <div className="card card-pad plan-share">
             <div className="plan-share-main">
               <div className="row" style={{ gap: 10, alignItems: "center" }}>
@@ -551,8 +564,10 @@ export default function CalendarPage() {
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <button type="button" className="btn btn-secondary btn-sm"
-                      onClick={() => setAddingClient(true)}>+ New</button>
+                    {isAdmin ? (
+                      <button type="button" className="btn btn-secondary btn-sm"
+                        onClick={() => setAddingClient(true)}>+ New</button>
+                    ) : null}
                   </div>
                 )}
               </div>

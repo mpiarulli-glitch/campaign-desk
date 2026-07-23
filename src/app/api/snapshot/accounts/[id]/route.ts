@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isWorkflowAuthenticated } from "@/lib/auth";
 import {
   behindDeliverablesForClient,
   contractStatus,
@@ -13,7 +13,7 @@ import {
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isWorkflowAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

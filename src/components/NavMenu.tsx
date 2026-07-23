@@ -15,12 +15,38 @@ const NAV_ITEMS = [
   { href: "/admin/activity", label: "Activity" },
 ];
 
+const FORECAST_NAV_ITEMS = [
+  { href: "/admin", label: "Home" },
+  { href: "/admin/forecast", label: "Forecast" },
+  { href: "/admin/calendar", label: "Calendar" },
+  { href: "/admin/snapshot", label: "Snapshot" },
+];
+
 // Single dropdown standing in for the old per-page row of nav links, so the
 // topbar doesn't wrap into a tall multi-line mess on narrow screens.
 export function NavMenu({ current }: { current: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [session, setSession] = useState<{
+    role: "admin" | "forecast" | null;
+    person: string | null;
+  }>({ role: null, person: null });
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (mounted && data?.authenticated) {
+          setSession({ role: data.role, person: data.person || null });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -43,6 +69,15 @@ export function NavMenu({ current }: { current: string }) {
     router.push("/login");
   }
 
+  const items =
+    session.role === "admin"
+      ? NAV_ITEMS
+      : FORECAST_NAV_ITEMS.map((item) =>
+          item.href === "/admin/forecast" && session.person
+            ? { ...item, href: `/admin/forecast/${session.person}` }
+            : item
+        );
+
   return (
     <div className="nav-menu" ref={wrapRef}>
       <button
@@ -56,7 +91,7 @@ export function NavMenu({ current }: { current: string }) {
       </button>
       {open ? (
         <div className="nav-menu-panel" role="menu">
-          {NAV_ITEMS.map((item) => (
+          {items.map((item) => (
             <Link
               key={item.href}
               href={item.href}
