@@ -1,12 +1,13 @@
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "crypto";
+import { isValidAdminPerson } from "./admin-people";
 import { isValidPerson } from "./people";
 
 const COOKIE_NAME = "cd_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days
 
 export type Session =
-  | { role: "admin"; issuedAt: number }
+  | { role: "admin"; person: string | null; issuedAt: number }
   | { role: "forecast"; person: string; issuedAt: number };
 
 function getSecret(): string {
@@ -40,17 +41,41 @@ function validPasswords(): string[] {
   return list;
 }
 
-export function verifyPassword(password: string): boolean {
+function timingSafePasswordMatch(password: string, expected: string): boolean {
   const a = Buffer.from(password);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+export function verifyPassword(password: string): boolean {
   return validPasswords().some((expected) => {
-    const b = Buffer.from(expected);
-    if (a.length !== b.length) return false;
-    try {
-      return timingSafeEqual(a, b);
-    } catch {
-      return false;
-    }
+    return timingSafePasswordMatch(password, expected);
   });
+}
+
+function adminAccountPasswords(): Map<string, string> {
+  const map = new Map<string, string>();
+  const raw = process.env.ADMIN_ACCOUNTS || "";
+  for (const item of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [person, ...passwordParts] = item.split(":");
+    const password = passwordParts.join(":");
+    if (person && password) map.set(person.trim().toLowerCase(), password);
+  }
+  return map;
+}
+
+export function verifyAdminAccount(
+  person: string,
+  password: string
+): boolean {
+  if (!isValidAdminPerson(person)) return false;
+  const expected = adminAccountPasswords().get(person);
+  return expected ? timingSafePasswordMatch(password, expected) : false;
 }
 
 function forecastPasswords(): Map<string, string> {
@@ -100,6 +125,10 @@ export async function createSession(): Promise<void> {
   await setSessionCookie(`admin:${Date.now()}`);
 }
 
+export async function createAdminAccountSession(person: string): Promise<void> {
+  await setSessionCookie(`admin:${person}:${Date.now()}`);
+}
+
 export async function createForecastSession(person: string): Promise<void> {
   await setSessionCookie(`forecast:${person}:${Date.now()}`);
 }
@@ -133,7 +162,11 @@ export async function getSession(): Promise<Session | null> {
   if (!Number.isFinite(issuedAt)) return null;
   if (Date.now() - issuedAt > MAX_AGE_SECONDS * 1000) return null;
 
-  if (role === "admin") return { role, issuedAt };
+  if (role === "admin") {
+    const person = parts.length >= 3 ? parts[1] : null;
+    if (person && !isValidAdminPerson(person)) return null;
+    return { role, person, issuedAt };
+  }
   if (role === "forecast") {
     const person = parts[1];
     if (!isValidPerson(person)) return null;

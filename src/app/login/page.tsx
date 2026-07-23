@@ -3,11 +3,13 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { ADMIN_PEOPLE } from "@/lib/admin-people";
 import { PEOPLE } from "@/lib/people";
 
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"admin" | "forecast">("admin");
+  const [adminPerson, setAdminPerson] = useState<string>("main");
   const [person, setPerson] = useState<string>(PEOPLE[0]?.slug || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,6 +25,10 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           password,
+          adminPerson:
+            mode === "admin" && adminPerson !== "main"
+              ? adminPerson
+              : undefined,
           person: mode === "forecast" ? person : undefined,
         }),
       });
@@ -72,6 +78,24 @@ export default function LoginPage() {
             Forecast
           </button>
         </div>
+        {mode === "admin" ? (
+          <div className="field">
+            <label htmlFor="admin-person">Account</label>
+            <select
+              id="admin-person"
+              className="select-clean"
+              value={adminPerson}
+              onChange={(e) => setAdminPerson(e.target.value)}
+            >
+              <option value="main">Main admin</option>
+              {ADMIN_PEOPLE.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         {mode === "forecast" ? (
           <div className="field">
             <label htmlFor="person">Your name</label>
