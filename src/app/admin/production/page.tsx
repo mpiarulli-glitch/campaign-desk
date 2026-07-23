@@ -107,6 +107,12 @@ const ACTIVE_OPTIONS = [
   { value: "1", label: "Yes" },
   { value: "0", label: "No" },
 ];
+const ACCOUNT_MANAGER_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "Kyle", label: "Kyle" },
+  { value: "Cassidy", label: "Cassidy" },
+  { value: "Luis", label: "Luis" },
+];
 
 function fmtDate(ymd: string | null): string {
   if (!ymd) return "—";
@@ -482,8 +488,9 @@ export default function ProductionPage() {
                       r.client.poc ? <span style={{ fontSize: 13 }}>{r.client.poc}</span> : <span className="muted">Set POC</span>
                     )}
                     {editableCell(
-                      r, "account_manager", "text", r.client.account_manager,
-                      r.client.account_manager ? <span style={{ fontSize: 13 }}>{r.client.account_manager}</span> : <span className="muted">Set manager</span>
+                      r, "account_manager", "select", r.client.account_manager,
+                      r.client.account_manager ? <span style={{ fontSize: 13 }}>{r.client.account_manager}</span> : <span className="muted">Set manager</span>,
+                      ACCOUNT_MANAGER_OPTIONS
                     )}
                     {editableCell(r, "active", "select", r.client.active ? "1" : "0", r.client.active ? "Yes" : "No", ACTIVE_OPTIONS)}
                     {editableCell(
