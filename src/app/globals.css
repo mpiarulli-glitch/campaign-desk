@@ -39,6 +39,8 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -74,7 +76,10 @@ button {
 }
 
 .app-shell {
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
+  overflow-x: hidden;
   background: var(--bg);
 }
 
@@ -365,6 +370,8 @@ button {
 
 .container {
   width: min(1120px, calc(100% - 40px));
+  max-width: 100%;
+  min-width: 0;
   margin: 0 auto;
   padding: 32px 0 72px;
 }
@@ -1138,10 +1145,15 @@ button {
   align-items: start;
 }
 
+.dashboard-grid > *,
+.dash-stats > * {
+  min-width: 0;
+}
+
 /* Admin home dashboard */
 .dash-stats {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 .dash-stat {
@@ -1189,6 +1201,9 @@ button {
   border-top: 1px solid var(--border);
   color: inherit;
 }
+.dash-row > div {
+  min-width: 0;
+}
 .dash-row:first-child {
   border-top: 0;
 }
@@ -1200,11 +1215,13 @@ button {
   font-size: 14px;
   letter-spacing: -0.01em;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 .dash-row-sub {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .dash-mini {
@@ -1234,7 +1251,7 @@ button {
 
 @media (max-width: 1000px) {
   .dash-stats {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .dash-mini {
     grid-template-columns: repeat(2, 1fr);
