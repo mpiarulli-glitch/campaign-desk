@@ -10,6 +10,7 @@ type Send = {
   send_date: string;
   send_time: string;
   status: string;
+  asset_type: string;
   audience: string;
   purpose: string;
   offer: string;
@@ -31,6 +32,14 @@ const MONTHS = [
 function isProduction(s: Pick<Send, "production_brief">): boolean {
   return !!s.production_brief?.trim();
 }
+
+const ASSET_TYPE_LABEL: Record<string, string> = {
+  social_post: "Social post",
+  social_video_carousel: "Social video carousel",
+  email_campaign: "Email campaign",
+  crm_automation: "CRM automation",
+  blog_post: "Blog post",
+};
 
 function fmtDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -72,6 +81,7 @@ export default function PlanClientPage() {
   const [approvedBy, setApprovedBy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState("");
   const [approving, setApproving] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -80,20 +90,26 @@ export default function PlanClientPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/plan/${token}`);
-    if (res.status === 404) { setNotFound(true); setLoading(false); return; }
-    if (res.ok) {
-      const data = await res.json();
-      setName(data.client.name);
-      setRange({ start: data.start, end: data.end });
-      setSends(data.sends || []);
-      setApprovedAt(data.approvedAt || null);
-      setApprovedBy(data.approvedBy || null);
-      const map: Record<string, string> = {};
-      for (const f of (data.feedback || []) as Feedback[]) map[f.send_id] = f.body;
-      setNotes(map);
+    setError("");
+    try {
+      const res = await fetch(`/api/plan/${token}`);
+      if (res.status === 404) { setNotFound(true); return; }
+      if (res.ok) {
+        const data = await res.json();
+        setName(data.client.name);
+        setRange({ start: data.start, end: data.end });
+        setSends(data.sends || []);
+        setApprovedAt(data.approvedAt || null);
+        setApprovedBy(data.approvedBy || null);
+        const map: Record<string, string> = {};
+        for (const f of (data.feedback || []) as Feedback[]) map[f.send_id] = f.body;
+        setNotes(map);
+      }
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
@@ -222,6 +238,8 @@ export default function PlanClientPage() {
       <main className="container stack" style={{ gap: 26 }}>
         {loading ? (
           <p className="muted">Loading…</p>
+        ) : error ? (
+          <p className="error">{error}</p>
         ) : sends.length === 0 ? (
           <div className="empty"><p>No campaigns planned in this window yet. Check back soon.</p></div>
         ) : (
@@ -343,6 +361,10 @@ export default function PlanClientPage() {
                               />
                             ) : (
                               <>
+                                <PlanRow
+                                  label="Asset type"
+                                  value={s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : ""}
+                                />
                                 <PlanRow label="Purpose" value={s.purpose} />
                                 <PlanRow label="Audience" value={s.audience} />
                                 <PlanRow label="Offer" value={s.offer} />
@@ -445,6 +467,10 @@ export default function PlanClientPage() {
                 />
               ) : (
                 <>
+                  <PlanRow
+                    label="Asset type"
+                    value={detail.asset_type ? ASSET_TYPE_LABEL[detail.asset_type] || detail.asset_type : ""}
+                  />
                   <PlanRow label="Purpose" value={detail.purpose} />
                   <PlanRow label="Audience" value={detail.audience} />
                   <PlanRow label="Offer" value={detail.offer} />

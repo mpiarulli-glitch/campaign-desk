@@ -84,18 +84,22 @@ export default function AdminHomePage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch("/api/dashboard");
-      if (res.status === 401) {
-        router.push("/login");
-        return;
-      }
-      if (!res.ok) {
-        setError("Could not load your dashboard.");
+      try {
+        const res = await fetch("/api/dashboard");
+        if (res.status === 401) {
+          router.push("/login");
+          return;
+        }
+        if (!res.ok) {
+          setError("Could not load your dashboard.");
+          return;
+        }
+        setS(await res.json());
+      } catch {
+        setError("Network error. Check your connection and try again.");
+      } finally {
         setLoading(false);
-        return;
       }
-      setS(await res.json());
-      setLoading(false);
     })();
   }, [router]);
 

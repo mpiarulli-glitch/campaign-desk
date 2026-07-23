@@ -2,15 +2,29 @@ import { nanoid } from "nanoid";
 import {
   getDb,
   nowIso,
+  type AssetType,
   type BusinessModel,
   type ScheduledSend,
   type SendStatus,
 } from "./db";
 
-export type { ScheduledSend, SendStatus };
+export type { ScheduledSend, SendStatus, AssetType };
 
 const STATUSES: SendStatus[] = ["requested", "planned", "scheduled", "sent"];
 export const SEND_STATUSES = STATUSES;
+
+const ASSET_TYPES: AssetType[] = [
+  "social_post",
+  "social_video_carousel",
+  "email_campaign",
+  "crm_automation",
+  "blog_post",
+];
+export const ASSET_TYPES_LIST = ASSET_TYPES;
+
+function normalizeAssetType(v: unknown): AssetType | "" {
+  return ASSET_TYPES.includes(v as AssetType) ? (v as AssetType) : "";
+}
 
 // A send joined with its client's model (for calendar color-coding). model is
 // null when the send has no linked client.
@@ -64,6 +78,7 @@ export function createSend(input: {
   duration?: string;
   status?: SendStatus;
   platform?: string;
+  assetType?: AssetType | "";
   note?: string;
   audience?: string;
   purpose?: string;
@@ -80,10 +95,10 @@ export function createSend(input: {
   const clientId = input.clientId || null;
   db.prepare(
     `INSERT INTO scheduled_sends
-      (id, client_id, client_name, title, send_date, send_time, duration, status, platform, note,
+      (id, client_id, client_name, title, send_date, send_time, duration, status, platform, asset_type, note,
        audience, purpose, offer, subject, preview_text, production_brief,
        cadence_window_start, requested_by_client, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     clientId,
@@ -94,6 +109,7 @@ export function createSend(input: {
     input.duration === "full" ? "full" : "half",
     normalizeStatus(input.status),
     (input.platform || "").trim(),
+    normalizeAssetType(input.assetType),
     (input.note || "").trim(),
     (input.audience || "").trim(),
     (input.purpose || "").trim(),
@@ -120,6 +136,7 @@ export function updateSend(
     duration: string;
     status: SendStatus;
     platform: string;
+    assetType: AssetType | "";
     note: string;
     audience: string;
     purpose: string;
@@ -140,7 +157,7 @@ export function updateSend(
   db.prepare(
     `UPDATE scheduled_sends SET
        client_id = ?, client_name = ?, title = ?, send_date = ?, send_time = ?, duration = ?,
-       status = ?, platform = ?, note = ?, audience = ?, purpose = ?,
+       status = ?, platform = ?, asset_type = ?, note = ?, audience = ?, purpose = ?,
        offer = ?, subject = ?, preview_text = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -152,6 +169,7 @@ export function updateSend(
     updates.duration === undefined ? existing.duration : updates.duration === "full" ? "full" : "half",
     updates.status ? normalizeStatus(updates.status) : existing.status,
     updates.platform?.trim() ?? existing.platform,
+    updates.assetType !== undefined ? normalizeAssetType(updates.assetType) : existing.asset_type,
     updates.note?.trim() ?? existing.note,
     updates.audience?.trim() ?? existing.audience,
     updates.purpose?.trim() ?? existing.purpose,

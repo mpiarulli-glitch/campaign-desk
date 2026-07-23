@@ -168,7 +168,7 @@ export default function ProductionPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    if (res.ok) load();
+    if (res.ok) load({ silent: true });
   }
 
   async function loadBc() {
@@ -192,11 +192,13 @@ export default function ProductionPage() {
       `Matched ${d.matched.length} of ${d.matched.length + d.unmatched.length}. ` +
         (d.unmatched.length ? `Still need a project: ${d.unmatched.join(", ")}.` : "All set.")
     );
-    load();
+    load({ silent: true });
   }
 
-  async function load() {
-    setLoading(true);
+  // silent = true skips the loading state so an inline edit or toggle
+  // doesn't blank the whole table out and jump the page back to the top.
+  async function load(opts?: { silent?: boolean }) {
+    if (!opts?.silent) setLoading(true);
     const res = await fetch("/api/production");
     if (res.status === 401) {
       router.push("/login");
@@ -252,7 +254,7 @@ export default function ProductionPage() {
       setError("Could not save that change.");
       return;
     }
-    load();
+    load({ silent: true });
   }
 
   async function setEnrolled(clientId: string, enrolled: boolean) {
@@ -265,7 +267,7 @@ export default function ProductionPage() {
       setError("Could not update production status.");
       return;
     }
-    load();
+    load({ silent: true });
   }
 
   async function copyLink(clientId: string) {

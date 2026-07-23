@@ -135,25 +135,33 @@ export default function SnapshotEditorPage() {
 
   const fetchWeek = useCallback(
     async (w: string) => {
-      const res = await fetch(`/api/snapshot/accounts/${id}/week?week=${w}`);
-      if (res.status === 401) return router.push("/login");
-      if (res.ok) setRows((await res.json()).rows || []);
+      try {
+        const res = await fetch(`/api/snapshot/accounts/${id}/week?week=${w}`);
+        if (res.status === 401) return router.push("/login");
+        if (res.ok) setRows((await res.json()).rows || []);
+      } catch {
+        setError("Network error. Check your connection and try again.");
+      }
     },
     [id, router]
   );
 
   const loadMeta = useCallback(async () => {
-    const res = await fetch(`/api/snapshot/accounts/${id}`);
-    if (res.status === 401) return router.push("/login");
-    if (!res.ok) { setError("Account not found."); return; }
-    const data = await res.json();
-    setName(data.account.name);
-    setDeliverables(data.deliverables || []);
-    setToken(data.token || null);
-    setWins(data.wins || []);
-    setMetricsRaw(data.metricsRaw || []);
-    setContract(data.contract || null);
-    setBehind(data.behind || []);
+    try {
+      const res = await fetch(`/api/snapshot/accounts/${id}`);
+      if (res.status === 401) return router.push("/login");
+      if (!res.ok) { setError("Account not found."); return; }
+      const data = await res.json();
+      setName(data.account.name);
+      setDeliverables(data.deliverables || []);
+      setToken(data.token || null);
+      setWins(data.wins || []);
+      setMetricsRaw(data.metricsRaw || []);
+      setContract(data.contract || null);
+      setBehind(data.behind || []);
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    }
   }, [id, router]);
 
   async function addWin(e: FormEvent) {

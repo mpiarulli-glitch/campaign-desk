@@ -165,33 +165,41 @@ export default function RevenueClientPage() {
   const [deliverableCount, setDeliverableCount] = useState(0);
 
   async function load() {
-    const res = await fetch(`/api/revenue/clients/${id}`);
-    if (res.status === 401) return router.push("/login");
-    if (!res.ok) {
-      setError("Client not found.");
-      return;
+    try {
+      const res = await fetch(`/api/revenue/clients/${id}`);
+      if (res.status === 401) return router.push("/login");
+      if (!res.ok) {
+        setError("Client not found.");
+        return;
+      }
+      const data = await res.json();
+      setClient(data.client);
+      setMetrics(data.metrics || []);
+      setKpis(data.kpis || []);
+      setCfg(data.client);
+      setContract(data.contract || null);
+      setDeliverableCount(data.deliverableCount || 0);
+      setBlackoutInput(
+        (() => {
+          try {
+            return (JSON.parse(data.client.blackout_dates || "[]") as string[]).join(", ");
+          } catch {
+            return "";
+          }
+        })()
+      );
+    } catch {
+      setError("Network error. Check your connection and try again.");
     }
-    const data = await res.json();
-    setClient(data.client);
-    setMetrics(data.metrics || []);
-    setKpis(data.kpis || []);
-    setCfg(data.client);
-    setContract(data.contract || null);
-    setDeliverableCount(data.deliverableCount || 0);
-    setBlackoutInput(
-      (() => {
-        try {
-          return (JSON.parse(data.client.blackout_dates || "[]") as string[]).join(", ");
-        } catch {
-          return "";
-        }
-      })()
-    );
   }
 
   async function loadCadence() {
-    const res = await fetch(`/api/revenue/clients/${id}/cadence`);
-    if (res.ok) setCadenceInfo(await res.json());
+    try {
+      const res = await fetch(`/api/revenue/clients/${id}/cadence`);
+      if (res.ok) setCadenceInfo(await res.json());
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    }
   }
 
   useEffect(() => {

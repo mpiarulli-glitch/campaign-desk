@@ -7,6 +7,14 @@ import { NavMenu } from "@/components/NavMenu";
 
 type Status = "requested" | "planned" | "scheduled" | "sent";
 
+type AssetType =
+  | ""
+  | "social_post"
+  | "social_video_carousel"
+  | "email_campaign"
+  | "crm_automation"
+  | "blog_post";
+
 type Send = {
   id: string;
   client_id: string | null;
@@ -16,6 +24,7 @@ type Send = {
   send_time: string;
   duration: string;
   status: Status;
+  asset_type: AssetType;
   note: string;
   audience: string;
   purpose: string;
@@ -80,6 +89,14 @@ const STATUS_LABEL: Record<Status, string> = {
   sent: "Sent",
 };
 
+const ASSET_TYPE_LABEL: Record<Exclude<AssetType, "">, string> = {
+  social_post: "Social post",
+  social_video_carousel: "Social video carousel",
+  email_campaign: "Email campaign",
+  crm_automation: "CRM automation",
+  blog_post: "Blog post",
+};
+
 // Production shoot requests always carry a non-empty intake brief; editorial
 // content entries (blog/social/email) never do. That's the only signal we
 // have to tell the two apart, so treat it as the source of truth.
@@ -97,6 +114,7 @@ const EMPTY = {
   sendDate: "",
   sendTime: "",
   status: "planned" as Status,
+  assetType: "" as AssetType,
   audience: "",
   purpose: "",
   offer: "",
@@ -228,6 +246,7 @@ export default function CalendarPage() {
       sendDate: s.send_date,
       sendTime: s.send_time || "",
       status: s.status,
+      assetType: s.asset_type || "",
       audience: s.audience,
       purpose: s.purpose,
       offer: s.offer,
@@ -268,6 +287,7 @@ export default function CalendarPage() {
       sendDate: editing.sendDate,
       sendTime: editing.sendTime,
       status: editing.status,
+      assetType: editing.assetType,
       audience: editing.audience,
       purpose: editing.purpose,
       offer: editing.offer,
@@ -477,6 +497,10 @@ export default function CalendarPage() {
               />
             ) : (
               <>
+                <PopRow
+                  label="Asset type"
+                  value={hover.send.asset_type ? ASSET_TYPE_LABEL[hover.send.asset_type] : ""}
+                />
                 <PopRow label="Audience" value={hover.send.audience} />
                 <PopRow label="Purpose" value={hover.send.purpose} />
                 <PopRow label="Offers being tested" value={hover.send.offer} />
@@ -558,6 +582,18 @@ export default function CalendarPage() {
                     <option value="sent">Sent</option>
                   </select>
                 </div>
+              </div>
+              <div className="field">
+                <label>Asset type</label>
+                <select className="select-clean" value={editing.assetType}
+                  onChange={(e) => setEditing({ ...editing, assetType: e.target.value as AssetType })}>
+                  <option value="">Not set</option>
+                  <option value="social_post">Social post</option>
+                  <option value="social_video_carousel">Social video carousel</option>
+                  <option value="email_campaign">Email campaign</option>
+                  <option value="crm_automation">CRM automation</option>
+                  <option value="blog_post">Blog post</option>
+                </select>
               </div>
               <div className="field">
                 <label>Audience</label>

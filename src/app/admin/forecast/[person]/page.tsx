@@ -72,8 +72,11 @@ export default function PersonForecastPage() {
     setDrafts((d) => ({ ...d, [date]: { ...draftFor(date), ...patch } }));
   }
 
-  async function load(w: string) {
-    setLoading(true);
+  // silent = true skips the loading indicator so the whole task list doesn't
+  // unmount (and the page doesn't jump to the top) after a checkbox toggle
+  // or field edit refetches in the background.
+  async function load(w: string, opts?: { silent?: boolean }) {
+    if (!opts?.silent) setLoading(true);
     const res = await fetch(`/api/forecast/${person}?week=${w}`);
     if (res.status === 401) {
       router.push("/login");
@@ -127,7 +130,7 @@ export default function PersonForecastPage() {
       return;
     }
     setDrafts((d) => ({ ...d, [date]: { client: "", notes: "", hours: "" } }));
-    load(week);
+    load(week, { silent: true });
   }
 
   async function removeTask(id: string) {
@@ -136,7 +139,7 @@ export default function PersonForecastPage() {
       setError("Could not remove that task.");
       return;
     }
-    load(week);
+    load(week, { silent: true });
   }
 
   async function saveField(
@@ -159,12 +162,12 @@ export default function PersonForecastPage() {
         body: JSON.stringify({ hours }),
       });
       if (!res.ok) setError("Could not save that task.");
-      load(week);
+      load(week, { silent: true });
       return;
     }
     if (field === "client" && !rawValue.trim()) {
       setError("A task needs a client.");
-      load(week);
+      load(week, { silent: true });
       return;
     }
     if (rawValue === task[field]) return;
@@ -175,7 +178,7 @@ export default function PersonForecastPage() {
       body: JSON.stringify({ [field]: rawValue }),
     });
     if (!res.ok) setError("Could not save that task.");
-    load(week);
+    load(week, { silent: true });
   }
 
   async function toggleCompleted(task: Task) {
@@ -188,7 +191,7 @@ export default function PersonForecastPage() {
       setError("Could not update that task.");
       return;
     }
-    load(week);
+    load(week, { silent: true });
   }
 
   return (

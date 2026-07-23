@@ -19,11 +19,16 @@ export default function SnapshotAccountsPage() {
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/snapshot/accounts");
-    if (res.status === 401) return router.push("/login");
-    if (!res.ok) { setError("Failed to load."); setLoading(false); return; }
-    setAccounts((await res.json()).accounts || []);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/snapshot/accounts");
+      if (res.status === 401) return router.push("/login");
+      if (!res.ok) { setError("Failed to load."); return; }
+      setAccounts((await res.json()).accounts || []);
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 

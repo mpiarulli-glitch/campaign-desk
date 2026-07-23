@@ -77,6 +77,7 @@ export default function SchedulePage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<Data | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [pick, setPick] = useState<{ date: string; time: string } | null>(null);
   const [duration, setDuration] = useState<"half" | "full">("half");
   const [brief, setBrief] = useState<Brief>({});
@@ -88,12 +89,17 @@ export default function SchedulePage() {
     setBrief((b) => ({ ...b, [key]: value }));
 
   async function load() {
-    const res = await fetch(`/api/schedule/${token}`);
-    if (!res.ok) {
-      setNotFound(true);
-      return;
+    try {
+      const res = await fetch(`/api/schedule/${token}`);
+      if (!res.ok) {
+        setNotFound(true);
+        return;
+      }
+      setLoadFailed(false);
+      setData(await res.json());
+    } catch {
+      setLoadFailed(true);
     }
-    setData(await res.json());
   }
 
   useEffect(() => {
@@ -163,7 +169,17 @@ export default function SchedulePage() {
       </div>
     );
   }
-  if (!data) return frame(<p className="muted">Loading your calendar...</p>);
+  if (!data) {
+    if (loadFailed) {
+      return frame(
+        <div className="sched-notice">
+          <h1 className="h1">Network error</h1>
+          <p className="muted">Check your connection and try again.</p>
+        </div>
+      );
+    }
+    return frame(<p className="muted">Loading your calendar...</p>);
+  }
 
   const canBook = data.status === "due" || data.status === "not_due";
 

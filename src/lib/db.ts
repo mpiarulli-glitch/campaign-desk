@@ -250,6 +250,13 @@ export interface CalendarFeedback {
 
 export type SendStatus = "requested" | "planned" | "scheduled" | "sent";
 
+export type AssetType =
+  | "social_post"
+  | "social_video_carousel"
+  | "email_campaign"
+  | "crm_automation"
+  | "blog_post";
+
 // A single email send plotted on the campaign calendar. client_id is optional
 // (soft link to rev_clients); client_name is always kept as a display fallback.
 export interface ScheduledSend {
@@ -264,6 +271,7 @@ export interface ScheduledSend {
   duration: string;
   status: SendStatus;
   platform: string;
+  asset_type: AssetType | "";
   note: string;
   audience: string;
   purpose: string;
@@ -468,6 +476,7 @@ export function getDb(): Database.Database {
       send_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'planned',
       platform TEXT NOT NULL DEFAULT '',
+      asset_type TEXT NOT NULL DEFAULT '',
       note TEXT NOT NULL DEFAULT '',
       audience TEXT NOT NULL DEFAULT '',
       purpose TEXT NOT NULL DEFAULT '',
@@ -818,6 +827,11 @@ function migrate(database: Database.Database) {
   if (sendCols.length && !sendCols.includes("shoot_reminder_sent_at")) {
     database.exec(
       `ALTER TABLE scheduled_sends ADD COLUMN shoot_reminder_sent_at TEXT`
+    );
+  }
+  if (sendCols.length && !sendCols.includes("asset_type")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN asset_type TEXT NOT NULL DEFAULT ''`
     );
   }
 

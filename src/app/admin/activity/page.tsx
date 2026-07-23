@@ -46,19 +46,23 @@ export default function ActivityPage() {
   async function load() {
     setLoading(true);
     setError("");
-    const res = await fetch("/api/activity");
-    if (res.status === 401) {
-      router.push("/login");
-      return;
-    }
-    if (!res.ok) {
-      setError("Failed to load activity.");
+    try {
+      const res = await fetch("/api/activity");
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (!res.ok) {
+        setError("Failed to load activity.");
+        return;
+      }
+      const data = await res.json();
+      setItems(data.activity || []);
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    } finally {
       setLoading(false);
-      return;
     }
-    const data = await res.json();
-    setItems(data.activity || []);
-    setLoading(false);
   }
 
   useEffect(() => {

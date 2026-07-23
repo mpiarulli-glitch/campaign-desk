@@ -41,11 +41,16 @@ export default function BehindReportPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch("/api/snapshot/behind-report");
-      if (res.status === 401) return router.push("/login");
-      if (!res.ok) { setError("Failed to load."); setLoading(false); return; }
-      setClients((await res.json()).clients || []);
-      setLoading(false);
+      try {
+        const res = await fetch("/api/snapshot/behind-report");
+        if (res.status === 401) return router.push("/login");
+        if (!res.ok) { setError("Failed to load."); return; }
+        setClients((await res.json()).clients || []);
+      } catch {
+        setError("Network error. Check your connection and try again.");
+      } finally {
+        setLoading(false);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

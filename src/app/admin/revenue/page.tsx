@@ -7,12 +7,6 @@ import { NavMenu } from "@/components/NavMenu";
 
 type Model = "ecomm" | "b2b" | "home_service";
 
-const MODEL_LABEL: Record<Model, string> = {
-  ecomm: "Ecommerce",
-  b2b: "B2B",
-  home_service: "Home service",
-};
-
 type Rollup = {
   client: {
     id: string;
@@ -62,8 +56,8 @@ export default function RevenuePage() {
   const [monthlyCost, setMonthlyCost] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    setLoading(true);
+  async function load(opts?: { silent?: boolean }) {
+    if (!opts?.silent) setLoading(true);
     const res = await fetch("/api/revenue/summary");
     if (res.status === 401) {
       router.push("/login");
@@ -81,6 +75,30 @@ export default function RevenuePage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function changeModel(clientId: string, businessModel: Model) {
+    setSummary((s) =>
+      s
+        ? {
+            ...s,
+            clients: s.clients.map((r) =>
+              r.client.id === clientId
+                ? { ...r, client: { ...r.client, business_model: businessModel } }
+                : r
+            ),
+          }
+        : s
+    );
+    const res = await fetch(`/api/revenue/clients/${clientId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessModel }),
+    });
+    if (!res.ok) {
+      setError("Could not update business model.");
+      load();
+    }
+  }
 
   async function addClient(e: FormEvent) {
     e.preventDefault();
@@ -227,8 +245,16 @@ export default function RevenuePage() {
                         onClick={() => router.push(`/admin/revenue/${r.client.id}`)}
                       >
                         <td><strong>{r.client.name}</strong></td>
-                        <td>
-                          <span className="badge">{MODEL_LABEL[r.client.business_model]}</span>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <select
+                            className="select-clean badge-select"
+                            value={r.client.business_model}
+                            onChange={(e) => changeModel(r.client.id, e.target.value as Model)}
+                          >
+                            <option value="home_service">Home service</option>
+                            <option value="b2b">B2B</option>
+                            <option value="ecomm">Ecommerce</option>
+                          </select>
                         </td>
                         <td className="num">{money(r.agg.revenue)}</td>
                         <td className="num">{mult(r.clientRoi)}</td>

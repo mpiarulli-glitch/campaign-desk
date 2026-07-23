@@ -147,36 +147,40 @@ export default function AdminCampaignPage() {
   }
 
   async function load(preferredEmailId?: string | null) {
-    const res = await fetch(`/api/campaigns/${id}`);
-    if (res.status === 401) {
-      router.push("/login");
-      return;
-    }
-    if (!res.ok) {
-      setError("Campaign not found.");
-      return;
-    }
-    const data = await res.json();
-    setCampaign(data.campaign);
-    setEmails(data.emails || []);
-    setComments(data.comments || []);
-    setVersions(data.versions || []);
-    setStatus(data.campaign.status);
+    try {
+      const res = await fetch(`/api/campaigns/${id}`);
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (!res.ok) {
+        setError("Campaign not found.");
+        return;
+      }
+      const data = await res.json();
+      setCampaign(data.campaign);
+      setEmails(data.emails || []);
+      setComments(data.comments || []);
+      setVersions(data.versions || []);
+      setStatus(data.campaign.status);
 
-    const nextId =
-      preferredEmailId &&
-      (data.emails || []).some((e: EmailItem) => e.id === preferredEmailId)
-        ? preferredEmailId
-        : activeEmailId &&
-            (data.emails || []).some((e: EmailItem) => e.id === activeEmailId)
-          ? activeEmailId
-          : data.emails?.[0]?.id || null;
+      const nextId =
+        preferredEmailId &&
+        (data.emails || []).some((e: EmailItem) => e.id === preferredEmailId)
+          ? preferredEmailId
+          : activeEmailId &&
+              (data.emails || []).some((e: EmailItem) => e.id === activeEmailId)
+            ? activeEmailId
+            : data.emails?.[0]?.id || null;
 
-    setActiveEmailId(nextId);
-    const active = (data.emails || []).find((e: EmailItem) => e.id === nextId);
-    if (active) {
-      setHtmlDraft(active.html_content);
-      setEmailTitleDraft(active.title);
+      setActiveEmailId(nextId);
+      const active = (data.emails || []).find((e: EmailItem) => e.id === nextId);
+      if (active) {
+        setHtmlDraft(active.html_content);
+        setEmailTitleDraft(active.title);
+      }
+    } catch {
+      setError("Network error. Check your connection and try again.");
     }
   }
 

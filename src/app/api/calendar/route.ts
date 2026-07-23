@@ -45,6 +45,7 @@ export async function POST(request: Request) {
     sendTime: str(body.sendTime),
     status: body.status,
     platform: str(body.platform),
+    assetType: body.assetType,
     note: str(body.note),
     audience: str(body.audience),
     purpose: str(body.purpose),

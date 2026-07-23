@@ -146,8 +146,8 @@ export default function AdminPage() {
     });
   }
 
-  async function load(nextFilter: "active" | "archived" = filter) {
-    setLoading(true);
+  async function load(nextFilter: "active" | "archived" = filter, opts?: { silent?: boolean }) {
+    if (!opts?.silent) setLoading(true);
     setError("");
     const res = await fetch(
       `/api/campaigns${nextFilter === "archived" ? "?archived=1" : ""}`
@@ -178,7 +178,7 @@ export default function AdminPage() {
       setError(archived ? "Could not archive." : "Could not restore.");
       return;
     }
-    load();
+    load(filter, { silent: true });
   }
 
   useEffect(() => {

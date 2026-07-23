@@ -161,7 +161,7 @@ export default function ReviewPage() {
       return;
     }
     setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
-    load(activeEmailId);
+    load(activeEmailId, { silent: true });
   }
 
   async function addFiles(fileList: FileList | null) {
@@ -198,30 +198,37 @@ export default function ReviewPage() {
     if (saved) setAuthorName(saved);
   }, []);
 
-  async function load(keepEmailId?: string | null) {
-    setLoading(true);
+  // silent = true skips the full-page loading state so a reply, approval, or
+  // comment submit doesn't blank the whole screen out from under the client
+  // mid-interaction; only the initial mount load shows it.
+  async function load(keepEmailId?: string | null, opts?: { silent?: boolean }) {
+    if (!opts?.silent) setLoading(true);
     setError("");
-    const res = await fetch(`/api/review/${token}`);
-    if (!res.ok) {
-      setError("This review link is invalid or expired.");
-      setLoading(false);
-      return;
-    }
-    const data = await res.json();
-    setCampaign(data.campaign);
-    setEmails(data.emails || []);
-    setComments(data.comments || []);
+    try {
+      const res = await fetch(`/api/review/${token}`);
+      if (!res.ok) {
+        setError("This review link is invalid or expired.");
+        return;
+      }
+      const data = await res.json();
+      setCampaign(data.campaign);
+      setEmails(data.emails || []);
+      setComments(data.comments || []);
 
-    const nextId =
-      keepEmailId &&
-      (data.emails || []).some((e: EmailItem) => e.id === keepEmailId)
-        ? keepEmailId
-        : activeEmailId &&
-            (data.emails || []).some((e: EmailItem) => e.id === activeEmailId)
-          ? activeEmailId
-          : data.emails?.[0]?.id || null;
-    setActiveEmailId(nextId);
-    setLoading(false);
+      const nextId =
+        keepEmailId &&
+        (data.emails || []).some((e: EmailItem) => e.id === keepEmailId)
+          ? keepEmailId
+          : activeEmailId &&
+              (data.emails || []).some((e: EmailItem) => e.id === activeEmailId)
+            ? activeEmailId
+            : data.emails?.[0]?.id || null;
+      setActiveEmailId(nextId);
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -262,7 +269,7 @@ export default function ReviewPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chooseSubject: { emailId, subjectId: next } }),
     });
-    if (res.ok) load(emailId);
+    if (res.ok) load(emailId, { silent: true });
   }
 
   async function unapproveOneEmail(emailId: string) {
@@ -282,7 +289,7 @@ export default function ReviewPage() {
     }
     const data = await res.json();
     setMessage(data.message || "Approval undone.");
-    load(emailId);
+    load(emailId, { silent: true });
   }
 
   async function approveOneEmail(emailId: string) {
@@ -313,7 +320,7 @@ export default function ReviewPage() {
     }
     const data = await res.json();
     setMessage(data.message || "Email approved.");
-    load(emailId);
+    load(emailId, { silent: true });
   }
 
   async function submitComment(e: FormEvent) {
@@ -369,7 +376,7 @@ export default function ReviewPage() {
     setPendingPin(null);
     setImages([]);
     setMessage("Feedback sent. Thank you.");
-    load(activeEmail.id);
+    load(activeEmail.id, { silent: true });
   }
 
   async function approveEmail() {
@@ -395,7 +402,7 @@ export default function ReviewPage() {
       return;
     }
     setMessage("Got it. The email team has been notified this is approved.");
-    load(activeEmailId);
+    load(activeEmailId, { silent: true });
   }
 
   if (loading) {

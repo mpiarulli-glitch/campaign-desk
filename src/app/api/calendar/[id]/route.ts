@@ -37,6 +37,7 @@ export async function PATCH(request: Request, { params }: Params) {
     sendTime: optStr(body.sendTime),
     status: body.status,
     platform: optStr(body.platform),
+    assetType: body.assetType,
     note: optStr(body.note),
     audience: optStr(body.audience),
     purpose: optStr(body.purpose),

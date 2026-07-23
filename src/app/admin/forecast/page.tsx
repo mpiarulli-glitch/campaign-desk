@@ -97,13 +97,16 @@ export default function ForecastDashboardPage() {
           <span className="muted">
             Team: {totalHours}h / {totalCapacity}h forecasted (
             <strong style={{ color: allocationColor(teamPct) }}>{teamPct}%</strong>)
+            {loading ? " · Updating…" : ""}
           </span>
         </div>
 
         {error ? <p className="error">{error}</p> : null}
 
-        {loading ? (
+        {loading && people.length === 0 ? (
           <p className="muted">Loading...</p>
+        ) : !loading && people.length === 0 ? (
+          <div className="empty"><p>No forecasted hours for this week yet.</p></div>
         ) : (
           <div className="card card-pad" style={{ overflowX: "auto" }}>
             <table className="rev-table">

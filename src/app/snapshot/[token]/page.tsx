@@ -69,21 +69,28 @@ export default function SnapshotClientPage() {
   const [week, setWeek] = useState(currentWeek());
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState("");
 
   const load = useCallback(
     async (w: string) => {
       setLoading(true);
-      const res = await fetch(`/api/snapshot/shared/${token}?week=${w}`);
-      if (res.status === 404) { setNotFound(true); setLoading(false); return; }
-      if (res.ok) {
-        const data = await res.json();
-        setAccountName(data.account.name);
-        setRows(data.rows || []);
-        setOverview(data.overview || []);
-        setWins(data.wins || []);
-        setMetrics(data.metrics || []);
+      setError("");
+      try {
+        const res = await fetch(`/api/snapshot/shared/${token}?week=${w}`);
+        if (res.status === 404) { setNotFound(true); return; }
+        if (res.ok) {
+          const data = await res.json();
+          setAccountName(data.account.name);
+          setRows(data.rows || []);
+          setOverview(data.overview || []);
+          setWins(data.wins || []);
+          setMetrics(data.metrics || []);
+        }
+      } catch {
+        setError("Network error. Check your connection and try again.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     },
     [token]
   );
@@ -163,7 +170,7 @@ export default function SnapshotClientPage() {
             </div>
           </div>
 
-          {!loading ? (
+          {!loading || accountName ? (
             <div className="snap-glance">
               <div className="snap-chip"><span className="snap-chip-n">{glance.delivered}</span> delivered this week</div>
               <div className="snap-chip"><span className="snap-chip-n">{glance.active}</span> in progress</div>
@@ -177,8 +184,10 @@ export default function SnapshotClientPage() {
       </section>
 
       <main className="container stack" style={{ gap: 30 }}>
-        {loading ? (
+        {loading && !accountName ? (
           <p className="muted">Loading...</p>
+        ) : error && !accountName ? (
+          <p className="error">{error}</p>
         ) : (
           <>
             <section className="stack" style={{ gap: 14 }}>
