@@ -38,6 +38,7 @@ export async function POST(request: Request) {
     typeof body.htmlContent === "string" ? body.htmlContent : "";
   const clientName =
     typeof body.clientName === "string" ? body.clientName : "";
+  const clientId = typeof body.clientId === "string" && body.clientId ? body.clientId : null;
   const description =
     typeof body.description === "string" ? body.description : "";
   const audience = typeof body.audience === "string" ? body.audience : "";
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
   const campaign = createCampaign({
     title,
     clientName,
+    clientId,
     description,
     audience,
     htmlContent,

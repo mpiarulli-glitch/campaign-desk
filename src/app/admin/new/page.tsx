@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
+
+type RevClientOption = { id: string; name: string };
 
 export default function NewCampaignPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
+  const [clients, setClients] = useState<RevClientOption[]>([]);
   const [clientName, setClientName] = useState("");
   const [description, setDescription] = useState("");
   const [audience, setAudience] = useState("");
@@ -17,6 +20,12 @@ export default function NewCampaignPage() {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/revenue/clients")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setClients(d.clients.map((c: RevClientOption) => ({ id: c.id, name: c.name }))));
+  }, []);
 
   async function readFile(file: File) {
     const text = await file.text();
@@ -38,6 +47,7 @@ export default function NewCampaignPage() {
       body: JSON.stringify({
         title,
         clientName,
+        clientId: clients.find((c) => c.name.toLowerCase() === clientName.trim().toLowerCase())?.id || null,
         description,
         audience,
         htmlContent,
@@ -115,10 +125,16 @@ export default function NewCampaignPage() {
             <label htmlFor="client">Client (optional)</label>
             <input
               id="client"
+              list="rev-clients"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
               placeholder="Client name"
             />
+            <datalist id="rev-clients">
+              {clients.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
           </div>
 
           <div className="field">

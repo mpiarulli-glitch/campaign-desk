@@ -235,6 +235,7 @@ export default function RevenuePage() {
                       <th className="num">Agency margin</th>
                       <th className="num">Appts</th>
                       <th>Latest</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -261,6 +262,14 @@ export default function RevenuePage() {
                         <td className="num">{money(r.agencyMargin)}</td>
                         <td className="num">{r.agg.appointments.toLocaleString()}</td>
                         <td>{r.latestMonth ?? "—"}</td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => router.push(`/admin/clients/${r.client.id}`)}
+                          >
+                            Hub →
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

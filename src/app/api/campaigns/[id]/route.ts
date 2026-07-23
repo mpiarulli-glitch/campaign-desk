@@ -171,6 +171,10 @@ export async function PATCH(request: Request, { params }: Params) {
     title: typeof body.title === "string" ? body.title : undefined,
     clientName:
       typeof body.clientName === "string" ? body.clientName : undefined,
+    clientId:
+      body.clientId === null || typeof body.clientId === "string"
+        ? body.clientId
+        : undefined,
     description:
       typeof body.description === "string" ? body.description : undefined,
     audience:

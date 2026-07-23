@@ -68,6 +68,7 @@ type Campaign = {
   id: string;
   title: string;
   client_name: string;
+  client_id: string | null;
   description: string;
   audience: string;
   status: string;
@@ -187,6 +188,25 @@ export default function AdminCampaignPage() {
   useEffect(() => {
     load();
   }, [id]);
+
+  const [revClients, setRevClients] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/revenue/clients")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setRevClients(d.clients));
+  }, []);
+
+  async function changeClient(clientId: string) {
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: clientId || null,
+        clientName: revClients.find((c) => c.id === clientId)?.name || "",
+      }),
+    });
+    if (res.ok) load();
+  }
 
   const activeEmail = useMemo(
     () => emails.find((e) => e.id === activeEmailId) || emails[0] || null,
@@ -692,10 +712,25 @@ export default function AdminCampaignPage() {
             </p>
             <h1 className="h1">{campaign.title}</h1>
             <p className="muted" style={{ margin: "8px 0 0" }}>
-              {campaign.client_name ? `${campaign.client_name} · ` : ""}
               {emails.length} email{emails.length === 1 ? "" : "s"} · Updated{" "}
               {new Date(campaign.updated_at).toLocaleString()}
             </p>
+            <div className="row" style={{ gap: 8, alignItems: "center", marginTop: 6 }}>
+              <label className="muted" style={{ fontSize: 13 }} htmlFor="campaign-client">
+                Client
+              </label>
+              <select
+                id="campaign-client"
+                className="select-clean badge-select"
+                value={campaign.client_id || ""}
+                onChange={(e) => changeClient(e.target.value)}
+              >
+                <option value="">{campaign.client_name || "Unlinked"}</option>
+                {revClients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
             {campaign.description ? (
               <p className="body-text" style={{ marginTop: 10, lineHeight: 1.6 }}>
                 {campaign.description}

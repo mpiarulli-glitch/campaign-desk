@@ -34,6 +34,7 @@ function syncCampaignPreview(campaignId: string) {
 export function createCampaign(input: {
   title: string;
   clientName?: string;
+  clientId?: string | null;
   description?: string;
   audience?: string;
   htmlContent: string;
@@ -49,12 +50,13 @@ export function createCampaign(input: {
 
   db.prepare(
     `INSERT INTO campaigns
-      (id, title, client_name, description, audience, html_content, status, magic_token, external_token, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
+      (id, title, client_name, client_id, description, audience, html_content, status, magic_token, external_token, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
   ).run(
     id,
     input.title.trim(),
     (input.clientName || "").trim(),
+    input.clientId || null,
     (input.description || "").trim(),
     (input.audience || "").trim(),
     input.htmlContent,
@@ -352,6 +354,7 @@ export function updateCampaign(
   updates: {
     title?: string;
     clientName?: string;
+    clientId?: string | null;
     description?: string;
     audience?: string;
     htmlContent?: string;
@@ -368,6 +371,7 @@ export function updateCampaign(
   const ts = nowIso();
   const title = updates.title?.trim() ?? existing.title;
   const clientName = updates.clientName?.trim() ?? existing.client_name;
+  const clientId = updates.clientId !== undefined ? updates.clientId : existing.client_id;
   const description = updates.description?.trim() ?? existing.description;
   const audience = updates.audience?.trim() ?? existing.audience;
   const status = updates.status ?? existing.status;
@@ -376,9 +380,9 @@ export function updateCampaign(
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, description = ?, audience = ?, status = ?, approved_at = ?, updated_at = ?
+     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, clientName, description, audience, status, approvedAt, ts, id);
+  ).run(title, clientName, clientId, description, audience, status, approvedAt, ts, id);
 
   // Legacy path: htmlContent without emailId updates first email
   if (updates.htmlContent) {
@@ -737,6 +741,7 @@ export interface ActivityItem {
   campaign_id: string;
   campaign_title: string;
   client_name: string;
+  client_id: string | null;
   actor: string | null;
   body: string | null;
   comment_type: CommentType | null;
@@ -750,7 +755,9 @@ export interface ActivityItem {
 // A unified, reverse-chronological feed of client activity across every
 // campaign: feedback left on the review link, and campaigns the client
 // approved. Derived from existing data so it always reflects full history.
-export function listActivity(limit = 100): ActivityItem[] {
+export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
+  const where = clientId ? `WHERE client_id = ?` : "";
+  const args = clientId ? [clientId, limit] : [limit];
   return getDb()
     .prepare(
       `SELECT * FROM (
@@ -760,6 +767,7 @@ export function listActivity(limit = 100): ActivityItem[] {
            c.campaign_id AS campaign_id,
            cam.title AS campaign_title,
            cam.client_name AS client_name,
+           cam.client_id AS client_id,
            c.author_name AS actor,
            c.body AS body,
            c.type AS comment_type,
@@ -780,6 +788,7 @@ export function listActivity(limit = 100): ActivityItem[] {
            cam.id AS campaign_id,
            cam.title AS campaign_title,
            cam.client_name AS client_name,
+           cam.client_id AS client_id,
            NULL AS actor,
            NULL AS body,
            NULL AS comment_type,
@@ -791,8 +800,9 @@ export function listActivity(limit = 100): ActivityItem[] {
          FROM campaigns cam
          WHERE cam.status = 'approved'
        )
+       ${where}
        ORDER BY at DESC
        LIMIT ?`
     )
-    .all(limit) as ActivityItem[];
+    .all(...args) as ActivityItem[];
 }

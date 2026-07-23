@@ -20,6 +20,9 @@ export interface Campaign {
   id: string;
   title: string;
   client_name: string;
+  // Soft link to rev_clients — backfilled by name match, set directly by the
+  // client picker going forward. client_name stays the display fallback.
+  client_id: string | null;
   description: string;
   audience: string;
   html_content: string;
@@ -127,6 +130,10 @@ export interface RevClient {
   production_cadence: ProductionCadence;
   last_production_date: string | null;
   schedule_token: string | null;
+  // Share token for the client-facing unified dashboard (production status,
+  // snapshot link, account data, activity, campaign calendar). Internal-only
+  // data (OKRs) is never returned through this token — see src/lib/dashboard.ts.
+  dashboard_token: string | null;
   contract_start: string | null;
   contract_end: string | null;
   blackout_dates: string;
@@ -320,6 +327,31 @@ export interface RevMetric {
   revenue_source: MetricSource;
   activity_source: MetricSource;
   note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type OkrStatus = "on_track" | "at_risk" | "off_track" | "achieved";
+
+export interface OkrKeyResult {
+  id: string;
+  description: string;
+  target: number;
+  current: number;
+  unit: string; // e.g. "$", "%", ""
+}
+
+// A long-term goal we're tracking internally for an account — never exposed
+// through the client-facing dashboard token.
+export interface ClientOkr {
+  id: string;
+  client_id: string;
+  objective: string;
+  key_results: string; // JSON string of OkrKeyResult[]
+  target_date: string | null; // YYYY-MM-DD
+  status: OkrStatus;
+  sort_order: number;
+  active: number;
   created_at: string;
   updated_at: string;
 }
@@ -610,6 +642,22 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
 
+    CREATE TABLE IF NOT EXISTS client_okrs (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      objective TEXT NOT NULL,
+      key_results TEXT NOT NULL DEFAULT '[]',
+      target_date TEXT,
+      status TEXT NOT NULL DEFAULT 'on_track',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_okrs_client ON client_okrs(client_id);
+
     CREATE INDEX IF NOT EXISTS idx_comments_campaign ON comments(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_versions_campaign ON campaign_versions(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_campaigns_token ON campaigns(magic_token);
@@ -671,6 +719,20 @@ function migrate(database: Database.Database) {
     }
   }
 
+  if (!campaignCols.includes("client_id")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN client_id TEXT`);
+  }
+  // Best-effort backfill by exact name match — only fills rows still unset,
+  // so it's safe to run on every boot and never clobbers a manually-set link.
+  database.exec(
+    `UPDATE campaigns SET client_id = (
+       SELECT id FROM rev_clients WHERE rev_clients.name = campaigns.client_name
+     )
+     WHERE client_id IS NULL AND client_name IS NOT NULL AND client_name != ''
+       AND EXISTS (SELECT 1 FROM rev_clients WHERE rev_clients.name = campaigns.client_name)`
+  );
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_campaigns_client ON campaigns(client_id)`);
+
   const commentCols = tableColumns(database, "comments");
   if (!commentCols.includes("email_id")) {
     database.exec(`ALTER TABLE comments ADD COLUMN email_id TEXT`);
@@ -723,6 +785,9 @@ function migrate(database: Database.Database) {
   }
   if (revClientCols.length && !revClientCols.includes("schedule_token")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN schedule_token TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("dashboard_token")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN dashboard_token TEXT`);
   }
   if (revClientCols.length && !revClientCols.includes("calendar_token")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_token TEXT`);
