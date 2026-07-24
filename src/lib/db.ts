@@ -415,6 +415,9 @@ export interface ClientStrategy {
   goals: string;
   channels: string; // JSON string of channel slugs
   cadence_notes: string;
+  // Structured, graphable plan data (KPIs, phases, tiers, offers, channel
+  // roles, rollout, lifecycle flows). JSON object string, "{}" if unset.
+  plan_json: string;
   onboarding_generated_at: string | null;
   recurring_generated_at: string | null;
   updated_at: string;
@@ -499,6 +502,34 @@ export interface ClientFlag {
   resolved: number;
   resolved_by: string;
   resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// A multi-lesson training course (e.g. the Hormozi $100M Offers curriculum).
+// Lessons belong to a course and read in sort_order. kind mirrors training
+// posts ("marketing" | "ai") so courses can share the same filter language.
+export interface Course {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  kind: string;
+  author: string;
+  summary: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CourseLesson {
+  id: string;
+  course_id: string;
+  title: string;
+  subtitle: string;
+  body: string; // lightweight markdown, rendered by the reader
+  duration: string; // human label e.g. "8 min read"
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -916,6 +947,34 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_sentiment_month ON sentiment_checkins(month);
     CREATE INDEX IF NOT EXISTS idx_hr_status ON hr_issues(status);
 
+    CREATE TABLE IF NOT EXISTS courses (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      subtitle TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL DEFAULT 'marketing',
+      author TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS course_lessons (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      subtitle TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      duration TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lessons_course ON course_lessons(course_id);
+
     CREATE TABLE IF NOT EXISTS client_strategies (
       client_id TEXT PRIMARY KEY,
       positioning TEXT NOT NULL DEFAULT '',
@@ -923,6 +982,7 @@ export function getDb(): Database.Database {
       goals TEXT NOT NULL DEFAULT '',
       channels TEXT NOT NULL DEFAULT '[]',
       cadence_notes TEXT NOT NULL DEFAULT '',
+      plan_json TEXT NOT NULL DEFAULT '{}',
       onboarding_generated_at TEXT,
       recurring_generated_at TEXT,
       updated_at TEXT NOT NULL,
@@ -1218,6 +1278,11 @@ function migrate(database: Database.Database) {
   const todoCols = tableColumns(database, "todos");
   if (todoCols.length && !todoCols.includes("list_name")) {
     database.exec(`ALTER TABLE todos ADD COLUMN list_name TEXT NOT NULL DEFAULT ''`);
+  }
+
+  const stratCols = tableColumns(database, "client_strategies");
+  if (stratCols.length && !stratCols.includes("plan_json")) {
+    database.exec(`ALTER TABLE client_strategies ADD COLUMN plan_json TEXT NOT NULL DEFAULT '{}'`);
   }
 
   const forecastCols = tableColumns(database, "forecast_tasks");

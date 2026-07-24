@@ -35,6 +35,7 @@ export async function PUT(
     goals: typeof body.goals === "string" ? body.goals : undefined,
     channels: Array.isArray(body.channels) ? body.channels : undefined,
     cadenceNotes: typeof body.cadenceNotes === "string" ? body.cadenceNotes : undefined,
+    plan: body.plan && typeof body.plan === "object" && !Array.isArray(body.plan) ? body.plan : undefined,
   });
   return NextResponse.json({ strategy });
 }

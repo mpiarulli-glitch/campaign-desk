@@ -104,8 +104,33 @@ function parseChannels(raw: string): string[] {
   }
 }
 
-export interface StrategyView extends Omit<ClientStrategy, "channels"> {
+// Loose shape of the structured, graphable plan. Every section is optional so
+// the tab renders only what's present.
+export interface StrategyPlan {
+  thesis?: string;
+  benchmarks?: string;
+  kpis?: { n: string; l: string }[];
+  audienceMoments?: { moment: string; meets: string }[];
+  offers?: { tier: string; name: string; desc: string; color?: string }[];
+  phases?: { name: string; months?: string; calls?: number; booked?: number; revenue?: string; costPerCall?: string; roi?: string }[];
+  tiers?: { name: string; recommended?: boolean; media: string; calls: string; booked: string; revenue: string }[];
+  channelRoles?: { name: string; role: string }[];
+  rollout?: { phase: string; name: string; desc: string }[];
+  lifecycleFlows?: { name: string; trigger?: string }[];
+}
+
+export interface StrategyView extends Omit<ClientStrategy, "channels" | "plan_json"> {
   channels: string[];
+  plan: StrategyPlan;
+}
+
+function parsePlan(raw: string): StrategyPlan {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
 }
 
 export function getStrategy(clientId: string): StrategyView {
@@ -120,12 +145,14 @@ export function getStrategy(clientId: string): StrategyView {
       goals: "",
       channels: [],
       cadence_notes: "",
+      plan: {},
       onboarding_generated_at: null,
       recurring_generated_at: null,
       updated_at: "",
     };
   }
-  return { ...row, channels: parseChannels(row.channels) };
+  const { plan_json, channels, ...rest } = row;
+  return { ...rest, channels: parseChannels(channels), plan: parsePlan(plan_json) };
 }
 
 export function upsertStrategy(
@@ -136,6 +163,7 @@ export function upsertStrategy(
     goals: string;
     channels: string[];
     cadenceNotes: string;
+    plan: StrategyPlan;
   }>
 ): StrategyView {
   const db = getDb();
@@ -143,17 +171,19 @@ export function upsertStrategy(
   const ts = nowIso();
   const channels = input.channels ?? existing.channels;
   const validChannels = channels.filter((c) => CHANNELS.some((ch) => ch.slug === c));
+  const planJson = input.plan !== undefined ? JSON.stringify(input.plan) : JSON.stringify(existing.plan);
 
   db.prepare(
     `INSERT INTO client_strategies
-      (client_id, positioning, audience, goals, channels, cadence_notes, onboarding_generated_at, recurring_generated_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (client_id, positioning, audience, goals, channels, cadence_notes, plan_json, onboarding_generated_at, recurring_generated_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(client_id) DO UPDATE SET
        positioning = excluded.positioning,
        audience = excluded.audience,
        goals = excluded.goals,
        channels = excluded.channels,
        cadence_notes = excluded.cadence_notes,
+       plan_json = excluded.plan_json,
        updated_at = excluded.updated_at`
   ).run(
     clientId,
@@ -162,6 +192,7 @@ export function upsertStrategy(
     input.goals ?? existing.goals,
     JSON.stringify(validChannels),
     input.cadenceNotes ?? existing.cadence_notes,
+    planJson,
     existing.onboarding_generated_at,
     existing.recurring_generated_at,
     ts
