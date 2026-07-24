@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
 import { entryLevelPeople, hasProductionAccess, personLabel as forecastPersonLabel } from "@/lib/people";
+import { CommandPalette } from "./CommandPalette";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Home" },
@@ -140,6 +141,16 @@ export function NavMenu({ current }: { current: string }) {
 
   return (
     <div className="nav-menu" ref={wrapRef}>
+      <CommandPalette />
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm nav-search-trigger"
+        onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}
+        title="Search (⌘K)"
+      >
+        <span aria-hidden="true">⌕</span> Search
+        <kbd className="nav-search-kbd">⌘K</kbd>
+      </button>
       <button
         type="button"
         className="btn btn-ghost btn-sm nav-menu-trigger"

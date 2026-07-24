@@ -65,6 +65,10 @@ function dayShortDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 const emptyDraft = { client: "", notes: "", hours: "" };
 
@@ -91,7 +95,7 @@ function PriorityPicker({
   );
 }
 
-type View = "list" | "week";
+type View = "today" | "list" | "week";
 
 export default function PersonForecastPage() {
   const router = useRouter();
@@ -99,7 +103,7 @@ export default function PersonForecastPage() {
   const searchParams = useSearchParams();
 
   const [week, setWeek] = useState(searchParams.get("week") || currentWeek());
-  const [view, setView] = useState<View>("list");
+  const [view, setView] = useState<View>(isCurrentWeek(searchParams.get("week") || currentWeek()) ? "today" : "list");
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -162,6 +166,12 @@ export default function PersonForecastPage() {
   }, []);
 
   const days = useMemo(() => weekdays(week), [week]);
+  const today = todayYmd();
+  const progress = useMemo(() => {
+    const all = data?.tasks || [];
+    const done = all.filter((t) => t.completed).length;
+    return { done, total: all.length, pct: all.length ? Math.round((done / all.length) * 100) : 0 };
+  }, [data]);
   const tasksByDay = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const t of data?.tasks || []) {
@@ -291,6 +301,9 @@ export default function PersonForecastPage() {
           </div>
           <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
             <div className="view-toggle">
+              <button className={`view-toggle-btn ${view === "today" ? "is-on" : ""}`} onClick={() => setView("today")}>
+                Today
+              </button>
               <button className={`view-toggle-btn ${view === "list" ? "is-on" : ""}`} onClick={() => setView("list")}>
                 List
               </button>
@@ -316,8 +329,124 @@ export default function PersonForecastPage() {
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
 
+        {!loading && progress.total > 0 ? (
+          <div className={`fc-progress ${progress.pct === 100 ? "is-clear" : ""}`}>
+            <div className="fc-progress-bar">
+              <div className="fc-progress-fill" style={{ width: `${progress.pct}%` }} />
+            </div>
+            <span className="fc-progress-label">
+              {progress.pct === 100
+                ? `All ${progress.total} done for the week 🎉`
+                : `${progress.done} of ${progress.total} done · ${progress.pct}%`}
+            </span>
+          </div>
+        ) : null}
+
         {loading ? (
           <p className="muted">Loading...</p>
+        ) : view === "today" ? (
+          (() => {
+            const tasks = tasksByDay.get(today) || [];
+            const inWeek = days.includes(today);
+            const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
+            const doneToday = tasks.filter((t) => t.completed).length;
+            const draft = draftFor(today);
+            if (!inWeek) {
+              return (
+                <div className="ops-list-day">
+                  <p className="muted" style={{ margin: 0 }}>
+                    Today isn&apos;t in the week you&apos;re viewing. Jump back to{" "}
+                    <button className="linklike" onClick={() => setWeek(currentWeek())}>this week</button>{" "}
+                    to plan your day.
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <div className="fc-today">
+                <div className="fc-today-head">
+                  <div>
+                    <div className="fc-today-day">{dayName(today)}</div>
+                    <div className="muted">{dayShortDate(today)}</div>
+                  </div>
+                  <div className="fc-today-stat">
+                    <strong>{doneToday}/{tasks.length}</strong>
+                    <span className="muted">done · {dayHours || 0}h</span>
+                  </div>
+                </div>
+
+                {tasks.length === 0 ? (
+                  <p className="muted" style={{ margin: "4px 0 14px" }}>Nothing planned for today yet. Add your first task below.</p>
+                ) : (
+                  tasks.map((t) => (
+                    <div key={t.id} className={`ops-list-row pri-${t.priority}`}>
+                      <input
+                        type="checkbox"
+                        checked={!!t.completed}
+                        onChange={() => toggleCompleted(t)}
+                        aria-label="Mark complete"
+                      />
+                      <input
+                        key={`${t.id}-client`}
+                        defaultValue={t.client}
+                        onBlur={(e) => saveField(t, "client", e.target.value)}
+                        placeholder="Client"
+                        className="client"
+                        style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
+                      />
+                      <input
+                        key={`${t.id}-notes`}
+                        defaultValue={t.notes}
+                        onBlur={(e) => saveField(t, "notes", e.target.value)}
+                        placeholder="Task notes"
+                        className="notes"
+                        style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
+                      />
+                      <div className="row" style={{ gap: 2 }}>
+                        <input
+                          key={`${t.id}-hours`}
+                          defaultValue={t.hours}
+                          onBlur={(e) => saveField(t, "hours", e.target.value)}
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          className="hrs"
+                        />
+                        <span className="muted">h</span>
+                      </div>
+                      <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                      <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>Remove</button>
+                    </div>
+                  ))
+                )}
+
+                <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                  <input
+                    value={draft.client}
+                    onChange={(e) => setDraft(today, { client: e.target.value })}
+                    placeholder="Client"
+                    style={{ flex: "1 1 160px" }}
+                  />
+                  <input
+                    value={draft.notes}
+                    onChange={(e) => setDraft(today, { notes: e.target.value })}
+                    placeholder="Task notes"
+                    style={{ flex: "2 1 240px" }}
+                  />
+                  <input
+                    value={draft.hours}
+                    onChange={(e) => setDraft(today, { hours: e.target.value })}
+                    placeholder="Hours"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    style={{ width: 90 }}
+                  />
+                  <button className="btn btn-sm" onClick={() => addTask(today)}>Add task</button>
+                </div>
+              </div>
+            );
+          })()
         ) : view === "week" ? (
           <div className="ops-planner">
             {days.map((date) => {
