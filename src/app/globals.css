@@ -39,6 +39,8 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -74,7 +76,10 @@ button {
 }
 
 .app-shell {
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
+  overflow-x: hidden;
   background: var(--bg);
 }
 
@@ -187,8 +192,10 @@ button {
 .nav-menu-panel {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
+  right: 0;
+  width: max-content;
   min-width: 190px;
+  max-width: calc(100vw - 16px);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -198,11 +205,13 @@ button {
   flex-direction: column;
   gap: 2px;
   z-index: 30;
+  overflow-x: hidden;
 }
 
 .nav-menu-item {
   display: block;
   width: 100%;
+  min-width: 0;
   text-align: left;
   padding: 9px 12px;
   border: 0;
@@ -238,6 +247,7 @@ button {
   border-top: 1px solid var(--border);
   margin-top: 4px;
   padding: 10px 8px 6px;
+  min-width: 0;
 }
 
 .nav-menu-view-as label,
@@ -253,6 +263,8 @@ button {
 
 .nav-menu-view-as select {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 36px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -260,6 +272,47 @@ button {
   color: var(--text);
   padding: 6px 30px 6px 9px;
   font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .topbar {
+    gap: 4px;
+    padding: 12px 8px;
+  }
+
+  .topbar .brand-logo {
+    width: 88px;
+    max-height: 26px;
+  }
+
+  .topbar > .row {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .topbar a[href="/admin/new"] {
+    width: 36px;
+    min-height: 36px;
+    padding: 8px;
+    font-size: 0;
+  }
+
+  .topbar a[href="/admin/new"]::before {
+    content: "+";
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .nav-menu-panel {
+    position: fixed;
+    top: 78px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 86px);
+    overflow-y: auto;
+  }
 }
 
 .nav-menu-return {
@@ -317,6 +370,8 @@ button {
 
 .container {
   width: min(1120px, calc(100% - 40px));
+  max-width: 100%;
+  min-width: 0;
   margin: 0 auto;
   padding: 32px 0 72px;
 }
@@ -1090,10 +1145,15 @@ button {
   align-items: start;
 }
 
+.dashboard-grid > *,
+.dash-stats > * {
+  min-width: 0;
+}
+
 /* Admin home dashboard */
 .dash-stats {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 .dash-stat {
@@ -1141,6 +1201,9 @@ button {
   border-top: 1px solid var(--border);
   color: inherit;
 }
+.dash-row > div {
+  min-width: 0;
+}
 .dash-row:first-child {
   border-top: 0;
 }
@@ -1152,11 +1215,13 @@ button {
   font-size: 14px;
   letter-spacing: -0.01em;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 .dash-row-sub {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .dash-mini {
@@ -1186,7 +1251,7 @@ button {
 
 @media (max-width: 1000px) {
   .dash-stats {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .dash-mini {
     grid-template-columns: repeat(2, 1fr);
@@ -1194,7 +1259,12 @@ button {
 }
 @media (max-width: 560px) {
   .dash-stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 360px) {
+  .dash-stats {
+    grid-template-columns: 1fr;
   }
 }
 
