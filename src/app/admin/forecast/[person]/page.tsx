@@ -327,6 +327,21 @@ export default function PersonForecastPage() {
           </div>
         </div>
 
+        <div className="color-legend">
+          <div className="color-legend-group">
+            <span className="color-legend-group-label">Task priority</span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> {PRIORITY_LABEL.urgent}
+            </span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> {PRIORITY_LABEL.important}
+            </span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> {PRIORITY_LABEL.flexible}
+            </span>
+          </div>
+        </div>
+
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
 
         {!loading && progress.total > 0 ? (

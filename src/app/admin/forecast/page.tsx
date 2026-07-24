@@ -160,6 +160,33 @@ export default function ForecastDashboardPage() {
           </div>
         ) : null}
 
+        <div className="color-legend">
+          <div className="color-legend-group">
+            <span className="color-legend-group-label">Allocation</span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> On target (80–100%)
+            </span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> Under-allocated (&lt;80%)
+            </span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> Over-allocated (&gt;100%)
+            </span>
+          </div>
+          <div className="color-legend-group">
+            <span className="color-legend-group-label">Task priority mix</span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> Urgent
+            </span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> Important
+            </span>
+            <span className="color-legend-item">
+              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> Flexible
+            </span>
+          </div>
+        </div>
+
         {loading ? <p className="muted" style={{ marginTop: 0 }}>Updating…</p> : null}
         {error ? <p className="error">{error}</p> : null}
 

@@ -4374,6 +4374,47 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Generic color-key legend: reused on the forecast dashboard (allocation +
+   priority colors) and the person forecast page (priority colors). */
+.color-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  background: #fff;
+  border: 1px solid var(--ops-border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+.color-legend-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.color-legend-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.color-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+.color-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
 .mood-avatar {
   position: relative;
   flex: none;
