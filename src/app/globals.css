@@ -4123,13 +4123,13 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 /* Forecast task priority: urgent (can't move) / important (move if truly
    needed) / flexible (reschedulable, still has to happen). */
-.ops-task-chip.pri-urgent { border-left: 3px solid var(--danger); }
-.ops-task-chip.pri-important { border-left: 3px solid var(--warning); }
-.ops-task-chip.pri-flexible { border-left: 3px solid var(--success); }
+.ops-task-chip.pri-urgent { background: rgba(214, 69, 69, 0.16); border-left: 3px solid var(--danger); }
+.ops-task-chip.pri-important { background: rgba(196, 137, 0, 0.16); border-left: 3px solid var(--warning); }
+.ops-task-chip.pri-flexible { background: rgba(31, 157, 99, 0.14); border-left: 3px solid var(--success); }
 
-.ops-list-row.pri-urgent { border-left: 3px solid var(--danger); }
-.ops-list-row.pri-important { border-left: 3px solid var(--warning); }
-.ops-list-row.pri-flexible { border-left: 3px solid var(--success); }
+.ops-list-row.pri-urgent { background: rgba(214, 69, 69, 0.16); border-left: 3px solid var(--danger); }
+.ops-list-row.pri-important { background: rgba(196, 137, 0, 0.16); border-left: 3px solid var(--warning); }
+.ops-list-row.pri-flexible { background: rgba(31, 157, 99, 0.14); border-left: 3px solid var(--success); }
 
 .priority-picker { display: inline-flex; gap: 4px; align-items: center; }
 .priority-dot {
