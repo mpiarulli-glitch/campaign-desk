@@ -6,6 +6,12 @@ import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
+import {
+  renderAssetDoc,
+  kindNoun,
+  type AssetKind,
+  type BodyFormat,
+} from "@/lib/asset-kinds";
 
 type Attachment = {
   id: string;
@@ -103,7 +109,9 @@ type EmailItem = {
   id: string;
   title: string;
   html_content: string;
-  kind?: "email" | "interactive";
+  kind?: AssetKind;
+  body_format?: BodyFormat;
+  media_url?: string | null;
   sort_order: number;
   open_comments: number;
   approved_at: string | null;
@@ -293,10 +301,7 @@ export default function ReviewPage() {
   }
 
   async function approveOneEmail(emailId: string) {
-    const noun =
-      emails.find((e) => e.id === emailId)?.kind === "interactive"
-        ? "form/quiz"
-        : "email";
+    const noun = kindNoun(emails.find((e) => e.id === emailId)?.kind ?? "email");
     if (
       !confirm(
         `Approve this ${noun}? This tells the team this one is good to go.`
@@ -428,9 +433,9 @@ export default function ReviewPage() {
 
   const locked = campaign.status === "approved";
   const activeIndex = emails.findIndex((e) => e.id === activeEmail.id);
-  // Copy adapts per item so a quiz/form isn't called an "email".
-  const isInteractive = activeEmail.kind === "interactive";
-  const itemNoun = isInteractive ? "form/quiz" : "email";
+  // Copy adapts per item so a blog/deck/mock-up isn't called an "email".
+  const activeDoc = renderAssetDoc(activeEmail);
+  const itemNoun = kindNoun(activeEmail.kind ?? "email");
 
   return (
     <div className="app-shell">
@@ -445,7 +450,7 @@ export default function ReviewPage() {
           <h1 className="h1">{campaign.title}</h1>
           <p className="muted" style={{ margin: "8px 0 0" }}>
             {campaign.client_name ? `${campaign.client_name} · ` : ""}
-            {emails.length} email{emails.length === 1 ? "" : "s"} · Updated{" "}
+            {emails.length} item{emails.length === 1 ? "" : "s"} · Updated{" "}
             {new Date(campaign.updated_at).toLocaleString()}
           </p>
           {campaign.description ? (
@@ -459,7 +464,8 @@ export default function ReviewPage() {
           <div className="card card-pad stack">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <strong>
-                Email {activeIndex + 1} of {emails.length}
+                {itemNoun.charAt(0).toUpperCase() + itemNoun.slice(1)}{" "}
+                {activeIndex + 1} of {emails.length}
               </strong>
               <div className="row">
                 <button
@@ -592,8 +598,8 @@ export default function ReviewPage() {
             ) : null}
 
             <EmailPreview
-              html={activeEmail.html_content}
-              interactive={activeEmail.kind === "interactive"}
+              html={activeDoc.html}
+              interactive={activeDoc.interactive}
               pins={[
                 ...inlinePins,
                 ...(pendingPin
@@ -652,7 +658,7 @@ export default function ReviewPage() {
                 </div>
               </div>
             ) : null}
-            <EmailLinks html={activeEmail.html_content} />
+            <EmailLinks html={activeDoc.html} />
           </div>
 
           <div className="stack">

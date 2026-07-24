@@ -7,6 +7,7 @@ import {
   countOpenComments,
   countEmails,
 } from "@/lib/campaigns";
+import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
 
 export async function GET(request: Request) {
   if (!(await isAdminAuthenticated())) {
@@ -43,15 +44,26 @@ export async function POST(request: Request) {
     typeof body.description === "string" ? body.description : "";
   const audience = typeof body.audience === "string" ? body.audience : "";
   const emailTitle =
-    typeof body.emailTitle === "string" ? body.emailTitle : "Email 1";
-  const kind = body.kind === "interactive" ? "interactive" : "email";
+    typeof body.emailTitle === "string" ? body.emailTitle : "Item 1";
+  const kind = coerceKind(body.kind);
+  const bodyFormat = coerceFormat(kind, body.bodyFormat);
+  const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : "";
 
   if (!title) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
-  if (!htmlContent.trim()) {
+  // Image/Figma mock-ups carry their artwork in mediaUrl, so HTML is optional.
+  // Everything else needs body content.
+  const needsMedia = bodyFormat === "image" || bodyFormat === "figma";
+  if (needsMedia && !mediaUrl.trim()) {
     return NextResponse.json(
-      { error: "HTML content is required" },
+      { error: "An image or Figma link is required" },
+      { status: 400 }
+    );
+  }
+  if (!needsMedia && !htmlContent.trim()) {
+    return NextResponse.json(
+      { error: "Content is required" },
       { status: 400 }
     );
   }
@@ -65,6 +77,8 @@ export async function POST(request: Request) {
     htmlContent,
     emailTitle,
     kind,
+    bodyFormat,
+    mediaUrl,
   });
 
   return NextResponse.json({ campaign }, { status: 201 });

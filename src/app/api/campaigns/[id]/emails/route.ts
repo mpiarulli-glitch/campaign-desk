@@ -9,6 +9,7 @@ import {
   updateEmail,
   countOpenComments,
 } from "@/lib/campaigns";
+import { coerceKind, coerceFormat, isBodyFormat } from "@/lib/asset-kinds";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -44,14 +45,23 @@ export async function POST(request: Request, { params }: Params) {
   const title =
     typeof body.title === "string" && body.title.trim()
       ? body.title.trim()
-      : `Email ${listEmails(id).length + 1}`;
+      : `Item ${listEmails(id).length + 1}`;
   const htmlContent =
     typeof body.htmlContent === "string" ? body.htmlContent : "";
-  const kind = body.kind === "interactive" ? "interactive" : "email";
+  const kind = coerceKind(body.kind);
+  const bodyFormat = coerceFormat(kind, body.bodyFormat);
+  const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : "";
 
-  if (!htmlContent.trim()) {
+  const needsMedia = bodyFormat === "image" || bodyFormat === "figma";
+  if (needsMedia && !mediaUrl.trim()) {
     return NextResponse.json(
-      { error: "HTML content is required" },
+      { error: "An image or Figma link is required" },
+      { status: 400 }
+    );
+  }
+  if (!needsMedia && !htmlContent.trim()) {
+    return NextResponse.json(
+      { error: "Content is required" },
       { status: 400 }
     );
   }
@@ -61,6 +71,8 @@ export async function POST(request: Request, { params }: Params) {
     title,
     htmlContent,
     kind,
+    bodyFormat,
+    mediaUrl,
   });
 
   return NextResponse.json({ email }, { status: 201 });
@@ -94,6 +106,8 @@ export async function PATCH(request: Request, { params }: Params) {
     purpose: typeof body.purpose === "string" ? body.purpose : undefined,
     versionNote:
       typeof body.versionNote === "string" ? body.versionNote : undefined,
+    bodyFormat: isBodyFormat(body.bodyFormat) ? body.bodyFormat : undefined,
+    mediaUrl: typeof body.mediaUrl === "string" ? body.mediaUrl : undefined,
   });
 
   return NextResponse.json({ email });

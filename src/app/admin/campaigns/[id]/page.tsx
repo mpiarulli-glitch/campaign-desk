@@ -6,6 +6,16 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmailPreview } from "@/components/EmailPreview";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
+import { AssetContentFields } from "@/components/AssetContentFields";
+import {
+  ASSET_KINDS,
+  renderAssetDoc,
+  kindLabel,
+  kindNoun,
+  coerceFormat,
+  type AssetKind,
+  type BodyFormat,
+} from "@/lib/asset-kinds";
 
 type Attachment = {
   id: string;
@@ -54,7 +64,9 @@ type EmailItem = {
   id: string;
   title: string;
   html_content: string;
-  kind?: "email" | "interactive";
+  kind?: AssetKind;
+  body_format?: BodyFormat;
+  media_url?: string | null;
   purpose?: string;
   sort_order: number;
   open_comments: number;
@@ -102,9 +114,9 @@ export default function AdminCampaignPage() {
   const [addingEmail, setAddingEmail] = useState(false);
   const [newEmailTitle, setNewEmailTitle] = useState("");
   const [newEmailHtml, setNewEmailHtml] = useState("");
-  const [newEmailKind, setNewEmailKind] = useState<"email" | "interactive">(
-    "email"
-  );
+  const [newEmailKind, setNewEmailKind] = useState<AssetKind>("email");
+  const [newEmailFormat, setNewEmailFormat] = useState<BodyFormat>("html");
+  const [newEmailMedia, setNewEmailMedia] = useState("");
   const [aiLoadingCommentId, setAiLoadingCommentId] = useState<string | null>(
     null
   );
@@ -210,6 +222,25 @@ export default function AdminCampaignPage() {
   const activeEmail = useMemo(
     () => emails.find((e) => e.id === activeEmailId) || emails[0] || null,
     [emails, activeEmailId]
+  );
+
+  // Rendered preview document for the active asset (blogs/decks/mock-ups get
+  // turned into displayable HTML here; emails pass through unchanged).
+  const activeDoc = useMemo(
+    () => (activeEmail ? renderAssetDoc(activeEmail) : { html: "", interactive: false }),
+    [activeEmail]
+  );
+
+  // The AI reviser rewrites HTML, so it only applies to HTML-backed assets
+  // (emails and HTML blogs/decks), never interactive forms, markdown docs, or
+  // image/Figma mock-ups.
+  const canAiRevise = useMemo(
+    () =>
+      !!activeEmail &&
+      !activeDoc.interactive &&
+      (activeEmail.body_format ?? "html") === "html" &&
+      activeEmail.kind !== "mockup",
+    [activeEmail, activeDoc.interactive]
   );
 
   // Keep the subject editor in sync with whichever email is active.
@@ -602,9 +633,11 @@ export default function AdminCampaignPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: newEmailTitle || `Email ${emails.length + 1}`,
+        title: newEmailTitle || `Item ${emails.length + 1}`,
         htmlContent: newEmailHtml,
         kind: newEmailKind,
+        bodyFormat: newEmailFormat,
+        mediaUrl: newEmailMedia,
       }),
     });
     setSaving(false);
@@ -618,6 +651,8 @@ export default function AdminCampaignPage() {
     setNewEmailTitle("");
     setNewEmailHtml("");
     setNewEmailKind("email");
+    setNewEmailFormat("html");
+    setNewEmailMedia("");
     setMessage("Added to this review package.");
     await load(data.email?.id);
     setTab("feedback");
@@ -765,12 +800,12 @@ export default function AdminCampaignPage() {
 
         <div className="card card-pad stack">
           <div className="row" style={{ justifyContent: "space-between" }}>
-            <strong>Emails in this package</strong>
+            <strong>Items in this package</strong>
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setAddingEmail((v) => !v)}
             >
-              {addingEmail ? "Cancel" : "Add email"}
+              {addingEmail ? "Cancel" : "Add item"}
             </button>
           </div>
           <div className="email-tabs">
@@ -790,7 +825,9 @@ export default function AdminCampaignPage() {
                     </span>
                     <span className="email-tab-label">
                       {email.title}
-                      {email.kind === "interactive" ? " · Form/quiz" : ""}
+                      {email.kind && email.kind !== "email"
+                        ? ` · ${kindLabel(email.kind)}`
+                        : ""}
                     </span>
                     {email.open_comments > 0 ? (
                       <span className="email-tab-badge">
@@ -823,23 +860,20 @@ export default function AdminCampaignPage() {
             <form className="stack" onSubmit={addEmail} style={{ marginTop: 8 }}>
               <div className="field">
                 <label>Type</label>
-                <div className="tabs" style={{ marginTop: 4 }}>
-                  <button
-                    type="button"
-                    className={`tab ${newEmailKind === "email" ? "active" : ""}`}
-                    onClick={() => setNewEmailKind("email")}
-                  >
-                    Email
-                  </button>
-                  <button
-                    type="button"
-                    className={`tab ${
-                      newEmailKind === "interactive" ? "active" : ""
-                    }`}
-                    onClick={() => setNewEmailKind("interactive")}
-                  >
-                    Form / quiz
-                  </button>
+                <div className="tabs" style={{ marginTop: 4, flexWrap: "wrap" }}>
+                  {ASSET_KINDS.map((k) => (
+                    <button
+                      key={k.kind}
+                      type="button"
+                      className={`tab ${newEmailKind === k.kind ? "active" : ""}`}
+                      onClick={() => {
+                        setNewEmailKind(k.kind);
+                        setNewEmailFormat(coerceFormat(k.kind, newEmailFormat));
+                      }}
+                    >
+                      {k.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="field">
@@ -851,21 +885,15 @@ export default function AdminCampaignPage() {
                   placeholder={`Item ${emails.length + 1}`}
                 />
               </div>
-              <div className="field">
-                <label htmlFor="newEmailHtml">HTML</label>
-                <textarea
-                  id="newEmailHtml"
-                  value={newEmailHtml}
-                  onChange={(e) => setNewEmailHtml(e.target.value)}
-                  placeholder={
-                    newEmailKind === "interactive"
-                      ? "Full HTML of the form or quiz (scripts run in preview)"
-                      : "Email HTML"
-                  }
-                  style={{ minHeight: 180, fontFamily: "var(--mono)", fontSize: 12 }}
-                  required
-                />
-              </div>
+              <AssetContentFields
+                kind={newEmailKind}
+                format={newEmailFormat}
+                setFormat={setNewEmailFormat}
+                content={newEmailHtml}
+                setContent={setNewEmailHtml}
+                media={newEmailMedia}
+                setMedia={setNewEmailMedia}
+              />
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? "Adding..." : "Add to package"}
               </button>
@@ -998,15 +1026,15 @@ export default function AdminCampaignPage() {
               <div className="stack">
                 <h2 className="h2">Current</h2>
                 <EmailPreview
-                  html={activeEmail.html_content}
-                  interactive={activeEmail.kind === "interactive"}
+                  html={activeDoc.html}
+                  interactive={activeDoc.interactive}
                 />
               </div>
               <div className="stack">
                 <h2 className="h2">Latest AI version</h2>
                 <EmailPreview
                   html={aiChat.currentHtml}
-                  interactive={activeEmail.kind === "interactive"}
+                  interactive={activeDoc.interactive}
                 />
               </div>
             </div>
@@ -1039,17 +1067,17 @@ export default function AdminCampaignPage() {
           <div className="split-review">
             <div className="stack">
               <EmailPreview
-                html={activeEmail.html_content}
+                html={activeDoc.html}
                 pins={inlinePins}
                 activePinId={activePinId}
                 onSelectPin={setActivePinId}
-                interactive={activeEmail.kind === "interactive"}
+                interactive={activeDoc.interactive}
               />
-              <EmailLinks html={activeEmail.html_content} />
+              <EmailLinks html={activeDoc.html} />
 
               <div className="card card-pad stack">
                 <h2 className="h2" style={{ margin: 0 }}>
-                  Purpose of this email
+                  Purpose of this {kindNoun(activeEmail.kind ?? "email")}
                 </h2>
                 <textarea
                   value={purposeDraft}
@@ -1162,7 +1190,7 @@ export default function AdminCampaignPage() {
                     onClick={() => toggleEmailApproved(false)}
                     disabled={saving}
                   >
-                    Un-approve {activeEmail.kind === "interactive" ? "form/quiz" : "email"}
+                    Un-approve {kindNoun(activeEmail.kind ?? "email")}
                   </button>
                 ) : (
                   <button
@@ -1170,7 +1198,7 @@ export default function AdminCampaignPage() {
                     onClick={() => toggleEmailApproved(true)}
                     disabled={saving}
                   >
-                    Approve {activeEmail.kind === "interactive" ? "form/quiz" : "email"}
+                    Approve {kindNoun(activeEmail.kind ?? "email")}
                   </button>
                 )}
                 {openCount > 0 ? (
@@ -1182,8 +1210,7 @@ export default function AdminCampaignPage() {
                     Mark revision done
                   </button>
                 ) : null}
-                {unresolvedComments.length > 0 &&
-                activeEmail.kind !== "interactive" ? (
+                {unresolvedComments.length > 0 && canAiRevise ? (
                   <button
                     className="btn btn-sm"
                     onClick={runAllAiRevisions}
@@ -1322,7 +1349,7 @@ export default function AdminCampaignPage() {
                       </div>
 
                       <div className="row" style={{ marginTop: 10 }}>
-                         {!c.resolved && activeEmail.kind !== "interactive" ? (
+                         {!c.resolved && canAiRevise ? (
                            <button
                              className="btn btn-sm"
                              onClick={(e) => {

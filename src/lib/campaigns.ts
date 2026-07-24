@@ -14,21 +14,40 @@ import {
   type EmailKind,
   type ReviewChannel,
 } from "./db";
+import {
+  coerceKind,
+  coerceFormat,
+  renderAssetDoc,
+  type AssetKind,
+  type BodyFormat,
+} from "./asset-kinds";
 
+// The campaigns.html_content column is only a convenience thumbnail for list
+// views. Keep it in sync with the first asset, rendered the same way the
+// preview renders it, so blogs/decks/mock-ups get a sensible thumbnail too.
 function syncCampaignPreview(campaignId: string) {
   const db = getDb();
   const first = db
     .prepare(
-      `SELECT html_content FROM campaign_emails
+      `SELECT html_content, kind, body_format, media_url FROM campaign_emails
        WHERE campaign_id = ?
        ORDER BY sort_order ASC, created_at ASC
        LIMIT 1`
     )
-    .get(campaignId) as { html_content: string } | undefined;
+    .get(campaignId) as
+    | {
+        html_content: string;
+        kind: AssetKind;
+        body_format: BodyFormat;
+        media_url: string | null;
+      }
+    | undefined;
+
+  const rendered = first ? renderAssetDoc(first).html : "";
 
   db.prepare(
     `UPDATE campaigns SET html_content = ?, updated_at = ? WHERE id = ?`
-  ).run(first?.html_content || "", nowIso(), campaignId);
+  ).run(rendered, nowIso(), campaignId);
 }
 
 export function createCampaign(input: {
@@ -40,6 +59,8 @@ export function createCampaign(input: {
   htmlContent: string;
   emailTitle?: string;
   kind?: EmailKind;
+  bodyFormat?: BodyFormat;
+  mediaUrl?: string | null;
 }): Campaign {
   const db = getDb();
   const id = nanoid(12);
@@ -47,6 +68,9 @@ export function createCampaign(input: {
   const externalToken = nanoid(24);
   const ts = nowIso();
   const emailId = nanoid(12);
+  const kind = coerceKind(input.kind);
+  const bodyFormat = coerceFormat(kind, input.bodyFormat);
+  const mediaUrl = (input.mediaUrl || "").trim() || null;
 
   db.prepare(
     `INSERT INTO campaigns
@@ -68,14 +92,16 @@ export function createCampaign(input: {
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, kind, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+      (id, campaign_id, title, html_content, kind, body_format, media_url, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     emailId,
     id,
-    (input.emailTitle || "Email 1").trim() || "Email 1",
+    (input.emailTitle || "Item 1").trim() || "Item 1",
     input.htmlContent,
-    input.kind === "interactive" ? "interactive" : "email",
+    kind,
+    bodyFormat,
+    mediaUrl,
     ts,
     ts
   );
@@ -86,6 +112,7 @@ export function createCampaign(input: {
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(nanoid(12), id, emailId, input.htmlContent, "Initial upload", ts);
 
+  syncCampaignPreview(id);
   return getCampaignById(id)!;
 }
 
@@ -272,6 +299,8 @@ export function addEmail(input: {
   title: string;
   htmlContent: string;
   kind?: EmailKind;
+  bodyFormat?: BodyFormat;
+  mediaUrl?: string | null;
 }): CampaignEmail | null {
   const campaign = getCampaignById(input.campaignId);
   if (!campaign) return null;
@@ -279,6 +308,9 @@ export function addEmail(input: {
   const db = getDb();
   const ts = nowIso();
   const id = nanoid(12);
+  const kind = coerceKind(input.kind);
+  const bodyFormat = coerceFormat(kind, input.bodyFormat);
+  const mediaUrl = (input.mediaUrl || "").trim() || null;
   const maxRow = db
     .prepare(
       `SELECT COALESCE(MAX(sort_order), -1) as max_order
@@ -288,14 +320,16 @@ export function addEmail(input: {
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, kind, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, campaign_id, title, html_content, kind, body_format, media_url, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.campaignId,
-    input.title.trim() || `Email ${maxRow.max_order + 2}`,
+    input.title.trim() || `Item ${maxRow.max_order + 2}`,
     input.htmlContent,
-    input.kind === "interactive" ? "interactive" : "email",
+    kind,
+    bodyFormat,
+    mediaUrl,
     maxRow.max_order + 1,
     ts,
     ts
@@ -318,6 +352,8 @@ export function updateEmail(
     htmlContent?: string;
     purpose?: string;
     versionNote?: string;
+    bodyFormat?: BodyFormat;
+    mediaUrl?: string | null;
   }
 ): CampaignEmail | null {
   const existing = getEmailById(emailId);
@@ -328,12 +364,19 @@ export function updateEmail(
   const title = updates.title?.trim() ?? existing.title;
   const htmlContent = updates.htmlContent ?? existing.html_content;
   const purpose = updates.purpose?.trim() ?? existing.purpose;
+  const bodyFormat = updates.bodyFormat
+    ? coerceFormat(existing.kind, updates.bodyFormat)
+    : existing.body_format;
+  const mediaUrl =
+    updates.mediaUrl !== undefined
+      ? (updates.mediaUrl || "").trim() || null
+      : existing.media_url;
 
   db.prepare(
     `UPDATE campaign_emails
-     SET title = ?, html_content = ?, purpose = ?, updated_at = ?
+     SET title = ?, html_content = ?, purpose = ?, body_format = ?, media_url = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, htmlContent, purpose, ts, emailId);
+  ).run(title, htmlContent, purpose, bodyFormat, mediaUrl, ts, emailId);
 
   if (updates.htmlContent && updates.htmlContent !== existing.html_content) {
     db.prepare(

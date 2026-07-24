@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import { AssetContentFields } from "@/components/AssetContentFields";
+import {
+  ASSET_KINDS,
+  coerceFormat,
+  type AssetKind,
+  type BodyFormat,
+} from "@/lib/asset-kinds";
 
 type RevClientOption = { id: string; name: string };
 
@@ -14,7 +21,9 @@ export default function NewCampaignPage() {
   const [description, setDescription] = useState("");
   const [audience, setAudience] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
-  const [kind, setKind] = useState<"email" | "interactive">("email");
+  const [kind, setKind] = useState<AssetKind>("email");
+  const [format, setFormat] = useState<BodyFormat>("html");
+  const [mediaUrl, setMediaUrl] = useState("");
   const [fileName, setFileName] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
@@ -51,6 +60,8 @@ export default function NewCampaignPage() {
         audience,
         htmlContent,
         kind,
+        bodyFormat: format,
+        mediaUrl,
       }),
     });
 
@@ -90,21 +101,20 @@ export default function NewCampaignPage() {
 
           <div className="field">
             <label>What is this?</label>
-            <div className="tabs" style={{ marginTop: 4 }}>
-              <button
-                type="button"
-                className={`tab ${kind === "email" ? "active" : ""}`}
-                onClick={() => setKind("email")}
-              >
-                Email
-              </button>
-              <button
-                type="button"
-                className={`tab ${kind === "interactive" ? "active" : ""}`}
-                onClick={() => setKind("interactive")}
-              >
-                Form / quiz
-              </button>
+            <div className="tabs" style={{ marginTop: 4, flexWrap: "wrap" }}>
+              {ASSET_KINDS.map((k) => (
+                <button
+                  key={k.kind}
+                  type="button"
+                  className={`tab ${kind === k.kind ? "active" : ""}`}
+                  onClick={() => {
+                    setKind(k.kind);
+                    setFormat(coerceFormat(k.kind, format));
+                  }}
+                >
+                  {k.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -155,57 +165,53 @@ export default function NewCampaignPage() {
             />
           </div>
 
-          <div
-            className={`dropzone ${dragActive ? "active" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={async (e) => {
-              e.preventDefault();
-              setDragActive(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file) await readFile(file);
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              {fileName
-                ? `Loaded: ${fileName}`
-                : "Drop an .html file here, or choose one"}
-            </p>
-            <label
-              className="btn btn-secondary btn-sm"
-              style={{ marginTop: 12 }}
+          {format === "html" ? (
+            <div
+              className={`dropzone ${dragActive ? "active" : ""}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={async (e) => {
+                e.preventDefault();
+                setDragActive(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) await readFile(file);
+              }}
             >
-              Choose file
-              <input
-                type="file"
-                accept=".html,text/html"
-                hidden
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (file) await readFile(file);
-                }}
-              />
-            </label>
-          </div>
+              <p style={{ margin: 0 }}>
+                {fileName
+                  ? `Loaded: ${fileName}`
+                  : "Drop an .html file here, or choose one"}
+              </p>
+              <label
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 12 }}
+              >
+                Choose file
+                <input
+                  type="file"
+                  accept=".html,text/html"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) await readFile(file);
+                  }}
+                />
+              </label>
+            </div>
+          ) : null}
 
-          <div className="field">
-            <label htmlFor="html">HTML content</label>
-            <textarea
-              id="html"
-              value={htmlContent}
-              onChange={(e) => setHtmlContent(e.target.value)}
-              placeholder={
-                kind === "interactive"
-                  ? "Paste the full HTML of your form or quiz (scripts included)"
-                  : "Paste full HTML email here"
-              }
-              style={{ minHeight: 220, fontFamily: "var(--mono)", fontSize: 12 }}
-              required
-            />
-          </div>
+          <AssetContentFields
+            kind={kind}
+            format={format}
+            setFormat={setFormat}
+            content={htmlContent}
+            setContent={setHtmlContent}
+            media={mediaUrl}
+            setMedia={setMediaUrl}
+          />
 
           {error ? <p className="error">{error}</p> : null}
 
