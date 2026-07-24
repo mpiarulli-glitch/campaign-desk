@@ -324,8 +324,8 @@ export default function ClientHubPage() {
     : activityGroups.slice(0, ACTIVITY_PREVIEW);
 
   return (
-    <div className="acct-scope">
-      <section className="snap-hero" style={{ padding: "38px 0 30px" }}>
+    <div className="acct-scope acct-hub">
+      <section className="snap-hero" style={{ padding: "34px 0 26px" }}>
         <div className="snap-hero-inner">
           <p className="snap-hero-eyebrow">Client hub</p>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>

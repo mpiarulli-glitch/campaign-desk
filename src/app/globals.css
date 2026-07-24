@@ -6218,3 +6218,33 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .tower-elevator { display: none; }
   .tf-task { max-width: 110px; }
 }
+
+/* ============================================ internal client hub (light) */
+/* The client hub reuses the acct-scope components, but the warm cream body and
+   near-black hero block are the client-FACING treatment. Inside the internal
+   shell that reads as clashing color blocks, so cool the palette and flatten
+   the hero to match the rest of the app. */
+.acct-hub {
+  --bg: #f3f5f8;
+  --bg-elevated: #ffffff;
+  --bg-soft: #eef1f5;
+  --border: #e6e9ef;
+  --text: #0e1116;
+  --text-muted: #737b89;
+  --text-body: #4a5262;
+}
+.acct-hub .snap-hero {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.acct-hub .snap-hero-title { color: var(--text); text-shadow: none; }
+.acct-hub .snap-hero-sub { color: var(--text-muted); }
+.acct-hub .snap-hero-eyebrow { color: var(--accent-ink); }
+.acct-hub .snap-hero-eyebrow::before { background: var(--accent-ink); }
+/* action buttons in the (now light) hero */
+.acct-hub .snap-hero .btn-secondary {
+  background: var(--bg-elevated);
+  color: var(--text-body);
+  border: 1px solid var(--border);
+}
+.acct-hub .snap-hero .btn-secondary:hover { background: var(--bg-soft); }
