@@ -318,11 +318,11 @@ export default function SnapshotEditorPage() {
           </div>
           {view === "team" ? (
             <div className="cal-nav">
-              <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
+              <button className="cal-nav-btn" aria-label="Previous week" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
               <span className="cal-month">
                 {weekLabel(week)}{isCurrentWeek(week) ? " · This week" : ""}
               </span>
-              <button className="cal-nav-btn" onClick={() => setWeek((w) => addWeeks(w, 1))}>›</button>
+              <button className="cal-nav-btn" aria-label="Next week" onClick={() => setWeek((w) => addWeeks(w, 1))}>›</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setWeek(currentWeek())}>This week</button>
             </div>
           ) : null}
@@ -600,7 +600,7 @@ export default function SnapshotEditorPage() {
                 <div key={m.id} className="snap-metric-row">
                   <span><strong>{m.metric}</strong> · {m.period}</span>
                   <span>{m.unit === "$" ? "$" : ""}{m.value.toLocaleString()}{m.unit === "%" ? "%" : ""}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => removeMetric(m.id)}>×</button>
+                  <button className="btn btn-ghost btn-sm" aria-label="Remove metric" onClick={() => removeMetric(m.id)}>×</button>
                 </div>
               ))}
             </div>

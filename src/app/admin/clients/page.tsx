@@ -276,6 +276,7 @@ export default function AllClientsPage() {
                       <select
                         className={`select-clean badge-select ${c.tier ? `is-${c.tier}` : ""}`}
                         value={c.tier}
+                        aria-label="Account tier"
                         onChange={(e) => changeTier(c.id, e.target.value)}
                       >
                         {TIER_OPTIONS.map((o) => (

@@ -6053,8 +6053,18 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .app-menu-viewas label svg { width: 15px; height: 15px; }
 .app-menu-viewas select { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); font-size: 13px; color: var(--text); font-family: var(--font); }
 
-/* page-level action row (replaces per-page topbars) */
-.page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding: 16px 24px 0; }
+/* page-level action row (replaces per-page topbars). Centered to the same
+   column as page content so actions align with it instead of the viewport
+   edge; collapses entirely when it has no buttons (e.g. non-admin views). */
+.page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; width: min(1400px, calc(100% - 48px)); margin: 0 auto; padding: 14px 0 0; }
+.page-actions:empty { display: none; }
+.ops-scope .page-actions { width: min(1160px, calc(100% - 64px)); }
+
+/* Inside the shell the page scope fills the area below the 60px top bar,
+   without forcing an extra viewport-height that creates a dead scrollbar. */
+.app-content > .ops-scope,
+.app-content > .acct-scope,
+.app-content > .app-shell { min-height: calc(100vh - 60px); }
 
 @media (max-width: 760px) {
   .side, .side.is-collapsed { width: 52px; }
