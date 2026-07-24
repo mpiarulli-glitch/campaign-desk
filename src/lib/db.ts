@@ -2,6 +2,9 @@ import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
+import type { AssetKind, BodyFormat } from "./asset-kinds";
+
+export type { AssetKind, BodyFormat } from "./asset-kinds";
 
 export type CampaignStatus =
   | "draft"
@@ -11,10 +14,10 @@ export type CampaignStatus =
 
 export type CommentType = "general" | "inline";
 export type ReviewChannel = "internal" | "external";
-// "email" = static HTML email (scripts stripped in preview).
-// "interactive" = form/quiz whose JS runs in a sandboxed iframe so reviewers
-// can actually click through it.
-export type EmailKind = "email" | "interactive";
+// The kind of asset in a review package. See asset-kinds.ts for the full set
+// (email, interactive form/quiz, blog post, copy deck, website mock-up).
+// EmailKind is kept as a legacy alias for AssetKind.
+export type EmailKind = AssetKind;
 
 export interface Campaign {
   id: string;
@@ -40,8 +43,14 @@ export interface CampaignEmail {
   id: string;
   campaign_id: string;
   title: string;
+  // For html/markdown assets this is the source content. For image/figma
+  // mock-ups it is an optional caption (the artwork lives in media_url).
   html_content: string;
   kind: EmailKind;
+  // How html_content / media_url should be interpreted when rendering.
+  body_format: BodyFormat;
+  // Hosted image URL (image mock-up) or Figma link (figma mock-up).
+  media_url: string | null;
   purpose: string;
   sort_order: number;
   approved_at: string | null;
@@ -438,6 +447,25 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface WhiteboardBoard {
+  id: string;
+  title: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// One row per tldraw document record (shape, arrow, note, binding, etc.).
+// record_json is the serialized tldraw record; deleted is a soft-delete tombstone
+// so pollers can learn about removals via the same "changes since" query.
+export interface WhiteboardRecord {
+  board_id: string;
+  record_id: string;
+  record_json: string;
+  deleted: number;
+  updated_at: string;
+}
+
 // MEG Team Hub content ------------------------------------------------------
 
 // A written standard operating procedure, read by the whole team, edited by
@@ -572,6 +600,8 @@ export function getDb(): Database.Database {
       title TEXT NOT NULL,
       html_content TEXT NOT NULL,
       kind TEXT NOT NULL DEFAULT 'email',
+      body_format TEXT NOT NULL DEFAULT 'html',
+      media_url TEXT,
       purpose TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -999,6 +1029,26 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_replies_campaign ON comment_replies(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_subjects_email ON email_subjects(email_id);
     CREATE INDEX IF NOT EXISTS idx_subjects_campaign ON email_subjects(campaign_id);
+
+    CREATE TABLE IF NOT EXISTS whiteboard_boards (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT 'Untitled board',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS whiteboard_records (
+      board_id TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      record_json TEXT NOT NULL DEFAULT '',
+      deleted INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (board_id, record_id),
+      FOREIGN KEY (board_id) REFERENCES whiteboard_boards(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wb_records_changes ON whiteboard_records(board_id, updated_at);
   `);
 
   migrate(db);
@@ -1095,6 +1145,14 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE campaign_emails ADD COLUMN purpose TEXT NOT NULL DEFAULT ''`
     );
+  }
+  if (!emailCols.includes("body_format")) {
+    database.exec(
+      `ALTER TABLE campaign_emails ADD COLUMN body_format TEXT NOT NULL DEFAULT 'html'`
+    );
+  }
+  if (!emailCols.includes("media_url")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN media_url TEXT`);
   }
 
   const revClientCols = tableColumns(database, "rev_clients");
