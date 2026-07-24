@@ -146,6 +146,9 @@ export interface PersonWeekSummary {
   hours: number;
   capacity: number;
   allocationPct: number;
+  urgentPct: number;
+  importantPct: number;
+  flexiblePct: number;
 }
 
 // Total forecasted hours per person for a week, against the flat weekly
@@ -160,14 +163,34 @@ export function weekSummaryForAllPeople(weekStart: string): PersonWeekSummary[] 
     )
     .all(weekStart, end) as Array<{ person: string; hours: number }>;
   const byPerson = new Map(rows.map((r) => [r.person, r.hours]));
+
+  const priorityRows = getDb()
+    .prepare(
+      `SELECT person, priority, SUM(hours) AS hours FROM forecast_tasks
+       WHERE task_date >= ? AND task_date < ?
+       GROUP BY person, priority`
+    )
+    .all(weekStart, end) as Array<{ person: string; priority: ForecastPriority; hours: number }>;
+  const priorityByPerson = new Map<string, Record<ForecastPriority, number>>();
+  for (const row of priorityRows) {
+    const entry = priorityByPerson.get(row.person) || { urgent: 0, important: 0, flexible: 0 };
+    entry[row.priority] = row.hours;
+    priorityByPerson.set(row.person, entry);
+  }
+
   return PEOPLE.map((p) => {
     const hours = byPerson.get(p.slug) || 0;
+    const priorityHours = priorityByPerson.get(p.slug) || { urgent: 0, important: 0, flexible: 0 };
+    const priorityTotal = priorityHours.urgent + priorityHours.important + priorityHours.flexible;
     return {
       person: p.slug,
       label: p.label,
       hours,
       capacity: WEEKLY_CAPACITY_HOURS,
       allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
+      urgentPct: priorityTotal ? Math.round((priorityHours.urgent / priorityTotal) * 100) : 0,
+      importantPct: priorityTotal ? Math.round((priorityHours.important / priorityTotal) * 100) : 0,
+      flexiblePct: priorityTotal ? Math.round((priorityHours.flexible / priorityTotal) * 100) : 0,
     };
   });
 }

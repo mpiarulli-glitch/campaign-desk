@@ -14,6 +14,9 @@ type PersonSummary = {
   hours: number;
   capacity: number;
   allocationPct: number;
+  urgentPct: number;
+  importantPct: number;
+  flexiblePct: number;
 };
 
 function allocationColor(pct: number): string {
@@ -195,6 +198,20 @@ export default function ForecastDashboardPage() {
                         {p.hours}h · {allocationLabel(p.allocationPct)}
                       </span>
                     </div>
+                    {p.hours > 0 ? (
+                      <div className="mood-card-priority">
+                        <div className="mood-card-priority-bar">
+                          <span style={{ width: `${p.urgentPct}%`, background: "var(--danger)" }} />
+                          <span style={{ width: `${p.importantPct}%`, background: "var(--warning)" }} />
+                          <span style={{ width: `${p.flexiblePct}%`, background: "var(--success)" }} />
+                        </div>
+                        <div className="mood-card-priority-legend">
+                          <span style={{ color: "var(--danger)" }}>{p.urgentPct}%</span>
+                          <span style={{ color: "var(--warning)" }}>{p.importantPct}%</span>
+                          <span style={{ color: "var(--success)" }}>{p.flexiblePct}%</span>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </Link>
               );

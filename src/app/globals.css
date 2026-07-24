@@ -4350,6 +4350,30 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   gap: 8px;
 }
 
+.mood-card-priority {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+.mood-card-priority-bar {
+  height: 5px;
+  border-radius: 99px;
+  overflow: hidden;
+  display: flex;
+  background: var(--ops-border-soft);
+}
+.mood-card-priority-bar span {
+  height: 100%;
+}
+.mood-card-priority-legend {
+  display: flex;
+  gap: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .mood-avatar {
   position: relative;
   flex: none;
