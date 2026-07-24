@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { hasProductionAccess } from "@/lib/people";
+import { entryLevelPeople, hasProductionAccess, personLabel as forecastPersonLabel } from "@/lib/people";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Home" },
@@ -85,16 +85,16 @@ export function NavMenu({ current }: { current: string }) {
     router.push("/login");
   }
 
-  async function viewAs(person: string) {
+  async function viewAs(person: string, role: "admin" | "forecast" = "admin") {
     if (!person || switching) return;
     setSwitching(true);
     const res = await fetch("/api/auth/impersonate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ person }),
+      body: JSON.stringify({ person, role }),
     });
     if (res.ok) {
-      window.location.assign("/admin");
+      window.location.assign(role === "forecast" ? `/admin/forecast/${person}` : "/admin");
       return;
     }
     setSwitching(false);
@@ -111,9 +111,10 @@ export function NavMenu({ current }: { current: string }) {
     setSwitching(false);
   }
 
-  const personLabel =
-    ADMIN_PEOPLE.find((person) => person.slug === session.person)?.label ||
-    session.person;
+  const personLabel = session.person
+    ? ADMIN_PEOPLE.find((p) => p.slug === session.person)?.label ||
+      (session.role === "forecast" ? forecastPersonLabel(session.person) : session.person)
+    : session.person;
 
   const items =
     session.role === "admin"
@@ -160,10 +161,28 @@ export function NavMenu({ current }: { current: string }) {
                 id="view-as-person"
                 value=""
                 disabled={switching}
-                onChange={(event) => viewAs(event.target.value)}
+                onChange={(event) => viewAs(event.target.value, "admin")}
               >
                 <option value="">Choose a person...</option>
                 {ADMIN_PEOPLE.map((person) => (
+                  <option key={person.slug} value={person.slug}>
+                    {person.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {session.owner ? (
+            <div className="nav-menu-view-as">
+              <label htmlFor="view-as-team-member">View as team member</label>
+              <select
+                id="view-as-team-member"
+                value=""
+                disabled={switching}
+                onChange={(event) => viewAs(event.target.value, "forecast")}
+              >
+                <option value="">Choose a person...</option>
+                {entryLevelPeople().map((person) => (
                   <option key={person.slug} value={person.slug}>
                     {person.label}
                   </option>

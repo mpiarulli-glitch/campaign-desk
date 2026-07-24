@@ -19,9 +19,7 @@ export async function GET() {
     owner:
       session?.role === "admin" &&
       session.person === null,
-    impersonating:
-      session?.role === "admin" &&
-      session.impersonating,
+    impersonating: Boolean(session?.impersonating),
   });
 }
 

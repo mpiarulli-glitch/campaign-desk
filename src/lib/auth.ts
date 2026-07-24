@@ -13,7 +13,7 @@ export type Session =
       impersonating: boolean;
       issuedAt: number;
     }
-  | { role: "forecast"; person: string; issuedAt: number };
+  | { role: "forecast"; person: string; impersonating: boolean; issuedAt: number };
 
 function getSecret(): string {
   return process.env.SESSION_SECRET || "dev-insecure-secret";
@@ -147,6 +147,15 @@ export async function createForecastSession(person: string): Promise<void> {
   await setSessionCookie(`forecast:${person}:${Date.now()}`);
 }
 
+export async function createForecastImpersonationSession(
+  person: string
+): Promise<void> {
+  if (!isValidPerson(person)) {
+    throw new Error("Unknown person");
+  }
+  await setSessionCookie(`forecast:${person}:impersonated:${Date.now()}`);
+}
+
 export async function clearSession(): Promise<void> {
   const jar = await cookies();
   jar.delete(COOKIE_NAME);
@@ -186,7 +195,9 @@ export async function getSession(): Promise<Session | null> {
   if (role === "forecast") {
     const person = parts[1];
     if (!isValidPerson(person)) return null;
-    return { role, person, issuedAt };
+    const impersonating = parts.length === 4 && parts[2] === "impersonated";
+    if (parts.length === 4 && !impersonating) return null;
+    return { role, person, impersonating, issuedAt };
   }
 
   return null;
