@@ -27,6 +27,10 @@ function allocationLabel(pct: number): string {
   return "Under-allocated";
 }
 
+function initials(label: string): string {
+  return label.trim().slice(0, 1).toUpperCase() || "?";
+}
+
 export default function ForecastDashboardPage() {
   const router = useRouter();
   const [week, setWeek] = useState(currentWeek());
@@ -69,47 +73,42 @@ export default function ForecastDashboardPage() {
   const teamPct = totalCapacity ? Math.round((totalHours / totalCapacity) * 100) : 0;
 
   return (
-    <div className="app-shell">
+    <div className="ops-scope">
       <header className="topbar">
         <Brand href="/admin" />
-        <div className="row">
-          <NavMenu current="/admin/forecast" />
-        </div>
+        <NavMenu current="/admin/forecast" />
       </header>
 
-      <section className="snap-hero">
-        <div className="snap-hero-inner">
-          <p className="snap-hero-eyebrow">Team capacity</p>
-          <h1 className="snap-hero-title">Weekly forecast</h1>
-          <p className="snap-hero-sub">
-            What everyone expects to work on this week, and how allocated the team
-            is against a 40-hour week. Click into a name to add or edit tasks.
-          </p>
-        </div>
-      </section>
-
-      <main className="container stack">
-        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div className="row" style={{ gap: 8 }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => setWeek((w) => addWeeks(w, -1))}>
-              ← Prev
-            </button>
+      <div className="ops-page">
+        <div className="ops-page-head">
+          <div>
+            <p className="ops-eyebrow">Team capacity</p>
+            <h1 className="ops-title">Weekly forecast</h1>
+            <p className="ops-sub">
+              What everyone expects to work on this week, against a 40-hour week.
+              Click into a name to add or edit tasks.
+            </p>
+          </div>
+          <div className="ops-weeknav">
+            <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
             <strong>{weekLabel(week)}</strong>
+            <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
             {!isCurrentWeek(week) ? (
-              <button className="btn btn-ghost btn-sm" onClick={() => setWeek(currentWeek())}>
+              <button
+                style={{ width: "auto", padding: "0 10px", fontSize: 12, fontWeight: 600 }}
+                onClick={() => setWeek(currentWeek())}
+              >
                 This week
               </button>
             ) : null}
-            <button className="btn btn-ghost btn-sm" onClick={() => setWeek((w) => addWeeks(w, 1))}>
-              Next →
-            </button>
           </div>
-          <span className="muted">
-            Team: {totalHours}h / {totalCapacity}h forecasted (
-            <strong style={{ color: allocationColor(teamPct) }}>{teamPct}%</strong>)
-            {loading ? " · Updating…" : ""}
-          </span>
         </div>
+
+        <p className="muted" style={{ marginTop: -14, marginBottom: 20, fontSize: 13 }}>
+          Team: {totalHours}h / {totalCapacity}h forecasted (
+          <strong style={{ color: allocationColor(teamPct) }}>{teamPct}%</strong>)
+          {loading ? " · Updating…" : ""}
+        </p>
 
         {error ? <p className="error">{error}</p> : null}
 
@@ -118,57 +117,37 @@ export default function ForecastDashboardPage() {
         ) : !loading && people.length === 0 ? (
           <div className="empty"><p>No forecasted hours for this week yet.</p></div>
         ) : (
-          <div className="card card-pad" style={{ overflowX: "auto" }}>
-            <table className="rev-table">
-              <thead>
-                <tr>
-                  <th>Person</th>
-                  <th>Forecasted hours</th>
-                  <th>Capacity</th>
-                  <th>Allocation</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {people.map((p) => (
-                  <tr key={p.person}>
-                    <td><strong>{p.label}</strong></td>
-                    <td>{p.hours}h</td>
-                    <td>{p.capacity}h</td>
-                    <td style={{ minWidth: 180 }}>
-                      <div className="row" style={{ gap: 10, alignItems: "center" }}>
-                        <div className="alloc-track">
-                          <div
-                            className="alloc-fill"
-                            style={{
-                              width: `${Math.min(100, p.allocationPct)}%`,
-                              background: allocationColor(p.allocationPct),
-                            }}
-                          />
-                        </div>
-                        <span style={{ color: allocationColor(p.allocationPct), fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
-                          {p.allocationPct}%
-                        </span>
-                      </div>
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        {allocationLabel(p.allocationPct)}
-                      </span>
-                    </td>
-                    <td>
-                      <Link
-                        className="btn btn-ghost btn-sm"
-                        href={`/admin/forecast/${p.person}?week=${week}`}
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="ops-panel">
+            <div className="ops-cap-list">
+              {people.map((p) => (
+                <div key={p.person} className="ops-cap-row">
+                  <div className="ops-cap-person">
+                    <span className="ops-avatar">{initials(p.label)}</span>
+                    <span className="ops-cap-name">{p.label}</span>
+                  </div>
+                  <div className="ops-cap-track">
+                    <div
+                      className="ops-cap-fill"
+                      style={{ width: `${Math.min(100, p.allocationPct)}%`, background: allocationColor(p.allocationPct) }}
+                    />
+                  </div>
+                  <div>
+                    <div className="ops-cap-pct" style={{ color: allocationColor(p.allocationPct) }}>
+                      {p.allocationPct}%
+                    </div>
+                    <div className="ops-cap-hrs">{allocationLabel(p.allocationPct)}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <Link className="btn btn-ghost btn-sm" href={`/admin/forecast/${p.person}?week=${week}`}>
+                      View
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

@@ -47,19 +47,16 @@ function weekdays(weekStart: string): string[] {
   return out;
 }
 
-function dayLabel(ymd: string): string {
+function dayName(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long" });
+}
+function dayShortDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function shortDow(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" });
-}
+const emptyDraft = { client: "", notes: "", hours: "" };
 
 export default function PersonForecastPage() {
   const router = useRouter();
@@ -71,12 +68,13 @@ export default function PersonForecastPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, { client: string; notes: string; hours: string }>>({});
+  const [addingFor, setAddingFor] = useState<string | null>(null);
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
 
   function draftFor(date: string) {
-    return drafts[date] || { client: "", notes: "", hours: "" };
+    return drafts[date] || emptyDraft;
   }
   function setDraft(date: string, patch: Partial<{ client: string; notes: string; hours: string }>) {
     setDrafts((d) => ({ ...d, [date]: { ...draftFor(date), ...patch } }));
@@ -159,7 +157,8 @@ export default function PersonForecastPage() {
       setError("Could not add that task.");
       return;
     }
-    setDrafts((d) => ({ ...d, [date]: { client: "", notes: "", hours: "" } }));
+    setDrafts((d) => ({ ...d, [date]: emptyDraft }));
+    setAddingFor(null);
     load(week, { silent: true });
   }
 
@@ -225,10 +224,10 @@ export default function PersonForecastPage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="ops-scope">
       <header className="topbar">
         <Brand href="/admin" />
-        <div className="row">
+        <div className="row" style={{ gap: 10 }}>
           {role === "admin" ? (
             <Link className="btn btn-ghost btn-sm" href="/admin/forecast">All forecasts</Link>
           ) : null}
@@ -236,62 +235,136 @@ export default function PersonForecastPage() {
         </div>
       </header>
 
-      <section className="snap-hero">
-        <div className="snap-hero-inner">
-          <p className="snap-hero-eyebrow">Weekly forecast</p>
-          <h1 className="snap-hero-title">{data?.label || person}</h1>
-          <p className="snap-hero-sub">
-            Add what you expect to work on each day this week: the client, a note
-            on the task, and how many hours it should take.
-          </p>
-        </div>
-      </section>
-
-      <main className="container stack">
-        <div className="row" style={{ gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setWeek((w) => addWeeks(w, -1))}>
-            ← Prev
-          </button>
-          <strong>{weekLabel(week)}</strong>
-          {!isCurrentWeek(week) ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => setWeek(currentWeek())}>
-              This week
-            </button>
-          ) : null}
-          <button className="btn btn-ghost btn-sm" onClick={() => setWeek((w) => addWeeks(w, 1))}>
-            Next →
-          </button>
+      <div className="ops-page">
+        <div className="ops-page-head">
+          <div>
+            <p className="ops-eyebrow">Weekly forecast</p>
+            <h1 className="ops-title">{data?.label || person}</h1>
+            <p className="ops-sub">Add what you expect to work on each day this week.</p>
+          </div>
+          <div className="ops-weeknav">
+            <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
+            <strong>{weekLabel(week)}</strong>
+            <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
+            {!isCurrentWeek(week) ? (
+              <button
+                style={{ width: "auto", padding: "0 10px", fontSize: 12, fontWeight: 600 }}
+                onClick={() => setWeek(currentWeek())}
+              >
+                This week
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
 
-        {data && days.length ? (
-          <div className="card card-pad week-glance">
+        {loading ? (
+          <p className="muted">Loading...</p>
+        ) : (
+          <div className="ops-planner">
             {days.map((date) => {
-              const dayHours = (tasksByDay.get(date) || []).reduce((sum, t) => sum + t.hours, 0);
-              const perDayCapacity = data.capacity / days.length || 8;
-              const pct = Math.min(100, (dayHours / (perDayCapacity * 1.25)) * 100);
+              const tasks = tasksByDay.get(date) || [];
+              const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
+              const draft = draftFor(date);
+              const isAdding = addingFor === date;
               return (
-                <div key={date} className="week-glance-col">
-                  <div className="week-glance-bar-wrap">
-                    <div
-                      className="week-glance-bar"
-                      style={{
-                        height: `${Math.max(4, pct)}%`,
-                        background: dayHours > perDayCapacity ? "var(--warning)" : "var(--accent)",
-                      }}
-                    />
+                <div key={date} className="ops-day-col">
+                  <div className="ops-day-head">
+                    <div>
+                      <div className="ops-day-name">{dayName(date)}</div>
+                      <div className="ops-day-date">{dayShortDate(date)}</div>
+                    </div>
+                    <span className="ops-day-hours">{dayHours ? `${dayHours}h` : "—"}</span>
                   </div>
-                  <span className="week-glance-hours">{dayHours || "—"}{dayHours ? "h" : ""}</span>
-                  <span className="week-glance-day">{shortDow(date)}</span>
+
+                  <div className="ops-day-tasks">
+                    {tasks.map((t) => (
+                      <div key={t.id} className={`ops-task-chip ${t.completed ? "is-done" : ""}`}>
+                        <input
+                          type="checkbox"
+                          className="done-check"
+                          checked={!!t.completed}
+                          onChange={() => toggleCompleted(t)}
+                          aria-label="Mark complete"
+                        />
+                        <input
+                          key={`${t.id}-client`}
+                          defaultValue={t.client}
+                          onBlur={(e) => saveField(t, "client", e.target.value)}
+                          placeholder="Client"
+                          className="client"
+                          style={{ paddingLeft: 18 }}
+                        />
+                        <input
+                          key={`${t.id}-notes`}
+                          defaultValue={t.notes}
+                          onBlur={(e) => saveField(t, "notes", e.target.value)}
+                          placeholder="Task notes"
+                          className="notes"
+                          style={{ paddingLeft: 18 }}
+                        />
+                        <input
+                          key={`${t.id}-hours`}
+                          defaultValue={t.hours}
+                          onBlur={(e) => saveField(t, "hours", e.target.value)}
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          className="hrs"
+                        />
+                        <button className="remove" onClick={() => removeTask(t.id)}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="ops-day-add">
+                    {isAdding ? (
+                      <div className="ops-day-add-form">
+                        <input
+                          autoFocus
+                          value={draft.client}
+                          onChange={(e) => setDraft(date, { client: e.target.value })}
+                          placeholder="Client"
+                        />
+                        <input
+                          value={draft.notes}
+                          onChange={(e) => setDraft(date, { notes: e.target.value })}
+                          placeholder="Task notes"
+                        />
+                        <div className="row" style={{ gap: 6 }}>
+                          <input
+                            value={draft.hours}
+                            onChange={(e) => setDraft(date, { hours: e.target.value })}
+                            placeholder="Hours"
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            style={{ flex: 1 }}
+                          />
+                          <button className="btn btn-sm" onClick={() => addTask(date)}>Add</button>
+                        </div>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setAddingFor(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="ops-add-trigger" onClick={() => setAddingFor(date)}>
+                        + Add task
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
-        ) : null}
+        )}
 
         {data ? (
-          <label className="field">
+          <label className="field" style={{ marginTop: 18 }}>
             <span>
               Notes for this week
               {noteSaving ? " · saving…" : ""}
@@ -306,114 +379,8 @@ export default function PersonForecastPage() {
           </label>
         ) : null}
 
-        {loading ? (
-          <p className="muted">Loading...</p>
-        ) : (
-          <div className="stack">
-            {days.map((date) => {
-              const tasks = tasksByDay.get(date) || [];
-              const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
-              const draft = draftFor(date);
-              return (
-                <div key={date} className="card card-pad stack">
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <strong>{dayLabel(date)}</strong>
-                    <span className="muted">{dayHours}h</span>
-                  </div>
-
-                  {tasks.length === 0 ? (
-                    <p className="muted" style={{ margin: 0, fontSize: 13 }}>Nothing forecasted yet.</p>
-                  ) : (
-                    <div className="stack" style={{ gap: 6 }}>
-                      {tasks.map((t) => (
-                        <div
-                          key={t.id}
-                          className="row"
-                          style={{ gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: 6 }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!!t.completed}
-                            onChange={() => toggleCompleted(t)}
-                          />
-                          <input
-                            key={`${t.id}-client`}
-                            defaultValue={t.client}
-                            onBlur={(e) => saveField(t, "client", e.target.value)}
-                            placeholder="Client"
-                            className="input-inline"
-                            style={{
-                              flex: "1 1 160px",
-                              fontWeight: 600,
-                              textDecoration: t.completed ? "line-through" : "none",
-                              opacity: t.completed ? 0.6 : 1,
-                            }}
-                          />
-                          <input
-                            key={`${t.id}-notes`}
-                            defaultValue={t.notes}
-                            onBlur={(e) => saveField(t, "notes", e.target.value)}
-                            placeholder="Task notes"
-                            className="input-inline"
-                            style={{
-                              flex: "2 1 240px",
-                              textDecoration: t.completed ? "line-through" : "none",
-                              opacity: t.completed ? 0.6 : 1,
-                            }}
-                          />
-                          <div className="row" style={{ gap: 2 }}>
-                            <input
-                              key={`${t.id}-hours`}
-                              defaultValue={t.hours}
-                              onBlur={(e) => saveField(t, "hours", e.target.value)}
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              className="input-inline input-hours"
-                              style={{ width: 32, padding: "3px 0 3px 5px", textAlign: "right" }}
-                            />
-                            <span className="muted">h</span>
-                          </div>
-                          <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <input
-                      value={draft.client}
-                      onChange={(e) => setDraft(date, { client: e.target.value })}
-                      placeholder="Client"
-                      style={{ flex: "1 1 160px" }}
-                    />
-                    <input
-                      value={draft.notes}
-                      onChange={(e) => setDraft(date, { notes: e.target.value })}
-                      placeholder="Task notes"
-                      style={{ flex: "2 1 240px" }}
-                    />
-                    <input
-                      value={draft.hours}
-                      onChange={(e) => setDraft(date, { hours: e.target.value })}
-                      placeholder="Hours"
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      style={{ width: 90 }}
-                    />
-                    <button className="btn btn-sm" onClick={() => addTask(date)}>Add task</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {data ? (
-          <div className="card card-pad row" style={{ justifyContent: "space-between" }}>
+          <div className="ops-week-total">
             <strong>Week total</strong>
             <span>
               {data.hours}h / {data.capacity}h ·{" "}
@@ -423,7 +390,7 @@ export default function PersonForecastPage() {
             </span>
           </div>
         ) : null}
-      </main>
+      </div>
     </div>
   );
 }
