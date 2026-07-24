@@ -6064,3 +6064,146 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .side-toggle { display: none; }
   .side-viewas { display: none; }
 }
+
+/* ============================================ Client dashboard — live work tower */
+.tower-wrap { display: flex; flex-direction: column; gap: 20px; }
+
+/* Hero */
+.tower-hero { position: relative; }
+.tower-live {
+  display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800;
+  letter-spacing: 0.16em; color: #e0413b; background: #fdecec; border: 1px solid #f6cfce;
+  padding: 4px 10px; border-radius: 999px;
+}
+.tower-live .dot { width: 8px; height: 8px; border-radius: 50%; background: #e0413b; box-shadow: 0 0 0 0 rgba(224,65,59,0.5); animation: tw-pulse 1.8s infinite; }
+@keyframes tw-pulse { 0% { box-shadow: 0 0 0 0 rgba(224,65,59,0.5); } 70% { box-shadow: 0 0 0 7px rgba(224,65,59,0); } 100% { box-shadow: 0 0 0 0 rgba(224,65,59,0); } }
+.tower-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-ink); margin: 12px 0 6px; }
+.tower-title { font-family: var(--font-head); font-size: clamp(24px, 3.6vw, 34px); font-weight: 600; letter-spacing: -0.025em; margin: 0; color: var(--text); }
+.tower-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.tower-stat { display: flex; align-items: baseline; gap: 8px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 13px; padding: 10px 15px; box-shadow: var(--shadow); }
+.tower-stat .n { font-family: var(--font-head); font-weight: 700; font-size: 22px; color: var(--text); }
+.tower-stat .l { color: var(--text-muted); font-size: 12.5px; }
+
+/* Stage: night sky + building */
+.tower-stage {
+  position: relative; border-radius: 22px; overflow: hidden;
+  background: #070b24; border: 1px solid #0f1436;
+  box-shadow: 0 22px 50px rgba(7, 11, 36, 0.42);
+  padding: 34px 20px 0;
+}
+.tower-sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.tower-empty { position: relative; z-index: 1; text-align: center; padding: 70px 24px 90px; color: #b9c2e0; max-width: 46ch; margin: 0 auto; }
+
+/* The tower itself */
+.tower { position: relative; z-index: 1; width: min(760px, 100%); margin: 0 auto; }
+.tower-roof {
+  position: relative; height: 30px; width: 62%; margin: 0 auto;
+  background: linear-gradient(180deg, #202a45, #121a30);
+  border-radius: 12px 12px 0 0; border: 1px solid #2a3654; border-bottom: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.tower-roof-sign {
+  font-family: var(--font-head); font-weight: 700; letter-spacing: 0.18em; font-size: 14px;
+  color: #ffe9b0; text-shadow: 0 0 10px rgba(255,209,110,0.7);
+}
+.tower-roof-beacon {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  width: 6px; height: 12px; background: #ff5a5a; border-radius: 2px;
+  box-shadow: 0 0 10px 2px rgba(255,90,90,0.8); animation: tw-beacon 2.4s infinite;
+}
+@keyframes tw-beacon { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+.tower-body {
+  position: relative; background: linear-gradient(180deg, #141c33 0%, #0c1120 100%);
+  border: 1px solid #26314f; border-radius: 4px; overflow: hidden;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.5);
+}
+/* elevator shaft running the full height */
+.tower-elevator {
+  position: absolute; top: 0; bottom: 0; right: 12.5%; width: 26px; z-index: 2;
+  background: linear-gradient(180deg, rgba(8,11,24,0.9), rgba(8,11,24,0.7));
+  border-left: 1px solid rgba(120,140,200,0.14); border-right: 1px solid rgba(120,140,200,0.14);
+}
+.tower-car {
+  position: absolute; left: 3px; right: 3px; height: 44px; border-radius: 3px;
+  background: linear-gradient(180deg, #ffd98a, #d99a3c); box-shadow: 0 0 14px rgba(255,200,110,0.6);
+  animation: tw-lift 16s ease-in-out infinite;
+}
+@keyframes tw-lift { 0%, 100% { top: 6px; } 50% { top: calc(100% - 50px); } }
+
+/* one floor = one department */
+.tf { display: grid; grid-template-columns: 168px 1fr; align-items: stretch; min-height: 96px; border-bottom: 1px solid rgba(140,160,220,0.1); }
+.tf:last-child { border-bottom: none; }
+.tf-sign {
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 12px 14px; background: linear-gradient(180deg, #10182e, #0c1424);
+  border-right: 1px solid rgba(140,160,220,0.12);
+}
+.tf-ico { width: 26px; height: 26px; color: #7fe9f5; opacity: 0.9; }
+.tf-ico svg { width: 100%; height: 100%; }
+.tf-name { font-family: var(--font-head); font-weight: 600; font-size: 14px; color: #eef2ff; letter-spacing: -0.01em; line-height: 1.15; }
+.tf-count { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8a94b6; }
+.tf.is-busy .tf-count { color: #ffbe6a; }
+.tf.is-busy .tf-ico { color: #ffcf6e; filter: drop-shadow(0 0 6px rgba(255,190,90,0.5)); }
+
+/* the lit office interior */
+.tf-office {
+  position: relative; overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255,196,110,var(--glow,0.16)) 0%, rgba(255,170,80,calc(var(--glow,0.16) * 0.4)) 55%, rgba(12,17,32,0.92) 100%),
+    repeating-linear-gradient(90deg, rgba(8,12,24,0.85) 0 1.5px, transparent 1.5px 52px);
+}
+.tf-office::before { /* glass sheen */
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(115deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 40%);
+  pointer-events: none;
+}
+.tf.is-quiet .tf-office { filter: saturate(0.7) brightness(0.8); }
+
+.tf-desks { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; height: 100%; }
+.tf-desk {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  background: rgba(10,15,28,0.66); border: 1px solid rgba(150,170,225,0.14);
+  border-radius: 10px; padding: 6px 10px 6px 8px; max-width: 230px;
+  backdrop-filter: blur(2px);
+}
+.tf-desk .tf-screen { width: 5px; height: 22px; border-radius: 2px; background: #34506b; flex: none; }
+.tf-desk.s-open .tf-screen { background: #ffc25c; box-shadow: 0 0 8px rgba(255,194,92,0.7); animation: tw-flicker 4s infinite; }
+.tf-desk.s-done { opacity: 0.72; }
+.tf-desk.s-done .tf-screen { background: #34d399; box-shadow: 0 0 6px rgba(52,211,153,0.5); }
+.tf-desk.is-urgent { border-color: rgba(248,113,113,0.6); box-shadow: 0 0 10px rgba(248,113,113,0.25); }
+@keyframes tw-flicker { 0%, 100% { opacity: 1; } 48% { opacity: 1; } 50% { opacity: 0.78; } 52% { opacity: 1; } }
+.tf-task { font-size: 12px; color: #e7ecfb; line-height: 1.2; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-status { color: #34d399; font-weight: 800; font-size: 13px; margin-left: 2px; }
+.tf-more { font-size: 11px; color: #9aa6c8; align-self: center; padding: 0 6px; }
+.tf-idle { font-size: 12px; color: #6b7590; font-style: italic; }
+
+.tower-lobby {
+  position: relative; z-index: 1; height: 40px; width: 84%; margin: 0 auto;
+  background: linear-gradient(180deg, #10182e, #060a16);
+  border: 1px solid #26314f; border-top: none; border-radius: 0 0 6px 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.tower-marquee { font-size: 10.5px; font-weight: 800; letter-spacing: 0.22em; color: #7fe9f5; text-shadow: 0 0 8px rgba(0,212,232,0.5); }
+
+/* live ticker */
+.tower-ticker { display: flex; align-items: center; gap: 12px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 13px; padding: 10px 14px; box-shadow: var(--shadow); overflow: hidden; }
+.tower-ticker-label { flex: none; font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); }
+.tower-ticker-track { display: flex; gap: 26px; overflow: hidden; white-space: nowrap; }
+.tower-ticker-item { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-body); }
+.tower-ticker-item b { color: var(--text); font-weight: 600; }
+.tower-ticker-item .d { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.tower-ticker-item .d.s-open { background: #ffbe6a; }
+.tower-ticker-item .d.s-done { background: #34d399; }
+.tower-ticker-item .who { color: var(--text-muted); }
+.tower-ticker-item .ago { color: var(--text-muted); font-size: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tower-car, .tower-roof-beacon, .tower-live .dot, .tf-desk.s-open .tf-screen { animation: none; }
+}
+@media (max-width: 640px) {
+  .tf { grid-template-columns: 120px 1fr; }
+  .tf-sign { padding: 10px; }
+  .tower-elevator { display: none; }
+  .tf-task { max-width: 110px; }
+}

@@ -13,6 +13,8 @@ import { aggregate, getRevClient, kpisForModel, listMetrics } from "./revenue";
 import { planSends } from "./plan";
 import { listActivity, listPendingApprovalCampaigns, type ActivityItem, type PendingApproval } from "./campaigns";
 import { listOkrs, type OkrStatus } from "./okrs";
+import { listTodos } from "./todos";
+import { teamLabel, avatarFor } from "./team";
 
 /* ------------------------------------------------------- share token */
 
@@ -181,6 +183,136 @@ export interface ClientDashboardData {
   activity: AccountActivityItem[];
   goals: ClientGoal[];
   pendingApprovals: PendingApproval[];
+  workboard: Workboard;
+}
+
+/* ----------------------------------------------------- live workroom (tower) */
+// The client dashboard's "workroom" view: their to-dos, grouped into
+// department "floors" of an office tower so the client can watch work happen.
+export interface WorkboardTask {
+  id: string;
+  title: string;
+  assignee: string;
+  assigneeLabel: string;
+  avatar: string | null;
+  status: "open" | "done";
+  priority: string;
+  dueDate: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+}
+export interface WorkboardFloor {
+  key: string;
+  department: string;
+  active: number;
+  done: number;
+  tasks: WorkboardTask[];
+}
+export interface Workboard {
+  floors: WorkboardFloor[];
+  activeTotal: number;
+  doneRecent: number;
+  peopleActive: number;
+  recent: { department: string; title: string; status: "open" | "done"; assigneeLabel: string; at: string }[];
+  updatedAt: string;
+}
+
+// Department "floors", ordered top (penthouse) to bottom (lobby). Each client
+// to-do is mapped to one by its list_name; anything unrecognized gets its own
+// floor so nothing is hidden.
+const TOWER_DEPARTMENTS: { key: string; label: string; match: string[] }[] = [
+  { key: "strategy", label: "Strategy & Client", match: ["strategy & client", "strategy", "client", "strategy & planning"] },
+  { key: "paid", label: "Paid Media", match: ["paid media", "paid", "ppc", "ads", "paid ads"] },
+  { key: "seo", label: "SEO", match: ["seo"] },
+  { key: "content", label: "Content", match: ["content", "content / blog", "blog"] },
+  { key: "social", label: "Social", match: ["social", "social media"] },
+  { key: "email", label: "Email & Lifecycle", match: ["email & lifecycle", "email", "lifecycle", "sms"] },
+  { key: "onboarding", label: "Onboarding", match: ["onboarding"] },
+];
+
+function departmentFor(listName: string): { key: string; label: string } {
+  const n = (listName || "").trim().toLowerCase();
+  if (n) {
+    for (const d of TOWER_DEPARTMENTS) {
+      if (d.match.includes(n) || d.match.some((m) => n.includes(m))) return { key: d.key, label: d.label };
+    }
+  }
+  const label = listName.trim() || "General";
+  return { key: `other:${label.toLowerCase()}`, label };
+}
+
+export function getClientWorkboard(clientId: string): Workboard {
+  const todos = listTodos({ clientId });
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  const byKey = new Map<string, WorkboardFloor>();
+  const order = new Map(TOWER_DEPARTMENTS.map((d, i) => [d.key, i]));
+  const activeAssignees = new Set<string>();
+  let doneRecent = 0;
+
+  for (const t of todos) {
+    const dept = departmentFor(t.list_name);
+    if (!byKey.has(dept.key)) {
+      byKey.set(dept.key, { key: dept.key, department: dept.label, active: 0, done: 0, tasks: [] });
+    }
+    const floor = byKey.get(dept.key)!;
+    const task: WorkboardTask = {
+      id: t.id,
+      title: t.title,
+      assignee: t.assignee,
+      assigneeLabel: t.assignee ? teamLabel(t.assignee) : "Unassigned",
+      avatar: t.assignee ? avatarFor(t.assignee) : null,
+      status: t.status === "done" ? "done" : "open",
+      priority: t.priority,
+      dueDate: t.due_date,
+      completedAt: t.completed_at,
+      updatedAt: t.updated_at,
+    };
+    floor.tasks.push(task);
+    if (task.status === "open") {
+      floor.active += 1;
+      if (t.assignee) activeAssignees.add(t.assignee);
+    } else {
+      floor.done += 1;
+      if (t.completed_at && new Date(t.completed_at).getTime() >= dayAgo) doneRecent += 1;
+    }
+  }
+
+  // Active tasks first within a floor, urgent before important before flexible.
+  const pri = (p: string) => (p === "urgent" ? 0 : p === "important" ? 1 : 2);
+  for (const floor of byKey.values()) {
+    floor.tasks.sort((a, b) => {
+      if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+      return pri(a.priority) - pri(b.priority);
+    });
+  }
+
+  const floors = Array.from(byKey.values()).sort((a, b) => {
+    const oa = order.has(a.key) ? order.get(a.key)! : 100;
+    const ob = order.has(b.key) ? order.get(b.key)! : 100;
+    if (oa !== ob) return oa - ob;
+    return a.department.localeCompare(b.department);
+  });
+
+  const recent = [...todos]
+    .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
+    .slice(0, 10)
+    .map((t) => ({
+      department: departmentFor(t.list_name).label,
+      title: t.title,
+      status: (t.status === "done" ? "done" : "open") as "open" | "done",
+      assigneeLabel: t.assignee ? teamLabel(t.assignee) : "Unassigned",
+      at: t.updated_at,
+    }));
+
+  return {
+    floors,
+    activeTotal: floors.reduce((s, f) => s + f.active, 0),
+    doneRecent,
+    peopleActive: activeAssignees.size,
+    recent,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function addDaysYmd(ymd: string, n: number): string {
@@ -221,5 +353,6 @@ export function getClientDashboardData(clientId: string): ClientDashboardData | 
     activity: accountActivity(client.id),
     goals: clientVisibleGoals(client.id),
     pendingApprovals: listPendingApprovalCampaigns(client.id),
+    workboard: getClientWorkboard(client.id),
   };
 }

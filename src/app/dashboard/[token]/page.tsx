@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
 import { ChatThread } from "@/components/ChatThread";
+import { WorkTower, type Workboard } from "@/components/WorkTower";
 
 type CycleStatus =
   | "not_configured"
@@ -55,6 +56,7 @@ type DashboardData = {
   activity: ActivityItem[];
   goals: Goal[];
   pendingApprovals: { id: string; title: string; external_token: string; updated_at: string }[];
+  workboard: Workboard;
 };
 
 const STATUS_LABEL: Record<CycleStatus, string> = {
@@ -130,9 +132,10 @@ function fmtAt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-type Tab = "overview" | "schedule" | "calendar" | "goals" | "messages";
+type Tab = "overview" | "workroom" | "schedule" | "calendar" | "goals" | "messages";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "workroom", label: "Live workroom" },
   { key: "schedule", label: "Schedule production" },
   { key: "calendar", label: "Campaign calendar" },
   { key: "goals", label: "Account & goals" },
@@ -447,6 +450,10 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
                 </div>
+              ) : null}
+
+              {tab === "workroom" ? (
+                <WorkTower token={token} clientName={data.client.name} initial={data.workboard} />
               ) : null}
 
               {tab === "schedule" ? (
