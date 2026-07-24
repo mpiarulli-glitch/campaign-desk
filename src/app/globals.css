@@ -3391,6 +3391,121 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   text-decoration: underline;
 }
 
+/* Collapsible section header (Activity) */
+.acct-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.acct-collapse-caret {
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+  flex: none;
+}
+.acct-collapse-caret.is-open {
+  transform: rotate(90deg);
+}
+.acct-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+  line-height: 1.5;
+}
+
+/* Activity feed */
+.act-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.act-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+.act-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.act-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 6px;
+  background: var(--text-muted);
+}
+.act-dot.feedback { background: #f59e0b; }
+.act-dot.approved { background: #10b981; }
+.act-dot.production_sent { background: #3b82f6; }
+.act-dot.production_booked { background: #8a94a6; }
+.act-dot.calendar_note { background: #8a94a6; }
+.act-body {
+  flex: 1;
+  min-width: 0;
+}
+.act-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+.act-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
+  flex: none;
+}
+.act-detail {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.act-when {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: none;
+  margin-top: 1px;
+}
+.act-more {
+  display: inline-block;
+  margin-top: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--signal-ink);
+}
+.act-more:hover {
+  text-decoration: underline;
+}
+
 .acct-report {
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;

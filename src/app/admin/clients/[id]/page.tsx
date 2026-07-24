@@ -116,6 +116,52 @@ function fmtAt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// A URL detail collapses to its final path segment so the feed reads as
+// "blue-sea-3000-hdseries-switch" instead of the full product URL. Non-URL
+// details pass through untouched.
+function shortDetail(detail: string): string {
+  try {
+    const u = new URL(detail);
+    const seg = u.pathname.split("/").filter(Boolean).pop();
+    return seg ? decodeURIComponent(seg) : u.hostname;
+  } catch {
+    return detail;
+  }
+}
+
+type ActivityGroup = {
+  kind: string;
+  summary: string;
+  at: string;
+  details: string[];
+  count: number;
+};
+
+// Collapse consecutive activity items that share a kind + summary (e.g. a burst
+// of reviewer comments on the same campaign) into a single grouped row. Items
+// arrive newest-first, so the first timestamp in a run is the most recent.
+function groupActivity(items: ActivityItem[]): ActivityGroup[] {
+  const groups: ActivityGroup[] = [];
+  for (const a of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.kind === a.kind && last.summary === a.summary) {
+      last.count += 1;
+      if (a.detail) last.details.push(a.detail);
+    } else {
+      groups.push({
+        kind: a.kind,
+        summary: a.summary,
+        at: a.at,
+        details: a.detail ? [a.detail] : [],
+        count: 1,
+      });
+    }
+  }
+  return groups;
+}
+
+const ACTIVITY_PREVIEW = 6;
+
 type Tab = "overview" | "strategy" | "todos" | "messages" | "production" | "calendar" | "goals";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -136,6 +182,8 @@ export default function ClientHubPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [dashboardToken, setDashboardToken] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState("");
+  const [activityOpen, setActivityOpen] = useState(true);
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -250,6 +298,14 @@ export default function ClientHubPage() {
     [data]
   );
 
+  const activityGroups = useMemo(
+    () => groupActivity(data?.activity || []),
+    [data]
+  );
+  const visibleActivity = activityExpanded
+    ? activityGroups
+    : activityGroups.slice(0, ACTIVITY_PREVIEW);
+
   return (
     <div className="acct-scope">
       <header className="topbar">
@@ -363,26 +419,65 @@ export default function ClientHubPage() {
                 </div>
 
                 <div className="acct-section">
-                  <div className="acct-section-head"><h2 className="acct-section-title">Activity</h2></div>
-                  <div className="card card-pad">
-                    {data.activity.length ? (
-                      data.activity.map((a, i) => (
-                        <div
-                          key={i}
-                          className="row"
-                          style={i > 0 ? { marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" } : undefined}
-                        >
-                          <div>
-                            <div style={{ fontSize: 14 }}>{a.summary}</div>
-                            {a.detail ? <div className="muted" style={{ fontSize: 13 }}>{a.detail}</div> : null}
-                          </div>
-                          <span className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtAt(a.at)}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="muted" style={{ margin: 0 }}>No activity yet.</p>
-                    )}
+                  <div className="acct-section-head">
+                    <button
+                      type="button"
+                      className="acct-collapse-btn"
+                      onClick={() => setActivityOpen((o) => !o)}
+                      aria-expanded={activityOpen}
+                    >
+                      <span className={`acct-collapse-caret ${activityOpen ? "is-open" : ""}`} aria-hidden="true" />
+                      <h2 className="acct-section-title">Activity</h2>
+                      {activityGroups.length ? (
+                        <span className="acct-count">{data.activity.length}</span>
+                      ) : null}
+                    </button>
                   </div>
+                  {activityOpen ? (
+                    <div className="card card-pad">
+                      {activityGroups.length ? (
+                        <>
+                          <ul className="act-feed">
+                            {visibleActivity.map((g, i) => (
+                              <li key={i} className="act-item">
+                                <span className={`act-dot ${g.kind}`} aria-hidden="true" />
+                                <div className="act-body">
+                                  <div className="act-summary">
+                                    {g.summary}
+                                    {g.count > 1 ? (
+                                      <span className="act-badge">{g.count}</span>
+                                    ) : null}
+                                  </div>
+                                  {g.details.length ? (
+                                    <div className="act-detail" title={g.details.join("\n")}>
+                                      {shortDetail(g.details[0])}
+                                      {g.details.length > 1
+                                        ? ` +${g.details.length - 1} more`
+                                        : ""}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <span className="act-when">{fmtAt(g.at)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {activityGroups.length > ACTIVITY_PREVIEW ? (
+                            <button
+                              type="button"
+                              className="act-more"
+                              onClick={() => setActivityExpanded((e) => !e)}
+                            >
+                              {activityExpanded
+                                ? "Show less"
+                                : `Show all ${activityGroups.length}`}
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="muted" style={{ margin: 0 }}>No activity yet.</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
