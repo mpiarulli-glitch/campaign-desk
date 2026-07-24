@@ -100,6 +100,14 @@ export function NavMenu({ current }: { current: string }) {
     setSwitching(false);
   }
 
+  // Combined dropdown option values are "role:slug" so one <select> can pick
+  // between the two distinct account systems (full admin vs restricted team
+  // member) without a second control.
+  function onViewAsChange(value: string) {
+    const [role, person] = value.split(":");
+    if (role === "admin" || role === "forecast") viewAs(person, role);
+  }
+
   async function returnToOwner() {
     if (switching) return;
     setSwitching(true);
@@ -161,32 +169,23 @@ export function NavMenu({ current }: { current: string }) {
                 id="view-as-person"
                 value=""
                 disabled={switching}
-                onChange={(event) => viewAs(event.target.value, "admin")}
+                onChange={(event) => onViewAsChange(event.target.value)}
               >
                 <option value="">Choose a person...</option>
-                {ADMIN_PEOPLE.map((person) => (
-                  <option key={person.slug} value={person.slug}>
-                    {person.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          {session.owner ? (
-            <div className="nav-menu-view-as">
-              <label htmlFor="view-as-team-member">View as team member</label>
-              <select
-                id="view-as-team-member"
-                value=""
-                disabled={switching}
-                onChange={(event) => viewAs(event.target.value, "forecast")}
-              >
-                <option value="">Choose a person...</option>
-                {entryLevelPeople().map((person) => (
-                  <option key={person.slug} value={person.slug}>
-                    {person.label}
-                  </option>
-                ))}
+                <optgroup label="Admin accounts">
+                  {ADMIN_PEOPLE.map((person) => (
+                    <option key={person.slug} value={`admin:${person.slug}`}>
+                      {person.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Team members">
+                  {entryLevelPeople().map((person) => (
+                    <option key={person.slug} value={`forecast:${person.slug}`}>
+                      {person.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
           ) : null}
