@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
+import { ChatThread } from "@/components/ChatThread";
 
 type CycleStatus =
   | "not_configured"
@@ -129,12 +130,13 @@ function fmtAt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-type Tab = "overview" | "schedule" | "calendar" | "goals";
+type Tab = "overview" | "schedule" | "calendar" | "goals" | "messages";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "schedule", label: "Schedule production" },
   { key: "calendar", label: "Campaign calendar" },
   { key: "goals", label: "Account & goals" },
+  { key: "messages", label: "Messages" },
 ];
 
 function Arc({
@@ -513,6 +515,22 @@ export default function ClientDashboardPage() {
                       </div>
                     </>
                   )}
+                </div>
+              ) : null}
+
+              {tab === "messages" ? (
+                <div className="acct-section">
+                  <div className="acct-section-head">
+                    <h2 className="acct-section-title">Message your team</h2>
+                  </div>
+                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                    <ChatThread
+                      endpoint={`/api/dashboard/${token}/chat`}
+                      mineIsClient
+                      emptyText="No messages yet. Send us a note and we'll get right back to you."
+                      placeholder="Message your account team…"
+                    />
+                  </div>
                 </div>
               ) : null}
 

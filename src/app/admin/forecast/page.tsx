@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { NavMenu } from "@/components/NavMenu";
+import { MoodAvatar, MOOD_LABEL, moodForPct } from "@/components/MoodAvatar";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type PersonSummary = {
@@ -27,8 +28,12 @@ function allocationLabel(pct: number): string {
   return "Under-allocated";
 }
 
-function initials(label: string): string {
-  return label.trim().slice(0, 1).toUpperCase() || "?";
+type StatusBucket = "over" | "target" | "under";
+
+function bucketFor(pct: number): StatusBucket {
+  if (pct > 100) return "over";
+  if (pct >= 80) return "target";
+  return "under";
 }
 
 export default function ForecastDashboardPage() {
@@ -72,6 +77,11 @@ export default function ForecastDashboardPage() {
   const totalCapacity = people.reduce((sum, p) => sum + p.capacity, 0);
   const teamPct = totalCapacity ? Math.round((totalHours / totalCapacity) * 100) : 0;
 
+  const buckets = { over: 0, target: 0, under: 0 };
+  for (const p of people) buckets[bucketFor(p.allocationPct)] += 1;
+  const teamSize = people.length || 1;
+  const bucketPct = (n: number) => Math.round((n / teamSize) * 100);
+
   return (
     <div className="ops-scope">
       <header className="topbar">
@@ -104,12 +114,50 @@ export default function ForecastDashboardPage() {
           </div>
         </div>
 
-        <p className="muted" style={{ marginTop: -14, marginBottom: 20, fontSize: 13 }}>
-          Team: {totalHours}h / {totalCapacity}h forecasted (
-          <strong style={{ color: allocationColor(teamPct) }}>{teamPct}%</strong>)
-          {loading ? " · Updating…" : ""}
-        </p>
+        {people.length > 0 ? (
+          <div className="mood-summary">
+            <div className="mood-summary-total">
+              <span className="mood-summary-total-pct" style={{ color: allocationColor(teamPct) }}>
+                {teamPct}%
+              </span>
+              <span className="mood-summary-total-label">
+                Team forecasted
+                <br />
+                {totalHours}h / {totalCapacity}h
+              </span>
+            </div>
+            <div className="mood-summary-bar">
+              <div
+                className="mood-summary-seg"
+                style={{ width: `${bucketPct(buckets.target)}%`, background: "var(--success)" }}
+              />
+              <div
+                className="mood-summary-seg"
+                style={{ width: `${bucketPct(buckets.under)}%`, background: "var(--warning)" }}
+              />
+              <div
+                className="mood-summary-seg"
+                style={{ width: `${bucketPct(buckets.over)}%`, background: "var(--danger)" }}
+              />
+            </div>
+            <div className="mood-summary-legend">
+              <span>
+                <i style={{ background: "var(--success)" }} /> On target · {buckets.target} (
+                {bucketPct(buckets.target)}%)
+              </span>
+              <span>
+                <i style={{ background: "var(--warning)" }} /> Under-allocated · {buckets.under} (
+                {bucketPct(buckets.under)}%)
+              </span>
+              <span>
+                <i style={{ background: "var(--danger)" }} /> Over-allocated · {buckets.over} (
+                {bucketPct(buckets.over)}%)
+              </span>
+            </div>
+          </div>
+        ) : null}
 
+        {loading ? <p className="muted" style={{ marginTop: 0 }}>Updating…</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
         {loading && people.length === 0 ? (
@@ -117,34 +165,40 @@ export default function ForecastDashboardPage() {
         ) : !loading && people.length === 0 ? (
           <div className="empty"><p>No forecasted hours for this week yet.</p></div>
         ) : (
-          <div className="ops-panel">
-            <div className="ops-cap-list">
-              {people.map((p) => (
-                <div key={p.person} className="ops-cap-row">
-                  <div className="ops-cap-person">
-                    <span className="ops-avatar">{initials(p.label)}</span>
-                    <span className="ops-cap-name">{p.label}</span>
-                  </div>
-                  <div className="ops-cap-track">
-                    <div
-                      className="ops-cap-fill"
-                      style={{ width: `${Math.min(100, p.allocationPct)}%`, background: allocationColor(p.allocationPct) }}
-                    />
-                  </div>
-                  <div>
-                    <div className="ops-cap-pct" style={{ color: allocationColor(p.allocationPct) }}>
-                      {p.allocationPct}%
+          <div className="mood-grid">
+            {people.map((p) => {
+              const mood = moodForPct(p.allocationPct);
+              return (
+                <Link
+                  key={p.person}
+                  href={`/admin/forecast/${p.person}?week=${week}`}
+                  className={`mood-card mood-card--${mood}`}
+                >
+                  <MoodAvatar pct={p.allocationPct} size={64} />
+                  <div className="mood-card-body">
+                    <div className="mood-card-name">{p.label}</div>
+                    <div className="mood-card-mood">{MOOD_LABEL[mood]}</div>
+                    <div className="ops-cap-track">
+                      <div
+                        className="ops-cap-fill"
+                        style={{
+                          width: `${Math.min(100, p.allocationPct)}%`,
+                          background: allocationColor(p.allocationPct),
+                        }}
+                      />
                     </div>
-                    <div className="ops-cap-hrs">{allocationLabel(p.allocationPct)}</div>
+                    <div className="mood-card-foot">
+                      <span style={{ color: allocationColor(p.allocationPct), fontWeight: 700 }}>
+                        {p.allocationPct}%
+                      </span>
+                      <span className="muted">
+                        {p.hours}h · {allocationLabel(p.allocationPct)}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <Link className="btn btn-ghost btn-sm" href={`/admin/forecast/${p.person}?week=${week}`}>
-                      View
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

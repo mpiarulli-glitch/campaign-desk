@@ -4148,6 +4148,163 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .ops-cap-row { grid-template-columns: 1fr; gap: 8px; }
 }
 
+/* Forecast: team status summary bar (green/yellow/red split of the team) */
+.mood-summary {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  background: #fff;
+  border: 1px solid var(--ops-border);
+  border-radius: 16px;
+  padding: 18px 22px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+.mood-summary-total {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.mood-summary-total-pct {
+  font-family: var(--font-head);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.mood-summary-total-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.mood-summary-bar {
+  flex: 1 1 220px;
+  min-width: 160px;
+  height: 10px;
+  border-radius: 99px;
+  overflow: hidden;
+  display: flex;
+  background: var(--ops-border-soft);
+}
+.mood-summary-seg {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.mood-summary-seg:first-child { border-radius: 99px 0 0 99px; }
+.mood-summary-seg:last-child { border-radius: 0 99px 99px 0; }
+.mood-summary-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.mood-summary-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.mood-summary-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Forecast: team mood-avatar card grid */
+.mood-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+.mood-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid var(--ops-border);
+  border-radius: 16px;
+  padding: 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.mood-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--border-strong);
+}
+.mood-card--relaxed:hover { border-color: rgba(31, 157, 99, 0.4); }
+.mood-card--focused:hover { border-color: rgba(4, 128, 141, 0.4); }
+.mood-card--stressed:hover { border-color: rgba(196, 137, 0, 0.4); }
+.mood-card--overwhelmed:hover { border-color: rgba(214, 69, 69, 0.45); }
+.mood-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mood-card-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.mood-card-mood {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: -4px;
+}
+.mood-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.mood-avatar {
+  position: relative;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--ops-border);
+}
+.mood-avatar--relaxed { animation: mood-breathe 4s ease-in-out infinite; }
+.mood-avatar--focused { animation: none; }
+.mood-avatar--stressed { animation: mood-fidget 2.6s ease-in-out infinite; }
+.mood-avatar--overwhelmed { animation: mood-shake 0.6s ease-in-out infinite; }
+
+@keyframes mood-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+@keyframes mood-fidget {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(2deg); }
+}
+@keyframes mood-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1.5px); }
+  75% { transform: translateX(1.5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-avatar--relaxed, .mood-avatar--stressed, .mood-avatar--overwhelmed {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .mood-summary { flex-direction: column; align-items: stretch; gap: 14px; }
+  .mood-grid { grid-template-columns: 1fr; }
+}
+
 /* Forecast task priority: urgent (can't move) / important (move if truly
    needed) / flexible (reschedulable, still has to happen). */
 .ops-task-chip.pri-urgent { background: rgba(214, 69, 69, 0.16); border-left: 3px solid var(--danger); }
@@ -4586,4 +4743,14 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background: var(--bg);
   max-height: 120px;
   line-height: 1.4;
+}
+
+/* ---------------------------------------------- client hub messages grid */
+.acct-msg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 860px) {
+  .acct-msg-grid { grid-template-columns: 1fr; }
 }

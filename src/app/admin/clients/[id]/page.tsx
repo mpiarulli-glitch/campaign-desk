@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { NavMenu } from "@/components/NavMenu";
+import { TodoList } from "@/components/TodoList";
+import { ChatThread } from "@/components/ChatThread";
 
 type CycleStatus =
   | "not_configured"
@@ -113,9 +115,11 @@ function fmtAt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-type Tab = "overview" | "production" | "calendar" | "goals";
+type Tab = "overview" | "todos" | "messages" | "production" | "calendar" | "goals";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "todos", label: "To-dos" },
+  { key: "messages", label: "Messages" },
   { key: "production", label: "Production" },
   { key: "calendar", label: "Campaign calendar" },
   { key: "goals", label: "Goals & OKRs" },
@@ -376,6 +380,45 @@ export default function ClientHubPage() {
                     ) : (
                       <p className="muted" style={{ margin: 0 }}>No activity yet.</p>
                     )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {tab === "todos" ? (
+              <div className="card card-pad">
+                <TodoList clientId={data.client.id} title="Client to-dos" />
+              </div>
+            ) : null}
+
+            {tab === "messages" ? (
+              <div className="acct-msg-grid">
+                <div className="acct-section">
+                  <div className="acct-section-head">
+                    <h2 className="acct-section-title">Internal thread</h2>
+                    <span className="muted" style={{ fontSize: 12 }}>Team only</span>
+                  </div>
+                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                    <ChatThread
+                      endpoint="/api/chat"
+                      room={`team:${data.client.id}`}
+                      emptyText="No internal notes yet."
+                      placeholder="Note for the team…"
+                    />
+                  </div>
+                </div>
+                <div className="acct-section">
+                  <div className="acct-section-head">
+                    <h2 className="acct-section-title">Client thread</h2>
+                    <span className="muted" style={{ fontSize: 12 }}>Visible to the client</span>
+                  </div>
+                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                    <ChatThread
+                      endpoint="/api/chat"
+                      room={`client:${data.client.id}`}
+                      emptyText="No messages with the client yet."
+                      placeholder="Reply to the client…"
+                    />
                   </div>
                 </div>
               </div>
