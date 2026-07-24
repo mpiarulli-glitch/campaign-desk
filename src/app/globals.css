@@ -1297,6 +1297,33 @@ button {
   opacity: 0.75;
 }
 
+.activity-sidebar-item--read {
+  opacity: 0.45;
+}
+
+.activity-sidebar-item--read:hover {
+  opacity: 0.65;
+}
+
+.activity-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.activity-sidebar-chevron {
+  display: inline-block;
+  font-size: 11px;
+  color: #8a9099;
+  transition: transform 0.15s ease;
+}
+
 .activity-dot {
   width: 8px;
   height: 8px;
