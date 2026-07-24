@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { NavMenu } from "@/components/NavMenu";
 import { TodoList } from "@/components/TodoList";
-import { ChatThread } from "@/components/ChatThread";
+import { ChatPreviewCard } from "@/components/ChatPreviewCard";
 import { StrategyPanel } from "@/components/StrategyPanel";
 
 type CycleStatus =
@@ -399,34 +399,18 @@ export default function ClientHubPage() {
 
             {tab === "messages" ? (
               <div className="acct-msg-grid">
-                <div className="acct-section">
-                  <div className="acct-section-head">
-                    <h2 className="acct-section-title">Internal thread</h2>
-                    <span className="muted" style={{ fontSize: 12 }}>Team only</span>
-                  </div>
-                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <ChatThread
-                      endpoint="/api/chat"
-                      room={`team:${data.client.id}`}
-                      emptyText="No internal notes yet."
-                      placeholder="Note for the team…"
-                    />
-                  </div>
-                </div>
-                <div className="acct-section">
-                  <div className="acct-section-head">
-                    <h2 className="acct-section-title">Client thread</h2>
-                    <span className="muted" style={{ fontSize: 12 }}>Visible to the client</span>
-                  </div>
-                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <ChatThread
-                      endpoint="/api/chat"
-                      room={`client:${data.client.id}`}
-                      emptyText="No messages with the client yet."
-                      placeholder="Reply to the client…"
-                    />
-                  </div>
-                </div>
+                <ChatPreviewCard
+                  clientId={data.client.id}
+                  kind="internal"
+                  title="Internal thread"
+                  tag="Team only"
+                />
+                <ChatPreviewCard
+                  clientId={data.client.id}
+                  kind="client"
+                  title="Client thread"
+                  tag="Visible to the client"
+                />
               </div>
             ) : null}
 
