@@ -11,18 +11,19 @@ import { SopsSection } from "@/components/hub/SopsSection";
 import { TrainingSection } from "@/components/hub/TrainingSection";
 import { SentimentSection } from "@/components/hub/SentimentSection";
 import { HrSection } from "@/components/hub/HrSection";
+import { HubHome } from "@/components/hub/HubHome";
 import { teamLabel } from "@/lib/team";
 
-type Section = "chat" | "resources" | "sops" | "training" | "todos" | "sentiment" | "hr";
-const SECTIONS: { key: Section; label: string }[] = [
-  { key: "chat", label: "Team chat" },
-  { key: "resources", label: "Forecasts, docs & files" },
-  { key: "sops", label: "SOPs" },
-  { key: "training", label: "Marketing & AI training" },
-  { key: "todos", label: "Team to-dos" },
-  { key: "sentiment", label: "Sentiment check-in" },
-  { key: "hr", label: "HR" },
-];
+type Section = "home" | "chat" | "resources" | "sops" | "training" | "todos" | "sentiment" | "hr";
+const SECTION_TITLE: Record<Exclude<Section, "home">, string> = {
+  chat: "Team chat",
+  resources: "Forecasts, docs & files",
+  sops: "SOPs",
+  training: "Marketing & AI training",
+  todos: "Team to-dos",
+  sentiment: "Sentiment check-in",
+  hr: "HR",
+};
 
 function ResourcesSection({ isAdmin }: { isAdmin: boolean }) {
   const [links, setLinks] = useState<{ docsUrl: string; filesUrl: string }>({ docsUrl: "", filesUrl: "" });
@@ -88,7 +89,7 @@ function ResourcesSection({ isAdmin }: { isAdmin: boolean }) {
 
 export default function TeamHubPage() {
   const router = useRouter();
-  const [section, setSection] = useState<Section>("chat");
+  const [section, setSection] = useState<Section>("home");
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const [person, setPerson] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -115,24 +116,19 @@ export default function TeamHubPage() {
       </header>
 
       <div className="ops-page">
-        <div className="ops-page-head">
-          <div>
-            <p className="ops-eyebrow">Internal</p>
-            <h1 className="ops-title">MEG Team Hub.</h1>
-            <p className="ops-sub">Everything the team runs on, in one place.</p>
+        {section !== "home" ? (
+          <div className="ops-page-head" style={{ alignItems: "flex-start" }}>
+            <div>
+              <button className="hq-back" onClick={() => setSection("home")}>‹ MEG Team Hub</button>
+              <h1 className="ops-title" style={{ marginTop: 2 }}>{SECTION_TITLE[section]}.</h1>
+            </div>
           </div>
-        </div>
-
-        <div className="hub-nav">
-          {SECTIONS.map((s) => (
-            <button key={s.key} className={`hub-nav-btn ${section === s.key ? "is-on" : ""}`} onClick={() => setSection(s.key)}>
-              {s.label}
-            </button>
-          ))}
-        </div>
+        ) : null}
 
         {!ready ? (
           <p className="muted">Loading…</p>
+        ) : section === "home" ? (
+          <HubHome onOpen={setSection} isAdmin={isAdmin} person={person} />
         ) : section === "chat" ? (
           <div className="ops-panel chat-panel chat-panel-tall">
             <ChatThread endpoint="/api/chat" room="team" emptyText="No messages yet. Kick it off." />
