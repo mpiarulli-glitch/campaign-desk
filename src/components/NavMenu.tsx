@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/production", label: "Production" },
   { href: "/admin/forecast", label: "Forecast" },
+  { href: "/admin/todos", label: "To-dos" },
   { href: "/admin/snapshot", label: "Snapshots" },
   { href: "/admin/revenue", label: "Revenue" },
   { href: "/admin/clients", label: "Clients" },
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
 const FORECAST_NAV_ITEMS = [
   { href: "/admin", label: "Home" },
   { href: "/admin/forecast", label: "Forecast" },
+  { href: "/admin/todos", label: "To-dos" },
   { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/snapshot", label: "Snapshot" },
 ];
