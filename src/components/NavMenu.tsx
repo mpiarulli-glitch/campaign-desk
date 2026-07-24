@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: "/admin/production", label: "Production" },
   { href: "/admin/forecast", label: "Forecast" },
   { href: "/admin/todos", label: "To-dos" },
-  { href: "/admin/chat", label: "Team chat" },
+  { href: "/admin/hub", label: "MEG Team Hub" },
   { href: "/admin/snapshot", label: "Snapshots" },
   { href: "/admin/revenue", label: "Revenue" },
   { href: "/admin/clients", label: "Clients" },
@@ -25,7 +25,7 @@ const FORECAST_NAV_ITEMS = [
   { href: "/admin", label: "Home" },
   { href: "/admin/forecast", label: "Forecast" },
   { href: "/admin/todos", label: "To-dos" },
-  { href: "/admin/chat", label: "Team chat" },
+  { href: "/admin/hub", label: "MEG Team Hub" },
   { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/snapshot", label: "Snapshot" },
 ];

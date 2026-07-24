@@ -432,6 +432,56 @@ export interface ChatMessage {
   created_at: string;
 }
 
+// MEG Team Hub content ------------------------------------------------------
+
+// A written standard operating procedure, read by the whole team, edited by
+// admins. link is an optional pointer to a fuller doc/video.
+export interface Sop {
+  id: string;
+  title: string;
+  category: string;
+  body: string;
+  link: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// A daily marketing or AI training post. kind = "marketing" | "ai".
+export interface TrainingPost {
+  id: string;
+  title: string;
+  kind: string;
+  body: string;
+  link: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// One monthly sentiment check-in per person (score 1-5 + optional note).
+export interface SentimentCheckin {
+  id: string;
+  person: string;
+  month: string; // YYYY-MM
+  score: number; // 1-5
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// An HR escalation. submitted_by is "" when anonymous. Readable by admins only.
+export interface HrIssue {
+  id: string;
+  submitted_by: string;
+  anonymous: number;
+  subject: string;
+  body: string;
+  status: string; // "open" | "acknowledged" | "resolved"
+  created_at: string;
+  updated_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -778,6 +828,54 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_chat_room ON chat_messages(room, created_at);
+
+    CREATE TABLE IF NOT EXISTS sops (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      link TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS training_posts (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'marketing',
+      body TEXT NOT NULL DEFAULT '',
+      link TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sentiment_checkins (
+      id TEXT PRIMARY KEY,
+      person TEXT NOT NULL,
+      month TEXT NOT NULL,
+      score INTEGER NOT NULL DEFAULT 3,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (person, month)
+    );
+
+    CREATE TABLE IF NOT EXISTS hr_issues (
+      id TEXT PRIMARY KEY,
+      submitted_by TEXT NOT NULL DEFAULT '',
+      anonymous INTEGER NOT NULL DEFAULT 0,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_training_created ON training_posts(created_at);
+    CREATE INDEX IF NOT EXISTS idx_sentiment_month ON sentiment_checkins(month);
+    CREATE INDEX IF NOT EXISTS idx_hr_status ON hr_issues(status);
 
     CREATE TABLE IF NOT EXISTS client_strategies (
       client_id TEXT PRIMARY KEY,

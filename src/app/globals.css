@@ -5187,3 +5187,149 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   line-height: 1;
 }
 .chat-author .avatar { margin-right: 2px; }
+
+/* ---------------------------------------------- MEG Team Hub */
+.hub-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+.hub-nav-btn {
+  border: 1px solid transparent;
+  background: none;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  font-family: var(--font);
+  white-space: nowrap;
+}
+.hub-nav-btn:hover { background: var(--bg-soft); }
+.hub-nav-btn.is-on { background: var(--accent-ink); color: #fff; }
+
+/* resources links */
+.hub-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.hub-link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.hub-link-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.hub-link-card.is-empty { opacity: 0.6; cursor: default; pointer-events: none; }
+.hub-link-title { font-family: var(--font-head); font-size: 17px; font-weight: 600; color: var(--text); }
+.hub-link-sub { font-size: 13px; color: var(--text-muted); }
+.hub-link-go { font-size: 13px; font-weight: 600; color: var(--accent-ink); margin-top: 6px; }
+
+/* categories, kinds */
+.hub-cat {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.hub-kind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.hub-kind-marketing { color: var(--accent-ink); background: var(--bg-tint); }
+.hub-kind-ai { color: #7a5cc4; background: rgba(122, 92, 196, 0.12); }
+.sop-title {
+  border: none;
+  background: none;
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+.hub-sent { color: var(--success); font-weight: 600; margin: 0; font-size: 14px; }
+
+/* sentiment faces */
+.senti-faces { display: flex; gap: 8px; flex-wrap: wrap; }
+.senti-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  min-width: 76px;
+}
+.senti-face span { font-size: 24px; line-height: 1; }
+.senti-face small { font-size: 11px; color: var(--text-muted); }
+.senti-face.is-on { border-color: var(--accent); background: var(--bg-tint); }
+.senti-face.is-on small { color: var(--accent-ink); font-weight: 600; }
+
+/* team todos per person */
+.team-todo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.team-todo-col {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.team-todo-head { display: flex; align-items: center; gap: 8px; }
+.team-todo-name { font-weight: 600; font-size: 14px; flex: 1; }
+.team-todo-rows { display: flex; flex-direction: column; gap: 5px; min-height: 20px; }
+.team-todo-empty { margin: 0; font-size: 13px; }
+.team-todo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  background: var(--bg-soft);
+}
+.team-todo-row.pri-urgent { border-left-color: var(--danger); }
+.team-todo-row.pri-important { border-left-color: var(--warning); }
+.team-todo-row.pri-flexible { border-left-color: var(--success); }
+.team-todo-row.is-done { opacity: 0.55; }
+.team-todo-row.is-done .team-todo-title { text-decoration: line-through; }
+.team-todo-title { flex: 1; font-size: 13px; color: var(--text); }
+.team-todo-add { display: flex; gap: 6px; }
+.team-todo-add input {
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+}
