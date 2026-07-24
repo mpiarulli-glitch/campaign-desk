@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar } from "./Avatar";
+import { avatarFor } from "@/lib/team";
 
 type Message = {
   id: string;
@@ -221,6 +223,9 @@ export function ChatThread({
               <div key={m.id} className={`chat-msg ${mine ? "is-mine" : "is-them"}`}>
                 <div className="chat-bubble">
                   <div className="chat-author">
+                    {m.is_client ? null : (
+                      <Avatar label={m.author_name} src={avatarFor(m.author_slug)} size={20} />
+                    )}
                     {m.author_name}
                     {m.is_client ? <span className="chat-badge chat-badge-client">Client</span> : null}
                   </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Avatar } from "./Avatar";
+import { avatarFor } from "@/lib/team";
 
 type Priority = "urgent" | "important" | "flexible";
 type Status = "open" | "done";
@@ -216,7 +218,14 @@ export function TodoList({
                 <div className="todo-body">
                   <span className="todo-title">{t.title}</span>
                   <div className="todo-meta">
-                    {t.assignee ? <span className="todo-chip todo-who">{label(t.assignee)}</span> : <span className="todo-chip todo-unassigned">Unassigned</span>}
+                    {t.assignee ? (
+                      <span className="todo-chip todo-who">
+                        <Avatar label={label(t.assignee)} src={avatarFor(t.assignee)} size={16} />
+                        {label(t.assignee)}
+                      </span>
+                    ) : (
+                      <span className="todo-chip todo-unassigned">Unassigned</span>
+                    )}
                     {t.tags.map((tg) => (
                       <span key={tg} className="todo-chip todo-tag">@{label(tg)}</span>
                     ))}
