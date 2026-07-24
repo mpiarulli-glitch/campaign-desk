@@ -412,6 +412,21 @@ export interface ClientStrategy {
   updated_at: string;
 }
 
+// A chat message in a room. room key formats:
+//   client:{clientId}  → shared thread visible to the client AND the team
+//   team               → global internal team chat
+//   team:{clientId}     → internal-only per-client thread (team eyes only)
+// is_client = 1 when the client (not a team member) wrote it.
+export interface ChatMessage {
+  id: string;
+  room: string;
+  author_name: string;
+  author_slug: string;
+  is_client: number;
+  body: string;
+  created_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -746,6 +761,18 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_todos_client ON todos(client_id);
     CREATE INDEX IF NOT EXISTS idx_todos_assignee ON todos(assignee);
     CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      room TEXT NOT NULL,
+      author_name TEXT NOT NULL DEFAULT '',
+      author_slug TEXT NOT NULL DEFAULT '',
+      is_client INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_room ON chat_messages(room, created_at);
 
     CREATE TABLE IF NOT EXISTS client_strategies (
       client_id TEXT PRIMARY KEY,
