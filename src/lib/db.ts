@@ -147,6 +147,11 @@ export interface RevClient {
   account_manager: string;
   // Manually-set account tier: ""|standard|premium|vip.
   tier: string;
+  // Client website (bare domain or full URL) used to auto-derive a brand logo.
+  website: string;
+  // Manual account-sentiment override: ""|healthy|watch|at_risk. Empty means
+  // fall back to the metric-derived sentiment.
+  sentiment_override: string;
   // 1 = shown on the production scheduler, 0 = removed from it (client and all
   // other data are kept; they just don't get productions).
   production_enrolled: number;
@@ -981,6 +986,16 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("videographer_id")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN videographer_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("website")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN website TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("sentiment_override")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN sentiment_override TEXT NOT NULL DEFAULT ''`
     );
   }
 

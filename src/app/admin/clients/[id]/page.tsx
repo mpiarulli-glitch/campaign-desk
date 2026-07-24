@@ -6,6 +6,7 @@ import { Brand } from "@/components/Brand";
 import { NavMenu } from "@/components/NavMenu";
 import { TodoList } from "@/components/TodoList";
 import { ChatThread } from "@/components/ChatThread";
+import { StrategyPanel } from "@/components/StrategyPanel";
 
 type CycleStatus =
   | "not_configured"
@@ -115,9 +116,10 @@ function fmtAt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-type Tab = "overview" | "todos" | "messages" | "production" | "calendar" | "goals";
+type Tab = "overview" | "strategy" | "todos" | "messages" | "production" | "calendar" | "goals";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "strategy", label: "Strategy" },
   { key: "todos", label: "To-dos" },
   { key: "messages", label: "Messages" },
   { key: "production", label: "Production" },
@@ -383,6 +385,10 @@ export default function ClientHubPage() {
                   </div>
                 </div>
               </div>
+            ) : null}
+
+            {tab === "strategy" ? (
+              <StrategyPanel clientId={data.client.id} onGenerated={() => setTab("todos")} />
             ) : null}
 
             {tab === "todos" ? (
