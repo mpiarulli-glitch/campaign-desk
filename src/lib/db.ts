@@ -166,6 +166,10 @@ export interface Videographer {
   updated_at: string;
 }
 
+// urgent = can't be moved; important = reschedulable if truly needed;
+// flexible = can be rescheduled but still needs to happen this week.
+export type ForecastPriority = "urgent" | "important" | "flexible";
+
 export interface ForecastTask {
   id: string;
   person: string;
@@ -174,6 +178,7 @@ export interface ForecastTask {
   notes: string;
   hours: number;
   completed: number;
+  priority: ForecastPriority;
   created_at: string;
   updated_at: string;
 }
@@ -961,6 +966,11 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("completed")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN completed INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("priority")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'flexible'`
     );
   }
 

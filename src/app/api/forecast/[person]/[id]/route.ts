@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
-import { deleteTask, getTask, updateTask } from "@/lib/forecast";
+import { deleteTask, getTask, updateTask, type ForecastPriority } from "@/lib/forecast";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
 
 export async function PATCH(request: Request, { params }: Params) {
   const { person, id } = await params;
@@ -31,6 +32,7 @@ export async function PATCH(request: Request, { params }: Params) {
     notes: typeof body.notes === "string" ? body.notes : undefined,
     hours: body.hours !== undefined ? Number(body.hours) : undefined,
     completed: typeof body.completed === "boolean" ? body.completed : undefined,
+    priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
   });
   return NextResponse.json({ task });
 }

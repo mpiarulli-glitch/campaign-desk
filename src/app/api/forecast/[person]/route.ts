@@ -8,12 +8,14 @@ import {
   listTasksForPersonWeek,
   personLabel,
   upsertWeekNote,
+  type ForecastPriority,
 } from "@/lib/forecast";
 import { currentWeek } from "@/lib/week";
 
 type Params = { params: Promise<{ person: string }> };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
 
 export async function GET(request: Request, { params }: Params) {
   const { person } = await params;
@@ -79,6 +81,7 @@ export async function POST(request: Request, { params }: Params) {
     client: typeof body.client === "string" ? body.client : "",
     notes: typeof body.notes === "string" ? body.notes : "",
     hours,
+    priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
   });
   return NextResponse.json({ task }, { status: 201 });
 }

@@ -1,9 +1,14 @@
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type ForecastNote, type ForecastTask } from "./db";
+import { getDb, nowIso, type ForecastNote, type ForecastPriority, type ForecastTask } from "./db";
 import { PEOPLE, isValidPerson, personLabel } from "./people";
 import { addWeeks } from "./week";
 
-export type { ForecastTask };
+export type { ForecastTask, ForecastPriority };
+
+const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
+function normPriority(v: unknown): ForecastPriority {
+  return PRIORITIES.includes(v as ForecastPriority) ? (v as ForecastPriority) : "flexible";
+}
 export { PEOPLE, isValidPerson, personLabel };
 
 export const WEEKLY_CAPACITY_HOURS = 40;
@@ -46,13 +51,14 @@ export function createTask(input: {
   client?: string;
   notes?: string;
   hours: number;
+  priority?: ForecastPriority;
 }): ForecastTask {
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -60,6 +66,7 @@ export function createTask(input: {
     (input.client || "").trim(),
     (input.notes || "").trim(),
     input.hours,
+    normPriority(input.priority),
     ts,
     ts
   );
@@ -74,13 +81,14 @@ export function updateTask(
     notes: string;
     hours: number;
     completed: boolean;
+    priority: ForecastPriority;
   }>
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, updated_at = ? WHERE id = ?`
     )
     .run(
       updates.taskDate ?? existing.task_date,
@@ -88,6 +96,7 @@ export function updateTask(
       updates.notes !== undefined ? updates.notes.trim() : existing.notes,
       updates.hours ?? existing.hours,
       updates.completed !== undefined ? (updates.completed ? 1 : 0) : existing.completed,
+      updates.priority ? normPriority(updates.priority) : existing.priority,
       nowIso(),
       id
     );
