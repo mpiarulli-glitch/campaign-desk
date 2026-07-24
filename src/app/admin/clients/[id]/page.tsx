@@ -7,6 +7,7 @@ import { NavMenu } from "@/components/NavMenu";
 import { TodoList } from "@/components/TodoList";
 import { ChatPreviewCard } from "@/components/ChatPreviewCard";
 import { StrategyPanel } from "@/components/StrategyPanel";
+import { RoadmapPanel } from "@/components/RoadmapPanel";
 import { FlagsPanel } from "@/components/FlagsPanel";
 
 type CycleStatus =
@@ -163,11 +164,12 @@ function groupActivity(items: ActivityItem[]): ActivityGroup[] {
 
 const ACTIVITY_PREVIEW = 6;
 
-type Tab = "overview" | "flags" | "strategy" | "todos" | "messages" | "production" | "calendar" | "goals";
+type Tab = "overview" | "flags" | "strategy" | "roadmap" | "todos" | "messages" | "production" | "calendar" | "goals";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "flags", label: "Flags" },
   { key: "strategy", label: "Strategy" },
+  { key: "roadmap", label: "Roadmap" },
   { key: "todos", label: "To-dos" },
   { key: "messages", label: "Messages" },
   { key: "production", label: "Production" },
@@ -516,6 +518,15 @@ export default function ClientHubPage() {
 
             {tab === "strategy" ? (
               <StrategyPanel clientId={data.client.id} onGenerated={() => setTab("todos")} />
+            ) : null}
+
+            {tab === "roadmap" ? (
+              <RoadmapPanel
+                clientId={data.client.id}
+                okrs={data.okrs}
+                onManageGoals={() => setTab("goals")}
+                onOpenStrategy={() => setTab("strategy")}
+              />
             ) : null}
 
             {tab === "todos" ? (

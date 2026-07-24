@@ -5877,3 +5877,98 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .strat-gen-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 @media (max-width: 620px) { .strat-gen-row { flex-direction: column; align-items: flex-start; } }
+
+/* ============================================ Client roadmap — dusk skyline */
+.rmap { display: flex; flex-direction: column; gap: 22px; }
+
+/* Hero (light, matches the app) */
+.rmap-hero { }
+.rmap-eyebrow {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent-ink); margin: 0 0 8px;
+}
+.rmap-hero-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rmap-title {
+  font-family: var(--font-head); font-size: clamp(26px, 4vw, 38px); font-weight: 600;
+  letter-spacing: -0.025em; line-height: 1.02; margin: 0; color: var(--text);
+}
+.rmap-lead { color: var(--text-body); margin: 10px 0 0; font-size: 15px; max-width: 60ch; }
+.rmap-lead b { color: var(--text); font-weight: 700; }
+.rmap-verdict {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700;
+  padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--bg-elevated); color: var(--text);
+}
+.rmap-verdict .dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent); }
+.rmap-verdict.s-on_track { color: #0b7a4b; } .rmap-verdict.s-on_track .dot { background: #34d399; }
+.rmap-verdict.s-at_risk { color: #9a6a00; } .rmap-verdict.s-at_risk .dot { background: #fbbf24; }
+.rmap-verdict.s-off_track { color: #b42318; } .rmap-verdict.s-off_track .dot { background: #f87171; }
+.rmap-verdict.s-achieved { color: #0369a1; } .rmap-verdict.s-achieved .dot { background: #38bdf8; }
+
+/* The scene */
+.rmap-scene {
+  border-radius: 22px; overflow: hidden; background: #070b24;
+  border: 1px solid #0f1436; box-shadow: 0 18px 44px rgba(7, 11, 36, 0.4);
+}
+.rmap-scene svg { display: block; width: 100%; height: auto; }
+.rmap-now-tag { font-family: var(--font); font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; fill: #4a2a0c; }
+
+/* Timeline axis under the skyline */
+.rmap-axis {
+  display: grid; gap: 0; padding: 0 44px 18px;
+  background: linear-gradient(180deg, #0a0a1c 0%, #0c1024 100%);
+}
+.rmap-axis-col {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 0 6px; position: relative;
+}
+.rmap-tick { width: 1px; height: 12px; background: rgba(180,200,255,0.25); margin-bottom: 8px; }
+.rmap-when {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #ffbe6a; margin-bottom: 3px;
+}
+.rmap-phase { font-family: var(--font-head); font-size: 13.5px; font-weight: 600; color: #eef2ff; line-height: 1.2; }
+.rmap-phase-desc { font-size: 11.5px; color: #9aa6c8; margin-top: 3px; line-height: 1.35; }
+.rmap-axis-col.is-now .rmap-tick { height: 16px; background: #ffe9b0; }
+.rmap-axis-col.is-now .rmap-phase { color: #fff; }
+
+/* OKR tracker */
+.rmap-okr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.rmap-sec-title { font-family: var(--font-head); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.rmap-okr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.rmap-okr-card {
+  background: var(--bg-elevated); border: 1px solid var(--border); border-left: 3px solid var(--s, var(--accent));
+  border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow);
+}
+.rmap-okr-top { display: flex; gap: 14px; align-items: center; }
+.rmap-ring { flex: none; }
+.rmap-ring-num { font-family: var(--font-head); font-weight: 700; font-size: 13px; fill: var(--text); }
+.rmap-okr-meta { min-width: 0; }
+.rmap-okr-obj { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; margin: 0 0 4px; color: var(--text); }
+.rmap-okr-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-body); }
+.rmap-okr-status .d { width: 8px; height: 8px; border-radius: 50%; background: var(--s); }
+.rmap-okr-date { color: var(--text-muted); font-weight: 500; }
+.rmap-kr-list { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
+.rmap-kr { display: grid; grid-template-columns: 1fr 90px auto; align-items: center; gap: 10px; }
+.rmap-kr-desc { font-size: 13px; color: var(--text-body); min-width: 0; }
+.rmap-kr-track { height: 6px; border-radius: 3px; background: var(--bg-soft); overflow: hidden; }
+.rmap-kr-fill { height: 100%; border-radius: 3px; }
+.rmap-kr-num { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.rmap-okr-nokr { margin: 12px 0 0; font-size: 13px; color: var(--text-muted); }
+
+/* Empty state with a tiny skyline motif */
+.rmap-empty { text-align: center; padding: 48px 20px; }
+.rmap-empty h3 { font-family: var(--font-head); font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+.rmap-empty p { color: var(--text-muted); margin: 0 auto 16px; max-width: 46ch; font-size: 14px; }
+.rmap-empty-city { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 60px; margin-bottom: 18px; opacity: 0.5; }
+.rmap-empty-city span { width: 16px; background: linear-gradient(180deg, #26304d, #0b1120); border-radius: 2px 2px 0 0; }
+.rmap-empty-city span:nth-child(1){height:30%} .rmap-empty-city span:nth-child(2){height:64%} .rmap-empty-city span:nth-child(3){height:46%}
+.rmap-empty-city span:nth-child(4){height:88%} .rmap-empty-city span:nth-child(5){height:54%} .rmap-empty-city span:nth-child(6){height:38%}
+
+@media (max-width: 720px) {
+  .rmap-phase-desc { display: none; }
+  .rmap-when { font-size: 8.5px; letter-spacing: 0.04em; }
+  .rmap-phase { font-size: 11px; }
+  .rmap-kr { grid-template-columns: 1fr auto; }
+  .rmap-kr-track { display: none; }
+}

@@ -40,6 +40,40 @@ type Overview = {
   completed_on: string;
 };
 
+const ICONS: Record<string, React.ReactNode> = {
+  wins: (
+    <>
+      <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0z" />
+      <path d="M5 4H3v1.5a3 3 0 0 0 3 3M19 4h2v1.5a3 3 0 0 1-3 3" />
+    </>
+  ),
+  work: (
+    <>
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </>
+  ),
+  deliv: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6M9 13h6M9 17h6" />
+    </>
+  ),
+  perf: (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-4 3 3 5-6" />
+    </>
+  ),
+};
+function Icon({ name }: { name: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {ICONS[name]}
+    </svg>
+  );
+}
+
 function groupByCategory(rows: Row[]): [string, Row[]][] {
   const map = new Map<string, Row[]>();
   for (const r of rows) {
@@ -151,173 +185,56 @@ export default function SnapshotClientPage() {
         <span className="snap-topbar-tag">Client snapshot</span>
       </header>
 
-      {/* Report cover */}
-      <section className="snap-hero">
-        <div className="snap-hero-inner">
-          <div className="snap-hero-top">
-            <div>
-              <p className="snap-hero-eyebrow">Weekly snapshot</p>
-              <h1 className="snap-hero-title">{accountName || "Account snapshot"}</h1>
-              <p className="snap-hero-sub">
-                Week of {weekLabel(week)}
-                {isCurrentWeek(week) ? " · current week" : ""} · prepared by Marketing Empire Group
-              </p>
-            </div>
-            <div className="snap-hero-nav">
-              <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
-              <button onClick={() => setWeek(currentWeek())} className="snap-hero-today">This week</button>
-              <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
-            </div>
-          </div>
-
-          {!loading || accountName ? (
-            <div className="snap-glance">
-              <div className="snap-chip"><span className="snap-chip-n">{glance.delivered}</span> delivered this week</div>
-              <div className="snap-chip"><span className="snap-chip-n">{glance.active}</span> in progress</div>
-              <div className="snap-chip"><span className="snap-chip-n">{glance.wins}</span> wins</div>
-              {glance.headlineText ? (
-                <div className="snap-chip snap-chip-accent">{glance.headlineText}</div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <main className="container stack" style={{ gap: 30 }}>
+      <main className="snap-wrap">
         {loading && !accountName ? (
           <p className="muted">Loading...</p>
         ) : error && !accountName ? (
           <p className="error">{error}</p>
         ) : (
           <>
-            <section className="stack" style={{ gap: 14 }}>
-              <h2 className="snap-section-title">This week&apos;s work</h2>
-              {rows.length === 0 ? (
-                <div className="empty"><p>No deliverables set up yet.</p></div>
-              ) : !anyUpdates ? (
-                <div className="empty"><p>No updates logged for this week yet. Check back soon.</p></div>
-              ) : (
-                grouped.map(([category, catRows]) => {
-                  const updated = catRows.filter(hasUpdate);
-                  if (updated.length === 0) return null;
-                  return (
-                    <div key={category} className="snap-group">
-                      <div className="snap-cat">
-                        <span>{category}</span>
-                        <span className="snap-cat-count">{updated.length}</span>
-                      </div>
-                      <div className="stack" style={{ gap: 10 }}>
-                        {updated.map((r) => (
-                          <div key={r.deliverable_id} className="snap-card">
-                            <div className="snap-card-head">
-                              <div>
-                                <div className="snap-name">{r.name}</div>
-                                {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
-                              </div>
-                              <span className={`snap-pill status-${r.status}`}>
-                                {STATUS_LABEL[r.status]}
-                              </span>
-                            </div>
-                            <div className="snap-ro-grid">
-                              {r.work_done.trim() ? (
-                                <div className="snap-ro">
-                                  <span className="snap-ro-label">What we did</span>
-                                  <p>{r.work_done}</p>
-                                </div>
-                              ) : null}
-                              {r.next_steps.trim() ? (
-                                <div className="snap-ro">
-                                  <span className="snap-ro-label">Next steps</span>
-                                  <p>{r.next_steps}</p>
-                                </div>
-                              ) : null}
-                              {r.notes.trim() ? (
-                                <div className="snap-ro">
-                                  <span className="snap-ro-label">Notes</span>
-                                  <p>{r.notes}</p>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </section>
-
-            {overview.length > 0 ? (
-              <section className="stack" style={{ gap: 14 }}>
-                <h2 className="snap-section-title">Contracted deliverables</h2>
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                  Everything in your agreement and where each item stands.
+            {/* Hero */}
+            <div className="snap-head-row">
+              <div className="hq-hero" style={{ marginBottom: 0 }}>
+                <p className="ops-eyebrow">Weekly snapshot · Week of {weekLabel(week)}{isCurrentWeek(week) ? " · current" : ""}</p>
+                <h1>{accountName || "Account snapshot"}</h1>
+                <p>
+                  <b>{glance.delivered}</b> delivered this week, <b>{glance.active}</b> in progress
+                  {glance.wins > 0 ? <>, and <b>{glance.wins} win{glance.wins === 1 ? "" : "s"}</b> to celebrate.</> : "."}
+                  {" "}Prepared by Marketing Empire Group.
                 </p>
-                {ongoingGroups.map(([category, items]) => (
-                  <div key={category} className="snap-group">
-                    <div className="snap-cat">
-                      <span>{category}</span>
-                      <span className="snap-cat-count">{items.length}</span>
-                    </div>
-                    <div className="stack" style={{ gap: 10 }}>
-                      {items.map((o) => (
-                        <div key={o.deliverable_id} className="snap-card">
-                          <div className="snap-card-head">
-                            <div>
-                              <div className="snap-name">{o.name}</div>
-                              {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
-                            </div>
-                            <span className={`snap-pill status-${o.status}`}>
-                              {STATUS_LABEL[o.status]}
-                            </span>
-                          </div>
-                          <div className="snap-deliv-meta">
-                            {o.worked_ever ? "Work in progress" : "Not started yet"}
-                            {o.worked_ever && o.last_work_done ? ` · ${o.last_work_done}` : ""}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              </div>
+              <div className="snap-week-nav">
+                <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
+                <button onClick={() => setWeek(currentWeek())} className="snap-week-today">This week</button>
+                <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
+              </div>
+            </div>
 
-                {setupDone.length > 0 ? (
-                  <div className="snap-group">
-                    <div className="snap-cat">
-                      <span>Setup &amp; one-time work</span>
-                      <span className="snap-cat-count">{setupDone.length}</span>
-                    </div>
-                    <div className="stack" style={{ gap: 10 }}>
-                      {setupDone.map((o) => (
-                        <div key={o.deliverable_id} className="snap-card snap-card-done">
-                          <div className="snap-card-head">
-                            <div>
-                              <div className="snap-name">{o.name}</div>
-                              {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
-                            </div>
-                            <span className="snap-pill status-completed">Completed</span>
-                          </div>
-                          <div className="snap-deliv-meta">
-                            Completed · week of {weekLabel(o.completed_on)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
+            {/* Pulse bar */}
+            <div className="hq-pulse">
+              <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#1f9d63" }} /><span className="n">{glance.delivered}</span><span className="l">delivered</span></div>
+              <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#04808d" }} /><span className="n">{glance.active}</span><span className="l">in progress</span></div>
+              <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#b8820b" }} /><span className="n">{glance.wins}</span><span className="l">wins</span></div>
+              {glance.headlineText ? (
+                <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#3f5bd6" }} /><span className="n" style={{ fontSize: 14 }}>{glance.headlineText}</span></div>
+              ) : null}
+            </div>
 
+            {/* WINS — up top */}
             {wins.length > 0 ? (
-              <section className="stack" style={{ gap: 14 }}>
-                <h2 className="snap-section-title">Wins</h2>
-                <div className="snap-wins">
+              <section className="snap-panel t-wins">
+                <div className="snap-panel-head">
+                  <span className="hq-icon"><Icon name="wins" /></span>
+                  <div><h3 className="hq-card-title">Wins</h3><p className="hq-card-desc">Highlights worth celebrating</p></div>
+                </div>
+                <div className="hq-divider" />
+                <div className="snap-wins2">
                   {wins.map((w) => (
-                    <div key={w.id} className="snap-win">
-                      <span className="snap-win-mark" aria-hidden="true">★</span>
+                    <div key={w.id} className="snap-win2">
+                      <span className="snap-win2-mark" aria-hidden="true">★</span>
                       <div>
                         <p>{w.body}</p>
-                        {w.happened_on ? <span className="snap-win-date">{w.happened_on}</span> : null}
+                        {w.happened_on ? <span className="snap-win2-date">{w.happened_on}</span> : null}
                       </div>
                     </div>
                   ))}
@@ -325,9 +242,143 @@ export default function SnapshotClientPage() {
               </section>
             ) : null}
 
+            {/* This week's work */}
+            <section className="snap-panel t-work">
+              <div className="snap-panel-head">
+                <span className="hq-icon"><Icon name="work" /></span>
+                <div><h3 className="hq-card-title">This week&apos;s work</h3><p className="hq-card-desc">What we moved on this week</p></div>
+              </div>
+              <div className="hq-divider" />
+              {rows.length === 0 ? (
+                <p className="muted" style={{ margin: 0 }}>No deliverables set up yet.</p>
+              ) : !anyUpdates ? (
+                <p className="muted" style={{ margin: 0 }}>No updates logged for this week yet. Check back soon.</p>
+              ) : (
+                <div className="stack" style={{ gap: 18 }}>
+                  {grouped.map(([category, catRows]) => {
+                    const updated = catRows.filter(hasUpdate);
+                    if (updated.length === 0) return null;
+                    return (
+                      <div key={category} className="snap-group">
+                        <div className="snap-cat">
+                          <span>{category}</span>
+                          <span className="snap-cat-count">{updated.length}</span>
+                        </div>
+                        <div className="stack" style={{ gap: 10 }}>
+                          {updated.map((r) => (
+                            <div key={r.deliverable_id} className="snap-card">
+                              <div className="snap-card-head">
+                                <div>
+                                  <div className="snap-name">{r.name}</div>
+                                  {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
+                                </div>
+                                <span className={`snap-pill status-${r.status}`}>
+                                  {STATUS_LABEL[r.status]}
+                                </span>
+                              </div>
+                              <div className="snap-ro-grid">
+                                {r.work_done.trim() ? (
+                                  <div className="snap-ro">
+                                    <span className="snap-ro-label">What we did</span>
+                                    <p>{r.work_done}</p>
+                                  </div>
+                                ) : null}
+                                {r.next_steps.trim() ? (
+                                  <div className="snap-ro">
+                                    <span className="snap-ro-label">Next steps</span>
+                                    <p>{r.next_steps}</p>
+                                  </div>
+                                ) : null}
+                                {r.notes.trim() ? (
+                                  <div className="snap-ro">
+                                    <span className="snap-ro-label">Notes</span>
+                                    <p>{r.notes}</p>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Contracted deliverables */}
+            {overview.length > 0 ? (
+              <section className="snap-panel t-deliv">
+                <div className="snap-panel-head">
+                  <span className="hq-icon"><Icon name="deliv" /></span>
+                  <div><h3 className="hq-card-title">Contracted deliverables</h3><p className="hq-card-desc">Everything in your agreement and where it stands</p></div>
+                </div>
+                <div className="hq-divider" />
+                <div className="stack" style={{ gap: 18 }}>
+                  {ongoingGroups.map(([category, items]) => (
+                    <div key={category} className="snap-group">
+                      <div className="snap-cat">
+                        <span>{category}</span>
+                        <span className="snap-cat-count">{items.length}</span>
+                      </div>
+                      <div className="stack" style={{ gap: 10 }}>
+                        {items.map((o) => (
+                          <div key={o.deliverable_id} className="snap-card">
+                            <div className="snap-card-head">
+                              <div>
+                                <div className="snap-name">{o.name}</div>
+                                {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
+                              </div>
+                              <span className={`snap-pill status-${o.status}`}>
+                                {STATUS_LABEL[o.status]}
+                              </span>
+                            </div>
+                            <div className="snap-deliv-meta">
+                              {o.worked_ever ? "Work in progress" : "Not started yet"}
+                              {o.worked_ever && o.last_work_done ? ` · ${o.last_work_done}` : ""}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {setupDone.length > 0 ? (
+                    <div className="snap-group">
+                      <div className="snap-cat">
+                        <span>Setup &amp; one-time work</span>
+                        <span className="snap-cat-count">{setupDone.length}</span>
+                      </div>
+                      <div className="stack" style={{ gap: 10 }}>
+                        {setupDone.map((o) => (
+                          <div key={o.deliverable_id} className="snap-card snap-card-done">
+                            <div className="snap-card-head">
+                              <div>
+                                <div className="snap-name">{o.name}</div>
+                                {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
+                              </div>
+                              <span className="snap-pill status-completed">Completed</span>
+                            </div>
+                            <div className="snap-deliv-meta">
+                              Completed · week of {weekLabel(o.completed_on)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {/* Performance */}
             {hasMetrics ? (
-              <section className="stack" style={{ gap: 14 }}>
-                <h2 className="snap-section-title">Performance</h2>
+              <section className="snap-panel t-perf">
+                <div className="snap-panel-head">
+                  <span className="hq-icon"><Icon name="perf" /></span>
+                  <div><h3 className="hq-card-title">Performance</h3><p className="hq-card-desc">The numbers behind the work</p></div>
+                </div>
+                <div className="hq-divider" />
                 <PerfCharts series={metrics} />
               </section>
             ) : null}
