@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isProductionAuthenticated } from "@/lib/auth";
 import { listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
 
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isProductionAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const today = todayYmd();

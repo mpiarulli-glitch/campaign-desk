@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isAdminAuthenticated, isProductionAuthenticated } from "@/lib/auth";
 import { listVideographers, createVideographer } from "@/lib/videographers";
 
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isProductionAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ videographers: listVideographers(false) });

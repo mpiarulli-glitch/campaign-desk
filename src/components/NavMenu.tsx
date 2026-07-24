@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
+import { hasProductionAccess } from "@/lib/people";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Home" },
@@ -117,11 +118,16 @@ export function NavMenu({ current }: { current: string }) {
   const items =
     session.role === "admin"
       ? NAV_ITEMS
-      : FORECAST_NAV_ITEMS.map((item) =>
-          item.href === "/admin/forecast" && session.person
-            ? { ...item, href: `/admin/forecast/${session.person}` }
-            : item
-        );
+      : (() => {
+          const base = FORECAST_NAV_ITEMS.map((item) =>
+            item.href === "/admin/forecast" && session.person
+              ? { ...item, href: `/admin/forecast/${session.person}` }
+              : item
+          );
+          return session.person && hasProductionAccess(session.person)
+            ? [...base, { href: "/admin/production", label: "Production" }]
+            : base;
+        })();
 
   return (
     <div className="nav-menu" ref={wrapRef}>

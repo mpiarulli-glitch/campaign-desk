@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isValidAdminPerson } from "./admin-people";
-import { isValidPerson } from "./people";
+import { hasProductionAccess, isValidPerson } from "./people";
 
 const COOKIE_NAME = "cd_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days
@@ -208,6 +208,15 @@ export async function isForecastAuthenticated(
 export async function isWorkflowAuthenticated(): Promise<boolean> {
   const session = await getSession();
   return session?.role === "admin" || session?.role === "forecast";
+}
+
+// Admins always pass; forecast-role users pass only if their person has been
+// granted production access (see PEOPLE in ./people).
+export async function isProductionAuthenticated(): Promise<boolean> {
+  const session = await getSession();
+  if (session?.role === "admin") return true;
+  if (session?.role !== "forecast") return false;
+  return hasProductionAccess(session.person);
 }
 
 export function getAppUrl(): string {

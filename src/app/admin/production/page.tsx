@@ -159,6 +159,7 @@ export default function ProductionPage() {
 
   const [bc, setBc] = useState<{ configured: boolean; connected: boolean } | null>(null);
   const [videographers, setVideographers] = useState<Videographer[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   async function addVideographer() {
     const name = (prompt("Videographer name") || "").trim();
@@ -217,7 +218,14 @@ export default function ProductionPage() {
 
   useEffect(() => {
     load();
-    loadBc();
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const admin = data?.role === "admin";
+        setIsAdmin(admin);
+        if (admin) loadBc();
+      })
+      .catch(() => {});
   }, []);
 
   function beginEdit(id: string, field: Field, current: string) {
@@ -350,6 +358,7 @@ export default function ProductionPage() {
     display: React.ReactNode,
     options?: { value: string; label: string }[]
   ) {
+    if (!isAdmin) return <td>{display}</td>;
     const active = edit?.id === r.client.id && edit?.field === field;
     if (active) return <td className="cell-editing">{editor(field, type, options)}</td>;
     return (
@@ -374,8 +383,11 @@ export default function ProductionPage() {
           <h1 className="h1">Master scheduler</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Every client&apos;s color week, cadence, next production window, and reminder
-            status. <strong>Click any field to edit it</strong> — press Enter to save,
-            Esc to cancel. The window and reminder columns are calculated automatically.
+            status.{" "}
+            {isAdmin
+              ? <><strong>Click any field to edit it</strong> — press Enter to save, Esc to cancel. </>
+              : null}
+            The window and reminder columns are calculated automatically.
           </p>
         </div>
 
@@ -412,7 +424,9 @@ export default function ProductionPage() {
           <span className="muted" style={{ fontSize: 13 }}>
             Videographers: {videographers.length ? videographers.map((v) => v.name).join(", ") : "none yet"}
           </span>
-          <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add videographer</button>
+          {isAdmin ? (
+            <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add videographer</button>
+          ) : null}
           <span className="muted" style={{ fontSize: 12 }}>
             One production per day each. A booked day blocks that videographer&apos;s other clients.
           </span>
@@ -520,23 +534,27 @@ export default function ProductionPage() {
                         : <span className="muted">Set project</span>
                     )}
                     <td>
-                      <div className="row" style={{ gap: 6 }}>
-                        {r.client.color_week && r.client.production_cadence ? (
-                          <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
-                        ) : null}
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => {
-                            if (confirm(`Remove ${r.client.name} from production scheduling? This keeps the client and all their data — they just won't get productions or reminders.`)) {
-                              setEnrolled(r.client.id, false);
-                            }
-                          }}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      {linkMessage[r.client.id] ? (
-                        <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{linkMessage[r.client.id]}</div>
+                      {isAdmin ? (
+                        <>
+                          <div className="row" style={{ gap: 6 }}>
+                            {r.client.color_week && r.client.production_cadence ? (
+                              <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
+                            ) : null}
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => {
+                                if (confirm(`Remove ${r.client.name} from production scheduling? This keeps the client and all their data — they just won't get productions or reminders.`)) {
+                                  setEnrolled(r.client.id, false);
+                                }
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          {linkMessage[r.client.id] ? (
+                            <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{linkMessage[r.client.id]}</div>
+                          ) : null}
+                        </>
                       ) : null}
                     </td>
                   </tr>
@@ -546,7 +564,7 @@ export default function ProductionPage() {
           </div>
         )}
 
-        {removed.length > 0 ? (
+        {isAdmin && removed.length > 0 ? (
           <div className="card card-pad stack">
             <strong>Removed from production ({removed.length})</strong>
             <p className="muted" style={{ margin: 0 }}>
