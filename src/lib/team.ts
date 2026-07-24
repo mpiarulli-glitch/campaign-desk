@@ -29,7 +29,7 @@ export function isTeamMember(slug: string): boolean {
 
 // Slugs that have a real headshot in /public/avatars/{slug}.png. Everyone else
 // falls back to initials. Add a slug here once its photo is dropped in.
-const AVATAR_SLUGS = new Set(["abel", "luis_romero", "sylvia"]);
+const AVATAR_SLUGS = new Set(["abel", "luis_romero", "sylvia", "kyle_onstott"]);
 
 export function avatarFor(slug: string): string | null {
   return AVATAR_SLUGS.has(slug) ? `/avatars/${slug}.png` : null;
