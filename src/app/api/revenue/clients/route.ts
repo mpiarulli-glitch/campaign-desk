@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession, isAdminAuthenticated } from "@/lib/auth";
-import { createRevClient, listRevClients } from "@/lib/revenue";
+import { createRevClient, listRevClientCards, listRevClients } from "@/lib/revenue";
 import type { BusinessModel } from "@/lib/db";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
   const includeInactive =
     new URL(request.url).searchParams.get("all") === "1";
-  return NextResponse.json({ clients: listRevClients(includeInactive) });
+  return NextResponse.json({ clients: listRevClientCards(includeInactive) });
 }
 
 export async function POST(request: Request) {

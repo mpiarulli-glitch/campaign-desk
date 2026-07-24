@@ -28,6 +28,92 @@ export function listRevClients(includeInactive = false): RevClient[] {
     .all() as RevClient[];
 }
 
+/* ------------------------------------------------- logos + account health */
+
+export type Sentiment = "healthy" | "watch" | "at_risk" | "unknown";
+
+// Reduce a website value (bare domain or full URL) to a clean hostname we can
+// hand to a logo service. Returns "" when there's nothing usable.
+export function normalizeHost(website: string): string {
+  const raw = (website || "").trim();
+  if (!raw) return "";
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const host = new URL(withScheme).hostname.toLowerCase();
+    return host.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+// Auto-derive a brand logo from the client's website. Uses Google's keyless
+// favicon service so no upload or API token is needed; the UI falls back to an
+// initials avatar when this returns null or the image fails to load.
+export function logoUrlFor(website: string): string | null {
+  const host = normalizeHost(website);
+  if (!host) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`;
+}
+
+// Derive account health from recent email metrics. Looks at up to the last
+// three months of data: send activity, engagement (open rate), and the
+// month-over-month revenue trend. Deliberately conservative — a manual
+// override on the client always wins over this.
+export function computeSentiment(metrics: RevMetric[]): Sentiment {
+  if (!metrics.length) return "unknown";
+  const recent = metrics.slice(-3); // metrics come in ASC month order
+  const last = recent[recent.length - 1];
+  const openRate = last.recipients > 0 ? last.opens / last.recipients : 0;
+  const sentRecently = recent.some((m) => m.campaigns_sent > 0);
+
+  let revTrend = 0;
+  if (recent.length >= 2) {
+    const prev = recent[recent.length - 2];
+    if (prev.revenue > 0) revTrend = (last.revenue - prev.revenue) / prev.revenue;
+    else if (last.revenue > 0) revTrend = 1;
+  }
+
+  // At-risk: gone quiet, engagement bottomed out, or revenue sliding hard.
+  if (!sentRecently) return "at_risk";
+  if (openRate > 0 && openRate < 0.1) return "at_risk";
+  if (revTrend <= -0.3) return "at_risk";
+
+  // Healthy: strong engagement, or growing revenue while still sending.
+  if (openRate >= 0.2 && revTrend >= -0.05) return "healthy";
+  if (openRate === 0 && revTrend >= 0.1) return "healthy";
+
+  return "watch";
+}
+
+export interface RevClientCard extends RevClient {
+  logo_url: string | null;
+  sentiment_auto: Sentiment;
+  // Effective sentiment shown in the UI: manual override when set, else auto.
+  sentiment: Sentiment;
+}
+
+// Clients enriched with a derived logo and account-health signal for the
+// all-clients list. One grouped metrics read avoids an N+1 query per client.
+export function listRevClientCards(includeInactive = false): RevClientCard[] {
+  const clients = listRevClients(includeInactive);
+  const byClient = new Map<string, RevMetric[]>();
+  for (const m of allMetrics()) {
+    const arr = byClient.get(m.client_id);
+    if (arr) arr.push(m);
+    else byClient.set(m.client_id, [m]);
+  }
+  return clients.map((c) => {
+    const auto = computeSentiment(byClient.get(c.id) ?? []);
+    const override = (c.sentiment_override || "") as Sentiment | "";
+    return {
+      ...c,
+      logo_url: logoUrlFor(c.website),
+      sentiment_auto: auto,
+      sentiment: override || auto,
+    };
+  });
+}
+
 export function getRevClient(id: string): RevClient | null {
   return (
     (getDb()
@@ -89,6 +175,8 @@ export function updateRevClient(
     poc: string;
     accountManager: string;
     tier: string;
+    website: string;
+    sentimentOverride: string;
     productionEnrolled: boolean;
     basecampProjectId: string;
     videographerId: string;
@@ -104,6 +192,7 @@ export function updateRevClient(
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
        contact_name = ?, contact_email = ?, poc = ?, account_manager = ?, tier = ?,
+       website = ?, sentiment_override = ?,
        production_enrolled = ?,
        basecamp_project_id = ?, videographer_id = ?, updated_at = ?
      WHERE id = ?`
@@ -131,6 +220,8 @@ export function updateRevClient(
     updates.poc?.trim() ?? existing.poc,
     updates.accountManager?.trim() ?? existing.account_manager,
     updates.tier ?? existing.tier,
+    updates.website?.trim() ?? existing.website,
+    updates.sentimentOverride ?? existing.sentiment_override,
     updates.productionEnrolled === undefined
       ? existing.production_enrolled
       : updates.productionEnrolled

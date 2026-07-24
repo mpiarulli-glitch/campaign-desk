@@ -14,6 +14,7 @@ import { contractStatus, listDeliverables } from "@/lib/snapshot";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
 const TIERS = ["", "tier1", "tier2", "tier3"];
+const SENTIMENTS = ["", "healthy", "watch", "at_risk"];
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -96,6 +97,10 @@ export async function PATCH(request: Request, { params }: Params) {
     accountManager:
       typeof body.accountManager === "string" ? body.accountManager : undefined,
     tier: TIERS.includes(body.tier) ? body.tier : undefined,
+    website: typeof body.website === "string" ? body.website : undefined,
+    sentimentOverride: SENTIMENTS.includes(body.sentimentOverride)
+      ? body.sentimentOverride
+      : undefined,
     productionEnrolled:
       typeof body.productionEnrolled === "boolean"
         ? body.productionEnrolled

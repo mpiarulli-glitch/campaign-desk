@@ -51,5 +51,6 @@ export function search(query: string, limit = 12): SearchHit[] {
   return hits
     .sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title))
     .slice(0, limit)
-    .map(({ rank: _rank, ...hit }) => hit);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    .map(({ rank, ...hit }) => hit);
 }
