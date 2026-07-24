@@ -2,8 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 
 type Sentiment = "healthy" | "watch" | "at_risk" | "unknown";
 
@@ -172,11 +170,6 @@ export default function AllClientsPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin/clients" />
-      </header>
-
       <main className="container stack">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
           <div>

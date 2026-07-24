@@ -2,8 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 
 type Model = "ecomm" | "b2b" | "home_service";
 
@@ -127,18 +125,14 @@ export default function RevenuePage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <button
-            className="btn btn-sm"
-            onClick={() => setAdding((v) => !v)}
-          >
-            {adding ? "Cancel" : "Add client"}
-          </button>
-          <NavMenu current="/admin/revenue" />
-        </div>
-      </header>
+      <div className="page-actions">
+        <button
+          className="btn btn-sm"
+          onClick={() => setAdding((v) => !v)}
+        >
+          {adding ? "Cancel" : "Add client"}
+        </button>
+      </div>
 
       <main className="container container-wide stack">
         <div className="page-hero">

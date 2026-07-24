@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
 
 type CadenceUnit = "weekly" | "monthly" | "quarterly";
 const CADENCE_UNIT_LABEL: Record<CadenceUnit, string> = {
@@ -59,12 +58,9 @@ export default function BehindReportPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">All accounts</Link>
-        </div>
-      </header>
+      <div className="page-actions">
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">All accounts</Link>
+      </div>
 
       <main className="container stack">
         <div className="page-hero">

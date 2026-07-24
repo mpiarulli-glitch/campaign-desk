@@ -2,8 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 
 type Status = "requested" | "planned" | "scheduled" | "sent";
 
@@ -357,13 +355,9 @@ export default function CalendarPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
-          <NavMenu current="/admin/calendar" />
-        </div>
-      </header>
+      <div className="page-actions">
+        <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
+      </div>
 
       <main className="container container-wide stack">
         <div className="cal-header">

@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { ChatThread } from "@/components/ChatThread";
 
 // Full-page view of a single client thread. kind = "internal" (team-only) or
@@ -32,11 +30,6 @@ export default function ClientChatPage() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin/clients" />
-      </header>
-
       <div className="ops-page">
         <div className="ops-page-head">
           <div>

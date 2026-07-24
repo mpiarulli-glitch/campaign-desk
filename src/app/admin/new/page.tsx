@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
 
 type RevClientOption = { id: string; name: string };
 
@@ -73,12 +72,11 @@ export default function NewCampaignPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
+      <div className="page-actions">
         <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
           Back
         </Link>
-      </header>
+      </div>
 
       <main className="container">
         <form

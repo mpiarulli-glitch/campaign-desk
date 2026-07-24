@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 
 type Account = { id: string; name: string; deliverable_count: number };
 
@@ -62,20 +60,16 @@ export default function SnapshotAccountsPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          {isAdmin ? (
-            <>
-              <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">Behind report</Link>
-              <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
-                {adding ? "Cancel" : "Add account"}
-              </button>
-            </>
-          ) : null}
-          <NavMenu current="/admin/snapshot" />
-        </div>
-      </header>
+      <div className="page-actions">
+        {isAdmin ? (
+          <>
+            <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">Behind report</Link>
+            <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
+              {adding ? "Cancel" : "Add account"}
+            </button>
+          </>
+        ) : null}
+      </div>
 
       <main className="container stack">
         <div className="page-hero">

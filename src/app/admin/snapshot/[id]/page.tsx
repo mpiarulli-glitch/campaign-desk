@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
@@ -283,31 +282,28 @@ export default function SnapshotEditorPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">All accounts</Link>
-          <div className="tabs" style={{ marginBottom: 0 }}>
-            <button
-              className={`tab ${view === "team" ? "active" : ""}`}
-              onClick={() => setView("team")}
-            >
-              Team view
-            </button>
-            <button
-              className={`tab ${view === "client" ? "active" : ""}`}
-              onClick={() => setView("client")}
-            >
-              Client view
-            </button>
-          </div>
-          {view === "team" ? (
-            <button className="btn btn-secondary btn-sm" onClick={() => setManaging((v) => !v)}>
-              {managing ? "Done editing" : "Edit deliverables"}
-            </button>
-          ) : null}
+      <div className="page-actions">
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot">All accounts</Link>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button
+            className={`tab ${view === "team" ? "active" : ""}`}
+            onClick={() => setView("team")}
+          >
+            Team view
+          </button>
+          <button
+            className={`tab ${view === "client" ? "active" : ""}`}
+            onClick={() => setView("client")}
+          >
+            Client view
+          </button>
         </div>
-      </header>
+        {view === "team" ? (
+          <button className="btn btn-secondary btn-sm" onClick={() => setManaging((v) => !v)}>
+            {managing ? "Done editing" : "Edit deliverables"}
+          </button>
+        ) : null}
+      </div>
 
       <main className="container container-wide stack">
         <div className="cal-header">

@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { MoodAvatar, MOOD_LABEL, moodForPct } from "@/components/MoodAvatar";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
@@ -87,11 +85,6 @@ export default function ForecastDashboardPage() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin/forecast" />
-      </header>
-
       <div className="ops-page">
         <div className="ops-page-head">
           <div>

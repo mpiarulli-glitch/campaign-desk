@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { ChatThread } from "@/components/ChatThread";
 import { TeamTodos } from "@/components/TeamTodos";
 import { SopsSection } from "@/components/hub/SopsSection";
@@ -110,11 +108,6 @@ export default function TeamHubPage() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin/hub" />
-      </header>
-
       <div className="ops-page">
         {section !== "home" ? (
           <div className="ops-page-head" style={{ alignItems: "flex-start" }}>

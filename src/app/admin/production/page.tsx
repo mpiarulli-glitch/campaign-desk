@@ -2,8 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 
 type ColorWeek = "purple" | "red" | "blue" | "green" | "";
 type Cadence = "monthly" | "bi_monthly" | "quarterly" | "";
@@ -370,13 +368,6 @@ export default function ProductionPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <NavMenu current="/admin/production" />
-        </div>
-      </header>
-
       <main className="container container-wide stack">
         <div className="page-hero">
           <p className="eyebrow">Email department</p>

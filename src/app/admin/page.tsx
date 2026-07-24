@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { currentWeek } from "@/lib/week";
@@ -155,13 +153,9 @@ function AdminHome() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row" style={{ gap: 10 }}>
-          <Link className="btn" href="/admin/new">+ New campaign</Link>
-          <NavMenu current="/admin" />
-        </div>
-      </header>
+      <div className="page-actions">
+        <Link className="btn" href="/admin/new">+ New campaign</Link>
+      </div>
 
       <div className="ops-page">
         <div className="ops-page-head">
@@ -403,11 +397,6 @@ function TeamMemberHome() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin" />
-      </header>
-
       <div className="ops-page">
         <div className="ops-page-head">
           <div>

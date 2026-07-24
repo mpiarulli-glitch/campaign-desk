@@ -2,8 +2,6 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { TodoList } from "@/components/TodoList";
 
 export default function TodosPage() {
@@ -20,11 +18,6 @@ export default function TodosPage() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin/todos" />
-      </header>
-
       <div className="ops-page">
         <div className="ops-page-head">
           <div>

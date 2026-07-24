@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -691,15 +690,12 @@ export default function AdminCampaignPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <StatusBadge status={status} />
-          <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
-            All campaigns
-          </Link>
-        </div>
-      </header>
+      <div className="page-actions">
+        <StatusBadge status={status} />
+        <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
+          All campaigns
+        </Link>
+      </div>
 
       <main className="container container-wide stack">
         <div

@@ -5972,3 +5972,83 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .rmap-kr { grid-template-columns: 1fr auto; }
   .rmap-kr-track { display: none; }
 }
+
+/* ============================================ app shell (sidebar + topbar) */
+.cd-shell { display: flex; min-height: 100vh; }
+.side {
+  width: 236px; flex: none; position: sticky; top: 0; height: 100vh;
+  background: #0e1420; color: #aeb7c6; display: flex; flex-direction: column; z-index: 30;
+}
+.side-brand { display: flex; align-items: center; gap: 10px; padding: 18px 18px 14px; text-decoration: none; }
+.side-mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(145deg, #00d4e8, #04808d); display: grid; place-items: center; color: #06222b; font-weight: 800; font-family: var(--font-head); flex: none; }
+.side-brand b { color: #fff; font-family: var(--font-head); font-size: 15px; font-weight: 600; white-space: nowrap; }
+.side-nav { padding: 6px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.nav-i { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; color: #aeb7c6; text-decoration: none; font-size: 14px; font-weight: 500; }
+.nav-i svg { width: 18px; height: 18px; flex: none; opacity: .8; }
+.nav-i:hover { background: #161d2b; color: #e7ecf3; }
+.nav-i.on { background: linear-gradient(90deg, rgba(0,212,232,.18), rgba(0,212,232,.04)); color: #fff; box-shadow: inset 2px 0 0 #00d4e8; }
+.nav-i.on svg { opacity: 1; color: #00d4e8; }
+.side-foot { margin-top: auto; padding: 12px; border-top: 1px solid rgba(255,255,255,.06); }
+.side-viewas { font-size: 12px; color: #6b7688; padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.app-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.app-top {
+  height: 60px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 22px;
+  border-bottom: 1px solid var(--border); background: rgba(255,255,255,.82); backdrop-filter: blur(8px);
+  position: sticky; top: 0; z-index: 25;
+}
+.app-search {
+  flex: 1; max-width: 440px; margin: 0 auto; display: flex; align-items: center; gap: 9px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px;
+  color: var(--text-muted); font-size: 13.5px; cursor: pointer; font-family: var(--font);
+}
+.app-search kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; background: #fff; }
+.app-top-right { display: flex; align-items: center; gap: 6px; }
+.app-iconbtn { width: 38px; height: 38px; border-radius: 10px; border: none; background: none; color: var(--text-body); display: grid; place-items: center; cursor: pointer; }
+.app-iconbtn:hover { background: var(--bg); }
+.app-iconbtn svg { width: 20px; height: 20px; }
+.app-avatarbtn { display: flex; align-items: center; gap: 7px; border: none; background: none; cursor: pointer; padding: 4px 6px 4px 4px; border-radius: 999px; }
+.app-avatarbtn:hover { background: var(--bg); }
+.app-ava { width: 32px; height: 32px; border-radius: 50%; background: #04808d; color: #fff; display: grid; place-items: center; font-weight: 600; font-size: 12px; flex: none; }
+.app-caret { color: var(--text-muted); font-size: 11px; }
+
+.app-content { flex: 1; min-width: 0; }
+
+/* dropdowns */
+.app-notif, .app-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lift); z-index: 40;
+}
+.app-notif { width: 320px; overflow: hidden; }
+.app-notif-head { padding: 13px 15px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; }
+.app-notif-empty { padding: 22px 16px; margin: 0; color: var(--text-muted); font-size: 13px; text-align: center; }
+.app-menu { width: 264px; padding: 6px; }
+.app-menu-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 12px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.app-menu-head b { font-size: 14px; display: block; color: var(--text); }
+.app-menu-head small { font-size: 12px; color: var(--text-muted); }
+.app-menu-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); padding: 10px 10px 4px; font-weight: 600; }
+.app-menu-i { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; font-size: 14px; color: var(--text); text-decoration: none; cursor: pointer; width: 100%; border: none; background: none; font-family: var(--font); text-align: left; }
+.app-menu-i svg { width: 17px; height: 17px; color: var(--text-muted); flex: none; }
+.app-menu-i:hover { background: var(--bg); }
+.app-menu-i.is-soon { color: var(--text-muted); cursor: default; }
+.app-menu-i.is-soon:hover { background: none; }
+.app-menu-i .soon { margin-left: auto; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); background: var(--bg-soft); border-radius: 999px; padding: 1px 7px; }
+.app-menu-i.danger { color: var(--danger); }
+.app-menu-i.danger svg { color: var(--danger); }
+.app-menu-div { height: 1px; background: var(--border); margin: 6px 0; }
+.app-menu-viewas { padding: 8px 10px; }
+.app-menu-viewas label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.app-menu-viewas label svg { width: 15px; height: 15px; }
+.app-menu-viewas select { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); font-size: 13px; color: var(--text); font-family: var(--font); }
+
+/* page-level action row (replaces per-page topbars) */
+.page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding: 16px 24px 0; }
+
+@media (max-width: 900px) {
+  .side { width: 60px; }
+  .side-brand b, .nav-i { font-size: 0; }
+  .nav-i { justify-content: center; gap: 0; }
+  .nav-i svg { font-size: initial; }
+  .side-brand b { display: none; }
+  .side-viewas { display: none; }
+}

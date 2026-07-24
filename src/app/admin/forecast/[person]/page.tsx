@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -282,15 +280,11 @@ export default function PersonForecastPage() {
 
   return (
     <div className="ops-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row" style={{ gap: 10 }}>
-          {role === "admin" ? (
-            <Link className="btn btn-ghost btn-sm" href="/admin/forecast">All forecasts</Link>
-          ) : null}
-          <NavMenu current="/admin/forecast" />
-        </div>
-      </header>
+      <div className="page-actions">
+        {role === "admin" ? (
+          <Link className="btn btn-ghost btn-sm" href="/admin/forecast">All forecasts</Link>
+        ) : null}
+      </div>
 
       <div className="ops-page">
         <div className="ops-page-head">

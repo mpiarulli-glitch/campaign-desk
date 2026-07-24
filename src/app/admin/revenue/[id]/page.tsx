@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
 
 type Model = "ecomm" | "b2b" | "home_service";
 type Fmt = "currency" | "number" | "percent" | "multiple";
@@ -358,12 +357,11 @@ export default function RevenueClientPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
+      <div className="page-actions">
         <Link className="btn btn-ghost btn-sm" href="/admin/revenue">
           All clients
         </Link>
-      </header>
+      </div>
 
       <main className="container container-wide stack">
         <div>

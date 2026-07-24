@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 
 type ActivityItem = {
   kind: "feedback" | "approved";
@@ -73,15 +71,11 @@ export default function ActivityPage() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <div className="row">
-          <Link className="btn" href="/admin/new">
-            New campaign
-          </Link>
-          <NavMenu current="/admin/activity" />
-        </div>
-      </header>
+      <div className="page-actions">
+        <Link className="btn" href="/admin/new">
+          New campaign
+        </Link>
+      </div>
 
       <main className="container stack">
         <div className="page-hero">

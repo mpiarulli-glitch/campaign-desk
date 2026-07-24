@@ -2,8 +2,6 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Brand } from "@/components/Brand";
-import { NavMenu } from "@/components/NavMenu";
 import { TodoList } from "@/components/TodoList";
 import { ChatPreviewCard } from "@/components/ChatPreviewCard";
 import { StrategyPanel } from "@/components/StrategyPanel";
@@ -327,11 +325,6 @@ export default function ClientHubPage() {
 
   return (
     <div className="acct-scope">
-      <header className="topbar">
-        <Brand href="/admin" />
-        <NavMenu current="/admin/clients" />
-      </header>
-
       <section className="snap-hero" style={{ padding: "38px 0 30px" }}>
         <div className="snap-hero-inner">
           <p className="snap-hero-eyebrow">Client hub</p>
