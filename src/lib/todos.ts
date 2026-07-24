@@ -77,6 +77,7 @@ export function createTodo(input: {
   dueDate?: string | null;
   priority?: ForecastPriority;
   source?: string;
+  listName?: string;
   createdBy?: string;
 }): TodoView {
   const db = getDb();
@@ -84,8 +85,8 @@ export function createTodo(input: {
   const ts = nowIso();
   db.prepare(
     `INSERT INTO todos
-      (id, title, notes, client_id, assignee, tags, due_date, status, priority, source, created_by, sort_order, completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, 0, NULL, ?, ?)`
+      (id, title, notes, client_id, assignee, tags, due_date, status, priority, source, list_name, created_by, sort_order, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, 0, NULL, ?, ?)`
   ).run(
     id,
     input.title.trim(),
@@ -96,6 +97,7 @@ export function createTodo(input: {
     input.dueDate || null,
     normPriority(input.priority),
     input.source || "manual",
+    (input.listName || "").trim(),
     input.createdBy || "",
     ts,
     ts

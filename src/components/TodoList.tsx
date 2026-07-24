@@ -18,6 +18,7 @@ export type Todo = {
   status: Status;
   priority: Priority;
   source: string;
+  list_name: string;
 };
 
 type Member = { slug: string; label: string };
@@ -143,6 +144,21 @@ export function TodoList({
     return rows;
   }, [todos, showDone, filterAssignee]);
 
+  // Group visible rows by their department list. "Onboarding" floats to the
+  // top, then the rest alphabetically, then ungrouped ("General") last.
+  const groups = useMemo(() => {
+    const map = new Map<string, Todo[]>();
+    for (const t of visible) {
+      const key = t.list_name || "General";
+      (map.get(key) || map.set(key, []).get(key)!).push(t);
+    }
+    const order = (k: string) => (k === "Onboarding" ? 0 : k === "General" ? 2 : 1);
+    return Array.from(map, ([name, rows]) => ({ name, rows })).sort(
+      (a, b) => order(a.name) - order(b.name) || a.name.localeCompare(b.name)
+    );
+  }, [visible]);
+  const showHeaders = groups.length > 1 || (groups[0]?.name !== "General");
+
   const openCount = todos.filter((t) => t.status === "open").length;
 
   return (
@@ -204,52 +220,64 @@ export function TodoList({
       ) : visible.length === 0 ? (
         <p className="muted todo-empty">{showDone ? "No to-dos yet." : "Nothing open. Nice."}</p>
       ) : (
-        <div className="todo-rows">
-          {visible.map((t) => {
-            const due = fmtDue(t.due_date);
-            return (
-              <div key={t.id} className={`todo-row pri-${t.priority} ${t.status === "done" ? "is-done" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={t.status === "done"}
-                  onChange={() => patch(t.id, { status: t.status === "done" ? "open" : "done" })}
-                  aria-label="Mark done"
-                />
-                <div className="todo-body">
-                  <span className="todo-title">{t.title}</span>
-                  <div className="todo-meta">
-                    {t.assignee ? (
-                      <span className="todo-chip todo-who">
-                        <Avatar label={label(t.assignee)} src={avatarFor(t.assignee)} size={16} />
-                        {label(t.assignee)}
-                      </span>
-                    ) : (
-                      <span className="todo-chip todo-unassigned">Unassigned</span>
-                    )}
-                    {t.tags.map((tg) => (
-                      <span key={tg} className="todo-chip todo-tag">@{label(tg)}</span>
-                    ))}
-                    {showClient && t.client_id ? <span className="todo-chip todo-client">{clientName(t.client_id)}</span> : null}
-                    {due ? <span className={`todo-chip todo-due ${due.overdue ? "is-overdue" : ""}`}>{due.text}</span> : null}
-                  </div>
+        <div className="todo-groups">
+          {groups.map((g) => (
+            <div key={g.name} className="todo-group">
+              {showHeaders ? (
+                <div className="todo-group-head">
+                  <span>{g.name}</span>
+                  <span className="todo-group-count">{g.rows.filter((r) => r.status === "open").length}</span>
                 </div>
-                <div className="todo-actions">
-                  <select
-                    value={t.assignee}
-                    onChange={(e) => patch(t.id, { assignee: e.target.value })}
-                    title="Assign"
-                    className="todo-assign-select"
-                  >
-                    <option value="">— </option>
-                    {team.map((m) => (
-                      <option key={m.slug} value={m.slug}>{m.label}</option>
-                    ))}
-                  </select>
-                  <button className="todo-del" onClick={() => remove(t.id)} title="Delete" aria-label="Delete">✕</button>
-                </div>
+              ) : null}
+              <div className="todo-rows">
+                {g.rows.map((t) => {
+                  const due = fmtDue(t.due_date);
+                  return (
+                    <div key={t.id} className={`todo-row pri-${t.priority} ${t.status === "done" ? "is-done" : ""}`}>
+                      <input
+                        type="checkbox"
+                        checked={t.status === "done"}
+                        onChange={() => patch(t.id, { status: t.status === "done" ? "open" : "done" })}
+                        aria-label="Mark done"
+                      />
+                      <div className="todo-body">
+                        <span className="todo-title">{t.title}</span>
+                        <div className="todo-meta">
+                          {t.assignee ? (
+                            <span className="todo-chip todo-who">
+                              <Avatar label={label(t.assignee)} src={avatarFor(t.assignee)} size={16} />
+                              {label(t.assignee)}
+                            </span>
+                          ) : (
+                            <span className="todo-chip todo-unassigned">Unassigned</span>
+                          )}
+                          {t.tags.map((tg) => (
+                            <span key={tg} className="todo-chip todo-tag">@{label(tg)}</span>
+                          ))}
+                          {showClient && t.client_id ? <span className="todo-chip todo-client">{clientName(t.client_id)}</span> : null}
+                          {due ? <span className={`todo-chip todo-due ${due.overdue ? "is-overdue" : ""}`}>{due.text}</span> : null}
+                        </div>
+                      </div>
+                      <div className="todo-actions">
+                        <select
+                          value={t.assignee}
+                          onChange={(e) => patch(t.id, { assignee: e.target.value })}
+                          title="Assign"
+                          className="todo-assign-select"
+                        >
+                          <option value="">— </option>
+                          {team.map((m) => (
+                            <option key={m.slug} value={m.slug}>{m.label}</option>
+                          ))}
+                        </select>
+                        <button className="todo-del" onClick={() => remove(t.id)} title="Delete" aria-label="Delete">✕</button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

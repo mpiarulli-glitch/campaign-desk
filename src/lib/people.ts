@@ -14,6 +14,7 @@ export const PEOPLE = [
   { slug: "paula", label: "Paula", productionAccess: true, entryLevel: true },
   { slug: "randi", label: "Randi", productionAccess: true, entryLevel: true },
   { slug: "abel", label: "Abel", productionAccess: false, entryLevel: true },
+  { slug: "mike_hines", label: "Mike Hines", productionAccess: false, entryLevel: false },
 ] as const;
 
 export function personLabel(slug: string): string {

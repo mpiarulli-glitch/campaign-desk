@@ -396,6 +396,9 @@ export interface Todo {
   status: TodoStatus;
   priority: ForecastPriority;
   source: string; // "manual" | "strategy"
+  // Department / grouping list, e.g. "Onboarding", "SEO", "Email & Lifecycle".
+  // Empty = ungrouped ("General").
+  list_name: string;
   created_by: string;
   sort_order: number;
   completed_at: string | null;
@@ -823,6 +826,7 @@ export function getDb(): Database.Database {
       status TEXT NOT NULL DEFAULT 'open',
       priority TEXT NOT NULL DEFAULT 'flexible',
       source TEXT NOT NULL DEFAULT 'manual',
+      list_name TEXT NOT NULL DEFAULT '',
       created_by TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       completed_at TEXT,
@@ -1209,6 +1213,11 @@ function migrate(database: Database.Database) {
   // implicit due date from their cadence period instead).
   if (snapDelivCols.length && !snapDelivCols.includes("due_date")) {
     database.exec(`ALTER TABLE snapshot_deliverables ADD COLUMN due_date TEXT`);
+  }
+
+  const todoCols = tableColumns(database, "todos");
+  if (todoCols.length && !todoCols.includes("list_name")) {
+    database.exec(`ALTER TABLE todos ADD COLUMN list_name TEXT NOT NULL DEFAULT ''`);
   }
 
   const forecastCols = tableColumns(database, "forecast_tasks");

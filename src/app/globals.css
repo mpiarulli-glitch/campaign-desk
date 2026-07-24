@@ -2614,6 +2614,82 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   gap: 12px 28px;
 }
 
+/* ============================================ Weekly snapshot — Team Hub styling */
+.snap-wrap {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 30px 0 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.snap-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.snap-week-nav { display: flex; align-items: center; gap: 6px; flex: none; }
+.snap-week-nav button {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  height: 38px;
+  min-width: 38px;
+  padding: 0 12px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  font-family: var(--font);
+  font-weight: 500;
+  transition: border-color .15s ease, background .15s ease;
+}
+.snap-week-nav button:hover { border-color: var(--accent); }
+.snap-week-today { font-size: 13px !important; font-weight: 700 !important; letter-spacing: 0.02em; }
+
+/* Section panels styled after the Team Hub bento cards */
+.snap-panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 22px 24px;
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+.snap-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--tool, var(--accent-ink));
+}
+.snap-panel.t-wins { --tool: #b8820b; --tool-tint: #fbf2dd; }
+.snap-panel.t-work { --tool: #04808d; --tool-tint: #e6f6f8; }
+.snap-panel.t-deliv { --tool: #3f5bd6; --tool-tint: #eceffb; }
+.snap-panel.t-perf { --tool: #1f9d63; --tool-tint: #e7f6ee; }
+.snap-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+
+/* Wins list inside the top panel */
+.snap-wins2 { display: flex; flex-direction: column; }
+.snap-win2 { display: flex; gap: 14px; align-items: flex-start; padding: 13px 0; }
+.snap-win2 + .snap-win2 { border-top: 1px solid var(--border); }
+.snap-win2-mark {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  display: grid; place-items: center; font-size: 16px;
+  background: var(--tool-tint); color: var(--tool);
+}
+.snap-win2 p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--text); }
+.snap-win2-date { display: block; font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+@media (max-width: 640px) {
+  .snap-head-row { flex-direction: column; }
+  .snap-panel { padding: 20px 16px; }
+}
+
 /* ---------------------------------------------------- client scheduling page */
 .sched-main {
   width: min(860px, calc(100% - 40px));
@@ -5490,3 +5566,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .flag-cell .flag-dot { width: 9px; height: 9px; }
 .flag-cell .cnt { font-size: 12px; color: var(--text-muted); }
 .flag-clear { color: var(--text-muted); font-size: 12px; }
+
+/* ---------------------------------------------- todo department groups */
+.todo-groups { display: flex; flex-direction: column; gap: 18px; }
+.todo-group { display: flex; flex-direction: column; gap: 8px; }
+.todo-group-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-muted); padding-bottom: 2px;
+}
+.todo-group-count {
+  font-size: 11px; font-weight: 600; color: var(--accent-ink);
+  background: var(--bg-tint); border-radius: 999px; padding: 1px 7px; letter-spacing: 0;
+}

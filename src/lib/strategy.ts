@@ -1,7 +1,25 @@
 import { getDb, nowIso, type ClientStrategy } from "./db";
 import { createTodo } from "./todos";
+import { getRevClient } from "./revenue";
+import { slugForName } from "./team";
 
 export type { ClientStrategy };
+
+// Who owns what, by department. "am" = the account's manager (resolved from
+// rev_clients.account_manager), falling back to Cassidy when none is set.
+const OWNER = {
+  michael: "michael", // email, sms, automation, lifecycle, reviews
+  carlos: "carlos", // SEO
+  mike_hines: "mike_hines", // paid media
+  luis: "luis_romero", // generic onboarding
+  am_fallback: "cassidy", // client-facing when no manager set
+} as const;
+
+function accountManagerSlug(clientId: string): string {
+  const client = getRevClient(clientId);
+  const resolved = client ? slugForName(client.account_manager) : null;
+  return resolved || OWNER.am_fallback;
+}
 
 // Marketing channels a client can be running. Drives which onboarding and
 // recurring to-dos get generated.
@@ -16,37 +34,65 @@ export const CHANNELS = [
   { slug: "automation", label: "CRM automation" },
 ] as const;
 
-// Onboarding tasks: a base checklist every account gets, plus channel-specific
-// setup work. Recurring tasks: what repeats each period per channel, plus base
-// reporting/check-in work.
-const BASE_ONBOARDING = [
-  "Schedule kickoff call",
-  "Collect brand assets, logins, and access",
-  "Set up platform subaccount and sending config",
-  "Define audience segments",
-  "Connect tracking and analytics",
+// Each generated task carries a title, the list it groups under, and an owner
+// role. Owner is either a fixed slug or "am" (the account manager). Onboarding
+// tasks all group under "Onboarding"; recurring tasks group by department.
+type OwnerRole = string | "am";
+interface TaskTemplate {
+  title: string;
+  list: string;
+  owner: OwnerRole;
+}
+
+// Base onboarding checklist, always generated. Client-facing items go to the
+// account manager; the generic setup work goes to Luis.
+const BASE_ONBOARDING: TaskTemplate[] = [
+  { title: "Schedule kickoff call", list: "Onboarding", owner: "am" },
+  { title: "Collect brand assets, logins, and access", list: "Onboarding", owner: OWNER.luis },
+  { title: "Set up platform subaccount and sending config", list: "Onboarding", owner: OWNER.luis },
+  { title: "Define audience segments", list: "Onboarding", owner: "am" },
+  { title: "Connect tracking and analytics", list: "Onboarding", owner: OWNER.luis },
 ];
-const CHANNEL_ONBOARDING: Record<string, string[]> = {
-  email: ["Set up email sending domain and warm-up", "Build welcome / nurture flow"],
-  sms: ["Register A2P 10DLC for SMS", "Draft SMS opt-in flow"],
-  social: ["Connect social accounts and scheduler"],
-  content: ["Build content calendar", "Outline first blog post"],
-  ppc: ["Set up ad accounts and conversion tracking"],
-  seo: ["Run technical SEO audit", "Complete keyword research"],
-  reviews: ["Connect review platform and request flow"],
-  automation: ["Map core CRM automations"],
+
+// Channel-specific onboarding. All grouped under "Onboarding", owned by the
+// department lead.
+const CHANNEL_ONBOARDING: Record<string, TaskTemplate[]> = {
+  email: [
+    { title: "Set up email sending domain and warm-up", list: "Onboarding", owner: OWNER.michael },
+    { title: "Build welcome / nurture flow", list: "Onboarding", owner: OWNER.michael },
+  ],
+  sms: [
+    { title: "Register A2P 10DLC for SMS", list: "Onboarding", owner: OWNER.michael },
+    { title: "Draft SMS opt-in flow", list: "Onboarding", owner: OWNER.michael },
+  ],
+  social: [{ title: "Connect social accounts and scheduler", list: "Onboarding", owner: "am" }],
+  content: [
+    { title: "Build content calendar", list: "Onboarding", owner: "am" },
+    { title: "Outline first blog post", list: "Onboarding", owner: "am" },
+  ],
+  ppc: [{ title: "Set up ad accounts and conversion tracking", list: "Onboarding", owner: OWNER.mike_hines }],
+  seo: [
+    { title: "Run technical SEO audit", list: "Onboarding", owner: OWNER.carlos },
+    { title: "Complete keyword research", list: "Onboarding", owner: OWNER.carlos },
+  ],
+  reviews: [{ title: "Connect review platform and request flow", list: "Onboarding", owner: OWNER.michael }],
+  automation: [{ title: "Map core CRM automations", list: "Onboarding", owner: OWNER.michael }],
 };
 
-const BASE_RECURRING = ["Monthly performance report", "Monthly strategy check-in"];
-const CHANNEL_RECURRING: Record<string, string[]> = {
-  email: ["Send monthly email campaign"],
-  sms: ["Send monthly SMS campaign"],
-  social: ["Publish this month's social posts"],
-  content: ["Publish monthly blog post"],
-  ppc: ["Optimize ad campaigns and report"],
-  seo: ["Monthly SEO progress and rankings check"],
-  reviews: ["Monthly review response and generation push"],
-  automation: ["Audit and tune CRM automations"],
+// Recurring work, grouped by department.
+const BASE_RECURRING: TaskTemplate[] = [
+  { title: "Monthly performance report", list: "Strategy & Client", owner: "am" },
+  { title: "Monthly strategy check-in", list: "Strategy & Client", owner: "am" },
+];
+const CHANNEL_RECURRING: Record<string, TaskTemplate[]> = {
+  email: [{ title: "Send monthly email campaign", list: "Email & Lifecycle", owner: OWNER.michael }],
+  sms: [{ title: "Send monthly SMS campaign", list: "Email & Lifecycle", owner: OWNER.michael }],
+  social: [{ title: "Publish this month's social posts", list: "Social", owner: "am" }],
+  content: [{ title: "Publish monthly blog post", list: "Content", owner: "am" }],
+  ppc: [{ title: "Optimize ad campaigns and report", list: "Paid Media", owner: OWNER.mike_hines }],
+  seo: [{ title: "Monthly SEO progress and rankings check", list: "SEO", owner: OWNER.carlos }],
+  reviews: [{ title: "Monthly review response and generation push", list: "Email & Lifecycle", owner: OWNER.michael }],
+  automation: [{ title: "Audit and tune CRM automations", list: "Email & Lifecycle", owner: OWNER.michael }],
 };
 
 function parseChannels(raw: string): string[] {
@@ -147,17 +193,25 @@ export function generateOnboardingTodos(clientId: string, force = false): Genera
   if (strategy.onboarding_generated_at && !force) {
     return { created: 0, skipped: true, reason: "Onboarding to-dos were already generated." };
   }
-  const titles = [
+  const am = accountManagerSlug(clientId);
+  const templates: TaskTemplate[] = [
     ...BASE_ONBOARDING,
     ...strategy.channels.flatMap((c) => CHANNEL_ONBOARDING[c] || []),
   ];
-  for (const title of titles) {
-    createTodo({ title, clientId, priority: "important", source: "strategy" });
+  for (const t of templates) {
+    createTodo({
+      title: t.title,
+      clientId,
+      priority: "important",
+      source: "strategy",
+      listName: t.list,
+      assignee: t.owner === "am" ? am : t.owner,
+    });
   }
   getDb()
     .prepare(`UPDATE client_strategies SET onboarding_generated_at = ? WHERE client_id = ?`)
     .run(nowIso(), clientId);
-  return { created: titles.length, skipped: false };
+  return { created: templates.length, skipped: false };
 }
 
 // Build this month's recurring to-dos. Idempotent per calendar month unless
@@ -168,16 +222,25 @@ export function generateRecurringTodos(clientId: string, force = false): Generat
   if (strategy.recurring_generated_at?.startsWith(month) && !force) {
     return { created: 0, skipped: true, reason: "Recurring to-dos already generated this month." };
   }
-  const titles = [
+  const am = accountManagerSlug(clientId);
+  const templates: TaskTemplate[] = [
     ...BASE_RECURRING,
     ...strategy.channels.flatMap((c) => CHANNEL_RECURRING[c] || []),
   ];
   const due = endOfMonthYmd();
-  for (const title of titles) {
-    createTodo({ title, clientId, priority: "flexible", source: "strategy", dueDate: due });
+  for (const t of templates) {
+    createTodo({
+      title: t.title,
+      clientId,
+      priority: "flexible",
+      source: "strategy",
+      dueDate: due,
+      listName: t.list,
+      assignee: t.owner === "am" ? am : t.owner,
+    });
   }
   getDb()
     .prepare(`UPDATE client_strategies SET recurring_generated_at = ? WHERE client_id = ?`)
     .run(nowIso(), clientId);
-  return { created: titles.length, skipped: false };
+  return { created: templates.length, skipped: false };
 }
