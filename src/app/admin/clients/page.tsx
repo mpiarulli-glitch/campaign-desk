@@ -14,10 +14,10 @@ type Client = {
 };
 
 const TIER_OPTIONS = [
-  { value: "", label: "Not set" },
-  { value: "standard", label: "Standard" },
-  { value: "premium", label: "Premium" },
-  { value: "vip", label: "VIP" },
+  { value: "", label: "No tier" },
+  { value: "tier1", label: "Tier 1" },
+  { value: "tier2", label: "Tier 2" },
+  { value: "tier3", label: "Tier 3" },
 ];
 
 export default function AllClientsPage() {
@@ -64,7 +64,12 @@ export default function AllClientsPage() {
       </header>
 
       <main className="container stack">
-        <h1 className="h1">All clients</h1>
+        <div>
+          <h1 className="h1" style={{ marginBottom: 4 }}>All clients</h1>
+          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+            {clients.length} client{clients.length === 1 ? "" : "s"}
+          </p>
+        </div>
 
         {loading ? (
           <p className="muted">Loading…</p>
@@ -74,7 +79,7 @@ export default function AllClientsPage() {
           <div className="empty"><p>No clients yet.</p></div>
         ) : (
           <div className="card card-pad" style={{ overflowX: "auto" }}>
-            <table className="rev-table">
+            <table className="client-table">
               <thead>
                 <tr>
                   <th>Client</th>
@@ -85,12 +90,16 @@ export default function AllClientsPage() {
               </thead>
               <tbody>
                 {clients.map((c) => (
-                  <tr key={c.id} className="rev-row" onClick={() => router.push(`/admin/clients/${c.id}`)}>
+                  <tr key={c.id} className="client-row" onClick={() => router.push(`/admin/clients/${c.id}`)}>
                     <td><strong>{c.name}</strong></td>
-                    <td>{c.account_manager || <span className="muted">Unassigned</span>}</td>
+                    <td>
+                      <span className={`manager-tag ${c.account_manager ? "" : "is-unassigned"}`}>
+                        {c.account_manager || "Unassigned"}
+                      </span>
+                    </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <select
-                        className="select-clean badge-select"
+                        className={`select-clean badge-select ${c.tier ? `is-${c.tier}` : ""}`}
                         value={c.tier}
                         onChange={(e) => changeTier(c.id, e.target.value)}
                       >

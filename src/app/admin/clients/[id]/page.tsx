@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { NavMenu } from "@/components/NavMenu";
 
@@ -31,7 +31,7 @@ type Okr = {
 };
 
 type DashboardData = {
-  client: { id: string; name: string };
+  client: { id: string; name: string; accountManager: string; tier: string };
   production: {
     window: { start: string; end: string } | null;
     status: CycleStatus;
@@ -53,12 +53,34 @@ const STATUS_LABEL: Record<CycleStatus, string> = {
   scheduled: "Scheduled",
   sent: "Sent",
 };
+const STATUS_DOT: Record<CycleStatus, string> = {
+  not_configured: "is-muted",
+  inactive: "is-muted",
+  not_due: "is-muted",
+  due: "is-signal",
+  requested: "is-signal",
+  scheduled: "is-good",
+  sent: "is-good",
+};
 
 const OKR_STATUS_LABEL: Record<OkrStatus, string> = {
   on_track: "On track",
   at_risk: "At risk",
   off_track: "Off track",
   achieved: "Achieved",
+};
+const OKR_ARC_FILL: Record<OkrStatus, number> = {
+  on_track: 0.7,
+  at_risk: 0.4,
+  off_track: 0.15,
+  achieved: 1,
+};
+
+const TIER_LABEL: Record<string, string> = {
+  "": "No tier",
+  tier1: "Tier 1",
+  tier2: "Tier 2",
+  tier3: "Tier 3",
 };
 
 function fmtDate(ymd: string): string {
@@ -91,13 +113,21 @@ function fmtAt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+type Tab = "overview" | "production" | "calendar" | "goals";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "production", label: "Production" },
+  { key: "calendar", label: "Campaign calendar" },
+  { key: "goals", label: "Goals & OKRs" },
+];
+
 export default function ClientHubPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"overview" | "okrs">("overview");
+  const [tab, setTab] = useState<Tab>("overview");
   const [dashboardToken, setDashboardToken] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState("");
 
@@ -201,82 +231,103 @@ export default function ClientHubPage() {
     load({ silent: true });
   }
 
+  const snapshotDone = data?.snapshot.overview.filter((d) =>
+    ["completed", "approved"].includes(d.status)
+  ).length ?? 0;
+  const snapshotTotal = data?.snapshot.overview.length ?? 0;
+
+  const headlineKpi = data?.accountData.kpis[0] ?? null;
+  const activeGoal = data?.okrs.find((o) => o.status !== "achieved") ?? data?.okrs[0] ?? null;
+
+  const upcomingCalendar = useMemo(
+    () => (data?.calendar || []).slice(0, 8),
+    [data]
+  );
+
   return (
-    <div className="app-shell">
+    <div className="acct-scope">
       <header className="topbar">
         <Brand href="/admin" />
-        <NavMenu current="/admin/revenue" />
+        <NavMenu current="/admin/clients" />
       </header>
 
-      <main className="container stack" style={{ gap: 20 }}>
+      <section className="snap-hero" style={{ padding: "38px 0 30px" }}>
+        <div className="snap-hero-inner">
+          <p className="snap-hero-eyebrow">Client hub</p>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <h1 className="snap-hero-title" style={{ fontSize: "clamp(26px,4vw,38px)" }}>
+                {data?.client.name || "Client hub"}
+              </h1>
+              <p className="snap-hero-sub">
+                {data ? `Managed by ${data.client.accountManager || "—"} · ${TIER_LABEL[data.client.tier] ?? "No tier"}` : ""}
+              </p>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={copyLink} disabled={!dashboardToken}>
+                Copy client link
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={rotateToken}>
+                Rotate link
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <main className="container stack" style={{ gap: 22, paddingTop: 28, paddingBottom: 80 }}>
         {loading ? (
           <p className="muted">Loading…</p>
         ) : error ? (
           <p className="error">{error}</p>
         ) : data ? (
           <>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <h1 style={{ margin: 0 }}>{data.client.name}</h1>
-              <div className="row" style={{ gap: 8 }}>
-                <button className="btn btn-secondary btn-sm" onClick={copyLink} disabled={!dashboardToken}>
-                  Copy client link
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={rotateToken}>
-                  Rotate link
-                </button>
-              </div>
-            </div>
             {copyMsg ? <p className="muted" style={{ margin: 0 }}>{copyMsg}</p> : null}
 
-            <div className="view-toggle">
-              <button
-                className={`view-toggle-btn ${tab === "overview" ? "is-on" : ""}`}
-                onClick={() => setTab("overview")}
-              >
-                Overview
-              </button>
-              <button
-                className={`view-toggle-btn ${tab === "okrs" ? "is-on" : ""}`}
-                onClick={() => setTab("okrs")}
-              >
-                Goals &amp; OKRs
-              </button>
+            <div className="acct-pulse">
+              <div className="acct-pulse-item">
+                <span className={`dot ${STATUS_DOT[data.production.status]}`} />
+                <div><p className="k">Production</p><p className="v">{STATUS_LABEL[data.production.status]}</p></div>
+              </div>
+              <div className="acct-pulse-item">
+                <span className={`dot ${snapshotTotal ? "is-good" : "is-muted"}`} />
+                <div>
+                  <p className="k">Snapshot</p>
+                  <p className="v">{snapshotTotal ? `${snapshotDone}/${snapshotTotal} done` : "Not tracked"}</p>
+                </div>
+              </div>
+              <div className="acct-pulse-item">
+                <span className="dot is-signal" />
+                <div>
+                  <p className="k">{headlineKpi?.label || "Revenue"}</p>
+                  <p className="v">{headlineKpi ? fmtKpi(headlineKpi.value, headlineKpi.fmt) : "—"}</p>
+                </div>
+              </div>
+              <div className="acct-pulse-item">
+                <span className={`dot ${activeGoal ? "is-ember" : "is-muted"}`} />
+                <div>
+                  <p className="k">Goals</p>
+                  <p className="v">
+                    {data.okrs.length
+                      ? `${data.okrs.length} active · ${OKR_STATUS_LABEL[activeGoal!.status]}`
+                      : "None set"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="acct-tabs">
+              {TABS.map((t) => (
+                <button key={t.key} className={tab === t.key ? "is-on" : ""} onClick={() => setTab(t.key)}>
+                  {t.label}
+                </button>
+              ))}
             </div>
 
             {tab === "overview" ? (
-              <div className="stack" style={{ gap: 20 }}>
-                <section className="card card-pad stack" style={{ gap: 8 }}>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Production status</h2>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{STATUS_LABEL[data.production.status]}</p>
-                  {data.production.window ? (
-                    <p className="muted" style={{ margin: 0 }}>
-                      {data.production.existingSend
-                        ? `Booked for ${fmtDate(data.production.existingSend.sendDate)}`
-                        : `Next window: ${fmtDate(data.production.window.start)} – ${fmtDate(data.production.window.end)}`}
-                    </p>
-                  ) : (
-                    <p className="muted" style={{ margin: 0 }}>Not configured.</p>
-                  )}
-                </section>
-
-                <section className="card card-pad stack" style={{ gap: 8 }}>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Weekly snapshot</h2>
-                  <p className="muted" style={{ margin: 0 }}>
-                    {data.snapshot.overview.length} deliverable(s) tracked.
-                  </p>
-                  {data.snapshot.token ? (
-                    <a
-                      className="btn btn-secondary btn-sm"
-                      href={`/admin/snapshot/${data.client.id}`}
-                      style={{ width: "fit-content" }}
-                    >
-                      Open snapshot editor
-                    </a>
-                  ) : null}
-                </section>
-
-                <section className="card card-pad stack" style={{ gap: 8 }}>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Account data</h2>
+              <div className="stack" style={{ gap: 32 }}>
+                <div className="acct-section">
+                  <div className="acct-section-head"><h2 className="acct-section-title">Account data</h2></div>
                   <div className="kpi-grid">
                     {data.accountData.kpis.map((k) => (
                       <div key={k.key} className="kpi-tile">
@@ -285,40 +336,93 @@ export default function ClientHubPage() {
                       </div>
                     ))}
                   </div>
-                </section>
+                </div>
 
-                <section className="card card-pad stack" style={{ gap: 8 }}>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Campaign calendar</h2>
-                  {data.calendar.length ? (
-                    data.calendar.map((s) => (
-                      <div key={s.id} className="row" style={{ justifyContent: "space-between" }}>
+                <div className="acct-section">
+                  <div className="acct-section-head">
+                    <h2 className="acct-section-title">Weekly snapshot</h2>
+                    {data.snapshot.token ? (
+                      <a className="acct-section-link" href={`/admin/snapshot/${data.client.id}`}>
+                        Open snapshot editor →
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="card card-pad">
+                    <p style={{ margin: 0, fontSize: 14 }}>
+                      {snapshotTotal
+                        ? `${snapshotDone} of ${snapshotTotal} deliverables completed this period.`
+                        : "No deliverables tracked yet."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="acct-section">
+                  <div className="acct-section-head"><h2 className="acct-section-title">Activity</h2></div>
+                  <div className="card card-pad">
+                    {data.activity.length ? (
+                      data.activity.map((a, i) => (
+                        <div
+                          key={i}
+                          className="row"
+                          style={i > 0 ? { marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" } : undefined}
+                        >
+                          <div>
+                            <div style={{ fontSize: 14 }}>{a.summary}</div>
+                            {a.detail ? <div className="muted" style={{ fontSize: 13 }}>{a.detail}</div> : null}
+                          </div>
+                          <span className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtAt(a.at)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="muted" style={{ margin: 0 }}>No activity yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {tab === "production" ? (
+              <div className="card card-pad row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <p style={{ fontWeight: 600, margin: "0 0 4px" }}>{STATUS_LABEL[data.production.status]}</p>
+                  {data.production.window ? (
+                    <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                      {data.production.existingSend
+                        ? `Booked for ${fmtDate(data.production.existingSend.sendDate)}`
+                        : `Next window: ${fmtDate(data.production.window.start)} – ${fmtDate(data.production.window.end)}`}
+                    </p>
+                  ) : (
+                    <p className="muted" style={{ margin: 0, fontSize: 13 }}>Not configured.</p>
+                  )}
+                </div>
+                <span className={`acct-pill ${STATUS_DOT[data.production.status] === "is-good" ? "is-good" : STATUS_DOT[data.production.status] === "is-signal" ? "is-signal" : "is-muted"}`}>
+                  {STATUS_LABEL[data.production.status]}
+                </span>
+              </div>
+            ) : null}
+
+            {tab === "calendar" ? (
+              <div className="stack" style={{ gap: 8 }}>
+                {upcomingCalendar.length ? (
+                  <div className="card card-pad">
+                    {upcomingCalendar.map((s, i) => (
+                      <div
+                        key={s.id}
+                        className="row"
+                        style={i > 0 ? { marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" } : undefined}
+                      >
                         <span>{s.title}</span>
                         <span className="muted" style={{ fontSize: 13 }}>{fmtDate(s.send_date)}</span>
                       </div>
-                    ))
-                  ) : (
-                    <p className="muted" style={{ margin: 0 }}>Nothing scheduled.</p>
-                  )}
-                </section>
-
-                <section className="card card-pad stack" style={{ gap: 8 }}>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Activity</h2>
-                  {data.activity.length ? (
-                    data.activity.map((a, i) => (
-                      <div key={i} className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <div>
-                          <div style={{ fontSize: 14 }}>{a.summary}</div>
-                          {a.detail ? <div className="muted" style={{ fontSize: 13 }}>{a.detail}</div> : null}
-                        </div>
-                        <span className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtAt(a.at)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="muted" style={{ margin: 0 }}>No activity yet.</p>
-                  )}
-                </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty"><p>Nothing scheduled.</p></div>
+                )}
               </div>
-            ) : (
+            ) : null}
+
+            {tab === "goals" ? (
               <div className="stack" style={{ gap: 16 }}>
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                   <button className="btn btn-sm" onClick={addOkr}>+ Add OKR</button>
@@ -327,15 +431,13 @@ export default function ClientHubPage() {
                   <div className="empty"><p>No goals tracked for this account yet.</p></div>
                 ) : (
                   data.okrs.map((okr) => (
-                    <div key={okr.id} className="card card-pad stack" style={{ gap: 10 }}>
-                      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div key={okr.id} className="card card-pad acct-okr-card">
+                      <div className="acct-okr-top">
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: 16 }}>{okr.objective}</div>
-                          {okr.target_date ? (
-                            <div className="muted" style={{ fontSize: 13 }}>
-                              Target: {fmtDate(okr.target_date)}
-                            </div>
-                          ) : null}
+                          <p className="acct-okr-title">{okr.objective}</p>
+                          <p className="acct-okr-meta">
+                            {okr.target_date ? `Target: ${fmtDate(okr.target_date)}` : "No target date"}
+                          </p>
                         </div>
                         <div className="row" style={{ gap: 8 }}>
                           <select
@@ -352,27 +454,27 @@ export default function ClientHubPage() {
                           </button>
                         </div>
                       </div>
-                      <div className="stack" style={{ gap: 6 }}>
+                      <div className="acct-goal-track" style={{ marginBottom: 14 }}>
+                        <div className="acct-goal-fill" style={{ width: `${OKR_ARC_FILL[okr.status] * 100}%` }} />
+                      </div>
+                      <div>
                         {okr.keyResults.map((kr) => (
-                          <div key={kr.id} className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                            <span style={{ fontSize: 14 }}>{kr.description}</span>
-                            <div className="row" style={{ gap: 6, alignItems: "center" }}>
-                              <input
-                                type="number"
-                                className="cell-input"
-                                style={{ width: 90 }}
-                                defaultValue={kr.current}
-                                onBlur={(e) => updateKeyResultCurrent(okr, kr.id, Number(e.target.value))}
-                              />
-                              <span className="muted" style={{ fontSize: 13 }}>
-                                / {kr.target}{kr.unit}
-                              </span>
-                            </div>
+                          <div key={kr.id} className="acct-kr-row">
+                            <span className="desc">{kr.description}</span>
+                            <div className="track"><div className="fill" style={{ width: `${kr.target ? Math.min(100, (kr.current / kr.target) * 100) : 0}%` }} /></div>
+                            <span className="num">{kr.current}{kr.unit} / {kr.target}{kr.unit}</span>
+                            <input
+                              type="number"
+                              className="cell-input"
+                              style={{ width: 70, marginLeft: 8 }}
+                              defaultValue={kr.current}
+                              onBlur={(e) => updateKeyResultCurrent(okr, kr.id, Number(e.target.value))}
+                            />
                           </div>
                         ))}
                         <button
                           className="btn btn-secondary btn-sm"
-                          style={{ width: "fit-content" }}
+                          style={{ width: "fit-content", marginTop: 10 }}
                           onClick={() => addKeyResult(okr)}
                         >
                           + Add key result
@@ -382,7 +484,7 @@ export default function ClientHubPage() {
                   ))
                 )}
               </div>
-            )}
+            ) : null}
           </>
         ) : null}
       </main>

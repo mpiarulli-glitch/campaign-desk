@@ -13,7 +13,7 @@ import { extractProjectId } from "@/lib/basecamp";
 import { contractStatus, listDeliverables } from "@/lib/snapshot";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
-const TIERS = ["", "standard", "premium", "vip"];
+const TIERS = ["", "tier1", "tier2", "tier3"];
 
 type Params = { params: Promise<{ id: string }> };
 
