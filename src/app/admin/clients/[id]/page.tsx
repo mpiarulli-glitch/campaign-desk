@@ -7,6 +7,7 @@ import { NavMenu } from "@/components/NavMenu";
 import { TodoList } from "@/components/TodoList";
 import { ChatPreviewCard } from "@/components/ChatPreviewCard";
 import { StrategyPanel } from "@/components/StrategyPanel";
+import { FlagsPanel } from "@/components/FlagsPanel";
 
 type CycleStatus =
   | "not_configured"
@@ -162,9 +163,10 @@ function groupActivity(items: ActivityItem[]): ActivityGroup[] {
 
 const ACTIVITY_PREVIEW = 6;
 
-type Tab = "overview" | "strategy" | "todos" | "messages" | "production" | "calendar" | "goals";
+type Tab = "overview" | "flags" | "strategy" | "todos" | "messages" | "production" | "calendar" | "goals";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "flags", label: "Flags" },
   { key: "strategy", label: "Strategy" },
   { key: "todos", label: "To-dos" },
   { key: "messages", label: "Messages" },
@@ -172,6 +174,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "calendar", label: "Campaign calendar" },
   { key: "goals", label: "Goals & OKRs" },
 ];
+
+const FLAG_LABEL: Record<string, string> = { red: "Red flag", yellow: "Yellow flag", green: "Green flag" };
 
 export default function ClientHubPage() {
   const { id } = useParams<{ id: string }>();
@@ -184,6 +188,18 @@ export default function ClientHubPage() {
   const [copyMsg, setCopyMsg] = useState("");
   const [activityOpen, setActivityOpen] = useState(true);
   const [activityExpanded, setActivityExpanded] = useState(false);
+  const [flagStatus, setFlagStatus] = useState<"red" | "yellow" | "green" | null>(null);
+
+  const loadFlagStatus = useCallback(async () => {
+    const res = await fetch(`/api/clients/${id}/flags`);
+    if (!res.ok) return;
+    const active = ((await res.json()).flags || []).filter((f: { resolved: number }) => !f.resolved);
+    const order = { red: 0, yellow: 1, green: 2 } as const;
+    const worst = active
+      .map((f: { level: "red" | "yellow" | "green" }) => f.level)
+      .sort((a: "red" | "yellow" | "green", b: "red" | "yellow" | "green") => order[a] - order[b])[0];
+    setFlagStatus(worst || null);
+  }, [id]);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -206,7 +222,8 @@ export default function ClientHubPage() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadFlagStatus();
+  }, [load, loadFlagStatus]);
 
   useEffect(() => {
     fetch(`/api/admin/clients/${id}/dashboard-token`)
@@ -318,9 +335,20 @@ export default function ClientHubPage() {
           <p className="snap-hero-eyebrow">Client hub</p>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
             <div>
-              <h1 className="snap-hero-title" style={{ fontSize: "clamp(26px,4vw,38px)" }}>
-                {data?.client.name || "Client hub"}
-              </h1>
+              <div className="row" style={{ gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <h1 className="snap-hero-title" style={{ fontSize: "clamp(26px,4vw,38px)" }}>
+                  {data?.client.name || "Client hub"}
+                </h1>
+                {flagStatus ? (
+                  <button
+                    className={`flag-pill flag-${flagStatus}`}
+                    onClick={() => setTab("flags")}
+                    title="View flags"
+                  >
+                    <span className="flag-dot" /> {FLAG_LABEL[flagStatus]}
+                  </button>
+                ) : null}
+              </div>
               <p className="snap-hero-sub">
                 {data ? `Managed by ${data.client.accountManager || "—"} · ${TIER_LABEL[data.client.tier] ?? "No tier"}` : ""}
               </p>
@@ -480,6 +508,10 @@ export default function ClientHubPage() {
                   ) : null}
                 </div>
               </div>
+            ) : null}
+
+            {tab === "flags" ? (
+              <FlagsPanel clientId={data.client.id} onChange={loadFlagStatus} />
             ) : null}
 
             {tab === "strategy" ? (

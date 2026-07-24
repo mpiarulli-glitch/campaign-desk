@@ -482,6 +482,24 @@ export interface HrIssue {
   updated_at: string;
 }
 
+// A reported issue/status on a client account. level: "red" (urgent / at
+// risk), "yellow" (watch / concern), "green" (positive / going well). Stays
+// active until someone resolves it; a client's live status is its worst active
+// flag.
+export type FlagLevel = "red" | "yellow" | "green";
+export interface ClientFlag {
+  id: string;
+  client_id: string;
+  level: FlagLevel;
+  note: string;
+  created_by: string;
+  resolved: number;
+  resolved_by: string;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -872,6 +890,23 @@ export function getDb(): Database.Database {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS client_flags (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'yellow',
+      note TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      resolved INTEGER NOT NULL DEFAULT 0,
+      resolved_by TEXT NOT NULL DEFAULT '',
+      resolved_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_flags_client ON client_flags(client_id);
+    CREATE INDEX IF NOT EXISTS idx_flags_resolved ON client_flags(resolved);
 
     CREATE INDEX IF NOT EXISTS idx_training_created ON training_posts(created_at);
     CREATE INDEX IF NOT EXISTS idx_sentiment_month ON sentiment_checkins(month);

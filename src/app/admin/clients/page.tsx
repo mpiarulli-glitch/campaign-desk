@@ -92,6 +92,7 @@ export default function AllClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [flags, setFlags] = useState<Record<string, { status: string; counts: { red: number; yellow: number; green: number } }>>({});
 
   async function load() {
     setLoading(true);
@@ -112,6 +113,9 @@ export default function AllClientsPage() {
 
   useEffect(() => {
     load();
+    fetch("/api/flags")
+      .then((r) => (r.ok ? r.json() : { summary: {} }))
+      .then((d) => setFlags(d.summary || {}));
   }, []);
 
   async function patch(id: string, body: Record<string, unknown>) {
@@ -212,6 +216,7 @@ export default function AllClientsPage() {
                 <tr>
                   <th>Client</th>
                   <th>Account manager</th>
+                  <th>Flags</th>
                   <th>Sentiment</th>
                   <th>Tier</th>
                   <th></th>
@@ -240,6 +245,20 @@ export default function AllClientsPage() {
                       <span className={`manager-tag ${c.account_manager ? "" : "is-unassigned"}`}>
                         {c.account_manager || "Unassigned"}
                       </span>
+                    </td>
+                    <td>
+                      {flags[c.id] ? (
+                        <span className={`flag-cell flag-${flags[c.id].status}`} title="Active flags">
+                          <span className="flag-dot" />
+                          <span className="cnt">
+                            {flags[c.id].counts.red ? `${flags[c.id].counts.red}🔴 ` : ""}
+                            {flags[c.id].counts.yellow ? `${flags[c.id].counts.yellow}🟡 ` : ""}
+                            {flags[c.id].counts.green ? `${flags[c.id].counts.green}🟢` : ""}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="flag-clear">—</span>
+                      )}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <select
