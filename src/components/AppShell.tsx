@@ -78,6 +78,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+
+  useEffect(() => {
+    setCollapsed(localStorage.getItem("cd-sidebar") !== "expanded");
+  }, []);
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      const next = !v;
+      localStorage.setItem("cd-sidebar", next ? "collapsed" : "expanded");
+      return next;
+    });
+  }
   const menuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -146,23 +158,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="cd-shell">
       <CommandPalette />
-      <aside className="side">
-        <Link href="/admin" className="side-brand">
+      <aside className={`side ${collapsed ? "is-collapsed" : ""}`}>
+        <Link href="/admin" className="side-brand" title="Campaign Desk">
           <span className="side-mark">M</span>
-          <b>Campaign Desk</b>
+          <b className="nav-label">Campaign Desk</b>
         </Link>
         <nav className="side-nav">
           {items.map((it) => (
-            <Link key={it.href} href={it.href} className={`nav-i ${isActive(it.href) ? "on" : ""}`}>
+            <Link key={it.href} href={it.href} title={it.label} className={`nav-i ${isActive(it.href) ? "on" : ""}`}>
               <Svg name={it.icon} />
-              {it.label}
+              <span className="nav-label">{it.label}</span>
             </Link>
           ))}
         </nav>
         <div className="side-foot">
-          <div className="side-viewas">
+          <div className="side-viewas nav-label">
             {session.impersonating ? `Viewing as ${meLabel}` : session.owner ? "Owner" : meLabel}
           </div>
+          <button className="side-toggle" onClick={toggleCollapsed} title={collapsed ? "Expand" : "Collapse"} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            <span className="side-toggle-icon" aria-hidden="true">{collapsed ? "»" : "«"}</span>
+            <span className="nav-label">Collapse</span>
+          </button>
         </div>
       </aside>
 
