@@ -53,6 +53,7 @@ type DashboardData = {
   calendar: Send[];
   activity: ActivityItem[];
   goals: Goal[];
+  pendingApprovals: { id: string; title: string; external_token: string; updated_at: string }[];
 };
 
 const STATUS_LABEL: Record<CycleStatus, string> = {
@@ -121,20 +122,6 @@ function fmtDate(ymdStr: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-
-function fmtKpi(value: number | null, fmt: string): string {
-  if (value === null || Number.isNaN(value)) return "—";
-  if (fmt === "currency") {
-    return value.toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: value >= 1000 ? 0 : 2,
-    });
-  }
-  if (fmt === "percent") return `${(value * 100).toFixed(1)}%`;
-  if (fmt === "multiple") return `${value.toFixed(2)}x`;
-  return value.toLocaleString("en-US");
 }
 
 function fmtAt(iso: string): string {
@@ -257,6 +244,16 @@ export default function ClientDashboardPage() {
 
   const primaryGoal = data?.goals[0] ?? null;
 
+  const visibleTabs = useMemo(
+    () => TABS.filter((t) => t.key !== "schedule" || data?.production.status === "due"),
+    [data]
+  );
+  useEffect(() => {
+    if (tab === "schedule" && data && data.production.status !== "due") {
+      setTab("overview");
+    }
+  }, [tab, data]);
+
   if (notFound) {
     return (
       <div className="login-wrap">
@@ -346,7 +343,7 @@ export default function ClientDashboardPage() {
         ) : data ? (
           <div className="acct-report">
             <nav className="acct-rail">
-              {TABS.map((t) => (
+              {visibleTabs.map((t) => (
                 <button
                   key={t.key}
                   className={tab === t.key ? "is-current" : ""}
@@ -360,19 +357,46 @@ export default function ClientDashboardPage() {
             <main>
               {tab === "overview" ? (
                 <div className="stack" style={{ gap: 40 }}>
-                  <div className="acct-section">
-                    <div className="acct-section-head">
-                      <h2 className="acct-section-title">Account data</h2>
+                  {data.pendingApprovals.length ? (
+                    <div className="acct-section">
+                      <div className="acct-section-head">
+                        <h2 className="acct-section-title">Needs your approval</h2>
+                      </div>
+                      <div className="stack" style={{ gap: 10 }}>
+                        {data.pendingApprovals.map((c) => (
+                          <div key={c.id} className="card card-pad row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <p style={{ margin: "0 0 2px", fontWeight: 600, fontSize: 15 }}>{c.title}</p>
+                              <p className="muted" style={{ margin: 0, fontSize: 13 }}>Waiting on your review</p>
+                            </div>
+                            <a className="btn" href={`/review/${c.external_token}`}>
+                              Review &amp; approve
+                            </a>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="kpi-grid">
-                      {data.accountData.kpis.map((k) => (
-                        <div key={k.key} className="kpi-tile">
-                          <span className="kpi-label">{k.label}</span>
-                          <span className="kpi-value">{fmtKpi(k.value, k.fmt)}</span>
+                  ) : null}
+
+                  {data.production.status === "due" ? (
+                    <div className="acct-section">
+                      <div className="card card-pad row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 15 }}>
+                            Your next production window is open
+                          </p>
+                          {data.production.window ? (
+                            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                              Pick any day from {fmtDate(data.production.window.start)} to {fmtDate(data.production.window.end)}.
+                            </p>
+                          ) : null}
                         </div>
-                      ))}
+                        <button className="btn" onClick={() => setTab("schedule")}>
+                          Schedule my production
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
 
                   <div className="acct-section">
                     <div className="acct-section-head">

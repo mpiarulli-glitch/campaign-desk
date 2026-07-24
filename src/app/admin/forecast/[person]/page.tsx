@@ -24,6 +24,7 @@ type Data = {
   hours: number;
   capacity: number;
   allocationPct: number;
+  note: string;
 };
 
 function allocationColor(pct: number): string {
@@ -55,6 +56,11 @@ function dayLabel(ymd: string): string {
   });
 }
 
+function shortDow(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" });
+}
+
 export default function PersonForecastPage() {
   const router = useRouter();
   const { person } = useParams<{ person: string }>();
@@ -66,6 +72,8 @@ export default function PersonForecastPage() {
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, { client: string; notes: string; hours: string }>>({});
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
 
   function draftFor(date: string) {
     return drafts[date] || { client: "", notes: "", hours: "" };
@@ -89,8 +97,20 @@ export default function PersonForecastPage() {
       setLoading(false);
       return;
     }
-    setData(await res.json());
+    const json = await res.json();
+    setData(json);
+    setNoteDraft(json.note || "");
     setLoading(false);
+  }
+
+  async function saveNote() {
+    setNoteSaving(true);
+    await fetch(`/api/forecast/${person}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week, note: noteDraft }),
+    });
+    setNoteSaving(false);
   }
 
   useEffect(() => {
@@ -216,16 +236,18 @@ export default function PersonForecastPage() {
         </div>
       </header>
 
-      <main className="container stack">
-        <div className="page-hero">
-          <p className="eyebrow">Weekly forecast</p>
-          <h1 className="h1">{data?.label || person}</h1>
-          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
+      <section className="snap-hero">
+        <div className="snap-hero-inner">
+          <p className="snap-hero-eyebrow">Weekly forecast</p>
+          <h1 className="snap-hero-title">{data?.label || person}</h1>
+          <p className="snap-hero-sub">
             Add what you expect to work on each day this week: the client, a note
             on the task, and how many hours it should take.
           </p>
         </div>
+      </section>
 
+      <main className="container stack">
         <div className="row" style={{ gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setWeek((w) => addWeeks(w, -1))}>
             ← Prev
@@ -242,6 +264,47 @@ export default function PersonForecastPage() {
         </div>
 
         {error ? <p className="error">{error}</p> : null}
+
+        {data && days.length ? (
+          <div className="card card-pad week-glance">
+            {days.map((date) => {
+              const dayHours = (tasksByDay.get(date) || []).reduce((sum, t) => sum + t.hours, 0);
+              const perDayCapacity = data.capacity / days.length || 8;
+              const pct = Math.min(100, (dayHours / (perDayCapacity * 1.25)) * 100);
+              return (
+                <div key={date} className="week-glance-col">
+                  <div className="week-glance-bar-wrap">
+                    <div
+                      className="week-glance-bar"
+                      style={{
+                        height: `${Math.max(4, pct)}%`,
+                        background: dayHours > perDayCapacity ? "var(--warning)" : "var(--accent)",
+                      }}
+                    />
+                  </div>
+                  <span className="week-glance-hours">{dayHours || "—"}{dayHours ? "h" : ""}</span>
+                  <span className="week-glance-day">{shortDow(date)}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {data ? (
+          <label className="field">
+            <span>
+              Notes for this week
+              {noteSaving ? " · saving…" : ""}
+            </span>
+            <textarea
+              value={noteDraft}
+              placeholder="Anything worth flagging for the week — PTO, a heads up on a client, blockers, whatever's useful."
+              onChange={(e) => setNoteDraft(e.target.value)}
+              onBlur={saveNote}
+              rows={3}
+            />
+          </label>
+        ) : null}
 
         {loading ? (
           <p className="muted">Loading...</p>

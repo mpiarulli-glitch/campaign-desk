@@ -11,7 +11,7 @@ import {
 import { deliverableOverview, getOrCreateToken as getOrCreateSnapshotToken } from "./snapshot";
 import { aggregate, getRevClient, kpisForModel, listMetrics } from "./revenue";
 import { planSends } from "./plan";
-import { listActivity, type ActivityItem } from "./campaigns";
+import { listActivity, listPendingApprovalCampaigns, type ActivityItem, type PendingApproval } from "./campaigns";
 import { listOkrs, type OkrStatus } from "./okrs";
 
 /* ------------------------------------------------------- share token */
@@ -180,6 +180,7 @@ export interface ClientDashboardData {
   calendar: ScheduledSend[];
   activity: AccountActivityItem[];
   goals: ClientGoal[];
+  pendingApprovals: PendingApproval[];
 }
 
 function addDaysYmd(ymd: string, n: number): string {
@@ -219,5 +220,6 @@ export function getClientDashboardData(clientId: string): ClientDashboardData | 
     calendar: planSends(client.id, addDaysYmd(today, -30), addDaysYmd(today, 180)),
     activity: accountActivity(client.id),
     goals: clientVisibleGoals(client.id),
+    pendingApprovals: listPendingApprovalCampaigns(client.id),
   };
 }

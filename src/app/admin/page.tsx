@@ -129,11 +129,11 @@ export default function AdminHomePage() {
         </div>
       </header>
 
-      <main className="container container-wide stack">
-        <div className="page-hero">
-          <p className="eyebrow">{DATE_FMT.format(new Date())}</p>
-          <h1 className="h1">{greeting()}, welcome back.</h1>
-          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
+      <section className="snap-hero">
+        <div className="snap-hero-inner">
+          <p className="snap-hero-eyebrow">{DATE_FMT.format(new Date())}</p>
+          <h1 className="snap-hero-title">{greeting()}, welcome back.</h1>
+          <p className="snap-hero-sub">
             {loading
               ? "Pulling together what's going on…"
               : toDo > 0
@@ -141,7 +141,9 @@ export default function AdminHomePage() {
                 : "Everything looks handled. Nothing is waiting on you right now."}
           </p>
         </div>
+      </section>
 
+      <main className="container container-wide stack">
         {error ? <p className="error">{error}</p> : null}
 
         {loading || !s ? (

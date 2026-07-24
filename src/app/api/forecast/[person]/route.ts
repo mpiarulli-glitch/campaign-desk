@@ -3,9 +3,11 @@ import { isForecastAuthenticated } from "@/lib/auth";
 import {
   WEEKLY_CAPACITY_HOURS,
   createTask,
+  getWeekNote,
   isValidPerson,
   listTasksForPersonWeek,
   personLabel,
+  upsertWeekNote,
 } from "@/lib/forecast";
 import { currentWeek } from "@/lib/week";
 
@@ -33,7 +35,25 @@ export async function GET(request: Request, { params }: Params) {
     hours,
     capacity: WEEKLY_CAPACITY_HOURS,
     allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
+    note: getWeekNote(person, week),
   });
+}
+
+export async function PATCH(request: Request, { params }: Params) {
+  const { person } = await params;
+  if (!(await isForecastAuthenticated(person))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isValidPerson(person)) {
+    return NextResponse.json({ error: "Unknown person" }, { status: 404 });
+  }
+  const body = await request.json().catch(() => ({}));
+  const week = typeof body.week === "string" ? body.week : "";
+  if (!DATE_RE.test(week)) {
+    return NextResponse.json({ error: "week must be YYYY-MM-DD" }, { status: 400 });
+  }
+  const note = typeof body.note === "string" ? upsertWeekNote(person, week, body.note) : getWeekNote(person, week);
+  return NextResponse.json({ note });
 }
 
 export async function POST(request: Request, { params }: Params) {

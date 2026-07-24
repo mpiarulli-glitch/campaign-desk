@@ -178,6 +178,17 @@ export interface ForecastTask {
   updated_at: string;
 }
 
+// One freeform note per person per week (Monday-keyed) — general context for
+// the week, separate from individual task notes.
+export interface ForecastNote {
+  id: string;
+  person: string;
+  week_start: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SnapshotStatus =
   | "not_started"
   | "in_progress"
@@ -643,6 +654,16 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
+
+    CREATE TABLE IF NOT EXISTS forecast_notes (
+      id TEXT PRIMARY KEY,
+      person TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (person, week_start)
+    );
 
     CREATE TABLE IF NOT EXISTS client_okrs (
       id TEXT PRIMARY KEY,

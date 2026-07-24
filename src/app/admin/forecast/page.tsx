@@ -77,16 +77,18 @@ export default function ForecastDashboardPage() {
         </div>
       </header>
 
-      <main className="container stack">
-        <div className="page-hero">
-          <p className="eyebrow">Team capacity</p>
-          <h1 className="h1">Weekly forecast</h1>
-          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
+      <section className="snap-hero">
+        <div className="snap-hero-inner">
+          <p className="snap-hero-eyebrow">Team capacity</p>
+          <h1 className="snap-hero-title">Weekly forecast</h1>
+          <p className="snap-hero-sub">
             What everyone expects to work on this week, and how allocated the team
-            is against a {40}-hour week. Click into a name to add or edit tasks.
+            is against a 40-hour week. Click into a name to add or edit tasks.
           </p>
         </div>
+      </section>
 
+      <main className="container stack">
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div className="row" style={{ gap: 8 }}>
             <button className="btn btn-ghost btn-sm" onClick={() => setWeek((w) => addWeeks(w, -1))}>
@@ -133,11 +135,22 @@ export default function ForecastDashboardPage() {
                     <td><strong>{p.label}</strong></td>
                     <td>{p.hours}h</td>
                     <td>{p.capacity}h</td>
-                    <td>
-                      <span style={{ color: allocationColor(p.allocationPct), fontWeight: 600 }}>
-                        {p.allocationPct}%
-                      </span>
-                      <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                    <td style={{ minWidth: 180 }}>
+                      <div className="row" style={{ gap: 10, alignItems: "center" }}>
+                        <div className="alloc-track">
+                          <div
+                            className="alloc-fill"
+                            style={{
+                              width: `${Math.min(100, p.allocationPct)}%`,
+                              background: allocationColor(p.allocationPct),
+                            }}
+                          />
+                        </div>
+                        <span style={{ color: allocationColor(p.allocationPct), fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
+                          {p.allocationPct}%
+                        </span>
+                      </div>
+                      <span className="muted" style={{ fontSize: 12 }}>
                         {allocationLabel(p.allocationPct)}
                       </span>
                     </td>

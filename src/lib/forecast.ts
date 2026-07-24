@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type ForecastTask } from "./db";
+import { getDb, nowIso, type ForecastNote, type ForecastTask } from "./db";
 import { PEOPLE, isValidPerson, personLabel } from "./people";
 import { addWeeks } from "./week";
 
@@ -96,6 +96,39 @@ export function updateTask(
 
 export function deleteTask(id: string): boolean {
   return getDb().prepare(`DELETE FROM forecast_tasks WHERE id = ?`).run(id).changes > 0;
+}
+
+/* --------------------------------------------------------- week notes */
+
+export function getWeekNote(person: string, weekStart: string): string {
+  const row = getDb()
+    .prepare(`SELECT body FROM forecast_notes WHERE person = ? AND week_start = ?`)
+    .get(person, weekStart) as ForecastNote | undefined;
+  return row?.body || "";
+}
+
+// One row per person per week — blank body clears it back to nothing rather
+// than leaving an empty row behind.
+export function upsertWeekNote(person: string, weekStart: string, body: string): string {
+  const db = getDb();
+  const trimmed = body.trim();
+  const ts = nowIso();
+  const existing = db
+    .prepare(`SELECT id FROM forecast_notes WHERE person = ? AND week_start = ?`)
+    .get(person, weekStart) as { id: string } | undefined;
+  if (existing) {
+    db.prepare(`UPDATE forecast_notes SET body = ?, updated_at = ? WHERE id = ?`).run(
+      trimmed,
+      ts,
+      existing.id
+    );
+  } else if (trimmed) {
+    db.prepare(
+      `INSERT INTO forecast_notes (id, person, week_start, body, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(nanoid(12), person, weekStart, trimmed, ts, ts);
+  }
+  return trimmed;
 }
 
 export interface PersonWeekSummary {

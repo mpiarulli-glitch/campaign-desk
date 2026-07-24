@@ -96,6 +96,25 @@ export function listCampaigns(includeArchived = false): Campaign[] {
     .all() as Campaign[];
 }
 
+// Campaigns currently awaiting this client's review — the one status where
+// the ball is in their court (needs_changes means we're the ones acting on
+// their feedback, so it isn't "pending" on them).
+export interface PendingApproval {
+  id: string;
+  title: string;
+  external_token: string;
+  updated_at: string;
+}
+export function listPendingApprovalCampaigns(clientId: string): PendingApproval[] {
+  return getDb()
+    .prepare(
+      `SELECT id, title, external_token, updated_at FROM campaigns
+       WHERE client_id = ? AND status = 'in_review' AND archived_at IS NULL
+       ORDER BY updated_at DESC`
+    )
+    .all(clientId) as PendingApproval[];
+}
+
 export function listArchivedCampaigns(): Campaign[] {
   return getDb()
     .prepare(
