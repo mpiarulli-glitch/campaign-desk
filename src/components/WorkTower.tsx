@@ -25,7 +25,6 @@ export type Workboard = {
   updatedAt: string;
 };
 
-// A compact glyph per department, drawn inline so the floor plates stay crisp.
 const DEPT_ICON: Record<string, React.ReactNode> = {
   strategy: <path d="M3 3v18h18M7 14l3-4 3 3 5-7" />,
   paid: <><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9.5 9.2a2.5 2 0 0 1 2.5-1.2c1.5 0 2.5.8 2.5 2s-1 1.8-2.5 2-2.5.8-2.5 2 1 2 2.5 2a2.5 2 0 0 0 2.5-1.2" /></>,
@@ -55,39 +54,64 @@ function relTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// Desks shown per floor before rolling into "+N". A real floor also shows a
-// couple of empty workstations so it reads like an office, not a list.
-const DESKS_SHOWN = 5;
-const MIN_DESKS = 4;
+// Deterministic shirt color per person so the same teammate keeps the same look.
+const SHIRTS = ["#3f6fb0", "#c96f4a", "#4f9d78", "#8a6bb0", "#c98aa8", "#4a7c8c", "#b0894a", "#6c7a8c"];
+function shirtFor(slug: string): string {
+  let h = 0;
+  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+  return SHIRTS[h % SHIRTS.length];
+}
 
-// A single workstation: monitor, desk surface, chair, and the person at it.
-// Occupied+open desks glow warm; done desks settle to a calm green; empty
-// desks stay dark so a busy floor reads brighter than a quiet one.
-function Desk({ task }: { task: Task | null }) {
-  if (!task) {
-    return (
-      <div className="dk is-empty" aria-hidden="true">
-        <span className="dk-monitor" />
-        <span className="dk-surface" />
-        <span className="dk-chair" />
-      </div>
-    );
-  }
-  const cls = `dk s-${task.status} ${task.priority === "urgent" && task.status === "open" ? "is-urgent" : ""}`;
+const ROOMS_SHOWN = 4;
+
+// One workstation: a teammate seated at a desk with a glowing monitor and the
+// task they're on. Head is the real avatar; shoulders take the person's shirt
+// color; the desk sits in front so you see them "at" their desk.
+function Workstation({ task }: { task: Task }) {
+  const open = task.status === "open";
+  const urgent = task.priority === "urgent" && open;
   return (
-    <div className={cls} title={`${task.title} · ${task.assigneeLabel}`}>
-      <span className="dk-monitor">
-        {task.status === "done" ? <span className="dk-check">✓</span> : <span className="dk-code" />}
+    <div className={`ws ${open ? "is-open" : "is-done"} ${urgent ? "is-urgent" : ""}`}>
+      <span className="ws-note" title={`${task.title} · ${task.assigneeLabel}`}>
+        <span className={`ws-note-dot ${open ? "on" : "ok"}`} />
+        <span className="ws-note-txt">{task.title}</span>
       </span>
-      <span className="dk-person">
-        <Avatar label={task.assigneeLabel} src={task.avatar} size={30} />
-      </span>
-      <span className="dk-surface" />
-      <span className="dk-chair" />
-      <span className="dk-tip">
-        <b>{task.title}</b>
-        <i>{task.assigneeLabel}</i>
-      </span>
+
+      <div className="ws-scene">
+        <span className="ws-chair" aria-hidden="true" />
+        <span className="ws-figure" aria-hidden="true">
+          <span className="ws-torso" style={{ background: shirtFor(task.assignee || task.assigneeLabel) }} />
+        </span>
+        <span className="ws-head">
+          <Avatar label={task.assigneeLabel} src={task.avatar} size={38} />
+        </span>
+        <span className="ws-desk" aria-hidden="true" />
+        <span className="ws-monitor" aria-hidden="true">
+          <span className="ws-screen">
+            {task.status === "done" ? (
+              <span className="ws-check">✓</span>
+            ) : (
+              <>
+                <i style={{ width: "80%" }} />
+                <i style={{ width: "55%" }} />
+                <i style={{ width: "68%" }} />
+              </>
+            )}
+          </span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// A furnished-but-idle room, so a quiet floor still reads like an office.
+function EmptyRoom() {
+  return (
+    <div className="ws is-empty" aria-hidden="true">
+      <div className="ws-scene">
+        <span className="ws-plant"><i /><i /><i /></span>
+        <span className="ws-desk" />
+      </div>
     </div>
   );
 }
@@ -117,7 +141,7 @@ export function WorkTower({
 
   useEffect(() => {
     timer.current = setInterval(poll, 10000);
-    const tick = setInterval(() => force((n) => n + 1), 30000); // refresh "x ago" labels
+    const tick = setInterval(() => force((n) => n + 1), 30000);
     return () => {
       if (timer.current) clearInterval(timer.current);
       clearInterval(tick);
@@ -138,59 +162,42 @@ export function WorkTower({
           <span className="floor-live"><span className="dot" />LIVE</span>
           <p className="floor-eyebrow">The MEG floor</p>
           <h1 className="floor-title">Working on {clientName} right now</h1>
-          <p className="floor-sub">A live look at your account team at their desks. Updated {stamp}.</p>
+          <p className="floor-sub">A live look inside our office. Every lit desk is a teammate on your account. Updated {stamp}.</p>
         </div>
         <div className="floor-stats">
-          <div className="floor-stat">
-            <span className="n">{wb.peopleActive}</span>
-            <span className="l">on your account</span>
-          </div>
-          <div className="floor-stat">
-            <span className="n">{wb.activeTotal}</span>
-            <span className="l">tasks in motion</span>
-          </div>
-          <div className="floor-stat">
-            <span className="n">{wb.doneRecent}</span>
-            <span className="l">shipped today</span>
-          </div>
+          <div className="floor-stat"><span className="n">{wb.peopleActive}</span><span className="l">at their desks</span></div>
+          <div className="floor-stat"><span className="n">{wb.activeTotal}</span><span className="l">tasks in motion</span></div>
+          <div className="floor-stat"><span className="n">{wb.doneRecent}</span><span className="l">shipped today</span></div>
         </div>
       </div>
 
-      {/* The building */}
+      {/* The building cutaway */}
       <div className="bld-scene">
-        <svg className="bld-sky" viewBox="0 0 1200 640" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+        <svg className="bld-sky" viewBox="0 0 1200 720" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
           <defs>
             <linearGradient id="bld-sky-g" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#0a1030" />
-              <stop offset="42%" stopColor="#1c1f4d" />
-              <stop offset="74%" stopColor="#4a2f5e" />
+              <stop offset="44%" stopColor="#1c1f4d" />
+              <stop offset="76%" stopColor="#4a2f5e" />
               <stop offset="100%" stopColor="#b8623f" />
             </linearGradient>
             <radialGradient id="bld-glow" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#ffe9c2" stopOpacity="0.85" />
               <stop offset="100%" stopColor="#ffe9c2" stopOpacity="0" />
             </radialGradient>
-            <linearGradient id="bld-haze" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#c8794f" stopOpacity="0" />
-              <stop offset="100%" stopColor="#e0946a" stopOpacity="0.5" />
-            </linearGradient>
           </defs>
-          <rect x="0" y="0" width="1200" height="640" fill="url(#bld-sky-g)" />
-          <circle cx="250" cy="150" r="120" fill="url(#bld-glow)" />
-          <circle cx="250" cy="150" r="34" fill="#fff3d8" opacity="0.95" />
-          {STARS.map((s, i) => (
-            <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#eef3ff" opacity={s.o} />
-          ))}
-          {/* distant skyline with lit windows */}
+          <rect x="0" y="0" width="1200" height="720" fill="url(#bld-sky-g)" />
+          <circle cx="235" cy="150" r="120" fill="url(#bld-glow)" />
+          <circle cx="235" cy="150" r="32" fill="#fff3d8" opacity="0.95" />
+          {STARS.map((s, i) => <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#eef3ff" opacity={s.o} />)}
           {SKYLINE.map((b, i) => (
             <g key={i}>
-              <rect x={b.x} y={640 - b.h} width={b.w} height={b.h} fill="#0b1030" opacity="0.9" />
+              <rect x={b.x} y={720 - b.h} width={b.w} height={b.h} fill="#0b1030" opacity="0.9" />
               {b.win.map((w, j) => (
-                <rect key={j} x={b.x + w.dx} y={640 - b.h + w.dy} width="3.5" height="3.5" fill="#ffcf7e" opacity={w.o} />
+                <rect key={j} x={b.x + w.dx} y={720 - b.h + w.dy} width="3.5" height="3.5" fill="#ffcf7e" opacity={w.o} />
               ))}
             </g>
           ))}
-          <rect x="0" y="470" width="1200" height="170" fill="url(#bld-haze)" />
         </svg>
 
         {floors.length === 0 ? (
@@ -208,35 +215,32 @@ export function WorkTower({
               </div>
 
               <div className="bld-body">
-                <div className="bld-lift" aria-hidden="true">
-                  <span className="bld-car" />
-                </div>
+                <div className="bld-lift" aria-hidden="true"><span className="bld-car" /></div>
 
                 {floors.map((f) => {
-                  const shown = f.tasks.slice(0, DESKS_SHOWN);
+                  const shown = f.tasks.slice(0, ROOMS_SHOWN);
                   const extra = f.tasks.length - shown.length;
-                  const pad = Math.max(0, MIN_DESKS - shown.length);
-                  const glow = Math.min(0.5, 0.14 + f.active * 0.09);
+                  const empties = Math.max(0, Math.min(3, 4 - shown.length));
+                  const glow = Math.min(0.5, 0.16 + f.active * 0.09);
                   return (
                     <div key={f.key} className={`flr ${f.active > 0 ? "is-busy" : "is-quiet"}`}>
                       <div className="flr-plate">
                         <span className="flr-ico"><DeptIcon k={f.key} /></span>
                         <span className="flr-name">{f.department}</span>
-                        <span className="flr-count">
-                          {f.active > 0 ? `${f.active} active` : f.done ? "wrapped" : "standing by"}
-                        </span>
+                        <span className="flr-count">{f.active > 0 ? `${f.active} active` : f.done ? "wrapped" : "standing by"}</span>
                       </div>
-                      <div className="flr-office" style={{ ["--glow" as string]: glow }}>
-                        <span className="flr-ceiling" aria-hidden="true" />
-                        <div className="flr-desks">
+                      <div className="flr-interior" style={{ ["--glow" as string]: glow }}>
+                        <span className="flr-window" aria-hidden="true" />
+                        <span className="flr-lights" aria-hidden="true"><i /><i /><i /><i /></span>
+                        <div className="flr-rooms">
                           {shown.map((t) => (
-                            <Desk key={t.id} task={t} />
+                            <div className="room" key={t.id}><Workstation task={t} /></div>
                           ))}
-                          {Array.from({ length: pad }, (_, i) => (
-                            <Desk key={`e${i}`} task={null} />
+                          {Array.from({ length: empties }, (_, i) => (
+                            <div className="room room-idle" key={`e${i}`}><EmptyRoom /></div>
                           ))}
                         </div>
-                        {extra > 0 ? <span className="flr-more">+{extra}</span> : null}
+                        {extra > 0 ? <span className="flr-more">+{extra} more on this floor</span> : null}
                       </div>
                     </div>
                   );
@@ -250,18 +254,15 @@ export function WorkTower({
               </div>
             </div>
 
-            {/* wet-plaza reflection */}
             <div className="bld-reflection" aria-hidden="true">
               <div className="bld bld-mirror">
                 <div className="bld-body">
                   {floors.map((f) => {
-                    const glow = Math.min(0.5, 0.14 + f.active * 0.09);
+                    const glow = Math.min(0.5, 0.16 + f.active * 0.09);
                     return (
                       <div key={f.key} className={`flr ${f.active > 0 ? "is-busy" : "is-quiet"}`}>
                         <div className="flr-plate" />
-                        <div className="flr-office" style={{ ["--glow" as string]: glow }}>
-                          <span className="flr-ceiling" />
-                        </div>
+                        <div className="flr-interior" style={{ ["--glow" as string]: glow }}><span className="flr-window" /></div>
                       </div>
                     );
                   })}
@@ -295,23 +296,17 @@ export function WorkTower({
 /* deterministic backdrop (module scope so it never re-rolls on re-render) */
 const STARS = (() => {
   let a = 20240724;
-  const rnd = () => {
-    a = (a * 1664525 + 1013904223) >>> 0;
-    return a / 4294967296;
-  };
-  return Array.from({ length: 70 }, () => ({ x: rnd() * 1200, y: rnd() * 360, r: 0.4 + rnd() * 1.2, o: 0.18 + rnd() * 0.55 }));
+  const rnd = () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
+  return Array.from({ length: 70 }, () => ({ x: rnd() * 1200, y: rnd() * 380, r: 0.4 + rnd() * 1.2, o: 0.18 + rnd() * 0.55 }));
 })();
 const SKYLINE = (() => {
   let a = 991;
-  const rnd = () => {
-    a = (a * 1103515245 + 12345) >>> 0;
-    return a / 4294967296;
-  };
+  const rnd = () => { a = (a * 1103515245 + 12345) >>> 0; return a / 4294967296; };
   const out: { x: number; w: number; h: number; win: { dx: number; dy: number; o: number }[] }[] = [];
   let x = -20;
   while (x < 1200) {
     const w = 42 + rnd() * 74;
-    const h = 70 + rnd() * 170;
+    const h = 70 + rnd() * 190;
     const win: { dx: number; dy: number; o: number }[] = [];
     for (let dy = 10; dy < h - 8; dy += 12) {
       for (let dx = 6; dx < w - 6; dx += 11) {
