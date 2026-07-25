@@ -1,19 +1,13 @@
 import { nanoid } from "nanoid";
-import {
-  getDb,
-  nowIso,
-  type WhiteboardBoard,
-  type WhiteboardRecord,
-} from "./db";
+import { getDb, nowIso, type WhiteboardBoard } from "./db";
 
-export type { WhiteboardBoard, WhiteboardRecord };
+export type { WhiteboardBoard };
 
-// A single tldraw record as it travels over the wire. `id` is the tldraw
-// record id (e.g. "shape:abc"); the rest of the record lives in `data`.
-export interface WireRecord {
-  id: string;
-  data: unknown;
-}
+// Each board stores its whole tldraw document as a single snapshot row in
+// whiteboard_records, keyed by this sentinel record id. Snapshot sync (rather
+// than per-record diffing) keeps the document always self-consistent, so a
+// loading client can never hit an orphaned record and crash the canvas.
+const DOC_ID = "__doc__";
 
 export function listBoards(): WhiteboardBoard[] {
   return getDb()
@@ -47,82 +41,56 @@ export function createBoard(input: {
   return getBoard(id)!;
 }
 
-// All live (non-deleted) records for a board — used for the initial client load.
-export function getAllRecords(boardId: string): WireRecord[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT record_id, record_json FROM whiteboard_records
-       WHERE board_id = ? AND deleted = 0`
-    )
-    .all(boardId) as Array<Pick<WhiteboardRecord, "record_id" | "record_json">>;
-  return rows.map((r) => ({ id: r.record_id, data: JSON.parse(r.record_json) }));
+export interface BoardDoc {
+  // Monotonic revision; bumped on every save so pollers know when to reload.
+  rev: number;
+  // Serialized tldraw document snapshot (JSON string), or "" for a new board.
+  snapshot: string;
 }
 
-export interface ChangeSet {
-  // Records added or updated since the caller's `since` timestamp.
-  put: WireRecord[];
-  // Record ids that were removed since `since`.
-  remove: string[];
-  // Server clock at read time — the caller passes this back as its next `since`.
-  now: string;
-}
-
-// Records changed strictly after `sinceIso`. Deleted rows come back as removals
-// so pollers learn about deletions through the same call.
-export function getChangesSince(boardId: string, sinceIso: string): ChangeSet {
-  const now = nowIso();
-  const rows = getDb()
+// Read the stored document + revision. The row wraps both in a small JSON
+// envelope so we don't need a schema change to carry the revision.
+export function getDoc(boardId: string): BoardDoc {
+  const row = getDb()
     .prepare(
-      `SELECT record_id, record_json, deleted FROM whiteboard_records
-       WHERE board_id = ? AND updated_at > ?`
+      `SELECT record_json FROM whiteboard_records
+       WHERE board_id = ? AND record_id = ?`
     )
-    .all(boardId, sinceIso) as Array<
-    Pick<WhiteboardRecord, "record_id" | "record_json" | "deleted">
-  >;
-  const put: WireRecord[] = [];
-  const remove: string[] = [];
-  for (const r of rows) {
-    if (r.deleted) remove.push(r.record_id);
-    else put.push({ id: r.record_id, data: JSON.parse(r.record_json) });
+    .get(boardId, DOC_ID) as { record_json: string } | undefined;
+  if (!row) return { rev: 0, snapshot: "" };
+  try {
+    const parsed = JSON.parse(row.record_json) as {
+      rev?: number;
+      snapshot?: string;
+    };
+    return {
+      rev: typeof parsed.rev === "number" ? parsed.rev : 0,
+      snapshot: typeof parsed.snapshot === "string" ? parsed.snapshot : "",
+    };
+  } catch {
+    return { rev: 0, snapshot: "" };
   }
-  return { put, remove, now };
 }
 
-// Upsert changed records and tombstone removed ones. Runs in a transaction and
-// bumps the board's updated_at so the board list re-sorts to the top.
-export function applyChanges(
-  boardId: string,
-  changes: { put?: WireRecord[]; remove?: string[] }
-): void {
-  const db = getDb();
-  const ts = nowIso();
-  const put = changes.put || [];
-  const remove = changes.remove || [];
+// Lightweight poll target: just the current revision.
+export function getRev(boardId: string): number {
+  return getDoc(boardId).rev;
+}
 
-  const upsert = db.prepare(
+// Store a new document snapshot, bumping the revision. Last write wins.
+export function saveDoc(boardId: string, snapshot: string): number {
+  const db = getDb();
+  const rev = getDoc(boardId).rev + 1;
+  const ts = nowIso();
+  db.prepare(
     `INSERT INTO whiteboard_records (board_id, record_id, record_json, deleted, updated_at)
      VALUES (?, ?, ?, 0, ?)
      ON CONFLICT (board_id, record_id)
-     DO UPDATE SET record_json = excluded.record_json, deleted = 0, updated_at = excluded.updated_at`
+     DO UPDATE SET record_json = excluded.record_json, updated_at = excluded.updated_at`
+  ).run(boardId, DOC_ID, JSON.stringify({ rev, snapshot }), ts);
+  db.prepare(`UPDATE whiteboard_boards SET updated_at = ? WHERE id = ?`).run(
+    ts,
+    boardId
   );
-  const tombstone = db.prepare(
-    `INSERT INTO whiteboard_records (board_id, record_id, record_json, deleted, updated_at)
-     VALUES (?, ?, '', 1, ?)
-     ON CONFLICT (board_id, record_id)
-     DO UPDATE SET deleted = 1, updated_at = excluded.updated_at`
-  );
-  const touchBoard = db.prepare(
-    `UPDATE whiteboard_boards SET updated_at = ? WHERE id = ?`
-  );
-
-  const run = db.transaction(() => {
-    for (const rec of put) {
-      upsert.run(boardId, rec.id, JSON.stringify(rec.data), ts);
-    }
-    for (const id of remove) {
-      tombstone.run(boardId, id, ts);
-    }
-    touchBoard.run(ts, boardId);
-  });
-  run();
+  return rev;
 }

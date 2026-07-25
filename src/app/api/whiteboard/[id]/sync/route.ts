@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { isWorkflowAuthenticated } from "@/lib/auth";
-import { applyChanges, getBoard, type WireRecord } from "@/lib/whiteboard";
+import { getBoard, saveDoc } from "@/lib/whiteboard";
 
 type Params = { params: Promise<{ id: string }> };
 
-// A client pushes its local edits: records to upsert and record ids to remove.
+// Save the whole document snapshot. Returns the new revision.
 export async function POST(request: Request, { params }: Params) {
   if (!(await isWorkflowAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -14,17 +14,10 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
-  const put: WireRecord[] = Array.isArray(body.put)
-    ? body.put.filter(
-        (r: unknown): r is WireRecord =>
-          !!r && typeof (r as WireRecord).id === "string"
-      )
-    : [];
-  const remove: string[] = Array.isArray(body.remove)
-    ? body.remove.filter((x: unknown): x is string => typeof x === "string")
-    : [];
-  if (put.length || remove.length) {
-    applyChanges(id, { put, remove });
+  const snapshot = typeof body.snapshot === "string" ? body.snapshot : null;
+  if (snapshot === null) {
+    return NextResponse.json({ error: "Missing snapshot" }, { status: 400 });
   }
-  return NextResponse.json({ ok: true });
+  const rev = saveDoc(id, snapshot);
+  return NextResponse.json({ rev });
 }

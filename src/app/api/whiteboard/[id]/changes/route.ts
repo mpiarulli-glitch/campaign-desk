@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { isWorkflowAuthenticated } from "@/lib/auth";
-import { getBoard, getChangesSince } from "@/lib/whiteboard";
+import { getBoard, getRev } from "@/lib/whiteboard";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Poll target: records changed since the client's last sync timestamp, plus the
-// server clock the client stores as its next `since`.
-export async function GET(request: Request, { params }: Params) {
+// Lightweight poll: the current revision only. Clients fetch the full snapshot
+// from the board route when this revision is newer than the one they hold.
+export async function GET(_request: Request, { params }: Params) {
   if (!(await isWorkflowAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -14,8 +14,5 @@ export async function GET(request: Request, { params }: Params) {
   if (!getBoard(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  // Default to epoch so a client with no cursor gets everything on first poll.
-  const since =
-    new URL(request.url).searchParams.get("since") || "1970-01-01T00:00:00.000Z";
-  return NextResponse.json(getChangesSince(id, since));
+  return NextResponse.json({ rev: getRev(id) });
 }

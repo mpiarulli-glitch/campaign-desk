@@ -2,13 +2,7 @@
 
 import { Component, useCallback, useRef, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import type {
-  Editor,
-  HistoryEntry,
-  TLRecord,
-  TLStoreSnapshot,
-} from "tldraw";
-import { loadSnapshot } from "tldraw";
+import type { Editor, TLEditorSnapshot } from "tldraw";
 import "tldraw/tldraw.css";
 
 // tldraw touches the DOM/window at import time, so it must never render on the
@@ -22,27 +16,16 @@ const Tldraw = dynamic(() => import("tldraw").then((m) => m.Tldraw), {
   ),
 });
 
-// How often each viewer pulls remote changes, and how long local edits are
-// batched before being pushed. Both are deliberately small so the board feels
-// live without hammering the single Next process.
+// How often each viewer checks for a newer revision, and how long local edits
+// are batched before being saved. Small enough to feel live without hammering
+// the single Next process.
 const POLL_MS = 2000;
-const FLUSH_MS = 500;
+const SAVE_MS = 700;
 
-// One record as it travels to/from our API: the tldraw record id plus the
-// record itself.
-type Wire = { id: string; data: TLRecord };
+type DocSnapshot = TLEditorSnapshot["document"];
 
-// Records that structure the document (the singleton document record and the
-// pages). tldraw creates these at store init, before onMount attaches our
-// change listener, so they'd never be pushed by the incremental listener alone.
-// We push them explicitly on mount — otherwise the server ends up with shapes
-// whose parent page is missing, and loading that crashes the canvas.
-function isStructural(r: TLRecord): boolean {
-  return r.typeName === "page" || r.typeName === "document";
-}
-
-// A render error inside tldraw (e.g. a shape referencing a missing page) would
-// otherwise blank the whole route. Contain it and offer a reload instead.
+// A render error inside tldraw would otherwise blank the whole route. Contain
+// it and offer a reload instead of a white screen.
 class BoardErrorBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
@@ -72,161 +55,130 @@ class BoardErrorBoundary extends Component<
 }
 
 export function WhiteboardCanvas({ boardId }: { boardId: string }) {
-  // Server clock cursor: the timestamp of the last changes we applied. The next
-  // poll asks for everything newer than this.
-  const sinceRef = useRef<string>("1970-01-01T00:00:00.000Z");
-  // Local edits waiting to be pushed, deduped by record id.
-  const pendingPut = useRef<Map<string, TLRecord>>(new Map());
-  const pendingRemove = useRef<Set<string>>(new Set());
-  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  // Revision we currently hold. The poll pulls a fresh snapshot when the server
+  // revision moves past this.
+  const localRevRef = useRef(0);
+  // Local edits made since our last save. While dirty we push, never pull, so a
+  // remote snapshot can't wipe work-in-progress.
+  const dirtyRef = useRef(false);
+  // True while we're applying a remote snapshot, so that store churn from the
+  // load can't be mistaken for a local edit.
+  const applyingRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
-  const postSync = useCallback(
-    async (put: Wire[], remove: string[]) => {
-      if (!put.length && !remove.length) return;
-      try {
-        await fetch(`/api/whiteboard/${boardId}/sync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ put, remove }),
-        });
-      } catch {
-        // Network blips are fine: the next edit re-pushes, and pollers still
-        // converge from whatever did land.
+  const save = useCallback(async () => {
+    saveTimer.current = null;
+    const editor = editorRef.current;
+    if (!editor || applyingRef.current) return;
+    dirtyRef.current = false;
+    let snapshot: string;
+    try {
+      snapshot = JSON.stringify(editor.getSnapshot().document);
+    } catch {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/whiteboard/${boardId}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snapshot }),
+      });
+      if (res.ok) {
+        const { rev } = (await res.json()) as { rev: number };
+        // Only advance our revision if nothing changed while the save was in
+        // flight; otherwise the next save handles it.
+        if (!dirtyRef.current) localRevRef.current = rev;
       }
-    },
-    [boardId]
-  );
+    } catch {
+      // Network blip: the board is still dirty-free locally, but the next edit
+      // re-saves and pollers converge from whatever landed.
+    }
+  }, [boardId]);
 
-  const flush = useCallback(() => {
-    flushTimer.current = null;
-    const put = Array.from(pendingPut.current.values()).map(
-      (data): Wire => ({ id: data.id, data })
-    );
-    const remove = Array.from(pendingRemove.current);
-    pendingPut.current.clear();
-    pendingRemove.current.clear();
-    void postSync(put, remove);
-  }, [postSync]);
+  const scheduleSave = useCallback(() => {
+    if (saveTimer.current) return;
+    saveTimer.current = setTimeout(save, SAVE_MS);
+  }, [save]);
 
-  const scheduleFlush = useCallback(() => {
-    if (flushTimer.current) return;
-    flushTimer.current = setTimeout(flush, FLUSH_MS);
-  }, [flush]);
+  const applySnapshot = useCallback((editor: Editor, snapshot: string) => {
+    if (!snapshot) return;
+    let doc: DocSnapshot;
+    try {
+      doc = JSON.parse(snapshot) as DocSnapshot;
+    } catch {
+      return;
+    }
+    applyingRef.current = true;
+    try {
+      // editor.loadSnapshot reconciles the current page/camera against the
+      // loaded document, so we never end up pointing at a page that no longer
+      // exists. Passing only { document } keeps this viewer's camera put.
+      editor.loadSnapshot({ document: doc });
+    } catch (err) {
+      console.warn("whiteboard: could not apply snapshot", err);
+    } finally {
+      applyingRef.current = false;
+    }
+  }, []);
 
   const poll = useCallback(async () => {
     const editor = editorRef.current;
     if (!editor) return;
-    let data: { put: Wire[]; remove: string[]; now: string };
-    try {
-      const res = await fetch(
-        `/api/whiteboard/${boardId}/changes?since=${encodeURIComponent(
-          sinceRef.current
-        )}`
-      );
-      if (!res.ok) return;
-      data = await res.json();
-    } catch {
+    // Don't pull while the user is mid-action or has unsaved edits — that's when
+    // a remote overwrite would be disruptive or lose work.
+    if (dirtyRef.current || editor.inputs.isPointing || editor.getEditingShapeId()) {
       return;
     }
-    if (data.put.length || data.remove.length) {
-      try {
-        // mergeRemoteChanges tags these as source "remote" so our own listener
-        // (which only reacts to source "user") does not echo them back out.
-        editor.store.mergeRemoteChanges(() => {
-          // Put before remove so a shape and its page can arrive together.
-          if (data.put.length) editor.store.put(data.put.map((r) => r.data));
-          if (data.remove.length) {
-            editor.store.remove(data.remove as TLRecord["id"][]);
-          }
-        });
-      } catch (err) {
-        // A malformed or orphaned record must not take the canvas down; skip
-        // this batch and let the next poll try again.
-        console.warn("whiteboard: skipped a bad remote change batch", err);
+    try {
+      const res = await fetch(`/api/whiteboard/${boardId}/changes`);
+      if (!res.ok) return;
+      const { rev } = (await res.json()) as { rev: number };
+      if (rev <= localRevRef.current) return;
+      // A newer revision exists: pull the full snapshot and adopt it.
+      const full = await fetch(`/api/whiteboard/${boardId}`);
+      if (!full.ok) return;
+      const data = (await full.json()) as { rev: number; snapshot: string };
+      // Re-check we're still idle before clobbering the canvas.
+      if (dirtyRef.current || editor.inputs.isPointing || editor.getEditingShapeId()) {
+        return;
       }
+      applySnapshot(editor, data.snapshot);
+      localRevRef.current = data.rev;
+    } catch {
+      // ignore; try again next tick
     }
-    sinceRef.current = data.now;
-  }, [boardId]);
+  }, [boardId, applySnapshot]);
 
-  const cleanupRef = useRef<(() => void) | null>(null);
-
-  // onMount must be synchronous (it returns a cleanup fn, not a Promise), so the
-  // async initial load runs in a fire-and-forget IIFE and wires up the listener
-  // and poll loop once the board has loaded.
   const handleMount = useCallback(
     (editor: Editor) => {
       editorRef.current = editor;
 
       (async () => {
-        // Initial load: adopt the server's document wholesale so every viewer
-        // converges on the same pages and shapes (rather than merging each
-        // client's default empty page).
+        // Initial load.
         try {
           const res = await fetch(`/api/whiteboard/${boardId}`);
           if (res.ok) {
-            const { records, now } = (await res.json()) as {
-              records: Wire[];
-              now?: string;
+            const data = (await res.json()) as {
+              rev: number;
+              snapshot: string;
             };
-            // Only load if the saved document is self-consistent (has at least
-            // one page). Legacy boards saved before the structural-push fix may
-            // have shapes with no page; loading those would crash, so we skip
-            // them and let the mount push below re-seed a clean page.
-            const hasPage = records.some((r) => r.data?.typeName === "page");
-            if (records.length && hasPage) {
-              const store: Record<string, TLRecord> = {};
-              for (const r of records) store[r.id] = r.data;
-              const snapshot: TLStoreSnapshot = {
-                store,
-                schema: editor.store.schema.serialize(),
-              };
-              try {
-                loadSnapshot(editor.store, snapshot);
-              } catch (err) {
-                console.warn("whiteboard: could not load saved board", err);
-              }
-            }
-            if (now) sinceRef.current = now;
+            applySnapshot(editor, data.snapshot);
+            localRevRef.current = data.rev;
           }
         } catch {
-          // Start from an empty board if the initial load fails; the poll loop
-          // will still pull anything the server has.
+          // Empty board is fine; the first edit seeds it.
         }
 
-        // Persist the structural records (document + pages) that existed before
-        // this listener attached, so other viewers never receive a shape whose
-        // page is missing.
-        try {
-          const docRecords = Object.values(
-            editor.store.serialize("document")
-          ) as TLRecord[];
-          const structural = docRecords
-            .filter(isStructural)
-            .map((data): Wire => ({ id: data.id, data }));
-          void postSync(structural, []);
-        } catch (err) {
-          console.warn("whiteboard: could not seed structural records", err);
-        }
-
-        // Push local, user-driven document edits to the server.
+        // Mark the board dirty on any user-driven document change and schedule a
+        // save. Remote applies use source "remote", so they don't trip this.
         const unlisten = editor.store.listen(
-          (entry: HistoryEntry<TLRecord>) => {
-            const { added, updated, removed } = entry.changes;
-            for (const rec of Object.values(added)) {
-              pendingPut.current.set(rec.id, rec);
-              pendingRemove.current.delete(rec.id);
-            }
-            for (const [, to] of Object.values(updated)) {
-              pendingPut.current.set(to.id, to);
-              pendingRemove.current.delete(to.id);
-            }
-            for (const rec of Object.values(removed)) {
-              pendingRemove.current.add(rec.id);
-              pendingPut.current.delete(rec.id);
-            }
-            scheduleFlush();
+          () => {
+            if (applyingRef.current) return;
+            dirtyRef.current = true;
+            scheduleSave();
           },
           { source: "user", scope: "document" }
         );
@@ -238,13 +190,13 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
       // tldraw calls this on unmount.
       return () => {
         if (pollTimer.current) clearInterval(pollTimer.current);
-        if (flushTimer.current) clearTimeout(flushTimer.current);
+        if (saveTimer.current) clearTimeout(saveTimer.current);
         cleanupRef.current?.();
-        // Best-effort final push of anything still batched.
-        flush();
+        // Best-effort final save of anything unsaved.
+        if (dirtyRef.current) void save();
       };
     },
-    [boardId, poll, scheduleFlush, flush, postSync]
+    [boardId, applySnapshot, scheduleSave, poll, save]
   );
 
   return (
