@@ -12,6 +12,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "better-sqlite3": "^12.11.1",
     "nanoid": "^5.1.16",
     "next": "^16.2.10",

@@ -18,12 +18,12 @@ function ensureCleanSlate() {
   if (cleaned) return;
   const db = getDb();
   const row = db
-    .prepare(`SELECT value FROM app_settings WHERE key = 'wb_records_reset_v5'`)
+    .prepare(`SELECT value FROM app_settings WHERE key = 'wb_records_reset_v7_excalidraw'`)
     .get() as { value: string } | undefined;
   if (!row) {
     db.prepare(`DELETE FROM whiteboard_records`).run();
     db.prepare(
-      `INSERT INTO app_settings (key, value, updated_at) VALUES ('wb_records_reset_v5', '1', ?)
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('wb_records_reset_v7_excalidraw', '1', ?)
        ON CONFLICT (key) DO UPDATE SET value = '1', updated_at = excluded.updated_at`
     ).run(nowIso());
   }
