@@ -9,15 +9,18 @@ import {
   type ReactNode,
 } from "react";
 import dynamic from "next/dynamic";
-import type { Editor, TLEditorSnapshot } from "tldraw";
+import type {
+  Editor,
+  HistoryEntry,
+  TLRecord,
+  TLStoreSnapshot,
+} from "tldraw";
 import "tldraw/tldraw.css";
 
 // Bump on every whiteboard client change. Logged on mount so the deploy logs
-// show exactly which build a viewer is running.
-const SYNC_VERSION = "v4-snapshot-latencyfix";
+// show which build a viewer is running.
+const SYNC_VERSION = "v6-per-record";
 
-// tldraw touches the DOM/window at import time, so it must never render on the
-// server. Load the editor client-side only.
 const Tldraw = dynamic(() => import("tldraw").then((m) => m.Tldraw), {
   ssr: false,
   loading: () => (
@@ -27,16 +30,14 @@ const Tldraw = dynamic(() => import("tldraw").then((m) => m.Tldraw), {
   ),
 });
 
-// How often each viewer checks for a newer revision, and how long local edits
-// are batched before being saved.
+// How often each viewer pulls remote changes, and how long local edits are
+// batched before being pushed.
 const POLL_MS = 2000;
-const SAVE_MS = 700;
+const SAVE_MS = 500;
 
-type DocSnapshot = TLEditorSnapshot["document"];
+type Wire = { id: string; data: TLRecord };
 
-// Report a client-side crash to the server so it lands in the logs even when we
-// can't get a console from the person hitting it.
-function reportError(boardId: string, where: string, err: unknown) {
+function report(boardId: string, where: string, err: unknown) {
   try {
     const msg =
       err instanceof Error ? `${err.message}\n${err.stack || ""}` : String(err);
@@ -52,7 +53,7 @@ function reportError(boardId: string, where: string, err: unknown) {
 }
 
 // A render error inside tldraw would otherwise blank the whole route. Contain it
-// and offer a reload instead of a white screen — and report it.
+// and offer a reload instead of a white screen.
 class BoardErrorBoundary extends Component<
   { boardId: string; children: ReactNode },
   { failed: boolean }
@@ -62,7 +63,7 @@ class BoardErrorBoundary extends Component<
     return { failed: true };
   }
   componentDidCatch(err: unknown) {
-    reportError(this.props.boardId, "render", err);
+    report(this.props.boardId, "render", err);
   }
   render() {
     if (this.state.failed) {
@@ -71,10 +72,7 @@ class BoardErrorBoundary extends Component<
           <p style={{ marginBottom: 12 }}>
             The board hit a snag rendering. Reloading usually clears it.
           </p>
-          <button
-            className="btn btn-sm"
-            onClick={() => window.location.reload()}
-          >
+          <button className="btn btn-sm" onClick={() => window.location.reload()}>
             Reload board
           </button>
         </div>
@@ -86,14 +84,12 @@ class BoardErrorBoundary extends Component<
 
 export function WhiteboardCanvas({ boardId }: { boardId: string }) {
   const editorRef = useRef<Editor | null>(null);
-  // The revision we are known to be consistent with. Our own saves advance this,
-  // so we never mistake our own work for a remote change and reload over it.
-  const localRevRef = useRef(0);
-  // Unsaved local edits exist.
-  const dirtyRef = useRef(false);
-  // A save request is in flight (the server may already be ahead of localRev).
-  const savingRef = useRef(false);
-  // We're applying a remote snapshot; ignore the store churn it causes.
+  // Server-time cursor: the timestamp of the last change we applied.
+  const sinceRef = useRef<string>("1970-01-01T00:00:00.000Z");
+  // Local, unsaved record changes, deduped by id.
+  const pendingPut = useRef<Map<string, TLRecord>>(new Map());
+  const pendingRemove = useRef<Set<string>>(new Set());
+  // We're applying remote changes; ignore the store churn they cause.
   const applyingRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -101,40 +97,22 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
 
   const save = useCallback(async () => {
     saveTimer.current = null;
-    const editor = editorRef.current;
-    if (!editor || applyingRef.current || savingRef.current) return;
-    dirtyRef.current = false;
-    let snapshot: string;
+    if (!pendingPut.current.size && !pendingRemove.current.size) return;
+    const put: Wire[] = Array.from(pendingPut.current.values()).map((data) => ({
+      id: data.id,
+      data,
+    }));
+    const remove = Array.from(pendingRemove.current);
+    pendingPut.current.clear();
+    pendingRemove.current.clear();
     try {
-      snapshot = JSON.stringify(editor.getSnapshot().document);
-    } catch (err) {
-      reportError(boardId, "getSnapshot", err);
-      return;
-    }
-    savingRef.current = true;
-    try {
-      const res = await fetch(`/api/whiteboard/${boardId}/sync`, {
+      await fetch(`/api/whiteboard/${boardId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ snapshot }),
+        body: JSON.stringify({ put, remove }),
       });
-      if (res.ok) {
-        const { rev } = (await res.json()) as { rev: number };
-        // Our save IS this revision, so we're consistent up to it — even if more
-        // edits piled up while the request was in flight. This is the key guard
-        // against reloading our own work on a slow connection.
-        if (typeof rev === "number") {
-          localRevRef.current = Math.max(localRevRef.current, rev);
-        }
-      }
     } catch {
-      // Network blip: the next edit re-saves; pollers converge from what landed.
-    } finally {
-      savingRef.current = false;
-      // If edits arrived during the save, make sure they get flushed.
-      if (dirtyRef.current && !saveTimer.current) {
-        saveTimer.current = setTimeout(save, SAVE_MS);
-      }
+      // Network blip: subsequent edits re-push; pollers converge from what landed.
     }
   }, [boardId]);
 
@@ -143,29 +121,33 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
     saveTimer.current = setTimeout(save, SAVE_MS);
   }, [save]);
 
-  const busy = (editor: Editor) =>
-    dirtyRef.current ||
-    savingRef.current ||
-    editor.inputs.isPointing ||
-    !!editor.getEditingShapeId();
-
-  const applySnapshot = useCallback(
-    (editor: Editor, snapshot: string) => {
-      if (!snapshot) return;
-      let doc: DocSnapshot;
-      try {
-        doc = JSON.parse(snapshot) as DocSnapshot;
-      } catch (err) {
-        reportError(boardId, "parseSnapshot", err);
-        return;
-      }
+  // Apply remote record changes, but never touch a record the local user is
+  // currently editing (still pending), so incoming updates can't revert
+  // work-in-progress. Everyone only ever writes their own records, so this is
+  // conflict-free in practice.
+  const applyRemote = useCallback(
+    (editor: Editor, put: Wire[], remove: string[]) => {
+      const puts = put
+        .filter(
+          (r) =>
+            r &&
+            typeof r.id === "string" &&
+            !pendingPut.current.has(r.id) &&
+            !pendingRemove.current.has(r.id)
+        )
+        .map((r) => r.data);
+      const removes = remove.filter(
+        (id) => !pendingPut.current.has(id) && !pendingRemove.current.has(id)
+      ) as TLRecord["id"][];
+      if (!puts.length && !removes.length) return;
       applyingRef.current = true;
       try {
-        // editor.loadSnapshot reconciles the current page/camera against the
-        // loaded document. Passing only { document } keeps this viewer's camera.
-        editor.loadSnapshot({ document: doc });
+        editor.store.mergeRemoteChanges(() => {
+          if (puts.length) editor.store.put(puts);
+          if (removes.length) editor.store.remove(removes);
+        });
       } catch (err) {
-        reportError(boardId, "loadSnapshot", err);
+        report(boardId, "applyRemote", err);
       } finally {
         applyingRef.current = false;
       }
@@ -175,56 +157,106 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
 
   const poll = useCallback(async () => {
     const editor = editorRef.current;
-    if (!editor || busy(editor)) return;
+    if (!editor) return;
     try {
-      const res = await fetch(`/api/whiteboard/${boardId}/changes`);
+      const res = await fetch(
+        `/api/whiteboard/${boardId}/changes?since=${encodeURIComponent(
+          sinceRef.current
+        )}`
+      );
       if (!res.ok) return;
-      const { rev } = (await res.json()) as { rev: number };
-      if (typeof rev !== "number" || rev <= localRevRef.current) return;
-      // A genuinely newer revision from someone else: pull the full snapshot.
-      const full = await fetch(`/api/whiteboard/${boardId}`);
-      if (!full.ok) return;
-      const data = (await full.json()) as { rev: number; snapshot: string };
-      // Re-check we're still idle before clobbering the canvas — the user may
-      // have started drawing while these requests were in flight.
-      if (busy(editor)) return;
-      applySnapshot(editor, data.snapshot);
-      localRevRef.current = Math.max(localRevRef.current, data.rev);
+      const data = (await res.json()) as {
+        put: Wire[];
+        remove: string[];
+        now: string;
+      };
+      applyRemote(editor, data.put || [], data.remove || []);
+      if (data.now) sinceRef.current = data.now;
     } catch {
-      // ignore; try again next tick
+      // try again next tick
     }
-  }, [boardId, applySnapshot]);
+  }, [boardId, applyRemote]);
 
   const handleMount = useCallback(
     (editor: Editor) => {
       editorRef.current = editor;
+      report(boardId, "mount", SYNC_VERSION);
 
-      // Beacon so the logs show which build a viewer is running.
-      reportError(boardId, "mount", SYNC_VERSION);
-
-      // Report uncaught errors/rejections while this board is mounted.
-      const onErr = (e: ErrorEvent) => reportError(boardId, "window", e.error || e.message);
+      const onErr = (e: ErrorEvent) => report(boardId, "window", e.error || e.message);
       const onRej = (e: PromiseRejectionEvent) =>
-        reportError(boardId, "unhandledrejection", e.reason);
+        report(boardId, "unhandledrejection", e.reason);
       window.addEventListener("error", onErr);
       window.addEventListener("unhandledrejection", onRej);
 
       (async () => {
+        // Initial load: adopt the server's document so all viewers share the
+        // same pages/shapes.
         try {
           const res = await fetch(`/api/whiteboard/${boardId}`);
           if (res.ok) {
-            const data = (await res.json()) as { rev: number; snapshot: string };
-            applySnapshot(editor, data.snapshot);
-            localRevRef.current = Math.max(localRevRef.current, data.rev || 0);
+            const { records, now } = (await res.json()) as {
+              records: Wire[];
+              now?: string;
+            };
+            if (records?.length) {
+              const store: Record<string, TLRecord> = {};
+              for (const r of records) store[r.id] = r.data;
+              const snapshot: TLStoreSnapshot = {
+                store,
+                schema: editor.store.schema.serialize(),
+              };
+              applyingRef.current = true;
+              try {
+                editor.loadSnapshot(snapshot);
+              } catch (err) {
+                report(boardId, "loadInitial", err);
+              } finally {
+                applyingRef.current = false;
+              }
+            }
+            if (now) sinceRef.current = now;
           }
         } catch {
-          // Empty board is fine; the first edit seeds it.
+          /* empty board is fine */
         }
 
+        // Persist the structural records (document + pages) that existed before
+        // this listener attached, so other viewers never get a shape whose page
+        // is missing.
+        try {
+          const docRecords = Object.values(
+            editor.store.serialize("document")
+          ) as TLRecord[];
+          const structural = docRecords
+            .filter((r) => r.typeName === "page" || r.typeName === "document")
+            .map((data) => ({ id: data.id, data }));
+          if (structural.length) {
+            void fetch(`/api/whiteboard/${boardId}/sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ put: structural, remove: [] }),
+            });
+          }
+        } catch (err) {
+          report(boardId, "seedStructural", err);
+        }
+
+        // Push local, user-driven changes.
         const unlisten = editor.store.listen(
-          () => {
-            if (applyingRef.current) return;
-            dirtyRef.current = true;
+          (entry: HistoryEntry<TLRecord>) => {
+            const { added, updated, removed } = entry.changes;
+            for (const rec of Object.values(added)) {
+              pendingPut.current.set(rec.id, rec);
+              pendingRemove.current.delete(rec.id);
+            }
+            for (const [, to] of Object.values(updated)) {
+              pendingPut.current.set(to.id, to);
+              pendingRemove.current.delete(to.id);
+            }
+            for (const rec of Object.values(removed)) {
+              pendingRemove.current.add(rec.id);
+              pendingPut.current.delete(rec.id);
+            }
             scheduleSave();
           },
           { source: "user", scope: "document" }
@@ -242,20 +274,17 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
         if (pollTimer.current) clearInterval(pollTimer.current);
         if (saveTimer.current) clearTimeout(saveTimer.current);
         cleanupRef.current?.();
-        if (dirtyRef.current) void save();
+        void save();
       };
     },
-    [boardId, applySnapshot, scheduleSave, poll, save]
+    [boardId, poll, scheduleSave, save]
   );
 
-  // Hook tldraw's own error handling: a whole-canvas crash shows a reload UI
-  // (never a blank) and is reported; a single bad shape is isolated so it can't
-  // take the whole board down.
   const components = useMemo(
     () => ({
       ErrorFallback: ({ error }: { error: unknown }) => {
         useEffect(() => {
-          reportError(boardId, "tldraw-error", error);
+          report(boardId, "tldraw-error", error);
         }, [error]);
         return (
           <div style={{ padding: 24 }}>
@@ -273,7 +302,7 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
       },
       ShapeErrorFallback: ({ error }: { error: unknown }) => {
         useEffect(() => {
-          reportError(boardId, "tldraw-shape-error", error);
+          report(boardId, "tldraw-shape-error", error);
         }, [error]);
         return null;
       },

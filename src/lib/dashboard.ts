@@ -14,7 +14,7 @@ import { planSends } from "./plan";
 import { listActivity, listPendingApprovalCampaigns, type ActivityItem, type PendingApproval } from "./campaigns";
 import { listOkrs, type OkrStatus } from "./okrs";
 import { listTodos } from "./todos";
-import { teamLabel, avatarFor } from "./team";
+import { teamLabel, avatarFor, slugForName } from "./team";
 
 /* ------------------------------------------------------- share token */
 
@@ -242,8 +242,71 @@ function departmentFor(listName: string): { key: string; label: string } {
 }
 
 export function getClientWorkboard(clientId: string): Workboard {
-  const todos = listTodos({ clientId });
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const nowIso = new Date().toISOString();
+  const client = getRevClient(clientId);
+  const amSlug = client ? slugForName(client.account_manager || "") : null;
+
+  type WorkItem = {
+    id: string; title: string; assignee: string; status: string; priority: string;
+    due_date: string | null; completed_at: string | null; updated_at: string; list_name: string;
+  };
+
+  // Real, hand-tracked to-dos carry their true assignee.
+  const items: WorkItem[] = listTodos({ clientId }).map((t) => ({
+    id: t.id, title: t.title, assignee: t.assignee, status: t.status, priority: t.priority,
+    due_date: t.due_date, completed_at: t.completed_at, updated_at: t.updated_at, list_name: t.list_name,
+  }));
+
+  // Supplement with the rest of the account's live work so the floor reflects
+  // everything in motion, not only hand-entered to-dos. These are attributed to
+  // the account manager (their real owner); each maps to a floor by category.
+  const seen = new Set(items.map((i) => i.title.trim().toLowerCase()));
+  const push = (it: WorkItem) => {
+    const key = it.title.trim().toLowerCase();
+    if (!it.title || seen.has(key)) return;
+    seen.add(key);
+    items.push(it);
+  };
+
+  try {
+    for (const d of deliverableOverview(clientId)) {
+      const done = ["completed", "approved"].includes(d.status);
+      push({
+        id: `dlv-${d.deliverable_id}`, title: d.name, assignee: amSlug || "",
+        status: done ? "done" : "open", priority: "normal",
+        due_date: null, completed_at: done ? nowIso : null, updated_at: nowIso,
+        list_name: d.category || "",
+      });
+    }
+  } catch { /* snapshot not set up for this client */ }
+
+  try {
+    const today = todayYmd();
+    for (const s of planSends(clientId, addDaysYmd(today, -7), addDaysYmd(today, 45))) {
+      if (!["planned", "scheduled", "requested", "sent"].includes(s.status)) continue;
+      const done = s.status === "sent";
+      push({
+        id: `snd-${s.id}`, title: s.title, assignee: amSlug || "",
+        status: done ? "done" : "open", priority: "normal",
+        due_date: s.send_date, completed_at: done ? (s.updated_at || nowIso) : null,
+        updated_at: s.updated_at || nowIso, list_name: "Email & Lifecycle",
+      });
+    }
+  } catch { /* no calendar for this client */ }
+
+  try {
+    for (const c of listPendingApprovalCampaigns(clientId)) {
+      push({
+        id: `cmp-${c.id}`, title: c.title, assignee: amSlug || "",
+        status: "open", priority: "important",
+        due_date: null, completed_at: null, updated_at: c.updated_at || nowIso,
+        list_name: "Email & Lifecycle",
+      });
+    }
+  } catch { /* none pending */ }
+
+  const todos = items;
 
   const byKey = new Map<string, WorkboardFloor>();
   const order = new Map(TOWER_DEPARTMENTS.map((d, i) => [d.key, i]));
