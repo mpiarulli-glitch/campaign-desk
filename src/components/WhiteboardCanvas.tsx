@@ -1,9 +1,20 @@
 "use client";
 
-import { Component, useCallback, useRef, type ReactNode } from "react";
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import dynamic from "next/dynamic";
 import type { Editor, TLEditorSnapshot } from "tldraw";
 import "tldraw/tldraw.css";
+
+// Bump on every whiteboard client change. Logged on mount so the deploy logs
+// show exactly which build a viewer is running.
+const SYNC_VERSION = "v4-snapshot-latencyfix";
 
 // tldraw touches the DOM/window at import time, so it must never render on the
 // server. Load the editor client-side only.
@@ -188,6 +199,9 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
     (editor: Editor) => {
       editorRef.current = editor;
 
+      // Beacon so the logs show which build a viewer is running.
+      reportError(boardId, "mount", SYNC_VERSION);
+
       // Report uncaught errors/rejections while this board is mounted.
       const onErr = (e: ErrorEvent) => reportError(boardId, "window", e.error || e.message);
       const onRej = (e: PromiseRejectionEvent) =>
@@ -234,10 +248,43 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
     [boardId, applySnapshot, scheduleSave, poll, save]
   );
 
+  // Hook tldraw's own error handling: a whole-canvas crash shows a reload UI
+  // (never a blank) and is reported; a single bad shape is isolated so it can't
+  // take the whole board down.
+  const components = useMemo(
+    () => ({
+      ErrorFallback: ({ error }: { error: unknown }) => {
+        useEffect(() => {
+          reportError(boardId, "tldraw-error", error);
+        }, [error]);
+        return (
+          <div style={{ padding: 24 }}>
+            <p style={{ marginBottom: 12 }}>
+              The board hit a snag. Reloading usually clears it.
+            </p>
+            <button
+              className="btn btn-sm"
+              onClick={() => window.location.reload()}
+            >
+              Reload board
+            </button>
+          </div>
+        );
+      },
+      ShapeErrorFallback: ({ error }: { error: unknown }) => {
+        useEffect(() => {
+          reportError(boardId, "tldraw-shape-error", error);
+        }, [error]);
+        return null;
+      },
+    }),
+    [boardId]
+  );
+
   return (
     <div style={{ position: "absolute", inset: 0 }}>
       <BoardErrorBoundary boardId={boardId}>
-        <Tldraw onMount={handleMount} />
+        <Tldraw onMount={handleMount} components={components} />
       </BoardErrorBoundary>
     </div>
   );
