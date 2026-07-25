@@ -27,7 +27,14 @@ const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
 
 type View = "all" | "folders";
 type GroupBy = "client" | "month";
-type StatusFilter = "all" | "draft" | "in_review" | "needs_changes" | "approved";
+type StatusFilter =
+  | "all"
+  | "draft"
+  | "in_review"
+  | "needs_changes"
+  | "approved"
+  | "scheduled"
+  | "sent";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -35,6 +42,8 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "in_review", label: "In review" },
   { value: "needs_changes", label: "Needs changes" },
   { value: "approved", label: "Approved" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "sent", label: "Sent" },
 ];
 
 // Grouped by the month the campaign was created/sent, not by approval date,

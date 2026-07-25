@@ -10,7 +10,9 @@ export type CampaignStatus =
   | "draft"
   | "in_review"
   | "needs_changes"
-  | "approved";
+  | "approved"
+  | "scheduled"
+  | "sent";
 
 export type CommentType = "general" | "inline";
 export type ReviewChannel = "internal" | "external";
@@ -562,6 +564,21 @@ export interface CourseLesson {
   updated_at: string;
 }
 
+// A single multiple-choice question that ends a lesson. options is a JSON
+// array of strings; correct_index points at the right one. explanation is
+// shown after the learner answers.
+export interface CourseQuizQuestion {
+  id: string;
+  lesson_id: string;
+  prompt: string;
+  options: string; // JSON string[]
+  correct_index: number;
+  explanation: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -1004,6 +1021,21 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_lessons_course ON course_lessons(course_id);
+
+    CREATE TABLE IF NOT EXISTS course_quiz_questions (
+      id TEXT PRIMARY KEY,
+      lesson_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      options TEXT NOT NULL DEFAULT '[]',
+      correct_index INTEGER NOT NULL DEFAULT 0,
+      explanation TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (lesson_id) REFERENCES course_lessons(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quiz_lesson ON course_quiz_questions(lesson_id);
 
     CREATE TABLE IF NOT EXISTS client_strategies (
       client_id TEXT PRIMARY KEY,

@@ -1,8 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Post = { id: string; title: string; kind: string; body: string; link: string; created_at: string };
+type Course = {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  kind: string;
+  author: string;
+  lesson_count: number;
+};
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -10,14 +20,19 @@ function fmt(iso: string): string {
 
 export function TrainingSection({ isAdmin }: { isAdmin: boolean }) {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "marketing" | "ai">("all");
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ title: "", kind: "marketing", body: "", link: "" });
 
   async function load() {
-    const res = await fetch("/api/hub/training");
-    if (res.ok) setPosts((await res.json()).posts || []);
+    const [pRes, cRes] = await Promise.all([
+      fetch("/api/hub/training"),
+      fetch("/api/hub/courses"),
+    ]);
+    if (pRes.ok) setPosts((await pRes.json()).posts || []);
+    if (cRes.ok) setCourses((await cRes.json()).courses || []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -55,6 +70,32 @@ export function TrainingSection({ isAdmin }: { isAdmin: boolean }) {
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>{adding ? "Cancel" : "+ New training"}</button>
         ) : null}
       </div>
+
+      {(() => {
+        const visibleCourses = courses.filter((c) => filter === "all" || c.kind === filter);
+        if (!visibleCourses.length) return null;
+        return (
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="course-section-label">Courses</p>
+            <div className="course-grid">
+              {visibleCourses.map((c) => (
+                <Link key={c.id} href={`/admin/courses/${c.slug}`} className="course-card">
+                  <span className={`hub-kind hub-kind-${c.kind === "ai" ? "ai" : "marketing"}`}>
+                    {c.kind === "ai" ? "AI" : "Marketing"}
+                  </span>
+                  <span className="course-card-title">{c.title}</span>
+                  {c.subtitle ? <span className="course-card-sub">{c.subtitle}</span> : null}
+                  <span className="course-card-meta">
+                    {c.lesson_count} lesson{c.lesson_count === 1 ? "" : "s"}
+                    {c.author ? ` · ${c.author}` : ""}
+                  </span>
+                  <span className="course-card-go">Start course →</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {adding ? (
         <div className="card card-pad stack" style={{ gap: 10 }}>

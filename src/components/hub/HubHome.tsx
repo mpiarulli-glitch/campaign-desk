@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar } from "../Avatar";
 import { avatarFor } from "@/lib/team";
@@ -10,6 +11,7 @@ type Msg = { id: string; author_name: string; author_slug: string; is_client: nu
 type Todo = { id: string; assignee: string; status: string };
 type Sop = { id: string; title: string; category: string };
 type Post = { id: string; title: string; kind: string; created_at: string };
+type Course = { id: string; slug: string; title: string; kind: string; lesson_count: number };
 type Checkin = { person: string; score: number };
 
 const FACES = ["😞", "😕", "😐", "🙂", "😄"];
@@ -75,6 +77,7 @@ export function HubHome({
   const [todos, setTodos] = useState<Todo[]>([]);
   const [sops, setSops] = useState<Sop[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [checkins, setCheckins] = useState<Checkin[] | null>(null);
   const [myScore, setMyScore] = useState<number | null>(null);
   const [hrOpen, setHrOpen] = useState<number | null>(null);
@@ -85,6 +88,7 @@ export function HubHome({
     fetch("/api/todos?client_id=none").then((r) => (r.ok ? r.json() : { todos: [] })).then((d) => setTodos(d.todos || []));
     fetch("/api/hub/sops").then((r) => (r.ok ? r.json() : { sops: [] })).then((d) => setSops(d.sops || []));
     fetch("/api/hub/training").then((r) => (r.ok ? r.json() : { posts: [] })).then((d) => setPosts(d.posts || []));
+    fetch("/api/hub/courses").then((r) => (r.ok ? r.json() : { courses: [] })).then((d) => setCourses(d.courses || []));
     fetch("/api/hub/sentiment")
       .then((r) => (r.ok ? r.json() : {}))
       .then((d: { all?: Checkin[] | null; mine?: { score: number } | null }) => {
@@ -99,7 +103,6 @@ export function HubHome({
   }, [isAdmin]);
 
   const labels = team.map((m) => m.label);
-  const label = (slug: string) => team.find((m) => m.slug === slug)?.label || slug;
 
   const msgsToday = msgs.filter((m) => isToday(m.created_at)).length;
   const openTodos = todos.filter((t) => t.status === "open");
@@ -115,6 +118,8 @@ export function HubHome({
 
   const pulseAvg = checkins && checkins.length ? checkins.reduce((s, c) => s + c.score, 0) / checkins.length : null;
   const latestPost = posts[0] || null;
+  const featuredCourse = courses[0] || null;
+  const courseCount = courses.length;
 
   const firstName = person ? person.split("_")[0].replace(/^\w/, (c) => c.toUpperCase()) : null;
 
@@ -197,7 +202,7 @@ export function HubHome({
             <div><h3 className="hq-card-title">Resources</h3><p className="hq-card-desc">Forecasts · Docs · Files</p></div>
           </div>
           <div className="hq-res">
-            <a href="/admin/forecast">📊 Forecasts <span className="rgo">→</span></a>
+            <Link href="/admin/forecast">📊 Forecasts <span className="rgo">→</span></Link>
             <button onClick={() => onOpen("resources")}>📄 Docs & Files <span className="rgo">→</span></button>
           </div>
         </div>
@@ -223,11 +228,20 @@ export function HubHome({
         <button className="hq-card t-train" onClick={() => onOpen("training")}>
           <div className="hq-card-head">
             <span className="hq-icon"><Icon name="train" /></span>
-            <div><h3 className="hq-card-title">Training</h3><p className="hq-card-desc">Daily marketing & AI</p></div>
+            <div><h3 className="hq-card-title">Training</h3><p className="hq-card-desc">Courses, marketing & AI</p></div>
             <span className="hq-arrow">→</span>
           </div>
           <div className="hq-divider" />
-          {latestPost ? (
+          {featuredCourse ? (
+            <>
+              <span className="hq-tag" style={{ alignSelf: "flex-start" }}>Course</span>
+              <p style={{ margin: "9px 0 2px", fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{featuredCourse.title}</p>
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                {featuredCourse.lesson_count} lesson{featuredCourse.lesson_count === 1 ? "" : "s"}
+                {courseCount > 1 ? ` · ${courseCount} courses` : ""}
+              </p>
+            </>
+          ) : latestPost ? (
             <>
               <span className="hq-tag" style={{ alignSelf: "flex-start" }}>{latestPost.kind === "ai" ? "AI" : "Marketing"}</span>
               <p style={{ margin: "9px 0 0", fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{latestPost.title}</p>

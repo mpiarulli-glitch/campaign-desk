@@ -24,6 +24,8 @@ const STATUSES: CampaignStatus[] = [
   "in_review",
   "needs_changes",
   "approved",
+  "scheduled",
+  "sent",
 ];
 
 type Params = { params: Promise<{ id: string }> };

@@ -55,6 +55,31 @@ function greeting(): string {
   return "Good evening";
 }
 
+const HUB_LAUNCH: { href: string; title: string; desc: string; icon: string }[] = [
+  { href: "/admin/clients", title: "Clients", desc: "Accounts, health & control rooms", icon: "clients" },
+  { href: "/admin/campaigns", title: "Campaigns", desc: "Review packages & approvals", icon: "mail" },
+  { href: "/admin/calendar", title: "Calendar", desc: "What's going out and when", icon: "calendar" },
+  { href: "/admin/production", title: "Production", desc: "Shoots & scheduling", icon: "video" },
+  { href: "/admin/revenue", title: "Revenue", desc: "Portfolio ROI & margins", icon: "chart" },
+  { href: "/admin/hub", title: "Team Hub", desc: "Chat, SOPs, training & pulse", icon: "chat" },
+];
+
+const LAUNCH_ICONS: Record<string, React.ReactNode> = {
+  clients: <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />,
+  mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></>,
+  calendar: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
+  video: <><path d="m23 7-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></>,
+  chart: <><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></>,
+  chat: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+};
+function LaunchIcon({ name }: { name: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {LAUNCH_ICONS[name]}
+    </svg>
+  );
+}
+
 const DATE_FMT = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
   month: "long",
@@ -205,6 +230,19 @@ function AdminHome() {
                 </span>
                 <span className="l">Blended ROI</span>
               </Link>
+            </div>
+
+            <div className="hub-launch">
+              {HUB_LAUNCH.map((l) => (
+                <Link key={l.href} className="hub-tile" href={l.href}>
+                  <span className="hub-tile-ico"><LaunchIcon name={l.icon} /></span>
+                  <span className="hub-tile-body">
+                    <span className="hub-tile-title">{l.title}</span>
+                    <span className="hub-tile-desc">{l.desc}</span>
+                  </span>
+                  <span className="hub-tile-go" aria-hidden="true">→</span>
+                </Link>
+              ))}
             </div>
 
             <div className="ops-grid">

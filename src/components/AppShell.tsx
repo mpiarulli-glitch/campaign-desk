@@ -78,7 +78,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false });
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
 
@@ -93,7 +92,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   }
   const menuRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let on = true;
@@ -111,7 +109,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -192,20 +189,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           <div className="app-top-right">
-            <div ref={notifRef} style={{ position: "relative" }}>
-              <button className="app-iconbtn" onClick={() => { setNotifOpen((v) => !v); setMenuOpen(false); }} title="Notifications" aria-label="Notifications">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
-              </button>
-              {notifOpen ? (
-                <div className="app-notif">
-                  <div className="app-notif-head"><span>Notifications</span></div>
-                  <p className="app-notif-empty">You&apos;re all caught up. Live notifications are coming next.</p>
-                </div>
-              ) : null}
-            </div>
-
             <div ref={menuRef} style={{ position: "relative" }}>
-              <button className="app-avatarbtn" onClick={() => { setMenuOpen((v) => !v); setNotifOpen(false); }}>
+              <button className="app-avatarbtn" onClick={() => setMenuOpen((v) => !v)}>
                 <span className="app-ava">{initials(meLabel)}</span>
                 <span className="app-caret" aria-hidden="true">▾</span>
               </button>
@@ -218,13 +203,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                   <div className="app-menu-sec">Personal tools</div>
                   <Link href={forecastHref} className="app-menu-i" onClick={() => setMenuOpen(false)}><Svg name="forecast" />Forecast</Link>
-                  <span className="app-menu-i is-soon"><Svg name="note" />Notepad<span className="soon">Soon</span></span>
-                  <span className="app-menu-i is-soon"><Svg name="bell2" />Reminders<span className="soon">Soon</span></span>
-                  <span className="app-menu-i is-soon"><Svg name="clock" />Track Time<span className="soon">Soon</span></span>
 
                   <div className="app-menu-div" />
-                  <span className="app-menu-i is-soon"><Svg name="gear" />Settings<span className="soon">Soon</span></span>
-                  <span className="app-menu-i is-soon"><Svg name="send" />Send Feedback<span className="soon">Soon</span></span>
 
                   {session.owner ? (
                     <div className="app-menu-viewas">

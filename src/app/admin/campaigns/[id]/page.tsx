@@ -784,6 +784,8 @@ export default function AdminCampaignPage() {
               <option value="in_review">In review</option>
               <option value="needs_changes">Needs changes</option>
               <option value="approved">Approved</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="sent">Sent</option>
             </select>
             <button
               className="btn btn-secondary btn-sm"

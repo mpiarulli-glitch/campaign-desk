@@ -7,6 +7,8 @@ const LABELS: Record<CampaignStatus, string> = {
   in_review: "In review",
   needs_changes: "Needs changes",
   approved: "Approved",
+  scheduled: "Scheduled",
+  sent: "Sent",
 };
 
 export function StatusBadge({ status }: { status: CampaignStatus | string }) {
