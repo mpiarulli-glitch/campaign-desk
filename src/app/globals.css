@@ -6118,7 +6118,11 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    into glass rooms where a teammate sits at a desk working their task. Real
    headshots, warm interior light, live updates. */
 
-.floor-wrap { display: flex; flex-direction: column; gap: 22px; }
+.floor-wrap { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+/* Let the office shrink to its column instead of the nowrap ticker stretching
+   it (grid/flex items default to min-content width). */
+.acct-report > main { min-width: 0; }
+.acct-report .floor-wrap, .acct-report .bld-scene, .acct-report .floor-ticker { max-width: 100%; }
 
 /* Header */
 .floor-head { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 20px; }

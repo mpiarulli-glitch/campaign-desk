@@ -272,11 +272,16 @@ export function getClientWorkboard(clientId: string): Workboard {
   try {
     for (const d of deliverableOverview(clientId)) {
       const done = ["completed", "approved"].includes(d.status);
+      // Route to a department floor by the work's name first (so e.g.
+      // "Go-To-Market Marketing Strategy" lands on Strategy), falling back to
+      // its snapshot category, then a General floor.
+      const byName = departmentFor(d.name);
+      const listName = byName.key.startsWith("other:") ? (d.category || "General") : d.name;
       push({
         id: `dlv-${d.deliverable_id}`, title: d.name, assignee: amSlug || "",
         status: done ? "done" : "open", priority: "normal",
         due_date: null, completed_at: done ? nowIso : null, updated_at: nowIso,
-        list_name: d.category || "",
+        list_name: listName,
       });
     }
   } catch { /* snapshot not set up for this client */ }
@@ -350,16 +355,8 @@ export function getClientWorkboard(clientId: string): Workboard {
     });
   }
 
-  // The building is always shown with a room for every core department, even
-  // when a floor is idle — so the client sees the whole office and watches
-  // workers arrive as tasks move into a department. Departments with work that
-  // aren't in the core set still get their own floor.
-  for (const d of TOWER_DEPARTMENTS) {
-    if (!byKey.has(d.key)) {
-      byKey.set(d.key, { key: d.key, department: d.label, active: 0, done: 0, tasks: [] });
-    }
-  }
-
+  // Only floors that actually have work are rendered, so the building stays
+  // compact and populated instead of a tall stack of empty department rooms.
   const floors = Array.from(byKey.values()).sort((a, b) => {
     const oa = order.has(a.key) ? order.get(a.key)! : 100;
     const ob = order.has(b.key) ? order.get(b.key)! : 100;
