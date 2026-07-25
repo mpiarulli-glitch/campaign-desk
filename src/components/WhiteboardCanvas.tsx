@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { Component, useCallback, useRef, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type {
   Editor,
@@ -32,6 +32,45 @@ const FLUSH_MS = 500;
 // record itself.
 type Wire = { id: string; data: TLRecord };
 
+// Records that structure the document (the singleton document record and the
+// pages). tldraw creates these at store init, before onMount attaches our
+// change listener, so they'd never be pushed by the incremental listener alone.
+// We push them explicitly on mount — otherwise the server ends up with shapes
+// whose parent page is missing, and loading that crashes the canvas.
+function isStructural(r: TLRecord): boolean {
+  return r.typeName === "page" || r.typeName === "document";
+}
+
+// A render error inside tldraw (e.g. a shape referencing a missing page) would
+// otherwise blank the whole route. Contain it and offer a reload instead.
+class BoardErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div style={{ padding: 24 }}>
+          <p style={{ marginBottom: 12 }}>
+            The board hit a snag rendering. Reloading usually clears it.
+          </p>
+          <button
+            className="btn btn-sm"
+            onClick={() => window.location.reload()}
+          >
+            Reload board
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function WhiteboardCanvas({ boardId }: { boardId: string }) {
   // Server clock cursor: the timestamp of the last changes we applied. The next
   // poll asks for everything newer than this.
@@ -43,7 +82,24 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const editorRef = useRef<Editor | null>(null);
 
-  const flush = useCallback(async () => {
+  const postSync = useCallback(
+    async (put: Wire[], remove: string[]) => {
+      if (!put.length && !remove.length) return;
+      try {
+        await fetch(`/api/whiteboard/${boardId}/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ put, remove }),
+        });
+      } catch {
+        // Network blips are fine: the next edit re-pushes, and pollers still
+        // converge from whatever did land.
+      }
+    },
+    [boardId]
+  );
+
+  const flush = useCallback(() => {
     flushTimer.current = null;
     const put = Array.from(pendingPut.current.values()).map(
       (data): Wire => ({ id: data.id, data })
@@ -51,18 +107,8 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
     const remove = Array.from(pendingRemove.current);
     pendingPut.current.clear();
     pendingRemove.current.clear();
-    if (!put.length && !remove.length) return;
-    try {
-      await fetch(`/api/whiteboard/${boardId}/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ put, remove }),
-      });
-    } catch {
-      // Network blips are fine: the next edit re-pushes, and pollers still
-      // converge from whatever did land.
-    }
-  }, [boardId]);
+    void postSync(put, remove);
+  }, [postSync]);
 
   const scheduleFlush = useCallback(() => {
     if (flushTimer.current) return;
@@ -85,14 +131,21 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
       return;
     }
     if (data.put.length || data.remove.length) {
-      // mergeRemoteChanges tags these as source "remote" so our own listener
-      // (which only reacts to source "user") does not echo them back out.
-      editor.store.mergeRemoteChanges(() => {
-        if (data.put.length) editor.store.put(data.put.map((r) => r.data));
-        if (data.remove.length) {
-          editor.store.remove(data.remove as TLRecord["id"][]);
-        }
-      });
+      try {
+        // mergeRemoteChanges tags these as source "remote" so our own listener
+        // (which only reacts to source "user") does not echo them back out.
+        editor.store.mergeRemoteChanges(() => {
+          // Put before remove so a shape and its page can arrive together.
+          if (data.put.length) editor.store.put(data.put.map((r) => r.data));
+          if (data.remove.length) {
+            editor.store.remove(data.remove as TLRecord["id"][]);
+          }
+        });
+      } catch (err) {
+        // A malformed or orphaned record must not take the canvas down; skip
+        // this batch and let the next poll try again.
+        console.warn("whiteboard: skipped a bad remote change batch", err);
+      }
     }
     sinceRef.current = data.now;
   }, [boardId]);
@@ -117,20 +170,44 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
               records: Wire[];
               now?: string;
             };
-            if (records.length) {
+            // Only load if the saved document is self-consistent (has at least
+            // one page). Legacy boards saved before the structural-push fix may
+            // have shapes with no page; loading those would crash, so we skip
+            // them and let the mount push below re-seed a clean page.
+            const hasPage = records.some((r) => r.data?.typeName === "page");
+            if (records.length && hasPage) {
               const store: Record<string, TLRecord> = {};
               for (const r of records) store[r.id] = r.data;
               const snapshot: TLStoreSnapshot = {
                 store,
                 schema: editor.store.schema.serialize(),
               };
-              loadSnapshot(editor.store, snapshot);
+              try {
+                loadSnapshot(editor.store, snapshot);
+              } catch (err) {
+                console.warn("whiteboard: could not load saved board", err);
+              }
             }
             if (now) sinceRef.current = now;
           }
         } catch {
           // Start from an empty board if the initial load fails; the poll loop
           // will still pull anything the server has.
+        }
+
+        // Persist the structural records (document + pages) that existed before
+        // this listener attached, so other viewers never receive a shape whose
+        // page is missing.
+        try {
+          const docRecords = Object.values(
+            editor.store.serialize("document")
+          ) as TLRecord[];
+          const structural = docRecords
+            .filter(isStructural)
+            .map((data): Wire => ({ id: data.id, data }));
+          void postSync(structural, []);
+        } catch (err) {
+          console.warn("whiteboard: could not seed structural records", err);
         }
 
         // Push local, user-driven document edits to the server.
@@ -167,12 +244,14 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
         flush();
       };
     },
-    [boardId, poll, scheduleFlush, flush]
+    [boardId, poll, scheduleFlush, flush, postSync]
   );
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
-      <Tldraw onMount={handleMount} />
+      <BoardErrorBoundary>
+        <Tldraw onMount={handleMount} />
+      </BoardErrorBoundary>
     </div>
   );
 }
