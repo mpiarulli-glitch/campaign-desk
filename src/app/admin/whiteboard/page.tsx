@@ -71,36 +71,38 @@ export default function WhiteboardListPage() {
         </button>
       </div>
 
-      <div className="page-hero">
-        <p className="eyebrow">Team workspace</p>
-        <h1 className="h1">Whiteboards</h1>
-        <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-          Shared, live canvases for sketching campaigns, mapping flows, and
-          planning together. Everyone on a board sees changes within a couple of
-          seconds.
-        </p>
-      </div>
-
-      {loading ? (
-        <p className="muted">Loading boards…</p>
-      ) : boards.length === 0 ? (
-        <p className="muted">No boards yet. Name one above to get started.</p>
-      ) : (
-        <div className="stack" style={{ gap: 8 }}>
-          {boards.map((b) => (
-            <Link
-              key={b.id}
-              href={`/admin/whiteboard/${b.id}`}
-              className="campaign-item"
-            >
-              <span style={{ fontWeight: 600 }}>{b.title}</span>
-              <span className="muted" style={{ fontSize: 13 }}>
-                {b.created_by ? `by ${b.created_by}` : ""}
-              </span>
-            </Link>
-          ))}
+      <main className="container stack">
+        <div className="page-hero">
+          <p className="eyebrow">Team workspace</p>
+          <h1 className="h1">Whiteboards</h1>
+          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
+            Shared, live canvases for sketching campaigns, mapping flows, and
+            planning together. Everyone on a board sees changes within a couple
+            of seconds.
+          </p>
         </div>
-      )}
+
+        {loading ? (
+          <p className="muted">Loading boards…</p>
+        ) : boards.length === 0 ? (
+          <p className="muted">No boards yet. Name one above to get started.</p>
+        ) : (
+          <div className="stack" style={{ gap: 8 }}>
+            {boards.map((b) => (
+              <Link
+                key={b.id}
+                href={`/admin/whiteboard/${b.id}`}
+                className="campaign-item"
+              >
+                <span style={{ fontWeight: 600 }}>{b.title}</span>
+                <span className="muted" style={{ fontSize: 13 }}>
+                  {b.created_by ? `by ${b.created_by}` : ""}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
