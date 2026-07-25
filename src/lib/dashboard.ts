@@ -350,6 +350,16 @@ export function getClientWorkboard(clientId: string): Workboard {
     });
   }
 
+  // The building is always shown with a room for every core department, even
+  // when a floor is idle — so the client sees the whole office and watches
+  // workers arrive as tasks move into a department. Departments with work that
+  // aren't in the core set still get their own floor.
+  for (const d of TOWER_DEPARTMENTS) {
+    if (!byKey.has(d.key)) {
+      byKey.set(d.key, { key: d.key, department: d.label, active: 0, done: 0, tasks: [] });
+    }
+  }
+
   const floors = Array.from(byKey.values()).sort((a, b) => {
     const oa = order.has(a.key) ? order.get(a.key)! : 100;
     const ob = order.has(b.key) ? order.get(b.key)! : 100;

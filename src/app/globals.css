@@ -6250,7 +6250,37 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .floor-ticker-item .who { color: var(--text-muted); }
 .floor-ticker-item .ago { color: var(--text-muted); font-size: 11px; }
 
-@media (prefers-reduced-motion: reduce) { .bld-car, .bld-beacon, .floor-live .dot, .ws.is-open .ws-screen { animation: none; } }
+/* --- narrative: workers walk in to start, finished work is filed up top --- */
+/* teammate walks in from the side of the room and settles at the desk */
+@keyframes ws-arrive {
+  0% { transform: translateX(calc(-50% - 66px)); opacity: 0; }
+  55% { opacity: 1; }
+  80% { transform: translateX(calc(-50% + 4px)); }
+  100% { transform: translateX(-50%); opacity: 1; }
+}
+.ws.is-open .ws-arrive { animation: ws-arrive 0.75s cubic-bezier(0.22, 0.8, 0.24, 1) both; }
+.room:nth-child(2) .ws.is-open .ws-arrive { animation-delay: 0.12s; }
+.room:nth-child(3) .ws.is-open .ws-arrive { animation-delay: 0.24s; }
+.room:nth-child(4) .ws.is-open .ws-arrive { animation-delay: 0.36s; }
+/* subtle "at work" bob once seated */
+.ws.is-open .ws-head { animation: ws-arrive 0.75s cubic-bezier(0.22,0.8,0.24,1) both, ws-work 4.5s ease-in-out 0.9s infinite; }
+@keyframes ws-work { 0%, 100% { margin-top: 0; } 50% { margin-top: 1.5px; } }
+
+/* filed folder left on a finished desk */
+.ws-folder { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5; width: 30px; height: 22px; border-radius: 2px 2px 3px 3px; background: linear-gradient(180deg, #d9b878, #b8934e); box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+.ws-folder::before { content: ""; position: absolute; top: -4px; left: 3px; width: 12px; height: 5px; border-radius: 2px 2px 0 0; background: #d9b878; }
+.ws-folder::after { content: ""; position: absolute; top: 4px; left: 5px; right: 5px; height: 2px; background: rgba(255,255,255,0.5); box-shadow: 0 4px 0 rgba(255,255,255,0.35); }
+
+/* the lift ferries finished work up to be filed */
+.bld-archive { position: absolute; top: 0; left: 3px; right: 3px; height: 6px; border-radius: 0 0 3px 3px; background: #8ff0fb; box-shadow: 0 0 12px 2px rgba(0,212,232,0.6); z-index: 1; }
+.bld-car.is-filing::after { content: ""; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: 14px; height: 10px; border-radius: 1px 1px 2px 2px; background: #7a5a2e; box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+.bld-car.is-filing::before { content: ""; position: absolute; top: 4px; left: calc(50% - 4px); width: 6px; height: 3px; border-radius: 2px 2px 0 0; background: #7a5a2e; }
+
+/* filed-today badge on the crown */
+.bld-filed { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; color: #bff3d6; background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.35); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.bld-filed-ico { font-size: 10px; }
+
+@media (prefers-reduced-motion: reduce) { .bld-car, .bld-beacon, .floor-live .dot, .ws.is-open .ws-screen, .ws.is-open .ws-arrive, .ws.is-open .ws-head { animation: none; } }
 @media (max-width: 680px) {
   .floor-head { align-items: flex-start; }
   .floor-stats { width: 100%; }

@@ -79,23 +79,31 @@ function Workstation({ task }: { task: Task }) {
 
       <div className="ws-scene">
         <span className="ws-chair" aria-hidden="true" />
-        <span className="ws-figure" aria-hidden="true">
-          <span className="ws-torso" style={{ background: shirtFor(task.assignee || task.assigneeLabel) }} />
-        </span>
-        <span className="ws-head">
-          <Avatar label={task.assigneeLabel} src={task.avatar} size={38} />
-        </span>
+        {open ? (
+          <>
+            <span className="ws-figure ws-arrive" aria-hidden="true">
+              <span className="ws-torso" style={{ background: shirtFor(task.assignee || task.assigneeLabel) }} />
+            </span>
+            <span className="ws-head ws-arrive">
+              <Avatar label={task.assigneeLabel} src={task.avatar} size={38} />
+            </span>
+          </>
+        ) : (
+          // Task finished: the teammate has taken it up to be filed, leaving a
+          // filed folder on the desk.
+          <span className="ws-folder" aria-hidden="true" />
+        )}
         <span className="ws-desk" aria-hidden="true" />
         <span className="ws-monitor" aria-hidden="true">
           <span className="ws-screen">
-            {task.status === "done" ? (
-              <span className="ws-check">✓</span>
-            ) : (
+            {open ? (
               <>
                 <i style={{ width: "80%" }} />
                 <i style={{ width: "55%" }} />
                 <i style={{ width: "68%" }} />
               </>
+            ) : (
+              <span className="ws-check">✓</span>
             )}
           </span>
         </span>
@@ -104,12 +112,14 @@ function Workstation({ task }: { task: Task }) {
   );
 }
 
-// A furnished-but-idle room, so a quiet floor still reads like an office.
-function EmptyRoom() {
+// An unoccupied workstation: desk + empty chair + dark monitor. A quiet floor
+// still reads as an office, and a worker visibly "arrives" when a task lands.
+function EmptyRoom({ plant = false }: { plant?: boolean }) {
   return (
     <div className="ws is-empty" aria-hidden="true">
       <div className="ws-scene">
-        <span className="ws-plant"><i /><i /><i /></span>
+        <span className="ws-chair" />
+        {plant ? <span className="ws-plant"><i /><i /><i /></span> : <span className="ws-monitor"><span className="ws-screen" /></span>}
         <span className="ws-desk" />
       </div>
     </div>
@@ -212,10 +222,18 @@ export function WorkTower({
                 <span className="bld-beacon" />
                 <span className="bld-logo">MEG</span>
                 <span className="bld-crown-glass" />
+                {wb.doneRecent > 0 ? (
+                  <span className="bld-filed" title={`${wb.doneRecent} filed today`}>
+                    <span className="bld-filed-ico">🗂</span>{wb.doneRecent} filed today
+                  </span>
+                ) : null}
               </div>
 
               <div className="bld-body">
-                <div className="bld-lift" aria-hidden="true"><span className="bld-car" /></div>
+                <div className="bld-lift" aria-hidden="true">
+                  <span className="bld-archive" />
+                  <span className={`bld-car ${wb.doneRecent > 0 ? "is-filing" : ""}`} />
+                </div>
 
                 {floors.map((f) => {
                   const shown = f.tasks.slice(0, ROOMS_SHOWN);
@@ -237,7 +255,7 @@ export function WorkTower({
                             <div className="room" key={t.id}><Workstation task={t} /></div>
                           ))}
                           {Array.from({ length: empties }, (_, i) => (
-                            <div className="room room-idle" key={`e${i}`}><EmptyRoom /></div>
+                            <div className="room room-idle" key={`e${i}`}><EmptyRoom plant={i === empties - 1} /></div>
                           ))}
                         </div>
                         {extra > 0 ? <span className="flr-more">+{extra} more on this floor</span> : null}

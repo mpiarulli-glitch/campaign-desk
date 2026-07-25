@@ -15,7 +15,15 @@ import type {
   TLRecord,
   TLStoreSnapshot,
 } from "tldraw";
+import { loadSnapshot } from "tldraw";
 import "tldraw/tldraw.css";
+
+// Only these record types belong to the shared document. Everything else
+// (instance, camera, pointer, user preferences) is per-viewer session state and
+// must never be synced or loaded across clients.
+const DOC_TYPES = new Set(["document", "page", "shape", "asset", "binding"]);
+const isDocType = (r: TLRecord | undefined) =>
+  !!r && DOC_TYPES.has(r.typeName as string);
 
 // Bump on every whiteboard client change. Logged on mount so the deploy logs
 // show which build a viewer is running.
@@ -132,6 +140,7 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
           (r) =>
             r &&
             typeof r.id === "string" &&
+            isDocType(r.data as TLRecord) &&
             !pendingPut.current.has(r.id) &&
             !pendingRemove.current.has(r.id)
         )
@@ -207,7 +216,7 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
               };
               applyingRef.current = true;
               try {
-                editor.loadSnapshot(snapshot);
+                loadSnapshot(editor.store, snapshot);
               } catch (err) {
                 report(boardId, "loadInitial", err);
               } finally {
@@ -246,18 +255,23 @@ export function WhiteboardCanvas({ boardId }: { boardId: string }) {
           (entry: HistoryEntry<TLRecord>) => {
             const { added, updated, removed } = entry.changes;
             for (const rec of Object.values(added)) {
+              if (!isDocType(rec)) continue;
               pendingPut.current.set(rec.id, rec);
               pendingRemove.current.delete(rec.id);
             }
             for (const [, to] of Object.values(updated)) {
+              if (!isDocType(to)) continue;
               pendingPut.current.set(to.id, to);
               pendingRemove.current.delete(to.id);
             }
             for (const rec of Object.values(removed)) {
+              if (!isDocType(rec)) continue;
               pendingRemove.current.add(rec.id);
               pendingPut.current.delete(rec.id);
             }
-            scheduleSave();
+            if (pendingPut.current.size || pendingRemove.current.size) {
+              scheduleSave();
+            }
           },
           { source: "user", scope: "document" }
         );
