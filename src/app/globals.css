@@ -3647,6 +3647,31 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   }
 }
 
+/* Live workroom is a full-width, page-centered centerpiece: drop the left rail
+   into a top tab-strip so the office building isn't shoved into the right
+   column. */
+.acct-report.is-wide {
+  grid-template-columns: 1fr;
+  gap: 22px;
+}
+.acct-report.is-wide .acct-rail {
+  position: static;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.acct-report.is-wide .acct-rail button {
+  width: auto;
+  white-space: nowrap;
+  border-left: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+}
+.acct-report.is-wide .acct-rail button.is-current {
+  border-left: none;
+  border-bottom-color: var(--signal);
+}
+
 .acct-pill {
   display: inline-flex;
   align-items: center;

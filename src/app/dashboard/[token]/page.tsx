@@ -346,7 +346,7 @@ export default function ClientDashboardPage() {
             {error}
           </p>
         ) : data ? (
-          <div className="acct-report">
+          <div className={`acct-report${tab === "workroom" ? " is-wide" : ""}`}>
             <nav className="acct-rail">
               {visibleTabs.map((t) => (
                 <button
