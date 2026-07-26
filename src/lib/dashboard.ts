@@ -8,7 +8,8 @@ import {
   type CycleStatus,
   type Window,
 } from "./cadence";
-import { deliverableOverview, getOrCreateToken as getOrCreateSnapshotToken } from "./snapshot";
+import { deliverableOverview, getOrCreateToken as getOrCreateSnapshotToken, listWins } from "./snapshot";
+import { mondayOf } from "./week";
 import { aggregate, getRevClient, kpisForModel, listMetrics } from "./revenue";
 import { planSends } from "./plan";
 import { listActivity, listPendingApprovalCampaigns, type ActivityItem, type PendingApproval } from "./campaigns";
@@ -184,6 +185,13 @@ export interface ClientDashboardData {
   goals: ClientGoal[];
   pendingApprovals: PendingApproval[];
   workboard: Workboard;
+  highlights: {
+    approvalsPending: number;
+    completedThisWeek: number;
+    wins: number;
+    deliverablesDone: number;
+    deliverablesTotal: number;
+  };
 }
 
 /* ----------------------------------------------------- live workroom (tower) */
@@ -411,18 +419,39 @@ export function getClientDashboardData(clientId: string): ClientDashboardData | 
     value: k.value(agg, client),
   }));
 
+  const overview = deliverableOverview(client.id);
+  const pendingApprovals = listPendingApprovalCampaigns(client.id);
+
+  // Client-facing highlights for the hero: what needs them, momentum, wins.
+  const db = getDb();
+  const weekStart = mondayOf(new Date());
+  const doneTodos = db
+    .prepare(`SELECT COUNT(*) AS c FROM todos WHERE client_id = ? AND status = 'done' AND completed_at >= ?`)
+    .get(client.id, weekStart) as { c: number };
+  const sentSends = db
+    .prepare(`SELECT COUNT(*) AS c FROM scheduled_sends WHERE client_id = ? AND status = 'sent' AND send_date >= ?`)
+    .get(client.id, weekStart) as { c: number };
+  const deliverablesDone = overview.filter((d) => ["completed", "approved"].includes(d.status)).length;
+
   return {
     client: { id: client.id, name: client.name, accountManager: client.account_manager },
     production: productionStatus(client),
     snapshot: {
       token: getOrCreateSnapshotToken(client.id),
-      overview: deliverableOverview(client.id),
+      overview,
     },
     accountData: { kpis },
     calendar: planSends(client.id, addDaysYmd(today, -30), addDaysYmd(today, 180)),
     activity: accountActivity(client.id),
     goals: clientVisibleGoals(client.id),
-    pendingApprovals: listPendingApprovalCampaigns(client.id),
+    pendingApprovals,
     workboard: getClientWorkboard(client.id),
+    highlights: {
+      approvalsPending: pendingApprovals.length,
+      completedThisWeek: doneTodos.c + sentSends.c,
+      wins: listWins(client.id).length,
+      deliverablesDone,
+      deliverablesTotal: overview.length,
+    },
   };
 }

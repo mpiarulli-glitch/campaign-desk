@@ -57,30 +57,13 @@ type DashboardData = {
   goals: Goal[];
   pendingApprovals: { id: string; title: string; external_token: string; updated_at: string }[];
   workboard: Workboard;
-};
-
-const STATUS_LABEL: Record<CycleStatus, string> = {
-  not_configured: "Not configured yet",
-  inactive: "Account inactive",
-  not_due: "Not due yet",
-  due: "Ready to book",
-  requested: "Requested — awaiting confirmation",
-  scheduled: "Scheduled",
-  sent: "Sent",
-};
-
-// Short arc-label + illustrative fill for a status that isn't a measured
-// percentage (production windows and goal progress aren't ratios — only the
-// snapshot arc uses a real computed number). The fill is a stylized "how far
-// along" impression, never presented as an exact figure.
-const PRODUCTION_ARC: Record<CycleStatus, { fill: number; label: string }> = {
-  not_configured: { fill: 0, label: "—" },
-  inactive: { fill: 0, label: "—" },
-  not_due: { fill: 0.25, label: "Soon" },
-  due: { fill: 0.55, label: "Due" },
-  requested: { fill: 0.75, label: "Req'd" },
-  scheduled: { fill: 0.9, label: "Booked" },
-  sent: { fill: 1, label: "Sent" },
+  highlights: {
+    approvalsPending: number;
+    completedThisWeek: number;
+    wins: number;
+    deliverablesDone: number;
+    deliverablesTotal: number;
+  };
 };
 
 const GOAL_STATUS_LABEL: Record<GoalStatus, string> = {
@@ -110,16 +93,13 @@ const MONTHS = [
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
-const ARC_R = 24;
-const ARC_C = 2 * Math.PI * ARC_R;
-function arcOffset(fill: number): number {
-  return ARC_C * (1 - Math.max(0, Math.min(1, fill)));
-}
-
 function fmtDate(ymdStr: string): string {
   if (!ymdStr) return "—";
   const [y, m, d] = ymdStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+  if (!y || !m || !d) return "—";
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -141,34 +121,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "goals", label: "Account & goals" },
   { key: "messages", label: "Messages" },
 ];
-
-function Arc({
-  fill,
-  label,
-  color,
-}: {
-  fill: number;
-  label: string;
-  color: string;
-}) {
-  return (
-    <div className="acct-arc">
-      <svg viewBox="0 0 56 56">
-        <circle className="acct-arc-track" cx="28" cy="28" r={ARC_R} />
-        <circle
-          className="acct-arc-val"
-          cx="28"
-          cy="28"
-          r={ARC_R}
-          stroke={color}
-          strokeDasharray={ARC_C}
-          strokeDashoffset={arcOffset(fill)}
-        />
-      </svg>
-      <span className="acct-arc-label">{label}</span>
-    </div>
-  );
-}
 
 export default function ClientDashboardPage() {
   const { token } = useParams<{ token: string }>();
@@ -245,9 +197,6 @@ export default function ClientDashboardPage() {
     ["completed", "approved"].includes(d.status)
   ).length ?? 0;
   const snapshotTotal = data?.snapshot.overview.length ?? 0;
-  const snapshotFraction = snapshotTotal ? snapshotDone / snapshotTotal : 0;
-
-  const primaryGoal = data?.goals[0] ?? null;
 
   const visibleTabs = useMemo(
     () => TABS.filter((t) => t.key !== "schedule" || data?.production.status === "due"),
@@ -284,52 +233,26 @@ export default function ClientDashboardPage() {
           <p className="snap-hero-sub">Prepared by Marketing Empire Group</p>
 
           {data ? (
-            <div className="acct-hero-standing">
-              <div className="acct-standing-item">
-                <Arc
-                  fill={PRODUCTION_ARC[data.production.status].fill}
-                  label={PRODUCTION_ARC[data.production.status].label}
-                  color="#00d4e8"
-                />
-                <div className="acct-standing-copy">
-                  <p className="k">Production</p>
-                  <p className="v">
-                    {STATUS_LABEL[data.production.status]}
-                    {data.production.window ? (
-                      <span> · {fmtDate(data.production.window.start)}</span>
-                    ) : null}
-                  </p>
-                </div>
+            <div className="acct-hero-metrics">
+              <div className={`acct-metric${data.highlights.approvalsPending > 0 ? " is-action" : ""}`}>
+                <span className="n">{data.highlights.approvalsPending}</span>
+                <span className="l">Approval{data.highlights.approvalsPending === 1 ? "" : "s"} pending</span>
               </div>
-              <div className="acct-standing-item">
-                <Arc
-                  fill={snapshotFraction}
-                  label={snapshotTotal ? `${Math.round(snapshotFraction * 100)}%` : "—"}
-                  color="#00d4e8"
-                />
-                <div className="acct-standing-copy">
-                  <p className="k">Snapshot</p>
-                  <p className="v">
-                    {snapshotTotal ? "On track" : "Not tracked yet"}
-                    {snapshotTotal ? <span> · {snapshotDone} of {snapshotTotal} done</span> : null}
-                  </p>
-                </div>
+              <div className="acct-metric">
+                <span className="n">{data.highlights.completedThisWeek}</span>
+                <span className="l">Completed this week</span>
               </div>
-              <div className="acct-standing-item">
-                <Arc
-                  fill={primaryGoal ? GOAL_ARC[primaryGoal.status].fill : 0}
-                  label={primaryGoal ? GOAL_ARC[primaryGoal.status].label : "—"}
-                  color="#d98b2b"
-                />
-                <div className="acct-standing-copy">
-                  <p className="k">Goal</p>
-                  <p className="v">
-                    {primaryGoal ? primaryGoal.objective : "No goal set yet"}
-                    {primaryGoal?.targetDate ? (
-                      <span> · by {fmtDate(primaryGoal.targetDate)}</span>
-                    ) : null}
-                  </p>
-                </div>
+              <div className="acct-metric">
+                <span className="n">{data.highlights.wins}</span>
+                <span className="l">Win{data.highlights.wins === 1 ? "" : "s"} logged</span>
+              </div>
+              <div className="acct-metric">
+                <span className="n">
+                  {data.highlights.deliverablesTotal
+                    ? `${data.highlights.deliverablesDone}/${data.highlights.deliverablesTotal}`
+                    : "—"}
+                </span>
+                <span className="l">Deliverables done</span>
               </div>
             </div>
           ) : null}
