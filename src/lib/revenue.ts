@@ -469,6 +469,11 @@ const PROFIT_KPIS: Kpi[] = [
   },
 ];
 
+// Internal-only KPIs that expose agency economics (retainer vs. cost to
+// deliver). Admins see these; they must NEVER be returned over a client-facing
+// share-token response. The public dashboard route filters these out by key.
+export const CLIENT_HIDDEN_KPI_KEYS = new Set(["agency_margin", "margin_pct"]);
+
 const ECOMM_KPIS: Kpi[] = [
   { key: "orders", label: "Orders", fmt: "number", value: (a) => a.orders },
   { key: "aov", label: "AOV", fmt: "currency", value: (a) => div(a.revenue, a.orders) },

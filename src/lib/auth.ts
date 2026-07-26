@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { isValidAdminPerson } from "./admin-people";
 import { hasProductionAccess, isValidPerson } from "./people";
 
@@ -15,12 +15,20 @@ export type Session =
     }
   | { role: "forecast"; person: string; impersonating: boolean; issuedAt: number };
 
+// If a required secret is missing in production, fall back to a random,
+// per-boot value rather than a publicly known default. This "fails closed":
+// an unset SESSION_SECRET/ADMIN_PASSWORD can never be exploited with a shipped
+// default (sessions simply won't validate / the default password won't work).
+const PROD_FALLBACK = randomBytes(32).toString("hex");
+
 function getSecret(): string {
-  return process.env.SESSION_SECRET || "dev-insecure-secret";
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  return process.env.NODE_ENV === "production" ? PROD_FALLBACK : "dev-insecure-secret";
 }
 
 function getAdminPassword(): string {
-  return process.env.ADMIN_PASSWORD || "campaign-desk-dev";
+  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  return process.env.NODE_ENV === "production" ? PROD_FALLBACK : "campaign-desk-dev";
 }
 
 function getSharedForecastPassword(): string {
