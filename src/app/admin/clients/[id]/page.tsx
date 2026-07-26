@@ -177,6 +177,80 @@ const TABS: { key: Tab; label: string }[] = [
 
 const FLAG_LABEL: Record<string, string> = { red: "Red flag", yellow: "Yellow flag", green: "Green flag" };
 
+// Shows the real client-facing dashboard inline (via its shared link), so the
+// team can see exactly what the client sees without leaving the hub.
+function ClientDashboardPreview({
+  token,
+  onGenerate,
+}: {
+  token: string | null;
+  onGenerate: () => void;
+}) {
+  if (!token) {
+    return (
+      <div className="card card-pad" style={{ textAlign: "center" }}>
+        <p className="muted" style={{ marginBottom: 12 }}>
+          This client doesn&apos;t have a shareable dashboard link yet.
+        </p>
+        <button
+          className="btn btn-sm"
+          onClick={onGenerate}
+          style={{ width: "fit-content", margin: "0 auto" }}
+        >
+          Generate client link
+        </button>
+      </div>
+    );
+  }
+  const url = `/dashboard/${token}`;
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+          This is exactly what the client sees at their shared link. Internal-only
+          data stays hidden.
+        </p>
+        <a
+          className="btn btn-secondary btn-sm"
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open in new tab ↗
+        </a>
+      </div>
+      <div
+        style={{
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          overflow: "hidden",
+          background: "var(--bg)",
+        }}
+      >
+        <iframe
+          src={url}
+          title="Client dashboard preview"
+          style={{
+            width: "100%",
+            height: "calc(100vh - 240px)",
+            minHeight: 600,
+            border: "none",
+            display: "block",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function ClientHubPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -184,6 +258,9 @@ export default function ClientHubPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
+  // "internal" = the team's client hub; "client" = exactly what the client sees
+  // at their shared dashboard link.
+  const [viewMode, setViewMode] = useState<"internal" | "client">("internal");
   const [dashboardToken, setDashboardToken] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState("");
   const [activityOpen, setActivityOpen] = useState(true);
@@ -348,7 +425,35 @@ export default function ClientHubPage() {
                 {data ? `Managed by ${data.client.accountManager || "—"} · ${TIER_LABEL[data.client.tier] ?? "No tier"}` : ""}
               </p>
             </div>
-            <div className="row" style={{ gap: 8 }}>
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              <div
+                className="row"
+                role="tablist"
+                aria-label="View mode"
+                style={{
+                  gap: 0,
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  className={`btn btn-sm ${viewMode === "internal" ? "" : "btn-ghost"}`}
+                  style={{ borderRadius: 0, border: "none" }}
+                  aria-pressed={viewMode === "internal"}
+                  onClick={() => setViewMode("internal")}
+                >
+                  Internal
+                </button>
+                <button
+                  className={`btn btn-sm ${viewMode === "client" ? "" : "btn-ghost"}`}
+                  style={{ borderRadius: 0, border: "none" }}
+                  aria-pressed={viewMode === "client"}
+                  onClick={() => setViewMode("client")}
+                >
+                  Client view
+                </button>
+              </div>
               <button className="btn btn-secondary btn-sm" onClick={copyLink} disabled={!dashboardToken}>
                 Copy client link
               </button>
@@ -369,6 +474,13 @@ export default function ClientHubPage() {
           <>
             {copyMsg ? <p className="muted" style={{ margin: 0 }}>{copyMsg}</p> : null}
 
+            {viewMode === "client" ? (
+              <ClientDashboardPreview
+                token={dashboardToken}
+                onGenerate={rotateToken}
+              />
+            ) : (
+            <>
             <div className="acct-pulse">
               <div className="acct-pulse-item">
                 <span className={`dot ${STATUS_DOT[data.production.status]}`} />
@@ -649,6 +761,8 @@ export default function ClientHubPage() {
                 )}
               </div>
             ) : null}
+            </>
+            )}
           </>
         ) : null}
       </main>
