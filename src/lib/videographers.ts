@@ -46,13 +46,13 @@ export function updateVideographer(
 }
 
 // Dates in [start, end] where the given videographer already has a production
-// on the books (any status) for a DIFFERENT client. One production/day per
-// videographer, so these days are unavailable to everyone else who shares them.
+// on the books (any status). One production/day per videographer, so these
+// dates are unavailable even when the other production belongs to the same
+// client under a different cadence window.
 export function videographerBookedDates(
   videographerId: string,
   start: string,
-  end: string,
-  excludeClientId?: string
+  end: string
 ): string[] {
   if (!videographerId) return [];
   const rows = getDb()
@@ -61,10 +61,10 @@ export function videographerBookedDates(
        FROM scheduled_sends s
        JOIN rev_clients c ON c.id = s.client_id
        WHERE c.videographer_id = ?
-         AND s.send_date >= ? AND s.send_date <= ?
-         AND (? = '' OR s.client_id != ?)`
+         AND s.production_brief != ''
+         AND s.send_date >= ? AND s.send_date <= ?`
     )
-    .all(videographerId, start, end, excludeClientId || "", excludeClientId || "") as Array<{
+    .all(videographerId, start, end) as Array<{
     d: string;
   }>;
   return rows.map((r) => r.d);

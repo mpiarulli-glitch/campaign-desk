@@ -1,16 +1,43 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { isAdminAuthenticated } from "@/lib/auth";
 import { deleteSend, getSend, updateSend } from "@/lib/calendar";
 import { advanceLastProduction } from "@/lib/cadence";
 import { getRevClient } from "@/lib/revenue";
 import { sendProductionConfirmed } from "@/lib/production-emails";
+import { listVideographers } from "@/lib/videographers";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Params = { params: Promise<{ id: string }> };
 
+export async function GET(_request: Request, { params }: Params) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = await params;
+  const send = getSend(id);
+  if (!send) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const client = send.client_id ? getRevClient(send.client_id) : null;
+  const videographer = client?.videographer_id
+    ? listVideographers(true).find((person) => person.id === client.videographer_id)
+    : null;
+  return NextResponse.json({
+    send,
+    client: client
+      ? {
+          id: client.id,
+          name: client.name,
+          accountManager: client.account_manager,
+          videographer: videographer?.name || "",
+        }
+      : null,
+  });
+}
+
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -64,14 +91,14 @@ export async function PATCH(request: Request, { params }: Params) {
     send.client_id
   ) {
     const client = getRevClient(send.client_id);
-    if (client) void sendProductionConfirmed(client, send);
+    if (client) await sendProductionConfirmed(client, send);
   }
 
   return NextResponse.json({ send });
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

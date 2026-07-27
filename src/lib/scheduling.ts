@@ -1,10 +1,10 @@
 import {
   BOOKING_SLOTS,
+  appDateTime,
   computeCycleStatus,
   findSendForWindow,
   isBlackout,
   nextWindow,
-  todayYmd,
   type CycleStatus,
   type Window,
 } from "./cadence";
@@ -12,7 +12,9 @@ import { createSend } from "./calendar";
 import { notifyProductionRequested } from "./notify";
 import { sendProductionRequestReceived } from "./production-emails";
 import { videographerBookedDates } from "./videographers";
-import type { RevClient, ScheduledSend } from "./db";
+import { getDb, type RevClient, type ScheduledSend } from "./db";
+import { getAppUrl } from "./auth";
+import { durationAllowsStart, slotHasPassed } from "./scheduling-rules";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -20,6 +22,8 @@ export interface SchedulingStatus {
   client: { name: string };
   window: Window | null;
   status: CycleStatus;
+  today: string;
+  currentTime: string;
   slots: string[];
   blackoutDates: string[];
   videographerBooked: string[];
@@ -31,29 +35,59 @@ export interface SchedulingStatus {
   } | null;
 }
 
+function datesBetween(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  let current = new Date(Date.UTC(sy, sm - 1, sd));
+  const last = new Date(Date.UTC(ey, em - 1, ed));
+  while (current <= last) {
+    dates.push(current.toISOString().slice(0, 10));
+    current = new Date(current.getTime() + 86_400_000);
+  }
+  return dates;
+}
+
 // The GET payload for a client's production-booking view, keyed off an
 // already-resolved client (caller decides how the client was authenticated —
 // schedule_token or dashboard_token both resolve to the same RevClient shape).
 export function getSchedulingStatus(client: RevClient): SchedulingStatus {
-  const today = todayYmd();
+  const now = appDateTime();
+  const today = now.date;
   const window = nextWindow(client, today);
-  const status = computeCycleStatus(client, window, today);
+  const status = client.production_enrolled
+    ? computeCycleStatus(client, window, today)
+    : "inactive";
   const existing = window ? findSendForWindow(client.id, window.start) : null;
 
   return {
     client: { name: client.name },
     window,
     status,
+    today,
+    currentTime: now.time,
     slots: BOOKING_SLOTS,
     blackoutDates: (() => {
+      const configured = (() => {
+        try {
+          return JSON.parse(client.blackout_dates || "[]") as string[];
+        } catch {
+          return [];
+        }
+      })();
+      const contractBlocked = window
+        ? datesBetween(window.start, window.end).filter((date) =>
+            isBlackout(date, { ...client, blackout_dates: "[]" })
+          )
+        : [];
       try {
-        return JSON.parse(client.blackout_dates || "[]") as string[];
+        return [...new Set([...configured, ...contractBlocked])];
       } catch {
         return [];
       }
     })(),
     videographerBooked: window
-      ? videographerBookedDates(client.videographer_id, window.start, window.end, client.id)
+      ? videographerBookedDates(client.videographer_id, window.start, window.end)
       : [],
     existingSend: existing
       ? {
@@ -67,7 +101,7 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
 }
 
 export type BookingResult =
-  | { ok: true; send: ScheduledSend }
+  | { ok: true; send: ScheduledSend; client: RevClient }
   | { ok: false; httpStatus: number; error: string };
 
 const BRIEF_FIELDS = [
@@ -92,14 +126,20 @@ const BRIEF_FIELDS = [
 // Books a production slot for an already-resolved client. Same validation
 // (window/blackout/videographer-conflict/required brief fields) regardless
 // of which token authenticated the request.
-export function submitProductionBooking(
+export async function submitProductionBooking(
   client: RevClient,
   body: Record<string, unknown>
-): BookingResult {
-  const today = todayYmd();
+): Promise<BookingResult> {
+  const now = appDateTime();
+  const today = now.date;
   const window = nextWindow(client, today);
   const status = computeCycleStatus(client, window, today);
-  if (!window || status === "inactive" || status === "not_configured") {
+  if (
+    !client.production_enrolled ||
+    !window ||
+    status === "inactive" ||
+    status === "not_configured"
+  ) {
     return {
       ok: false,
       httpStatus: 400,
@@ -153,8 +193,26 @@ export function submitProductionBooking(
       error: "Pick a day inside your production window.",
     };
   }
+  if (slotHasPassed(date, time, today, now.time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "That start time has already passed. Pick a future slot.",
+    };
+  }
   if (!BOOKING_SLOTS.includes(time)) {
-    return { ok: false, httpStatus: 400, error: "Pick a time between 9 AM and 5 PM." };
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Pick a start time between 9 AM and 1 PM.",
+    };
+  }
+  if (!durationAllowsStart(duration, time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Full-day productions start at 9 AM.",
+    };
   }
   if (isBlackout(date, client)) {
     return {
@@ -163,30 +221,79 @@ export function submitProductionBooking(
       error: "That day isn't available. Pick another day in the window.",
     };
   }
-  if (videographerBookedDates(client.videographer_id, date, date, client.id).length > 0) {
-    return {
-      ok: false,
-      httpStatus: 409,
-      error: "That day was just taken. Please pick another day in the window.",
-    };
-  }
+  // Serialize the last availability check and insert. This prevents two
+  // simultaneous requests from claiming the same videographer/day or cadence
+  // window before either request can see the other's insert.
+  const reserve = getDb().transaction((): BookingResult => {
+    const currentClient = getDb()
+      .prepare(`SELECT * FROM rev_clients WHERE id = ?`)
+      .get(client.id) as RevClient | undefined;
+    if (!currentClient?.production_enrolled) {
+      return {
+        ok: false,
+        httpStatus: 404,
+        error: "This scheduling link is no longer active.",
+      };
+    }
+    const currentWindow = nextWindow(currentClient, today);
+    const currentStatus = computeCycleStatus(
+      currentClient,
+      currentWindow,
+      today
+    );
+    if (
+      !currentWindow ||
+      currentWindow.start !== window.start ||
+      (currentStatus !== "due" && currentStatus !== "not_due")
+    ) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: "This production window has already been scheduled.",
+      };
+    }
+    if (
+      videographerBookedDates(
+        currentClient.videographer_id,
+        date,
+        date
+      ).length > 0
+    ) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: "That day was just taken. Please pick another day in the window.",
+      };
+    }
 
-  const send = createSend({
-    clientId: client.id,
-    clientName: client.name,
-    title: `${client.name} production`,
+    const send = createSend({
+      clientId: currentClient.id,
+      clientName: currentClient.name,
+      title: `${currentClient.name} production`,
+      sendDate: date,
+      sendTime: time,
+      duration,
+      status: "requested",
+      note,
+      productionBrief: JSON.stringify(brief),
+      cadenceWindowStart: currentWindow.start,
+      requestedByClient: true,
+    });
+    return { ok: true, send, client: currentClient };
+  });
+
+  const result = reserve.immediate();
+  if (!result.ok) return result;
+
+  await notifyProductionRequested({
+    clientName: result.client.name,
     sendDate: date,
     sendTime: time,
     duration,
-    status: "requested",
+    detailsUrl: `${getAppUrl()}/admin/production/${result.send.id}`,
     note,
-    productionBrief: JSON.stringify(brief),
-    cadenceWindowStart: window.start,
-    requestedByClient: true,
   });
+  await sendProductionRequestReceived(result.client, result.send);
 
-  notifyProductionRequested({ clientName: client.name, sendDate: date, note });
-  void sendProductionRequestReceived(client, send);
-
-  return { ok: true, send };
+  return result;
 }

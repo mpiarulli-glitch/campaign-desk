@@ -16,11 +16,14 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-async function postToCampfire(content: string): Promise<void> {
-  const url = process.env.BASECAMP_CAMPFIRE_URL;
+async function postToCampfire(
+  content: string,
+  destination?: string
+): Promise<boolean> {
+  const url = destination || process.env.BASECAMP_CAMPFIRE_URL;
   if (!url) {
     // Not configured yet. Silently skip so local/dev runs are unaffected.
-    return;
+    return false;
   }
 
   try {
@@ -34,9 +37,12 @@ async function postToCampfire(content: string): Promise<void> {
       console.error(
         `[notify] Campfire post failed: ${res.status} ${detail.slice(0, 200)}`
       );
+      return false;
     }
+    return true;
   } catch (err) {
     console.error("[notify] Campfire post threw:", err);
+    return false;
   }
 }
 
@@ -66,19 +72,43 @@ export function notifyClientFeedback(args: {
 }
 
 // A client picked a production date on their schedule link.
-export function notifyProductionRequested(args: {
+export interface ProductionRequestedNotification {
   clientName: string;
   sendDate: string;
+  sendTime: string;
+  duration: string;
+  detailsUrl: string;
   note?: string;
-}): void {
-  const note = args.note ? `<br>Note: ${escapeHtml(args.note)}` : "";
-  const content =
-    `<strong>Production requested:</strong> ` +
-    `${escapeHtml(args.clientName)} picked <strong>${escapeHtml(args.sendDate)}</strong> ` +
-    `for their next production.${note}`;
+}
 
-  // Fire and forget.
-  void postToCampfire(content);
+export function productionRequestedCampfireContent(
+  args: ProductionRequestedNotification
+): string {
+  const note = args.note ? `<br>Note: ${escapeHtml(args.note)}` : "";
+  const time = args.sendTime ? ` at ${escapeHtml(args.sendTime)}` : "";
+  const length = args.duration === "full" ? "Full day" : "4 hours";
+  return (
+    `<strong>Production requested</strong><br>` +
+    `<strong>Client:</strong> ${escapeHtml(args.clientName)}<br>` +
+    `<strong>Date:</strong> ${escapeHtml(args.sendDate)}${time}<br>` +
+    `<strong>Length:</strong> ${length}${note}<br>` +
+    `<a href="${escapeHtml(args.detailsUrl)}">View production details</a>`
+  );
+}
+
+export function notifyProductionRequested(
+  args: ProductionRequestedNotification
+): Promise<boolean> {
+  const content = productionRequestedCampfireContent(args);
+
+  // Production requests go to the Video Editing Team Campfire when its
+  // dedicated chatbot URL is configured. The general Campfire remains a
+  // backwards-compatible fallback.
+  return postToCampfire(
+    content,
+    process.env.BASECAMP_VIDEO_EDITING_CAMPFIRE_URL ||
+      process.env.BASECAMP_CAMPFIRE_URL
+  );
 }
 
 // A campaign was deleted from the admin dashboard.

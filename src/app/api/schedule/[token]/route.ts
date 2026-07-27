@@ -20,7 +20,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
-  const result = submitProductionBooking(client, body);
+  const result = await submitProductionBooking(client, body);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.httpStatus });
   }

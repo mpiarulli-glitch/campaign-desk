@@ -44,6 +44,11 @@ Hooks are installed by `npm install`.
 | `ADMIN_PASSWORD` | Password for your admin dashboard |
 | `SESSION_SECRET` | Random long string used to sign session cookies |
 | `NEXT_PUBLIC_APP_URL` | Public base URL used when building magic links |
+| `APP_TIME_ZONE` | Business timezone used for production booking dates |
+| `RESEND_API_KEY` | Resend API key for production emails |
+| `EMAIL_FROM` | Verified sender for production emails |
+| `CRON_SECRET` | Secret used by the daily production-reminder job |
+| `BASECAMP_VIDEO_EDITING_CAMPFIRE_URL` | Video Editing Team Campfire chatbot URL |
 
 ## Workflow
 
@@ -77,6 +82,11 @@ Good fits:
 3. Build command: `npm install && npm run build`
 4. Start command: `npm run start`
 5. Attach a persistent volume mounted at `/app/data` (or the app working directory `data/`)
+
+Production scheduling also needs the separate, short-lived Railway cron
+service documented in [DEPLOY.md](./DEPLOY.md). Its start command is
+`npm run cron:reminders`; do not apply a cron schedule to the always-on web
+service.
 
 ### Not ideal without changes
 

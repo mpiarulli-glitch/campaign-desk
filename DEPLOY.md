@@ -48,6 +48,12 @@ In the service → **Variables**:
 | `ADMIN_PASSWORD` | a strong password only you know |
 | `SESSION_SECRET` | a long random string (32+ chars) |
 | `NEXT_PUBLIC_APP_URL` | your public URL, e.g. `https://campaign-desk-production-xxxx.up.railway.app` |
+| `APP_TIME_ZONE` | `America/Los_Angeles` |
+| `RESEND_API_KEY` | Resend API key for scheduling and confirmation emails |
+| `EMAIL_FROM` | Verified Resend sender |
+| `EMAIL_REPLY_TO` | Address that should receive client replies |
+| `CRON_SECRET` | Long random secret used by the reminder job |
+| `BASECAMP_VIDEO_EDITING_CAMPFIRE_URL` | Video Editing Team Campfire chatbot URL for new production requests |
 
 Generate a secret:
 
@@ -57,14 +63,31 @@ openssl rand -hex 32
 
 After Railway gives you a public domain, set `NEXT_PUBLIC_APP_URL` to that exact URL (no trailing slash), then redeploy if needed.
 
-## 5) Generate a public domain
+## 5) Add the production-reminder cron service
+
+Do not put a cron schedule on the web service; Railway cron services start,
+run, and exit instead of staying online.
+
+1. Add a second Railway service from the same repository.
+2. Give it `APP_URL` set to the public Campaign Desk URL and the same
+   `CRON_SECRET` as the web service.
+3. Override its start command with `npm run cron:reminders`.
+4. In **Settings → Cron Schedule**, use `0 17 * * *`. Railway schedules in UTC,
+   so this runs at 9 AM Pacific Standard Time / 10 AM Pacific Daylight Time.
+5. Deploy it, run it once manually, and confirm its JSON output reports the
+   expected `sent`, `failed`, and `shootReminders` counts.
+
+The cron service calls the web API. It does not mount or open the SQLite
+volume, which keeps the web service as the database's single owner.
+
+## 6) Generate a public domain
 
 1. Service → **Settings** → **Networking**
 2. **Generate Domain**
 3. Copy it into `NEXT_PUBLIC_APP_URL`
 4. Redeploy once so magic links use the live domain
 
-## 6) Use it with your boss and clients
+## 7) Use it with your boss and clients
 
 1. Open `https://YOUR-DOMAIN/login`
 2. Sign in with `ADMIN_PASSWORD`

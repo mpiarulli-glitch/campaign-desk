@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -54,7 +55,7 @@ type Row = {
   client: Client;
   window: { start: string; end: string } | null;
   status: CycleStatus;
-  existingSend: { sendDate: string; status: string } | null;
+  existingSend: { id: string; sendDate: string; status: string } | null;
   currentReminderCount: number;
   lastEmailSent: string | null;
   lastWindowEmailed: string | null;
@@ -528,6 +529,14 @@ export default function ProductionPage() {
                       {isAdmin ? (
                         <>
                           <div className="row" style={{ gap: 6 }}>
+                            {r.existingSend ? (
+                              <Link
+                                className="btn btn-secondary btn-sm"
+                                href={`/admin/production/${r.existingSend.id}`}
+                              >
+                                View details
+                              </Link>
+                            ) : null}
                             {r.client.color_week && r.client.production_cadence ? (
                               <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
                             ) : null}

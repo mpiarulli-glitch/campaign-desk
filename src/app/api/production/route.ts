@@ -36,7 +36,11 @@ export async function GET() {
       window,
       status,
       existingSend: existingSend
-        ? { sendDate: existingSend.send_date, status: existingSend.status }
+        ? {
+            id: existingSend.id,
+            sendDate: existingSend.send_date,
+            status: existingSend.status,
+          }
         : null,
       // Reminder emails: count on the current window, plus the most recent
       // send date and which window it was for (mirrors the tracker sheet).
