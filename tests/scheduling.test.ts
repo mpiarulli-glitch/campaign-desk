@@ -63,6 +63,7 @@ test("cadence advances to the next non-expired production window", () => {
 test("production Campfire message includes safe details and a direct link", () => {
   const content = productionRequestedCampfireContent({
     clientName: "Example & Sons",
+    videographerName: "Cassidy Merideth",
     sendDate: "2026-08-04",
     sendTime: "10:00",
     duration: "half",
@@ -73,6 +74,7 @@ test("production Campfire message includes safe details and a direct link", () =
 
   assert.match(content, /Production requested/);
   assert.match(content, /Example &amp; Sons/);
+  assert.match(content, /@Cassidy Merideth/);
   assert.match(content, /2026-08-04 at 10:00/);
   assert.match(content, /4 hours/);
   assert.match(content, /Use loading dock &lt;B&gt;/);

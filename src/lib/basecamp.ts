@@ -172,6 +172,12 @@ export interface CardResult {
   assigned?: number;
 }
 
+export interface CampfireResult {
+  ok: boolean;
+  error?: string;
+  url?: string;
+}
+
 export interface BcPerson {
   id: number;
   name: string;
@@ -202,6 +208,41 @@ export function mentionHtml(person: BcPerson): string {
   return person.attachable_sgid
     ? `<bc-attachment sgid="${person.attachable_sgid}"></bc-attachment>`
     : `@${person.name}`;
+}
+
+// Post a rich-text line to a project's Campfire using the app's existing
+// Basecamp OAuth connection. Rich text is required for real person mentions.
+export async function postProjectCampfireLine(
+  projectId: string,
+  contentHtml: string
+): Promise<CampfireResult> {
+  if (!projectId) return { ok: false, error: "No Basecamp project set" };
+  try {
+    const projectRes = await bc(`/projects/${projectId}.json`);
+    if (!projectRes.ok) {
+      return { ok: false, error: `project lookup ${projectRes.status}` };
+    }
+    const project = await projectRes.json();
+    const dock: Array<{ id: number; name: string; enabled?: boolean }> =
+      project.dock || [];
+    const chat = dock.find((tool) => tool.name === "chat" && tool.enabled !== false);
+    if (!chat) return { ok: false, error: "no Campfire in this project" };
+
+    const lineRes = await bc(`/chats/${chat.id}/lines.json`, {
+      method: "POST",
+      body: JSON.stringify({
+        content: contentHtml,
+        content_type: "text/html",
+      }),
+    });
+    if (!lineRes.ok) {
+      return { ok: false, error: `Campfire post ${lineRes.status}` };
+    }
+    const line = await lineRes.json();
+    return { ok: true, url: line.app_url || line.url };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 // Resolve free-text identifiers (email or name) to Basecamp person ids within a

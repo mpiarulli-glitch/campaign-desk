@@ -1,13 +1,16 @@
 // Basecamp Campfire notifications.
 //
-// Posts short messages to a Basecamp Campfire via a chatbot webhook URL.
-// The URL is created once in Basecamp (Campfire -> add a chatbot) and stored
-// in the BASECAMP_CAMPFIRE_URL environment variable. Posting to it needs no
-// auth token and the URL never expires.
+// Posts short messages to Basecamp Campfires through either the app's OAuth
+// connection (which supports real @mentions) or a chatbot webhook fallback.
 //
-// All calls are fire-and-forget: if the env var is missing or Basecamp is
-// unreachable, we log and move on. A notification must never break a user
-// request.
+// Notification failures are logged but never break a user request.
+
+import {
+  basecampConnected,
+  getProjectPeople,
+  mentionHtml,
+  postProjectCampfireLine,
+} from "./basecamp";
 
 function escapeHtml(text: string): string {
   return text
@@ -74,6 +77,7 @@ export function notifyClientFeedback(args: {
 // A client picked a production date on their schedule link.
 export interface ProductionRequestedNotification {
   clientName: string;
+  videographerName?: string;
   sendDate: string;
   sendTime: string;
   duration: string;
@@ -82,28 +86,56 @@ export interface ProductionRequestedNotification {
 }
 
 export function productionRequestedCampfireContent(
-  args: ProductionRequestedNotification
+  args: ProductionRequestedNotification,
+  videographerMention?: string
 ): string {
   const note = args.note ? `<br>Note: ${escapeHtml(args.note)}` : "";
   const time = args.sendTime ? ` at ${escapeHtml(args.sendTime)}` : "";
   const length = args.duration === "full" ? "Full day" : "4 hours";
+  const videographer =
+    videographerMention ||
+    (args.videographerName
+      ? `@${escapeHtml(args.videographerName)}`
+      : "Unassigned");
   return (
     `<strong>Production requested</strong><br>` +
     `<strong>Client:</strong> ${escapeHtml(args.clientName)}<br>` +
+    `<strong>Videographer:</strong> ${videographer}<br>` +
     `<strong>Date:</strong> ${escapeHtml(args.sendDate)}${time}<br>` +
     `<strong>Length:</strong> ${length}${note}<br>` +
     `<a href="${escapeHtml(args.detailsUrl)}">View production details</a>`
   );
 }
 
-export function notifyProductionRequested(
+export async function notifyProductionRequested(
   args: ProductionRequestedNotification
 ): Promise<boolean> {
+  const projectId = process.env.BASECAMP_VIDEO_EDITING_PROJECT_ID || "";
+  if (projectId && basecampConnected()) {
+    const people = await getProjectPeople(projectId);
+    const name = (args.videographerName || "").trim().toLowerCase();
+    const person = name
+      ? people.find((candidate) => candidate.name.toLowerCase() === name) ||
+        people.find(
+          (candidate) =>
+            candidate.name.toLowerCase().includes(name) ||
+            name.includes(candidate.name.toLowerCase())
+        )
+      : undefined;
+    const content = productionRequestedCampfireContent(
+      args,
+      person ? mentionHtml(person) : undefined
+    );
+    const result = await postProjectCampfireLine(projectId, content);
+    if (result.ok) return true;
+    console.error(`[notify] Basecamp production Campfire failed: ${result.error}`);
+  }
+
   const content = productionRequestedCampfireContent(args);
 
   // Production requests go to the Video Editing Team Campfire when its
-  // dedicated chatbot URL is configured. The general Campfire remains a
-  // backwards-compatible fallback.
+  // dedicated chatbot URL is configured. This remains a fallback for accounts
+  // that have not connected Campaign Desk through Basecamp OAuth.
   return postToCampfire(
     content,
     process.env.BASECAMP_VIDEO_EDITING_CAMPFIRE_URL ||

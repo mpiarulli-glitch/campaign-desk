@@ -53,7 +53,8 @@ In the service → **Variables**:
 | `EMAIL_FROM` | Verified Resend sender |
 | `EMAIL_REPLY_TO` | Address that should receive client replies |
 | `CRON_SECRET` | Long random secret used by the reminder job |
-| `BASECAMP_VIDEO_EDITING_CAMPFIRE_URL` | Video Editing Team Campfire chatbot URL for new production requests |
+| `BASECAMP_VIDEO_EDITING_PROJECT_ID` | Video Editing Team project ID (`31034042`) for production-request messages and videographer mentions |
+| `BASECAMP_VIDEO_EDITING_CAMPFIRE_URL` | Optional chatbot fallback for production requests |
 
 Generate a secret:
 

@@ -11,7 +11,7 @@ import {
 import { createSend } from "./calendar";
 import { notifyProductionRequested } from "./notify";
 import { sendProductionRequestReceived } from "./production-emails";
-import { videographerBookedDates } from "./videographers";
+import { listVideographers, videographerBookedDates } from "./videographers";
 import { getDb, type RevClient, type ScheduledSend } from "./db";
 import { getAppUrl } from "./auth";
 import { durationAllowsStart, slotHasPassed } from "./scheduling-rules";
@@ -284,9 +284,15 @@ export async function submitProductionBooking(
 
   const result = reserve.immediate();
   if (!result.ok) return result;
+  const videographer = result.client.videographer_id
+    ? listVideographers(true).find(
+        (person) => person.id === result.client.videographer_id
+      )
+    : undefined;
 
   await notifyProductionRequested({
     clientName: result.client.name,
+    videographerName: videographer?.name,
     sendDate: date,
     sendTime: time,
     duration,
