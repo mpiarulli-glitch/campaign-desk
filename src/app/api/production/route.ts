@@ -4,6 +4,7 @@ import { listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
+import { listProductionSends } from "@/lib/calendar";
 
 export async function GET() {
   if (!(await isProductionAuthenticated())) {
@@ -49,5 +50,10 @@ export async function GET() {
       lastWindowEmailed: latestReminder?.window_start || null,
     };
   });
-  return NextResponse.json({ clients, today, videographers: listVideographers(false) });
+  return NextResponse.json({
+    clients,
+    productions: listProductionSends(),
+    today,
+    videographers: listVideographers(false),
+  });
 }

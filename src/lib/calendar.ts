@@ -32,6 +32,11 @@ export interface SendWithClient extends ScheduledSend {
   business_model: BusinessModel | null;
 }
 
+export interface ProductionSend extends ScheduledSend {
+  account_manager: string;
+  videographer: string;
+}
+
 function normalizeStatus(v: unknown): SendStatus {
   return STATUSES.includes(v as SendStatus) ? (v as SendStatus) : "planned";
 }
@@ -48,6 +53,28 @@ export function listSends(start: string, end: string): SendWithClient[] {
        ORDER BY s.send_date ASC, s.created_at ASC`
     )
     .all(start, end) as SendWithClient[];
+}
+
+// Client-submitted production requests, including the people responsible for
+// the account and shoot. These power the Requested / Confirmed admin queues.
+export function listProductionSends(): ProductionSend[] {
+  return getDb()
+    .prepare(
+      `SELECT
+         s.*,
+         COALESCE(c.account_manager, '') AS account_manager,
+         COALESCE(v.name, '') AS videographer
+       FROM scheduled_sends s
+       LEFT JOIN rev_clients c ON c.id = s.client_id
+       LEFT JOIN videographers v ON v.id = c.videographer_id
+       WHERE s.requested_by_client = 1
+       ORDER BY
+         CASE WHEN s.status = 'requested' THEN 0 ELSE 1 END,
+         s.send_date ASC,
+         s.send_time ASC,
+         s.created_at ASC`
+    )
+    .all() as ProductionSend[];
 }
 
 export function getSend(id: string): ScheduledSend | null {

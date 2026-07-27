@@ -61,6 +61,21 @@ type Row = {
   lastWindowEmailed: string | null;
 };
 
+type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
+type ProductionTab = "requested" | "confirmed" | "setup";
+
+type Production = {
+  id: string;
+  client_name: string;
+  send_date: string;
+  send_time: string;
+  duration: string;
+  status: ProductionStatus;
+  account_manager: string;
+  videographer: string;
+  created_at: string;
+};
+
 // Which client fields can be edited inline, and how each maps to the PATCH body.
 type Field =
   | "name"
@@ -142,9 +157,18 @@ function colorLabel(c: ColorWeek): string {
   return c ? c[0].toUpperCase() + c.slice(1) : "—";
 }
 
+function fmtTime(hhmm: string): string {
+  if (!hhmm) return "—";
+  const [hourText, minute = "00"] = hhmm.split(":");
+  const hour = Number(hourText);
+  return `${hour % 12 || 12}:${minute} ${hour >= 12 ? "PM" : "AM"}`;
+}
+
 export default function ProductionPage() {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
+  const [productions, setProductions] = useState<Production[]>([]);
+  const [tab, setTab] = useState<ProductionTab>("requested");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [linkMessage, setLinkMessage] = useState<Record<string, string>>({});
@@ -211,6 +235,7 @@ export default function ProductionPage() {
     }
     const data = await res.json();
     setRows(data.clients || []);
+    setProductions(data.productions || []);
     setVideographers(data.videographers || []);
     setLoading(false);
   }
@@ -303,6 +328,16 @@ export default function ProductionPage() {
     [enrolled, showInactive, colorFilter]
   );
   const activeCount = enrolled.filter((r) => r.client.active).length;
+  const requestedProductions = useMemo(
+    () => productions.filter((production) => production.status === "requested"),
+    [productions]
+  );
+  const confirmedProductions = useMemo(
+    () => productions.filter((production) => production.status !== "requested"),
+    [productions]
+  );
+  const visibleProductions =
+    tab === "requested" ? requestedProductions : confirmedProductions;
 
   const vidOptions = [
     { value: "", label: "Unassigned" },
@@ -372,17 +407,51 @@ export default function ProductionPage() {
       <main className="container container-wide stack">
         <div className="page-hero">
           <p className="eyebrow">Email department</p>
-          <h1 className="h1">Master scheduler</h1>
+          <h1 className="h1">Productions</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Every client&apos;s color week, cadence, next production window, and reminder
-            status.{" "}
-            {isAdmin
-              ? <><strong>Click any field to edit it</strong> — press Enter to save, Esc to cancel. </>
-              : null}
-            The window and reminder columns are calculated automatically.
+            Review new production requests, see confirmed shoots, or manage the
+            master scheduling setup.
           </p>
         </div>
 
+        <div className="tabs" role="tablist" aria-label="Production views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "requested"}
+            className={`tab ${tab === "requested" ? "active" : ""}`}
+            onClick={() => setTab("requested")}
+          >
+            Requested
+            <span className="tab-count">{requestedProductions.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "confirmed"}
+            className={`tab ${tab === "confirmed" ? "active" : ""}`}
+            onClick={() => setTab("confirmed")}
+          >
+            Confirmed
+            <span className="tab-count">{confirmedProductions.length}</span>
+          </button>
+          <span className="tab-divider" aria-hidden="true" />
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "setup"}
+            className={`tab ${tab === "setup" ? "active" : ""}`}
+            onClick={() => setTab("setup")}
+          >
+            Client setup
+            <span className="tab-count">{enrolled.length}</span>
+          </button>
+        </div>
+
+        {error ? <p className="error">{error}</p> : null}
+
+        {tab === "setup" ? (
+          <>
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <span className="muted">
             {colorFilter === "all"
@@ -452,8 +521,6 @@ export default function ProductionPage() {
           </div>
         ) : null}
         {matchMsg ? <p className="muted" style={{ marginTop: -6 }}>{matchMsg}</p> : null}
-
-        {error ? <p className="error">{error}</p> : null}
 
         {loading ? (
           <p className="muted">Loading...</p>
@@ -583,7 +650,90 @@ export default function ProductionPage() {
             </div>
           </div>
         ) : null}
+          </>
+        ) : (
+          <ProductionQueue
+            productions={visibleProductions}
+            loading={loading}
+            emptyLabel={
+              tab === "requested"
+                ? "No production requests are waiting for confirmation."
+                : "No productions have been confirmed yet."
+            }
+          />
+        )}
       </main>
+    </div>
+  );
+}
+
+function ProductionQueue({
+  productions,
+  loading,
+  emptyLabel,
+}: {
+  productions: Production[];
+  loading: boolean;
+  emptyLabel: string;
+}) {
+  if (loading) return <p className="muted">Loading productions...</p>;
+  if (!productions.length) {
+    return (
+      <div className="empty">
+        <p>{emptyLabel}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card card-pad" style={{ overflowX: "auto" }}>
+      <table className="rev-table">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Production date</th>
+            <th>Start time</th>
+            <th>Length</th>
+            <th>Videographer</th>
+            <th>Account manager</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {productions.map((production) => {
+            const statusLabel =
+              production.status === "requested"
+                ? "Requested"
+                : production.status === "sent"
+                  ? "Completed"
+                  : "Confirmed";
+            return (
+              <tr key={production.id}>
+                <td><strong>{production.client_name}</strong></td>
+                <td>{fmtDate(production.send_date)}</td>
+                <td>{fmtTime(production.send_time)}</td>
+                <td>{production.duration === "full" ? "Full day" : "4 hours"}</td>
+                <td>{production.videographer || <span className="muted">Unassigned</span>}</td>
+                <td>{production.account_manager || <span className="muted">Not set</span>}</td>
+                <td>
+                  <span className={`badge badge-${production.status}`}>
+                    {statusLabel}
+                  </span>
+                </td>
+                <td>
+                  <Link
+                    className="btn btn-secondary btn-sm"
+                    href={`/admin/production/${production.id}`}
+                  >
+                    View details
+                  </Link>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

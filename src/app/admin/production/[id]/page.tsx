@@ -94,9 +94,16 @@ export default function ProductionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let mounted = true;
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((session) => {
+        if (mounted) setIsAdmin(session?.role === "admin");
+      })
+      .catch(() => {});
     fetch(`/api/calendar/${id}`)
       .then(async (res) => {
         if (res.status === 401) {
@@ -193,30 +200,32 @@ export default function ProductionDetailPage() {
                 />
               </div>
 
-              <div className="field">
-                <label>Production status</label>
-                <div className="row">
-                  <select
-                    className="select-clean"
-                    value={status}
-                    onChange={(event) => setStatus(event.target.value as Status)}
-                    style={{ maxWidth: 240 }}
-                  >
-                    <option value="requested">Requested</option>
-                    <option value="planned">Planned</option>
-                    <option value="scheduled">Scheduled</option>
-                    <option value="sent">Completed</option>
-                  </select>
-                  <button
-                    className="btn btn-sm"
-                    disabled={saving || status === data.send.status}
-                    onClick={saveStatus}
-                  >
-                    {saving ? "Saving..." : "Update status"}
-                  </button>
-                  {message ? <span className="muted">{message}</span> : null}
+              {isAdmin ? (
+                <div className="field">
+                  <label>Production status</label>
+                  <div className="row">
+                    <select
+                      className="select-clean"
+                      value={status}
+                      onChange={(event) => setStatus(event.target.value as Status)}
+                      style={{ maxWidth: 240 }}
+                    >
+                      <option value="requested">Requested</option>
+                      <option value="planned">Planned</option>
+                      <option value="scheduled">Scheduled</option>
+                      <option value="sent">Completed</option>
+                    </select>
+                    <button
+                      className="btn btn-sm"
+                      disabled={saving || status === data.send.status}
+                      onClick={saveStatus}
+                    >
+                      {saving ? "Saving..." : "Update status"}
+                    </button>
+                    {message ? <span className="muted">{message}</span> : null}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </section>
 
             {BRIEF_SECTIONS.map((section) => {
