@@ -99,6 +99,14 @@ function compressImage(file: File): Promise<LocalImage> {
   });
 }
 
+// First letters of a reviewer's name, for the small round avatar on a comment.
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2);
+  return parts[0][0] + parts[parts.length - 1][0];
+}
+
 type SubjectOption = {
   id: string;
   subject: string;
@@ -141,8 +149,13 @@ export default function ReviewPage() {
     null
   );
   const [activePinId, setActivePinId] = useState<string | null>(null);
+  // Page-level notices cover the link itself and the approve actions, which
+  // live at the top of the page. Form-level notices stay next to the compose
+  // box in the rail so a reviewer never has to scroll to find the response.
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [formError, setFormError] = useState("");
+  const [formMessage, setFormMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -165,16 +178,17 @@ export default function ReviewPage() {
     setReplyingId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not send reply.");
+      setFormError(data.error || "Could not send reply.");
       return;
     }
+    setFormError("");
     setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
     load(activeEmailId, { silent: true });
   }
 
   async function addFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
-    setError("");
+    setFormError("");
     setImgBusy(true);
     try {
       const remaining = MAX_IMAGES - images.length;
@@ -332,17 +346,17 @@ export default function ReviewPage() {
     e.preventDefault();
     if (!activeEmail) return;
     setSubmitting(true);
-    setError("");
-    setMessage("");
+    setFormError("");
+    setFormMessage("");
 
     if (mode === "pin" && !pendingPin) {
-      setError("Click on the email to place a pin first.");
+      setFormError("Click on the email to place a pin first.");
       setSubmitting(false);
       return;
     }
 
     if (!body.trim() && images.length === 0) {
-      setError("Add a comment or attach an image.");
+      setFormError("Add a comment or attach an image.");
       setSubmitting(false);
       return;
     }
@@ -373,14 +387,14 @@ export default function ReviewPage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not post comment.");
+      setFormError(data.error || "Could not post comment.");
       return;
     }
 
     setBody("");
     setPendingPin(null);
     setImages([]);
-    setMessage("Feedback sent. Thank you.");
+    setFormMessage("Feedback sent. Thank you.");
     load(activeEmail.id, { silent: true });
   }
 
@@ -438,60 +452,52 @@ export default function ReviewPage() {
   const itemNoun = kindNoun(activeEmail.kind ?? "email");
 
   return (
-    <div className="app-shell">
+    <div className="app-shell review-page">
       <header className="topbar">
         <Brand />
         <StatusBadge status={campaign.status} />
       </header>
 
       <main className="container container-wide stack">
-        <div>
-          <p className="eyebrow">Review</p>
-          <h1 className="h1">{campaign.title}</h1>
-          <p className="muted" style={{ margin: "8px 0 0" }}>
-            {campaign.client_name ? `${campaign.client_name} · ` : ""}
-            {emails.length} item{emails.length === 1 ? "" : "s"} · Updated{" "}
-            {new Date(campaign.updated_at).toLocaleString()}
+        <div className="rv-hero">
+          <div>
+            <p className="eyebrow">Review</p>
+            <h1 className="h1">{campaign.title}</h1>
+          </div>
+          <p className="rv-meta">
+            {campaign.client_name ? (
+              <>
+                <span>{campaign.client_name}</span>
+                <span className="rv-meta-dot" aria-hidden />
+              </>
+            ) : null}
+            <span>
+              {emails.length} item{emails.length === 1 ? "" : "s"}
+            </span>
+            <span className="rv-meta-dot" aria-hidden />
+            <span>
+              Updated {new Date(campaign.updated_at).toLocaleString()}
+            </span>
           </p>
           {campaign.description ? (
-            <p className="body-text" style={{ marginTop: 10, lineHeight: 1.6 }}>
-              {campaign.description}
-            </p>
+            <p className="rv-hero-desc">{campaign.description}</p>
           ) : null}
         </div>
 
         {emails.length > 1 ? (
-          <div className="card card-pad stack">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <strong>
-                {itemNoun.charAt(0).toUpperCase() + itemNoun.slice(1)}{" "}
-                {activeIndex + 1} of {emails.length}
-              </strong>
-              <div className="row">
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={activeIndex <= 0}
-                  onClick={() => selectEmail(emails[activeIndex - 1].id)}
-                >
-                  Previous
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={activeIndex >= emails.length - 1}
-                  onClick={() => selectEmail(emails[activeIndex + 1].id)}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-            <div className="email-tabs">
+          <div className="card rv-switch">
+            <span className="rv-switch-count">
+              {itemNoun.charAt(0).toUpperCase() + itemNoun.slice(1)}{" "}
+              {activeIndex + 1} of {emails.length}
+            </span>
+            <div className="rv-switch-tabs">
               {emails.map((email, index) => (
                 <button
                   key={email.id}
                   type="button"
                   className={`email-tab ${
                     email.id === activeEmail.id ? "active" : ""
-                  }`}
+                  } ${email.approved_at ? "is-done" : ""}`}
                   onClick={() => selectEmail(email.id)}
                 >
                   <span className="email-tab-num">
@@ -501,56 +507,69 @@ export default function ReviewPage() {
                 </button>
               ))}
             </div>
+            <div className="rv-switch-nav">
+              <button
+                className="rv-step"
+                aria-label={`Previous ${itemNoun}`}
+                disabled={activeIndex <= 0}
+                onClick={() => selectEmail(emails[activeIndex - 1].id)}
+              >
+                ‹
+              </button>
+              <button
+                className="rv-step"
+                aria-label={`Next ${itemNoun}`}
+                disabled={activeIndex >= emails.length - 1}
+                onClick={() => selectEmail(emails[activeIndex + 1].id)}
+              >
+                ›
+              </button>
+            </div>
           </div>
         ) : null}
 
         {locked ? (
-          <div className="card card-pad approve-card is-approved">
-            <strong>This email is approved.</strong>
-            <p className="muted" style={{ margin: "6px 0 0" }}>
-              The email team has been notified. Feedback is closed. You can still
-              view the emails and prior comments.
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="card card-pad approve-card">
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <strong>Ready to approve?</strong>
-                  <p
-                    className="muted"
-                    style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.55 }}
-                  >
-                    This covers every email in the package.
-                  </p>
-                </div>
-                <button
-                  className="btn btn-approve"
-                  onClick={approveEmail}
-                  disabled={approving}
-                >
-                  {approving ? "Sending..." : "Approve and notify email team"}
-                </button>
+          <div className="rv-approve is-approved">
+            <div className="rv-approve-with-check">
+              <span className="rv-approve-check" aria-hidden>
+                ✓
+              </span>
+              <div className="rv-approve-copy">
+                <span className="rv-approve-title">This campaign is approved.</span>
+                <p className="rv-approve-sub">
+                  The email team has been notified and feedback is now closed.
+                  You can still read every item and all prior comments.
+                </p>
               </div>
             </div>
-          </>
+          </div>
+        ) : (
+          <div className="rv-approve">
+            <div className="rv-approve-copy">
+              <span className="rv-approve-title">Ready to approve?</span>
+              <p className="rv-approve-sub">
+                This covers every item in the package.
+              </p>
+            </div>
+            <button
+              className="btn btn-approve"
+              onClick={approveEmail}
+              disabled={approving}
+            >
+              {approving ? "Sending..." : "Approve and notify email team"}
+            </button>
+          </div>
         )}
-        {message ? <p className="success">{message}</p> : null}
-        {error && campaign ? <p className="error">{error}</p> : null}
+
+        {message ? <p className="rv-notice rv-notice-ok">{message}</p> : null}
+        {error ? <p className="rv-notice rv-notice-bad">{error}</p> : null}
 
         <div className="split-review">
           <div className="stack">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
+            <div className="rv-asset-head">
               <h2 className="h2">{activeEmail.title}</h2>
               {activeEmail.approved_at ? (
-                <span
-                  className="row"
-                  style={{ gap: 8, alignItems: "center" }}
-                >
+                <div className="rv-asset-actions">
                   <span className="badge badge-approved">Approved</span>
                   <button
                     className="btn btn-secondary btn-sm"
@@ -559,36 +578,43 @@ export default function ReviewPage() {
                   >
                     Undo
                   </button>
-                </span>
+                </div>
               ) : !locked ? (
-                <button
-                  className="btn btn-approve btn-sm"
-                  onClick={() => approveOneEmail(activeEmail.id)}
-                  disabled={approving}
-                >
-                  Approve this {itemNoun}
-                </button>
+                <div className="rv-asset-actions">
+                  <button
+                    className="btn btn-approve btn-sm"
+                    onClick={() => approveOneEmail(activeEmail.id)}
+                    disabled={approving}
+                  >
+                    Approve this {itemNoun}
+                  </button>
+                </div>
               ) : null}
             </div>
+
             {!locked ? (
-              <div className="toolbar">
-                <button
-                  className={`tab ${mode === "general" ? "active" : ""}`}
-                  onClick={() => {
-                    setMode("general");
-                    setPendingPin(null);
-                  }}
-                >
-                  General comment
-                </button>
-                <button
-                  className={`tab ${mode === "pin" ? "active" : ""}`}
-                  onClick={() => setMode("pin")}
-                >
-                  Pin on {itemNoun}
-                </button>
+              <div className="rv-modebar">
+                <div className="rv-segment">
+                  <button
+                    type="button"
+                    className={mode === "general" ? "active" : ""}
+                    onClick={() => {
+                      setMode("general");
+                      setPendingPin(null);
+                    }}
+                  >
+                    General comment
+                  </button>
+                  <button
+                    type="button"
+                    className={mode === "pin" ? "active" : ""}
+                    onClick={() => setMode("pin")}
+                  >
+                    Pin on {itemNoun}
+                  </button>
+                </div>
                 {mode === "pin" ? (
-                  <span className="muted" style={{ fontSize: 13 }}>
+                  <span className={`rv-hint ${pendingPin ? "is-ready" : ""}`}>
                     {pendingPin
                       ? "Pin placed. Write your note on the right."
                       : `Click anywhere on the ${itemNoun} to drop a pin.`}
@@ -619,15 +645,16 @@ export default function ReviewPage() {
               onPlacePin={(x, y) => setPendingPin({ x, y })}
               onSelectPin={setActivePinId}
             />
+
             {activeEmail.subjects && activeEmail.subjects.length > 0 ? (
               <div className="card card-pad stack">
-                <h2 className="h2" style={{ margin: 0 }}>
-                  Pick a subject line
-                </h2>
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                  Choose the subject line and preview text you want to send.
-                  {locked ? "" : " Tap one to select it."}
-                </p>
+                <div>
+                  <h2 className="h2">Pick a subject line</h2>
+                  <p className="rv-form-sub">
+                    Choose the subject line and preview text you want to send.
+                    {locked ? "" : " Tap one to select it."}
+                  </p>
+                </div>
                 <div className="subject-options">
                   {activeEmail.subjects.map((s) => {
                     const chosen = activeEmail.chosen_subject_id === s.id;
@@ -658,18 +685,22 @@ export default function ReviewPage() {
                 </div>
               </div>
             ) : null}
+
             <EmailLinks html={activeDoc.html} />
           </div>
 
-          <div className="stack">
+          <div className="rv-rail">
             {!locked ? (
               <form className="card card-pad stack" onSubmit={submitComment}>
-                <h2 className="h2">
-                  {mode === "pin" ? "Pinned feedback" : "General feedback"}
-                </h2>
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                  Commenting on: <strong>{activeEmail.title}</strong>
-                </p>
+                <div>
+                  <h2 className="h2">
+                    {mode === "pin" ? "Pinned feedback" : "General feedback"}
+                  </h2>
+                  <p className="rv-form-sub">
+                    Commenting on <strong>{activeEmail.title}</strong>
+                  </p>
+                </div>
+
                 <div className="field">
                   <label htmlFor="name">Your name</label>
                   <input
@@ -679,6 +710,7 @@ export default function ReviewPage() {
                     placeholder="Boss / Client name"
                   />
                 </div>
+
                 <div className="field">
                   <label htmlFor="body">Comment</label>
                   <textarea
@@ -696,55 +728,21 @@ export default function ReviewPage() {
                 <div className="field">
                   <label>
                     Attach images{" "}
-                    <span className="muted" style={{ fontWeight: 400 }}>
+                    <span className="rv-label-note">
                       (optional, up to {MAX_IMAGES})
                     </span>
                   </label>
                   {images.length > 0 ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 8,
-                        marginBottom: 8,
-                      }}
-                    >
+                    <div className="rv-thumbs">
                       {images.map((img) => (
-                        <div
-                          key={img.id}
-                          style={{ position: "relative", lineHeight: 0 }}
-                        >
+                        <div key={img.id} className="rv-thumb">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={img.dataUrl}
-                            alt="attachment preview"
-                            style={{
-                              width: 72,
-                              height: 72,
-                              objectFit: "cover",
-                              borderRadius: 8,
-                              border: "1px solid #e5e7eb",
-                            }}
-                          />
+                          <img src={img.dataUrl} alt="attachment preview" />
                           <button
                             type="button"
+                            className="rv-thumb-x"
                             onClick={() => removeImage(img.id)}
                             aria-label="Remove image"
-                            style={{
-                              position: "absolute",
-                              top: -8,
-                              right: -8,
-                              width: 22,
-                              height: 22,
-                              borderRadius: "50%",
-                              border: "none",
-                              background: "#111827",
-                              color: "#fff",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              lineHeight: "22px",
-                              padding: 0,
-                            }}
                           >
                             ×
                           </button>
@@ -753,25 +751,35 @@ export default function ReviewPage() {
                     </div>
                   ) : null}
                   {images.length < MAX_IMAGES ? (
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      disabled={imgBusy}
-                      onChange={(e) => {
-                        addFiles(e.target.files);
-                        e.target.value = "";
-                      }}
-                    />
-                  ) : null}
-                  {imgBusy ? (
-                    <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-                      Processing images...
-                    </p>
+                    <label
+                      className={`rv-filepick ${imgBusy ? "is-busy" : ""}`}
+                    >
+                      {imgBusy
+                        ? "Processing images..."
+                        : images.length > 0
+                          ? "Add another image"
+                          : "Choose images"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={imgBusy}
+                        onChange={(e) => {
+                          addFiles(e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
                   ) : null}
                 </div>
-                {error ? <p className="error">{error}</p> : null}
-                {message ? <p className="success">{message}</p> : null}
+
+                {formError ? (
+                  <p className="rv-notice rv-notice-bad">{formError}</p>
+                ) : null}
+                {formMessage ? (
+                  <p className="rv-notice rv-notice-ok">{formMessage}</p>
+                ) : null}
+
                 <button
                   className="btn"
                   type="submit"
@@ -788,121 +796,123 @@ export default function ReviewPage() {
                 <div className="empty">No comments on this {itemNoun} yet.</div>
               ) : (
                 <div className="comment-list">
-                  {emailComments.map((c) => (
-                    <div
-                      key={c.id}
-                      className={`comment-card ${c.resolved ? "resolved" : ""} ${
-                        activePinId === c.id ? "active" : ""
-                      }`}
-                      onClick={() => c.type === "inline" && setActivePinId(c.id)}
-                      style={{
-                        cursor: c.type === "inline" ? "pointer" : "default",
-                      }}
-                    >
-                      <div className="comment-head">
-                        <span>
-                          {c.author_name}
-                          {c.type === "inline"
-                            ? ` · Pin ${
-                                inlinePins.findIndex((p) => p.id === c.id) + 1
-                              }`
-                            : " · General"}
-                          {c.resolved ? " · Resolved" : ""}
-                        </span>
-                        <span>{new Date(c.created_at).toLocaleString()}</span>
-                      </div>
-                      {c.body ? (
-                        <div className="comment-body">{c.body}</div>
-                      ) : null}
-                      {c.attachments && c.attachments.length > 0 ? (
-                        <div
-                          style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 8,
-                            marginTop: 8,
-                          }}
-                        >
-                          {c.attachments.map((a) => (
-                            <a
-                              key={a.id}
-                              href={`/api/attachments/${a.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              style={{ lineHeight: 0 }}
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={`/api/attachments/${a.id}`}
-                                alt="feedback attachment"
-                                style={{
-                                  width: 96,
-                                  height: 96,
-                                  objectFit: "cover",
-                                  borderRadius: 8,
-                                  border: "1px solid #e5e7eb",
-                                }}
-                              />
-                            </a>
-                          ))}
+                  {emailComments.map((c) => {
+                    const pinNumber =
+                      c.type === "inline"
+                        ? inlinePins.findIndex((p) => p.id === c.id) + 1
+                        : 0;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`comment-card ${c.resolved ? "resolved" : ""} ${
+                          activePinId === c.id ? "active" : ""
+                        } ${c.type === "inline" ? "is-pinned" : ""}`}
+                        onClick={() =>
+                          c.type === "inline" && setActivePinId(c.id)
+                        }
+                      >
+                        <div className="rv-comment-head">
+                          <span className="rv-avatar" aria-hidden>
+                            {initials(c.author_name)}
+                          </span>
+                          <span className="rv-comment-who">
+                            <span className="rv-comment-name">
+                              {c.author_name}
+                            </span>
+                            <span className="rv-comment-when">
+                              {new Date(c.created_at).toLocaleString()}
+                            </span>
+                          </span>
+                          {c.resolved ? (
+                            <span className="rv-chip is-resolved">Resolved</span>
+                          ) : c.type === "inline" ? (
+                            <span className="rv-chip is-pin">
+                              Pin {pinNumber}
+                            </span>
+                          ) : (
+                            <span className="rv-chip">General</span>
+                          )}
                         </div>
-                      ) : null}
 
-                      {c.replies && c.replies.length > 0 ? (
-                        <div className="reply-thread">
-                          {c.replies.map((r) => (
-                            <div
-                              key={r.id}
-                              className={`reply ${r.is_admin ? "reply-admin" : ""}`}
-                            >
-                              <div className="reply-head">
-                                {r.author_name}
-                                {r.is_admin ? " · Team" : ""} ·{" "}
-                                {new Date(r.created_at).toLocaleString()}
+                        {c.body ? (
+                          <div className="comment-body">{c.body}</div>
+                        ) : null}
+
+                        {c.attachments && c.attachments.length > 0 ? (
+                          <div className="rv-attachments">
+                            {c.attachments.map((a) => (
+                              <a
+                                key={a.id}
+                                href={`/api/attachments/${a.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`/api/attachments/${a.id}`}
+                                  alt="feedback attachment"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {c.replies && c.replies.length > 0 ? (
+                          <div className="reply-thread">
+                            {c.replies.map((r) => (
+                              <div
+                                key={r.id}
+                                className={`reply ${r.is_admin ? "reply-admin" : ""}`}
+                              >
+                                <div className="reply-head">
+                                  {r.author_name}
+                                  {r.is_admin ? " · Team" : ""} ·{" "}
+                                  {new Date(r.created_at).toLocaleString()}
+                                </div>
+                                <div className="reply-body">{r.body}</div>
                               </div>
-                              <div className="reply-body">{r.body}</div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
+                            ))}
+                          </div>
+                        ) : null}
 
-                      {!locked ? (
-                        <div
-                          className="reply-form"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            value={replyDrafts[c.id] || ""}
-                            onChange={(e) =>
-                              setReplyDrafts((prev) => ({
-                                ...prev,
-                                [c.id]: e.target.value,
-                              }))
-                            }
-                            placeholder="Reply..."
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                submitReply(c.id);
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            disabled={
-                              replyingId === c.id ||
-                              !(replyDrafts[c.id] || "").trim()
-                            }
-                            onClick={() => submitReply(c.id)}
+                        {!locked ? (
+                          <div
+                            className="reply-form"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            {replyingId === c.id ? "..." : "Reply"}
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                            <input
+                              value={replyDrafts[c.id] || ""}
+                              onChange={(e) =>
+                                setReplyDrafts((prev) => ({
+                                  ...prev,
+                                  [c.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Reply..."
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  submitReply(c.id);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              disabled={
+                                replyingId === c.id ||
+                                !(replyDrafts[c.id] || "").trim()
+                              }
+                              onClick={() => submitReply(c.id)}
+                            >
+                              {replyingId === c.id ? "..." : "Reply"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
