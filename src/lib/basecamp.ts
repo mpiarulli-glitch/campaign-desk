@@ -333,6 +333,7 @@ interface BcCard {
   app_url?: string;
   url?: string;
   assignees?: Array<{ id: number }>;
+  parent?: { id: number; type?: string };
 }
 
 function normalizedLabel(value: string): string {
@@ -340,6 +341,48 @@ function normalizedLabel(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// Client approvals always belong on the project's Deliverables card table.
+// Projects carry several boards (videos, Empire Blueprint, Proof, Inbound and
+// so on), so match the Deliverables board by title rather than taking whichever
+// board happens to sit first in the dock. Live titles are "Deliverables",
+// "Approvals / Deliverables" and "DELIVERABLES ", so normalize before matching.
+// "Deliverable Templates" is the snapshot source board and is never a target.
+export function findDeliverablesTables(
+  dock: Array<{ id: number; name: string; title?: string; enabled?: boolean }>
+): Array<{ id: number; title: string }> {
+  return dock
+    .filter((entry) => entry.name === "kanban_board" && entry.enabled !== false)
+    .map((entry) => ({
+      table: { id: entry.id, title: entry.title || "" },
+      label: normalizedLabel(entry.title || ""),
+    }))
+    .filter(
+      (entry) =>
+        entry.label.includes("deliverable") && !entry.label.includes("template")
+    )
+    .map((entry) => {
+      // Prefer a plain "Deliverables" board over a combined title if a project
+      // somehow has both.
+      const rank =
+        entry.label === "deliverables" || entry.label === "deliverable" ? 0 : 1;
+      return { table: entry.table, rank };
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .map((entry) => entry.table);
+}
+
+function findNeedsApprovalColumn(
+  lists: Array<{ id: number; title: string }>
+): { id: number; title: string } | undefined {
+  return lists.find((list) => {
+    const label = normalizedLabel(list.title);
+    return (
+      label === "needs approval" ||
+      (label.includes("needs") && label.includes("approval"))
+    );
+  });
 }
 
 // Send the approved client-review message to the client's Deliverables card
@@ -370,27 +413,46 @@ export async function sendApprovalToDeliverables(input: {
       title?: string;
       enabled?: boolean;
     }> = project.dock || [];
-    const tool = dock.find(
-      (entry) => entry.name === "kanban_board" && entry.enabled !== false
-    );
-    if (!tool) {
-      return { ok: false, error: "This Basecamp project has no active card table." };
-    }
-
-    const tableRes = await bc(`/card_tables/${tool.id}.json`);
-    if (!tableRes.ok) {
-      return { ok: false, error: `Deliverables lookup failed (${tableRes.status}).` };
-    }
-    const table = await tableRes.json();
-    const lists: Array<{ id: number; title: string }> = table.lists || [];
-    const needsApproval = lists.find((list) => {
-      const label = normalizedLabel(list.title);
-      return label === "needs approval" || (label.includes("needs") && label.includes("approval"));
-    });
-    if (!needsApproval) {
+    const candidates = findDeliverablesTables(dock);
+    if (!candidates.length) {
       return {
         ok: false,
-        error: "The Basecamp Deliverables card table has no Needs Approval column.",
+        error:
+          "This Basecamp project has no Deliverables card table. Client approvals only post there.",
+      };
+    }
+
+    let needsApproval: { id: number; title: string } | undefined;
+    let tableColumnIds: number[] = [];
+    const checked: string[] = [];
+    let lastStatus = 0;
+    for (const candidate of candidates) {
+      const tableRes = await bc(`/card_tables/${candidate.id}.json`);
+      if (!tableRes.ok) {
+        lastStatus = tableRes.status;
+        continue;
+      }
+      const table = await tableRes.json();
+      const lists: Array<{ id: number; title: string }> = table.lists || [];
+      const label = candidate.title.trim() || `table ${candidate.id}`;
+      checked.push(label);
+      needsApproval = findNeedsApprovalColumn(lists);
+      if (needsApproval) {
+        tableColumnIds = lists.map((list) => list.id);
+        break;
+      }
+    }
+
+    if (!needsApproval) {
+      if (!checked.length) {
+        return {
+          ok: false,
+          error: `Deliverables card table lookup failed (${lastStatus || "not readable"}).`,
+        };
+      }
+      return {
+        ok: false,
+        error: `The ${checked.join(" and ")} card table has no Needs Approval column.`,
       };
     }
 
@@ -410,6 +472,13 @@ export async function sendApprovalToDeliverables(input: {
       const cardRes = await bc(`/card_tables/cards/${input.existingCardId}.json`);
       if (cardRes.ok) {
         card = (await cardRes.json()) as BcCard;
+        // Earlier sends could land a card on the wrong board, and Basecamp
+        // cannot move a card between card tables. If the stored card is not in
+        // this Deliverables table, abandon it and create a fresh card.
+        const parentId = card?.parent?.id;
+        if (parentId && !tableColumnIds.includes(parentId)) {
+          card = null;
+        }
       } else if (cardRes.status !== 404) {
         return {
           ok: false,

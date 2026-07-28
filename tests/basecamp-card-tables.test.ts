@@ -1,0 +1,103 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { findDeliverablesTables } from "../src/lib/basecamp";
+
+// Client approvals must always land on the Deliverables card table. Projects
+// carry several boards, and the Deliverables board is rarely first in the dock,
+// which used to make the approval send read the video board and report a
+// missing Needs Approval column.
+const topNotchDock = [
+  { id: 6820650130, name: "kanban_board", title: "Video Card Table", enabled: true },
+  { id: 8443351619, name: "kanban_board", title: "Deliverables", enabled: true },
+  { id: 8443352029, name: "kanban_board", title: "Deliverable Templates", enabled: true },
+  { id: 1111, name: "message_board", title: "Message Board", enabled: true },
+];
+
+// The Growth OS snapshot layout, where the board is named "Approvals /
+// Deliverables" and sits among six other boards.
+const growthOsDock = [
+  { id: 10007065363, name: "kanban_board", title: "VIDEOS", enabled: true },
+  { id: 10007065491, name: "kanban_board", title: "Approvals / Deliverables", enabled: true },
+  { id: 10007065526, name: "kanban_board", title: "Deliverable Templates", enabled: true },
+  { id: 10007065666, name: "kanban_board", title: "Empire Blueprint", enabled: true },
+  { id: 10007065787, name: "kanban_board", title: "Proof", enabled: true },
+  { id: 10007065809, name: "kanban_board", title: "Inbound", enabled: true },
+  { id: 10007065824, name: "kanban_board", title: "Revenue", enabled: true },
+  { id: 10007065861, name: "kanban_board", title: "Expansion", enabled: true },
+];
+
+test("picks Deliverables even when another board is first in the dock", () => {
+  const found = findDeliverablesTables(topNotchDock);
+  assert.deepEqual(
+    found.map((table) => table.id),
+    [8443351619]
+  );
+});
+
+test("matches the Approvals / Deliverables title used by Growth OS projects", () => {
+  const found = findDeliverablesTables(growthOsDock);
+  assert.deepEqual(
+    found.map((table) => table.id),
+    [10007065491]
+  );
+});
+
+test("matches an all caps title with a trailing space", () => {
+  const found = findDeliverablesTables([
+    { id: 6128826896, name: "kanban_board", title: "VIDEOS", enabled: true },
+    { id: 9671327153, name: "kanban_board", title: "DELIVERABLES ", enabled: true },
+  ]);
+  assert.deepEqual(
+    found.map((table) => table.id),
+    [9671327153]
+  );
+});
+
+test("Deliverable Templates is never a target", () => {
+  for (const dock of [topNotchDock, growthOsDock]) {
+    const found = findDeliverablesTables(dock);
+    assert.equal(
+      found.some((table) => /template/i.test(table.title)),
+      false
+    );
+  }
+});
+
+test("unrelated boards are never a fallback", () => {
+  const found = findDeliverablesTables([
+    { id: 1, name: "kanban_board", title: "VIDEOS", enabled: true },
+    { id: 2, name: "kanban_board", title: "Proof", enabled: true },
+    { id: 3, name: "kanban_board", title: "SEO Approvals", enabled: true },
+  ]);
+  assert.deepEqual(found, []);
+});
+
+test("non card table dock entries are ignored", () => {
+  const found = findDeliverablesTables(topNotchDock);
+  assert.equal(
+    found.some((table) => table.id === 1111),
+    false
+  );
+});
+
+test("disabled boards are skipped", () => {
+  const found = findDeliverablesTables([
+    { id: 5, name: "kanban_board", title: "Deliverables", enabled: false },
+    { id: 6, name: "kanban_board", title: "Approvals / Deliverables", enabled: true },
+  ]);
+  assert.deepEqual(
+    found.map((table) => table.id),
+    [6]
+  );
+});
+
+test("a plain Deliverables board outranks a combined title", () => {
+  const found = findDeliverablesTables([
+    { id: 8, name: "kanban_board", title: "Approvals / Deliverables", enabled: true },
+    { id: 9, name: "kanban_board", title: "Deliverables", enabled: true },
+  ]);
+  assert.deepEqual(
+    found.map((table) => table.id),
+    [9, 8]
+  );
+});
