@@ -182,6 +182,8 @@ export interface BcPerson {
   id: number;
   name: string;
   email_address: string;
+  client?: boolean;
+  employee?: boolean;
   // Used to @-mention this person inline in rich text content
   // (<bc-attachment sgid="...">). Absent for some system/bot accounts.
   attachable_sgid?: string;
@@ -199,6 +201,8 @@ export async function getProjectPeople(projectId: string): Promise<BcPerson[]> {
     id: p.id,
     name: p.name || "",
     email_address: p.email_address || "",
+    client: Boolean(p.client),
+    employee: Boolean(p.employee),
     attachable_sgid: p.attachable_sgid || undefined,
   }));
 }
@@ -309,6 +313,194 @@ export async function createScheduleCard(
       if (upd.ok && assigneeIds) assigned = assigneeIds.length;
     }
     return { ok: true, url: card.app_url || card.url, assigned };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+export interface ApprovalDeliveryResult {
+  ok: boolean;
+  error?: string;
+  cardId?: string;
+  cardUrl?: string;
+  recipientName?: string;
+  created?: boolean;
+}
+
+interface BcCard {
+  id: number;
+  title: string;
+  app_url?: string;
+  url?: string;
+  assignees?: Array<{ id: number }>;
+}
+
+function normalizedLabel(value: string): string {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Send the approved client-review message to the client's Deliverables card
+// table. The first send creates a card directly in Needs Approval. Later sends
+// reuse that card, move it back to Needs Approval, and add the message as a
+// comment. The client POC is assigned before a comment is posted so Basecamp
+// routes the notification to the right person.
+export async function sendApprovalToDeliverables(input: {
+  projectId: string;
+  campaignTitle: string;
+  contentHtml: string;
+  recipientIdentifiers: string[];
+  existingCardId?: string | null;
+}): Promise<ApprovalDeliveryResult> {
+  if (!input.projectId) {
+    return { ok: false, error: "No Basecamp project set for this client." };
+  }
+
+  try {
+    const projectRes = await bc(`/projects/${input.projectId}.json`);
+    if (!projectRes.ok) {
+      return { ok: false, error: `Basecamp project lookup failed (${projectRes.status}).` };
+    }
+    const project = await projectRes.json();
+    const dock: Array<{
+      id: number;
+      name: string;
+      title?: string;
+      enabled?: boolean;
+    }> = project.dock || [];
+    const tool = dock.find(
+      (entry) => entry.name === "kanban_board" && entry.enabled !== false
+    );
+    if (!tool) {
+      return { ok: false, error: "This Basecamp project has no active card table." };
+    }
+
+    const tableRes = await bc(`/card_tables/${tool.id}.json`);
+    if (!tableRes.ok) {
+      return { ok: false, error: `Deliverables lookup failed (${tableRes.status}).` };
+    }
+    const table = await tableRes.json();
+    const lists: Array<{ id: number; title: string }> = table.lists || [];
+    const needsApproval = lists.find((list) => {
+      const label = normalizedLabel(list.title);
+      return label === "needs approval" || (label.includes("needs") && label.includes("approval"));
+    });
+    if (!needsApproval) {
+      return {
+        ok: false,
+        error: "The Basecamp Deliverables card table has no Needs Approval column.",
+      };
+    }
+
+    const people = await getProjectPeople(input.projectId);
+    const matchedIds = matchPeople(people, input.recipientIdentifiers);
+    const recipient = people.find((person) => person.id === matchedIds[0]);
+    if (!recipient) {
+      return {
+        ok: false,
+        error:
+          "Could not match this account's contact or POC to a person in the Basecamp project.",
+      };
+    }
+
+    let card: BcCard | null = null;
+    if (input.existingCardId) {
+      const cardRes = await bc(`/card_tables/cards/${input.existingCardId}.json`);
+      if (cardRes.ok) {
+        card = (await cardRes.json()) as BcCard;
+      } else if (cardRes.status !== 404) {
+        return {
+          ok: false,
+          error: `Existing Deliverables card lookup failed (${cardRes.status}).`,
+        };
+      }
+    }
+
+    if (card) {
+      const moveRes = await bc(`/card_tables/cards/${card.id}/moves.json`, {
+        method: "POST",
+        body: JSON.stringify({ column_id: needsApproval.id, position: 1 }),
+      });
+      if (!moveRes.ok) {
+        return { ok: false, error: `Could not move the card (${moveRes.status}).` };
+      }
+
+      const assigneeIds = Array.from(
+        new Set([...(card.assignees || []).map((person) => person.id), recipient.id])
+      );
+      const assignRes = await bc(`/card_tables/cards/${card.id}.json`, {
+        method: "PUT",
+        body: JSON.stringify({ assignee_ids: assigneeIds }),
+      });
+      if (!assignRes.ok) {
+        return {
+          ok: false,
+          error: `The card moved, but the client contact could not be assigned (${assignRes.status}).`,
+          cardId: String(card.id),
+          cardUrl: card.app_url || card.url,
+          recipientName: recipient.name,
+        };
+      }
+
+      const commentRes = await bc(`/recordings/${card.id}/comments.json`, {
+        method: "POST",
+        body: JSON.stringify({ content: input.contentHtml }),
+      });
+      if (!commentRes.ok) {
+        return {
+          ok: false,
+          error: `The card moved, but the approval message could not be posted (${commentRes.status}).`,
+          cardId: String(card.id),
+          cardUrl: card.app_url || card.url,
+          recipientName: recipient.name,
+        };
+      }
+
+      return {
+        ok: true,
+        cardId: String(card.id),
+        cardUrl: card.app_url || card.url,
+        recipientName: recipient.name,
+        created: false,
+      };
+    }
+
+    const createRes = await bc(`/card_tables/lists/${needsApproval.id}/cards.json`, {
+      method: "POST",
+      body: JSON.stringify({
+        title: input.campaignTitle,
+        content: input.contentHtml,
+        notify: true,
+      }),
+    });
+    if (!createRes.ok) {
+      return { ok: false, error: `Could not create the approval card (${createRes.status}).` };
+    }
+    const created = (await createRes.json()) as BcCard;
+
+    const assignRes = await bc(`/card_tables/cards/${created.id}.json`, {
+      method: "PUT",
+      body: JSON.stringify({ assignee_ids: [recipient.id] }),
+    });
+    if (!assignRes.ok) {
+      return {
+        ok: false,
+        error: `The card was created, but the client contact could not be assigned (${assignRes.status}).`,
+        cardId: String(created.id),
+        cardUrl: created.app_url || created.url,
+        recipientName: recipient.name,
+      };
+    }
+
+    return {
+      ok: true,
+      cardId: String(created.id),
+      cardUrl: created.app_url || created.url,
+      recipientName: recipient.name,
+      created: true,
+    };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
