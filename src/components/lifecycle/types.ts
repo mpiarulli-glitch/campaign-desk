@@ -139,25 +139,36 @@ export interface ClientRef {
   name: string;
 }
 
-export interface GhlAutomationRow {
+export interface GhlWorkflowRow {
   id: string;
   name: string;
-  clientId: string;
-  clientName: string;
-  locationId: string;
   status: string;
   live: boolean;
   updatedAt: string;
+}
+
+export interface GhlAccountRow {
+  locationId: string;
+  name: string;
+  clientId: string | null;
+  workflows: GhlWorkflowRow[];
+  live: number;
+  error?: string;
 }
 
 export interface GhlSection {
   configured: boolean;
   error: string | null;
   fetchedAt: string | null;
-  workflows: GhlAutomationRow[];
-  live: number;
-  failures: Array<{ clientName: string; error: string }>;
-  emptyClients: string[];
+  accounts: GhlAccountRow[];
+  totals: {
+    accounts: number;
+    accountsWithWorkflows: number;
+    accountsWithLive: number;
+    workflows: number;
+    live: number;
+  };
+  failures: Array<{ name: string; error: string }>;
 }
 
 export interface LifecycleDashboard {

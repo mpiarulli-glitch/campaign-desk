@@ -242,63 +242,72 @@ export async function buildLinkedInSection(force = false): Promise<LinkedInSecti
 
 /* ------------------------------------------------------------ GHL section */
 
-export interface GhlAutomationRow {
+export interface GhlWorkflowRow {
   id: string;
   name: string;
-  clientId: string;
-  clientName: string;
-  locationId: string;
-  /** GHL's own status. "published" is the only one that actually fires. */
   status: string;
+  /** Only "published" actually fires. */
   live: boolean;
   updatedAt: string;
+}
+
+export interface GhlAccountRow {
+  locationId: string;
+  /** The subaccount name as GoHighLevel has it. */
+  name: string;
+  /** Matching Campaign Desk client, when we have one. Null is normal. */
+  clientId: string | null;
+  workflows: GhlWorkflowRow[];
+  live: number;
+  error?: string;
 }
 
 export interface GhlSection {
   configured: boolean;
   error: string | null;
   fetchedAt: string | null;
-  workflows: GhlAutomationRow[];
-  live: number;
-  /** Clients with a GHL location that returned an error. */
-  failures: Array<{ clientName: string; error: string }>;
-  /** Clients on GHL that have no workflows at all. */
-  emptyClients: string[];
+  accounts: GhlAccountRow[];
+  totals: {
+    accounts: number;
+    accountsWithWorkflows: number;
+    accountsWithLive: number;
+    workflows: number;
+    live: number;
+  };
+  failures: Array<{ name: string; error: string }>;
 }
 
 const EMPTY_GHL: GhlSection = {
   configured: false,
   error: null,
   fetchedAt: null,
-  workflows: [],
-  live: 0,
+  accounts: [],
+  totals: { accounts: 0, accountsWithWorkflows: 0, accountsWithLive: 0, workflows: 0, live: 0 },
   failures: [],
-  emptyClients: [],
 };
 
+/** Loose name match so a GHL subaccount lines up with our client record. */
+function normaliseName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 /**
- * Live automations straight out of GoHighLevel, matched to clients through
- * `rev_clients.ghl_location_id`. This is read-only: GHL owns these, so they
- * are never written into `lifecycle_automations` where they could drift.
+ * Every automation switched on across the whole GoHighLevel agency.
+ *
+ * Deliberately not limited to clients we have in Campaign Desk: the question
+ * is "what is running out there", and subaccounts nobody has mapped yet are
+ * exactly the ones worth seeing. Where a client does match, by location ID
+ * first and then by name, it is linked so the account report can use it.
+ *
+ * Read-only. GHL owns these records, so they are never copied into
+ * lifecycle_automations where the two could drift apart.
  */
 export async function buildGhlSection(force = false): Promise<GhlSection> {
   if (!isGhlConfigured()) return { ...EMPTY_GHL };
 
-  const targets = listRevClients(true)
-    .filter((c) => c.ghl_location_id?.trim())
-    .map((c) => ({
-      locationId: c.ghl_location_id.trim(),
-      clientId: c.id,
-      clientName: c.name,
-    }));
-
-  if (targets.length === 0) {
-    return { ...EMPTY_GHL, configured: true };
-  }
-
-  let sweep;
+  let data;
   try {
-    sweep = await sweepWorkflows(targets, force);
+    data = await sweepWorkflows(force);
   } catch (err) {
     return {
       ...EMPTY_GHL,
@@ -307,48 +316,57 @@ export async function buildGhlSection(force = false): Promise<GhlSection> {
     };
   }
 
-  const workflows: GhlAutomationRow[] = [];
-  const failures: Array<{ clientName: string; error: string }> = [];
-  const emptyClients: string[] = [];
+  const clients = listRevClients(true);
+  const byLocation = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const c of clients) {
+    if (c.ghl_location_id?.trim()) byLocation.set(c.ghl_location_id.trim(), c.id);
+    byName.set(normaliseName(c.name), c.id);
+  }
 
-  for (const loc of sweep.locations) {
-    if (loc.error) {
-      failures.push({ clientName: loc.clientName, error: loc.error });
-      continue;
-    }
-    if (loc.workflows.length === 0) {
-      emptyClients.push(loc.clientName);
-      continue;
-    }
-    for (const w of loc.workflows) {
-      workflows.push({
-        id: `${loc.locationId}:${w.id}`,
+  const accounts: GhlAccountRow[] = data.locations.map((loc) => {
+    const workflows: GhlWorkflowRow[] = loc.workflows
+      .map((w) => ({
+        id: w.id,
         name: w.name,
-        clientId: loc.clientId,
-        clientName: loc.clientName,
-        locationId: loc.locationId,
         status: w.status,
         live: w.status === "published",
         updatedAt: w.updatedAt,
-      });
-    }
-  }
+      }))
+      .sort((a, b) => Number(b.live) - Number(a.live) || a.name.localeCompare(b.name));
 
-  workflows.sort(
-    (a, b) =>
-      Number(b.live) - Number(a.live) ||
-      a.clientName.localeCompare(b.clientName) ||
-      a.name.localeCompare(b.name)
+    return {
+      locationId: loc.locationId,
+      name: loc.locationName,
+      clientId:
+        byLocation.get(loc.locationId) ?? byName.get(normaliseName(loc.locationName)) ?? null,
+      workflows,
+      live: workflows.filter((w) => w.live).length,
+      error: loc.error,
+    };
+  });
+
+  // Busiest accounts first: the ones with live automations are the ones with
+  // something to go wrong.
+  accounts.sort(
+    (a, b) => b.live - a.live || b.workflows.length - a.workflows.length || a.name.localeCompare(b.name)
   );
 
   return {
     configured: true,
     error: null,
-    fetchedAt: sweep.fetchedAt,
-    workflows,
-    live: workflows.filter((w) => w.live).length,
-    failures,
-    emptyClients,
+    fetchedAt: data.fetchedAt,
+    accounts,
+    totals: {
+      accounts: accounts.length,
+      accountsWithWorkflows: accounts.filter((a) => a.workflows.length > 0).length,
+      accountsWithLive: accounts.filter((a) => a.live > 0).length,
+      workflows: accounts.reduce((n, a) => n + a.workflows.length, 0),
+      live: accounts.reduce((n, a) => n + a.live, 0),
+    },
+    failures: accounts
+      .filter((a) => a.error)
+      .map((a) => ({ name: a.name, error: a.error as string })),
   };
 }
 
@@ -414,7 +432,7 @@ export async function buildLifecycleDashboard(force = false): Promise<LifecycleD
       linkedInLive: linkedIn.campaigns.filter((c) => c.isActive).length,
       campaignsNeedingRefresh: linkedIn.needsRefresh.length,
       brokenSeats: linkedIn.brokenSeats,
-      ghlLive: ghl.live,
+      ghlLive: ghl.totals.live,
     },
   };
 }

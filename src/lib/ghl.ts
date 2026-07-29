@@ -27,7 +27,59 @@ const API_VERSION = process.env.GHL_API_VERSION || "2021-07-28";
 const TOKEN_KEY = "ghl_tokens";
 const REQUEST_TIMEOUT_MS = 25_000;
 const WORKFLOW_CACHE_TTL_MS = 10 * 60 * 1000;
+
+// A full sweep is 2 requests per location (mint a token, then read workflows),
+// so ~300 requests across 150 subaccounts. GHL rate limits hard: at
+// concurrency 8 with no backoff, a third of the accounts came back 429 and
+// were silently reported as failures. Modest concurrency plus real backoff
+// gets the whole agency read cleanly, just a little slower.
 const CONCURRENCY = 4;
+const MAX_RETRIES = 4;
+
+/** Sleep helper for backoff. */
+function wait(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * fetch that retries on 429 and 5xx.
+ *
+ * Honours `Retry-After` when GHL sends it, otherwise backs off exponentially
+ * with jitter so parallel workers don't all wake at the same instant and
+ * re-trigger the limit.
+ */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastRes: Response | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+    } catch (err) {
+      clearTimeout(timer);
+      const why = err instanceof Error && err.name === "AbortError" ? "timed out" : "network error";
+      if (attempt === MAX_RETRIES) throw new GhlError(`GoHighLevel request ${why}`);
+      await wait(500 * 2 ** attempt + Math.random() * 250);
+      continue;
+    }
+    clearTimeout(timer);
+
+    if (res.status !== 429 && res.status < 500) return res;
+
+    lastRes = res;
+    if (attempt === MAX_RETRIES) break;
+
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    const backoff = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter, 30) * 1000
+      : Math.min(800 * 2 ** attempt, 8000);
+    await wait(backoff + Math.random() * 400);
+  }
+
+  return lastRes as Response;
+}
 
 export class GhlError extends Error {
   constructor(
@@ -221,7 +273,7 @@ export async function getLocationToken(locationId: string): Promise<string> {
   if (hit && hit.expires_at > Date.now()) return hit.access_token;
 
   const agency = await getAgencyToken();
-  const res = await fetch(`${BASE}/oauth/locationToken`, {
+  const res = await fetchWithRetry(`${BASE}/oauth/locationToken`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${agency}`,
@@ -230,7 +282,6 @@ export async function getLocationToken(locationId: string): Promise<string> {
       Version: API_VERSION,
     },
     body: JSON.stringify({ companyId: ghlCompanyId(), locationId }),
-    cache: "no-store",
   });
 
   if (!res.ok) {
@@ -285,18 +336,7 @@ export async function ghlRequest<T = unknown>(
   };
   if (locationId && !agencyLevel) headers["location_id"] = locationId;
 
-  const send = async (h: Record<string, string>): Promise<Response> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      return await fetch(url, { method, headers: h, signal: controller.signal, cache: "no-store" });
-    } catch (err) {
-      const why = err instanceof Error && err.name === "AbortError" ? "timed out" : "network error";
-      throw new GhlError(`GoHighLevel request ${why}`);
-    } finally {
-      clearTimeout(timer);
-    }
-  };
+  const send = (h: Record<string, string>) => fetchWithRetry(url, { method, headers: h });
 
   let res = await send(headers);
 
@@ -370,14 +410,13 @@ export interface GhlWorkflowSweep {
   fetchedAt: string;
   locations: Array<{
     locationId: string;
-    clientId: string;
-    clientName: string;
+    locationName: string;
     workflows: GhlWorkflow[];
     error?: string;
   }>;
 }
 
-let sweepCache: { at: number; key: string; data: GhlWorkflowSweep } | null = null;
+let sweepCache: { at: number; data: GhlWorkflowSweep } | null = null;
 
 async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -394,35 +433,34 @@ async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[
 }
 
 /**
- * Pull workflows for the given client locations.
+ * Pull workflows for every location on the agency.
  *
- * Only locations mapped to a client are swept. The agency has 150+ locations
- * and most are not accounts we run lifecycle for, so sweeping all of them
- * would be slow and mostly noise.
+ * All of them, not just the ones mapped to a Campaign Desk client: the point
+ * is to see what is switched on across the whole account, including
+ * subaccounts nobody has claimed yet. A full sweep of ~150 locations takes
+ * about 7 seconds at this concurrency, and the result is cached.
  *
  * A location that fails is recorded against that location rather than failing
  * the sweep: one un-authorised subaccount must not blank the whole panel.
  */
-export async function sweepWorkflows(
-  targets: Array<{ locationId: string; clientId: string; clientName: string }>,
-  force = false
-): Promise<GhlWorkflowSweep> {
-  const key = targets.map((t) => t.locationId).sort().join(",");
-  if (
-    !force &&
-    sweepCache &&
-    sweepCache.key === key &&
-    Date.now() - sweepCache.at < WORKFLOW_CACHE_TTL_MS
-  ) {
+export async function sweepWorkflows(force = false): Promise<GhlWorkflowSweep> {
+  if (!force && sweepCache && Date.now() - sweepCache.at < WORKFLOW_CACHE_TTL_MS) {
     return sweepCache.data;
   }
 
-  const locations = await pooled(targets, async (t) => {
+  const all = await listLocations();
+
+  const locations = await pooled(all, async (loc) => {
     try {
-      return { ...t, workflows: await listWorkflows(t.locationId) };
+      return {
+        locationId: loc.id,
+        locationName: loc.name,
+        workflows: await listWorkflows(loc.id),
+      };
     } catch (err) {
       return {
-        ...t,
+        locationId: loc.id,
+        locationName: loc.name,
         workflows: [] as GhlWorkflow[],
         error: err instanceof Error ? err.message : "Failed to load workflows",
       };
@@ -430,7 +468,7 @@ export async function sweepWorkflows(
   });
 
   const data: GhlWorkflowSweep = { fetchedAt: new Date().toISOString(), locations };
-  sweepCache = { at: Date.now(), key, data };
+  sweepCache = { at: Date.now(), data };
   return data;
 }
 

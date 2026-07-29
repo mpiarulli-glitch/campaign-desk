@@ -23,6 +23,8 @@ const EMPTY = {
  */
 function GhlWorkflows({ ghl }: { ghl: GhlSection }) {
   const [showDrafts, setShowDrafts] = useState(false);
+  const [showEmpty, setShowEmpty] = useState(false);
+  const [search, setSearch] = useState("");
 
   if (!ghl.configured) {
     return (
@@ -31,8 +33,8 @@ function GhlWorkflows({ ghl }: { ghl: GhlSection }) {
           <h2 className="hud-panel-title">GoHighLevel not connected</h2>
         </div>
         <p className="hud-empty">
-          Set GHL_CLIENT_ID, GHL_CLIENT_SECRET, GHL_COMPANY_ID and GHL_REFRESH_TOKEN to pull live
-          workflows for every client with a location ID.
+          Set GHL_CLIENT_ID, GHL_CLIENT_SECRET, GHL_COMPANY_ID and GHL_REFRESH_TOKEN to read
+          workflows across every subaccount.
         </p>
       </div>
     );
@@ -47,73 +49,121 @@ function GhlWorkflows({ ghl }: { ghl: GhlSection }) {
     );
   }
 
-  const rows = showDrafts ? ghl.workflows : ghl.workflows.filter((w) => w.live);
-  const drafts = ghl.workflows.length - ghl.workflows.filter((w) => w.live).length;
+  const t = ghl.totals;
+  const query = search.trim().toLowerCase();
 
-  // Group by client so the panel reads per-account, which is how the work is
-  // actually organised.
-  const byClient = new Map<string, typeof rows>();
-  for (const w of rows) {
-    const list = byClient.get(w.clientName) ?? [];
-    list.push(w);
-    byClient.set(w.clientName, list);
-  }
+  // 150+ accounts is too many to dump at once. Default to the ones with
+  // something switched on, and let the filters open it up from there.
+  const accounts = ghl.accounts
+    .filter((a) => (showEmpty ? true : a.workflows.length > 0))
+    .filter((a) => (showDrafts ? true : a.live > 0 || a.workflows.length === 0))
+    .filter((a) =>
+      query
+        ? a.name.toLowerCase().includes(query) ||
+          a.workflows.some((w) => w.name.toLowerCase().includes(query))
+        : true
+    );
 
   return (
     <div className="hud-stack">
-      <div className="hud-panel">
-        <div className="hud-panel-head">
-          <div>
-            <div className="hud-eyebrow">Live from GoHighLevel</div>
-            <h2 className="hud-panel-title" style={{ marginTop: 6 }}>
-              Workflows
-            </h2>
-          </div>
-          <div className="hud-integrity">
-            {ghl.live}
-            <small> live</small>
-          </div>
+      <div className="hud-readouts">
+        <div className="hud-readout live">
+          <b>{t.live}</b>
+          <span>Live workflows</span>
         </div>
+        <div className="hud-readout">
+          <b>{t.workflows}</b>
+          <span>Total built</span>
+        </div>
+        <div className="hud-readout">
+          <b>{t.accountsWithLive}</b>
+          <span>Accounts running</span>
+        </div>
+        <div className="hud-readout">
+          <b>{t.accounts}</b>
+          <span>Accounts scanned</span>
+        </div>
+      </div>
 
-        <label className="hud-check" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search accounts or workflows…"
+          style={{ flex: 1, minWidth: 220 }}
+        />
+        <label className="hud-check">
           <input
             type="checkbox"
             checked={showDrafts}
             onChange={(e) => setShowDrafts(e.target.checked)}
           />
-          Include drafts{drafts > 0 ? ` (${drafts})` : ""}
+          Include drafts
         </label>
-
-        {ghl.workflows.length === 0 ? (
-          <p className="hud-empty">
-            No workflows found. Check that your clients have a GHL location ID set on the Revenue
-            page.
-          </p>
-        ) : (
-          [...byClient.entries()].map(([client, list]) => (
-            <div key={client} style={{ marginBottom: 14 }}>
-              <div className="hud-eyebrow" style={{ marginBottom: 4 }}>{client}</div>
-              {list.map((w) => (
-                <div key={w.id} className="hud-row">
-                  <span>{w.name}</span>
-                  <span className="hud-row-meta">
-                    <span className={`hud-chip ${w.live ? "hud-chip-ok" : "hud-chip-idle"}`}>
-                      {w.status}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))
-        )}
+        <label className="hud-check">
+          <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
+          Include accounts with none
+        </label>
       </div>
+
+      {ghl.fetchedAt ? (
+        <div className="hud-eyebrow">
+          Synced {new Date(ghl.fetchedAt).toLocaleString()} · showing {accounts.length} of{" "}
+          {t.accounts} accounts
+        </div>
+      ) : null}
+
+      {accounts.length === 0 ? (
+        <p className="hud-empty">Nothing matches those filters.</p>
+      ) : (
+        accounts.map((a) => {
+          const rows = showDrafts ? a.workflows : a.workflows.filter((w) => w.live);
+          return (
+            <div key={a.locationId} className="hud-panel">
+              <div className="hud-panel-head" style={{ marginBottom: 10 }}>
+                <div>
+                  <h2 className="hud-panel-title">{a.name}</h2>
+                  <div className="hud-camp-sub">
+                    {a.live} live of {a.workflows.length}
+                    {a.clientId ? " · linked client" : " · not mapped in Campaign Desk"}
+                  </div>
+                </div>
+                <span className={`hud-chip ${a.live > 0 ? "hud-chip-ok" : "hud-chip-idle"}`}>
+                  {a.live > 0 ? `${a.live} on` : "Nothing on"}
+                </span>
+              </div>
+
+              {a.error ? <p className="hud-err">{a.error.slice(0, 140)}</p> : null}
+
+              {rows.length === 0 ? (
+                <p className="hud-empty">
+                  {a.workflows.length > 0
+                    ? `${a.workflows.length} built, none published.`
+                    : "No workflows built."}
+                </p>
+              ) : (
+                rows.map((w) => (
+                  <div key={w.id} className="hud-row">
+                    <span>{w.name}</span>
+                    <span className="hud-row-meta">
+                      <span className={`hud-chip ${w.live ? "hud-chip-ok" : "hud-chip-idle"}`}>
+                        {w.status}
+                      </span>
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })
+      )}
 
       {ghl.failures.length > 0 ? (
         <div className="hud-alert">
           <h3>{ghl.failures.length} accounts could not be read</h3>
           {ghl.failures.map((f) => (
-            <div key={f.clientName} className="hud-row">
-              <span>{f.clientName}</span>
+            <div key={f.name} className="hud-row">
+              <span>{f.name}</span>
               <span className="hud-row-meta">{f.error.slice(0, 90)}</span>
             </div>
           ))}
@@ -198,7 +248,7 @@ export function AutomationsPanel({
           onClick={() => setSource("ghl")}
         >
           GoHighLevel
-          {ghl.live > 0 ? <span className="hud-channel-count">{ghl.live}</span> : null}
+          {ghl.totals.live > 0 ? <span className="hud-channel-count">{ghl.totals.live}</span> : null}
         </button>
         <button
           className={`hud-channel ${source === "manual" ? "on" : ""}`}
