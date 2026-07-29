@@ -4,13 +4,22 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
+import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
 import { LinkedInPanel } from "@/components/lifecycle/LinkedInPanel";
 import { NotesPanel } from "@/components/lifecycle/NotesPanel";
 import { ReportPanel } from "@/components/lifecycle/ReportPanel";
 import { SeatArray } from "@/components/lifecycle/SeatArray";
 import { PLATFORM_LABELS, type LifecycleDashboard } from "@/components/lifecycle/types";
 
-type Channel = "status" | "approvals" | "linkedin" | "automations" | "sops" | "notes" | "report";
+type Channel =
+  | "status"
+  | "approvals"
+  | "linkedin"
+  | "automations"
+  | "sops"
+  | "knowledge"
+  | "notes"
+  | "report";
 
 const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "status", label: "Status" },
@@ -18,6 +27,7 @@ const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "linkedin", label: "Outreach" },
   { id: "automations", label: "Automations" },
   { id: "sops", label: "Playbooks" },
+  { id: "knowledge", label: "Knowledge" },
   { id: "notes", label: "Notes" },
   { id: "report", label: "Account report" },
 ];
@@ -345,6 +355,8 @@ export default function LifecyclePage() {
             )}
           </div>
         ) : null}
+
+        {channel === "knowledge" ? <KnowledgePanel /> : null}
 
         {channel === "notes" ? (
           <NotesPanel

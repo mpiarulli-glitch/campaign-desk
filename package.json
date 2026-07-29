@@ -11,6 +11,8 @@
     "test": "tsx --test tests/*.test.ts",
     "check": "npm run lint && npm run typecheck",
     "cron:reminders": "node scripts/run-production-reminders.mjs",
+    "knowledge:sync": "node scripts/scrape-inbox-newsletter.mjs --new-only",
+    "knowledge:rebuild": "node scripts/scrape-inbox-newsletter.mjs",
     "prepare": "husky"
   },
   "dependencies": {

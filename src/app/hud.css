@@ -786,3 +786,150 @@
 }
 .cd-shell.is-console .app-iconbtn { color: var(--ghost); }
 .cd-shell.is-console .app-content { background: var(--void); }
+
+/* ===========================================================================
+   Knowledge base — The Inbox Newsletter archive
+   ---------------------------------------------------------------------------
+   The console is an instrument panel, but reading 300+ newsletter issues in a
+   monospace HUD would be punishing. So the reader is the one place that breaks
+   the grid: prose font, generous measure, warmer ink. The chrome around it
+   stays on-theme.
+   ========================================================================= */
+
+.hud-progress {
+  height: 3px;
+  background: var(--seam);
+  margin: 14px 0 10px;
+}
+.hud-progress-fill {
+  height: 100%;
+  background: var(--arc);
+  box-shadow: 0 0 8px var(--arc-wash);
+  transition: width 0.3s ease;
+}
+
+.hud-today {
+  border-left: 2px solid var(--arc);
+}
+.hud-today-title {
+  font-family: var(--instrument);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink);
+  margin: 10px 0 12px;
+}
+
+.hud-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.hud-filters input[type="text"],
+.hud-filters input:not([type]) { flex: 1; min-width: 200px; }
+.hud-filters select { width: auto; min-width: 170px; }
+
+.hud-issue.is-read { border-left-color: var(--arc-deep); opacity: 0.62; }
+.hud-issue-title {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.hud-issue-title:hover { color: var(--arc); }
+.hud-issue-foot {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.hud-reader-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.hud-reader-actions { display: flex; align-items: center; gap: 14px; }
+
+.hud-read { max-width: 72ch; margin: 0 auto; padding: 30px 34px 38px; }
+.hud-read-title {
+  font-family: var(--instrument);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+  margin: 10px 0 16px;
+}
+.hud-read-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 22px auto;
+  border: 1px solid var(--seam);
+}
+
+/* Long-form prose: the readable exception to the monospace house style. */
+.hud-prose {
+  font-family: var(--prose);
+  font-size: 15.5px;
+  line-height: 1.72;
+  color: #c8dae6;
+}
+.hud-prose p { margin: 0 0 18px; }
+.hud-prose h2,
+.hud-prose h3,
+.hud-prose h4,
+.hud-prose h5,
+.hud-prose h6 {
+  font-family: var(--instrument);
+  color: var(--ink);
+  line-height: 1.3;
+  margin: 30px 0 12px;
+}
+.hud-prose h2 { font-size: 21px; }
+.hud-prose h3 { font-size: 18px; }
+.hud-prose h4,
+.hud-prose h5,
+.hud-prose h6 { font-size: 16px; }
+.hud-prose strong { color: var(--ink); font-weight: 600; }
+.hud-prose em { color: var(--ink); }
+.hud-prose a { color: var(--arc); text-decoration: none; border-bottom: 1px solid var(--arc-deep); }
+.hud-prose a:hover { border-bottom-color: var(--arc); }
+.hud-prose ul { margin: 0 0 18px; padding-left: 22px; }
+.hud-prose li { margin-bottom: 9px; }
+.hud-prose hr { border: 0; border-top: 1px solid var(--seam); margin: 28px 0; }
+.hud-prose blockquote {
+  margin: 0 0 18px;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--arc-deep);
+  color: var(--ghost);
+}
+
+.hud-feature {
+  margin-top: 34px;
+  padding: 18px 20px;
+  background: var(--hull-lift);
+  border: 1px solid var(--seam);
+  border-left: 2px solid var(--flare);
+}
+.hud-feature-title {
+  font-family: var(--instrument);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 8px 0 10px;
+}
+
+@media (max-width: 700px) {
+  .hud-read { padding: 22px 18px 28px; }
+  .hud-read-title { font-size: 24px; }
+  .hud-today-title { font-size: 20px; }
+}

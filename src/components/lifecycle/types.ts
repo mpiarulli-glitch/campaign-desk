@@ -233,3 +233,53 @@ export const PLATFORM_LABELS: Record<string, string> = {
   boulevard: "Boulevard",
   other: "Other",
 };
+
+/* ------------------------------------------ knowledge base (The Inbox Newsletter) */
+
+export interface KnowledgeListingRow {
+  slug: string;
+  url: string;
+  title: string;
+  published: string;
+  summary: string;
+  topics: string[];
+  words: number;
+  readMinutes: number;
+  read: boolean;
+  inspiration: { brand: string; design: string; note: string } | null;
+  template: { name: string; image: string } | null;
+}
+
+export interface KnowledgeEntryFull extends KnowledgeListingRow {
+  body: string;
+}
+
+export interface KnowledgeIndexPayload {
+  source: { name: string; author: string; agency: string; url: string };
+  scrapedAt: string;
+  total: number;
+  readCount: number;
+  topics: Array<{ name: string; count: number }>;
+  todaySlug: string | null;
+  entries: KnowledgeListingRow[];
+}
+
+export interface SwipeRow {
+  slug: string;
+  published: string;
+  issueTitle: string;
+  brand: string;
+  design: string;
+  note: string;
+  templateName: string;
+  templateImage: string;
+}
+
+export const PLATFORM_LABELS: Record<string, string> = {
+  ghl: "GoHighLevel",
+  klaviyo: "Klaviyo",
+  skylead: "Skylead",
+  appfront: "AppFront",
+  boulevard: "Boulevard",
+  other: "Other",
+};

@@ -16,6 +16,26 @@ Upload an email, share a magic link with your boss or client, collect general an
 
 AI “Make revision” is intentionally deferred for a later release.
 
+## Knowledge base (Lifecycle → Knowledge)
+
+The Lifecycle console carries a searchable archive of Max Sturtevant's *The
+Inbox Newsletter* (Well Copy): one issue surfaced per day, full text search
+across every issue, topic filters, read tracking, and a swipe file of every
+featured email design and template.
+
+The archive is a bundled JSON file rather than database rows, so it deploys
+with the image and needs no migration or prod seeding. Read state is the only
+mutable part and lives in `app_settings`.
+
+```bash
+npm run knowledge:sync      # fetch issues published since the last sync
+npm run knowledge:rebuild   # re-scrape the whole archive from scratch
+```
+
+Run a sync when you want the new issues, then commit the regenerated
+`src/content/inbox-newsletter.json` and redeploy. Rebuild only when the
+scraper's parsing changes, since it refetches all 340+ issues.
+
 ## Quick start
 
 ```bash
