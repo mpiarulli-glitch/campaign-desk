@@ -77,6 +77,10 @@ In the service → **Variables**:
 | `BASECAMP_VIDEO_EDITING_PROJECT_ID` | Video Editing Team project ID (`31034042`) for production-request messages and videographer mentions |
 | `BASECAMP_VIDEO_EDITING_CAMPFIRE_URL` | Optional chatbot fallback for production requests |
 | `SKYLEAD_API_KEY` | Optional. Powers the LinkedIn tab on the Lifecycle dashboard |
+| `GHL_CLIENT_ID` | Optional. GoHighLevel OAuth app client ID |
+| `GHL_CLIENT_SECRET` | Optional. GoHighLevel OAuth app client secret |
+| `GHL_COMPANY_ID` | Optional. GHL agency/company ID |
+| `GHL_REFRESH_TOKEN` | Optional. Bootstrap refresh token, seed only (see below) |
 
 Generate a secret:
 
@@ -96,6 +100,23 @@ Skylead (Multilead) Open API. Create a key at
 Without the key the rest of the dashboard still works. The LinkedIn tab shows a
 "not connected" note instead of failing. The key is read server-side only and is
 never sent to the browser.
+
+### GoHighLevel integration
+
+The Automations tab reads live workflows for every client that has a
+`ghl_location_id` set on the Revenue page.
+
+`GHL_REFRESH_TOKEN` is a **seed only**. GHL rotates the refresh token on every
+use, so after the first refresh the live token lives in the `app_settings`
+table (key `ghl_tokens`) inside the SQLite volume. Changing the env var later
+does nothing unless that row is deleted first.
+
+**Known conflict:** the local MCP server in `Email Cowork/code/ghl-mcp` uses
+the same OAuth install and caches its token in `.tokens.json`. The two caches
+cannot see each other, so whichever refreshes last invalidates the other and
+the loser gets `invalid_grant`. The proper fix is a second OAuth install so
+each consumer holds its own refresh token. Until then, copy the token across
+by hand when one side starts failing.
 
 ## 5) Add the production-reminder cron service
 
