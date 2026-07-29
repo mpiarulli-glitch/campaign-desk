@@ -301,6 +301,124 @@ export async function listCampaigns(userId: number, seatId: number): Promise<Sky
   });
 }
 
+/* ------------------------------------------------------------- sequence */
+
+/**
+ * `statistics/steps` returns each step keyed by step id, with metrics keyed by
+ * a numeric index and no documentation of what the indices mean.
+ *
+ * These were derived by summing each index across every step of a campaign and
+ * comparing to that campaign's own `campaignStats`. Verified against all 7
+ * active campaigns on the account: requests, accepted, messages sent and
+ * replies matched exactly, to the unit, in every case.
+ */
+const STEP_METRIC = {
+  views: "1",
+  requestsSent: "3",
+  messagesSent: "4",
+  accepted: "6",
+  replies: "7",
+  acceptanceRate: "8",
+  responseRate: "9",
+} as const;
+
+export interface SkyleadStep {
+  id: number;
+  /** Position in the sequence as Skylead numbers it. */
+  step: number;
+  /** view, connect, condition, message, email, inmail… */
+  action: string;
+  /** Wait before this step runs, in ms. 0 for the first. */
+  delayMs: number;
+  /** The message body, with {{merge}} tags intact. Empty for non-message steps. */
+  copy: string;
+  subject: string;
+  views: number;
+  requestsSent: number;
+  messagesSent: number;
+  accepted: number;
+  replies: number;
+  acceptanceRate: number;
+  responseRate: number;
+}
+
+export interface SkyleadSequence {
+  campaignId: number;
+  name: string;
+  steps: SkyleadStep[];
+}
+
+/**
+ * Flatten Skylead's step tree.
+ *
+ * `campaignSteps` nests each step under the previous one via `nextSteps`, and
+ * the same step appears more than once when branches reconverge, so dedupe by
+ * id rather than trusting the shape.
+ */
+function flattenSteps(nodes: unknown[], seen = new Map<number, Record<string, unknown>>()) {
+  for (const raw of nodes) {
+    const n = raw as Record<string, unknown>;
+    const id = num(n.id);
+    if (id && !seen.has(id)) seen.set(id, n);
+    const next = n.nextSteps;
+    if (Array.isArray(next)) flattenSteps(next, seen);
+  }
+  return seen;
+}
+
+/**
+ * One campaign's sequence: every step, its copy, and how that specific step
+ * performed. This is what turns "the campaign is underperforming" into "the
+ * connect request is the problem".
+ */
+export async function getSequence(
+  userId: number,
+  seatId: number,
+  campaignId: number
+): Promise<SkyleadSequence> {
+  const [detail, stats] = await Promise.all([
+    call<{ result?: Record<string, unknown> }>(
+      `${V1}/users/${userId}/accounts/${seatId}/campaigns/${campaignId}/details`
+    ),
+    call<{ result?: Record<string, Record<string, number>> }>(
+      `${V1}/users/${userId}/accounts/${seatId}/statistics/steps?campaignId=${campaignId}`
+    ).catch(() => ({ result: {} as Record<string, Record<string, number>> })),
+  ]);
+
+  const result = detail.result ?? {};
+  const byId = flattenSteps((result.campaignSteps as unknown[]) ?? []);
+  const perStep = stats.result ?? {};
+
+  const steps: SkyleadStep[] = [...byId.entries()].map(([id, n]) => {
+    const data = (n.data ?? {}) as Record<string, unknown>;
+    const m = perStep[String(id)] ?? {};
+    const pick = (key: keyof typeof STEP_METRIC) => num(m[STEP_METRIC[key]]);
+    return {
+      id,
+      step: num(n.step),
+      action: String(n.action ?? "unknown"),
+      delayMs: num(n.doAfterPreviousStep),
+      copy: String(data.message ?? ""),
+      subject: String(data.subject ?? ""),
+      views: pick("views"),
+      requestsSent: pick("requestsSent"),
+      messagesSent: pick("messagesSent"),
+      accepted: pick("accepted"),
+      replies: pick("replies"),
+      acceptanceRate: pick("acceptanceRate"),
+      responseRate: pick("responseRate"),
+    };
+  });
+
+  steps.sort((a, b) => a.step - b.step || a.id - b.id);
+
+  return {
+    campaignId,
+    name: String(result.name ?? "Untitled campaign"),
+    steps,
+  };
+}
+
 /* ---------------------------------------------------------------- sweep */
 
 export interface SkyleadSweep {

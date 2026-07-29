@@ -139,6 +139,28 @@ export interface ClientRef {
   name: string;
 }
 
+export interface SequenceStep {
+  id: number;
+  step: number;
+  action: string;
+  delayMs: number;
+  copy: string;
+  subject: string;
+  views: number;
+  requestsSent: number;
+  messagesSent: number;
+  accepted: number;
+  replies: number;
+  acceptanceRate: number;
+  responseRate: number;
+}
+
+export interface Sequence {
+  campaignId: number;
+  name: string;
+  steps: SequenceStep[];
+}
+
 export interface GhlWorkflowRow {
   id: string;
   name: string;

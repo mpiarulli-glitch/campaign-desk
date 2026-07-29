@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SequenceView } from "./SequenceView";
 import type { ClientRef, LinkedInCampaignRow, LinkedInSection } from "./types";
 
 function pct(value: number): string {
@@ -54,7 +55,7 @@ function CampaignCard({
       <div className="hud-camp-top">
         <div>
           <button className="hud-camp-name" onClick={() => setOpen((v) => !v)}>
-            {row.name}
+            {open ? "\u2212 " : "+ "}{row.name}
           </button>
           <div className="hud-camp-sub">
             {row.seatName}
@@ -81,6 +82,8 @@ function CampaignCard({
           ))}
         </ul>
       ) : null}
+
+      {open ? <SequenceView campaignId={row.id} /> : null}
 
       {open ? (
         <div className="hud-camp-edit">
