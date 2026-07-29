@@ -20,6 +20,8 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "Home", icon: "home" },
   { href: "/admin/clients", label: "Clients", icon: "clients" },
   { href: "/admin/campaigns", label: "Campaigns", icon: "mail" },
+  // Admin-only: aggregates every client's approvals, outreach and economics.
+  { href: "/admin/lifecycle", label: "Lifecycle", icon: "chart" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   { href: "/admin/production", label: "Production", icon: "video" },
   { href: "/admin/todos", label: "To-dos", icon: "check" },

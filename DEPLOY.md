@@ -48,6 +48,18 @@ In the service → **Variables**:
 | `ADMIN_PASSWORD` | a strong password only you know |
 | `SESSION_SECRET` | a long random string (32+ chars) |
 | `NEXT_PUBLIC_APP_URL` | your public URL, e.g. `https://campaign-desk-production-xxxx.up.railway.app` |
+| `SKYLEAD_API_KEY` | optional. Powers the LinkedIn tab on the Lifecycle dashboard |
+
+### Skylead (LinkedIn) integration
+
+The Lifecycle dashboard reads LinkedIn seats and campaign stats from the
+Skylead (Multilead) Open API. Create a key at
+<https://app.multilead.co/settings/api>, then set `SKYLEAD_API_KEY` in
+`.env.local` for local work and in Railway variables for production.
+
+Without the key the rest of the dashboard still works. The LinkedIn tab shows a
+"not connected" note instead of failing. The key is read server-side only and is
+never sent to the browser.
 
 Generate a secret:
 

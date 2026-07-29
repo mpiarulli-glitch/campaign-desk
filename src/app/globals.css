@@ -6572,3 +6572,284 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .hub-tile:hover .hub-tile-go { transform: translateX(3px); color: var(--accent-ink); }
 @media (max-width: 900px) { .hub-launch { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .hub-launch { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------- Lifecycle Marketing */
+/* Admin-only department dashboard. Scoped under .ops-scope so it inherits
+   the internal-tool palette rather than the client-facing one. */
+
+.ops-scope .lc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 20px;
+  border-bottom: 1px solid var(--ops-border, var(--border));
+  padding-bottom: 8px;
+}
+
+.ops-scope .lc-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ops-scope .lc-tab:hover { color: var(--text); background: var(--bg-soft); }
+.ops-scope .lc-tab.on {
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+}
+
+.ops-scope .lc-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-body);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.ops-scope .lc-tab-count-bad { background: var(--danger); color: #fff; }
+
+/* KPI strip, reused by the overview and the account report. */
+.ops-scope .lc-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.ops-scope .lc-kpis > div {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ops-scope .lc-kpis > div > b { font-size: 22px; font-weight: 650; line-height: 1.1; }
+.ops-scope .lc-kpis > div > span { font-size: 12px; color: var(--text-muted); }
+.ops-scope .lc-kpis > div.is-bad > b { color: var(--danger); }
+
+/* Generic label / value row used across the panels. */
+.ops-scope .lc-line {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ops-border-soft, var(--border));
+  font-size: 14px;
+}
+.ops-scope .lc-line:last-child { border-bottom: 0; }
+.ops-scope .lc-line .muted { font-size: 12px; white-space: nowrap; }
+
+.ops-scope .lc-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ops-scope .lc-chip-ok { background: rgba(31, 157, 99, 0.12); color: var(--success); }
+.ops-scope .lc-chip-warn { background: rgba(196, 137, 0, 0.14); color: var(--warning); }
+.ops-scope .lc-chip-bad { background: rgba(214, 69, 69, 0.12); color: var(--danger); }
+.ops-scope .lc-chip-muted { background: var(--bg-soft); color: var(--text-muted); }
+
+.ops-scope .lc-error { border-color: var(--danger); }
+.ops-scope .lc-error-line { color: var(--danger); font-size: 13px; margin: 4px 0; }
+
+.ops-scope .lc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-body);
+  cursor: pointer;
+}
+
+.ops-scope .lc-mini {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.ops-scope .lc-mini:hover { color: var(--text); }
+
+.ops-scope .lc-sub-head {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ops-scope .lc-two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.ops-scope .lc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+/* -------- approvals */
+
+.ops-scope .lc-approval {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.ops-scope .lc-approval-title { font-weight: 600; font-size: 14px; }
+
+/* -------- LinkedIn */
+
+.ops-scope .lc-seat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ops-scope .lc-camp-list { display: grid; gap: 10px; }
+
+.ops-scope .lc-camp {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: var(--bg-elevated);
+}
+.ops-scope .lc-camp-refresh { border-left-color: var(--danger); }
+.ops-scope .lc-camp-watch { border-left-color: var(--warning); }
+.ops-scope .lc-camp-ok { border-left-color: var(--success); }
+.ops-scope .lc-camp-blocked { border-left-color: var(--danger); }
+.ops-scope .lc-camp-off { border-left-color: var(--border); opacity: 0.72; }
+
+.ops-scope .lc-camp-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.ops-scope .lc-camp-name {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.ops-scope .lc-camp-name:hover { text-decoration: underline; }
+.ops-scope .lc-camp-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.ops-scope .lc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.ops-scope .lc-stats > div { display: flex; flex-direction: column; }
+.ops-scope .lc-stats b { font-size: 15px; font-weight: 620; }
+.ops-scope .lc-stats span { font-size: 11px; color: var(--text-muted); }
+
+.ops-scope .lc-reasons { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 5px; }
+.ops-scope .lc-reason { font-size: 12px; color: var(--text-body); line-height: 1.45; }
+.ops-scope .lc-reason-refresh b { color: var(--danger); }
+.ops-scope .lc-reason-watch b { color: var(--warning); }
+
+.ops-scope .lc-camp-edit {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.ops-scope .lc-camp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* -------- automations */
+
+.ops-scope .lc-auto-list { display: grid; gap: 8px; }
+
+.ops-scope .lc-auto {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.ops-scope .lc-auto-title { font-weight: 600; font-size: 14px; }
+.ops-scope .lc-auto-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.ops-scope .lc-auto-desc { font-size: 13px; color: var(--text-body); margin: 6px 0 0; }
+.ops-scope .lc-auto-side { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+/* -------- notes and links */
+
+.ops-scope .lc-note {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.ops-scope .lc-note.is-pinned { border-color: var(--accent); }
+.ops-scope .lc-note-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.ops-scope .lc-note-body {
+  font-size: 13px;
+  color: var(--text-body);
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+.ops-scope .lc-note-meta { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+
+.ops-scope .lc-link {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--ops-border-soft, var(--border));
+}
+.ops-scope .lc-link:last-child { border-bottom: 0; }
+.ops-scope .lc-link-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; }

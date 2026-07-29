@@ -483,6 +483,71 @@ export interface Sop {
   updated_at: string;
 }
 
+/** Where an automation lives. Platforms we have no read API into are manual. */
+export type AutomationPlatform =
+  | "ghl"
+  | "klaviyo"
+  | "skylead"
+  | "appfront"
+  | "boulevard"
+  | "other";
+
+/** live = running now, paused = deliberately off, draft = built but not on. */
+export type AutomationStatus = "live" | "paused" | "draft";
+
+export interface LifecycleAutomation {
+  id: string;
+  client_id: string | null;
+  name: string;
+  platform: AutomationPlatform;
+  /** Free text: welcome, abandoned cart, reactivation, post-purchase, etc. */
+  kind: string;
+  status: AutomationStatus;
+  /** Subaccount / location / seat identifier on the platform. */
+  account_ref: string;
+  description: string;
+  link: string;
+  last_reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LifecycleNote {
+  id: string;
+  client_id: string | null;
+  title: string;
+  body: string;
+  tags: string;
+  pinned: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type LinkCategory = "doc" | "inspo" | "reference";
+
+export interface LifecycleLink {
+  id: string;
+  client_id: string | null;
+  title: string;
+  url: string;
+  category: LinkCategory;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LifecycleCampaignMeta {
+  skylead_campaign_id: number;
+  client_id: string | null;
+  /** Overrides the global staleness threshold for this one campaign. */
+  refresh_interval_days: number | null;
+  last_refreshed_at: string | null;
+  muted: number;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // A daily marketing or AI training post. kind = "marketing" | "ai".
 export interface TrainingPost {
   id: string;
@@ -1081,6 +1146,89 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_wb_records_changes ON whiteboard_records(board_id, updated_at);
+
+    -- Lifecycle department: registry of every automation we run for a client,
+    -- across platforms we have no API into.
+    CREATE TABLE IF NOT EXISTS lifecycle_automations (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'ghl',
+      kind TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'live',
+      account_ref TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      link TEXT NOT NULL DEFAULT '',
+      last_reviewed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_auto_client ON lifecycle_automations(client_id);
+    CREATE INDEX IF NOT EXISTS idx_lc_auto_status ON lifecycle_automations(status);
+
+    -- Free-form notes, optionally pinned to a client.
+    CREATE TABLE IF NOT EXISTS lifecycle_notes (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      title TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL DEFAULT '',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_notes_client ON lifecycle_notes(client_id);
+
+    -- Saved docs and design inspiration.
+    CREATE TABLE IF NOT EXISTS lifecycle_links (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'doc',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_links_client ON lifecycle_links(client_id);
+    CREATE INDEX IF NOT EXISTS idx_lc_links_category ON lifecycle_links(category);
+
+    -- Local overlay on a Skylead campaign: which client it belongs to, a
+    -- per-campaign refresh interval, and when we last actually refreshed it.
+    -- Skylead owns the stats; this table owns our opinion of them.
+    CREATE TABLE IF NOT EXISTS lifecycle_campaign_meta (
+      skylead_campaign_id INTEGER PRIMARY KEY,
+      client_id TEXT,
+      refresh_interval_days INTEGER,
+      last_refreshed_at TEXT,
+      muted INTEGER NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- Daily snapshot of each Skylead campaign's stats. Skylead only returns
+    -- lifetime totals, so this is the only way to see a rate trending down
+    -- rather than just sitting below a threshold. One row per campaign per day.
+    CREATE TABLE IF NOT EXISTS lifecycle_campaign_stats (
+      skylead_campaign_id INTEGER NOT NULL,
+      captured_on TEXT NOT NULL,
+      acceptance_rate REAL NOT NULL DEFAULT 0,
+      response_rate REAL NOT NULL DEFAULT 0,
+      open_rate REAL NOT NULL DEFAULT 0,
+      connections_requested INTEGER NOT NULL DEFAULT 0,
+      messages_sent INTEGER NOT NULL DEFAULT 0,
+      replies INTEGER NOT NULL DEFAULT 0,
+      total_leads INTEGER NOT NULL DEFAULT 0,
+      remaining_leads INTEGER NOT NULL DEFAULT 0,
+      captured_at TEXT NOT NULL,
+      PRIMARY KEY (skylead_campaign_id, captured_on)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_stats_day ON lifecycle_campaign_stats(captured_on);
   `);
 
   migrate(db);
