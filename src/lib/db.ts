@@ -37,6 +37,10 @@ export interface Campaign {
   star_rating: number | null;
   approved_at: string | null;
   archived_at: string | null;
+  basecamp_card_id: string | null;
+  basecamp_card_url: string | null;
+  basecamp_approval_revision: string | null;
+  basecamp_approval_sent_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -672,6 +676,10 @@ export function getDb(): Database.Database {
       magic_token TEXT NOT NULL UNIQUE,
       external_token TEXT UNIQUE,
       approved_at TEXT,
+      basecamp_card_id TEXT,
+      basecamp_card_url TEXT,
+      basecamp_approval_revision TEXT,
+      basecamp_approval_sent_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1282,6 +1290,22 @@ function migrate(database: Database.Database) {
 
   if (!campaignCols.includes("client_id")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN client_id TEXT`);
+  }
+  if (!campaignCols.includes("basecamp_card_id")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN basecamp_card_id TEXT`);
+  }
+  if (!campaignCols.includes("basecamp_card_url")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN basecamp_card_url TEXT`);
+  }
+  if (!campaignCols.includes("basecamp_approval_revision")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN basecamp_approval_revision TEXT`
+    );
+  }
+  if (!campaignCols.includes("basecamp_approval_sent_at")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN basecamp_approval_sent_at TEXT`
+    );
   }
   // Best-effort backfill by exact name match — only fills rows still unset,
   // so it's safe to run on every boot and never clobbers a manually-set link.

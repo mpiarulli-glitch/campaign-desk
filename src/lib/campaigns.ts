@@ -439,12 +439,33 @@ export function updateCampaign(
   const status = updates.status ?? existing.status;
   const approvedAt =
     updates.approvedAt !== undefined ? updates.approvedAt : existing.approved_at;
+  const clientChanged =
+    updates.clientId !== undefined && updates.clientId !== existing.client_id;
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?, updated_at = ?
+     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?,
+         basecamp_card_id = CASE WHEN ? THEN NULL ELSE basecamp_card_id END,
+         basecamp_card_url = CASE WHEN ? THEN NULL ELSE basecamp_card_url END,
+         basecamp_approval_revision = CASE WHEN ? THEN NULL ELSE basecamp_approval_revision END,
+         basecamp_approval_sent_at = CASE WHEN ? THEN NULL ELSE basecamp_approval_sent_at END,
+         updated_at = ?
      WHERE id = ?`
-  ).run(title, clientName, clientId, description, audience, status, approvedAt, ts, id);
+  ).run(
+    title,
+    clientName,
+    clientId,
+    description,
+    audience,
+    status,
+    approvedAt,
+    clientChanged ? 1 : 0,
+    clientChanged ? 1 : 0,
+    clientChanged ? 1 : 0,
+    clientChanged ? 1 : 0,
+    ts,
+    id
+  );
 
   // Legacy path: htmlContent without emailId updates first email
   if (updates.htmlContent) {
@@ -460,6 +481,49 @@ export function updateCampaign(
     }
   }
 
+  return getCampaignById(id);
+}
+
+export function recordBasecampApproval(
+  id: string,
+  input: {
+    cardId: string;
+    cardUrl: string;
+    revision: string;
+  }
+): Campaign | null {
+  const existing = getCampaignById(id);
+  if (!existing) return null;
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+       SET status = 'in_review',
+           basecamp_card_id = ?,
+           basecamp_card_url = ?,
+           basecamp_approval_revision = ?,
+           basecamp_approval_sent_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .run(input.cardId, input.cardUrl, input.revision, ts, ts, id);
+  return getCampaignById(id);
+}
+
+export function rememberBasecampApprovalCard(
+  id: string,
+  cardId: string,
+  cardUrl: string
+): Campaign | null {
+  const existing = getCampaignById(id);
+  if (!existing) return null;
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+       SET basecamp_card_id = ?, basecamp_card_url = ?
+       WHERE id = ?`
+    )
+    .run(cardId, cardUrl, id);
   return getCampaignById(id);
 }
 

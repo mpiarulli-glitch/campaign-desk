@@ -356,7 +356,11 @@ export default function CalendarPage() {
   return (
     <div className="app-shell">
       <div className="page-actions">
-        <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>Add send</button>
+        {isAdmin ? (
+          <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>
+            Add send
+          </button>
+        ) : null}
       </div>
 
       <main className="container container-wide stack">
@@ -440,7 +444,9 @@ export default function CalendarPage() {
               <div
                 key={date}
                 className={`cal-cell ${isToday ? "cal-today" : ""}`}
-                onClick={() => openNew(date)}
+                onClick={() => {
+                  if (isAdmin) openNew(date);
+                }}
               >
                 <div className="cal-daynum">{d}</div>
                 <div className="cal-events">
@@ -448,7 +454,10 @@ export default function CalendarPage() {
                     <button
                       key={s.id}
                       className={`cal-chip chip-${s.status} ${isProduction(s) ? "is-production" : ""} ${feedbackBySend.has(s.id) ? "has-note" : ""}`}
-                      onClick={(e) => { e.stopPropagation(); openEdit(s); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isAdmin) openEdit(s);
+                      }}
                       onMouseEnter={(e) => showHover(e, s)}
                       onMouseLeave={hideHover}
                     >
@@ -499,7 +508,7 @@ export default function CalendarPage() {
                 value={
                   hover.send.duration === "full"
                     ? "Full day (9 AM – 5:30 PM)"
-                    : "4 hours (ends 5:30 PM)"
+                    : "4 hours from selected start"
                 }
               />
             ) : (
@@ -517,7 +526,7 @@ export default function CalendarPage() {
         </div>
       ) : null}
 
-      {editing ? (
+      {editing && isAdmin ? (
         <div className="modal-backdrop" onClick={() => setEditing(null)}>
           <div className="modal card card-pad stack" onClick={(e) => e.stopPropagation()}>
             <strong>{editing.id ? "Edit send" : "New send"}</strong>

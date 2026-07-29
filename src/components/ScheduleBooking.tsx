@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { slotHasPassed } from "@/lib/scheduling-rules";
 
 type CycleStatus =
   | "not_configured"
@@ -15,6 +16,8 @@ type Data = {
   client: { name: string };
   window: { start: string; end: string } | null;
   status: CycleStatus;
+  today: string;
+  currentTime: string;
   slots: string[];
   blackoutDates: string[];
   videographerBooked: string[];
@@ -114,6 +117,11 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     () => new Set([...(data?.blackoutDates || []), ...(data?.videographerBooked || [])]),
     [data]
   );
+
+  function isPastSlot(date: string, time: string): boolean {
+    if (!data) return false;
+    return slotHasPassed(date, time, data.today, data.currentTime);
+  }
 
   function choose(date: string, time: string) {
     setPick({ date, time });
@@ -262,7 +270,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           <strong>
             {dayNumber(data.window.start)} – {dayNumber(data.window.end)}
           </strong>
-          , 9 to 5.
+          , with four-hour start times from 9 AM to 1 PM.
         </p>
       </div>
 
@@ -273,7 +281,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         >
           <div className="sched-corner" />
           {days.map((d) => {
-            const off = blackout.has(d);
+            const off = blackout.has(d) || d < data.today;
             return (
               <div key={d} className={`sched-daycol ${off ? "is-off" : ""}`}>
                 <span className="sched-dow">{dayName(d)}</span>
@@ -285,7 +293,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             <div key={slot} className="sched-row-contents">
               <div className="sched-timelabel">{slotLabel(slot)}</div>
               {days.map((d) => {
-                const off = blackout.has(d);
+                const off = blackout.has(d) || isPastSlot(d, slot);
                 const selected = pick?.date === d && pick?.time === slot;
                 return (
                   <button
@@ -315,7 +323,14 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                 {longDate(pick.date)} · {slotLabel(pick.time)}
               </strong>
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPick(null)}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setPick(null);
+                setDuration("half");
+              }}
+            >
               Change slot
             </button>
           </div>
@@ -333,7 +348,15 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
               <button
                 type="button"
                 className={`brief-dur ${duration === "full" ? "is-on" : ""}`}
-                onClick={() => setDuration("full")}
+                disabled={
+                  pick.date === data.today && "09:00" <= data.currentTime
+                }
+                onClick={() => {
+                  setDuration("full");
+                  setPick((current) =>
+                    current ? { ...current, time: "09:00" } : current
+                  );
+                }}
               >
                 Full day
               </button>
@@ -341,8 +364,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             <span className="brief-duration-note">
               {duration === "full"
                 ? "Full day runs 9:00 AM to 5:30 PM."
-                : "A 4-hour production."}{" "}
-              Every production ends at 5:30 PM.
+                : "Four hours from your selected start time."}{" "}
+              All productions must finish by 5:30 PM.
             </span>
           </div>
 

@@ -8,7 +8,9 @@
     "start": "next start -H 0.0.0.0 -p 3040",
     "lint": "eslint src next.config.ts eslint.config.mjs",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
     "check": "npm run lint && npm run typecheck",
+    "cron:reminders": "node scripts/run-production-reminders.mjs",
     "prepare": "husky"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.1.0",
     "husky": "^9.1.7",
+    "tsx": "^4.23.1",
     "typescript": "^5"
   }
 }

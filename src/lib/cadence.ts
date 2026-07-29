@@ -6,6 +6,7 @@ import {
   type RevClient,
   type ScheduledSend,
 } from "./db";
+export { BOOKING_SLOTS } from "./scheduling-rules";
 
 export const COLORS: Exclude<ColorWeek, "">[] = ["purple", "red", "blue", "green"];
 
@@ -22,18 +23,8 @@ export const CADENCE_LABEL: Record<Exclude<ProductionCadence, "">, string> = {
   quarterly: "Quarterly",
 };
 
-// Bookable start times, on the hour, 9 AM through 5 PM (stored as 24h HH:MM).
-export const BOOKING_SLOTS = [
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-];
+export const APP_TIME_ZONE =
+  process.env.APP_TIME_ZONE || "America/Los_Angeles";
 
 export function slotLabel(hhmm: string): string {
   const [h] = hhmm.split(":").map(Number);
@@ -217,11 +208,37 @@ export function rotateScheduleToken(clientId: string): string | null {
 export function getClientByScheduleToken(token: string): RevClient | null {
   return (
     (getDb()
-      .prepare(`SELECT * FROM rev_clients WHERE schedule_token = ?`)
+      .prepare(
+        `SELECT * FROM rev_clients
+         WHERE schedule_token = ? AND production_enrolled = 1`
+      )
       .get(token) as RevClient | undefined) || null
   );
 }
 
 export function todayYmd(): string {
-  return new Date().toISOString().slice(0, 10);
+  return appDateTime().date;
+}
+
+// Calendar date and 24-hour time in the business timezone. Using format parts
+// avoids UTC rolling the scheduler into tomorrow during the Pacific evening.
+export function appDateTime(now = new Date()): {
+  date: string;
+  time: string;
+} {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value || "";
+  return {
+    date: `${part("year")}-${part("month")}-${part("day")}`,
+    time: `${part("hour")}:${part("minute")}`,
+  };
 }

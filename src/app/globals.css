@@ -6853,3 +6853,577 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .ops-scope .lc-link:last-child { border-bottom: 0; }
 .ops-scope .lc-link-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+/* ==========================================================================
+   Review page (client magic link) — /review/[token]
+   Everything here is scoped to .review-page so the admin views keep their
+   existing look. Goal: one calm column of content, one quiet rail of
+   feedback, and no ad-hoc inline styling in the component.
+   ========================================================================== */
+
+.review-page .container {
+  padding-top: 40px;
+}
+
+.review-page .stack {
+  gap: 18px;
+}
+
+/* --- Hero ---------------------------------------------------------------- */
+
+.rv-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rv-hero .h1 {
+  font-size: 34px;
+}
+
+.rv-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rv-meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.rv-hero-desc {
+  max-width: 68ch;
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-body);
+}
+
+/* --- Item switcher ------------------------------------------------------- */
+
+.rv-switch {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+}
+
+.rv-switch-count {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rv-switch-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rv-switch-nav {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.rv-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: #ffffff;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+
+.rv-step:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.rv-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.review-page .email-tab {
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12.5px;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.review-page .email-tab.active {
+  color: var(--text);
+  background: #ffffff;
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+.review-page .email-tab-num {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+.review-page .email-tab.active .email-tab-num {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.review-page .email-tab.is-done .email-tab-num {
+  background: rgba(31, 157, 99, 0.14);
+  color: var(--success);
+}
+
+/* --- Approve band -------------------------------------------------------- */
+
+.rv-approve {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 18px 22px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(31, 157, 99, 0.28);
+  background: linear-gradient(180deg, #f2fbf6 0%, #ffffff 100%);
+}
+
+.rv-approve-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rv-approve-title {
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.rv-approve-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.rv-approve.is-approved {
+  border-color: rgba(31, 157, 99, 0.4);
+}
+
+.rv-approve-check {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(31, 157, 99, 0.12);
+  color: var(--success);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.rv-approve-with-check {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* --- Notices ------------------------------------------------------------- */
+
+.rv-notice {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.rv-notice-ok {
+  background: rgba(31, 157, 99, 0.08);
+  border-color: rgba(31, 157, 99, 0.25);
+  color: #14724a;
+}
+
+.rv-notice-bad {
+  background: rgba(214, 69, 69, 0.07);
+  border-color: rgba(214, 69, 69, 0.25);
+  color: #a63636;
+}
+
+/* --- Asset column -------------------------------------------------------- */
+
+.rv-asset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.rv-asset-head .h2 {
+  font-size: 20px;
+  min-width: 0;
+}
+
+.rv-asset-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-modebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rv-segment {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 9px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+
+.rv-segment button {
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.rv-segment button:hover {
+  color: var(--text);
+}
+
+.rv-segment button.active {
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.rv-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.rv-hint.is-ready {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* --- Feedback rail ------------------------------------------------------- */
+
+.rv-rail {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  /* Hide the rail's own scrollbar gutter so the cards keep clean edges. */
+  scrollbar-width: thin;
+}
+
+.review-page .split-review {
+  align-items: start;
+  gap: 20px;
+}
+
+.rv-form-sub {
+  margin: -6px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Attachment picker. */
+.rv-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rv-thumb {
+  position: relative;
+  line-height: 0;
+}
+
+.rv-thumb img {
+  width: 68px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.rv-thumb-x {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rv-filepick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  background: #ffffff;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+
+.rv-filepick:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--bg-tint);
+}
+
+.rv-filepick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rv-filepick.is-busy {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Comment cards. */
+.review-page .comment-list {
+  gap: 12px;
+  max-height: none;
+  overflow: visible;
+}
+
+.review-page .comment-card {
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.review-page .comment-card.active {
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
+}
+
+.rv-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.rv-avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.rv-comment-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rv-comment-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rv-comment-when {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.rv-chip {
+  margin-left: auto;
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rv-chip.is-pin {
+  background: var(--bg-tint);
+  border-color: rgba(0, 212, 232, 0.4);
+  color: var(--accent-ink);
+}
+
+.rv-chip.is-resolved {
+  background: rgba(31, 157, 99, 0.1);
+  border-color: rgba(31, 157, 99, 0.3);
+  color: var(--success);
+}
+
+.rv-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rv-attachments a {
+  line-height: 0;
+}
+
+.rv-attachments img {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  transition: border-color 0.14s ease;
+}
+
+.rv-attachments a:hover img {
+  border-color: var(--accent);
+}
+
+.review-page .reply-thread {
+  border-left-color: var(--border);
+}
+
+.review-page .reply-form input {
+  border-color: var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
+}
+
+.review-page .reply-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
+}
+
+.review-page .empty {
+  padding: 32px 20px;
+  background: var(--bg-soft);
+  border-color: var(--border);
+  font-size: 13.5px;
+}
+
+/* Subject picker inside the review page. */
+.review-page .subject-option {
+  padding: 13px 15px;
+  border-radius: var(--radius-sm);
+}
+
+.review-page .subject-option.chosen {
+  border-color: rgba(31, 157, 99, 0.55);
+  background: rgba(31, 157, 99, 0.045);
+  box-shadow: none;
+}
+
+.review-page .subject-radio {
+  color: var(--success);
+}
+
+@media (max-width: 900px) {
+  .rv-rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .rv-hero .h1 {
+    font-size: 27px;
+  }
+
+  .rv-switch-nav {
+    margin-left: 0;
+  }
+}
+
+.review-page .field label .rv-label-note {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.review-page .comment-card.is-pinned {
+  cursor: pointer;
+}
+
+.review-page .comment-card.is-pinned:hover {
+  border-color: var(--border-strong);
+}

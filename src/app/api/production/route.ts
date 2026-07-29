@@ -4,6 +4,7 @@ import { listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
+import { listProductionSends } from "@/lib/calendar";
 
 export async function GET() {
   if (!(await isProductionAuthenticated())) {
@@ -36,7 +37,11 @@ export async function GET() {
       window,
       status,
       existingSend: existingSend
-        ? { sendDate: existingSend.send_date, status: existingSend.status }
+        ? {
+            id: existingSend.id,
+            sendDate: existingSend.send_date,
+            status: existingSend.status,
+          }
         : null,
       // Reminder emails: count on the current window, plus the most recent
       // send date and which window it was for (mirrors the tracker sheet).
@@ -45,5 +50,10 @@ export async function GET() {
       lastWindowEmailed: latestReminder?.window_start || null,
     };
   });
-  return NextResponse.json({ clients, today, videographers: listVideographers(false) });
+  return NextResponse.json({
+    clients,
+    productions: listProductionSends(),
+    today,
+    videographers: listVideographers(false),
+  });
 }

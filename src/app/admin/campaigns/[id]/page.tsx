@@ -92,6 +92,17 @@ type Campaign = {
   archived_at?: string | null;
 };
 
+type BasecampApprovalState = {
+  ready: boolean;
+  missing: string[];
+  recipient: string;
+  projectConfigured: boolean;
+  message: string;
+  alreadySent: boolean;
+  lastSentAt: string | null;
+  cardUrl: string | null;
+};
+
 export default function AdminCampaignPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -138,6 +149,9 @@ export default function AdminCampaignPage() {
   const [savingSubjects, setSavingSubjects] = useState(false);
   const [purposeDraft, setPurposeDraft] = useState("");
   const [savingPurpose, setSavingPurpose] = useState(false);
+  const [basecampApproval, setBasecampApproval] =
+    useState<BasecampApprovalState | null>(null);
+  const [sendingBasecampApproval, setSendingBasecampApproval] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -175,6 +189,7 @@ export default function AdminCampaignPage() {
       setComments(data.comments || []);
       setVersions(data.versions || []);
       setStatus(data.campaign.status);
+      loadBasecampApproval();
 
       const nextId =
         preferredEmailId &&
@@ -199,6 +214,15 @@ export default function AdminCampaignPage() {
   useEffect(() => {
     load();
   }, [id]);
+
+  async function loadBasecampApproval() {
+    const res = await fetch(`/api/campaigns/${id}/basecamp-approval`);
+    if (!res.ok) {
+      setBasecampApproval(null);
+      return;
+    }
+    setBasecampApproval(await res.json());
+  }
 
   const [revClients, setRevClients] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
@@ -371,6 +395,49 @@ export default function AdminCampaignPage() {
     await navigator.clipboard.writeText(campaign.external_review_url);
     setCopiedExternal(true);
     setTimeout(() => setCopiedExternal(false), 1500);
+  }
+
+  async function sendBasecampApproval() {
+    if (!basecampApproval?.ready || sendingBasecampApproval) return;
+    const resend = basecampApproval.alreadySent;
+    const action = resend ? "Resend" : "Send";
+    const destination = basecampApproval.recipient
+      ? ` to ${basecampApproval.recipient}`
+      : "";
+    if (
+      !confirm(
+        `${action} this client approval in Basecamp${destination} and move its Deliverables card to Needs Approval?`
+      )
+    ) {
+      return;
+    }
+
+    setSendingBasecampApproval(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/campaigns/${id}/basecamp-approval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: resend }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSendingBasecampApproval(false);
+
+    if (!res.ok) {
+      setError(data.error || "Could not send the approval in Basecamp.");
+      if (data.cardUrl) {
+        setMessage(`Basecamp card: ${data.cardUrl}`);
+      }
+      await loadBasecampApproval();
+      return;
+    }
+
+    setStatus(data.status || "in_review");
+    setMessage(
+      `Approval sent to ${data.recipient || "the client"} in Basecamp.`
+    );
+    await load(activeEmailId);
+    await loadBasecampApproval();
   }
 
   async function saveStatus(next: string) {
@@ -970,6 +1037,78 @@ export default function AdminCampaignPage() {
             <div className="copy-box">
               <code>{campaign.external_review_url}</code>
             </div>
+          </div>
+
+          <div className="review-link-row">
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", alignItems: "center" }}
+            >
+              <span className="review-link-label">
+                Basecamp{" "}
+                <span className="muted">· client approval workflow</span>
+              </span>
+              <button
+                className={`btn btn-sm ${
+                  basecampApproval?.alreadySent ? "btn-secondary" : ""
+                }`}
+                onClick={sendBasecampApproval}
+                disabled={
+                  !basecampApproval?.ready || sendingBasecampApproval
+                }
+              >
+                {sendingBasecampApproval
+                  ? "Sending..."
+                  : basecampApproval?.alreadySent
+                    ? "Resend approval"
+                    : "Send approval"}
+              </button>
+            </div>
+
+            {basecampApproval ? (
+              <>
+                <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+                  {basecampApproval.ready
+                    ? `Sends to ${basecampApproval.recipient || "the configured client contact"} and moves the Deliverables card to Needs Approval.`
+                    : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
+                  {basecampApproval.lastSentAt
+                    ? ` Last sent ${new Date(basecampApproval.lastSentAt).toLocaleString()}.`
+                    : ""}
+                </p>
+                {basecampApproval.cardUrl ? (
+                  <p style={{ margin: "6px 0 0", fontSize: 13 }}>
+                    <a
+                      href={basecampApproval.cardUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open Basecamp Deliverables card
+                    </a>
+                  </p>
+                ) : null}
+                <details style={{ marginTop: 10 }}>
+                  <summary className="muted" style={{ cursor: "pointer" }}>
+                    Preview approval message
+                  </summary>
+                  <pre
+                    className="copy-box"
+                    style={{
+                      marginTop: 8,
+                      whiteSpace: "pre-wrap",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {basecampApproval.message}
+                  </pre>
+                </details>
+              </>
+            ) : (
+              <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+                Checking Basecamp setup...
+              </p>
+            )}
           </div>
         </div>
 

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { getSession, isAdminAuthenticated } from "@/lib/auth";
 import { createSend, listSends } from "@/lib/calendar";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  const session = await getSession();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const url = new URL(request.url);
@@ -17,11 +18,21 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
-  return NextResponse.json({ sends: listSends(start, end) });
+  const sends = listSends(start, end);
+  if (session.role === "forecast") {
+    return NextResponse.json({
+      sends: sends.map((send) => ({
+        ...send,
+        note: "",
+        production_brief: "",
+      })),
+    });
+  }
+  return NextResponse.json({ sends });
 }
 
 export async function POST(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));
