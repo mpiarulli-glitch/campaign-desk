@@ -3,9 +3,30 @@
 Campaign Desk needs a host with a **persistent disk** for SQLite.
 Railway is the easiest option.
 
-The Railway service is connected to this repo's `main` branch for
-auto-deploy (`railway service source connect`) — a push to `main` builds
-and deploys on its own. No manual `railway up` needed for normal changes.
+## Deploying is a manual step
+
+The Railway service has this repo set as its source, but the project has **no
+deployment trigger**, so pushing to `main` does *not* start a build. Verified
+2026-07-28: a push landed on GitHub and no deployment was ever created.
+
+To ship, push your commits and then deploy explicitly:
+
+```bash
+git push origin main
+railway up            # add --detach to avoid tailing build logs
+```
+
+Check what actually shipped with `railway deployment list`, and confirm the
+project is still trigger-less with:
+
+```bash
+railway api 'query { project(id: "e98d422d-16bd-46ea-bf24-fe88f5ebe177") {
+  deploymentTriggers { edges { node { id branch repository } } } } }'
+```
+
+If you want pushes to deploy on their own, add a GitHub trigger on `main` in
+the Railway dashboard (service → **Settings** → **Source**). Once a trigger
+exists, delete this section and go back to push-to-deploy.
 
 ## 1) Create a GitHub repo for this app
 
