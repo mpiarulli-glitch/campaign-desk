@@ -156,8 +156,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setSwitching(false);
   }
 
+  // The Lifecycle console is a dark instrument panel. Darken the surrounding
+  // chrome on that route only, so the page reads as one console instead of a
+  // black rectangle dropped into a light app.
+  const consoleMode = pathname.startsWith("/admin/lifecycle");
+
   return (
-    <div className="cd-shell">
+    <div className={`cd-shell ${consoleMode ? "is-console" : ""}`}>
       <CommandPalette />
       <aside className={`side ${collapsed ? "is-collapsed" : ""}`}>
         <Link href="/admin" className="side-brand" title="Campaign Desk">

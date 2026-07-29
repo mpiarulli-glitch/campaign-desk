@@ -98,11 +98,11 @@ export function NotesPanel({
   }
 
   return (
-    <div className="lc-two-col">
-      <div className="stack" style={{ gap: 14 }}>
-        <h3 style={{ margin: 0 }}>Notes</h3>
+    <div className="hud-grid hud-grid-2">
+      <div className="hud-stack" style={{ gap: 14 }}>
+        <h2 className="hud-panel-title">Notes</h2>
 
-        <div className="card card-pad stack" style={{ gap: 8 }}>
+        <div className="hud-panel" style={{ display: "grid", gap: 8 }}>
           <input
             value={note.title}
             onChange={(e) => setNote({ ...note, title: e.target.value })}
@@ -114,7 +114,7 @@ export function NotesPanel({
             onChange={(e) => setNote({ ...note, body: e.target.value })}
             placeholder="What did you learn?"
           />
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <select value={note.clientId} onChange={(e) => setNote({ ...note, clientId: e.target.value })}>
               <option value="">No client</option>
               {clients.map((c) => (
@@ -127,26 +127,26 @@ export function NotesPanel({
               placeholder="tags, comma separated"
               style={{ flex: 1, minWidth: 140 }}
             />
-            <button className="btn btn-sm" disabled={busy} onClick={saveNote}>Save note</button>
+            <button className="hud-btn" disabled={busy} onClick={saveNote}>Save note</button>
           </div>
         </div>
 
         {notes.length === 0 ? (
-          <p className="muted">No notes yet.</p>
+          <p className="hud-empty">No notes yet.</p>
         ) : (
           notes.map((n) => (
-            <div key={n.id} className={`lc-note ${n.pinned ? "is-pinned" : ""}`}>
-              <div className="lc-note-head">
+            <div key={n.id} className={`hud-camp hud-note ${n.pinned ? "pinned" : ""}`}>
+              <div className="hud-camp-top">
                 <b>{n.title || "Untitled note"}</b>
-                <div className="row" style={{ gap: 6 }}>
-                  <button className="lc-mini" onClick={() => togglePin(n)}>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button className="hud-link" onClick={() => togglePin(n)}>
                     {n.pinned ? "Unpin" : "Pin"}
                   </button>
-                  <button className="lc-mini" onClick={() => removeNote(n)}>Delete</button>
+                  <button className="hud-link" onClick={() => removeNote(n)}>Delete</button>
                 </div>
               </div>
-              {n.body ? <p className="lc-note-body">{n.body}</p> : null}
-              <div className="lc-note-meta">
+              {n.body ? <p className="hud-note-body">{n.body}</p> : null}
+              <div className="hud-camp-sub" style={{ marginTop: 10 }}>
                 {clientName(n.client_id) ? `${clientName(n.client_id)} · ` : ""}
                 {n.tags ? `${n.tags} · ` : ""}
                 {new Date(n.updated_at).toLocaleDateString()}
@@ -156,10 +156,10 @@ export function NotesPanel({
         )}
       </div>
 
-      <div className="stack" style={{ gap: 14 }}>
-        <h3 style={{ margin: 0 }}>Docs & inspiration</h3>
+      <div className="hud-stack" style={{ gap: 14 }}>
+        <h2 className="hud-panel-title">Docs & inspiration</h2>
 
-        <div className="card card-pad stack" style={{ gap: 8 }}>
+        <div className="hud-panel" style={{ display: "grid", gap: 8 }}>
           <input
             value={link.title}
             onChange={(e) => setLink({ ...link, title: e.target.value })}
@@ -170,7 +170,7 @@ export function NotesPanel({
             onChange={(e) => setLink({ ...link, url: e.target.value })}
             placeholder="https://…"
           />
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <select value={link.category} onChange={(e) => setLink({ ...link, category: e.target.value })}>
               {CATEGORIES.map((c) => (
                 <option key={c.value} value={c.value}>{c.label}</option>
@@ -182,28 +182,28 @@ export function NotesPanel({
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <button className="btn btn-sm" disabled={busy} onClick={saveLink}>Save link</button>
+            <button className="hud-btn" disabled={busy} onClick={saveLink}>Save link</button>
           </div>
         </div>
 
-        {error ? <p className="lc-error-line">{error}</p> : null}
+        {error ? <p className="hud-err">{error}</p> : null}
 
         {links.length === 0 ? (
-          <p className="muted">Nothing saved yet.</p>
+          <p className="hud-empty">Nothing saved yet.</p>
         ) : (
           CATEGORIES.map((cat) => {
             const rows = links.filter((l) => l.category === cat.value);
             if (rows.length === 0) return null;
             return (
-              <div key={cat.value} className="stack" style={{ gap: 6 }}>
-                <div className="lc-sub-head">{cat.label}</div>
+              <div key={cat.value} className="hud-panel" style={{ display: "grid", gap: 4 }}>
+                <div className="hud-eyebrow">{cat.label}</div>
                 {rows.map((l) => (
-                  <div key={l.id} className="lc-link">
+                  <div key={l.id} className="hud-row">
                     <a href={l.url} target="_blank" rel="noreferrer">{l.title}</a>
-                    <span className="lc-link-meta">
+                    <span className="hud-row-meta">
                       {clientName(l.client_id)}
                     </span>
-                    <button className="lc-mini" onClick={() => removeLink(l)}>Delete</button>
+                    <button className="hud-link" onClick={() => removeLink(l)}>Delete</button>
                   </div>
                 ))}
               </div>

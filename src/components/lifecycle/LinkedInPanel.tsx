@@ -7,19 +7,19 @@ function pct(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
-function severityChip(row: LinkedInCampaignRow) {
-  if (row.verdict.muted) return <span className="lc-chip lc-chip-muted">Muted</span>;
+function statusChip(row: LinkedInCampaignRow) {
+  if (row.verdict.muted) return <span className="hud-chip hud-chip-idle">Muted</span>;
   switch (row.verdict.severity) {
     case "off":
-      return <span className="lc-chip lc-chip-muted">Off</span>;
+      return <span className="hud-chip hud-chip-idle">Off</span>;
     case "blocked":
-      return <span className="lc-chip lc-chip-bad">Seat blocked</span>;
+      return <span className="hud-chip hud-chip-crit">Seat down</span>;
     case "refresh":
-      return <span className="lc-chip lc-chip-bad">Needs refresh</span>;
+      return <span className="hud-chip hud-chip-crit">Needs work</span>;
     case "watch":
-      return <span className="lc-chip lc-chip-warn">Watch</span>;
+      return <span className="hud-chip hud-chip-warn">Watch</span>;
     default:
-      return <span className="lc-chip lc-chip-ok">Healthy</span>;
+      return <span className="hud-chip hud-chip-ok">Nominal</span>;
   }
 }
 
@@ -50,33 +50,32 @@ function CampaignCard({
   }
 
   return (
-    <div className={`lc-camp lc-camp-${row.verdict.severity}`}>
-      <div className="lc-camp-top">
-        <div className="lc-camp-id">
-          <button className="lc-camp-name" onClick={() => setOpen((v) => !v)}>
+    <div className={`hud-camp sev-${row.verdict.severity}`}>
+      <div className="hud-camp-top">
+        <div>
+          <button className="hud-camp-name" onClick={() => setOpen((v) => !v)}>
             {row.name}
           </button>
-          <div className="lc-camp-sub">
+          <div className="hud-camp-sub">
             {row.seatName}
             {row.clientName ? ` · ${row.clientName}` : " · unassigned"}
-            {row.isActive ? "" : " · paused"}
           </div>
         </div>
-        {severityChip(row)}
+        {statusChip(row)}
       </div>
 
-      <div className="lc-stats">
-        <div><b>{row.acceptanceRate ? pct(row.acceptanceRate) : "—"}</b><span>accepted</span></div>
-        <div><b>{row.responseRate ? pct(row.responseRate) : "—"}</b><span>replied</span></div>
-        <div><b>{row.connectionsRequested.toLocaleString()}</b><span>requests</span></div>
-        <div><b>{row.replies.toLocaleString()}</b><span>replies</span></div>
-        <div><b>{row.remainingLeads.toLocaleString()}</b><span>leads left</span></div>
+      <div className="hud-stats">
+        <div><b>{row.acceptanceRate ? pct(row.acceptanceRate) : "—"}</b><span>Accepted</span></div>
+        <div><b>{row.responseRate ? pct(row.responseRate) : "—"}</b><span>Replied</span></div>
+        <div><b>{row.connectionsRequested.toLocaleString()}</b><span>Requests</span></div>
+        <div><b>{row.replies.toLocaleString()}</b><span>Replies</span></div>
+        <div><b>{row.remainingLeads.toLocaleString()}</b><span>Leads left</span></div>
       </div>
 
       {row.verdict.reasons.length > 0 ? (
-        <ul className="lc-reasons">
+        <ul className="hud-faults">
           {row.verdict.reasons.map((r) => (
-            <li key={r.code} className={`lc-reason lc-reason-${r.severity}`}>
+            <li key={r.code} className={`hud-fault ${r.severity}`}>
               <b>{r.label}.</b> {r.detail}
             </li>
           ))}
@@ -84,8 +83,8 @@ function CampaignCard({
       ) : null}
 
       {open ? (
-        <div className="lc-camp-edit">
-          <label className="field">
+        <div className="hud-camp-edit">
+          <label className="hud-field">
             <span>Client</span>
             <select
               value={row.clientId ?? ""}
@@ -99,14 +98,13 @@ function CampaignCard({
             </select>
           </label>
 
-          <label className="field">
-            <span>Refresh every (days)</span>
+          <label className="hud-field">
+            <span>Refresh interval (days)</span>
             <input
               type="number"
               min={1}
               max={3650}
-              defaultValue={row.verdict.daysSinceActivity !== null ? undefined : undefined}
-              placeholder="Use the global default"
+              placeholder="Global default"
               disabled={busy}
               onBlur={(e) => {
                 const raw = e.target.value.trim();
@@ -115,16 +113,16 @@ function CampaignCard({
             />
           </label>
 
-          <div className="lc-camp-actions">
-            <button className="btn btn-sm" disabled={busy} onClick={() => patch({ markRefreshed: true })}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="hud-btn" disabled={busy} onClick={() => patch({ markRefreshed: true })}>
               Mark refreshed
             </button>
             <button
-              className="btn btn-ghost btn-sm"
+              className="hud-btn hud-btn-quiet"
               disabled={busy}
               onClick={() => patch({ muted: !row.verdict.muted })}
             >
-              {row.verdict.muted ? "Unmute" : "Mute alerts"}
+              {row.verdict.muted ? "Unmute" : "Mute"}
             </button>
           </div>
         </div>
@@ -142,18 +140,20 @@ export function LinkedInPanel({
   clients: ClientRef[];
   onChanged: () => void;
 }) {
-  // Switched-off campaigns are hidden by default. Most of the account is off
-  // at any time, and showing them buries the live ones.
+  // Switched-off campaigns are hidden by default. Most of the account is off at
+  // any time, and showing them buries the live ones.
   const [showOff, setShowOff] = useState(false);
   const [onlyProblems, setOnlyProblems] = useState(false);
 
   if (!data.configured) {
     return (
-      <div className="card card-pad">
-        <h3>Skylead is not connected yet</h3>
-        <p className="muted">
-          Set <code>SKYLEAD_API_KEY</code> in your environment and in Railway, then reload.
-          Grab a key at <a href="https://app.multilead.co/settings/api" target="_blank" rel="noreferrer">app.multilead.co/settings/api</a>.
+      <div className="hud-panel">
+        <div className="hud-panel-head">
+          <h2 className="hud-panel-title">Skylead offline</h2>
+        </div>
+        <p className="hud-empty">
+          Set SKYLEAD_API_KEY in your environment and in Railway, then resync. Keys are issued at
+          app.multilead.co/settings/api.
         </p>
       </div>
     );
@@ -161,9 +161,9 @@ export function LinkedInPanel({
 
   if (data.error) {
     return (
-      <div className="card card-pad lc-error">
-        <h3>Could not reach Skylead</h3>
-        <p className="muted">{data.error}</p>
+      <div className="hud-alert">
+        <h3>Link failed</h3>
+        <p className="hud-err">{data.error}</p>
       </div>
     );
   }
@@ -171,93 +171,78 @@ export function LinkedInPanel({
   const broken = data.seats.filter((s) => !s.connected);
 
   return (
-    <div className="stack" style={{ gap: 16 }}>
+    <div className="hud-stack">
       {broken.length > 0 ? (
-        <div className="card card-pad lc-error">
-          <h3 style={{ marginTop: 0 }}>
+        <div className="hud-alert hud-in hud-in-1">
+          <h3>
             {broken.length} of {data.seats.length} seats are not sending
           </h3>
-          <p className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            Campaigns on these seats look active but nothing goes out until the seat is fixed.
+          <p className="hud-err" style={{ color: "var(--ghost)", marginBottom: 10 }}>
+            Their campaigns still read as active. Nothing goes out until the seat is fixed.
           </p>
-          <div style={{ marginTop: 8 }}>
-            {broken.map(({ seat, campaigns }) => (
-              <div key={seat.id} className="lc-line">
-                <span>{seat.fullName}</span>
-                <span className="muted">
-                  {seat.statusLabel}
-                  {campaigns.length > 0 ? ` · ${campaigns.length} campaign${campaigns.length === 1 ? "" : "s"} stalled` : ""}
-                </span>
-              </div>
-            ))}
-          </div>
+          {broken.map(({ seat, campaigns }) => (
+            <div key={seat.id} className="hud-row">
+              <span>{seat.fullName}</span>
+              <span className="hud-row-meta">
+                {seat.statusLabel}
+                {campaigns.length > 0 ? ` · ${campaigns.length} stranded` : ""}
+              </span>
+            </div>
+          ))}
         </div>
       ) : null}
 
-      <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <label className="lc-toggle">
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+        <label className="hud-check">
           <input
             type="checkbox"
             checked={onlyProblems}
             onChange={(e) => setOnlyProblems(e.target.checked)}
           />
-          Only show campaigns that need attention
+          Only what needs work
         </label>
-        <label className="lc-toggle">
-          <input
-            type="checkbox"
-            checked={showOff}
-            onChange={(e) => setShowOff(e.target.checked)}
-          />
-          Include switched-off campaigns
+        <label className="hud-check">
+          <input type="checkbox" checked={showOff} onChange={(e) => setShowOff(e.target.checked)} />
+          Include switched-off
         </label>
-        {data.fetchedAt ? (
-          <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
-            Synced {new Date(data.fetchedAt).toLocaleString()}
-          </span>
-        ) : null}
       </div>
 
-      {data.seats.length === 0 ? (
-        <p className="muted">No LinkedIn seats found on this Skylead account.</p>
-      ) : null}
+      {data.seats.length === 0 ? <p className="hud-empty">No seats on this Skylead account.</p> : null}
 
       {data.seats.map(({ seat, connected, error, liveCampaigns, campaigns }) => {
-        const visible = showOff
-          ? campaigns
-          : campaigns.filter((c) => c.verdict.severity !== "off");
+        const visible = showOff ? campaigns : campaigns.filter((c) => c.verdict.severity !== "off");
         const shown = onlyProblems
           ? visible.filter((c) => c.verdict.severity === "refresh" || c.verdict.severity === "watch")
           : visible;
-        const offCount = campaigns.length - campaigns.filter((c) => c.verdict.severity !== "off").length;
+        const offCount = campaigns.filter((c) => c.verdict.severity === "off").length;
 
         return (
-          <div key={seat.id} className="ops-panel">
-            <div className="lc-seat-head">
+          <div key={seat.id} className="hud-panel">
+            <div className="hud-panel-head">
               <div>
-                <h3 style={{ margin: 0 }}>{seat.fullName}</h3>
-                <span className="muted" style={{ fontSize: 12 }}>
+                <h2 className="hud-panel-title">{seat.fullName}</h2>
+                <div className="hud-camp-sub">
                   {liveCampaigns} live of {campaigns.length}
                   {offCount > 0 && !showOff ? ` · ${offCount} off, hidden` : ""}
-                </span>
+                </div>
               </div>
-              <span className={`lc-chip ${connected ? "lc-chip-ok" : "lc-chip-bad"}`}>
+              <span className={`hud-chip ${connected ? "hud-chip-ok" : "hud-chip-crit"}`}>
                 {connected ? "Sending" : seat.statusLabel || "Not sending"}
               </span>
             </div>
 
-            {error ? <p className="lc-error-line">{error}</p> : null}
+            {error ? <p className="hud-err">{error}</p> : null}
 
             {shown.length === 0 ? (
-              <p className="muted" style={{ marginTop: 8 }}>
+              <p className="hud-empty">
                 {onlyProblems
-                  ? "Nothing needs attention on this seat."
+                  ? "Nothing needs work on this seat."
                   : campaigns.length > 0
                     ? "Every campaign on this seat is switched off."
                     : "No campaigns on this seat."}
               </p>
             ) : (
-              <div className="lc-camp-list">
+              <div style={{ display: "grid", gap: 10 }}>
                 {shown.map((row) => (
                   <CampaignCard key={row.id} row={row} clients={clients} onChanged={onChanged} />
                 ))}

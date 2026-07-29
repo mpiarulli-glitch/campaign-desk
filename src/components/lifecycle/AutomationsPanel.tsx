@@ -80,23 +80,23 @@ export function AutomationsPanel({
     : automations;
 
   return (
-    <div className="stack" style={{ gap: 16 }}>
-      <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+    <div className="hud-stack">
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
           <option value="">All platforms</option>
           {PLATFORMS.map((p) => (
             <option key={p} value={p}>{PLATFORM_LABELS[p]}</option>
           ))}
         </select>
-        <button className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={() => setAdding((v) => !v)}>
+        <button className="hud-btn" style={{ marginLeft: "auto" }} onClick={() => setAdding((v) => !v)}>
           {adding ? "Cancel" : "Add automation"}
         </button>
       </div>
 
       {adding ? (
-        <div className="card card-pad stack" style={{ gap: 10 }}>
-          <div className="lc-form-grid">
-            <label className="field">
+        <div className="hud-panel" style={{ display: "grid", gap: 12 }}>
+          <div className="hud-camp-edit" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
+            <label className="hud-field">
               <span>Name</span>
               <input
                 value={draft.name}
@@ -104,7 +104,7 @@ export function AutomationsPanel({
                 placeholder="Post-service review request"
               />
             </label>
-            <label className="field">
+            <label className="hud-field">
               <span>Client</span>
               <select value={draft.clientId} onChange={(e) => setDraft({ ...draft, clientId: e.target.value })}>
                 <option value="">No client</option>
@@ -113,7 +113,7 @@ export function AutomationsPanel({
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="hud-field">
               <span>Platform</span>
               <select value={draft.platform} onChange={(e) => setDraft({ ...draft, platform: e.target.value })}>
                 {PLATFORMS.map((p) => (
@@ -121,7 +121,7 @@ export function AutomationsPanel({
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="hud-field">
               <span>Status</span>
               <select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })}>
                 {STATUSES.map((s) => (
@@ -129,7 +129,7 @@ export function AutomationsPanel({
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="hud-field">
               <span>Type</span>
               <input
                 value={draft.kind}
@@ -137,7 +137,7 @@ export function AutomationsPanel({
                 placeholder="Welcome, reactivation, abandoned cart…"
               />
             </label>
-            <label className="field">
+            <label className="hud-field">
               <span>Account / location ref</span>
               <input
                 value={draft.accountRef}
@@ -146,7 +146,7 @@ export function AutomationsPanel({
               />
             </label>
           </div>
-          <label className="field">
+          <label className="hud-field">
             <span>Link</span>
             <input
               value={draft.link}
@@ -154,7 +154,7 @@ export function AutomationsPanel({
               placeholder="https://app.gohighlevel.com/…"
             />
           </label>
-          <label className="field">
+          <label className="hud-field">
             <span>What it does</span>
             <textarea
               rows={2}
@@ -162,47 +162,49 @@ export function AutomationsPanel({
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
             />
           </label>
-          {error ? <p className="lc-error-line">{error}</p> : null}
-          <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setError(""); }}>Cancel</button>
-            <button className="btn btn-sm" disabled={busy} onClick={save}>Save</button>
+          {error ? <p className="hud-err">{error}</p> : null}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="hud-btn hud-btn-quiet" onClick={() => { setAdding(false); setError(""); }}>Cancel</button>
+            <button className="hud-btn" disabled={busy} onClick={save}>Save</button>
           </div>
         </div>
       ) : null}
 
       {shown.length === 0 ? (
-        <p className="muted">
+        <p className="hud-empty">
           Nothing logged yet. Add the automations you run in GHL, Klaviyo and elsewhere so you can
           see them all in one place.
         </p>
       ) : (
-        <div className="lc-auto-list">
+        <div className="hud-stack" style={{ gap: 10 }}>
           {shown.map((a) => (
-            <div key={a.id} className="lc-auto">
-              <div className="lc-auto-main">
-                <div className="lc-auto-title">
-                  {a.link ? (
-                    <a href={a.link} target="_blank" rel="noreferrer">{a.name}</a>
-                  ) : (
-                    a.name
-                  )}
+            <div key={a.id} className={`hud-camp ${a.status === "live" ? "sev-ok" : "sev-off"}`}>
+              <div className="hud-camp-top">
+                <div>
+                  <div className="hud-q-name">
+                    {a.link ? (
+                      <a href={a.link} target="_blank" rel="noreferrer">{a.name}</a>
+                    ) : (
+                      a.name
+                    )}
+                  </div>
+                  <div className="hud-camp-sub">
+                    {PLATFORM_LABELS[a.platform] ?? a.platform} · {clientName(a.client_id)}
+                    {a.kind ? ` · ${a.kind}` : ""}
+                    {a.account_ref ? ` · ${a.account_ref}` : ""}
+                  </div>
+                  {a.description ? <p className="hud-note-body">{a.description}</p> : null}
                 </div>
-                <div className="lc-auto-sub">
-                  {PLATFORM_LABELS[a.platform] ?? a.platform} · {clientName(a.client_id)}
-                  {a.kind ? ` · ${a.kind}` : ""}
-                  {a.account_ref ? ` · ${a.account_ref}` : ""}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                  <select value={a.status} onChange={(e) => patch(a.id, { status: e.target.value })}>
+                    {STATUSES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <button className="hud-btn hud-btn-quiet" onClick={() => remove(a.id, a.name)}>
+                    Delete
+                  </button>
                 </div>
-                {a.description ? <p className="lc-auto-desc">{a.description}</p> : null}
-              </div>
-              <div className="lc-auto-side">
-                <select value={a.status} onChange={(e) => patch(a.id, { status: e.target.value })}>
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-                <button className="btn btn-ghost btn-sm" onClick={() => remove(a.id, a.name)}>
-                  Delete
-                </button>
               </div>
             </div>
           ))}

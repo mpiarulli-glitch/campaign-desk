@@ -1,0 +1,788 @@
+/* ===========================================================================
+   Lifecycle console
+   ---------------------------------------------------------------------------
+   An instrument panel, not a page of cards. Everything is scoped under .hud so
+   the rest of Campaign Desk keeps its light theme untouched.
+
+   Rules the whole surface obeys:
+     - No border radius above 2px. Panels are framed by corner brackets.
+     - Every numeral is monospace so figures stay on a fixed grid.
+     - Colour is a signal, never decoration. Cyan reads, amber warns, red is
+       offline. If something is fine it stays grey.
+   ========================================================================= */
+
+.hud {
+  /* Blue-black rather than pure black: pure #000 kills the glow falloff. */
+  --void: #05080d;
+  --hull: #0b1219;
+  --hull-lift: #101a24;
+  --seam: #16232f;
+  --seam-lit: #1e3444;
+
+  --arc: #00d4e8;
+  --arc-deep: #0e5c66;
+  --arc-wash: rgba(0, 212, 232, 0.09);
+
+  --flare: #ff8a3d;
+  --flare-wash: rgba(255, 138, 61, 0.11);
+  --crit: #ff3b47;
+  --crit-wash: rgba(255, 59, 71, 0.1);
+  --good: #35e39a;
+
+  --ink: #dcecf5;
+  --ghost: #7d96a8;
+  --ghost-dim: #4a5f6f;
+
+  --instrument: var(--font-instrument), "Chakra Petch", system-ui, sans-serif;
+  --readout: var(--font-readout), ui-monospace, "SF Mono", Menlo, monospace;
+  --prose: var(--font-inter), system-ui, sans-serif;
+
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 18% -10%, rgba(0, 212, 232, 0.07), transparent 62%),
+    radial-gradient(900px 500px at 100% 0%, rgba(255, 138, 61, 0.045), transparent 58%),
+    var(--void);
+  color: var(--ink);
+  font-family: var(--prose);
+  /* Hairline grid, barely legible. Reads as machined surface, not wallpaper. */
+  background-attachment: fixed;
+}
+
+.hud ::selection {
+  background: var(--arc);
+  color: var(--void);
+}
+
+.hud-page {
+  width: min(1280px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 30px 0 96px;
+}
+
+/* --------------------------------------------------------------- primitives */
+
+.hud-eyebrow {
+  font-family: var(--instrument);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ghost-dim);
+}
+
+/* Panels are framed by brackets at the corners rather than a full border, so
+   the frame reads as a machined bezel instead of a card. */
+.hud-panel {
+  position: relative;
+  background: linear-gradient(180deg, var(--hull) 0%, rgba(11, 18, 25, 0.72) 100%);
+  border: 1px solid var(--seam);
+  padding: 20px 22px;
+}
+
+.hud-panel::before,
+.hud-panel::after {
+  content: "";
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--arc-deep);
+  pointer-events: none;
+}
+.hud-panel::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.hud-panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.hud-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.hud-panel-title {
+  font-family: var(--instrument);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0;
+}
+
+.hud-num {
+  font-family: var(--readout);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ------------------------------------------------------------- system bar */
+
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--seam);
+  margin-bottom: 26px;
+}
+
+.hud-mark {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.hud-mark h1 {
+  font-family: var(--instrument);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* The one ambient effect on the page: a slow sweep across the title, like a
+   refresh line on a CRT. Everything else holds still. */
+.hud-mark h1 {
+  background: linear-gradient(
+    100deg,
+    var(--ink) 0%,
+    var(--ink) 38%,
+    var(--arc) 50%,
+    var(--ink) 62%,
+    var(--ink) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: hud-sweep 9s ease-in-out infinite;
+}
+
+@keyframes hud-sweep {
+  0%, 62% { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+
+.hud-clock {
+  font-family: var(--readout);
+  font-size: 11px;
+  color: var(--ghost-dim);
+  letter-spacing: 0.06em;
+}
+
+.hud-bar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.hud-btn {
+  appearance: none;
+  font-family: var(--instrument);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--arc);
+  background: transparent;
+  border: 1px solid var(--arc-deep);
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.hud-btn:hover:not(:disabled) {
+  background: var(--arc-wash);
+  border-color: var(--arc);
+}
+.hud-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.hud-btn-quiet { color: var(--ghost); border-color: var(--seam-lit); }
+.hud-btn-quiet:hover:not(:disabled) { color: var(--ink); background: rgba(255, 255, 255, 0.03); }
+
+.hud-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ghost);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hud-link:hover { color: var(--arc); }
+
+.hud :focus-visible {
+  outline: 1px solid var(--arc);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------- channel nav */
+
+.hud-channels {
+  display: flex;
+  gap: 0;
+  flex-wrap: wrap;
+  border: 1px solid var(--seam);
+  background: rgba(5, 8, 13, 0.6);
+  margin-bottom: 26px;
+}
+
+.hud-channel {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--seam);
+  padding: 11px 18px;
+  font-family: var(--instrument);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ghost-dim);
+  cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.hud-channel:last-child { border-right: 0; }
+.hud-channel:hover { color: var(--ink); background: rgba(255, 255, 255, 0.02); }
+
+.hud-channel.on {
+  color: var(--arc);
+  background: var(--arc-wash);
+}
+/* Lit rail under the active channel, like a selected instrument bank. */
+.hud-channel.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--arc);
+  box-shadow: 0 0 10px var(--arc);
+}
+
+.hud-channel-count {
+  font-family: var(--readout);
+  font-size: 10px;
+  padding: 1px 5px;
+  background: var(--seam-lit);
+  color: var(--ghost);
+}
+.hud-channel-count.alert { background: var(--crit); color: #fff; }
+
+/* ======================================================= SIGNATURE: array ==
+   One bar per LinkedIn seat. Lit = sending, dark = faulted. This is the first
+   thing on the page because it is the first thing that is wrong.
+   ========================================================================= */
+
+.hud-array-panel { margin-bottom: 22px; }
+
+.hud-array {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 132px;
+  margin: 10px 0 16px;
+  padding-bottom: 1px;
+  /* Baseline the bars sit on, so the array reads as a gauge with a floor. */
+  border-bottom: 1px solid var(--seam-lit);
+}
+
+/* Two faint gridlines behind the bars. Enough to imply a scale, not enough to
+   compete with the data. */
+.hud-array::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 1px 0;
+  background:
+    linear-gradient(to top, transparent 49.6%, var(--seam) 49.6%, var(--seam) 50%, transparent 50%),
+    linear-gradient(to top, transparent 99.6%, var(--seam) 99.6%, var(--seam) 100%, transparent 100%);
+  pointer-events: none;
+}
+
+.hud-seat {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+}
+
+/* The bar itself. Height encodes active-campaign load, colour encodes whether
+   the seat can send. A tall red bar is the worst thing on the page. */
+.hud-seat-bar {
+  width: 100%;
+  background: var(--seam-lit);
+  border-top: 2px solid var(--ghost-dim);
+  transition: filter 0.18s ease;
+}
+
+.hud-seat.live .hud-seat-bar {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 212, 232, 0.42) 0%,
+    rgba(0, 212, 232, 0.13) 45%,
+    rgba(0, 212, 232, 0.03) 100%
+  );
+  border-top-color: var(--arc);
+  box-shadow: 0 0 18px rgba(0, 212, 232, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.hud-seat.fault .hud-seat-bar {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 59, 71, 0.34) 0%,
+    rgba(255, 59, 71, 0.1) 48%,
+    rgba(255, 59, 71, 0.02) 100%
+  );
+  border-top-color: var(--crit);
+  box-shadow: 0 0 14px rgba(255, 59, 71, 0.26);
+}
+
+.hud-seat:hover .hud-seat-bar,
+.hud-seat:focus-visible .hud-seat-bar { filter: brightness(1.5); }
+
+.hud-seat-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--hull-lift);
+  border: 1px solid var(--seam-lit);
+  padding: 7px 10px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+  text-align: left;
+}
+.hud-seat:hover .hud-seat-tip,
+.hud-seat:focus-visible .hud-seat-tip { opacity: 1; }
+
+.hud-seat-tip b {
+  display: block;
+  font-family: var(--instrument);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+.hud-seat-tip span {
+  font-family: var(--readout);
+  font-size: 10px;
+  color: var(--ghost);
+}
+
+.hud-array-legend {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-family: var(--readout);
+  font-size: 11px;
+  color: var(--ghost);
+  border-top: 1px solid var(--seam);
+  padding-top: 12px;
+}
+.hud-array-legend b { color: var(--ink); font-weight: 500; }
+.hud-array-legend .crit { color: var(--crit); }
+
+/* Integrity ratio, set large and monospaced. */
+.hud-integrity {
+  font-family: var(--readout);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--arc);
+  line-height: 1;
+}
+.hud-integrity.degraded { color: var(--flare); }
+.hud-integrity small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ghost-dim);
+}
+
+/* ------------------------------------------------------------- readout row */
+
+.hud-readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 1px;
+  background: var(--seam);
+  border: 1px solid var(--seam);
+  margin-bottom: 22px;
+}
+
+.hud-readout {
+  background: var(--hull);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.hud-readout b {
+  font-family: var(--readout);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.hud-readout span {
+  font-family: var(--instrument);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ghost-dim);
+}
+
+.hud-readout.alert b { color: var(--crit); text-shadow: 0 0 22px rgba(255, 59, 71, 0.5); }
+.hud-readout.warn b { color: var(--flare); text-shadow: 0 0 22px rgba(255, 138, 61, 0.42); }
+.hud-readout.live b { color: var(--arc); text-shadow: 0 0 22px rgba(0, 212, 232, 0.42); }
+
+/* ----------------------------------------------------------- priority queue
+   Numbered because the order is real: worst first. */
+
+.hud-queue { display: flex; flex-direction: column; }
+
+.hud-q {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 4px;
+  border-bottom: 1px solid var(--seam);
+}
+.hud-q:last-child { border-bottom: 0; }
+
+.hud-q-rank {
+  font-family: var(--readout);
+  font-size: 12px;
+  color: var(--ghost-dim);
+}
+
+.hud-q-name {
+  font-family: var(--instrument);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+.hud-q-meta {
+  font-family: var(--readout);
+  font-size: 11px;
+  color: var(--ghost);
+  margin-top: 3px;
+}
+.hud-q-faults { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ------------------------------------------------------------------ chips */
+
+.hud-chip {
+  font-family: var(--instrument);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.hud-chip-crit { color: var(--crit); border-color: rgba(255, 59, 71, 0.4); background: var(--crit-wash); }
+.hud-chip-warn { color: var(--flare); border-color: rgba(255, 138, 61, 0.4); background: var(--flare-wash); }
+.hud-chip-ok { color: var(--good); border-color: rgba(53, 227, 154, 0.35); background: rgba(53, 227, 154, 0.08); }
+.hud-chip-idle { color: var(--ghost-dim); border-color: var(--seam-lit); }
+
+/* ------------------------------------------------------------- campaign card */
+
+.hud-camp {
+  border: 1px solid var(--seam);
+  border-left: 2px solid var(--ghost-dim);
+  background: var(--hull);
+  padding: 15px 17px;
+}
+.hud-camp.sev-refresh { border-left-color: var(--crit); }
+.hud-camp.sev-watch { border-left-color: var(--flare); }
+.hud-camp.sev-ok { border-left-color: var(--good); }
+.hud-camp.sev-blocked { border-left-color: var(--crit); opacity: 0.82; }
+.hud-camp.sev-off { border-left-color: var(--seam-lit); opacity: 0.55; }
+
+.hud-camp-top {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.hud-camp-name {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--instrument);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.hud-camp-name:hover { color: var(--arc); }
+.hud-camp-sub {
+  font-family: var(--readout);
+  font-size: 11px;
+  color: var(--ghost-dim);
+  margin-top: 3px;
+}
+
+/* Stat strip: values on a fixed grid so rows align across cards. */
+.hud-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 10px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--seam);
+}
+.hud-stats div { display: flex; flex-direction: column; gap: 2px; }
+.hud-stats b {
+  font-family: var(--readout);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.hud-stats span {
+  font-family: var(--instrument);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ghost-dim);
+}
+
+.hud-faults { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.hud-fault {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ghost);
+  padding-left: 12px;
+  border-left: 1px solid var(--seam-lit);
+}
+.hud-fault b { font-family: var(--instrument); letter-spacing: 0.04em; }
+.hud-fault.refresh b { color: var(--crit); }
+.hud-fault.watch b { color: var(--flare); }
+
+.hud-camp-edit {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--seam);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+/* ------------------------------------------------------------------ fields */
+
+.hud-field { display: flex; flex-direction: column; gap: 6px; }
+.hud-field > span {
+  font-family: var(--instrument);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ghost-dim);
+}
+
+.hud input,
+.hud select,
+.hud textarea {
+  background: var(--void);
+  border: 1px solid var(--seam-lit);
+  color: var(--ink);
+  font-family: var(--readout);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 0;
+  width: 100%;
+}
+.hud textarea { font-family: var(--prose); line-height: 1.55; resize: vertical; }
+.hud input:focus,
+.hud select:focus,
+.hud textarea:focus {
+  outline: none;
+  border-color: var(--arc);
+  box-shadow: 0 0 0 1px var(--arc-wash);
+}
+.hud input::placeholder,
+.hud textarea::placeholder { color: var(--ghost-dim); }
+.hud select option { background: var(--hull); color: var(--ink); }
+
+.hud-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--readout);
+  font-size: 11px;
+  color: var(--ghost);
+  cursor: pointer;
+}
+.hud-check input { width: auto; accent-color: var(--arc); }
+
+/* ------------------------------------------------------------------- lists */
+
+.hud-row {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--seam);
+  font-size: 13px;
+}
+.hud-row:last-child { border-bottom: 0; }
+.hud-row a { color: var(--ink); text-decoration: none; }
+.hud-row a:hover { color: var(--arc); text-decoration: underline; text-underline-offset: 3px; }
+.hud-row-meta {
+  font-family: var(--readout);
+  font-size: 11px;
+  color: var(--ghost-dim);
+  white-space: nowrap;
+}
+
+.hud-grid { display: grid; gap: 20px; }
+.hud-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+.hud-stack { display: flex; flex-direction: column; gap: 20px; }
+
+.hud-empty {
+  font-family: var(--readout);
+  font-size: 12px;
+  color: var(--ghost-dim);
+  padding: 8px 0;
+}
+
+.hud-note-body { font-size: 13px; line-height: 1.6; color: var(--ghost); white-space: pre-wrap; margin: 8px 0 0; }
+.hud-note.pinned { border-left: 2px solid var(--arc); }
+
+.hud-alert {
+  border: 1px solid rgba(255, 59, 71, 0.35);
+  background: linear-gradient(180deg, var(--crit-wash), transparent);
+  padding: 16px 18px;
+}
+.hud-alert h3 {
+  font-family: var(--instrument);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--crit);
+  margin: 0 0 4px;
+}
+.hud-err { font-family: var(--readout); font-size: 11px; color: var(--crit); }
+
+/* ------------------------------------------------------- boot-in sequence */
+
+.hud-in { animation: hud-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.hud-in-1 { animation-delay: 0.04s; }
+.hud-in-2 { animation-delay: 0.1s; }
+.hud-in-3 { animation-delay: 0.16s; }
+
+@keyframes hud-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-in { animation: none; }
+  .hud-mark h1 {
+    animation: none;
+    -webkit-text-fill-color: var(--ink);
+  }
+  .hud-seat-bar { transition: none; }
+}
+
+@media (max-width: 720px) {
+  .hud-page { width: calc(100% - 28px); }
+  .hud-array { height: 58px; }
+  .hud-q { grid-template-columns: 28px 1fr; }
+  .hud-q-faults { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* ================================================== console-mode chrome ====
+   When the Lifecycle console is open the surrounding shell goes dark too, so
+   the page reads as one instrument rather than a black card in a light app.
+   Scoped to .is-console: every other route keeps the light theme exactly.
+   ========================================================================= */
+
+.cd-shell.is-console {
+  --void: #05080d;
+  --hull: #0b1219;
+  --seam: #16232f;
+  --arc: #00d4e8;
+  --ghost: #7d96a8;
+  background: var(--void);
+}
+
+.cd-shell.is-console .side {
+  background: #070c12;
+  border-right-color: var(--seam);
+}
+.cd-shell.is-console .side-brand b,
+.cd-shell.is-console .side .nav-i {
+  color: var(--ghost);
+}
+.cd-shell.is-console .side .nav-i:hover {
+  background: rgba(0, 212, 232, 0.07);
+  color: #dcecf5;
+}
+.cd-shell.is-console .side .nav-i.on {
+  background: rgba(0, 212, 232, 0.1);
+  color: var(--arc);
+}
+.cd-shell.is-console .side-foot,
+.cd-shell.is-console .side-viewas,
+.cd-shell.is-console .side-toggle {
+  color: var(--ghost);
+  border-color: var(--seam);
+}
+
+.cd-shell.is-console .app-top {
+  background: rgba(7, 12, 18, 0.86);
+  border-bottom-color: var(--seam);
+}
+.cd-shell.is-console .app-search {
+  background: #0b1219;
+  border-color: var(--seam);
+  color: var(--ghost);
+}
+.cd-shell.is-console .app-iconbtn { color: var(--ghost); }
+.cd-shell.is-console .app-content { background: var(--void); }

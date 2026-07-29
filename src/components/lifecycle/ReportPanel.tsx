@@ -41,8 +41,8 @@ export function ReportPanel({ clients }: { clients: ClientRef[] }) {
   }, [clientId, months, run]);
 
   return (
-    <div className="stack" style={{ gap: 16 }}>
-      <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+    <div className="hud-stack">
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
           <option value="">Pick an account…</option>
           {clients.map((c) => (
@@ -54,66 +54,66 @@ export function ReportPanel({ clients }: { clients: ClientRef[] }) {
             <option key={m} value={m}>Last {m} months</option>
           ))}
         </select>
-        <button className="btn btn-sm" disabled={!clientId || loading} onClick={run}>
+        <button className="hud-btn" disabled={!clientId || loading} onClick={run}>
           {loading ? "Building…" : "Run report"}
         </button>
       </div>
 
-      {error ? <p className="lc-error-line">{error}</p> : null}
+      {error ? <p className="hud-err">{error}</p> : null}
 
       {!report ? (
-        <p className="muted">Pick an account to see email performance, automations and LinkedIn together.</p>
+        <p className="hud-empty">Pick an account to see email performance, automations and LinkedIn together.</p>
       ) : (
-        <div className="stack" style={{ gap: 16 }}>
-          <div className="ops-panel">
-            <h3 style={{ marginTop: 0 }}>{report.clientName}</h3>
-            <div className="lc-kpis">
-              <div><b>{report.email.campaignsSent.toLocaleString()}</b><span>emails sent</span></div>
-              <div><b>{report.email.recipients.toLocaleString()}</b><span>recipients</span></div>
-              <div><b>{report.email.openRate.toFixed(1)}%</b><span>open rate</span></div>
-              <div><b>{report.email.clickRate.toFixed(1)}%</b><span>click rate</span></div>
-              <div><b>{money(report.email.revenue)}</b><span>revenue</span></div>
-              <div><b>{report.email.leads.toLocaleString()}</b><span>leads</span></div>
+        <div className="hud-stack">
+          <div className="hud-panel">
+            <h2 className="hud-panel-title" style={{ marginBottom: 14 }}>{report.clientName}</h2>
+            <div className="hud-readouts">
+              <div className="hud-readout"><b>{report.email.campaignsSent.toLocaleString()}</b><span>emails sent</span></div>
+              <div className="hud-readout"><b>{report.email.recipients.toLocaleString()}</b><span>recipients</span></div>
+              <div className="hud-readout"><b>{report.email.openRate.toFixed(1)}%</b><span>open rate</span></div>
+              <div className="hud-readout"><b>{report.email.clickRate.toFixed(1)}%</b><span>click rate</span></div>
+              <div className="hud-readout"><b>{money(report.email.revenue)}</b><span>revenue</span></div>
+              <div className="hud-readout"><b>{report.email.leads.toLocaleString()}</b><span>leads</span></div>
             </div>
-            <p className="muted" style={{ fontSize: 12 }}>
+            <p className="hud-empty" style={{ fontSize: 12 }}>
               Email figures cover {report.email.months} month
               {report.email.months === 1 ? "" : "s"} of recorded data in the last {months}.
             </p>
           </div>
 
-          <div className="ops-panel">
-            <h3 style={{ marginTop: 0 }}>LinkedIn</h3>
+          <div className="hud-panel">
+            <h2 className="hud-panel-title" style={{ marginBottom: 14 }}>LinkedIn</h2>
             {report.linkedIn.campaigns.length === 0 ? (
-              <p className="muted">
+              <p className="hud-empty">
                 No Skylead campaigns are assigned to this account yet. Assign them from the LinkedIn tab.
               </p>
             ) : (
               <>
-                <div className="lc-kpis">
-                  <div><b>{report.linkedIn.live}</b><span>live campaigns</span></div>
-                  <div><b>{report.linkedIn.connectionsRequested.toLocaleString()}</b><span>requests</span></div>
-                  <div><b>{report.linkedIn.acceptanceRate.toFixed(1)}%</b><span>accepted</span></div>
-                  <div><b>{report.linkedIn.replies.toLocaleString()}</b><span>replies</span></div>
-                  <div><b>{report.linkedIn.responseRate.toFixed(1)}%</b><span>reply rate</span></div>
-                  <div><b>{report.linkedIn.needsRefresh}</b><span>need refresh</span></div>
+                <div className="hud-readouts">
+                  <div className="hud-readout"><b>{report.linkedIn.live}</b><span>live campaigns</span></div>
+                  <div className="hud-readout"><b>{report.linkedIn.connectionsRequested.toLocaleString()}</b><span>requests</span></div>
+                  <div className="hud-readout"><b>{report.linkedIn.acceptanceRate.toFixed(1)}%</b><span>accepted</span></div>
+                  <div className="hud-readout"><b>{report.linkedIn.replies.toLocaleString()}</b><span>replies</span></div>
+                  <div className="hud-readout"><b>{report.linkedIn.responseRate.toFixed(1)}%</b><span>reply rate</span></div>
+                  <div className="hud-readout"><b>{report.linkedIn.needsRefresh}</b><span>need refresh</span></div>
                 </div>
-                <p className="muted" style={{ fontSize: 12 }}>
+                <p className="hud-empty" style={{ fontSize: 12 }}>
                   Skylead reports lifetime totals, so these are not limited to the last {months} months.
                 </p>
               </>
             )}
           </div>
 
-          <div className="lc-two-col">
-            <div className="ops-panel">
-              <h3 style={{ marginTop: 0 }}>Automations</h3>
+          <div className="hud-grid hud-grid-2">
+            <div className="hud-panel">
+              <h2 className="hud-panel-title" style={{ marginBottom: 14 }}>Automations</h2>
               {report.automations.length === 0 ? (
-                <p className="muted">None logged for this account.</p>
+                <p className="hud-empty">None logged for this account.</p>
               ) : (
                 report.automations.map((a) => (
-                  <div key={a.id} className="lc-line">
+                  <div key={a.id} className="hud-row">
                     <span>{a.name}</span>
-                    <span className="muted">
+                    <span className="hud-empty">
                       {PLATFORM_LABELS[a.platform] ?? a.platform} · {a.status}
                     </span>
                   </div>
@@ -121,15 +121,15 @@ export function ReportPanel({ clients }: { clients: ClientRef[] }) {
               )}
             </div>
 
-            <div className="ops-panel">
-              <h3 style={{ marginTop: 0 }}>Open approvals</h3>
+            <div className="hud-panel">
+              <h2 className="hud-panel-title" style={{ marginBottom: 14 }}>Open approvals</h2>
               {report.approvals.length === 0 ? (
-                <p className="muted">Nothing waiting.</p>
+                <p className="hud-empty">Nothing waiting.</p>
               ) : (
                 report.approvals.map((a) => (
-                  <div key={a.id} className="lc-line">
+                  <div key={a.id} className="hud-row">
                     <a href={`/admin/campaigns/${a.id}`}>{a.title}</a>
-                    <span className="muted">{a.waitingDays}d</span>
+                    <span className="hud-empty">{a.waitingDays}d</span>
                   </div>
                 ))
               )}
@@ -137,26 +137,26 @@ export function ReportPanel({ clients }: { clients: ClientRef[] }) {
           </div>
 
           {report.notes.length > 0 || report.links.length > 0 ? (
-            <div className="lc-two-col">
-              <div className="ops-panel">
-                <h3 style={{ marginTop: 0 }}>Notes</h3>
+            <div className="hud-grid hud-grid-2">
+              <div className="hud-panel">
+                <h2 className="hud-panel-title" style={{ marginBottom: 14 }}>Notes</h2>
                 {report.notes.map((n) => (
-                  <div key={n.id} className="lc-line">
+                  <div key={n.id} className="hud-row">
                     <span>{n.title || "Untitled note"}</span>
-                    <span className="muted">{new Date(n.updated_at).toLocaleDateString()}</span>
+                    <span className="hud-empty">{new Date(n.updated_at).toLocaleDateString()}</span>
                   </div>
                 ))}
-                {report.notes.length === 0 ? <p className="muted">None.</p> : null}
+                {report.notes.length === 0 ? <p className="hud-empty">None.</p> : null}
               </div>
-              <div className="ops-panel">
-                <h3 style={{ marginTop: 0 }}>Links</h3>
+              <div className="hud-panel">
+                <h2 className="hud-panel-title" style={{ marginBottom: 14 }}>Links</h2>
                 {report.links.map((l) => (
-                  <div key={l.id} className="lc-line">
+                  <div key={l.id} className="hud-row">
                     <a href={l.url} target="_blank" rel="noreferrer">{l.title}</a>
-                    <span className="muted">{l.category}</span>
+                    <span className="hud-empty">{l.category}</span>
                   </div>
                 ))}
-                {report.links.length === 0 ? <p className="muted">None.</p> : null}
+                {report.links.length === 0 ? <p className="hud-empty">None.</p> : null}
               </div>
             </div>
           ) : null}
