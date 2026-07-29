@@ -26,6 +26,7 @@ import {
   type SkyleadCampaign,
   type SkyleadSeat,
 } from "./skylead";
+import { isGhlConfigured, sweepWorkflows } from "./ghl";
 import type { LifecycleAutomation, LifecycleLink, LifecycleNote } from "./db";
 
 /* ------------------------------------------------------------- approvals */
@@ -239,12 +240,125 @@ export async function buildLinkedInSection(force = false): Promise<LinkedInSecti
   };
 }
 
+/* ------------------------------------------------------------ GHL section */
+
+export interface GhlAutomationRow {
+  id: string;
+  name: string;
+  clientId: string;
+  clientName: string;
+  locationId: string;
+  /** GHL's own status. "published" is the only one that actually fires. */
+  status: string;
+  live: boolean;
+  updatedAt: string;
+}
+
+export interface GhlSection {
+  configured: boolean;
+  error: string | null;
+  fetchedAt: string | null;
+  workflows: GhlAutomationRow[];
+  live: number;
+  /** Clients with a GHL location that returned an error. */
+  failures: Array<{ clientName: string; error: string }>;
+  /** Clients on GHL that have no workflows at all. */
+  emptyClients: string[];
+}
+
+const EMPTY_GHL: GhlSection = {
+  configured: false,
+  error: null,
+  fetchedAt: null,
+  workflows: [],
+  live: 0,
+  failures: [],
+  emptyClients: [],
+};
+
+/**
+ * Live automations straight out of GoHighLevel, matched to clients through
+ * `rev_clients.ghl_location_id`. This is read-only: GHL owns these, so they
+ * are never written into `lifecycle_automations` where they could drift.
+ */
+export async function buildGhlSection(force = false): Promise<GhlSection> {
+  if (!isGhlConfigured()) return { ...EMPTY_GHL };
+
+  const targets = listRevClients(true)
+    .filter((c) => c.ghl_location_id?.trim())
+    .map((c) => ({
+      locationId: c.ghl_location_id.trim(),
+      clientId: c.id,
+      clientName: c.name,
+    }));
+
+  if (targets.length === 0) {
+    return { ...EMPTY_GHL, configured: true };
+  }
+
+  let sweep;
+  try {
+    sweep = await sweepWorkflows(targets, force);
+  } catch (err) {
+    return {
+      ...EMPTY_GHL,
+      configured: true,
+      error: err instanceof Error ? err.message : "Could not reach GoHighLevel",
+    };
+  }
+
+  const workflows: GhlAutomationRow[] = [];
+  const failures: Array<{ clientName: string; error: string }> = [];
+  const emptyClients: string[] = [];
+
+  for (const loc of sweep.locations) {
+    if (loc.error) {
+      failures.push({ clientName: loc.clientName, error: loc.error });
+      continue;
+    }
+    if (loc.workflows.length === 0) {
+      emptyClients.push(loc.clientName);
+      continue;
+    }
+    for (const w of loc.workflows) {
+      workflows.push({
+        id: `${loc.locationId}:${w.id}`,
+        name: w.name,
+        clientId: loc.clientId,
+        clientName: loc.clientName,
+        locationId: loc.locationId,
+        status: w.status,
+        live: w.status === "published",
+        updatedAt: w.updatedAt,
+      });
+    }
+  }
+
+  workflows.sort(
+    (a, b) =>
+      Number(b.live) - Number(a.live) ||
+      a.clientName.localeCompare(b.clientName) ||
+      a.name.localeCompare(b.name)
+  );
+
+  return {
+    configured: true,
+    error: null,
+    fetchedAt: sweep.fetchedAt,
+    workflows,
+    live: workflows.filter((w) => w.live).length,
+    failures,
+    emptyClients,
+  };
+}
+
 /* ------------------------------------------------------------- dashboard */
 
 export interface LifecycleDashboard {
   approvals: ApprovalRow[];
   linkedIn: LinkedInSection;
   automations: LifecycleAutomation[];
+  ghl: GhlSection;
   liveAutomationsByPlatform: Array<{ platform: string; live: number; total: number }>;
   sops: ReturnType<typeof listSops>;
   notes: LifecycleNote[];
@@ -258,12 +372,18 @@ export interface LifecycleDashboard {
     linkedInLive: number;
     campaignsNeedingRefresh: number;
     brokenSeats: number;
+    ghlLive: number;
   };
 }
 
 export async function buildLifecycleDashboard(force = false): Promise<LifecycleDashboard> {
   const approvals = listAllPendingApprovals();
-  const linkedIn = await buildLinkedInSection(force);
+  // Skylead and GoHighLevel are independent; fetch them side by side so a slow
+  // one doesn't add to the other's wait.
+  const [linkedIn, ghl] = await Promise.all([
+    buildLinkedInSection(force),
+    buildGhlSection(force),
+  ]);
   const automations = listAutomations();
 
   const byPlatform = new Map<string, { live: number; total: number }>();
@@ -278,6 +398,7 @@ export async function buildLifecycleDashboard(force = false): Promise<LifecycleD
     approvals,
     linkedIn,
     automations,
+    ghl,
     liveAutomationsByPlatform: [...byPlatform.entries()]
       .map(([platform, v]) => ({ platform, ...v }))
       .sort((a, b) => b.live - a.live),
@@ -293,6 +414,7 @@ export async function buildLifecycleDashboard(force = false): Promise<LifecycleD
       linkedInLive: linkedIn.campaigns.filter((c) => c.isActive).length,
       campaignsNeedingRefresh: linkedIn.needsRefresh.length,
       brokenSeats: linkedIn.brokenSeats,
+      ghlLive: ghl.live,
     },
   };
 }

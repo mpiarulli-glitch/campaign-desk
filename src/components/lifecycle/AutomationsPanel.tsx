@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PLATFORM_LABELS, type Automation, type ClientRef } from "./types";
+import { PLATFORM_LABELS, type Automation, type ClientRef, type GhlSection } from "./types";
 
 const PLATFORMS = ["ghl", "klaviyo", "skylead", "appfront", "boulevard", "other"];
 const STATUSES = ["live", "paused", "draft"];
@@ -17,15 +17,124 @@ const EMPTY = {
   link: "",
 };
 
+/**
+ * Workflows read live out of GoHighLevel. Read-only on purpose: GHL owns
+ * these, so copying them into our own table would just let the two drift.
+ */
+function GhlWorkflows({ ghl }: { ghl: GhlSection }) {
+  const [showDrafts, setShowDrafts] = useState(false);
+
+  if (!ghl.configured) {
+    return (
+      <div className="hud-panel">
+        <div className="hud-panel-head">
+          <h2 className="hud-panel-title">GoHighLevel not connected</h2>
+        </div>
+        <p className="hud-empty">
+          Set GHL_CLIENT_ID, GHL_CLIENT_SECRET, GHL_COMPANY_ID and GHL_REFRESH_TOKEN to pull live
+          workflows for every client with a location ID.
+        </p>
+      </div>
+    );
+  }
+
+  if (ghl.error) {
+    return (
+      <div className="hud-alert">
+        <h3>GoHighLevel link failed</h3>
+        <p className="hud-err">{ghl.error}</p>
+      </div>
+    );
+  }
+
+  const rows = showDrafts ? ghl.workflows : ghl.workflows.filter((w) => w.live);
+  const drafts = ghl.workflows.length - ghl.workflows.filter((w) => w.live).length;
+
+  // Group by client so the panel reads per-account, which is how the work is
+  // actually organised.
+  const byClient = new Map<string, typeof rows>();
+  for (const w of rows) {
+    const list = byClient.get(w.clientName) ?? [];
+    list.push(w);
+    byClient.set(w.clientName, list);
+  }
+
+  return (
+    <div className="hud-stack">
+      <div className="hud-panel">
+        <div className="hud-panel-head">
+          <div>
+            <div className="hud-eyebrow">Live from GoHighLevel</div>
+            <h2 className="hud-panel-title" style={{ marginTop: 6 }}>
+              Workflows
+            </h2>
+          </div>
+          <div className="hud-integrity">
+            {ghl.live}
+            <small> live</small>
+          </div>
+        </div>
+
+        <label className="hud-check" style={{ marginBottom: 12 }}>
+          <input
+            type="checkbox"
+            checked={showDrafts}
+            onChange={(e) => setShowDrafts(e.target.checked)}
+          />
+          Include drafts{drafts > 0 ? ` (${drafts})` : ""}
+        </label>
+
+        {ghl.workflows.length === 0 ? (
+          <p className="hud-empty">
+            No workflows found. Check that your clients have a GHL location ID set on the Revenue
+            page.
+          </p>
+        ) : (
+          [...byClient.entries()].map(([client, list]) => (
+            <div key={client} style={{ marginBottom: 14 }}>
+              <div className="hud-eyebrow" style={{ marginBottom: 4 }}>{client}</div>
+              {list.map((w) => (
+                <div key={w.id} className="hud-row">
+                  <span>{w.name}</span>
+                  <span className="hud-row-meta">
+                    <span className={`hud-chip ${w.live ? "hud-chip-ok" : "hud-chip-idle"}`}>
+                      {w.status}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+
+      {ghl.failures.length > 0 ? (
+        <div className="hud-alert">
+          <h3>{ghl.failures.length} accounts could not be read</h3>
+          {ghl.failures.map((f) => (
+            <div key={f.clientName} className="hud-row">
+              <span>{f.clientName}</span>
+              <span className="hud-row-meta">{f.error.slice(0, 90)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AutomationsPanel({
   automations,
+  ghl,
   clients,
   onChanged,
 }: {
   automations: Automation[];
+  ghl: GhlSection;
   clients: ClientRef[];
   onChanged: () => void;
 }) {
+  const [source, setSource] = useState<"ghl" | "manual">("ghl");
   const [draft, setDraft] = useState({ ...EMPTY });
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -81,6 +190,31 @@ export function AutomationsPanel({
 
   return (
     <div className="hud-stack">
+      {/* GHL is the source of truth for anything we actually built there. The
+          manual register is for platforms with no API into them. */}
+      <div className="hud-channels" style={{ marginBottom: 0 }}>
+        <button
+          className={`hud-channel ${source === "ghl" ? "on" : ""}`}
+          onClick={() => setSource("ghl")}
+        >
+          GoHighLevel
+          {ghl.live > 0 ? <span className="hud-channel-count">{ghl.live}</span> : null}
+        </button>
+        <button
+          className={`hud-channel ${source === "manual" ? "on" : ""}`}
+          onClick={() => setSource("manual")}
+        >
+          Logged by hand
+          {automations.length > 0 ? (
+            <span className="hud-channel-count">{automations.length}</span>
+          ) : null}
+        </button>
+      </div>
+
+      {source === "ghl" ? <GhlWorkflows ghl={ghl} /> : null}
+
+      {source === "manual" ? (
+        <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
           <option value="">All platforms</option>
@@ -210,6 +344,8 @@ export function AutomationsPanel({
           ))}
         </div>
       )}
+        </>
+      ) : null}
     </div>
   );
 }

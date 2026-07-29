@@ -190,8 +190,8 @@ export default function LifecyclePage() {
                 <span>On us</span>
               </div>
               <div className="hud-readout">
-                <b>{String(c.liveAutomations).padStart(2, "0")}</b>
-                <span>Automations</span>
+                <b>{String(c.ghlLive).padStart(2, "0")}</b>
+                <span>GHL workflows</span>
               </div>
             </div>
 
@@ -313,6 +313,7 @@ export default function LifecyclePage() {
         {channel === "automations" ? (
           <AutomationsPanel
             automations={data.automations}
+            ghl={data.ghl}
             clients={data.clients}
             onChanged={refresh}
           />

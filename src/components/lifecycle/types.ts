@@ -139,10 +139,32 @@ export interface ClientRef {
   name: string;
 }
 
+export interface GhlAutomationRow {
+  id: string;
+  name: string;
+  clientId: string;
+  clientName: string;
+  locationId: string;
+  status: string;
+  live: boolean;
+  updatedAt: string;
+}
+
+export interface GhlSection {
+  configured: boolean;
+  error: string | null;
+  fetchedAt: string | null;
+  workflows: GhlAutomationRow[];
+  live: number;
+  failures: Array<{ clientName: string; error: string }>;
+  emptyClients: string[];
+}
+
 export interface LifecycleDashboard {
   approvals: ApprovalRow[];
   linkedIn: LinkedInSection;
   automations: Automation[];
+  ghl: GhlSection;
   liveAutomationsByPlatform: Array<{ platform: string; live: number; total: number }>;
   sops: Sop[];
   notes: Note[];
@@ -157,6 +179,7 @@ export interface LifecycleDashboard {
     linkedInLive: number;
     campaignsNeedingRefresh: number;
     brokenSeats: number;
+    ghlLive: number;
   };
 }
 
