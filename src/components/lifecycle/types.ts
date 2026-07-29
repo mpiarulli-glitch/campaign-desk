@@ -225,15 +225,6 @@ export interface AccountReport {
   links: SavedLink[];
 }
 
-export const PLATFORM_LABELS: Record<string, string> = {
-  ghl: "GoHighLevel",
-  klaviyo: "Klaviyo",
-  skylead: "Skylead",
-  appfront: "AppFront",
-  boulevard: "Boulevard",
-  other: "Other",
-};
-
 /* ------------------------------------------ knowledge base (The Inbox Newsletter) */
 
 export interface KnowledgeListingRow {
