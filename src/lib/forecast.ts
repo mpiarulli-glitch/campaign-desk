@@ -52,13 +52,15 @@ export function createTask(input: {
   notes?: string;
   hours: number;
   priority?: ForecastPriority;
+  basecampTodoId?: string;
+  basecampProjectId?: string;
 }): ForecastTask {
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, basecamp_todo_id, basecamp_project_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -67,6 +69,8 @@ export function createTask(input: {
     (input.notes || "").trim(),
     input.hours,
     normPriority(input.priority),
+    (input.basecampTodoId || "").trim(),
+    (input.basecampProjectId || "").trim(),
     ts,
     ts
   );

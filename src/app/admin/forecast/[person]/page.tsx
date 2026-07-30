@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -16,6 +16,8 @@ type Task = {
   hours: number;
   completed: number;
   priority: Priority;
+  basecamp_todo_id: string;
+  basecamp_project_id: string;
 };
 
 type Data = {
@@ -26,6 +28,25 @@ type Data = {
   capacity: number;
   allocationPct: number;
   note: string;
+};
+
+type ClientOption = { id: string; name: string };
+
+type BcTodo = {
+  id: string;
+  title: string;
+  list: string;
+  dueOn: string | null;
+};
+
+// Per-client cache of the Basecamp todo picker's contents. `reason` explains an
+// empty list so the form can tell someone why they're typing instead of picking.
+type TodoState = {
+  loading: boolean;
+  todos: BcTodo[];
+  filteredToPerson: boolean;
+  projectId: string;
+  reason: string | null;
 };
 
 const PRIORITIES: Priority[] = ["urgent", "important", "flexible"];
@@ -68,7 +89,29 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const emptyDraft = { client: "", notes: "", hours: "" };
+type Draft = {
+  // Selected rev_client. `client` carries the name, which is what gets stored.
+  clientId: string;
+  client: string;
+  notes: string;
+  hours: string;
+  // Set when the task text was picked from a Basecamp todo. Kept so completing
+  // the task can close that todo.
+  todoId: string;
+  projectId: string;
+  // True once someone chooses to type the task rather than pick one.
+  manual: boolean;
+};
+
+const emptyDraft: Draft = {
+  clientId: "",
+  client: "",
+  notes: "",
+  hours: "",
+  todoId: "",
+  projectId: "",
+  manual: false,
+};
 
 function PriorityPicker({
   value,
@@ -93,6 +136,198 @@ function PriorityPicker({
   );
 }
 
+// Why the task field is a text box instead of a picker, in the reader's terms.
+// Empty string means the picker is working normally and needs no explanation.
+function todoHint(draft: Draft, state: TodoState | undefined): string {
+  if (!draft.clientId) return "";
+  if (!state || state.loading) return "";
+  if (draft.manual) return "Typing this one by hand, so it won't be linked to Basecamp.";
+  if (!state.todos.length) {
+    if (state.reason === "no-project") {
+      return "This client has no Basecamp project set, so type the task instead.";
+    }
+    if (state.reason === "not-connected") {
+      return "Basecamp isn't connected, so type the task instead.";
+    }
+    return "No open Basecamp todos found here, so type the task instead.";
+  }
+  if (!state.filteredToPerson) {
+    return "Nothing here is assigned to you, so every open todo is listed.";
+  }
+  return "";
+}
+
+function AddTaskForm({
+  draft,
+  patch,
+  clients,
+  todoState,
+  onPickClient,
+  onAdd,
+  onCancel,
+  layout,
+  autoFocus,
+}: {
+  draft: Draft;
+  patch: (p: Partial<Draft>) => void;
+  clients: ClientOption[];
+  todoState: TodoState | undefined;
+  onPickClient: (clientId: string) => void;
+  onAdd: () => void;
+  onCancel?: () => void;
+  layout: "row" | "stack";
+  autoFocus?: boolean;
+}) {
+  const stack = layout === "stack";
+  const todos = useMemo(() => todoState?.todos || [], [todoState]);
+
+  // Group by todo list so the dropdown reads the way Basecamp does.
+  const groups = useMemo(() => {
+    const map = new Map<string, BcTodo[]>();
+    for (const t of todos) {
+      const list = map.get(t.list) || [];
+      list.push(t);
+      map.set(t.list, list);
+    }
+    return [...map.entries()];
+  }, [todos]);
+
+  const usePicker = Boolean(draft.clientId) && !draft.manual && todos.length > 0;
+  const hint = todoHint(draft, todoState);
+
+  const clientSelect = (
+    <select
+      autoFocus={autoFocus}
+      value={draft.clientId}
+      onChange={(e) => onPickClient(e.target.value)}
+      aria-label="Client"
+      style={stack ? undefined : { flex: "1 1 160px" }}
+    >
+      <option value="">Pick a client</option>
+      {clients.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  const taskField = usePicker ? (
+    <select
+      value={draft.todoId}
+      onChange={(e) => {
+        const hit = todos.find((t) => t.id === e.target.value);
+        patch({ todoId: hit?.id || "", notes: hit?.title || "" });
+      }}
+      aria-label="Basecamp todo"
+      style={stack ? undefined : { flex: "2 1 240px" }}
+    >
+      <option value="">Pick a todo</option>
+      {groups.map(([list, items]) => (
+        <optgroup key={list} label={list}>
+          {items.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.title}
+              {t.dueOn ? ` (due ${t.dueOn})` : ""}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  ) : (
+    <input
+      value={draft.notes}
+      onChange={(e) => patch({ notes: e.target.value, todoId: "", projectId: "" })}
+      placeholder={
+        !draft.clientId
+          ? "Pick a client first"
+          : todoState?.loading
+            ? "Loading todos..."
+            : "Task notes"
+      }
+      disabled={!draft.clientId || Boolean(todoState?.loading)}
+      style={stack ? undefined : { flex: "2 1 240px" }}
+    />
+  );
+
+  const hoursInput = (
+    <input
+      value={draft.hours}
+      onChange={(e) => patch({ hours: e.target.value })}
+      placeholder="Hours"
+      type="number"
+      min="0"
+      step="0.5"
+      aria-label="Hours"
+      style={stack ? { flex: 1 } : { width: 90 }}
+    />
+  );
+
+  // Only worth offering once there are todos to switch away from.
+  const manualToggle =
+    draft.clientId && todos.length > 0 ? (
+      <button
+        type="button"
+        className="linklike"
+        style={{ fontSize: 12 }}
+        onClick={() =>
+          patch({ manual: !draft.manual, notes: "", todoId: "", projectId: "" })
+        }
+      >
+        {draft.manual ? "Pick a todo instead" : "Type it instead"}
+      </button>
+    ) : null;
+
+  if (stack) {
+    return (
+      <div className="ops-day-add-form">
+        {clientSelect}
+        {taskField}
+        <div className="row" style={{ gap: 6 }}>
+          {hoursInput}
+          <button className="btn btn-sm" onClick={onAdd}>
+            Add
+          </button>
+        </div>
+        {manualToggle}
+        {hint ? (
+          <p className="muted" style={{ fontSize: 11, margin: "2px 0 0" }}>
+            {hint}
+          </p>
+        ) : null}
+        {onCancel ? (
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+            Cancel
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        {clientSelect}
+        {taskField}
+        {hoursInput}
+        <button className="btn btn-sm" onClick={onAdd}>
+          Add task
+        </button>
+      </div>
+      {manualToggle || hint ? (
+        <div className="row" style={{ gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+          {manualToggle}
+          {hint ? (
+            <span className="muted" style={{ fontSize: 12 }}>
+              {hint}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 type View = "today" | "list" | "week";
 
 export default function PersonForecastPage() {
@@ -105,17 +340,19 @@ export default function PersonForecastPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, { client: string; notes: string; hours: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [todosByClient, setTodosByClient] = useState<Record<string, TodoState>>({});
 
-  function draftFor(date: string) {
+  function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
   }
-  function setDraft(date: string, patch: Partial<{ client: string; notes: string; hours: string }>) {
-    setDrafts((d) => ({ ...d, [date]: { ...draftFor(date), ...patch } }));
+  function setDraft(date: string, patch: Partial<Draft>) {
+    setDrafts((d) => ({ ...d, [date]: { ...(d[date] || emptyDraft), ...patch } }));
   }
 
   // silent = true skips the loading indicator so the whole task list doesn't
@@ -162,6 +399,85 @@ export default function PersonForecastPage() {
       })
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    fetch("/api/revenue/clients")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!Array.isArray(json?.clients)) return;
+        setClients(
+          json.clients
+            .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
+            .sort((a: ClientOption, b: ClientOption) => a.name.localeCompare(b.name))
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  // Basecamp is slow enough that this is fetched once per client and reused
+  // across every day's form for the rest of the visit.
+  const ensureTodos = useCallback(
+    async (clientId: string) => {
+      if (!clientId) return;
+      let shouldFetch = false;
+      setTodosByClient((prev) => {
+        if (prev[clientId]) return prev;
+        shouldFetch = true;
+        return {
+          ...prev,
+          [clientId]: {
+            loading: true,
+            todos: [],
+            filteredToPerson: false,
+            projectId: "",
+            reason: null,
+          },
+        };
+      });
+      if (!shouldFetch) return;
+      try {
+        const res = await fetch(
+          `/api/forecast/todos?person=${person}&client=${encodeURIComponent(clientId)}`
+        );
+        const json = res.ok ? await res.json() : null;
+        setTodosByClient((prev) => ({
+          ...prev,
+          [clientId]: {
+            loading: false,
+            todos: Array.isArray(json?.todos) ? json.todos : [],
+            filteredToPerson: Boolean(json?.filteredToPerson),
+            projectId: json?.projectId || "",
+            reason: json?.reason ?? (res.ok ? null : "failed"),
+          },
+        }));
+      } catch {
+        setTodosByClient((prev) => ({
+          ...prev,
+          [clientId]: {
+            loading: false,
+            todos: [],
+            filteredToPerson: false,
+            projectId: "",
+            reason: "failed",
+          },
+        }));
+      }
+    },
+    [person]
+  );
+
+  function pickClient(date: string, clientId: string) {
+    const hit = clients.find((c) => c.id === clientId);
+    // Changing client invalidates whatever task was picked for the old one.
+    setDraft(date, {
+      clientId,
+      client: hit?.name || "",
+      notes: "",
+      todoId: "",
+      projectId: "",
+      manual: false,
+    });
+    ensureTodos(clientId);
+  }
 
   const days = useMemo(() => weekdays(week), [week]);
   const today = todayYmd();
@@ -184,7 +500,7 @@ export default function PersonForecastPage() {
     const draft = draftFor(date);
     const hours = Number(draft.hours);
     if (!draft.client.trim()) {
-      setError("Add a client for that task.");
+      setError("Pick a client for that task.");
       return;
     }
     if (!Number.isFinite(hours) || hours <= 0) {
@@ -192,10 +508,18 @@ export default function PersonForecastPage() {
       return;
     }
     setError("");
+    const state = todosByClient[draft.clientId];
     const res = await fetch(`/api/forecast/${person}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskDate: date, client: draft.client, notes: draft.notes, hours }),
+      body: JSON.stringify({
+        taskDate: date,
+        client: draft.client,
+        notes: draft.notes,
+        hours,
+        basecampTodoId: draft.todoId,
+        basecampProjectId: draft.todoId ? state?.projectId || "" : "",
+      }),
     });
     if (!res.ok) {
       setError("Could not add that task.");
@@ -263,6 +587,18 @@ export default function PersonForecastPage() {
     if (!res.ok) {
       setError("Could not update that task.");
       return;
+    }
+    // The forecast row saved either way, so a Basecamp sync failure is a notice
+    // rather than an error that implies nothing happened.
+    const json = await res.json().catch(() => null);
+    if (json?.basecamp && !json.basecamp.synced) {
+      setError(
+        `Saved here, but the Basecamp todo didn't update${
+          json.basecamp.error ? `: ${json.basecamp.error}` : "."
+        }`
+      );
+    } else {
+      setError("");
     }
     load(week, { silent: true });
   }
@@ -409,6 +745,7 @@ export default function PersonForecastPage() {
                         onBlur={(e) => saveField(t, "notes", e.target.value)}
                         placeholder="Task notes"
                         className="notes"
+                        title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                         style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
                       />
                       <div className="row" style={{ gap: 2 }}>
@@ -429,30 +766,15 @@ export default function PersonForecastPage() {
                   ))
                 )}
 
-                <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                  <input
-                    value={draft.client}
-                    onChange={(e) => setDraft(today, { client: e.target.value })}
-                    placeholder="Client"
-                    style={{ flex: "1 1 160px" }}
-                  />
-                  <input
-                    value={draft.notes}
-                    onChange={(e) => setDraft(today, { notes: e.target.value })}
-                    placeholder="Task notes"
-                    style={{ flex: "2 1 240px" }}
-                  />
-                  <input
-                    value={draft.hours}
-                    onChange={(e) => setDraft(today, { hours: e.target.value })}
-                    placeholder="Hours"
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    style={{ width: 90 }}
-                  />
-                  <button className="btn btn-sm" onClick={() => addTask(today)}>Add task</button>
-                </div>
+                <AddTaskForm
+                  draft={draft}
+                  patch={(p) => setDraft(today, p)}
+                  clients={clients}
+                  todoState={todosByClient[draft.clientId]}
+                  onPickClient={(id) => pickClient(today, id)}
+                  onAdd={() => addTask(today)}
+                  layout="row"
+                />
               </div>
             );
           })()
@@ -497,6 +819,7 @@ export default function PersonForecastPage() {
                           onBlur={(e) => saveField(t, "notes", e.target.value)}
                           placeholder="Task notes"
                           className="notes"
+                          title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                           style={{ paddingLeft: 18 }}
                         />
                         <input
@@ -518,37 +841,17 @@ export default function PersonForecastPage() {
 
                   <div className="ops-day-add">
                     {isAdding ? (
-                      <div className="ops-day-add-form">
-                        <input
-                          autoFocus
-                          value={draft.client}
-                          onChange={(e) => setDraft(date, { client: e.target.value })}
-                          placeholder="Client"
-                        />
-                        <input
-                          value={draft.notes}
-                          onChange={(e) => setDraft(date, { notes: e.target.value })}
-                          placeholder="Task notes"
-                        />
-                        <div className="row" style={{ gap: 6 }}>
-                          <input
-                            value={draft.hours}
-                            onChange={(e) => setDraft(date, { hours: e.target.value })}
-                            placeholder="Hours"
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            style={{ flex: 1 }}
-                          />
-                          <button className="btn btn-sm" onClick={() => addTask(date)}>Add</button>
-                        </div>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setAddingFor(null)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <AddTaskForm
+                        draft={draft}
+                        patch={(p) => setDraft(date, p)}
+                        clients={clients}
+                        todoState={todosByClient[draft.clientId]}
+                        onPickClient={(id) => pickClient(date, id)}
+                        onAdd={() => addTask(date)}
+                        onCancel={() => setAddingFor(null)}
+                        layout="stack"
+                        autoFocus
+                      />
                     ) : (
                       <button className="ops-add-trigger" onClick={() => setAddingFor(date)}>
                         + Add task
@@ -600,6 +903,7 @@ export default function PersonForecastPage() {
                           onBlur={(e) => saveField(t, "notes", e.target.value)}
                           placeholder="Task notes"
                           className="notes"
+                          title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                           style={{
                             textDecoration: t.completed ? "line-through" : "none",
                             opacity: t.completed ? 0.6 : 1,
@@ -625,30 +929,15 @@ export default function PersonForecastPage() {
                     ))
                   )}
 
-                  <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                    <input
-                      value={draft.client}
-                      onChange={(e) => setDraft(date, { client: e.target.value })}
-                      placeholder="Client"
-                      style={{ flex: "1 1 160px" }}
-                    />
-                    <input
-                      value={draft.notes}
-                      onChange={(e) => setDraft(date, { notes: e.target.value })}
-                      placeholder="Task notes"
-                      style={{ flex: "2 1 240px" }}
-                    />
-                    <input
-                      value={draft.hours}
-                      onChange={(e) => setDraft(date, { hours: e.target.value })}
-                      placeholder="Hours"
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      style={{ width: 90 }}
-                    />
-                    <button className="btn btn-sm" onClick={() => addTask(date)}>Add task</button>
-                  </div>
+                  <AddTaskForm
+                    draft={draft}
+                    patch={(p) => setDraft(date, p)}
+                    clients={clients}
+                    todoState={todosByClient[draft.clientId]}
+                    onPickClient={(id) => pickClient(date, id)}
+                    onAdd={() => addTask(date)}
+                    layout="row"
+                  />
                 </div>
               );
             })}

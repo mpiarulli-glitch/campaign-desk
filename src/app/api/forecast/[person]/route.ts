@@ -82,6 +82,10 @@ export async function POST(request: Request, { params }: Params) {
     notes: typeof body.notes === "string" ? body.notes : "",
     hours,
     priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
+    // Present only when the task text came from the Basecamp todo picker.
+    basecampTodoId: typeof body.basecampTodoId === "string" ? body.basecampTodoId : "",
+    basecampProjectId:
+      typeof body.basecampProjectId === "string" ? body.basecampProjectId : "",
   });
   return NextResponse.json({ task }, { status: 201 });
 }

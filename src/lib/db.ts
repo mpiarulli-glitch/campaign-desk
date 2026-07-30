@@ -199,6 +199,11 @@ export interface ForecastTask {
   hours: number;
   completed: number;
   priority: ForecastPriority;
+  // Set when the task text was picked from a Basecamp todo rather than typed.
+  // Kept as hidden linkage so completing the task can close the Basecamp todo —
+  // the visible task text stays the plain copied title in `notes`.
+  basecamp_todo_id: string;
+  basecamp_project_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -934,6 +939,8 @@ export function getDb(): Database.Database {
       notes TEXT NOT NULL DEFAULT '',
       hours REAL NOT NULL DEFAULT 0,
       completed INTEGER NOT NULL DEFAULT 0,
+      basecamp_todo_id TEXT NOT NULL DEFAULT '',
+      basecamp_project_id TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1556,6 +1563,16 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("priority")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'flexible'`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("basecamp_todo_id")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN basecamp_todo_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("basecamp_project_id")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN basecamp_project_id TEXT NOT NULL DEFAULT ''`
     );
   }
 

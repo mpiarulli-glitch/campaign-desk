@@ -266,6 +266,160 @@ export function matchPeople(people: BcPerson[], identifiers: string[]): number[]
   return ids;
 }
 
+/* ------------------------------------------------------------------ todos */
+
+// Basecamp paginates collections at 50 per page and advertises the next page
+// in a Link header. Follow it, but cap the walk so one enormous todo list can't
+// stall the forecast picker.
+async function bcCollection<T>(path: string, maxPages = 4): Promise<T[]> {
+  const out: T[] = [];
+  let next: string | null = path;
+  for (let page = 0; page < maxPages && next; page++) {
+    const res: Response = await bc(next);
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch)) break;
+    out.push(...(batch as T[]));
+    const link = res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    // The header carries an absolute URL; bc() prepends apiBase(), so strip it.
+    next = m ? m[1].replace(apiBase(), "") : null;
+  }
+  return out;
+}
+
+export interface BcTodo {
+  id: string;
+  title: string;
+  // Todo list the item lives on, shown as a group heading in the picker.
+  list: string;
+  assigneeIds: number[];
+  dueOn: string | null;
+}
+
+interface BcTodoRaw {
+  id: number;
+  content?: string;
+  title?: string;
+  due_on?: string | null;
+  assignees?: Array<{ id: number }>;
+}
+
+// Every open todo in a project, across all its todo lists (including grouped
+// lists). Returns [] rather than throwing when the project has no todoset or
+// Basecamp is unreachable — the picker degrades to free text.
+export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
+  if (!projectId) return [];
+  try {
+    const pr = await bc(`/projects/${projectId}.json`);
+    if (!pr.ok) return [];
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string }> = project.dock || [];
+    const todoset = dock.find((d) => d.name === "todoset");
+    if (!todoset) return [];
+
+    const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
+      `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`
+    );
+
+    // A grouped todo list holds no todos itself — its groups do. Expand any
+    // list that reports groups so grouped work isn't silently missing.
+    const targets: Array<{ id: number; title: string }> = [];
+    for (const list of lists.slice(0, 30)) {
+      const title = list.title || list.name || "Todos";
+      targets.push({ id: list.id, title });
+      const groups = await bcCollection<{ id: number; title?: string; name?: string }>(
+        `/buckets/${projectId}/todolists/${list.id}/groups.json`,
+        1
+      );
+      for (const group of groups) {
+        targets.push({ id: group.id, title: `${title} › ${group.title || group.name || ""}`.trim() });
+      }
+    }
+
+    const perList = await Promise.all(
+      targets.map(async (target) => {
+        // No ?completed param means Basecamp returns only open todos.
+        const todos = await bcCollection<BcTodoRaw>(
+          `/buckets/${projectId}/todolists/${target.id}/todos.json`,
+          2
+        );
+        return todos.map((t) => ({
+          id: String(t.id),
+          title: (t.content || t.title || "").trim(),
+          list: target.title,
+          assigneeIds: (t.assignees || []).map((a) => a.id),
+          dueOn: t.due_on || null,
+        }));
+      })
+    );
+    return perList.flat().filter((t) => t.title);
+  } catch {
+    return [];
+  }
+}
+
+export interface PersonTodosResult {
+  todos: BcTodo[];
+  // False when the person couldn't be matched to anyone on the project, or
+  // matched but has nothing assigned — the caller is looking at every open
+  // todo instead and should say so.
+  filteredToPerson: boolean;
+}
+
+// Open todos in a client's project assigned to one of the given identifiers
+// (a name or email). Falls back to every open todo when nothing matches, so
+// the picker is never empty just because assignment is inconsistent.
+export async function listPersonProjectTodos(
+  projectId: string,
+  identifiers: string[]
+): Promise<PersonTodosResult> {
+  const todos = await listProjectTodos(projectId);
+  if (!todos.length) return { todos, filteredToPerson: false };
+  const people = await getProjectPeople(projectId);
+  const ids = matchPeople(people, identifiers);
+  if (!ids.length) return { todos, filteredToPerson: false };
+  const mine = todos.filter((t) => t.assigneeIds.some((id) => ids.includes(id)));
+  if (!mine.length) return { todos, filteredToPerson: false };
+  return { todos: mine, filteredToPerson: true };
+}
+
+// Mark a todo complete. Basecamp answers 204 on success and 404 if the todo is
+// already completed or gone, which we treat as success — the desired end state
+// holds either way.
+export async function completeTodo(
+  projectId: string,
+  todoId: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!projectId || !todoId) return { ok: false, error: "missing project or todo id" };
+  try {
+    const res = await bc(`/buckets/${projectId}/todos/${todoId}/completion.json`, {
+      method: "POST",
+    });
+    if (res.ok || res.status === 404) return { ok: true };
+    return { ok: false, error: `completion ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+// Reopen a todo, so unchecking a forecast task doesn't leave Basecamp out of sync.
+export async function uncompleteTodo(
+  projectId: string,
+  todoId: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!projectId || !todoId) return { ok: false, error: "missing project or todo id" };
+  try {
+    const res = await bc(`/buckets/${projectId}/todos/${todoId}/completion.json`, {
+      method: "DELETE",
+    });
+    if (res.ok || res.status === 404) return { ok: true };
+    return { ok: false, error: `completion ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 // Create a card in the project's card table, in the "In progress" column
 // (falls back to the first column if none matches). If assigneeIds are given,
 // the card is assigned to those people via a follow-up update (the create

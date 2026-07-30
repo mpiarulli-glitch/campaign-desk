@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
+import { basecampConnected, completeTodo, uncompleteTodo } from "@/lib/basecamp";
 import { deleteTask, getTask, updateTask, type ForecastPriority } from "@/lib/forecast";
 
 type Params = { params: Promise<{ person: string; id: string }> };
@@ -34,7 +35,26 @@ export async function PATCH(request: Request, { params }: Params) {
     completed: typeof body.completed === "boolean" ? body.completed : undefined,
     priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
   });
-  return NextResponse.json({ task });
+
+  // Mirror a completion flip onto the linked Basecamp todo. The forecast row is
+  // already saved, so a Basecamp failure is reported alongside the task rather
+  // than failing the request — the local plan shouldn't depend on Basecamp being
+  // reachable.
+  let basecamp: { synced: boolean; error?: string } | undefined;
+  const flipped =
+    typeof body.completed === "boolean" &&
+    Boolean(existing.completed) !== body.completed;
+  if (flipped && existing.basecamp_todo_id && existing.basecamp_project_id) {
+    if (!basecampConnected()) {
+      basecamp = { synced: false, error: "Basecamp isn't connected" };
+    } else {
+      const result = body.completed
+        ? await completeTodo(existing.basecamp_project_id, existing.basecamp_todo_id)
+        : await uncompleteTodo(existing.basecamp_project_id, existing.basecamp_todo_id);
+      basecamp = { synced: result.ok, error: result.error };
+    }
+  }
+  return NextResponse.json({ task, basecamp });
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
