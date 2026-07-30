@@ -76,6 +76,24 @@ export const ACCOUNT_GLOBAL_STATUS: Record<number, string> = {
 const CONNECTION_ACTIVE = 1;
 const GLOBAL_AUTH_OK = 5;
 
+/**
+ * Seats whose Skylead subscription is gone: cancelled outright, unpaid, or
+ * lapsed into an invalid subscription. These are not work anybody can do from
+ * this console, so they are dropped from the sweep entirely rather than shown
+ * as faults to fix. Everything else that cannot send (PIN, 2FA, jail, wrong
+ * password, connection errors) is a fixable fault and stays visible.
+ */
+const DEAD_SUBSCRIPTION_STATUS = new Set([
+  7, // Payment required
+  8, // Cancelled
+  11, // Invalid subscription
+]);
+
+/** True when a seat is billing-dead rather than merely broken. */
+export function isSubscriptionDead(seat: { accountGlobalStatusId: number }): boolean {
+  return DEAD_SUBSCRIPTION_STATUS.has(seat.accountGlobalStatusId);
+}
+
 /** A LinkedIn seat. Skylead calls these "accounts". */
 export interface SkyleadSeat {
   id: number;
@@ -425,6 +443,8 @@ export interface SkyleadSweep {
   fetchedAt: string;
   userId: number;
   seats: Array<{ seat: SkyleadSeat; campaigns: SkyleadCampaign[]; error?: string }>;
+  /** Seats left out because their subscription is dead. See isSubscriptionDead. */
+  hiddenSeats: number;
 }
 
 let cache: { at: number; data: SkyleadSweep } | null = null;
@@ -454,7 +474,10 @@ export async function sweep(force = false): Promise<SkyleadSweep> {
   if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
 
   const me = await getMe();
-  const seats = await listSeats();
+  const all = await listSeats();
+  // Drop dead-subscription seats before the campaign fan-out, so they cost no
+  // API calls on an endpoint that already rate-limits us.
+  const seats = all.filter((s) => !isSubscriptionDead(s));
 
   const rows = await pooled(seats, async (seat) => {
     try {
@@ -472,6 +495,7 @@ export async function sweep(force = false): Promise<SkyleadSweep> {
     fetchedAt: new Date().toISOString(),
     userId: me.id,
     seats: rows,
+    hiddenSeats: all.length - seats.length,
   };
   cache = { at: Date.now(), data };
   return data;

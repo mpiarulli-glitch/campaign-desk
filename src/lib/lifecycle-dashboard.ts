@@ -119,8 +119,13 @@ export interface LinkedInSection {
     campaigns: LinkedInCampaignRow[];
   }>;
   campaigns: LinkedInCampaignRow[];
-  /** Seats that cannot send right now (auth, 2FA, jail, subscription). */
+  /** Seats that cannot send right now, excluding the cancelled ones (auth, 2FA, jail). */
   brokenSeats: number;
+  /**
+   * Seats left out of everything above because their subscription is dead.
+   * Reported only so the array can say why the seat count is short.
+   */
+  hiddenSeats: number;
   needsRefresh: LinkedInCampaignRow[];
   watch: LinkedInCampaignRow[];
 }
@@ -132,6 +137,7 @@ const EMPTY_LINKEDIN: LinkedInSection = {
   seats: [],
   campaigns: [],
   brokenSeats: 0,
+  hiddenSeats: 0,
   needsRefresh: [],
   watch: [],
 };
@@ -235,6 +241,7 @@ export async function buildLinkedInSection(force = false): Promise<LinkedInSecti
     // A broken seat is its own alert: campaigns on it look fine but send
     // nothing, so surface the seats separately from the campaign rules.
     brokenSeats: seats.filter((s) => !s.connected).length,
+    hiddenSeats: data.hiddenSeats,
     needsRefresh: campaigns.filter((c) => c.verdict.severity === "refresh"),
     watch: campaigns.filter((c) => c.verdict.severity === "watch"),
   };

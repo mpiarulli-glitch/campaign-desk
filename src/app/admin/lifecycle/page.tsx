@@ -177,6 +177,12 @@ export default function LifecyclePage() {
                       <b>{stranded}</b> campaigns stranded on faulted seats
                     </span>
                   ) : null}
+                  {li.hiddenSeats > 0 ? (
+                    <span>
+                      <b>{li.hiddenSeats}</b> cancelled{" "}
+                      {li.hiddenSeats === 1 ? "seat" : "seats"} hidden
+                    </span>
+                  ) : null}
                   <span style={{ marginLeft: "auto" }}>bar height = campaign load</span>
                 </div>
               </div>

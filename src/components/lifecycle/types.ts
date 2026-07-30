@@ -78,6 +78,8 @@ export interface LinkedInSection {
   }>;
   campaigns: LinkedInCampaignRow[];
   brokenSeats: number;
+  /** Cancelled / unpaid seats dropped from the sweep, counted for the footnote. */
+  hiddenSeats: number;
   needsRefresh: LinkedInCampaignRow[];
   watch: LinkedInCampaignRow[];
 }
