@@ -18,9 +18,7 @@ type Props = {
   onPlacePin?: (xPercent: number, yPercent: number) => void;
   onSelectPin?: (id: string) => void;
   // When true the content is a form/quiz: its JS runs in a sandboxed iframe so
-  // reviewers can click through it. Height is reported by the injected script
-  // (the frame is script-enabled but NOT same-origin, so we can't measure it
-  // from the parent the way we do for static emails).
+  // reviewers can click through it. Height is reported by the injected script.
   interactive?: boolean;
 };
 
@@ -165,9 +163,8 @@ export function EmailPreview({
     setHeight(700);
     setHoverHref(null);
 
-    // Interactive frames are script-enabled but not same-origin, so we can't
-    // read their document. Show as soon as they load; height arrives via
-    // postMessage (see the message listener effect below).
+    // Interactive frames report their height via postMessage. Show the frame
+    // as soon as it loads rather than trying to measure its document here.
     if (interactive) {
       const onLoadInteractive = () => setReady(true);
       iframe.addEventListener("load", onLoadInteractive);
@@ -314,7 +311,7 @@ export function EmailPreview({
           srcDoc={srcDoc}
           sandbox={
             interactive
-              ? "allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
+              ? "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
               : "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
           }
           style={{
