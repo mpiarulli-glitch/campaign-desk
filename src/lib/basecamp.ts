@@ -323,19 +323,26 @@ export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
     );
 
     // A grouped todo list holds no todos itself — its groups do. Expand any
-    // list that reports groups so grouped work isn't silently missing.
-    const targets: Array<{ id: number; title: string }> = [];
-    for (const list of lists.slice(0, 30)) {
-      const title = list.title || list.name || "Todos";
-      targets.push({ id: list.id, title });
-      const groups = await bcCollection<{ id: number; title?: string; name?: string }>(
-        `/buckets/${projectId}/todolists/${list.id}/groups.json`,
-        1
-      );
-      for (const group of groups) {
-        targets.push({ id: group.id, title: `${title} › ${group.title || group.name || ""}`.trim() });
-      }
-    }
+    // list that reports groups so grouped work isn't silently missing. Checked
+    // for every list concurrently — sequentially this was one round trip per
+    // list, which is the main reason the picker used to be slow to load.
+    const perListGroups = await Promise.all(
+      lists.slice(0, 30).map(async (list) => {
+        const title = list.title || list.name || "Todos";
+        const groups = await bcCollection<{ id: number; title?: string; name?: string }>(
+          `/buckets/${projectId}/todolists/${list.id}/groups.json`,
+          1
+        );
+        return [
+          { id: list.id, title },
+          ...groups.map((group) => ({
+            id: group.id,
+            title: `${title} › ${group.title || group.name || ""}`.trim(),
+          })),
+        ];
+      })
+    );
+    const targets = perListGroups.flat();
 
     const perList = await Promise.all(
       targets.map(async (target) => {
@@ -374,9 +381,13 @@ export async function listPersonProjectTodos(
   projectId: string,
   identifiers: string[]
 ): Promise<PersonTodosResult> {
-  const todos = await listProjectTodos(projectId);
+  // Neither call depends on the other's result, so run them together instead
+  // of paying for both round trips back to back.
+  const [todos, people] = await Promise.all([
+    listProjectTodos(projectId),
+    getProjectPeople(projectId),
+  ]);
   if (!todos.length) return { todos, filteredToPerson: false };
-  const people = await getProjectPeople(projectId);
   const ids = matchPeople(people, identifiers);
   if (!ids.length) return { todos, filteredToPerson: false };
   const mine = todos.filter((t) => t.assigneeIds.some((id) => ids.includes(id)));
