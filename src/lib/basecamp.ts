@@ -12,6 +12,10 @@ import { getDb, nowIso } from "./db";
 const LAUNCHPAD_TOKEN = "https://launchpad.37signals.com/authorization/token";
 const LAUNCHPAD_AUTH = "https://launchpad.37signals.com/authorization/new";
 const USER_AGENT = "Campaign Desk (Marketing Empire Group)";
+// No Basecamp call — token refresh included — runs on a host with a platform
+// request deadline, so every fetch needs its own bound or a stalled connection
+// hangs forever.
+const BC_TIMEOUT_MS = 10_000;
 
 function accountId(): string {
   return process.env.BASECAMP_ACCOUNT_ID || "5338018";
@@ -95,7 +99,10 @@ export async function exchangeCode(
     code,
     redirect_uri: redirectUri,
   });
-  const res = await fetch(`${LAUNCHPAD_TOKEN}?${p.toString()}`, { method: "POST" });
+  const res = await fetch(`${LAUNCHPAD_TOKEN}?${p.toString()}`, {
+    method: "POST",
+    signal: AbortSignal.timeout(BC_TIMEOUT_MS),
+  });
   if (!res.ok) {
     console.error("[basecamp] token exchange failed", res.status, await res.text().catch(() => ""));
     return false;
@@ -106,7 +113,22 @@ export async function exchangeCode(
   return true;
 }
 
+// This call had no timeout, which mattered a lot once bc() started firing
+// concurrently: every parallel call sees the same expired token and each one
+// would independently hang forever on a stalled refresh. inFlight collapses
+// concurrent callers onto one request instead of a thundering herd, and the
+// timeout guarantees that request itself can't hang.
+let refreshInFlight: Promise<boolean> | null = null;
+
 async function refreshTokens(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = doRefreshTokens().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+async function doRefreshTokens(): Promise<boolean> {
   const t = getTokens();
   if (!t?.refresh_token) return false;
   const p = new URLSearchParams({
@@ -115,16 +137,24 @@ async function refreshTokens(): Promise<boolean> {
     client_id: clientId(),
     client_secret: clientSecret(),
   });
-  const res = await fetch(`${LAUNCHPAD_TOKEN}?${p.toString()}`, { method: "POST" });
-  if (!res.ok) {
-    console.error("[basecamp] token refresh failed", res.status);
+  try {
+    const res = await fetch(`${LAUNCHPAD_TOKEN}?${p.toString()}`, {
+      method: "POST",
+      signal: AbortSignal.timeout(BC_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.error("[basecamp] token refresh failed", res.status);
+      return false;
+    }
+    const d = await res.json();
+    if (!d.access_token) return false;
+    // Basecamp keeps the same refresh token across refreshes.
+    saveTokens(d.access_token, t.refresh_token, d.expires_in);
+    return true;
+  } catch (err) {
+    console.error("[basecamp] token refresh errored", (err as Error).message);
     return false;
   }
-  const d = await res.json();
-  if (!d.access_token) return false;
-  // Basecamp keeps the same refresh token across refreshes.
-  saveTokens(d.access_token, t.refresh_token, d.expires_in);
-  return true;
 }
 
 async function accessToken(): Promise<string | null> {
@@ -136,13 +166,6 @@ async function accessToken(): Promise<string | null> {
   }
   return t?.access_token || null;
 }
-
-// Basecamp calls have no platform-level timeout backing them (this runs on a
-// plain Node server, not a serverless host with a request deadline), so a
-// single stalled connection would otherwise hang the caller forever. 10s is
-// generous for a single API call but keeps one bad request from blocking a
-// picker that's meant to degrade to free text rather than freeze.
-const BC_TIMEOUT_MS = 10_000;
 
 async function bc(path: string, init?: RequestInit): Promise<Response> {
   const tok = await accessToken();
