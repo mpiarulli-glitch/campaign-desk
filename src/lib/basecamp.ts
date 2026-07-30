@@ -137,12 +137,20 @@ async function accessToken(): Promise<string | null> {
   return t?.access_token || null;
 }
 
+// Basecamp calls have no platform-level timeout backing them (this runs on a
+// plain Node server, not a serverless host with a request deadline), so a
+// single stalled connection would otherwise hang the caller forever. 10s is
+// generous for a single API call but keeps one bad request from blocking a
+// picker that's meant to degrade to free text rather than freeze.
+const BC_TIMEOUT_MS = 10_000;
+
 async function bc(path: string, init?: RequestInit): Promise<Response> {
   const tok = await accessToken();
   if (!tok) throw new Error("Basecamp not connected");
   const call = (t: string) =>
     fetch(`${apiBase()}${path}`, {
       ...init,
+      signal: AbortSignal.timeout(BC_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${t}`,
         "Content-Type": "application/json",
@@ -193,18 +201,22 @@ export interface BcPerson {
 // (given as an email or name) to the Basecamp person id we tag on a card.
 export async function getProjectPeople(projectId: string): Promise<BcPerson[]> {
   if (!projectId) return [];
-  const res = await bc(`/projects/${projectId}/people.json`);
-  if (!res.ok) return [];
-  const arr = await res.json();
-  if (!Array.isArray(arr)) return [];
-  return arr.map((p) => ({
-    id: p.id,
-    name: p.name || "",
-    email_address: p.email_address || "",
-    client: Boolean(p.client),
-    employee: Boolean(p.employee),
-    attachable_sgid: p.attachable_sgid || undefined,
-  }));
+  try {
+    const res = await bc(`/projects/${projectId}/people.json`);
+    if (!res.ok) return [];
+    const arr = await res.json();
+    if (!Array.isArray(arr)) return [];
+    return arr.map((p) => ({
+      id: p.id,
+      name: p.name || "",
+      email_address: p.email_address || "",
+      client: Boolean(p.client),
+      employee: Boolean(p.employee),
+      attachable_sgid: p.attachable_sgid || undefined,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // Rich-text @-mention markup for a person, to embed directly in card content.
@@ -270,12 +282,20 @@ export function matchPeople(people: BcPerson[], identifiers: string[]): number[]
 
 // Basecamp paginates collections at 50 per page and advertises the next page
 // in a Link header. Follow it, but cap the walk so one enormous todo list can't
-// stall the forecast picker.
+// stall the forecast picker. A timed-out or failed page just ends the walk
+// early with whatever was already fetched, rather than throwing — this runs
+// inside Promise.all fan-outs where one bad request must not blank out every
+// other list's results.
 async function bcCollection<T>(path: string, maxPages = 4): Promise<T[]> {
   const out: T[] = [];
   let next: string | null = path;
   for (let page = 0; page < maxPages && next; page++) {
-    const res: Response = await bc(next);
+    let res: Response;
+    try {
+      res = await bc(next);
+    } catch {
+      break;
+    }
     if (!res.ok) break;
     const batch = await res.json();
     if (!Array.isArray(batch)) break;

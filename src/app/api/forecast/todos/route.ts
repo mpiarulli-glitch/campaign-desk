@@ -34,14 +34,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ todos: [], reason: "no-project" });
   }
 
-  const { todos, filteredToPerson } = await listPersonProjectTodos(projectId, [
-    personLabel(person),
-    person,
-  ]);
-  return NextResponse.json({
-    todos,
-    filteredToPerson,
-    projectId,
-    reason: todos.length ? null : "no-todos",
-  });
+  try {
+    const { todos, filteredToPerson } = await listPersonProjectTodos(projectId, [
+      personLabel(person),
+      person,
+    ]);
+    return NextResponse.json({
+      todos,
+      filteredToPerson,
+      projectId,
+      reason: todos.length ? null : "no-todos",
+    });
+  } catch {
+    // Every internal Basecamp call already degrades to an empty list on its
+    // own failure — this is a last-resort net so an unexpected throw still
+    // answers with the free-text fallback instead of a hung request or 500.
+    return NextResponse.json({ todos: [], reason: "failed" });
+  }
 }
