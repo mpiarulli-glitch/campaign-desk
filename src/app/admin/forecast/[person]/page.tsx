@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -415,30 +415,34 @@ export default function PersonForecastPage() {
 
   // Basecamp is slow enough that this is fetched once per client and reused
   // across every day's form for the rest of the visit.
+  // Which clients have already been requested this visit. This is a ref, not
+  // state, because it has to be readable synchronously: a setState updater runs
+  // during render, so a flag assigned inside one is still unset on the next line
+  // and the fetch below never fires — which left the picker stuck on
+  // "Loading todos..." forever with no request ever sent.
+  const requestedTodos = useRef<Set<string>>(new Set());
+
   const ensureTodos = useCallback(
     async (clientId: string) => {
       if (!clientId) return;
-      let shouldFetch = false;
-      setTodosByClient((prev) => {
-        if (prev[clientId]) return prev;
-        shouldFetch = true;
-        return {
-          ...prev,
-          [clientId]: {
-            loading: true,
-            todos: [],
-            filteredToPerson: false,
-            projectId: "",
-            reason: null,
-          },
-        };
-      });
-      if (!shouldFetch) return;
+      if (requestedTodos.current.has(clientId)) return;
+      requestedTodos.current.add(clientId);
+      setTodosByClient((prev) => ({
+        ...prev,
+        [clientId]: {
+          loading: true,
+          todos: [],
+          filteredToPerson: false,
+          projectId: "",
+          reason: null,
+        },
+      }));
       try {
         const res = await fetch(
           `/api/forecast/todos?person=${person}&client=${encodeURIComponent(clientId)}`
         );
         const json = res.ok ? await res.json() : null;
+        if (!res.ok) requestedTodos.current.delete(clientId);
         setTodosByClient((prev) => ({
           ...prev,
           [clientId]: {
@@ -450,6 +454,9 @@ export default function PersonForecastPage() {
           },
         }));
       } catch {
+        // Drop the marker so re-picking the client retries rather than being
+        // stuck with a failed result for the rest of the visit.
+        requestedTodos.current.delete(clientId);
         setTodosByClient((prev) => ({
           ...prev,
           [clientId]: {
