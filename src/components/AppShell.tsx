@@ -182,9 +182,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className={`cd-shell ${consoleMode ? "is-console" : ""}`}>
       <CommandPalette />
       <aside className={`side ${collapsed ? "is-collapsed" : ""}`}>
+        {/* Two marks, one shown at a time: the full wordmark needs the expanded
+            sidebar's width, and the square mark carries the brand when it's
+            collapsed to 56px, where a 4:1 wordmark would be illegible. */}
         <Link href="/admin" className="side-brand" title="Campaign Desk">
-          <span className="side-mark">M</span>
-          <b className="nav-label">Campaign Desk</b>
+          <span className="side-mark" aria-hidden="true">M</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/meg-logo.png"
+            alt="Marketing Empire Group"
+            className="side-logo"
+            width={180}
+            height={45}
+          />
         </Link>
         <nav className="side-nav">
           {items.map((it) => (

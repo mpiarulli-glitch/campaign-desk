@@ -6036,6 +6036,11 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .side.is-collapsed { width: 56px; }
 .side-brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; text-decoration: none; }
 .side-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(145deg, #00d4e8, #04808d); display: grid; place-items: center; color: #06222b; font-weight: 800; font-family: var(--font-head); flex: none; font-size: 14px; }
+/* The MEG wordmark is white-on-transparent, drawn for a dark ground, so it sits
+   on the sidebar as-is. Expanded shows the wordmark and hides the square mark;
+   collapsed swaps them (see the is-collapsed and mobile rules below). */
+.side-logo { display: block; width: 100%; max-width: 166px; height: auto; }
+.side-brand .side-mark { display: none; }
 .side-brand b { color: #fff; font-family: var(--font-head); font-size: 15px; font-weight: 600; white-space: nowrap; }
 .side-nav { padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; overflow-x: hidden; }
 .nav-i { display: flex; align-items: center; gap: 11px; padding: 8px 9px; border-radius: 9px; color: #aeb7c6; text-decoration: none; font-size: 13.5px; font-weight: 500; white-space: nowrap; }
@@ -6051,6 +6056,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 /* collapsed: icon-only rail */
 .side.is-collapsed .nav-label { display: none; }
+.side.is-collapsed .side-logo { display: none; }
+.side.is-collapsed .side-brand .side-mark { display: grid; }
 .side.is-collapsed .side-brand { justify-content: center; padding: 16px 0 12px; }
 .side.is-collapsed .nav-i { justify-content: center; gap: 0; padding: 9px 0; }
 .side.is-collapsed .side-toggle { justify-content: center; gap: 0; }
@@ -6120,6 +6127,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 @media (max-width: 760px) {
   .side, .side.is-collapsed { width: 52px; }
   .side .nav-label { display: none; }
+  /* Always narrow here, so the square mark carries the brand regardless of the
+     collapsed toggle's state. */
+  .side .side-logo { display: none; }
+  .side .side-brand .side-mark { display: grid; }
   .side-brand { justify-content: center; padding: 16px 0 12px; }
   .nav-i { justify-content: center; gap: 0; padding: 9px 0; }
   .side-toggle { display: none; }
