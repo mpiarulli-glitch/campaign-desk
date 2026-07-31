@@ -204,20 +204,44 @@ export default function ProductionPage() {
     loadBc();
   }
   const [matchMsg, setMatchMsg] = useState("");
-  async function autoMatch() {
-    setMatchMsg("Matching clients to Basecamp projects...");
-    const res = await fetch("/api/basecamp/automatch", { method: "POST" });
+  // Held between the preview call and the apply call so importing new clients is
+  // never a surprise — you see the counts and names first.
+  const [importPreview, setImportPreview] = useState<{
+    linked: Array<{ client: string; project: string }>;
+    created: Array<{ client: string; project: string }>;
+    ambiguous: Array<{ client: string; options: string[] }>;
+    noProject: string[];
+    skippedInternal: string[];
+  } | null>(null);
+
+  async function runMatch(opts: { createMissing: boolean; dryRun: boolean }) {
+    setMatchMsg(
+      opts.dryRun ? "Checking Basecamp..." : "Matching clients to Basecamp projects..."
+    );
+    const res = await fetch("/api/basecamp/automatch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
     if (!res.ok) {
-      setMatchMsg("Could not auto-match. Is Basecamp connected?");
+      setMatchMsg("Could not reach Basecamp. Is it still connected?");
       return;
     }
     const d = await res.json();
+    if (opts.dryRun) {
+      setImportPreview(d);
+      setMatchMsg("");
+      return;
+    }
+    setImportPreview(null);
     setMatchMsg(
-      `Matched ${d.matched.length} of ${d.matched.length + d.unmatched.length}. ` +
-        (d.unmatched.length ? `Still need a project: ${d.unmatched.join(", ")}.` : "All set.")
+      `Linked ${d.linked.length}${d.created.length ? `, created ${d.created.length}` : ""}. ` +
+        (d.noProject.length ? `No project found for: ${d.noProject.join(", ")}.` : "All set.")
     );
     load({ silent: true });
   }
+
+  const autoMatch = () => runMatch({ createMissing: false, dryRun: false });
 
   // silent = true skips the loading state so an inline edit or toggle
   // doesn't blank the whole table out and jump the page back to the top.
@@ -515,12 +539,84 @@ export default function ProductionPage() {
             {bc.connected ? (
               <span className="row" style={{ gap: 8 }}>
                 <button className="btn btn-sm" onClick={autoMatch}>Auto-match projects</button>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => runMatch({ createMissing: true, dryRun: true })}
+                >
+                  Import clients from Basecamp
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
               </span>
             ) : null}
           </div>
         ) : null}
         {matchMsg ? <p className="muted" style={{ marginTop: -6 }}>{matchMsg}</p> : null}
+
+        {importPreview ? (
+          <div className="card card-pad" style={{ marginBottom: 16 }}>
+            <strong>Preview: nothing has been changed yet</strong>
+            <p className="muted" style={{ fontSize: 13, margin: "6px 0 12px" }}>
+              {importPreview.linked.length} existing clients would be linked to a project,{" "}
+              {importPreview.created.length} new clients would be created,{" "}
+              {importPreview.skippedInternal.length} internal projects skipped.
+            </p>
+            {importPreview.created.length ? (
+              <details style={{ marginBottom: 8 }}>
+                <summary>New clients to create ({importPreview.created.length})</summary>
+                <ul style={{ fontSize: 13, marginTop: 8 }}>
+                  {importPreview.created.map((c) => (
+                    <li key={c.project}>{c.client}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {importPreview.linked.length ? (
+              <details style={{ marginBottom: 8 }}>
+                <summary>Existing clients to link ({importPreview.linked.length})</summary>
+                <ul style={{ fontSize: 13, marginTop: 8 }}>
+                  {importPreview.linked.map((c) => (
+                    <li key={c.client}>
+                      {c.client} → {c.project}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {importPreview.ambiguous.length ? (
+              <details style={{ marginBottom: 8 }}>
+                <summary>
+                  Ambiguous, left alone ({importPreview.ambiguous.length}) — set these by hand
+                </summary>
+                <ul style={{ fontSize: 13, marginTop: 8 }}>
+                  {importPreview.ambiguous.map((a) => (
+                    <li key={a.client}>
+                      {a.client}: {a.options.join(" | ")}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {importPreview.noProject.length ? (
+              <details style={{ marginBottom: 12 }}>
+                <summary>No Basecamp project found ({importPreview.noProject.length})</summary>
+                <p style={{ fontSize: 13, marginTop: 8 }}>
+                  {importPreview.noProject.join(", ")}
+                </p>
+              </details>
+            ) : null}
+            <div className="row" style={{ gap: 8 }}>
+              <button
+                className="btn btn-sm"
+                onClick={() => runMatch({ createMissing: true, dryRun: false })}
+              >
+                Apply these changes
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setImportPreview(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {loading ? (
           <p className="muted">Loading...</p>
