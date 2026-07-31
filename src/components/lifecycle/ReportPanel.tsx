@@ -5,10 +5,6 @@ import { PLATFORM_LABELS, type AccountReport, type ClientRef } from "./types";
 
 const WINDOWS = [3, 6, 12];
 
-function money(n: number): string {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
 export function ReportPanel({ clients }: { clients: ClientRef[] }) {
   const [clientId, setClientId] = useState("");
   const [months, setMonths] = useState(6);
@@ -72,7 +68,7 @@ export function ReportPanel({ clients }: { clients: ClientRef[] }) {
               <div className="hud-readout"><b>{report.email.recipients.toLocaleString()}</b><span>recipients</span></div>
               <div className="hud-readout"><b>{report.email.openRate.toFixed(1)}%</b><span>open rate</span></div>
               <div className="hud-readout"><b>{report.email.clickRate.toFixed(1)}%</b><span>click rate</span></div>
-              <div className="hud-readout"><b>{money(report.email.revenue)}</b><span>revenue</span></div>
+              {/* Revenue readout removed 2026-07-31: no revenue figures in the app. */}
               <div className="hud-readout"><b>{report.email.leads.toLocaleString()}</b><span>leads</span></div>
             </div>
             <p className="hud-empty" style={{ fontSize: 12 }}>

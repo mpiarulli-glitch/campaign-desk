@@ -1,36 +1,11 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { TodoList } from "@/components/TodoList";
-
-export default function TodosPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    fetch("/api/auth")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d?.authenticated) router.push("/login");
-      })
-      .catch(() => {});
-  }, [router]);
-
-  return (
-    <div className="ops-scope">
-      <div className="ops-page">
-        <div className="ops-page-head">
-          <div>
-            <p className="ops-eyebrow">Team</p>
-            <h1 className="ops-title">To-dos.</h1>
-            <p className="ops-sub">Everything the team owns, client work and general ops. Assign it, tag people, set a due date.</p>
-          </div>
-        </div>
-
-        <div className="ops-panel" style={{ padding: 20 }}>
-          <TodoList showClient title="All to-dos" />
-        </div>
-      </div>
-    </div>
-  );
+// Sunset 2026-07-31. The in-app to-do list is retired for every role, including
+// the owner. Kept as a redirect so old links and bookmarks land somewhere
+// sensible instead of 404ing.
+//
+// Forecast to-dos are a separate, still-live feature backed by Basecamp, at
+// /admin/forecast. The Team Hub keeps its own to-do panel.
+export default function RetiredTodosPage() {
+  redirect("/admin");
 }

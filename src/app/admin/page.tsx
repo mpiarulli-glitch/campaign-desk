@@ -60,7 +60,6 @@ const HUB_LAUNCH: { href: string; title: string; desc: string; icon: string }[] 
   { href: "/admin/campaigns", title: "Campaigns", desc: "Review packages & approvals", icon: "mail" },
   { href: "/admin/calendar", title: "Calendar", desc: "What's going out and when", icon: "calendar" },
   { href: "/admin/production", title: "Production", desc: "Shoots & scheduling", icon: "video" },
-  { href: "/admin/revenue", title: "Revenue", desc: "Portfolio ROI & margins", icon: "chart" },
   { href: "/admin/hub", title: "Team Hub", desc: "Chat, SOPs, training & pulse", icon: "chat" },
 ];
 
@@ -85,12 +84,6 @@ const DATE_FMT = new Intl.DateTimeFormat("en-US", {
   month: "long",
   day: "numeric",
 });
-
-function money(n: number): string {
-  return n >= 1000
-    ? `$${Math.round(n).toLocaleString()}`
-    : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
 
 function shortDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -224,12 +217,6 @@ function AdminHome() {
                 <span className="n">{s.calendar.upcomingCount}</span>
                 <span className="l">Sends in 14 days</span>
               </Link>
-              <Link className="ops-stat" href="/admin/revenue">
-                <span className="n">
-                  {s.revenue.blendedRoi != null ? `${s.revenue.blendedRoi.toFixed(1)}x` : "—"}
-                </span>
-                <span className="l">Blended ROI</span>
-              </Link>
             </div>
 
             <div className="hub-launch">
@@ -335,12 +322,11 @@ function AdminHome() {
                 <div className="ops-panel">
                   <div className="ops-panel-head">
                     <h2>Portfolio</h2>
-                    <Link href="/admin/revenue">Revenue →</Link>
                   </div>
+                  {/* Revenue tracked, agency margin and blended ROI were removed
+                      2026-07-31 along with the revenue dashboard. Counts stay. */}
                   <div className="ops-mini-grid">
                     <div className="ops-mini"><span className="n">{s.revenue.activeClients}</span><span className="l">Active clients</span></div>
-                    <div className="ops-mini"><span className="n">{money(s.revenue.totalRevenue)}</span><span className="l">Revenue tracked</span></div>
-                    <div className="ops-mini"><span className="n">{money(s.revenue.totalAgencyMargin)}</span><span className="l">Agency margin</span></div>
                     <div className="ops-mini"><span className="n">{s.snapshots.accounts}</span><span className="l">Snapshot accts</span></div>
                   </div>
                 </div>

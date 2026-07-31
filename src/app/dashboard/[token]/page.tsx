@@ -4,8 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
-import { ChatThread } from "@/components/ChatThread";
-import { WorkTower, type Workboard } from "@/components/WorkTower";
+import { type Workboard } from "@/components/WorkTower";
 
 type CycleStatus =
   | "not_configured"
@@ -66,25 +65,6 @@ type DashboardData = {
   };
 };
 
-const GOAL_STATUS_LABEL: Record<GoalStatus, string> = {
-  on_track: "On track",
-  at_risk: "At risk",
-  off_track: "Off track",
-  achieved: "Achieved",
-};
-const GOAL_ARC: Record<GoalStatus, { fill: number; label: string }> = {
-  on_track: { fill: 0.7, label: "Track" },
-  at_risk: { fill: 0.4, label: "Risk" },
-  off_track: { fill: 0.15, label: "Off" },
-  achieved: { fill: 1, label: "Done" },
-};
-const GOAL_PILL: Record<GoalStatus, string> = {
-  on_track: "is-ember",
-  at_risk: "is-ember",
-  off_track: "is-muted",
-  achieved: "is-good",
-};
-
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -107,19 +87,18 @@ function fmtDate(ymdStr: string): string {
   });
 }
 
-function fmtAt(iso: string): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-type Tab = "overview" | "workroom" | "schedule" | "calendar" | "goals" | "messages";
+// Trimmed 2026-07-31 to four things and nothing else: the campaign calendar,
+// approvals waiting on the client, the weekly snapshot, and a way to request a
+// production. Overview carries the approvals and the snapshot.
+//
+// Retired here: the live workroom, account & goals, and messages. Their data
+// still comes back from /api/dashboard/[token] and the components are in git
+// history, so any of them can be restored without a rebuild.
+type Tab = "overview" | "schedule" | "calendar";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
-  { key: "workroom", label: "Live workroom" },
-  { key: "schedule", label: "Schedule production" },
   { key: "calendar", label: "Campaign calendar" },
-  { key: "goals", label: "Account & goals" },
-  { key: "messages", label: "Messages" },
+  { key: "schedule", label: "Request a production" },
 ];
 
 export default function ClientDashboardPage() {
@@ -269,7 +248,7 @@ export default function ClientDashboardPage() {
             {error}
           </p>
         ) : data ? (
-          <div className={`acct-report${tab === "workroom" ? " is-wide" : ""}`}>
+          <div className="acct-report">
             <nav className="acct-rail">
               {visibleTabs.map((t) => (
                 <button
@@ -344,39 +323,7 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
 
-                  <div className="acct-section">
-                    <div className="acct-section-head">
-                      <h2 className="acct-section-title">Recent activity</h2>
-                    </div>
-                    <div className="card card-pad">
-                      {data.activity.length ? (
-                        data.activity.map((a, i) => (
-                          <div
-                            key={i}
-                            className="row"
-                            style={i > 0 ? { marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" } : undefined}
-                          >
-                            <div>
-                              <div style={{ fontSize: 14 }}>{a.summary}</div>
-                              {a.detail ? (
-                                <div className="muted" style={{ fontSize: 13 }}>{a.detail}</div>
-                              ) : null}
-                            </div>
-                            <span className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                              {fmtAt(a.at)}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="muted" style={{ margin: 0 }}>No activity yet.</p>
-                      )}
-                    </div>
-                  </div>
                 </div>
-              ) : null}
-
-              {tab === "workroom" ? (
-                <WorkTower token={token} clientName={data.client.name} initial={data.workboard} />
               ) : null}
 
               {tab === "schedule" ? (
@@ -448,66 +395,6 @@ export default function ClientDashboardPage() {
                 </div>
               ) : null}
 
-              {tab === "messages" ? (
-                <div className="acct-section">
-                  <div className="acct-section-head">
-                    <h2 className="acct-section-title">Message your team</h2>
-                  </div>
-                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <ChatThread
-                      endpoint={`/api/dashboard/${token}/chat`}
-                      mineIsClient
-                      emptyText="No messages yet. Send us a note and we'll get right back to you."
-                      placeholder="Message your account team…"
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              {tab === "goals" ? (
-                <div className="stack" style={{ gap: 40 }}>
-                  <div className="acct-section">
-                    <div className="acct-section-head">
-                      <h2 className="acct-section-title">Account manager</h2>
-                    </div>
-                    <div className="card card-pad">
-                      <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
-                        {data.client.accountManager || "Not assigned yet"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="acct-section">
-                    <div className="acct-section-head">
-                      <h2 className="acct-section-title">Business goals</h2>
-                    </div>
-                    {data.goals.length === 0 ? (
-                      <div className="empty"><p>No goals set for this account yet.</p></div>
-                    ) : (
-                      <div className="stack" style={{ gap: 12 }}>
-                        {data.goals.map((g) => (
-                          <div key={g.id} className="card card-pad acct-goal-card">
-                            <div className="row" style={{ alignItems: "flex-start", marginBottom: 14 }}>
-                              <div>
-                                <p className="objective">{g.objective}</p>
-                                {g.targetDate ? (
-                                  <p className="target">Target: {fmtDate(g.targetDate)}</p>
-                                ) : null}
-                              </div>
-                              <span className={`acct-pill ${GOAL_PILL[g.status]}`}>
-                                {GOAL_STATUS_LABEL[g.status]}
-                              </span>
-                            </div>
-                            <div className="acct-goal-track">
-                              <div className="acct-goal-fill" style={{ width: `${GOAL_ARC[g.status].fill * 100}%` }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
             </main>
           </div>
         ) : null}

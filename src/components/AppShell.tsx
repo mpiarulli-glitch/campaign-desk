@@ -16,6 +16,11 @@ type Session = {
 
 type NavItem = { href: string; label: string; icon: keyof typeof ICONS };
 
+// Sunset (2026-07-31), hidden from every role including the owner: Revenue and
+// the in-app To-dos. Their routes now redirect to Home. The /api/revenue
+// endpoints stay put, because /api/revenue/clients is the client registry the
+// rest of the app reads from and is not a revenue feature. Forecast to-dos are
+// a separate, still-live feature backed by Basecamp.
 const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "Home", icon: "home" },
   { href: "/admin/clients", label: "Clients", icon: "clients" },
@@ -24,17 +29,14 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/lifecycle", label: "Lifecycle", icon: "chart" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   { href: "/admin/production", label: "Production", icon: "video" },
-  { href: "/admin/todos", label: "To-dos", icon: "check" },
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
   { href: "/admin/snapshot", label: "Snapshots", icon: "doc" },
-  { href: "/admin/revenue", label: "Revenue", icon: "chart" },
   { href: "/admin/activity", label: "Activity", icon: "activity" },
 ];
 
 const FORECAST_NAV: NavItem[] = [
   { href: "/admin", label: "Home", icon: "home" },
-  { href: "/admin/todos", label: "To-dos", icon: "check" },
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   { href: "/admin/snapshot", label: "Snapshot", icon: "doc" },
