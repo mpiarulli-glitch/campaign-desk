@@ -338,6 +338,9 @@ export interface BcTodo {
   list: string;
   assigneeIds: number[];
   dueOn: string | null;
+  // Whether this todo is assigned to the person viewing the picker. Set by
+  // listPersonProjectTodos, which knows who's asking.
+  assigned?: boolean;
 }
 
 interface BcTodoRaw {
@@ -410,16 +413,22 @@ export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
 }
 
 export interface PersonTodosResult {
+  // Every open todo in the project, with the person's own flagged via
+  // `assigned`. Callers surface the assigned ones first rather than hiding
+  // the rest.
   todos: BcTodo[];
-  // False when the person couldn't be matched to anyone on the project, or
-  // matched but has nothing assigned — the caller is looking at every open
-  // todo instead and should say so.
-  filteredToPerson: boolean;
+  assignedCount: number;
 }
 
-// Open todos in a client's project assigned to one of the given identifiers
-// (a name or email). Falls back to every open todo when nothing matches, so
-// the picker is never empty just because assignment is inconsistent.
+// Every open todo in a client's project, with the ones assigned to the given
+// identifiers (a name or email) flagged.
+//
+// This deliberately does NOT filter down to the person's assigned todos.
+// Assignment is barely used in these projects in practice — 12 Volt Power has
+// 42 open todos across 8 lists with exactly 1 assigned — so filtering made the
+// picker look broken, showing a single list's worth of work and hiding the
+// rest. Flagging instead keeps everything pickable while still putting your own
+// work at the top.
 export async function listPersonProjectTodos(
   projectId: string,
   identifiers: string[]
@@ -430,12 +439,15 @@ export async function listPersonProjectTodos(
     listProjectTodos(projectId),
     getProjectPeople(projectId),
   ]);
-  if (!todos.length) return { todos, filteredToPerson: false };
+  if (!todos.length) return { todos, assignedCount: 0 };
   const ids = matchPeople(people, identifiers);
-  if (!ids.length) return { todos, filteredToPerson: false };
-  const mine = todos.filter((t) => t.assigneeIds.some((id) => ids.includes(id)));
-  if (!mine.length) return { todos, filteredToPerson: false };
-  return { todos: mine, filteredToPerson: true };
+  let assignedCount = 0;
+  const flagged = todos.map((t) => {
+    const assigned = ids.length > 0 && t.assigneeIds.some((id) => ids.includes(id));
+    if (assigned) assignedCount++;
+    return { ...t, assigned };
+  });
+  return { todos: flagged, assignedCount };
 }
 
 // Mark a todo complete. Basecamp answers 204 on success and 404 if the todo is

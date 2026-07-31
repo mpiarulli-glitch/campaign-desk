@@ -37,6 +37,7 @@ type BcTodo = {
   title: string;
   list: string;
   dueOn: string | null;
+  assigned?: boolean;
 };
 
 // Per-client cache of the Basecamp todo picker's contents. `reason` explains an
@@ -44,7 +45,7 @@ type BcTodo = {
 type TodoState = {
   loading: boolean;
   todos: BcTodo[];
-  filteredToPerson: boolean;
+  assignedCount: number;
   projectId: string;
   reason: string | null;
 };
@@ -151,10 +152,9 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
     }
     return "No open Basecamp todos found here, so type the task instead.";
   }
-  if (!state.filteredToPerson) {
-    return "Nothing here is assigned to you, so every open todo is listed.";
-  }
-  return "";
+  return `${state.todos.length} open todos${
+    state.assignedCount ? `, ${state.assignedCount} assigned to you` : ""
+  }.`;
 }
 
 function AddTaskForm({
@@ -181,15 +181,19 @@ function AddTaskForm({
   const stack = layout === "stack";
   const todos = useMemo(() => todoState?.todos || [], [todoState]);
 
-  // Group by todo list so the dropdown reads the way Basecamp does.
+  // Grouped by todo list, the way Basecamp reads, with anything assigned to this
+  // person lifted into a group of its own at the top so their own work is one
+  // glance away without the rest being hidden.
   const groups = useMemo(() => {
+    const assigned = todos.filter((t) => t.assigned);
     const map = new Map<string, BcTodo[]>();
     for (const t of todos) {
       const list = map.get(t.list) || [];
       list.push(t);
       map.set(t.list, list);
     }
-    return [...map.entries()];
+    const byList: Array<[string, BcTodo[]]> = [...map.entries()];
+    return assigned.length ? [["Assigned to you", assigned] as [string, BcTodo[]], ...byList] : byList;
   }, [todos]);
 
   const usePicker = Boolean(draft.clientId) && !draft.manual && todos.length > 0;
@@ -226,7 +230,9 @@ function AddTaskForm({
       {groups.map(([list, items]) => (
         <optgroup key={list} label={list}>
           {items.map((t) => (
-            <option key={t.id} value={t.id}>
+            // Assigned todos appear both in their own group and under their
+            // list, so the key has to include the group to stay unique.
+            <option key={`${list}:${t.id}`} value={t.id}>
               {t.title}
               {t.dueOn ? ` (due ${t.dueOn})` : ""}
             </option>
@@ -432,7 +438,7 @@ export default function PersonForecastPage() {
         [clientId]: {
           loading: true,
           todos: [],
-          filteredToPerson: false,
+          assignedCount: 0,
           projectId: "",
           reason: null,
         },
@@ -448,7 +454,7 @@ export default function PersonForecastPage() {
           [clientId]: {
             loading: false,
             todos: Array.isArray(json?.todos) ? json.todos : [],
-            filteredToPerson: Boolean(json?.filteredToPerson),
+            assignedCount: Number(json?.assignedCount) || 0,
             projectId: json?.projectId || "",
             reason: json?.reason ?? (res.ok ? null : "failed"),
           },
@@ -462,7 +468,7 @@ export default function PersonForecastPage() {
           [clientId]: {
             loading: false,
             todos: [],
-            filteredToPerson: false,
+            assignedCount: 0,
             projectId: "",
             reason: "failed",
           },

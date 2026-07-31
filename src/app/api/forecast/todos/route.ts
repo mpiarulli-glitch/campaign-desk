@@ -35,13 +35,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { todos, filteredToPerson } = await listPersonProjectTodos(projectId, [
+    const { todos, assignedCount } = await listPersonProjectTodos(projectId, [
       personLabel(person),
       person,
     ]);
     return NextResponse.json({
       todos,
-      filteredToPerson,
+      assignedCount,
       projectId,
       reason: todos.length ? null : "no-todos",
     });
