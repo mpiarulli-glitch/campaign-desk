@@ -118,13 +118,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const items = session.role === "forecast"
-    ? (session.person && hasProductionAccess(session.person)
-        ? [...FORECAST_NAV, { href: "/admin/production", label: "Production", icon: "video" as const }]
-        : FORECAST_NAV)
-    : ADMIN_NAV;
-
+  // Forecast is per-person, so its href depends on the session and it can't live
+  // in the static arrays above. Team members get it second, since it's their
+  // daily view; admins get it grouped with the other team tools.
   const forecastHref = session.person ? `/admin/forecast/${session.person}` : "/admin/forecast";
+  const forecastItem: NavItem = {
+    href: forecastHref,
+    label: "Forecast",
+    icon: "forecast",
+  };
+
+  const items: NavItem[] = session.role === "forecast"
+    ? [
+        FORECAST_NAV[0],
+        forecastItem,
+        ...FORECAST_NAV.slice(1),
+        ...(session.person && hasProductionAccess(session.person)
+          ? [{ href: "/admin/production", label: "Production", icon: "video" as const }]
+          : []),
+      ]
+    : ADMIN_NAV.flatMap((item) =>
+        item.href === "/admin/hub" ? [forecastItem, item] : [item]
+      );
 
   const meLabel = session.person
     ? (ADMIN_PEOPLE.find((p) => p.slug === session.person)?.label ||
