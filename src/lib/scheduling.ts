@@ -1,10 +1,12 @@
 import {
   BOOKING_SLOTS,
+  advanceLastProduction,
   appDateTime,
   computeCycleStatus,
   findSendForWindow,
   isBlackout,
   nextWindow,
+  productionWindowForDate,
   type CycleStatus,
   type Window,
 } from "./cadence";
@@ -300,6 +302,160 @@ export async function submitProductionBooking(
     note,
   });
   await sendProductionRequestReceived(result.client, result.send);
+
+  return result;
+}
+
+const MANUAL_STATUSES = ["requested", "scheduled", "sent"] as const;
+export type ManualProductionStatus = (typeof MANUAL_STATUSES)[number];
+
+// Logs a production that was arranged outside the app — over the phone, by an
+// account manager, or in another booking system. Deliberately more permissive
+// than submitProductionBooking: past dates are allowed so historical
+// productions can be backfilled, the brief is optional because the
+// conversation already happened, and the client email is opt-in rather than
+// automatic.
+//
+// What it does NOT relax is the cadence link. The row is written with the same
+// requested_by_client flag and cadence_window_start a client booking would get,
+// so it shows up in the production queue, stops the scheduling reminders for
+// that window, and advances the client's cadence anchor once it's marked
+// complete. Anything less and the record looks right while the cadence keeps
+// treating the window as unbooked.
+export async function recordManualProduction(
+  client: RevClient,
+  body: Record<string, unknown>
+): Promise<BookingResult> {
+  if (!client.color_week || !client.production_cadence) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error:
+        "Set this client's color week and cadence before logging a production.",
+    };
+  }
+
+  const date = typeof body.date === "string" ? body.date : "";
+  if (!DATE_RE.test(date)) {
+    return { ok: false, httpStatus: 400, error: "date must be YYYY-MM-DD" };
+  }
+
+  const time = typeof body.time === "string" ? body.time : "";
+  if (time && !BOOKING_SLOTS.includes(time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Pick a start time between 9 AM and 1 PM.",
+    };
+  }
+
+  const duration = body.duration === "full" ? "full" : "half";
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const status: ManualProductionStatus = MANUAL_STATUSES.includes(
+    body.status as ManualProductionStatus
+  )
+    ? (body.status as ManualProductionStatus)
+    : "scheduled";
+
+  // Which cadence window this production settles. Derived from the date so it
+  // lands on the client's real beat; an explicit override covers productions
+  // that happened off-window.
+  const override =
+    typeof body.cadenceWindowStart === "string" && body.cadenceWindowStart
+      ? body.cadenceWindowStart
+      : "";
+  if (override && !DATE_RE.test(override)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "cadenceWindowStart must be YYYY-MM-DD",
+    };
+  }
+  const derived = productionWindowForDate(client.color_week, date);
+  const windowStart = override || derived?.start || "";
+  if (!windowStart) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error:
+        `${date} isn't inside a ${client.color_week} production week. ` +
+        "Pick a date in one of their windows, or choose the window this production counts toward.",
+    };
+  }
+
+  const rawBrief =
+    body.brief && typeof body.brief === "object"
+      ? (body.brief as Record<string, unknown>)
+      : {};
+  const brief: Record<string, string> = {};
+  for (const key of BRIEF_FIELDS) {
+    const v = rawBrief[key];
+    if (typeof v === "string" && v.trim()) brief[key] = v.trim();
+  }
+
+  // Serialize the duplicate check with the insert so two people logging the
+  // same production can't both land a row for one window.
+  const reserve = getDb().transaction((): BookingResult => {
+    const currentClient = getDb()
+      .prepare(`SELECT * FROM rev_clients WHERE id = ?`)
+      .get(client.id) as RevClient | undefined;
+    if (!currentClient) {
+      return { ok: false, httpStatus: 404, error: "Client not found." };
+    }
+    if (findSendForWindow(currentClient.id, windowStart)) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error:
+          "This production window already has a booking. Open it from the queue to edit instead.",
+      };
+    }
+    const send = createSend({
+      clientId: currentClient.id,
+      clientName: currentClient.name,
+      title: `${currentClient.name} production`,
+      sendDate: date,
+      sendTime: time,
+      duration,
+      status,
+      note,
+      productionBrief: JSON.stringify(brief),
+      cadenceWindowStart: windowStart,
+      requestedByClient: true,
+    });
+    return { ok: true, send, client: currentClient };
+  });
+
+  const result = reserve.immediate();
+  if (!result.ok) return result;
+
+  // Moving the anchor reshapes every future window for this client, so it's the
+  // caller's explicit choice rather than a side effect. Defaulted on by the UI
+  // when logging a completed production, since that's the case where the
+  // cadence genuinely should step forward.
+  if (body.advanceAnchor === true && status === "sent") {
+    advanceLastProduction(result.client.id, date);
+  }
+
+  if (body.notifyTeam === true) {
+    const videographer = result.client.videographer_id
+      ? listVideographers(true).find(
+          (person) => person.id === result.client.videographer_id
+        )
+      : undefined;
+    await notifyProductionRequested({
+      clientName: result.client.name,
+      videographerName: videographer?.name,
+      sendDate: date,
+      sendTime: time,
+      duration,
+      detailsUrl: `${getAppUrl()}/admin/production/${result.send.id}`,
+      note,
+    });
+  }
+  if (body.notifyClient === true) {
+    await sendProductionRequestReceived(result.client, result.send);
+  }
 
   return result;
 }

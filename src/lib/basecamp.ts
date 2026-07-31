@@ -199,6 +199,9 @@ export interface CardResult {
   ok: boolean;
   error?: string;
   url?: string;
+  // The card's Basecamp recording id. Kept so later follow-ups can comment on
+  // the same card instead of creating a duplicate.
+  cardId?: string;
   // How many of the requested assignees were actually tagged on the card.
   assigned?: number;
 }
@@ -552,7 +555,37 @@ export async function createScheduleCard(
       });
       if (upd.ok && assigneeIds) assigned = assigneeIds.length;
     }
-    return { ok: true, url: card.app_url || card.url, assigned };
+    return {
+      ok: true,
+      url: card.app_url || card.url,
+      cardId: card.id ? String(card.id) : undefined,
+      assigned,
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+// Adds a comment to an existing card. Basecamp comments are flat and attach to
+// the parent recording, so the card id is all that's needed. Used for the
+// production scheduling follow-ups, which nudge the same card rather than
+// filling the board with duplicates.
+export async function commentOnCard(
+  projectId: string,
+  cardId: string,
+  contentHtml: string
+): Promise<CampfireResult> {
+  if (!projectId || !cardId) {
+    return { ok: false, error: "No Basecamp card to follow up on" };
+  }
+  try {
+    const res = await bc(`/buckets/${projectId}/recordings/${cardId}/comments.json`, {
+      method: "POST",
+      body: JSON.stringify({ content: contentHtml }),
+    });
+    if (!res.ok) return { ok: false, error: `comment ${res.status}` };
+    const comment = await res.json();
+    return { ok: true, url: comment.app_url || comment.url };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

@@ -370,8 +370,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           </div>
 
           <p className="brief-intro muted">
-            A videographer typically arrives 15–30 minutes early for setup. Only the
-            location and on-site contact are required — the rest helps us plan the production.
+            A videographer typically arrives 15 to 30 minutes early for setup. Only
+            the location and on-site contact are required. Everything else just
+            helps us plan the production.
           </p>
 
           {error ? <p className="error">{error}</p> : null}

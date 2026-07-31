@@ -340,8 +340,9 @@ export interface ScheduledSend {
 }
 
 // One row per client per production window that has entered its reminder
-// period. Tracks the last day we emailed the client so follow-ups fire at most
-// once per day and stop when they book.
+// period. Tracks the last day we emailed the client and the last day we nudged
+// the team in Basecamp, so follow-ups keep to their weekday schedule and stop
+// once the client books.
 export interface ScheduleReminder {
   id: string;
   client_id: string;
@@ -349,6 +350,9 @@ export interface ScheduleReminder {
   last_sent: string; // YYYY-MM-DD of the last reminder email
   count: number;
   bc_card_at: string | null; // when the Basecamp card was created for this window
+  bc_card_id: string | null; // the card's Basecamp recording id, for follow-up comments
+  bc_last_nudge: string | null; // YYYY-MM-DD of the last Basecamp follow-up comment
+  bc_nudge_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -1465,10 +1469,22 @@ function migrate(database: Database.Database) {
     );
   }
 
-  // Track the Basecamp "time to schedule" card per reminder window (dedupe).
+  // Track the Basecamp "time to schedule" card per reminder window (dedupe),
+  // plus the card id and last follow-up so team nudges can comment on it.
   const reminderCols = tableColumns(database, "schedule_reminders");
   if (reminderCols.length && !reminderCols.includes("bc_card_at")) {
     database.exec(`ALTER TABLE schedule_reminders ADD COLUMN bc_card_at TEXT`);
+  }
+  if (reminderCols.length && !reminderCols.includes("bc_card_id")) {
+    database.exec(`ALTER TABLE schedule_reminders ADD COLUMN bc_card_id TEXT`);
+  }
+  if (reminderCols.length && !reminderCols.includes("bc_last_nudge")) {
+    database.exec(`ALTER TABLE schedule_reminders ADD COLUMN bc_last_nudge TEXT`);
+  }
+  if (reminderCols.length && !reminderCols.includes("bc_nudge_count")) {
+    database.exec(
+      `ALTER TABLE schedule_reminders ADD COLUMN bc_nudge_count INTEGER NOT NULL DEFAULT 0`
+    );
   }
 
   // scheduled_sends planning fields (added after the table shipped).

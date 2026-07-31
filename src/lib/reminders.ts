@@ -12,6 +12,7 @@ import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
 import {
   basecampConnected,
+  commentOnCard,
   createScheduleCard,
   getProjectPeople,
   matchPeople,
@@ -21,9 +22,46 @@ import { sendProductionUpcoming } from "./production-emails";
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
 
+// Follow-up schedule, as weekdays (0 = Sunday ... 6 = Saturday).
+//
+// Fixed weekdays rather than an interval, because that satisfies all three
+// rules by construction: never on a weekend, at most two client emails a week,
+// at most three Basecamp nudges a week. Changing the cap is a matter of editing
+// these arrays.
+//
+// This governs FOLLOW-UPS only. Booking confirmations and the day-before
+// "crew arrives tomorrow" email are operational and still send whenever due,
+// weekends included.
+export const REMINDER_EMAIL_DAYS = [1, 4]; // Monday, Thursday
+export const BASECAMP_FOLLOWUP_DAYS = [1, 3, 5]; // Monday, Wednesday, Friday
+
 function subDays(ymd: string, n: number): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+}
+
+// Whole days from `from` to `to`. Negative once `to` is in the past.
+function daysBetween(from: string, to: string): number {
+  const day = (ymd: string) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((day(to) - day(from)) / 86_400_000);
+}
+
+// Day of week for a calendar date, read in UTC so it matches the way every
+// other date in the scheduler is built.
+export function dayOfWeek(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+export function isEmailFollowupDay(ymd: string): boolean {
+  return REMINDER_EMAIL_DAYS.includes(dayOfWeek(ymd));
+}
+
+export function isBasecampFollowupDay(ymd: string): boolean {
+  return BASECAMP_FOLLOWUP_DAYS.includes(dayOfWeek(ymd));
 }
 
 function longDate(ymd: string): string {
@@ -64,23 +102,44 @@ export function getLatestReminder(clientId: string): ScheduleReminder | null {
   );
 }
 
-// Stamp that the Basecamp card was created for this window (dedupe), creating
-// the tracking row if a reminder hasn't been recorded yet.
-function markBasecampCard(clientId: string, windowStart: string) {
+// Stamp that the Basecamp card was created for this window (dedupe), storing
+// its id so later follow-ups comment on the same card. Creates the tracking row
+// if a reminder hasn't been recorded yet.
+function markBasecampCard(
+  clientId: string,
+  windowStart: string,
+  today: string,
+  cardId?: string
+) {
   const db = getDb();
   const ts = nowIso();
   const existing = getReminder(clientId, windowStart);
   if (existing) {
     db.prepare(
-      `UPDATE schedule_reminders SET bc_card_at = ?, updated_at = ? WHERE id = ?`
-    ).run(ts, ts, existing.id);
+      `UPDATE schedule_reminders
+       SET bc_card_at = ?, bc_card_id = ?, bc_last_nudge = ?, updated_at = ?
+       WHERE id = ?`
+    ).run(ts, cardId || existing.bc_card_id, today, ts, existing.id);
   } else {
     db.prepare(
       `INSERT INTO schedule_reminders
-        (id, client_id, window_start, last_sent, count, bc_card_at, created_at, updated_at)
-       VALUES (?, ?, ?, '', 0, ?, ?, ?)`
-    ).run(nanoid(12), clientId, windowStart, ts, ts, ts);
+        (id, client_id, window_start, last_sent, count, bc_card_at, bc_card_id,
+         bc_last_nudge, bc_nudge_count, created_at, updated_at)
+       VALUES (?, ?, ?, '', 0, ?, ?, ?, 0, ?, ?)`
+    ).run(nanoid(12), clientId, windowStart, ts, cardId || null, today, ts, ts);
   }
+}
+
+// Record that a Basecamp follow-up comment went out today.
+function markBasecampNudge(reminderId: string, today: string) {
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE schedule_reminders
+       SET bc_last_nudge = ?, bc_nudge_count = bc_nudge_count + 1, updated_at = ?
+       WHERE id = ?`
+    )
+    .run(today, ts, reminderId);
 }
 
 // Record that a reminder went out today, creating the row on first send.
@@ -226,12 +285,14 @@ export interface ReminderRunResult {
   sent: Array<{ client: string; email: string; window: Window; attempt: number }>;
   failed: Array<{ client: string; email: string }>;
   basecampCards: Array<{ client: string; ok: boolean; error?: string }>;
+  basecampFollowups: Array<{ client: string; ok: boolean; error?: string }>;
   skipped: {
     notConfigured: number;
     notInWindow: number;
     alreadyBooked: number;
     noEmail: number;
     alreadySentToday: number;
+    notAFollowupDay: number;
     removed: number;
   };
 }
@@ -251,12 +312,14 @@ export async function runReminders(opts?: {
     sent: [],
     failed: [],
     basecampCards: [],
+    basecampFollowups: [],
     skipped: {
       notConfigured: 0,
       notInWindow: 0,
       alreadyBooked: 0,
       noEmail: 0,
       alreadySentToday: 0,
+      notAFollowupDay: 0,
       removed: 0,
     },
   };
@@ -288,12 +351,15 @@ export async function runReminders(opts?: {
       continue;
     }
 
-    // Basecamp "time to schedule" card: once per window, independent of email.
+    // Basecamp team nudge, independent of the client email. The card is created
+    // once per window; after that, follow-ups are comments on that same card so
+    // the board doesn't fill with duplicates. Both are limited to the
+    // Basecamp follow-up weekdays.
     if (!dryRun && client.basecamp_project_id && basecampConnected()) {
       const existingCard = getReminder(client.id, window.start);
+      const bcToken = getOrCreateScheduleToken(client.id);
+      const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
       if (!existingCard?.bc_card_at) {
-        const bcToken = getOrCreateScheduleToken(client.id);
-        const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
         const cardTitle = "Pending Production Scheduling";
         const cardBody =
           `<div><strong>${longDate(window.start)} to ${longDate(window.end)}</strong> is open for ${client.name}.</div>` +
@@ -316,10 +382,43 @@ export async function runReminders(opts?: {
             assigneeIds,
             dueOn
           );
-          if (r.ok) markBasecampCard(client.id, window.start);
+          if (r.ok) markBasecampCard(client.id, window.start, today, r.cardId);
           result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });
         } catch (e) {
           result.basecampCards.push({ client: client.name, ok: false, error: (e as Error).message });
+        }
+      } else if (
+        existingCard.bc_card_id &&
+        existingCard.bc_last_nudge !== today &&
+        isBasecampFollowupDay(today)
+      ) {
+        const daysOut = daysBetween(today, window.start);
+        const urgency =
+          daysOut > 0
+            ? `opens in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+            : "is open now";
+        const body =
+          `<div><strong>${client.name}</strong> still hasn't booked. Their window ${urgency} ` +
+          `(${longDate(window.start)} to ${longDate(window.end)}).</div>` +
+          (bcUrl ? `<div>Scheduling link: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
+        try {
+          const r = await commentOnCard(
+            client.basecamp_project_id,
+            existingCard.bc_card_id,
+            body
+          );
+          if (r.ok) markBasecampNudge(existingCard.id, today);
+          result.basecampFollowups.push({
+            client: client.name,
+            ok: r.ok,
+            error: r.error,
+          });
+        } catch (e) {
+          result.basecampFollowups.push({
+            client: client.name,
+            ok: false,
+            error: (e as Error).message,
+          });
         }
       }
     }
@@ -328,8 +427,13 @@ export async function runReminders(opts?: {
       result.skipped.noEmail++;
       continue;
     }
-    // At most one email per day.
     const rec = getReminder(client.id, window.start);
+    // Client emails go out on their follow-up weekdays only, so nobody gets a
+    // weekend nudge and nobody gets more than two in a week.
+    if (!isEmailFollowupDay(today)) {
+      result.skipped.notAFollowupDay++;
+      continue;
+    }
     if (rec && rec.last_sent === today) {
       result.skipped.alreadySentToday++;
       continue;
@@ -390,10 +494,14 @@ export async function runShootReminders(opts?: {
 
   const sends = getDb()
     .prepare(
+      // requested_by_client is what marks a row as a production. Without it
+      // this picks up ordinary campaign sends too, and tells the client a
+      // camera crew is arriving for their email blast.
       `SELECT * FROM scheduled_sends
        WHERE send_date = ?
          AND status IN ('scheduled', 'planned')
          AND client_id IS NOT NULL
+         AND requested_by_client = 1
          AND shoot_reminder_sent_at IS NULL`
     )
     .all(tomorrow) as ScheduledSend[];

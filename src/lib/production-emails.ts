@@ -162,7 +162,7 @@ export async function sendProductionUpcoming(
 
   const { subject, html, text } = shell({
     subject: `${client.name}: your crew arrives tomorrow`,
-    preheader: `Quick reminder — your production is tomorrow, ${when}.`,
+    preheader: `Just a reminder that your production is tomorrow, ${when}.`,
     eyebrow: client.name,
     headline: "Your crew arrives tomorrow",
     bodyHtml: `

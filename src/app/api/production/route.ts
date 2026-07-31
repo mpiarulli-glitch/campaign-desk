@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { isProductionAuthenticated } from "@/lib/auth";
-import { listRevClients } from "@/lib/revenue";
+import { isAdminAuthenticated, isProductionAuthenticated } from "@/lib/auth";
+import { getRevClient, listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
+import { recordManualProduction } from "@/lib/scheduling";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
 import { listProductionSends } from "@/lib/calendar";
@@ -56,4 +57,26 @@ export async function GET() {
     today,
     videographers: listVideographers(false),
   });
+}
+
+// Logs a production that was booked outside the app. Admin only, since it can
+// backdate a production and move the client's cadence anchor.
+export async function POST(request: Request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const body = await request.json().catch(() => ({}));
+  const clientId = typeof body.clientId === "string" ? body.clientId : "";
+  if (!clientId) {
+    return NextResponse.json({ error: "Pick a client." }, { status: 400 });
+  }
+  const client = getRevClient(clientId);
+  if (!client) {
+    return NextResponse.json({ error: "Client not found." }, { status: 404 });
+  }
+  const result = await recordManualProduction(client, body);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.httpStatus });
+  }
+  return NextResponse.json({ send: result.send }, { status: 201 });
 }

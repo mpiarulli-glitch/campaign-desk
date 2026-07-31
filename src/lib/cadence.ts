@@ -122,6 +122,33 @@ export function nextWindow(client: RevClient, today: string): Window | null {
   return null;
 }
 
+// The production window a given date falls inside, for a given color week, or
+// null if the date isn't in one. Used when logging a production that was booked
+// outside the app, so it lands on the same cadence beat a client booking would.
+//
+// A window can start in the month before the one it belongs to (purple
+// publishes in the first full week, so it shoots the week prior), which is why
+// this checks the neighbouring months rather than just the date's own month.
+export function productionWindowForDate(
+  colorWeek: ColorWeek,
+  date: string
+): Window | null {
+  if (!colorWeek) return null;
+  const colorIdx = COLOR_WEEK_INDEX[colorWeek];
+  const [y, m] = date.split("-").map(Number);
+  const monthOffset = y * 12 + (m - 1);
+  for (const delta of [-1, 0, 1]) {
+    const target = monthOffset + delta;
+    const w = productionWindowForMonth(
+      Math.floor(target / 12),
+      target % 12,
+      colorIdx
+    );
+    if (date >= w.start && date <= w.end) return w;
+  }
+  return null;
+}
+
 export function isBlackout(date: string, client: RevClient): boolean {
   if (client.contract_start && date < client.contract_start) return true;
   if (client.contract_end && date > client.contract_end) return true;

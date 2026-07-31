@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 type ColorWeek = "purple" | "red" | "blue" | "green" | "";
 type Cadence = "monthly" | "bi_monthly" | "quarterly" | "";
@@ -63,6 +63,21 @@ type Row = {
 
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
 type ProductionTab = "requested" | "confirmed" | "setup";
+
+// The "Log a production" form: a production that was arranged over the phone or
+// in another booking system, recorded after the fact.
+type LogForm = {
+  clientId: string;
+  date: string;
+  time: string;
+  duration: "half" | "full";
+  status: "requested" | "scheduled" | "sent";
+  note: string;
+  cadenceWindowStart: string;
+  notifyClient: boolean;
+  notifyTeam: boolean;
+  advanceAnchor: boolean;
+};
 
 type Production = {
   id: string;
@@ -183,6 +198,74 @@ export default function ProductionPage() {
   const [bc, setBc] = useState<{ configured: boolean; connected: boolean } | null>(null);
   const [videographers, setVideographers] = useState<Videographer[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // "Log a production" form, for productions booked outside the app.
+  const [logging, setLogging] = useState<LogForm | null>(null);
+  const [logSaving, setLogSaving] = useState(false);
+  const [logError, setLogError] = useState("");
+
+  function openLog(clientId = "") {
+    setLogError("");
+    setLogging({
+      clientId,
+      date: "",
+      time: "09:00",
+      duration: "half",
+      status: "scheduled",
+      note: "",
+      cadenceWindowStart: "",
+      notifyClient: false,
+      notifyTeam: false,
+      advanceAnchor: true,
+    });
+  }
+
+  // Picking a client prefills the date with their current window, which is what
+  // you want almost every time. Backfilling a past production means changing it.
+  function chooseLogClient(clientId: string) {
+    if (!logging) return;
+    const row = rows.find((r) => r.client.id === clientId);
+    setLogging({
+      ...logging,
+      clientId,
+      date: logging.date || row?.window?.start || "",
+    });
+  }
+
+  async function submitLog(e: FormEvent) {
+    e.preventDefault();
+    if (!logging) return;
+    if (!logging.clientId) { setLogError("Pick a client."); return; }
+    if (!logging.date) { setLogError("Pick the production date."); return; }
+    setLogSaving(true);
+    setLogError("");
+    const res = await fetch("/api/production", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: logging.clientId,
+        date: logging.date,
+        time: logging.time,
+        duration: logging.duration,
+        status: logging.status,
+        note: logging.note,
+        cadenceWindowStart: logging.cadenceWindowStart || undefined,
+        notifyClient: logging.notifyClient,
+        notifyTeam: logging.notifyTeam,
+        // Only meaningful on a completed production; the server ignores it
+        // otherwise, but don't send a misleading true.
+        advanceAnchor: logging.status === "sent" && logging.advanceAnchor,
+      }),
+    });
+    setLogSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setLogError(data.error || "Could not log the production.");
+      return;
+    }
+    setLogging(null);
+    load({ silent: true });
+  }
 
   async function addVideographer() {
     const name = (prompt("Videographer name") || "").trim();
@@ -363,6 +446,33 @@ export default function ProductionPage() {
   const visibleProductions =
     tab === "requested" ? requestedProductions : confirmedProductions;
 
+  // Only clients whose color week and cadence are set can have a production
+  // logged, since without them there's no window to record it against.
+  const loggableClients = useMemo(
+    () =>
+      enrolled
+        .filter((r) => r.client.color_week && r.client.production_cadence)
+        .sort((a, b) => a.client.name.localeCompare(b.client.name)),
+    [enrolled]
+  );
+  const logSelectedWindow = useMemo(
+    () =>
+      logging?.clientId
+        ? rows.find((r) => r.client.id === logging.clientId)?.window || null
+        : null,
+    [logging?.clientId, rows]
+  );
+  // Whether moving the anchor is consequential depends on the cadence: monthly
+  // windows don't move, longer cadences shift by whole months.
+  const logSelectedCadence = useMemo(
+    () =>
+      logging?.clientId
+        ? rows.find((r) => r.client.id === logging.clientId)?.client
+            .production_cadence || ""
+        : "",
+    [logging?.clientId, rows]
+  );
+
   const vidOptions = [
     { value: "", label: "Unassigned" },
     ...videographers.map((v) => ({ value: v.id, label: v.name })),
@@ -473,6 +583,190 @@ export default function ProductionPage() {
         </div>
 
         {error ? <p className="error">{error}</p> : null}
+
+        {isAdmin && tab !== "setup" ? (
+          logging ? (
+            <form className="card card-pad stack" onSubmit={submitLog}>
+              <div>
+                <h2 className="h3" style={{ margin: 0 }}>Log a production</h2>
+                <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+                  For a production booked over the phone or in another system.
+                  This records it against the client&apos;s cadence window, so it
+                  shows in the queue and stops their scheduling reminders.
+                </p>
+              </div>
+
+              <div className="rev-form-grid">
+                <div className="field">
+                  <label htmlFor="log-client">Client</label>
+                  <select
+                    id="log-client"
+                    className="select-clean"
+                    value={logging.clientId}
+                    onChange={(e) => chooseLogClient(e.target.value)}
+                  >
+                    <option value="">Pick a client</option>
+                    {loggableClients.map((r) => (
+                      <option key={r.client.id} value={r.client.id}>
+                        {r.client.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="log-date">Production date</label>
+                  <input
+                    id="log-date"
+                    type="date"
+                    value={logging.date}
+                    onChange={(e) => setLogging({ ...logging, date: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="log-time">Start time</label>
+                  <select
+                    id="log-time"
+                    className="select-clean"
+                    value={logging.time}
+                    onChange={(e) => setLogging({ ...logging, time: e.target.value })}
+                  >
+                    <option value="">No time set</option>
+                    {["09:00", "10:00", "11:00", "12:00", "13:00"].map((t) => (
+                      <option key={t} value={t}>{fmtTime(t)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="log-duration">Length</label>
+                  <select
+                    id="log-duration"
+                    className="select-clean"
+                    value={logging.duration}
+                    onChange={(e) =>
+                      setLogging({ ...logging, duration: e.target.value as "half" | "full" })
+                    }
+                  >
+                    <option value="half">4 hours</option>
+                    <option value="full">Full day</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="log-status">Status</label>
+                  <select
+                    id="log-status"
+                    className="select-clean"
+                    value={logging.status}
+                    onChange={(e) =>
+                      setLogging({
+                        ...logging,
+                        status: e.target.value as LogForm["status"],
+                      })
+                    }
+                  >
+                    <option value="requested">Requested, not confirmed</option>
+                    <option value="scheduled">Confirmed</option>
+                    <option value="sent">Already happened</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="log-window">Counts toward window</label>
+                  <input
+                    id="log-window"
+                    type="date"
+                    value={logging.cadenceWindowStart}
+                    onChange={(e) =>
+                      setLogging({ ...logging, cadenceWindowStart: e.target.value })
+                    }
+                  />
+                  <span className="muted" style={{ fontSize: 12, marginTop: 4, display: "block" }}>
+                    {logSelectedWindow
+                      ? `Leave blank to work it out from the date. Their current window is ${fmtWindow(logSelectedWindow)}.`
+                      : "Leave blank to work it out from the production date."}
+                  </span>
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="log-note">Note for the crew</label>
+                <textarea
+                  id="log-note"
+                  rows={2}
+                  value={logging.note}
+                  onChange={(e) => setLogging({ ...logging, note: e.target.value })}
+                  placeholder="Parking, on-site contact, anything the videographer needs."
+                />
+              </div>
+
+              <div className="row" style={{ gap: 20, flexWrap: "wrap" }}>
+                <label className="row" style={{ gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={logging.notifyClient}
+                    onChange={(e) =>
+                      setLogging({ ...logging, notifyClient: e.target.checked })
+                    }
+                  />
+                  <span className="muted">Email the client a confirmation</span>
+                </label>
+                <label className="row" style={{ gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={logging.notifyTeam}
+                    onChange={(e) =>
+                      setLogging({ ...logging, notifyTeam: e.target.checked })
+                    }
+                  />
+                  <span className="muted">Post to the Video Editing Campfire</span>
+                </label>
+                {logging.status === "sent" ? (
+                  <label className="row" style={{ gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={logging.advanceAnchor}
+                      onChange={(e) =>
+                        setLogging({ ...logging, advanceAnchor: e.target.checked })
+                      }
+                    />
+                    <span className="muted">
+                      Move their last production date to this one
+                    </span>
+                  </label>
+                ) : null}
+              </div>
+
+              {logging.status === "sent" && logging.advanceAnchor && logSelectedCadence ? (
+                <p className="muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>
+                  {logSelectedCadence === "monthly"
+                    ? "Safe on a monthly client: every month has a window, so their next one stays where it is."
+                    : "Careful on a " +
+                      (logSelectedCadence === "quarterly" ? "quarterly" : "bi-monthly") +
+                      " client. The cadence counts forward from the month of their last production, so this moves every future window."}
+                </p>
+              ) : null}
+
+              {logError ? <p className="error">{logError}</p> : null}
+
+              <div className="row" style={{ gap: 10 }}>
+                <button className="btn" type="submit" disabled={logSaving}>
+                  {logSaving ? "Saving..." : "Log production"}
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  onClick={() => setLogging(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => openLog()}>
+                + Log a production
+              </button>
+            </div>
+          )
+        ) : null}
 
         {tab === "setup" ? (
           <>
