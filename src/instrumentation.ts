@@ -1,13 +1,18 @@
 // Next.js runs register() once when the server starts.
 //
-// Used for the one-time Basecamp client backfill: linking existing clients to
-// their project and importing client projects that had no client record. It
-// guards itself with a flag in app_settings, so every boot after the first is a
-// no-op. Deliberately not awaited — a slow or unreachable Basecamp must not hold
-// up the server coming online.
+// Home for one-time data tasks that need more than the sync migration path in
+// lib/db can do. Each guards itself with a flag in app_settings, so every boot
+// after the first is a no-op.
 export async function register() {
   // Only the Node runtime can reach SQLite; skip the edge runtime pass.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  // Local and synchronous, so it finishes before the server takes traffic.
+  const { runClientCleanupOnce } = await import("./lib/client-cleanup");
+  runClientCleanupOnce();
+
+  // Calls Basecamp, so deliberately not awaited — a slow or unreachable
+  // Basecamp must not hold up the server coming online.
   const { runBasecampClientBackfillOnce } = await import("./lib/basecamp-clients");
   void runBasecampClientBackfillOnce();
 }

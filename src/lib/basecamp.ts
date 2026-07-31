@@ -351,30 +351,50 @@ interface BcTodoRaw {
   assignees?: Array<{ id: number }>;
 }
 
-// Every open todo in a project, across all its todo lists (including grouped
-// lists). Returns [] rather than throwing when the project has no todoset or
-// Basecamp is unreachable — the picker degrades to free text.
+// How many todo lists (across every todoset) one project will be walked for.
+// Bounded so a project with an unusual number of lists can't fan out without
+// limit, but high enough to cover several todosets' worth.
+const MAX_TODO_LISTS = 60;
+
+// Every open todo in a project, across every todoset and todo list (including
+// grouped lists). Returns [] rather than throwing when the project has no
+// todoset or Basecamp is unreachable — the picker degrades to free text.
 export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
   if (!projectId) return [];
   try {
     const pr = await bc(`/projects/${projectId}.json`);
     if (!pr.ok) return [];
     const project = await pr.json();
-    const dock: Array<{ id: number; name: string }> = project.dock || [];
-    const todoset = dock.find((d) => d.name === "todoset");
-    if (!todoset) return [];
+    const dock: Array<{ id: number; name: string; title?: string; enabled?: boolean }> =
+      project.dock || [];
 
-    const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
-      `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`
+    // A project carries SEVERAL todosets, each its own page in Basecamp — these
+    // projects run an "Onboarding Checklist", a "To Dos" and a "Cross Department
+    // Checklist". Taking only the first (dock.find) meant the picker showed
+    // onboarding work and silently hid everything else.
+    const todosets = dock.filter((d) => d.name === "todoset" && d.enabled !== false);
+    if (!todosets.length) return [];
+
+    const listsPerSet = await Promise.all(
+      todosets.map(async (set) => {
+        const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
+          `/buckets/${projectId}/todosets/${set.id}/todolists.json`
+        );
+        // Carry the todoset's own name so the picker can distinguish an
+        // onboarding list from a same-named regular one.
+        return lists.map((l) => ({ ...l, setTitle: set.title || "Todos" }));
+      })
     );
+    const lists = listsPerSet.flat();
 
     // A grouped todo list holds no todos itself — its groups do. Expand any
     // list that reports groups so grouped work isn't silently missing. Checked
     // for every list concurrently — sequentially this was one round trip per
     // list, which is the main reason the picker used to be slow to load.
     const perListGroups = await Promise.all(
-      lists.slice(0, 30).map(async (list) => {
-        const title = list.title || list.name || "Todos";
+      lists.slice(0, MAX_TODO_LISTS).map(async (list) => {
+        const listName = list.title || list.name || "Todos";
+        const title = `${list.setTitle} › ${listName}`;
         const groups = await bcCollection<{ id: number; title?: string; name?: string }>(
           `/buckets/${projectId}/todolists/${list.id}/groups.json`,
           1
