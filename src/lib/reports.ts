@@ -15,6 +15,7 @@ import { teamLabel } from "./team";
 export type ReportType =
   | "time_tracking"
   | "capacity"
+  | "approvals_ageing"
   | "okrs"
   | "weekly_snapshots"
   | "deliverables"
@@ -43,6 +44,12 @@ export const REPORTS: ReportMeta[] = [
     type: "capacity",
     label: "Capacity",
     blurb: "How much work is urgent, important or flexible, and whose hours could move.",
+    ranged: true,
+  },
+  {
+    type: "approvals_ageing",
+    label: "Approvals ageing",
+    blurb: "How long review packages have been waiting, on the client and on us.",
     ranged: true,
   },
   {
@@ -147,6 +154,201 @@ function titleCaseStatus(s: string): string {
 }
 
 /* ------------------------------------------------------- 1. time tracking */
+
+/* --------------------------------------------------------- approvals ageing */
+
+// Age buckets. The top bucket is deliberately open-ended: an approval sitting
+// past a month is the finding, and capping it would hide how far past.
+const AGE_BUCKETS: Array<{ label: string; min: number; max: number }> = [
+  { label: "0–3 days", min: 0, max: 3 },
+  { label: "4–7 days", min: 4, max: 7 },
+  { label: "8–14 days", min: 8, max: 14 },
+  { label: "15–30 days", min: 15, max: 30 },
+  { label: "Over 30 days", min: 31, max: Infinity },
+];
+
+function daysSince(iso: string, now: number): number {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.floor((now - t) / 86_400_000));
+}
+
+function median(ns: number[]): number | null {
+  if (!ns.length) return null;
+  const s = [...ns].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+/**
+ * How long review packages have been waiting, and how long settled ones took.
+ *
+ * Two clocks, kept apart on purpose:
+ *
+ *   in_review     the ball is with the client
+ *   needs_changes they have come back to us, so it is ours
+ *
+ * The open sections are always current, never filtered by the range. Filtering
+ * them by a date window would drop the oldest items, which are the whole point
+ * of an ageing report. The range applies only to the settled-approvals section
+ * at the end.
+ *
+ * Age is measured from basecamp_approval_sent_at when it exists, and from
+ * updated_at otherwise. Only packages sent through the Basecamp flow carry the
+ * former, and updated_at moves on any edit, so a package edited while waiting
+ * reads younger than it is. That understates age rather than overstating it,
+ * which is the safer direction for a queue you are trying to clear.
+ */
+function approvalsAgeing(start: string, end: string): ReportSection[] {
+  const db = getDb();
+  const now = Date.now();
+
+  const open = db
+    .prepare(
+      `SELECT c.id, c.title, c.client_name, c.status,
+              COALESCE(NULLIF(c.basecamp_approval_sent_at, ''), c.updated_at) AS waiting_since,
+              (SELECT COUNT(*) FROM comments cm
+                WHERE cm.campaign_id = c.id AND cm.resolved = 0) AS open_comments
+         FROM campaigns c
+        WHERE c.archived_at IS NULL
+          AND c.status IN ('in_review', 'needs_changes')`
+    )
+    .all() as Array<{
+    id: string;
+    title: string;
+    client_name: string;
+    status: string;
+    waiting_since: string;
+    open_comments: number;
+  }>;
+
+  const aged = open
+    .map((r) => ({ ...r, age: daysSince(r.waiting_since, now) }))
+    .sort((a, b) => b.age - a.age);
+
+  const withClient = aged.filter((r) => r.status === "in_review");
+  const withUs = aged.filter((r) => r.status === "needs_changes");
+
+  // Settled approvals inside the range, for turnaround. approved_at is set when
+  // a package is marked approved; created_at is the only reliable start, so
+  // this is total time from upload to approval, not time on the client.
+  const settled = db
+    .prepare(
+      `SELECT client_name, created_at, approved_at
+         FROM campaigns
+        WHERE approved_at IS NOT NULL
+          AND date(approved_at) >= date(?)
+          AND date(approved_at) <= date(?)`
+    )
+    .all(start, end) as Array<{
+    client_name: string;
+    created_at: string;
+    approved_at: string;
+  }>;
+
+  const turnarounds = settled.map((r) =>
+    Math.max(0, Math.floor((Date.parse(r.approved_at) - Date.parse(r.created_at)) / 86_400_000))
+  );
+
+  const byClient = new Map<string, { open: number; client: number; us: number; oldest: number }>();
+  for (const r of aged) {
+    const key = r.client_name.trim() || "No client";
+    const e = byClient.get(key) || { open: 0, client: 0, us: 0, oldest: 0 };
+    e.open += 1;
+    if (r.status === "in_review") e.client += 1;
+    else e.us += 1;
+    e.oldest = Math.max(e.oldest, r.age);
+    byClient.set(key, e);
+  }
+
+  const medianOpen = median(aged.map((r) => r.age));
+  const medianTurnaround = median(turnarounds);
+
+  return [
+    {
+      title: "Where things stand",
+      stats: [
+        { label: "Open approvals", value: String(aged.length), hint: "current, not range-filtered" },
+        {
+          label: "With the client",
+          value: String(withClient.length),
+          hint: withClient.length ? `oldest ${withClient[0].age}d` : "nothing waiting",
+        },
+        {
+          label: "With us",
+          value: String(withUs.length),
+          hint: withUs.length ? `oldest ${withUs[0].age}d` : "nothing waiting",
+        },
+        {
+          label: "Median age",
+          value: medianOpen === null ? "—" : `${medianOpen}d`,
+          hint: aged.length ? `oldest ${aged[0].age}d` : "nothing open",
+        },
+      ],
+    },
+    {
+      title: "Age of open approvals",
+      columns: ["Age", "Total", "With the client", "With us"],
+      numeric: [1, 2, 3],
+      empty: "Nothing is waiting on a decision.",
+      rows: aged.length
+        ? AGE_BUCKETS.map((b) => {
+            const inBucket = aged.filter((r) => r.age >= b.min && r.age <= b.max);
+            return [
+              b.label,
+              String(inBucket.length),
+              String(inBucket.filter((r) => r.status === "in_review").length),
+              String(inBucket.filter((r) => r.status === "needs_changes").length),
+            ];
+          })
+        : [],
+    },
+    {
+      title: "By client",
+      columns: ["Client", "Open", "With the client", "With us", "Oldest"],
+      numeric: [1, 2, 3, 4],
+      empty: "Nothing is waiting on a decision.",
+      rows: [...byClient.entries()]
+        .sort((a, b) => b[1].oldest - a[1].oldest)
+        .map(([client, e]) => [
+          client,
+          String(e.open),
+          String(e.client),
+          String(e.us),
+          `${e.oldest}d`,
+        ]),
+    },
+    {
+      title: "Every open approval, oldest first",
+      columns: ["Package", "Client", "Waiting on", "Age", "Open comments"],
+      numeric: [3, 4],
+      empty: "Nothing is waiting on a decision.",
+      rows: aged.map((r) => [
+        r.title,
+        r.client_name.trim() || "No client",
+        r.status === "in_review" ? "Client" : "Us",
+        `${r.age}d`,
+        String(r.open_comments),
+      ]),
+    },
+    {
+      title: "Approved in this range",
+      stats: [
+        { label: "Approved", value: String(settled.length), hint: `${prettyDate(start)} to ${prettyDate(end)}` },
+        {
+          label: "Median turnaround",
+          value: medianTurnaround === null ? "—" : `${medianTurnaround}d`,
+          hint: "upload to approval",
+        },
+        {
+          label: "Slowest",
+          value: turnarounds.length ? `${Math.max(...turnarounds)}d` : "—",
+          hint: "upload to approval",
+        },
+      ],
+    },
+  ];
+}
 
 /* ----------------------------------------------------------------- capacity */
 
@@ -817,6 +1019,9 @@ export function buildReport(
       break;
     case "capacity":
       sections = capacity(start, end);
+      break;
+    case "approvals_ageing":
+      sections = approvalsAgeing(start, end);
       break;
     case "okrs":
       sections = okrs();

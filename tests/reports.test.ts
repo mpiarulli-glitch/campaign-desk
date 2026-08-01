@@ -261,6 +261,60 @@ test("reports", async (t) => {
     assert.equal(r.sections.find((s) => s.title === "By person")!.rows!.length, 0);
   });
 
+  await t.test("approvals ageing splits the queue by who is holding it", () => {
+    const ago = (days: number) =>
+      new Date(Date.now() - days * 86_400_000).toISOString();
+    const camp = db.prepare(
+      `INSERT INTO campaigns
+         (id, title, client_name, client_id, status, magic_token, external_token,
+          created_at, updated_at, approved_at, basecamp_approval_sent_at)
+       VALUES (?, ?, ?, 'cl_1', ?, ?, ?, ?, ?, ?, ?)`
+    );
+    // Two on the client, one back on us, one already approved.
+    camp.run("ap1", "Old promo", "Humble Somm", "in_review", "mt1", "et1", ago(40), ago(40), null, null);
+    camp.run("ap2", "Fresh promo", "Humble Somm", "in_review", "mt2", "et2", ago(2), ago(2), null, null);
+    camp.run("ap3", "Needs a rewrite", "Krak Boba", "needs_changes", "mt3", "et3", ago(9), ago(9), null, null);
+    camp.run("ap4", "Done deal", "Humble Somm", "approved", "mt4", "et4", "2026-07-01T00:00:00.000Z", ago(1), "2026-07-11T00:00:00.000Z", null);
+
+    const r = reports.buildReport("approvals_ageing", "2026-07-01", "2026-07-31");
+    const stand = r.sections[0].stats!;
+    assert.equal(stand.find((s) => s.label === "Open approvals")?.value, "3");
+    assert.equal(stand.find((s) => s.label === "With the client")?.value, "2");
+    assert.equal(stand.find((s) => s.label === "With us")?.value, "1");
+
+    // Buckets: 2d, 9d and 40d land in three different bands.
+    const buckets = r.sections.find((s) => s.title === "Age of open approvals")!;
+    const row = (label: string) => buckets.rows!.find((x) => x[0] === label)!;
+    assert.equal(row("0–3 days")[1], "1");
+    assert.equal(row("8–14 days")[1], "1");
+    assert.equal(row("Over 30 days")[1], "1");
+    assert.equal(row("4–7 days")[1], "0");
+
+    // Oldest first, and the approved one never appears in the open list.
+    const list = r.sections.find((s) => s.title.startsWith("Every open approval"))!;
+    assert.deepEqual(list.rows!.map((x) => x[0]), ["Old promo", "Needs a rewrite", "Fresh promo"]);
+    assert.equal(list.rows![0][2], "Client");
+    assert.equal(list.rows![1][2], "Us");
+  });
+
+  await t.test("ageing ignores the range for open work but honours it for approvals", () => {
+    // The 40-day-old package must survive a narrow recent range: filtering open
+    // items by date would hide exactly the ones worth seeing.
+    const narrow = reports.buildReport("approvals_ageing", "2026-07-25", "2026-07-31");
+    assert.equal(narrow.sections[0].stats!.find((s) => s.label === "Open approvals")?.value, "3");
+    // ap4 was approved on 2026-07-11, outside that window.
+    assert.equal(
+      narrow.sections.find((s) => s.title === "Approved in this range")!.stats![0].value,
+      "0"
+    );
+
+    const wide = reports.buildReport("approvals_ageing", "2026-07-01", "2026-07-31");
+    const settled = wide.sections.find((s) => s.title === "Approved in this range")!.stats!;
+    assert.equal(settled[0].value, "1");
+    // Uploaded 2026-07-01, approved 2026-07-11.
+    assert.equal(settled.find((s) => s.label === "Median turnaround")?.value, "10d");
+  });
+
   await t.test("an unknown report type is rejected", () => {
     assert.equal(reports.isReportType("time_tracking"), true);
     assert.equal(reports.isReportType("nope"), false);
