@@ -4344,113 +4344,184 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .ops-weeknav strong { font-size: 13.5px; }
 
 /* Forecast portal: real week-view planner */
+/* ============================================================ forecast board
+   Priority used to tint each task's whole background, so a normal week read as
+   a wall of red and amber blocks. It's a 3px leading rail now: same signal,
+   quiet surface. The one loud element on the page is the capacity gauge, which
+   answers the question the page exists for — am I overloaded this week.
+   Easing is the iOS sheet curve; everything here uses it. */
+.ops-scope {
+  --fc-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --fc-rail: var(--border-strong);
+}
+
 .ops-planner {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
 }
 .ops-day-col {
-  background: #fff;
-  border: 1px solid var(--ops-border);
-  border-radius: 12px;
-  min-height: 220px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
+  transition: border-color 0.2s var(--fc-ease), box-shadow 0.2s var(--fc-ease),
+    background 0.2s var(--fc-ease);
+}
+/* Today's column is the one you're most likely acting on, so it gets a hairline
+   of accent rather than a full highlight. */
+.ops-day-col.is-today { border-color: rgba(0, 212, 232, 0.55); }
+.ops-day-col.is-drop-target {
+  border-color: var(--accent);
+  background: var(--bg-tint);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
 }
 .ops-day-head {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--ops-border-soft);
+  padding: 12px 14px 10px;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 8px;
 }
-.ops-day-name { font-size: 12.5px; font-weight: 700; }
-.ops-day-date { font-size: 11px; color: var(--text-muted); }
-.ops-day-hours { font-size: 11px; font-weight: 700; color: var(--accent-ink); }
+.ops-day-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.ops-day-date { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.ops-day-hours {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.ops-day-col.is-loaded .ops-day-hours { color: var(--accent-ink); }
 .ops-day-tasks {
-  padding: 10px;
+  padding: 0 10px 4px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
 }
+
 .ops-task-chip {
-  background: var(--ops-border-soft);
-  border-radius: 9px;
-  padding: 9px 32px 9px 10px;
-  font-size: 12.5px;
   position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--fc-rail);
+  border-radius: 10px;
+  padding: 8px 10px 8px 11px;
+  cursor: grab;
+  transition: box-shadow 0.2s var(--fc-ease), transform 0.2s var(--fc-ease),
+    opacity 0.2s var(--fc-ease);
+}
+.ops-task-chip:hover { box-shadow: var(--shadow); }
+.ops-task-chip:active { cursor: grabbing; }
+/* Lifted out of the column and tilted, so the card reads as picked up rather
+   than just faded. */
+.ops-task-chip.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.98) rotate(-1.5deg);
+  box-shadow: var(--shadow-lift);
+}
+.ops-task-chip .chip-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 .ops-task-chip .client {
-  font-weight: 700;
-  margin: 0 0 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 12.5px;
   border: none;
   background: none;
-  width: 100%;
-  padding: 0;
-  font-size: 12.5px;
+  padding: 1px 0;
   font-family: inherit;
+  color: var(--text);
 }
 .ops-task-chip .notes {
+  display: block;
+  width: 100%;
   color: var(--text-muted);
   font-size: 11.5px;
   border: none;
   background: none;
-  width: 100%;
-  padding: 0;
+  padding: 1px 0 0;
   font-family: inherit;
 }
 .ops-task-chip .hrs {
-  position: absolute;
-  top: 9px;
-  right: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent-ink);
+  flex: none;
+  width: 34px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-body);
   background: none;
   border: none;
-  width: 26px;
   text-align: right;
   font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
+.ops-task-chip .chip-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+/* Destructive and secondary, so it stays invisible until the card is hovered
+   or something inside it has focus. */
 .ops-task-chip .remove {
-  position: absolute;
-  bottom: 6px;
-  right: 8px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-muted);
   background: none;
   border: none;
   cursor: pointer;
   padding: 2px 4px;
-}
-.ops-task-chip .remove:hover { color: var(--danger); }
-.ops-task-chip .done-check { position: absolute; top: 9px; left: 8px; }
-.ops-task-chip.is-done .client,
-.ops-task-chip.is-done .notes { opacity: 0.55; text-decoration: line-through; }
-
-.ops-day-add { padding: 10px; border-top: 1px dashed var(--ops-border); }
-.ops-day-add-form { display: flex; flex-direction: column; gap: 6px; }
-.ops-day-add-form input {
-  border: 1px solid var(--ops-border);
   border-radius: 6px;
-  padding: 6px 8px;
+  opacity: 0;
+  transition: opacity 0.15s var(--fc-ease), color 0.15s var(--fc-ease);
+}
+.ops-task-chip:hover .remove,
+.ops-task-chip:focus-within .remove { opacity: 1; }
+.ops-task-chip .remove:hover { color: var(--danger); background: rgba(214, 69, 69, 0.08); }
+.ops-task-chip.is-done { background: var(--bg-soft); border-left-color: var(--border-strong); }
+.ops-task-chip.is-done .client,
+.ops-task-chip.is-done .notes { opacity: 0.5; text-decoration: line-through; }
+
+.ops-day-add { padding: 8px 10px 10px; }
+.ops-day-add-form { display: flex; flex-direction: column; gap: 6px; }
+.ops-day-add-form input,
+.ops-day-add-form select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 8px;
   font-size: 12px;
+  font-family: inherit;
+  background: var(--bg-elevated);
 }
 .ops-day-add button.ops-add-trigger {
   width: 100%;
   background: none;
-  border: none;
+  border: 1px dashed var(--border-strong);
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  padding: 6px;
-  border-radius: 7px;
+  padding: 7px;
+  border-radius: 9px;
+  transition: color 0.15s var(--fc-ease), border-color 0.15s var(--fc-ease),
+    background 0.15s var(--fc-ease);
 }
 .ops-day-add button.ops-add-trigger:hover {
-  background: var(--ops-border-soft);
-  color: var(--text);
+  background: var(--bg-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .ops-week-total {
@@ -4694,14 +4765,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 
 /* Forecast task priority: urgent (can't move) / important (move if truly
-   needed) / flexible (reschedulable, still has to happen). */
-.ops-task-chip.pri-urgent { background: rgba(214, 69, 69, 0.16); border-left: 3px solid var(--danger); }
-.ops-task-chip.pri-important { background: rgba(196, 137, 0, 0.16); border-left: 3px solid var(--warning); }
-.ops-task-chip.pri-flexible { background: rgba(31, 157, 99, 0.14); border-left: 3px solid var(--success); }
-
-.ops-list-row.pri-urgent { background: rgba(214, 69, 69, 0.16); border-left: 3px solid var(--danger); }
-.ops-list-row.pri-important { background: rgba(196, 137, 0, 0.16); border-left: 3px solid var(--warning); }
-.ops-list-row.pri-flexible { background: rgba(31, 157, 99, 0.14); border-left: 3px solid var(--success); }
+   needed) / flexible (reschedulable, still has to happen).
+   Carried by the card's leading rail only. Tinting the whole row turned a
+   normal week into a wall of colour and drowned out everything else. */
+.ops-task-chip.pri-urgent,
+.ops-list-row.pri-urgent { border-left-color: var(--danger); }
+.ops-task-chip.pri-important,
+.ops-list-row.pri-important { border-left-color: var(--warning); }
+.ops-task-chip.pri-flexible,
+.ops-list-row.pri-flexible { border-left-color: var(--success); }
 
 .priority-picker { display: inline-flex; gap: 4px; align-items: center; }
 .priority-dot {
@@ -4722,43 +4794,88 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 /* List view (stacked day cards, full-width task rows) */
 .ops-list-day {
-  background: #fff;
-  border: 1px solid var(--ops-border);
-  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 16px 18px;
+  transition: border-color 0.2s var(--fc-ease), box-shadow 0.2s var(--fc-ease),
+    background 0.2s var(--fc-ease);
 }
-.ops-list-day + .ops-list-day { margin-top: 12px; }
+.ops-list-day + .ops-list-day { margin-top: 10px; }
+.ops-list-day.is-today { border-color: rgba(0, 212, 232, 0.55); }
+.ops-list-day.is-drop-target {
+  border-color: var(--accent);
+  background: var(--bg-tint);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
+}
 .ops-list-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 9px 10px;
-  border-radius: 8px;
-  background: var(--ops-border-soft);
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--fc-rail);
+  transition: box-shadow 0.2s var(--fc-ease), transform 0.2s var(--fc-ease),
+    opacity 0.2s var(--fc-ease);
+}
+.ops-list-row:hover { box-shadow: var(--shadow); }
+/* Only the rows that can actually be moved advertise it. The Today view shows a
+   single day, so its rows aren't draggable. */
+.ops-list-row[draggable="true"] { cursor: grab; }
+.ops-list-row[draggable="true"]:active { cursor: grabbing; }
+.ops-list-row.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.995) rotate(-0.4deg);
+  box-shadow: var(--shadow-lift);
 }
 .ops-list-row + .ops-list-row { margin-top: 6px; }
 .ops-list-row input.client {
-  flex: 1 1 160px;
+  flex: 1 1 150px;
+  min-width: 0;
   font-weight: 600;
+  font-size: 13px;
   border: none;
   background: none;
   padding: 2px 0;
+  font-family: inherit;
 }
 .ops-list-row input.notes {
   flex: 2 1 240px;
+  min-width: 0;
   border: none;
   background: none;
   padding: 2px 0;
-  color: var(--text-muted);
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-body);
 }
 .ops-list-row input.hrs {
-  width: 40px;
+  width: 42px;
   border: none;
   background: none;
   text-align: right;
   padding: 2px 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
+/* Editable-in-place fields read as plain text until you touch them. */
+.ops-list-row input:hover,
+.ops-task-chip input:hover { background: var(--bg-soft); border-radius: 5px; }
+.ops-list-row input:focus,
+.ops-task-chip input:focus {
+  background: var(--bg-elevated);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 5px;
+}
+.ops-list-row .btn-ghost { opacity: 0; transition: opacity 0.15s var(--fc-ease); }
+.ops-list-row:hover .btn-ghost,
+.ops-list-row:focus-within .btn-ghost { opacity: 1; }
 
 /* ---------------------------------------------- command palette (⌘K) */
 .nav-search-trigger {
@@ -4895,64 +5012,113 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   cursor: pointer;
   text-decoration: underline;
 }
-.fc-progress {
+/* The page's one loud element. "Am I overloaded this week" was previously a
+   line of small text at the very bottom; it's the headline now. The hours read
+   as a fraction because capacity is the point, and the bar carries done vs
+   planned in one track rather than two separate bars. */
+.fc-gauge {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 18px;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
 }
-.fc-progress-bar {
-  flex: 1;
-  height: 8px;
+.fc-gauge-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: none;
+  font-family: var(--font-head);
+  letter-spacing: -0.025em;
+}
+.fc-gauge-figure b {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.fc-gauge-figure span {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fc-gauge-main { flex: 1 1 260px; min-width: 200px; }
+.fc-gauge-track {
+  height: 10px;
   border-radius: 999px;
   background: var(--bg-soft);
   overflow: hidden;
+  display: flex;
 }
-.fc-progress-fill {
+.fc-gauge-done,
+.fc-gauge-planned {
   height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 240ms ease;
+  transition: width 320ms var(--fc-ease), background 240ms var(--fc-ease);
 }
-.fc-progress.is-clear .fc-progress-fill {
-  background: var(--success);
+.fc-gauge-done { background: var(--success); }
+.fc-gauge-planned { background: var(--accent); }
+.fc-gauge.is-over .fc-gauge-planned { background: var(--danger); }
+.fc-gauge-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
-.fc-progress-label {
-  font-size: 13px;
+.fc-gauge-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fc-gauge-legend i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.fc-gauge-note {
+  flex: none;
+  font-size: 12.5px;
   font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--bg-soft);
   color: var(--text-body);
-  white-space: nowrap;
 }
+.fc-gauge.is-over .fc-gauge-note { background: rgba(214, 69, 69, 0.1); color: var(--danger); }
+.fc-gauge.is-clear .fc-gauge-note { background: rgba(31, 157, 99, 0.1); color: var(--success); }
+
 .fc-today {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
+  border-radius: 16px;
+  padding: 20px 22px;
   box-shadow: var(--shadow);
 }
 .fc-today-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  gap: 16px;
   padding-bottom: 14px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
 .fc-today-day {
   font-family: var(--font-head);
   font-size: 22px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 .fc-today-stat {
   text-align: right;
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .fc-today-stat strong {
-  font-size: 20px;
+  font-size: 19px;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------- to-do list */

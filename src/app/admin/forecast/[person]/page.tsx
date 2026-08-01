@@ -59,12 +59,6 @@ const PRIORITY_LABEL: Record<Priority, string> = {
   flexible: "Flexible — reschedulable, still needs doing",
 };
 
-function allocationColor(pct: number): string {
-  if (pct > 100) return "var(--danger)";
-  if (pct >= 80) return "var(--success)";
-  return "var(--warning)";
-}
-
 // Same Mon-Fri math as lib/week.ts's weekdays(), duplicated client-side so
 // this page doesn't need a server round trip just to lay out the columns.
 function weekdays(weekStart: string): string[] {
@@ -360,6 +354,10 @@ export default function PersonForecastPage() {
   // so ticking a task never posts on its own.
   const [logDrafts, setLogDrafts] = useState<Record<string, string>>({});
   const [logging, setLogging] = useState<string | null>(null);
+  // Task currently being dragged, and the day it's hovering over. Both are
+  // needed: the card dims itself, and only the hovered day highlights.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropDay, setDropDay] = useState<string | null>(null);
 
   function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
@@ -506,6 +504,28 @@ export default function PersonForecastPage() {
     const done = all.filter((t) => t.completed).length;
     return { done, total: all.length, pct: all.length ? Math.round((done / all.length) * 100) : 0 };
   }, [data]);
+  // Hours split into done vs still planned, both as a share of the weekly
+  // capacity, so one track shows progress and load at once.
+  const gauge = useMemo(() => {
+    const all = data?.tasks || [];
+    const capacity = data?.capacity || 40;
+    const doneHours = all.filter((t) => t.completed).reduce((s, t) => s + t.hours, 0);
+    const totalHours = all.reduce((s, t) => s + t.hours, 0);
+    const openHours = totalHours - doneHours;
+    const pct = capacity ? Math.round((totalHours / capacity) * 100) : 0;
+    return {
+      capacity,
+      doneHours,
+      openHours,
+      totalHours,
+      pct,
+      // Bars are capped at the track width; the percentage still reads over 100.
+      donePct: capacity ? Math.min(100, (doneHours / capacity) * 100) : 0,
+      openPct: capacity ? Math.min(100 - Math.min(100, (doneHours / capacity) * 100), (openHours / capacity) * 100) : 0,
+      over: totalHours > capacity,
+      clear: all.length > 0 && doneHours === totalHours,
+    };
+  }, [data]);
   const tasksByDay = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const t of data?.tasks || []) {
@@ -621,6 +641,77 @@ export default function PersonForecastPage() {
       setError("");
     }
     load(week, { silent: true });
+  }
+
+  /* ------------------------------------------------------ drag to reschedule */
+
+  function onDragStart(e: React.DragEvent, task: Task) {
+    setDragId(task.id);
+    e.dataTransfer.effectAllowed = "move";
+    // Firefox won't start a drag without data set.
+    e.dataTransfer.setData("text/plain", task.id);
+  }
+
+  function onDragEnd() {
+    setDragId(null);
+    setDropDay(null);
+  }
+
+  function onDayDragOver(e: React.DragEvent, date: string) {
+    if (!dragId) return;
+    // Only preventDefault marks this as a valid drop target.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dropDay !== date) setDropDay(date);
+  }
+
+  async function onDayDrop(e: React.DragEvent, date: string) {
+    e.preventDefault();
+    const id = dragId || e.dataTransfer.getData("text/plain");
+    setDragId(null);
+    setDropDay(null);
+    if (!id) return;
+    const task = (data?.tasks || []).find((t) => t.id === id);
+    if (!task || task.task_date === date) return;
+
+    // Move it locally first so the card lands where it was dropped instead of
+    // snapping back until the request returns.
+    setData((d) =>
+      d ? { ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, task_date: date } : t)) } : d
+    );
+    const res = await fetch(`/api/forecast/${person}/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskDate: date }),
+    });
+    if (!res.ok) {
+      setError("Could not move that task.");
+      load(week, { silent: true });
+      return;
+    }
+    setError("");
+    load(week, { silent: true });
+  }
+
+  // Spread across the day containers in every view that accepts a drop.
+  function dayDropProps(date: string) {
+    return {
+      onDragOver: (e: React.DragEvent) => onDayDragOver(e, date),
+      onDragLeave: (e: React.DragEvent) => {
+        // Ignore the events fired while crossing child elements.
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDropDay((d) => (d === date ? null : d));
+      },
+      onDrop: (e: React.DragEvent) => onDayDrop(e, date),
+    };
+  }
+
+  function dragProps(task: Task) {
+    return {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => onDragStart(e, task),
+      onDragEnd,
+    };
   }
 
   async function logTime(task: Task) {
@@ -739,33 +830,46 @@ export default function PersonForecastPage() {
           </div>
         </div>
 
-        <div className="color-legend">
-          <div className="color-legend-group">
-            <span className="color-legend-group-label">Task priority</span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> {PRIORITY_LABEL.urgent}
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> {PRIORITY_LABEL.important}
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> {PRIORITY_LABEL.flexible}
-            </span>
-          </div>
-        </div>
-
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
 
         {!loading && progress.total > 0 ? (
-          <div className={`fc-progress ${progress.pct === 100 ? "is-clear" : ""}`}>
-            <div className="fc-progress-bar">
-              <div className="fc-progress-fill" style={{ width: `${progress.pct}%` }} />
+          <div
+            className={`fc-gauge ${gauge.over ? "is-over" : ""} ${gauge.clear ? "is-clear" : ""}`}
+          >
+            <div className="fc-gauge-figure">
+              <b>{Math.round(gauge.totalHours * 10) / 10}</b>
+              <span>/ {gauge.capacity} hrs</span>
             </div>
-            <span className="fc-progress-label">
-              {progress.pct === 100
-                ? `All ${progress.total} done for the week 🎉`
-                : `${progress.done} of ${progress.total} done · ${progress.pct}%`}
-            </span>
+            <div className="fc-gauge-main">
+              <div
+                className="fc-gauge-track"
+                role="img"
+                aria-label={`${gauge.totalHours} of ${gauge.capacity} hours planned, ${gauge.doneHours} done`}
+              >
+                <div className="fc-gauge-done" style={{ width: `${gauge.donePct}%` }} />
+                <div className="fc-gauge-planned" style={{ width: `${gauge.openPct}%` }} />
+              </div>
+              <div className="fc-gauge-legend">
+                <span>
+                  <i style={{ background: "var(--success)" }} />
+                  {Math.round(gauge.doneHours * 10) / 10}h done
+                </span>
+                <span>
+                  <i style={{ background: gauge.over ? "var(--danger)" : "var(--accent)" }} />
+                  {Math.round(gauge.openHours * 10) / 10}h to go
+                </span>
+                <span>
+                  {progress.done} of {progress.total} tasks
+                </span>
+              </div>
+            </div>
+            <div className="fc-gauge-note">
+              {gauge.clear
+                ? "Week is clear"
+                : gauge.over
+                  ? `${Math.round((gauge.totalHours - gauge.capacity) * 10) / 10}h over capacity`
+                  : `${gauge.pct}% allocated`}
+            </div>
           </div>
         ) : null}
 
@@ -871,7 +975,13 @@ export default function PersonForecastPage() {
               const draft = draftFor(date);
               const isAdding = addingFor === date;
               return (
-                <div key={date} className="ops-day-col">
+                <div
+                  key={date}
+                  className={`ops-day-col ${date === today ? "is-today" : ""} ${
+                    dropDay === date ? "is-drop-target" : ""
+                  } ${dayHours > 8 ? "is-loaded" : ""}`}
+                  {...dayDropProps(date)}
+                >
                   <div className="ops-day-head">
                     <div>
                       <div className="ops-day-name">{dayName(date)}</div>
@@ -882,22 +992,40 @@ export default function PersonForecastPage() {
 
                   <div className="ops-day-tasks">
                     {tasks.map((t) => (
-                      <div key={t.id} className={`ops-task-chip pri-${t.priority} ${t.completed ? "is-done" : ""}`}>
-                        <input
-                          type="checkbox"
-                          className="done-check"
-                          checked={!!t.completed}
-                          onChange={() => toggleCompleted(t)}
-                          aria-label="Mark complete"
-                        />
-                        <input
-                          key={`${t.id}-client`}
-                          defaultValue={t.client}
-                          onBlur={(e) => saveField(t, "client", e.target.value)}
-                          placeholder="Client"
-                          className="client"
-                          style={{ paddingLeft: 18 }}
-                        />
+                      <div
+                        key={t.id}
+                        className={`ops-task-chip pri-${t.priority} ${t.completed ? "is-done" : ""} ${
+                          dragId === t.id ? "is-dragging" : ""
+                        }`}
+                        title="Drag to another day to reschedule"
+                        {...dragProps(t)}
+                      >
+                        <div className="chip-top">
+                          <input
+                            type="checkbox"
+                            className="done-check"
+                            checked={!!t.completed}
+                            onChange={() => toggleCompleted(t)}
+                            aria-label="Mark complete"
+                          />
+                          <input
+                            key={`${t.id}-client`}
+                            defaultValue={t.client}
+                            onBlur={(e) => saveField(t, "client", e.target.value)}
+                            placeholder="Client"
+                            className="client"
+                          />
+                          <input
+                            key={`${t.id}-hours`}
+                            defaultValue={t.hours}
+                            onBlur={(e) => saveField(t, "hours", e.target.value)}
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            className="hrs"
+                            aria-label="Hours"
+                          />
+                        </div>
                         <input
                           key={`${t.id}-notes`}
                           defaultValue={t.notes}
@@ -905,21 +1033,11 @@ export default function PersonForecastPage() {
                           placeholder="Task notes"
                           className="notes"
                           title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
-                          style={{ paddingLeft: 18 }}
                         />
-                        <input
-                          key={`${t.id}-hours`}
-                          defaultValue={t.hours}
-                          onBlur={(e) => saveField(t, "hours", e.target.value)}
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          className="hrs"
-                        />
-                        <div style={{ marginTop: 6, paddingLeft: 18 }}>
+                        <div className="chip-foot">
                           <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                          <button className="remove" onClick={() => removeTask(t.id)}>Remove</button>
                         </div>
-                        <button className="remove" onClick={() => removeTask(t.id)}>Remove</button>
                         <LogTimeRow task={t} />
                       </div>
                     ))}
@@ -955,18 +1073,30 @@ export default function PersonForecastPage() {
               const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
               const draft = draftFor(date);
               return (
-                <div key={date} className="ops-list-day">
+                <div
+                  key={date}
+                  className={`ops-list-day ${date === today ? "is-today" : ""} ${
+                    dropDay === date ? "is-drop-target" : ""
+                  }`}
+                  {...dayDropProps(date)}
+                >
                   <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
                     <strong>{dayName(date)} <span className="muted" style={{ fontWeight: 400 }}>{dayShortDate(date)}</span></strong>
                     <span className="muted">{dayHours || 0}h</span>
                   </div>
 
                   {tasks.length === 0 ? (
-                    <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>Nothing forecasted yet.</p>
+                    <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>
+                      {dragId ? "Drop here to move it to this day." : "Nothing planned yet."}
+                    </p>
                   ) : (
                     tasks.map((t) => (
                       <Fragment key={t.id}>
-                      <div className={`ops-list-row pri-${t.priority}`}>
+                      <div
+                        className={`ops-list-row pri-${t.priority} ${dragId === t.id ? "is-dragging" : ""}`}
+                        title="Drag to another day to reschedule"
+                        {...dragProps(t)}
+                      >
                         <input
                           type="checkbox"
                           checked={!!t.completed}
@@ -1049,17 +1179,7 @@ export default function PersonForecastPage() {
           </label>
         ) : null}
 
-        {data ? (
-          <div className="ops-week-total">
-            <strong>Week total</strong>
-            <span>
-              {data.hours}h / {data.capacity}h ·{" "}
-              <strong style={{ color: allocationColor(data.allocationPct) }}>
-                {data.allocationPct}% allocated
-              </strong>
-            </span>
-          </div>
-        ) : null}
+        {/* Week total lives in the capacity gauge at the top of the page now. */}
       </div>
     </div>
   );
