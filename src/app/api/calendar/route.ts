@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getSession, isAdminAuthenticated, sessionFocusSlug } from "@/lib/auth";
 import { teamFocus } from "@/lib/people";
 import { createSend, listSends } from "@/lib/calendar";
-import { listEventsBetween } from "@/lib/basecamp-events";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -30,11 +29,9 @@ export async function GET(request: Request) {
   const ownsNothing = focus !== null && focus.length === 0;
   const narrowed = focus !== null && (ownsNothing || !showAll);
   const sends = listSends(start, end, narrowed ? { assetTypes: focus } : undefined);
-  // Read-only mirror of Basecamp's schedules, refreshed by the events sync.
-  // Only events belonging to a known client are surfaced — the account also
-  // carries internal MEG project schedules, which would clutter a calendar
-  // that's organised around clients.
-  const events = listEventsBetween(start, end, { clientsOnly: true });
+  // Basecamp schedule entries are deliberately not returned. The campaign
+  // calendar is for planned work; meetings stay in Basecamp and are picked up in
+  // Forecast. The basecamp_events cache is still maintained for that picker.
   const scope = {
     // Only offer the toggle to someone who has a focus they could step outside.
     canToggle: focus !== null && !ownsNothing,
@@ -48,11 +45,10 @@ export async function GET(request: Request) {
         note: "",
         production_brief: "",
       })),
-      events,
       scope,
     });
   }
-  return NextResponse.json({ sends, events, scope });
+  return NextResponse.json({ sends, scope });
 }
 
 export async function POST(request: Request) {

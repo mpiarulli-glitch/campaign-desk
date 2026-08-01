@@ -496,6 +496,10 @@ export default function PersonForecastPage() {
   // Meeting picker contents, keyed by the day being added to rather than by
   // client, because a meeting is scoped to a date and often has no client.
   const [eventsByDate, setEventsByDate] = useState<Record<string, EventState>>({});
+  // Manual refresh of the Basecamp schedule cache. It syncs itself on boot when
+  // stale, but a meeting added this morning would not show until then, and this
+  // page is now the only place that cache is used.
+  const [syncingEvents, setSyncingEvents] = useState(false);
   // taskId -> hours typed into that task's "log time" box. Logging is explicit:
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
@@ -676,6 +680,20 @@ export default function PersonForecastPage() {
     },
     [person]
   );
+
+  async function syncMeetings() {
+    setSyncingEvents(true);
+    setError("");
+    const res = await fetch("/api/basecamp/events", { method: "POST" });
+    setSyncingEvents(false);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not sync Basecamp meetings.");
+      return;
+    }
+    // Drop the cached picker contents so the next open re-reads the fresh table.
+    setEventsByDate({});
+  }
 
   // Switching mode clears whatever was picked under the old one, so a half-filled
   // work row can't be submitted as a meeting or the reverse.
@@ -1041,6 +1059,14 @@ export default function PersonForecastPage() {
                 </button>
               ) : null}
             </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={syncMeetings}
+              disabled={syncingEvents}
+              title="Re-read every project's schedule from Basecamp, so today's meetings show up in the picker."
+            >
+              {syncingEvents ? "Syncing…" : "Sync meetings"}
+            </button>
           </div>
         </div>
 
