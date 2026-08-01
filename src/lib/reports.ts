@@ -8,11 +8,13 @@
 // Reports are read-only aggregations over existing tables. Nothing here writes.
 
 import { getDb } from "./db";
+import { WEEKLY_CAPACITY_HOURS } from "./forecast";
 import { PEOPLE, personLabel, teamLabelFor } from "./people";
 import { teamLabel } from "./team";
 
 export type ReportType =
   | "time_tracking"
+  | "capacity"
   | "okrs"
   | "weekly_snapshots"
   | "deliverables"
@@ -35,6 +37,12 @@ export const REPORTS: ReportMeta[] = [
     type: "time_tracking",
     label: "Time tracking",
     blurb: "Forecast hours against hours actually logged, by person and client.",
+    ranged: true,
+  },
+  {
+    type: "capacity",
+    label: "Capacity",
+    blurb: "How much work is urgent, important or flexible, and whose hours could move.",
     ranged: true,
   },
   {
@@ -139,6 +147,180 @@ function titleCaseStatus(s: string): string {
 }
 
 /* ------------------------------------------------------- 1. time tracking */
+
+/* ----------------------------------------------------------------- capacity */
+
+// Priority doubles as a traffic light everywhere in the UI: urgent is red,
+// important is amber, flexible is green (see .pri-* in globals.css).
+const LIGHTS = [
+  { priority: "urgent", light: "Red", meaning: "urgent" },
+  { priority: "important", light: "Yellow", meaning: "important" },
+  { priority: "flexible", light: "Green", meaning: "flexible" },
+] as const;
+
+// A person owes WEEKLY_CAPACITY_HOURS over five weekdays, so a range's capacity
+// is its workday count times the daily share. Counting calendar days instead
+// would credit people with weekend hours they never had.
+function workdaysBetween(start: string, end: string): number {
+  const [ys, ms, ds] = start.split("-").map(Number);
+  const [ye, me, de] = end.split("-").map(Number);
+  const cursor = new Date(ys, ms - 1, ds);
+  const last = new Date(ye, me - 1, de);
+  let n = 0;
+  while (cursor <= last) {
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) n++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return n;
+}
+
+/**
+ * Team capacity over a range: how much of the load is red, yellow or green, and
+ * how many hours could be moved onto a project.
+ *
+ * Reallocatable is unbooked capacity plus hours already marked flexible —
+ * flexible is the priority that says this can wait, so it is the honest pool to
+ * pull from. Two things are deliberately never counted as available:
+ *
+ *   - urgent and important hours, which are committed work
+ *   - meetings (rows carrying a basecamp_event_id), because createTask defaults
+ *     an unset priority to flexible, and a booked meeting is not free time
+ *
+ * People with nothing forecast are listed apart rather than folded into the
+ * totals: a blank range is not the same as a free one, and counting it as
+ * capacity would overstate what the team can take on.
+ */
+function capacity(start: string, end: string): ReportSection[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT person, priority, hours, basecamp_event_id
+         FROM forecast_tasks
+        WHERE task_date >= ? AND task_date <= ?`
+    )
+    .all(start, end) as Array<{
+    person: string;
+    priority: string;
+    hours: number;
+    basecamp_event_id: string;
+  }>;
+
+  const perPersonCapacity = workdaysBetween(start, end) * (WEEKLY_CAPACITY_HOURS / 5);
+
+  type Entry = {
+    tasks: Record<string, number>;
+    hours: Record<string, number>;
+    booked: number;
+    movable: number;
+    meetingHours: number;
+  };
+  const byPerson = new Map<string, Entry>();
+  for (const r of rows) {
+    const e =
+      byPerson.get(r.person) || {
+        tasks: { urgent: 0, important: 0, flexible: 0 },
+        hours: { urgent: 0, important: 0, flexible: 0 },
+        booked: 0,
+        movable: 0,
+        meetingHours: 0,
+      };
+    // A meeting consumes capacity but is not a task, so it counts towards what
+    // is booked and nothing else. Leaving it out of the traffic light matters:
+    // createTask defaults an unset priority to flexible, which would otherwise
+    // file every booked meeting under "green, and therefore movable".
+    e.booked += r.hours;
+    if (r.basecamp_event_id) {
+      e.meetingHours += r.hours;
+    } else {
+      e.tasks[r.priority] = (e.tasks[r.priority] || 0) + 1;
+      e.hours[r.priority] = (e.hours[r.priority] || 0) + r.hours;
+      if (r.priority === "flexible") e.movable += r.hours;
+    }
+    byPerson.set(r.person, e);
+  }
+
+  const people = PEOPLE.filter((p) => byPerson.has(p.slug)).map((p) => {
+    const e = byPerson.get(p.slug)!;
+    const free = Math.max(0, perPersonCapacity - e.booked);
+    return {
+      label: personLabel(p.slug) || p.slug,
+      ...e,
+      free,
+      reallocatable: free + e.movable,
+      overbooked: e.booked > perPersonCapacity,
+    };
+  });
+  const noForecast = PEOPLE.filter((p) => !byPerson.has(p.slug));
+
+  const sum = (pick: (p: (typeof people)[number]) => number) =>
+    people.reduce((n, p) => n + pick(p), 0);
+  const totalCapacity = people.length * perPersonCapacity;
+  const booked = sum((p) => p.booked);
+  const free = sum((p) => p.free);
+  const movable = sum((p) => p.movable);
+
+  return [
+    {
+      title: "Traffic light",
+      stats: [
+        ...LIGHTS.map((l) => ({
+          label: `${l.light} · ${l.meaning}`,
+          value: String(sum((p) => p.tasks[l.priority] || 0)),
+          hint: `${hrs(sum((p) => p.hours[l.priority] || 0))} forecast`,
+        })),
+        {
+          label: "In meetings",
+          value: hrs(sum((p) => p.meetingHours)),
+          hint: "booked from the schedule, not a task",
+        },
+      ],
+    },
+    {
+      title: "Hours you could move onto a project",
+      stats: [
+        {
+          label: "Reallocatable",
+          value: hrs(free + movable),
+          hint: "unbooked plus flexible",
+        },
+        {
+          label: "Unbooked",
+          value: hrs(free),
+          hint: `of ${hrs(totalCapacity)} across ${people.length} of ${PEOPLE.length} people`,
+        },
+        { label: "On flexible work", value: hrs(movable), hint: "meetings excluded" },
+        {
+          label: "Booked",
+          value: hrs(booked),
+          hint: pct(booked, totalCapacity) + " of capacity",
+        },
+      ],
+    },
+    {
+      title: "By person",
+      columns: ["Person", "Red", "Yellow", "Green", "Booked", "Free", "Reallocatable"],
+      numeric: [1, 2, 3, 4, 5, 6],
+      empty: "Nobody forecast anything in this range.",
+      rows: people
+        .sort((a, b) => b.reallocatable - a.reallocatable)
+        .map((p) => [
+          p.label,
+          String(p.tasks.urgent || 0),
+          String(p.tasks.important || 0),
+          String(p.tasks.flexible || 0),
+          p.overbooked ? `${hrs(p.booked)} (over)` : hrs(p.booked),
+          hrs(p.free),
+          hrs(p.reallocatable),
+        ]),
+    },
+    {
+      title: "No forecast entered",
+      columns: ["Person"],
+      empty: "Everyone forecast something in this range.",
+      rows: noForecast.map((p) => [personLabel(p.slug) || p.slug]),
+    },
+  ];
+}
 
 function timeTracking(start: string, end: string): ReportSection[] {
   const db = getDb();
@@ -606,6 +788,9 @@ export function buildReport(
   switch (type) {
     case "time_tracking":
       sections = timeTracking(start, end);
+      break;
+    case "capacity":
+      sections = capacity(start, end);
       break;
     case "okrs":
       sections = okrs();

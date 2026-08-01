@@ -53,10 +53,14 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/activity", label: "Activity", icon: "activity" },
 ];
 
+// Whiteboard is open to every role. Its API already authorised both admin and
+// forecast sessions (isWorkflowAuthenticated) and neither page has a role check,
+// so only the sidebar link was missing.
 const FORECAST_NAV: NavItem[] = [
   { href: "/admin", label: "Home", icon: "home" },
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
+  { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
   { href: "/admin/snapshot", label: "Snapshot", icon: "doc" },
 ];
 

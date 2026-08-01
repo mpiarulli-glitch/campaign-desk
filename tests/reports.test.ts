@@ -198,6 +198,48 @@ test("reports", async (t) => {
     assert.ok(csv.includes("Measure,Value,Detail"));
   });
 
+  await t.test("capacity counts tasks by traffic light", () => {
+    // Michael: one flexible task (t1) and one flexible meeting (t2).
+    // Jack: one flexible task (t3). The January row is out of range.
+    const r = reports.buildReport("capacity", "2026-07-01", "2026-07-31");
+    const light = r.sections.find((s) => s.title === "Traffic light")!.stats!;
+    assert.equal(light.find((s) => s.label === "Red · urgent")?.value, "0");
+    assert.equal(light.find((s) => s.label === "Yellow · important")?.value, "0");
+    // Two flexible tasks (t1, t3). The meeting (t2) is counted as a meeting,
+    // not as green work, so it can't be read as movable.
+    assert.equal(light.find((s) => s.label === "Green · flexible")?.value, "2");
+    assert.equal(light.find((s) => s.label === "In meetings")?.value, "1h");
+  });
+
+  await t.test("a booked meeting is never offered as reallocatable", () => {
+    const r = reports.buildReport("capacity", "2026-07-01", "2026-07-31");
+    const moveable = r.sections.find((s) => s.title.startsWith("Hours you could move"))!.stats!;
+    // Flexible hours are t1 (4h) + t3 (6h) = 10h. The 1h meeting (t2) carries a
+    // basecamp_event_id and defaults to flexible, but cannot be moved.
+    assert.equal(moveable.find((s) => s.label === "On flexible work")?.value, "10h");
+    assert.equal(moveable.find((s) => s.label === "Booked")?.value, "11h");
+  });
+
+  await t.test("only people who forecast are counted, the rest are listed apart", () => {
+    const r = reports.buildReport("capacity", "2026-07-01", "2026-07-31");
+    const byPerson = r.sections.find((s) => s.title === "By person")!;
+    assert.deepEqual(
+      byPerson.rows!.map((row) => row[0]).sort(),
+      ["Jack", "Michael"]
+    );
+    const none = r.sections.find((s) => s.title === "No forecast entered")!;
+    assert.ok(none.rows!.some((row) => row[0] === "Paula"));
+    assert.ok(!none.rows!.some((row) => row[0] === "Jack"));
+  });
+
+  await t.test("an empty range reports no capacity rather than a free team", () => {
+    const r = reports.buildReport("capacity", "2020-01-01", "2020-01-31");
+    const moveable = r.sections.find((s) => s.title.startsWith("Hours you could move"))!.stats!;
+    // Nobody forecast, so nobody's 40h counts. A blank range is not a free one.
+    assert.equal(moveable.find((s) => s.label === "Reallocatable")?.value, "0h");
+    assert.equal(r.sections.find((s) => s.title === "By person")!.rows!.length, 0);
+  });
+
   await t.test("an unknown report type is rejected", () => {
     assert.equal(reports.isReportType("time_tracking"), true);
     assert.equal(reports.isReportType("nope"), false);
