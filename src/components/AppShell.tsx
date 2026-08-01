@@ -78,6 +78,7 @@ const ICONS = {
   send: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>,
   logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></>,
+  menu: <><path d="M3 6h18M3 12h18M3 18h18" /></>,
 } as const;
 
 function Svg({ name }: { name: keyof typeof ICONS }) {
@@ -98,6 +99,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false });
   const [menuOpen, setMenuOpen] = useState(false);
+  // Mobile nav drawer. Above the breakpoint the sidebar is always in the layout
+  // and this class does nothing, so desktop is unaffected either way.
+  const [navOpen, setNavOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   // Starts as "system" to match what the boot script assumed; the effect below
@@ -146,6 +150,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {});
     return () => { on = false; };
   }, []);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
+
+  // Escape closes the drawer, which is the expected way out of an overlay.
+  useEffect(() => {
+    if (!navOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setNavOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [navOpen]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -247,7 +265,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className={`cd-shell ${consoleMode ? "is-console" : ""}`}>
       <CommandPalette />
-      <aside className={`side ${collapsed ? "is-collapsed" : ""}`}>
+      {/* Tapping the page behind an open drawer closes it. Rendered only while
+          open so it cannot swallow clicks on desktop. */}
+      {navOpen ? (
+        <div
+          className="side-scrim"
+          onClick={() => setNavOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+      <aside className={`side ${collapsed ? "is-collapsed" : ""} ${navOpen ? "is-open" : ""}`}>
         {/* Two marks, one shown at a time: the full wordmark needs the expanded
             sidebar's width, and the square mark carries the brand when it's
             collapsed to 56px, where a 4:1 wordmark would be illegible. */}
@@ -283,6 +310,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="app-body">
         <header className="app-top">
+          {/* Shown only under the mobile breakpoint, where the sidebar is a
+              drawer rather than a rail. */}
+          <button
+            className="app-hamburger"
+            onClick={() => setNavOpen((v) => !v)}
+            aria-label={navOpen ? "Close menu" : "Open menu"}
+            aria-expanded={navOpen}
+          >
+            <Svg name="menu" />
+          </button>
           <button className="app-search" onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}>
             <span aria-hidden="true">⌕</span> Search clients, campaigns…
             <kbd>⌘K</kbd>

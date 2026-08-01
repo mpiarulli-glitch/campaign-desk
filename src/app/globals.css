@@ -4684,6 +4684,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .ops-cap-row { grid-template-columns: 1fr; gap: 8px; }
 }
 
+
+
 /* Forecast: team status summary bar (green/yellow/red split of the team) */
 .mood-summary {
   display: flex;
@@ -6512,17 +6514,91 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .page-actions:empty { display: none; }
 .ops-scope .page-actions { width: min(1160px, calc(100% - 64px)); }
 
+/* The hamburger only exists under the mobile breakpoint, where the sidebar
+   becomes a drawer. Hidden by default so desktop is untouched. */
+.app-hamburger { display: none; }
+
+/* ---------------------------------------------------------------------------
+   Mobile shell
+   ---------------------------------------------------------------------------
+   A 52px icon rail costs 13% of a 390px screen and, with no labels, gives back
+   guesswork. Below this breakpoint the sidebar leaves the layout entirely and
+   becomes a drawer over the page, with its labels back, so the content gets the
+   full width and the navigation gets words.
+
+   Everything here is inside the media query, so the desktop shell is unchanged.
+   ------------------------------------------------------------------------- */
 @media (max-width: 760px) {
-  .side, .side.is-collapsed { width: 52px; }
-  .side .nav-label { display: none; }
-  /* Always narrow here, so the square mark carries the brand regardless of the
-     collapsed toggle's state. */
-  .side .side-logo { display: none; }
-  .side .side-brand .side-mark { display: grid; }
-  .side-brand { justify-content: center; padding: 16px 0 12px; }
-  .nav-i { justify-content: center; gap: 0; padding: 9px 0; }
+  .side {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    /* Wide enough for labels, narrow enough to keep the page visible behind. */
+    width: 264px;
+    max-width: 84vw;
+    transform: translateX(-100%);
+    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: none;
+    z-index: 60;
+  }
+  /* Collapsed is a desktop-only idea; the drawer is always the labelled form. */
+  .side.is-collapsed { width: 264px; }
+  .side.is-open { transform: translateX(0); box-shadow: 0 0 40px rgba(0, 0, 0, 0.5); }
+  .side.is-collapsed .nav-label,
+  .side .nav-label { display: inline; }
+  .side.is-collapsed .side-logo,
+  .side .side-logo { display: block; }
+  .side.is-collapsed .side-brand,
+  .side-brand { justify-content: flex-start; padding: 16px 14px 12px; }
+  .side.is-collapsed .side-brand .side-mark,
+  .side .side-brand .side-mark { display: none; }
+  .side.is-collapsed .nav-i,
+  .nav-i { justify-content: flex-start; gap: 11px; padding: 11px 10px; }
+  /* Collapsing is meaningless for a drawer that is already full width. */
   .side-toggle { display: none; }
   .side-viewas { display: none; }
+
+  .side-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 55;
+    /* Fades in rather than snapping, which reads as a deliberate overlay. */
+    animation: side-scrim-in 0.18s ease;
+  }
+
+  .app-hamburger {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    margin-left: -8px;
+    border: none;
+    background: none;
+    color: var(--text-body);
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .app-hamburger svg { width: 22px; height: 22px; }
+
+  /* The search field's placeholder wraps to two lines at this width, so it
+     becomes a compact control and the ⌘K hint (irrelevant on a phone) goes. */
+  .app-search { max-width: none; margin: 0; font-size: 14px; padding: 9px 12px; }
+  .app-search kbd { display: none; }
+
+  .app-top { height: 56px; padding: 0 14px; gap: 10px; }
+}
+
+@keyframes side-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side { transition: none; }
+  .side-scrim { animation: none; }
 }
 
 /* ================================= Client portal — the live MEG floor (office)
@@ -7562,4 +7638,122 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .review-page .comment-card.is-pinned:hover {
   border-color: var(--border-strong);
+}
+
+/* ---------------------------------------------------------------------------
+   Mobile ergonomics
+   ---------------------------------------------------------------------------
+   Everything below the phone breakpoint. The desktop rules above are untouched:
+   nothing here exists outside the media query, and none of it changes a shared
+   value that desktop also reads.
+
+   Three problems this fixes, all specific to a ~390px screen:
+     1. Controls sized for a mouse cursor. Anything you tap gets a 44px minimum,
+        which is the smallest reliable finger target.
+     2. Type set for a desktop hierarchy going below 12px, which is where small
+        print stops being readable on a phone held at arm's length.
+     3. Grids and headers built for horizontal room, which on a phone leave dead
+        cells and orphaned buttons.
+   ------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  /* --- 1. Tap targets ---------------------------------------------------- */
+  .btn,
+  .btn-sm,
+  .tab,
+  .view-toggle-btn,
+  .fc-mode-btn,
+  .app-theme-btn,
+  .preview-device-btn,
+  .cal-nav-btn,
+  .hub-nav-btn {
+    min-height: 44px;
+    /* Padding stays as authored; this only guarantees the floor. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .nav-i { min-height: 44px; }
+  /* Two more that sit outside the button classes above. */
+  .app-search { min-height: 44px; }
+  .activity-sidebar-toggle { min-height: 44px; }
+  /* The priority dots are a deliberately compact three-up control, so they get
+     a usable hit area via padding rather than growing the dot itself. */
+  .priority-dot { min-width: 36px; min-height: 36px; }
+  /* Week and month steppers. Targeted through their container because the
+     buttons carry no class of their own. */
+  .ops-weeknav > button { min-width: 44px; min-height: 44px; }
+  /* Native controls: 16px also stops iOS zooming the page on focus. */
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  /* Inputs that sit inside a row of their own, where 44px would look bloated,
+     still need to be tappable — the compromise is a slightly smaller floor. */
+  .hrs,
+  input.hrs {
+    min-height: 38px;
+  }
+
+  /* --- 2. Small print --------------------------------------------------- */
+  /* 12px floor. The selectors are written to match the specificity of the rules
+     they override rather than relying on source order alone. */
+  .btn-sm,
+  .ops-pill,
+  .eyebrow,
+  .ops-eyebrow,
+  label,
+  .muted,
+  .field label,
+  .login-card label,
+  .ops-stat .l,
+  .hq-tag,
+  .hq-msg .t,
+  .hq-pulse-item .l {
+    font-size: 12px;
+  }
+
+  /* --- 3. Layout -------------------------------------------------------- */
+  /* Five stats in a six-column grid leaves a dead cell once it wraps. Two
+     columns with the odd one out spanning the full width has no gap. The
+     nth-child guard keeps this to the five-item case. */
+  .ops-stats { grid-template-columns: repeat(2, 1fr); }
+  .ops-stat:nth-child(5):last-child { grid-column: 1 / -1; }
+
+  /* space-between plus wrap strands a page action on its own line, right
+     aligned under nothing. Stack it and let it sit with the heading. */
+  .ops-page-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  /* Once stacked, a right-aligned action reads as floating loose. Pull the
+     head's children and their text back to the left edge. */
+  .ops-page-head > * { min-width: 0; text-align: left; }
+  .ops-page-head .row,
+  .ops-page-head > div { justify-content: flex-start; }
+
+  /* Page gutters: 28px each side costs 14% of the screen. */
+  .ops-page { padding-left: 16px; padding-right: 16px; }
+
+  /* The shared action strip is right-aligned, which on a phone leaves the
+     primary button hanging above the heading with nothing under it. Left-align
+     it and match the page gutter so it lines up with the title below. */
+  .page-actions,
+  .ops-scope .page-actions {
+    justify-content: flex-start;
+    width: calc(100% - 32px);
+  }
+
+  /* Wide content scrolls inside its own box rather than pushing the page
+     sideways. Belt and braces: the audit shows no overflow today, but a table
+     gaining a column should not silently break the layout. */
+  .rev-table,
+  .client-table,
+  .strat-table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
 }
