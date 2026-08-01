@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
+import { SubjectBankPanel } from "@/components/lifecycle/SubjectBankPanel";
 import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
 import { LinkedInPanel } from "@/components/lifecycle/LinkedInPanel";
 import { NotesPanel } from "@/components/lifecycle/NotesPanel";
@@ -13,7 +14,7 @@ import { PLATFORM_LABELS, type LifecycleDashboard } from "@/components/lifecycle
 
 type Channel =
   | "status"
-  | "approvals"
+  | "subjects"
   | "linkedin"
   | "automations"
   | "sops"
@@ -21,15 +22,21 @@ type Channel =
   | "notes"
   | "report";
 
+// Ordered for the person who lives in this tab: email work first, then the
+// reference material, with LinkedIn outreach last because it belongs to someone
+// else's day. Approvals used to sit second; the Approvals ageing report covers
+// the same ground with ageing and per-client breakdowns, so the channel went
+// rather than being maintained in two places. The Status readout still carries
+// the pending count.
 const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "status", label: "Status" },
-  { id: "approvals", label: "Approvals" },
-  { id: "linkedin", label: "Outreach" },
+  { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
+  { id: "report", label: "Account report" },
   { id: "sops", label: "Playbooks" },
   { id: "knowledge", label: "Knowledge" },
   { id: "notes", label: "Notes" },
-  { id: "report", label: "Account report" },
+  { id: "linkedin", label: "Outreach" },
 ];
 
 /** Zulu-style clock. A console shows the time in one unambiguous zone. */
@@ -122,11 +129,9 @@ export default function LifecyclePage() {
         <nav className="hud-channels hud-in hud-in-1">
           {CHANNELS.map((ch) => {
             const badge =
-              ch.id === "approvals" && c.pendingApprovals > 0
-                ? { n: c.pendingApprovals, alert: false }
-                : ch.id === "linkedin" && c.campaignsNeedingRefresh > 0
-                  ? { n: c.campaignsNeedingRefresh, alert: true }
-                  : null;
+              ch.id === "linkedin" && c.campaignsNeedingRefresh > 0
+                ? { n: c.campaignsNeedingRefresh, alert: true }
+                : null;
             return (
               <button
                 key={ch.id}
@@ -288,40 +293,6 @@ export default function LifecyclePage() {
           </div>
         ) : null}
 
-        {channel === "approvals" ? (
-          <div className="hud-stack">
-            {data.approvals.length === 0 ? (
-              <div className="hud-panel">
-                <p className="hud-empty">Nothing is waiting on a decision.</p>
-              </div>
-            ) : (
-              data.approvals.map((a) => (
-                <div key={a.id} className="hud-panel" style={{ padding: "14px 18px" }}>
-                  <div className="hud-camp-top">
-                    <div>
-                      <Link href={`/admin/campaigns/${a.id}`} className="hud-q-name">
-                        {a.title}
-                      </Link>
-                      <div className="hud-camp-sub">
-                        {a.clientName}
-                        {a.openComments > 0
-                          ? ` · ${a.openComments} open comment${a.openComments === 1 ? "" : "s"}`
-                          : ""}
-                      </div>
-                    </div>
-                    <div className="hud-q-faults">
-                      <span className={`hud-chip ${a.status === "in_review" ? "hud-chip-warn" : "hud-chip-crit"}`}>
-                        {a.status === "in_review" ? "With client" : "With us"}
-                      </span>
-                      <span className="hud-chip hud-chip-idle">{a.waitingDays}d</span>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        ) : null}
-
         {channel === "linkedin" ? (
           <LinkedInPanel data={li} clients={data.clients} onChanged={refresh} />
         ) : null}
@@ -372,6 +343,8 @@ export default function LifecyclePage() {
             onChanged={refresh}
           />
         ) : null}
+
+        {channel === "subjects" ? <SubjectBankPanel /> : null}
 
         {channel === "report" ? <ReportPanel clients={data.clients} /> : null}
       </div>
