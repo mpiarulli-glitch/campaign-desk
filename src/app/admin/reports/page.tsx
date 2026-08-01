@@ -19,6 +19,8 @@ type Section = {
   rows?: string[][];
   numeric?: number[];
   empty?: string;
+  rowLinks?: Array<string | null>;
+  linkColumn?: number;
 };
 
 type Report = {
@@ -280,18 +282,28 @@ export default function ReportsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {section.rows.map((row, ri) => (
-                            <tr key={ri}>
-                              {row.map((cell, ci) => (
-                                <td
-                                  key={ci}
-                                  className={section.numeric?.includes(ci) ? "num" : ""}
-                                >
-                                  {cell}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
+                          {section.rows.map((row, ri) => {
+                            const href = section.rowLinks?.[ri];
+                            const linkCol = section.linkColumn ?? 0;
+                            return (
+                              <tr key={ri}>
+                                {row.map((cell, ci) => (
+                                  <td
+                                    key={ci}
+                                    className={section.numeric?.includes(ci) ? "num" : ""}
+                                  >
+                                    {href && ci === linkCol ? (
+                                      <a href={href} target="_blank" rel="noreferrer">
+                                        {cell}
+                                      </a>
+                                    ) : (
+                                      cell
+                                    )}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

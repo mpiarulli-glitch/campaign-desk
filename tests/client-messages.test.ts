@@ -4,7 +4,11 @@ import { judgeThread } from "../src/lib/basecamp-messages";
 import type { BcMessageThread } from "../src/lib/basecamp";
 
 const DAY = 86_400_000;
-const at = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString();
+// Anchored once. Calling Date.now() per invocation made at(1) drift by a
+// millisecond between building a thread and asserting on it, so the comparison
+// failed roughly whenever the clock ticked mid-test.
+const NOW = Date.now();
+const at = (daysAgo: number) => new Date(NOW - daysAgo * DAY).toISOString();
 
 function thread(
   authorIsClient: boolean,

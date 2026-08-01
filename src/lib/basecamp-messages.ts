@@ -179,6 +179,22 @@ export function lastMessageSyncAt(): string | null {
   return row?.at || null;
 }
 
+/**
+ * Where to open a cached thread.
+ *
+ * Prefers the app_url Basecamp handed back, and builds the canonical URL from
+ * the ids when it didn't. The row id is "<projectId>:<messageId>", which is
+ * everything the URL needs, so a missing app_url costs nothing rather than
+ * leaving a row you can't click through to.
+ */
+export function threadUrl(row: BasecampClientMessage): string {
+  if (row.app_url) return row.app_url;
+  const messageId = row.id.split(":")[1];
+  if (!row.project_id || !messageId) return "";
+  const account = process.env.BASECAMP_ACCOUNT_ID || "5338018";
+  return `https://3.basecamp.com/${account}/buckets/${row.project_id}/messages/${messageId}`;
+}
+
 /** How many clients have no Basecamp project id, so are invisible to the sweep. */
 export function clientsMissingProjectId(): string[] {
   return listRevClients(true)

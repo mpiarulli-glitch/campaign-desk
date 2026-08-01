@@ -12,6 +12,7 @@ import {
   clientsMissingProjectId,
   lastMessageSyncAt,
   listCachedClientMessages,
+  threadUrl,
 } from "./basecamp-messages";
 import { WEEKLY_CAPACITY_HOURS } from "./forecast";
 import { PEOPLE, personLabel, teamLabelFor } from "./people";
@@ -120,6 +121,13 @@ export interface ReportSection {
   numeric?: number[];
   // Shown instead of the table when there is nothing to show.
   empty?: string;
+  // One destination per row, aligned to `rows` by index. A null or empty entry
+  // renders as plain text, so a row whose source has no URL degrades quietly
+  // rather than becoming a dead link.
+  rowLinks?: Array<string | null>;
+  // Which cell carries the link. Defaults to the first column, which is the
+  // naming column in every table here.
+  linkColumn?: number;
 }
 
 export interface Report {
@@ -273,6 +281,9 @@ function clientMessages(): ReportSection[] {
       columns: ["Thread", "Client", "Last posted by", "Waiting", "Replies"],
       numeric: [3, 4],
       empty: "Nothing is waiting on a reply.",
+      // Straight through to the thread in Basecamp, so the list is something
+      // you work from rather than something you then go hunting through.
+      rowLinks: waiting.map((m) => threadUrl(m) || null),
       rows: waiting.map((m) => [
         m.title,
         m.client_name.trim() || "No client",
@@ -1205,8 +1216,14 @@ export function reportToCsv(report: Report): string {
         lines.push([esc(st.label), esc(st.value), esc(st.hint || "")].join(","));
       }
     } else if (s.columns) {
-      lines.push(s.columns.map(esc).join(","));
-      for (const row of s.rows || []) lines.push(row.map(esc).join(","));
+      // A CSV can't carry a hyperlink on a cell, so the destination becomes its
+      // own column rather than being dropped on export.
+      const linked = Boolean(s.rowLinks?.some(Boolean));
+      lines.push([...s.columns, ...(linked ? ["Link"] : [])].map(esc).join(","));
+      (s.rows || []).forEach((row, i) => {
+        const cells = linked ? [...row, s.rowLinks?.[i] || ""] : row;
+        lines.push(cells.map(esc).join(","));
+      });
     }
     lines.push("");
   }

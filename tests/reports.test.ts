@@ -347,6 +347,27 @@ test("reports", async (t) => {
     assert.ok(cov.find((s) => s.label === "Last synced")?.value !== "Never");
   });
 
+  await t.test("unanswered threads link straight to Basecamp", () => {
+    db.prepare(
+      `UPDATE basecamp_client_messages SET app_url = ? WHERE id = 'p1:1'`
+    ).run("https://3.basecamp.com/5338018/buckets/p1/messages/1");
+
+    const r = reports.buildReport("client_messages", "2026-07-01", "2026-07-31");
+    const list = r.sections.find((s) => s.title.startsWith("Every unanswered"))!;
+    const i = list.rows!.findIndex((x) => x[0] === "Where is the draft?");
+    assert.match(list.rowLinks![i]!, /^https:\/\/3\.basecamp\.com\//);
+
+    // A thread Basecamp gave no app_url for still gets a working link, built
+    // from the project and message ids rather than left dead.
+    const j = list.rows!.findIndex((x) => x[0] === "Logo files");
+    assert.match(list.rowLinks![j]!, /^https:\/\/3\.basecamp\.com\/\d+\/buckets\/p1\/messages\/2$/);
+
+    // The CSV keeps the destination as its own column.
+    const csv = reports.reportToCsv(r);
+    assert.ok(csv.includes("Thread,Client,Last posted by,Waiting,Replies,Link"));
+    assert.ok(csv.includes("https://3.basecamp.com/5338018/buckets/p1/messages/1"));
+  });
+
   await t.test("an unknown report type is rejected", () => {
     assert.equal(reports.isReportType("time_tracking"), true);
     assert.equal(reports.isReportType("nope"), false);
