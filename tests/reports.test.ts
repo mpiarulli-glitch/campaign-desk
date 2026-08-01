@@ -232,6 +232,27 @@ test("reports", async (t) => {
     assert.ok(!none.rows!.some((row) => row[0] === "Jack"));
   });
 
+  await t.test("a wide range does not invent capacity from unplanned weeks", () => {
+    // The regression: over a 3-month range, someone who forecast a single week
+    // was credited with the whole quarter (66 workdays x 8h = 528h), so 1h
+    // booked read as 527h free. Capacity must follow the weeks they planned.
+    const r = reports.buildReport("capacity", "2026-05-01", "2026-08-01");
+    const byPerson = r.sections.find((s) => s.title === "By person")!;
+    const jack = byPerson.rows!.find((row) => row[0] === "Jack")!;
+    // Jack has one row (t3, 6h flexible) in one week: 40h capacity, 34h free,
+    // and the 6h is itself movable, so 40h reallocatable — not 527h.
+    assert.equal(jack[4], "6h");
+    assert.equal(jack[5], "34h");
+    assert.equal(jack[6], "40h");
+
+    for (const row of byPerson.rows!) {
+      assert.ok(
+        Number(row[5].replace("h", "")) <= 40,
+        `${row[0]} was credited ${row[5]} free from a single planned week`
+      );
+    }
+  });
+
   await t.test("an empty range reports no capacity rather than a free team", () => {
     const r = reports.buildReport("capacity", "2020-01-01", "2020-01-31");
     const moveable = r.sections.find((s) => s.title.startsWith("Hours you could move"))!.stats!;

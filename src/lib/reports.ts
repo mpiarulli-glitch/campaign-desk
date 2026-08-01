@@ -161,6 +161,18 @@ const LIGHTS = [
 // A person owes WEEKLY_CAPACITY_HOURS over five weekdays, so a range's capacity
 // is its workday count times the daily share. Counting calendar days instead
 // would credit people with weekend hours they never had.
+// Monday key for a YYYY-MM-DD date, so a person's forecast rows collapse into
+// the set of weeks they actually planned.
+function mondayOf(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay(); // 0 Sun .. 6 Sat
+  dt.setDate(dt.getDate() + (day === 0 ? -6 : 1 - day));
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(
+    dt.getDate()
+  ).padStart(2, "0")}`;
+}
+
 function workdaysBetween(start: string, end: string): number {
   const [ys, ms, ds] = start.split("-").map(Number);
   const [ye, me, de] = end.split("-").map(Number);
@@ -194,18 +206,25 @@ function workdaysBetween(start: string, end: string): number {
 function capacity(start: string, end: string): ReportSection[] {
   const rows = getDb()
     .prepare(
-      `SELECT person, priority, hours, basecamp_event_id
+      `SELECT person, task_date, priority, hours, basecamp_event_id
          FROM forecast_tasks
         WHERE task_date >= ? AND task_date <= ?`
     )
     .all(start, end) as Array<{
     person: string;
+    task_date: string;
     priority: string;
     hours: number;
     basecamp_event_id: string;
   }>;
 
-  const perPersonCapacity = workdaysBetween(start, end) * (WEEKLY_CAPACITY_HOURS / 5);
+  // Capacity is counted only for the weeks a person actually planned, never for
+  // the whole range. People forecast week by week and only near-term, so
+  // crediting someone with every week between two dates invents availability
+  // that was never theirs: one hour logged in a quarter would otherwise read as
+  // ~527 hours free. The range still decides which weeks are in scope; it just
+  // no longer manufactures them.
+  const rangeCeiling = workdaysBetween(start, end) * (WEEKLY_CAPACITY_HOURS / 5);
 
   type Entry = {
     tasks: Record<string, number>;
@@ -213,6 +232,7 @@ function capacity(start: string, end: string): ReportSection[] {
     booked: number;
     movable: number;
     meetingHours: number;
+    weeks: Set<string>;
   };
   const byPerson = new Map<string, Entry>();
   for (const r of rows) {
@@ -223,7 +243,9 @@ function capacity(start: string, end: string): ReportSection[] {
         booked: 0,
         movable: 0,
         meetingHours: 0,
+        weeks: new Set<string>(),
       };
+    e.weeks.add(mondayOf(r.task_date));
     // A meeting consumes capacity but is not a task, so it counts towards what
     // is booked and nothing else. Leaving it out of the traffic light matters:
     // createTask defaults an unset priority to flexible, which would otherwise
@@ -241,20 +263,24 @@ function capacity(start: string, end: string): ReportSection[] {
 
   const people = PEOPLE.filter((p) => byPerson.has(p.slug)).map((p) => {
     const e = byPerson.get(p.slug)!;
-    const free = Math.max(0, perPersonCapacity - e.booked);
+    // Their weeks, not the range's. Capped by the range so a week hanging over
+    // either edge can't credit days that were never in scope.
+    const personCapacity = Math.min(e.weeks.size * WEEKLY_CAPACITY_HOURS, rangeCeiling);
+    const free = Math.max(0, personCapacity - e.booked);
     return {
       label: personLabel(p.slug) || p.slug,
       ...e,
+      capacity: personCapacity,
       free,
       reallocatable: free + e.movable,
-      overbooked: e.booked > perPersonCapacity,
+      overbooked: e.booked > personCapacity,
     };
   });
   const noForecast = PEOPLE.filter((p) => !byPerson.has(p.slug));
 
   const sum = (pick: (p: (typeof people)[number]) => number) =>
     people.reduce((n, p) => n + pick(p), 0);
-  const totalCapacity = people.length * perPersonCapacity;
+  const totalCapacity = sum((p) => p.capacity);
   const booked = sum((p) => p.booked);
   const free = sum((p) => p.free);
   const movable = sum((p) => p.movable);
@@ -286,7 +312,7 @@ function capacity(start: string, end: string): ReportSection[] {
         {
           label: "Unbooked",
           value: hrs(free),
-          hint: `of ${hrs(totalCapacity)} across ${people.length} of ${PEOPLE.length} people`,
+          hint: `of ${hrs(totalCapacity)} in the weeks ${people.length} of ${PEOPLE.length} people planned`,
         },
         { label: "On flexible work", value: hrs(movable), hint: "meetings excluded" },
         {
