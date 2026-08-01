@@ -238,6 +238,22 @@ export interface BasecampEvent {
   synced_at: string;
 }
 
+export interface BasecampClientMessage {
+  id: string;
+  project_id: string;
+  client_id: string | null;
+  client_name: string;
+  title: string;
+  app_url: string;
+  author_name: string;
+  created_at: string;
+  last_client_at: string;
+  last_team_at: string;
+  reply_count: number;
+  awaiting_reply: number;
+  synced_at: string;
+}
+
 export type ForecastPriority = "urgent" | "important" | "flexible";
 
 export interface ForecastTask {
@@ -1040,6 +1056,31 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_bcevents_date ON basecamp_events(event_date);
+
+    /* Message-board threads that a client has posted or commented on, cached
+       the same way and for the same reason: reading them live would be one
+       request per project plus one per thread, on every page load.
+       awaiting_reply is computed at sync time — see basecamp-messages.ts. */
+    CREATE TABLE IF NOT EXISTS basecamp_client_messages (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      client_id TEXT,
+      client_name TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      app_url TEXT NOT NULL DEFAULT '',
+      author_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      /* Most recent word from either side, so the report can age the thread
+         and say who spoke last without re-reading every comment. */
+      last_client_at TEXT NOT NULL DEFAULT '',
+      last_team_at TEXT NOT NULL DEFAULT '',
+      reply_count INTEGER NOT NULL DEFAULT 0,
+      awaiting_reply INTEGER NOT NULL DEFAULT 0,
+      synced_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bcmsg_awaiting
+      ON basecamp_client_messages(awaiting_reply, last_client_at);
 
     CREATE TABLE IF NOT EXISTS forecast_notes (
       id TEXT PRIMARY KEY,

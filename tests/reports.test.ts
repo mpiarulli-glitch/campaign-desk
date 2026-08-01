@@ -315,6 +315,38 @@ test("reports", async (t) => {
     assert.equal(settled.find((s) => s.label === "Median turnaround")?.value, "10d");
   });
 
+  await t.test("unanswered client messages reads the cache, newest last", () => {
+    const ago = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+    const msg = db.prepare(
+      `INSERT INTO basecamp_client_messages
+         (id, project_id, client_id, client_name, title, app_url, author_name,
+          created_at, last_client_at, last_team_at, reply_count, awaiting_reply, synced_at)
+       VALUES (?, ?, 'cl_1', ?, ?, '', ?, ?, ?, ?, ?, ?, ?)`
+    );
+    msg.run("p1:1", "p1", "Humble Somm", "Where is the draft?", "Katie", ago(20), ago(20), "", 0, 1, ago(0));
+    msg.run("p1:2", "p1", "Humble Somm", "Logo files", "Katie", ago(6), ago(5), ago(9), 2, 1, ago(0));
+    msg.run("p2:3", "p2", "Krak Boba", "Answered already", "Sam", ago(30), ago(12), ago(2), 3, 0, ago(0));
+
+    const r = reports.buildReport("client_messages", "2026-07-01", "2026-07-31");
+    // Not ranged: an old unanswered message is the point, so no date filter.
+    assert.equal(r.range, null);
+
+    const top = r.sections[0].stats!;
+    assert.equal(top.find((s) => s.label === "Unanswered")?.value, "2");
+    assert.equal(top.find((s) => s.label === "Oldest")?.value, "20d");
+    assert.equal(top.find((s) => s.label === "Clients affected")?.value, "1");
+
+    // The answered thread is tracked but never listed as waiting.
+    const list = r.sections.find((s) => s.title.startsWith("Every unanswered"))!;
+    assert.deepEqual(list.rows!.map((x) => x[0]), ["Where is the draft?", "Logo files"]);
+    assert.ok(!list.rows!.some((x) => x[0] === "Answered already"));
+
+    // Coverage is reported so an empty result is never mistaken for good news.
+    const cov = r.sections.find((s) => s.title === "Coverage")!.stats!;
+    assert.equal(cov.find((s) => s.label === "Threads tracked")?.value, "3");
+    assert.ok(cov.find((s) => s.label === "Last synced")?.value !== "Never");
+  });
+
   await t.test("an unknown report type is rejected", () => {
     assert.equal(reports.isReportType("time_tracking"), true);
     assert.equal(reports.isReportType("nope"), false);

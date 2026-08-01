@@ -1032,6 +1032,96 @@ export async function sendApprovalToDeliverables(input: {
 
 // All projects (buckets) in the account, paged. Used to auto-match clients to
 // their Basecamp project by name.
+/* ------------------------------------------------------- message threads */
+
+// One post on a project's message board, plus whoever has spoken on it since.
+// `client` on a person is Basecamp's own flag for a client-side user, which is
+// what lets us tell a client's post from one of ours without guessing at email
+// domains.
+export interface BcMessageThread {
+  id: number;
+  title: string;
+  url: string;
+  createdAt: string;
+  authorName: string;
+  authorIsClient: boolean;
+  // Every comment on the thread, oldest first.
+  replies: Array<{ createdAt: string; authorName: string; authorIsClient: boolean }>;
+}
+
+function personIsClient(p: { client?: boolean; employee?: boolean } | undefined): boolean {
+  if (!p) return false;
+  // Trust `client` when Basecamp sets it. Falling back to "not an employee"
+  // would mark integration bots as clients, so employee is only used to rule a
+  // person out, never to rule one in.
+  return Boolean(p.client) && !p.employee;
+}
+
+/**
+ * Message-board threads for a project, with their comments.
+ *
+ * Capped deliberately: this runs across every client on a sweep, and Basecamp
+ * pages at 15. `maxThreads` bounds the comment fan-out, which is one request
+ * per thread and the expensive half of the call.
+ */
+export async function listProjectMessages(
+  projectId: string,
+  maxThreads = 30
+): Promise<BcMessageThread[]> {
+  if (!projectId) return [];
+  try {
+    const pr = await bc(`/projects/${projectId}.json`);
+    if (!pr.ok) return [];
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
+    const board = dock.find((d) => d.name === "message_board" && d.enabled !== false);
+    if (!board) return [];
+
+    const raw = await bcCollection<{
+      id: number;
+      subject?: string;
+      title?: string;
+      created_at: string;
+      app_url?: string;
+      comments_count?: number;
+      creator?: { name?: string; client?: boolean; employee?: boolean };
+    }>(`/buckets/${projectId}/message_boards/${board.id}/messages.json`);
+
+    const threads = raw.slice(0, maxThreads);
+
+    return await Promise.all(
+      threads.map(async (m) => {
+        // Skip the round trip when Basecamp already says there are none.
+        const comments =
+          m.comments_count === 0
+            ? []
+            : await bcCollection<{
+                created_at: string;
+                creator?: { name?: string; client?: boolean; employee?: boolean };
+              }>(`/buckets/${projectId}/recordings/${m.id}/comments.json`, 2);
+
+        return {
+          id: m.id,
+          title: m.subject || m.title || "Untitled message",
+          url: m.app_url || "",
+          createdAt: m.created_at,
+          authorName: m.creator?.name || "Unknown",
+          authorIsClient: personIsClient(m.creator),
+          replies: comments
+            .map((c) => ({
+              createdAt: c.created_at,
+              authorName: c.creator?.name || "Unknown",
+              authorIsClient: personIsClient(c.creator),
+            }))
+            .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
+        };
+      })
+    );
+  } catch {
+    return [];
+  }
+}
+
 export async function listProjects(): Promise<Array<{ id: number; name: string }>> {
   const out: Array<{ id: number; name: string }> = [];
   for (let page = 1; page <= 30; page++) {

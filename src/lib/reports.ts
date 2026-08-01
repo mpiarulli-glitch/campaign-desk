@@ -8,6 +8,11 @@
 // Reports are read-only aggregations over existing tables. Nothing here writes.
 
 import { getDb } from "./db";
+import {
+  clientsMissingProjectId,
+  lastMessageSyncAt,
+  listCachedClientMessages,
+} from "./basecamp-messages";
 import { WEEKLY_CAPACITY_HOURS } from "./forecast";
 import { PEOPLE, personLabel, teamLabelFor } from "./people";
 import { teamLabel } from "./team";
@@ -16,6 +21,7 @@ export type ReportType =
   | "time_tracking"
   | "capacity"
   | "approvals_ageing"
+  | "client_messages"
   | "okrs"
   | "weekly_snapshots"
   | "deliverables"
@@ -51,6 +57,12 @@ export const REPORTS: ReportMeta[] = [
     label: "Approvals ageing",
     blurb: "How long review packages have been waiting, on the client and on us.",
     ranged: true,
+  },
+  {
+    type: "client_messages",
+    label: "Unanswered client messages",
+    blurb: "Basecamp threads where a client spoke last and nobody has replied.",
+    ranged: false,
   },
   {
     type: "okrs",
@@ -154,6 +166,130 @@ function titleCaseStatus(s: string): string {
 }
 
 /* ------------------------------------------------------- 1. time tracking */
+
+/* ------------------------------------------------------- unanswered clients */
+
+/**
+ * Basecamp threads where a client spoke last.
+ *
+ * Reads the basecamp_client_messages cache, never the API — see
+ * basecamp-messages.ts for the sweep and for how "unanswered" is decided.
+ *
+ * Not ranged: this is a state of play, and an old unanswered message is the
+ * one that matters most. A date filter would hide it.
+ *
+ * Two coverage caveats are reported on screen rather than left implicit, since
+ * both make an empty result look like good news when it isn't: clients with no
+ * Basecamp project id are invisible to the sweep, and a cache that has never
+ * been synced is empty rather than clear.
+ */
+function clientMessages(): ReportSection[] {
+  const all = listCachedClientMessages();
+  const waiting = all
+    .filter((m) => m.awaiting_reply)
+    .map((m) => ({ ...m, age: daysSince(m.last_client_at, Date.now()) }))
+    .sort((a, b) => b.age - a.age);
+
+  const syncedAt = lastMessageSyncAt();
+  const missing = clientsMissingProjectId();
+
+  const byClient = new Map<string, { open: number; oldest: number }>();
+  for (const m of waiting) {
+    const key = m.client_name.trim() || "No client";
+    const e = byClient.get(key) || { open: 0, oldest: 0 };
+    e.open += 1;
+    e.oldest = Math.max(e.oldest, m.age);
+    byClient.set(key, e);
+  }
+
+  const coverage: ReportSection = {
+    title: "Coverage",
+    stats: [
+      {
+        label: "Last synced",
+        value: syncedAt ? prettyDate(syncedAt.slice(0, 10)) : "Never",
+        hint: syncedAt ? "from the Basecamp sweep" : "nothing has been pulled yet",
+      },
+      {
+        label: "Threads tracked",
+        value: String(all.length),
+        hint: "client threads in the cache",
+      },
+      {
+        label: "Clients not covered",
+        value: String(missing.length),
+        hint: missing.length ? "no Basecamp project id set" : "every client is mapped",
+      },
+    ],
+  };
+
+  return [
+    {
+      title: "Waiting on a reply",
+      stats: [
+        { label: "Unanswered", value: String(waiting.length), hint: "client spoke last" },
+        {
+          label: "Oldest",
+          value: waiting.length ? `${waiting[0].age}d` : "—",
+          hint: waiting.length ? waiting[0].client_name : "nothing waiting",
+        },
+        {
+          label: "Median age",
+          value: waiting.length ? `${median(waiting.map((m) => m.age))}d` : "—",
+          hint: "since the client last posted",
+        },
+        {
+          label: "Clients affected",
+          value: String(byClient.size),
+          hint: "with at least one unanswered",
+        },
+      ],
+    },
+    {
+      title: "Age of unanswered messages",
+      columns: ["Age", "Threads"],
+      numeric: [1],
+      empty: syncedAt
+        ? "Nothing is waiting on a reply."
+        : "Nothing has been synced from Basecamp yet.",
+      rows: waiting.length
+        ? AGE_BUCKETS.map((b) => [
+            b.label,
+            String(waiting.filter((m) => m.age >= b.min && m.age <= b.max).length),
+          ])
+        : [],
+    },
+    {
+      title: "By client",
+      columns: ["Client", "Unanswered", "Oldest"],
+      numeric: [1, 2],
+      empty: "Nothing is waiting on a reply.",
+      rows: [...byClient.entries()]
+        .sort((a, b) => b[1].oldest - a[1].oldest)
+        .map(([client, e]) => [client, String(e.open), `${e.oldest}d`]),
+    },
+    {
+      title: "Every unanswered thread, oldest first",
+      columns: ["Thread", "Client", "Last posted by", "Waiting", "Replies"],
+      numeric: [3, 4],
+      empty: "Nothing is waiting on a reply.",
+      rows: waiting.map((m) => [
+        m.title,
+        m.client_name.trim() || "No client",
+        m.author_name || "Unknown",
+        `${m.age}d`,
+        String(m.reply_count),
+      ]),
+    },
+    coverage,
+    {
+      title: "Clients with no Basecamp project",
+      columns: ["Client"],
+      empty: "Every client is mapped to a Basecamp project.",
+      rows: missing.map((n) => [n]),
+    },
+  ];
+}
 
 /* --------------------------------------------------------- approvals ageing */
 
@@ -1022,6 +1158,9 @@ export function buildReport(
       break;
     case "approvals_ageing":
       sections = approvalsAgeing(start, end);
+      break;
+    case "client_messages":
+      sections = clientMessages();
       break;
     case "okrs":
       sections = okrs();
