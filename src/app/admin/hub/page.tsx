@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChatThread } from "@/components/ChatThread";
-import { TeamTodos } from "@/components/TeamTodos";
 import { SopsSection } from "@/components/hub/SopsSection";
 import { TrainingSection } from "@/components/hub/TrainingSection";
 import { SentimentSection } from "@/components/hub/SentimentSection";
@@ -12,13 +11,14 @@ import { HrSection } from "@/components/hub/HrSection";
 import { HubHome } from "@/components/hub/HubHome";
 import { teamLabel } from "@/lib/team";
 
-type Section = "home" | "chat" | "resources" | "sops" | "training" | "todos" | "sentiment" | "hr";
+// Team to-dos were removed (2026-08-01): to-dos live in Basecamp, and Forecast
+// is where they get picked up. The in-app list was a second place to look.
+type Section = "home" | "chat" | "resources" | "sops" | "training" | "sentiment" | "hr";
 const SECTION_TITLE: Record<Exclude<Section, "home">, string> = {
   chat: "Team chat",
   resources: "Forecasts, docs & files",
   sops: "SOPs",
   training: "Marketing & AI training",
-  todos: "Team to-dos",
   sentiment: "Sentiment check-in",
   hr: "HR",
 };
@@ -132,8 +132,6 @@ export default function TeamHubPage() {
           <SopsSection isAdmin={isAdmin} />
         ) : section === "training" ? (
           <TrainingSection isAdmin={isAdmin} />
-        ) : section === "todos" ? (
-          <TeamTodos />
         ) : section === "sentiment" ? (
           <SentimentSection isAdmin={isAdmin} person={person} />
         ) : section === "hr" ? (

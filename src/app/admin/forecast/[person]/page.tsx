@@ -18,6 +18,7 @@ type Task = {
   priority: Priority;
   basecamp_todo_id: string;
   basecamp_project_id: string;
+  basecamp_event_id: string;
   actual_hours: number;
   basecamp_time_entry_id: string;
 };
@@ -49,6 +50,30 @@ type TodoState = {
   todos: BcTodo[];
   assignedCount: number;
   projectId: string;
+  reason: string | null;
+};
+
+// A Basecamp schedule entry, i.e. a meeting. Booked into the forecast so a
+// meeting takes up its real hours without anyone creating a todo to represent
+// it. Meetings often belong to no client at all (internal MEG calls), which is
+// why this picker never asks for one first.
+type BcEvent = {
+  id: string;
+  title: string;
+  clientId: string | null;
+  clientName: string;
+  projectName: string;
+  allDay: boolean;
+  time: string;
+  hours: number;
+  participants: string;
+};
+
+// Per-date cache of the meeting picker, keyed by the day being added to.
+type EventState = {
+  loading: boolean;
+  mine: BcEvent[];
+  others: BcEvent[];
   reason: string | null;
 };
 
@@ -86,7 +111,13 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// "work" is the original flow: pick a client, then one of its Basecamp todos.
+// "meeting" books a Basecamp schedule entry instead, so a meeting can take up
+// hours without a todo being invented to hold it.
+type DraftMode = "work" | "meeting";
+
 type Draft = {
+  mode: DraftMode;
   // Selected rev_client. `client` carries the name, which is what gets stored.
   clientId: string;
   client: string;
@@ -96,17 +127,22 @@ type Draft = {
   // the task can close that todo.
   todoId: string;
   projectId: string;
+  // Set instead when the row came from the meeting picker. Never set alongside
+  // todoId: a meeting has nothing to close.
+  eventId: string;
   // True once someone chooses to type the task rather than pick one.
   manual: boolean;
 };
 
 const emptyDraft: Draft = {
+  mode: "work",
   clientId: "",
   client: "",
   notes: "",
   hours: "",
   todoId: "",
   projectId: "",
+  eventId: "",
   manual: false,
 };
 
@@ -153,12 +189,32 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
   }.`;
 }
 
+// Same idea as todoHint, for the meeting picker.
+function eventHint(state: EventState | undefined): string {
+  if (!state || state.loading) return "";
+  const total = state.mine.length + state.others.length;
+  if (!total) {
+    if (state.reason === "never-synced") {
+      return "Basecamp events haven't synced yet, so there's nothing to pick.";
+    }
+    return "No Basecamp events on this day.";
+  }
+  if (!state.mine.length) {
+    return `${total} on the schedule, none listing you.`;
+  }
+  return `${state.mine.length} with you${
+    state.others.length ? `, ${state.others.length} other` : ""
+  }.`;
+}
+
 function AddTaskForm({
   draft,
   patch,
   clients,
   todoState,
+  eventState,
   onPickClient,
+  onPickMode,
   onAdd,
   onCancel,
   layout,
@@ -168,7 +224,9 @@ function AddTaskForm({
   patch: (p: Partial<Draft>) => void;
   clients: ClientOption[];
   todoState: TodoState | undefined;
+  eventState: EventState | undefined;
   onPickClient: (clientId: string) => void;
+  onPickMode: (mode: DraftMode) => void;
   onAdd: () => void;
   onCancel?: () => void;
   layout: "row" | "stack";
@@ -176,6 +234,7 @@ function AddTaskForm({
 }) {
   const stack = layout === "stack";
   const todos = useMemo(() => todoState?.todos || [], [todoState]);
+  const meeting = draft.mode === "meeting";
 
   // Grouped by todo list, the way Basecamp reads, with anything assigned to this
   // person lifted into a group of its own at the top so their own work is one
@@ -193,7 +252,87 @@ function AddTaskForm({
   }, [todos]);
 
   const usePicker = Boolean(draft.clientId) && !draft.manual && todos.length > 0;
-  const hint = todoHint(draft, todoState);
+  const hint = meeting ? eventHint(eventState) : todoHint(draft, todoState);
+
+  // Work or meeting. Kept as two small buttons rather than a select because it
+  // switches which fields are shown, and a select there reads like data entry.
+  const modeToggle = (
+    <div className="fc-mode" role="group" aria-label="What are you adding?">
+      <button
+        type="button"
+        className={`fc-mode-btn ${draft.mode === "work" ? "is-on" : ""}`}
+        onClick={() => onPickMode("work")}
+      >
+        Work
+      </button>
+      <button
+        type="button"
+        className={`fc-mode-btn ${meeting ? "is-on" : ""}`}
+        onClick={() => onPickMode("meeting")}
+      >
+        Meeting
+      </button>
+    </div>
+  );
+
+  const meetingEvents = useMemo(() => {
+    const mine = eventState?.mine || [];
+    const others = eventState?.others || [];
+    const out: Array<[string, BcEvent[]]> = [];
+    if (mine.length) out.push(["On your schedule", mine]);
+    if (others.length) out.push(["Other meetings that day", others]);
+    return out;
+  }, [eventState]);
+
+  const hasEvents = Boolean(
+    (eventState?.mine.length || 0) + (eventState?.others.length || 0)
+  );
+
+  // Picking a meeting fills in everything the row needs: the title becomes the
+  // task text, the duration becomes the hours, and the event's client (if it has
+  // one) is carried across so the row still lands under that client.
+  const meetingField = hasEvents ? (
+    <select
+      autoFocus={autoFocus}
+      value={draft.eventId}
+      onChange={(e) => {
+        const all = [...(eventState?.mine || []), ...(eventState?.others || [])];
+        const hit = all.find((v) => v.id === e.target.value);
+        patch({
+          eventId: hit?.id || "",
+          notes: hit?.title || "",
+          hours: hit && hit.hours > 0 ? String(hit.hours) : "",
+          clientId: hit?.clientId || "",
+          client: hit?.clientName || "",
+          todoId: "",
+          projectId: "",
+        });
+      }}
+      aria-label="Basecamp meeting"
+      style={stack ? undefined : { flex: "3 1 260px" }}
+    >
+      <option value="">Pick a meeting</option>
+      {meetingEvents.map(([label, items]) => (
+        <optgroup key={label} label={label}>
+          {items.map((v) => (
+            <option key={`${label}:${v.id}`} value={v.id}>
+              {v.time ? `${v.time} · ` : ""}
+              {v.title}
+              {v.clientName ? ` (${v.clientName})` : ""}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  ) : (
+    <input
+      value={draft.notes}
+      onChange={(e) => patch({ notes: e.target.value, eventId: "" })}
+      placeholder={eventState?.loading ? "Loading meetings..." : "Meeting name"}
+      disabled={Boolean(eventState?.loading)}
+      style={stack ? undefined : { flex: "3 1 260px" }}
+    />
+  );
 
   const clientSelect = (
     <select
@@ -265,9 +404,10 @@ function AddTaskForm({
     />
   );
 
-  // Only worth offering once there are todos to switch away from.
+  // Only worth offering once there are todos to switch away from, and never for
+  // meetings, which have their own free-text fallback built in.
   const manualToggle =
-    draft.clientId && todos.length > 0 ? (
+    !meeting && draft.clientId && todos.length > 0 ? (
       <button
         type="button"
         className="linklike"
@@ -283,8 +423,11 @@ function AddTaskForm({
   if (stack) {
     return (
       <div className="ops-day-add-form">
-        {clientSelect}
-        {taskField}
+        {modeToggle}
+        {/* Meetings skip the client select entirely: most of them are internal
+            and have no client, and the picked event supplies one when it has. */}
+        {meeting ? meetingField : clientSelect}
+        {meeting ? null : taskField}
         <div className="row" style={{ gap: 6 }}>
           {hoursInput}
           <button className="btn btn-sm" onClick={onAdd}>
@@ -309,11 +452,12 @@ function AddTaskForm({
   return (
     <div style={{ marginTop: 12 }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        {clientSelect}
-        {taskField}
+        {modeToggle}
+        {meeting ? meetingField : clientSelect}
+        {meeting ? null : taskField}
         {hoursInput}
         <button className="btn btn-sm" onClick={onAdd}>
-          Add task
+          {meeting ? "Add meeting" : "Add task"}
         </button>
       </div>
       {manualToggle || hint ? (
@@ -349,6 +493,9 @@ export default function PersonForecastPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [todosByClient, setTodosByClient] = useState<Record<string, TodoState>>({});
+  // Meeting picker contents, keyed by the day being added to rather than by
+  // client, because a meeting is scoped to a date and often has no client.
+  const [eventsByDate, setEventsByDate] = useState<Record<string, EventState>>({});
   // taskId -> hours typed into that task's "log time" box. Logging is explicit:
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
@@ -497,6 +644,56 @@ export default function PersonForecastPage() {
     ensureTodos(clientId);
   }
 
+  // Meetings come from the local basecamp_events cache, so this is a cheap read
+  // and re-fetching on every switch into meeting mode keeps it current without a
+  // "requested" marker of its own.
+  const ensureEvents = useCallback(
+    async (date: string) => {
+      setEventsByDate((prev) => ({
+        ...prev,
+        [date]: prev[date] || { loading: true, mine: [], others: [], reason: null },
+      }));
+      try {
+        const res = await fetch(
+          `/api/forecast/events?person=${person}&date=${encodeURIComponent(date)}`
+        );
+        const json = res.ok ? await res.json() : null;
+        setEventsByDate((prev) => ({
+          ...prev,
+          [date]: {
+            loading: false,
+            mine: Array.isArray(json?.mine) ? json.mine : [],
+            others: Array.isArray(json?.others) ? json.others : [],
+            reason: json?.reason ?? (res.ok ? null : "failed"),
+          },
+        }));
+      } catch {
+        setEventsByDate((prev) => ({
+          ...prev,
+          [date]: { loading: false, mine: [], others: [], reason: "failed" },
+        }));
+      }
+    },
+    [person]
+  );
+
+  // Switching mode clears whatever was picked under the old one, so a half-filled
+  // work row can't be submitted as a meeting or the reverse.
+  function pickMode(date: string, mode: DraftMode) {
+    setDraft(date, {
+      mode,
+      notes: "",
+      hours: "",
+      todoId: "",
+      projectId: "",
+      eventId: "",
+      clientId: "",
+      client: "",
+      manual: false,
+    });
+    if (mode === "meeting") ensureEvents(date);
+  }
+
   const days = useMemo(() => weekdays(week), [week]);
   const today = todayYmd();
   const progress = useMemo(() => {
@@ -539,12 +736,25 @@ export default function PersonForecastPage() {
   async function addTask(date: string) {
     const draft = draftFor(date);
     const hours = Number(draft.hours);
-    if (!draft.client.trim()) {
+    const meeting = draft.mode === "meeting";
+
+    // A meeting needs no client: most of them are internal and have none. It
+    // does need a name, which the picker fills in and free text supplies.
+    if (meeting) {
+      if (!draft.notes.trim()) {
+        setError("Pick a meeting, or type what it is.");
+        return;
+      }
+    } else if (!draft.client.trim()) {
       setError("Pick a client for that task.");
       return;
     }
     if (!Number.isFinite(hours) || hours <= 0) {
-      setError("Enter how many hours that task should take.");
+      setError(
+        meeting
+          ? "Enter how long that meeting runs."
+          : "Enter how many hours that task should take."
+      );
       return;
     }
     setError("");
@@ -557,12 +767,13 @@ export default function PersonForecastPage() {
         client: draft.client,
         notes: draft.notes,
         hours,
-        basecampTodoId: draft.todoId,
-        basecampProjectId: draft.todoId ? state?.projectId || "" : "",
+        basecampTodoId: meeting ? "" : draft.todoId,
+        basecampProjectId: !meeting && draft.todoId ? state?.projectId || "" : "",
+        basecampEventId: meeting ? draft.eventId : "",
       }),
     });
     if (!res.ok) {
-      setError("Could not add that task.");
+      setError(meeting ? "Could not add that meeting." : "Could not add that task.");
       return;
     }
     setDrafts((d) => ({ ...d, [date]: emptyDraft }));
@@ -932,7 +1143,7 @@ export default function PersonForecastPage() {
                         onBlur={(e) => saveField(t, "notes", e.target.value)}
                         placeholder="Task notes"
                         className="notes"
-                        title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                        title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                         style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
                       />
                       <div className="row" style={{ gap: 2 }}>
@@ -960,7 +1171,10 @@ export default function PersonForecastPage() {
                   patch={(p) => setDraft(today, p)}
                   clients={clients}
                   todoState={todosByClient[draft.clientId]}
+
+                  eventState={eventsByDate[today]}
                   onPickClient={(id) => pickClient(today, id)}
+                  onPickMode={(m) => pickMode(today, m)}
                   onAdd={() => addTask(today)}
                   layout="row"
                 />
@@ -1032,7 +1246,7 @@ export default function PersonForecastPage() {
                           onBlur={(e) => saveField(t, "notes", e.target.value)}
                           placeholder="Task notes"
                           className="notes"
-                          title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                          title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                         />
                         <div className="chip-foot">
                           <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
@@ -1050,7 +1264,10 @@ export default function PersonForecastPage() {
                         patch={(p) => setDraft(date, p)}
                         clients={clients}
                         todoState={todosByClient[draft.clientId]}
+
+                        eventState={eventsByDate[date]}
                         onPickClient={(id) => pickClient(date, id)}
+                        onPickMode={(m) => pickMode(date, m)}
                         onAdd={() => addTask(date)}
                         onCancel={() => setAddingFor(null)}
                         layout="stack"
@@ -1120,7 +1337,7 @@ export default function PersonForecastPage() {
                           onBlur={(e) => saveField(t, "notes", e.target.value)}
                           placeholder="Task notes"
                           className="notes"
-                          title={t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                          title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                           style={{
                             textDecoration: t.completed ? "line-through" : "none",
                             opacity: t.completed ? 0.6 : 1,
@@ -1153,7 +1370,10 @@ export default function PersonForecastPage() {
                     patch={(p) => setDraft(date, p)}
                     clients={clients}
                     todoState={todosByClient[draft.clientId]}
+
+                    eventState={eventsByDate[date]}
                     onPickClient={(id) => pickClient(date, id)}
+                    onPickMode={(m) => pickMode(date, m)}
                     onAdd={() => addTask(date)}
                     layout="row"
                   />

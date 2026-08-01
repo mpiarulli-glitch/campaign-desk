@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { entryLevelPeople, hasProductionAccess, personLabel as forecastPersonLabel } from "@/lib/people";
+import { entryLevelPeople, hasProductionAccess, isSeoOnly, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
 
 type Session = {
@@ -31,7 +31,8 @@ const ADMIN_NAV: NavItem[] = [
   // Admin-only: aggregates every client's approvals, outreach and economics.
   { href: "/admin/lifecycle", label: "Lifecycle", icon: "chart" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
-  { href: "/admin/production", label: "Production", icon: "video" },
+  // Production is spliced in below for the people on PRODUCTION_ACCESS only, so
+  // it is deliberately absent here.
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
   { href: "/admin/snapshot", label: "Snapshots", icon: "doc" },
@@ -131,17 +132,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     icon: "forecast",
   };
 
+  // Production scheduling is on an explicit person list, so it is spliced in for
+  // both roles rather than being implied by being an admin. The owner's session
+  // carries a null person, hence the separate check.
+  const productionItem: NavItem = {
+    href: "/admin/production",
+    label: "Production",
+    icon: "video",
+  };
+  const canSeeProduction =
+    session.owner || (Boolean(session.person) && hasProductionAccess(session.person!));
+
+  // The SEO side is forecast-role but works in Campaigns, where their list is
+  // filtered to blog assets server-side.
+  const seoOnly = isSeoOnly(session.person);
+  const campaignsItem: NavItem = {
+    href: "/admin/campaigns",
+    label: "Campaigns",
+    icon: "mail",
+  };
+
   const items: NavItem[] = session.role === "forecast"
     ? [
         FORECAST_NAV[0],
         forecastItem,
+        ...(seoOnly ? [campaignsItem] : []),
         ...FORECAST_NAV.slice(1),
-        ...(session.person && hasProductionAccess(session.person)
-          ? [{ href: "/admin/production", label: "Production", icon: "video" as const }]
-          : []),
+        ...(canSeeProduction ? [productionItem] : []),
       ]
     : ADMIN_NAV.flatMap((item) =>
-        item.href === "/admin/hub" ? [forecastItem, item] : [item]
+        item.href === "/admin/hub"
+          ? [...(canSeeProduction ? [productionItem] : []), forecastItem, item]
+          : [item]
       );
 
   const meLabel = session.person

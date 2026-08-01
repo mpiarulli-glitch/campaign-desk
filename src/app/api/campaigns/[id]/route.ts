@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated, reviewUrl } from "@/lib/auth";
+import {
+  isAdminAuthenticated,
+  isBlogScopedSession,
+  isCampaignsReadAuthenticated,
+  reviewUrl,
+} from "@/lib/auth";
 import {
   deleteCampaign,
   getCampaignById,
@@ -12,6 +17,7 @@ import {
   setCampaignArchived,
   updateCampaign,
   unapproveCampaign,
+  campaignHasKind,
   countOpenComments,
   markRevisionDone,
   markApproved,
@@ -31,13 +37,20 @@ const STATUSES: CampaignStatus[] = [
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isCampaignsReadAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
   const campaign = getCampaignById(id);
   if (!campaign) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Blog-scoped people (the SEO side) can only open a campaign that has a blog
+  // item, so a pasted URL can't reach an email campaign that's filtered out of
+  // their list. 404 rather than 403: they aren't meant to know it exists.
+  if ((await isBlogScopedSession()) && !campaignHasKind(id, "blog")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

@@ -86,6 +86,10 @@ export async function POST(request: Request, { params }: Params) {
     basecampTodoId: typeof body.basecampTodoId === "string" ? body.basecampTodoId : "",
     basecampProjectId:
       typeof body.basecampProjectId === "string" ? body.basecampProjectId : "",
+    // Present instead when it came from the meeting picker. createTask drops the
+    // todo link if both arrive.
+    basecampEventId:
+      typeof body.basecampEventId === "string" ? body.basecampEventId : "",
   });
   return NextResponse.json({ task }, { status: 201 });
 }

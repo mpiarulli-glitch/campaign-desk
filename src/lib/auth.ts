@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { isValidAdminPerson } from "./admin-people";
-import { hasProductionAccess, isValidPerson, OWNER_SLUG } from "./people";
+import { hasProductionAccess, isSeoOnly, isValidPerson, OWNER_SLUG } from "./people";
 import { authenticate, getUser, recordLogin } from "./users";
 
 const COOKIE_NAME = "cd_session";
@@ -249,6 +249,27 @@ export async function isOwner(): Promise<boolean> {
   return session?.role === "admin" && session.person === null;
 }
 
+// True when the signed-in person works on blog content only (the SEO side), so
+// the campaigns list and any single campaign they open should be limited to blog
+// assets. The owner is never scoped.
+export async function isBlogScopedSession(): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  if (session.role === "admin" && session.person === null) return false;
+  return isSeoOnly(session.person);
+}
+
+// Who may READ the campaigns list and open a campaign: admins, plus the SEO-side
+// people, whose view is then filtered to blogs by isBlogScopedSession. Abel is
+// forecast-role, so without this he could not reach campaigns at all.
+// Creating and editing campaigns stays on isAdminAuthenticated.
+export async function isCampaignsReadAuthenticated(): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  if (session.role === "admin") return true;
+  return isSeoOnly(session.person);
+}
+
 async function setSessionCookie(payload: string): Promise<void> {
   const token = `${payload}.${sign(payload)}`;
   const jar = await cookies();
@@ -356,13 +377,15 @@ export async function isWorkflowAuthenticated(): Promise<boolean> {
   return session?.role === "admin" || session?.role === "forecast";
 }
 
-// Admins always pass; forecast-role users pass only if their person has been
-// granted production access (see PEOPLE in ./people).
+// Production scheduling is gated on an explicit person list (PRODUCTION_ACCESS
+// in ./people), not on role. Being an admin is no longer enough: the SEO-side
+// admins have no reason to see the shoot schedule. The owner always passes.
 export async function isProductionAuthenticated(): Promise<boolean> {
   const session = await getSession();
-  if (session?.role === "admin") return true;
-  if (session?.role !== "forecast") return false;
-  return hasProductionAccess(session.person);
+  if (!session) return false;
+  // Owner session carries a null person.
+  if (session.role === "admin" && session.person === null) return true;
+  return Boolean(session.person) && hasProductionAccess(session.person!);
 }
 
 export function getAppUrl(): string {

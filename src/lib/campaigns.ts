@@ -150,6 +150,46 @@ export function listArchivedCampaigns(): Campaign[] {
     .all() as Campaign[];
 }
 
+/**
+ * Campaigns holding at least one item of the given asset kind.
+ *
+ * The kind lives on campaign_emails, not on the campaign, because one review
+ * package can mix an email with a blog post. A campaign therefore counts as a
+ * blog campaign if any of its items is one. Used to scope the list for the SEO
+ * side of the team.
+ */
+export function listCampaignsWithKind(
+  kind: EmailKind,
+  opts?: { archived?: boolean }
+): Campaign[] {
+  const archived = opts?.archived
+    ? "c.archived_at IS NOT NULL"
+    : "c.archived_at IS NULL";
+  const order = opts?.archived ? "c.archived_at DESC" : "c.updated_at DESC";
+  return getDb()
+    .prepare(
+      `SELECT c.* FROM campaigns c
+       WHERE ${archived}
+         AND EXISTS (
+           SELECT 1 FROM campaign_emails e
+           WHERE e.campaign_id = c.id AND e.kind = ?
+         )
+       ORDER BY ${order}`
+    )
+    .all(kind) as Campaign[];
+}
+
+// Does this campaign contain an item of the given kind? Keeps someone scoped to
+// blogs from opening a non-blog campaign by pasting its URL.
+export function campaignHasKind(campaignId: string, kind: EmailKind): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS hit FROM campaign_emails WHERE campaign_id = ? AND kind = ? LIMIT 1`
+    )
+    .get(campaignId, kind) as { hit: number } | undefined;
+  return Boolean(row);
+}
+
 export function setCampaignArchived(
   id: string,
   archived: boolean

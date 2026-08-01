@@ -1,22 +1,37 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import {
+  isAdminAuthenticated,
+  isBlogScopedSession,
+  isCampaignsReadAuthenticated,
+} from "@/lib/auth";
 import {
   createCampaign,
   listCampaigns,
   listArchivedCampaigns,
+  listCampaignsWithKind,
   countOpenComments,
   countEmails,
 } from "@/lib/campaigns";
 import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
 
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  // Read is open to admins and to the SEO-side people; the list they get back is
+  // filtered to blogs below.
+  if (!(await isCampaignsReadAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const archived =
     new URL(request.url).searchParams.get("archived") === "1";
-  const source = archived ? listArchivedCampaigns() : listCampaigns();
+
+  // The SEO side of the team works on blog content only, so their list is
+  // filtered to campaigns containing a blog item rather than every client email.
+  const blogOnly = await isBlogScopedSession();
+  const source = blogOnly
+    ? listCampaignsWithKind("blog", { archived })
+    : archived
+      ? listArchivedCampaigns()
+      : listCampaigns();
 
   const campaigns = source.map((c) => ({
     ...c,
@@ -25,7 +40,7 @@ export async function GET(request: Request) {
     review_path: `/review/${c.magic_token}`,
   }));
 
-  return NextResponse.json({ campaigns });
+  return NextResponse.json({ campaigns, scope: blogOnly ? "blog" : "all" });
 }
 
 export async function POST(request: Request) {

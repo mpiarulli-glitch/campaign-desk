@@ -241,6 +241,11 @@ export interface ForecastTask {
   // the visible task text stays the plain copied title in `notes`.
   basecamp_todo_id: string;
   basecamp_project_id: string;
+  // Set instead of basecamp_todo_id when the row came from a Basecamp schedule
+  // entry, i.e. a meeting. Meetings take up real hours but are not work items,
+  // so booking one must never create or close a todo. Completing a meeting row
+  // stays local, because there is nothing on the Basecamp side to flip.
+  basecamp_event_id: string;
   // Time actually spent, logged to the linked Basecamp todo's timesheet on
   // completion. Distinct from `hours`, which is the up-front forecast estimate.
   // 0 means nothing has been logged yet.
@@ -989,6 +994,7 @@ export function getDb(): Database.Database {
       completed INTEGER NOT NULL DEFAULT 0,
       basecamp_todo_id TEXT NOT NULL DEFAULT '',
       basecamp_project_id TEXT NOT NULL DEFAULT '',
+      basecamp_event_id TEXT NOT NULL DEFAULT '',
       actual_hours REAL NOT NULL DEFAULT 0,
       basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
@@ -1685,6 +1691,11 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("basecamp_project_id")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN basecamp_project_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("basecamp_event_id")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN basecamp_event_id TEXT NOT NULL DEFAULT ''`
     );
   }
   if (forecastCols.length && !forecastCols.includes("actual_hours")) {

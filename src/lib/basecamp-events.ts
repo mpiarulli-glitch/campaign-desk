@@ -133,6 +133,68 @@ export function listEventsBetween(
     .all(start, end) as BasecampEvent[];
 }
 
+// How long a meeting runs, in hours, rounded to the nearest quarter so it drops
+// straight into a forecast row. All-day entries have no real duration, so they
+// return 0 and the person types their own estimate.
+export function eventHours(event: BasecampEvent): number {
+  if (event.all_day) return 0;
+  const start = new Date(event.starts_at).getTime();
+  const end = new Date(event.ends_at).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.round(((end - start) / 3_600_000) * 4) / 4;
+}
+
+// Does this Basecamp event list the given person as a participant?
+//
+// Basecamp stores full names ("Piarulli Michael") while the app knows people by
+// a short label ("Michael") or a slug ("mike_hines"), so this compares the parts
+// rather than the whole. Deliberately loose: a false positive puts one extra
+// meeting in a list the person is already choosing from, whereas a false
+// negative hides the meeting they are trying to book.
+export function eventHasParticipant(
+  event: BasecampEvent,
+  names: string[]
+): boolean {
+  const haystack = event.participants.toLowerCase();
+  if (!haystack) return false;
+  return names.some((name) => {
+    for (const part of name.toLowerCase().split(/[\s_]+/)) {
+      // Skip initials and short fragments, which would match far too much.
+      if (part.length < 3) continue;
+      if (haystack.includes(part)) return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Meetings on one day, split into the person's own and everything else.
+ *
+ * Reads the local cache, so this is a table scan rather than a Basecamp call and
+ * is safe to hit while someone opens the add form. Events are deliberately NOT
+ * restricted to clients: internal MEG meetings are exactly the ones people were
+ * otherwise faking a todo for.
+ */
+export function listEventsForDay(
+  date: string,
+  names: string[]
+): { mine: BasecampEvent[]; others: BasecampEvent[] } {
+  const all = getDb()
+    .prepare(
+      `SELECT * FROM basecamp_events
+       WHERE event_date = ?
+       ORDER BY all_day DESC, starts_at ASC`
+    )
+    .all(date) as BasecampEvent[];
+
+  const mine: BasecampEvent[] = [];
+  const others: BasecampEvent[] = [];
+  for (const event of all) {
+    (eventHasParticipant(event, names) ? mine : others).push(event);
+  }
+  return { mine, others };
+}
+
 export function lastEventSyncAt(): string | null {
   const row = getDb()
     .prepare(`SELECT MAX(synced_at) AS at FROM basecamp_events`)

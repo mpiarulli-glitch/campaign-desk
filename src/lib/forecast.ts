@@ -54,13 +54,19 @@ export function createTask(input: {
   priority?: ForecastPriority;
   basecampTodoId?: string;
   basecampProjectId?: string;
+  basecampEventId?: string;
 }): ForecastTask {
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
+  // A row is a todo or a meeting, never both. If somehow given both, the meeting
+  // wins and the todo link is dropped, so booking a meeting can never end up
+  // closing an unrelated todo when the row is ticked off.
+  const eventId = (input.basecampEventId || "").trim();
+  const todoId = eventId ? "" : (input.basecampTodoId || "").trim();
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, basecamp_todo_id, basecamp_project_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, basecamp_todo_id, basecamp_project_id, basecamp_event_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -69,8 +75,9 @@ export function createTask(input: {
     (input.notes || "").trim(),
     input.hours,
     normPriority(input.priority),
-    (input.basecampTodoId || "").trim(),
+    todoId,
     (input.basecampProjectId || "").trim(),
+    eventId,
     ts,
     ts
   );

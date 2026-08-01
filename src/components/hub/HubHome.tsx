@@ -5,10 +5,9 @@ import { useEffect, useState } from "react";
 import { Avatar } from "../Avatar";
 import { avatarFor } from "@/lib/team";
 
-type Section = "chat" | "resources" | "sops" | "training" | "todos" | "sentiment" | "hr";
+type Section = "chat" | "resources" | "sops" | "training" | "sentiment" | "hr";
 type Member = { slug: string; label: string };
 type Msg = { id: string; author_name: string; author_slug: string; is_client: number; body: string; created_at: string };
-type Todo = { id: string; assignee: string; status: string };
 type Sop = { id: string; title: string; category: string };
 type Post = { id: string; title: string; kind: string; created_at: string };
 type Course = { id: string; slug: string; title: string; kind: string; lesson_count: number };
@@ -74,7 +73,6 @@ export function HubHome({
 }) {
   const [team, setTeam] = useState<Member[]>([]);
   const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [todos, setTodos] = useState<Todo[]>([]);
   const [sops, setSops] = useState<Sop[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -85,7 +83,6 @@ export function HubHome({
   useEffect(() => {
     fetch("/api/team").then((r) => (r.ok ? r.json() : { team: [] })).then((d) => setTeam(d.team || []));
     fetch("/api/chat?room=team").then((r) => (r.ok ? r.json() : { messages: [] })).then((d) => setMsgs(d.messages || []));
-    fetch("/api/todos?client_id=none").then((r) => (r.ok ? r.json() : { todos: [] })).then((d) => setTodos(d.todos || []));
     fetch("/api/hub/sops").then((r) => (r.ok ? r.json() : { sops: [] })).then((d) => setSops(d.sops || []));
     fetch("/api/hub/training").then((r) => (r.ok ? r.json() : { posts: [] })).then((d) => setPosts(d.posts || []));
     fetch("/api/hub/courses").then((r) => (r.ok ? r.json() : { courses: [] })).then((d) => setCourses(d.courses || []));
@@ -105,16 +102,8 @@ export function HubHome({
   const labels = team.map((m) => m.label);
 
   const msgsToday = msgs.filter((m) => isToday(m.created_at)).length;
-  const openTodos = todos.filter((t) => t.status === "open");
   const recentMsgs = msgs.slice(-3);
 
-  // per-person open counts (team order, cap the card to a handful)
-  const perPerson = team
-    .map((m) => ({ m, n: openTodos.filter((t) => t.assignee === m.slug).length }))
-    .filter((x) => x.n > 0)
-    .sort((a, b) => b.n - a.n)
-    .slice(0, 6);
-  const maxN = Math.max(1, ...perPerson.map((x) => x.n));
 
   const pulseAvg = checkins && checkins.length ? checkins.reduce((s, c) => s + c.score, 0) / checkins.length : null;
   const latestPost = posts[0] || null;
@@ -130,15 +119,13 @@ export function HubHome({
         <h1>{greeting()}{firstName ? `, ${firstName}` : ""}.</h1>
         <p>
           The team&apos;s home base.{" "}
-          {msgsToday > 0 ? <><b>{msgsToday} message{msgsToday === 1 ? "" : "s"}</b> today, </> : null}
-          <b>{openTodos.length} to-do{openTodos.length === 1 ? "" : "s"}</b> open across the crew
-          {pulseAvg != null ? <>, and this month&apos;s pulse sits at <b>{pulseAvg.toFixed(1)}</b>.</> : "."}
+          {msgsToday > 0 ? <><b>{msgsToday} message{msgsToday === 1 ? "" : "s"}</b> today</> : null}
+          {pulseAvg != null ? <>{msgsToday > 0 ? ", and" : ""} this month&apos;s pulse sits at <b>{pulseAvg.toFixed(1)}</b>.</> : "."}
         </p>
       </div>
 
       <div className="hq-pulse">
         <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#04808d" }} /><span className="n">{msgsToday}</span><span className="l">messages today</span></div>
-        <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#b8820b" }} /><span className="n">{openTodos.length}</span><span className="l">open to-dos</span></div>
         <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#c25d8a" }} /><span className="n">{pulseAvg != null ? pulseAvg.toFixed(1) : myScore != null ? myScore : "—"}</span><span className="l">team pulse</span></div>
         {isAdmin ? <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#5a6b7b" }} /><span className="n">{hrOpen ?? 0}</span><span className="l">HR open</span></div> : null}
       </div>
@@ -167,32 +154,6 @@ export function HubHome({
             ))
           )}
           <div className="hq-chat-foot">Message the team…</div>
-        </button>
-
-        {/* TODOS */}
-        <button className="hq-card t-todo span2" onClick={() => onOpen("todos")}>
-          <div className="hq-card-head">
-            <span className="hq-icon"><Icon name="todo" /></span>
-            <div><h3 className="hq-card-title">Team To-dos</h3><p className="hq-card-desc">Internal work, per person</p></div>
-            <span className="hq-arrow">→</span>
-          </div>
-          <div className="hq-divider" />
-          {perPerson.length === 0 ? (
-            <p className="muted" style={{ margin: 0 }}>Nothing open right now.</p>
-          ) : (
-            <div className="hq-todo-people">
-              {perPerson.map(({ m, n }) => (
-                <div key={m.slug} className="hq-tp-wrap">
-                  <div className="hq-tp">
-                    <Avatar label={m.label} src={avatarFor(m.slug)} size={24} />
-                    <span className="nm">{m.label}</span>
-                    <span className="ct">{n}</span>
-                  </div>
-                  <div className="hq-bar"><i style={{ width: `${Math.round((n / maxN) * 100)}%` }} /></div>
-                </div>
-              ))}
-            </div>
-          )}
         </button>
 
         {/* RESOURCES */}

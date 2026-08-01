@@ -30,8 +30,33 @@ export function isValidPerson(slug: string): boolean {
   return PEOPLE.some((p) => p.slug === slug);
 }
 
+// Exactly who can see Production scheduling, by slug. An explicit list rather
+// than "any admin", because being an admin and needing the shoot schedule are
+// different things: Carlos is an admin on the SEO side and has no reason to see
+// it. The owner is included so the rule reads in one place, though the owner
+// passes every check anyway.
+export const PRODUCTION_ACCESS: readonly string[] = [
+  OWNER_SLUG, // michael
+  "jack",
+  "paula",
+  "randi",
+  "cassidy",
+  "sylvia",
+  "luis_romero",
+  "kyle_morris",
+  "kyle_onstott",
+] as const;
+
 export function hasProductionAccess(slug: string): boolean {
-  return PEOPLE.some((p) => p.slug === slug && p.productionAccess);
+  return PRODUCTION_ACCESS.includes(slug);
+}
+
+// SEO side of the team. They work on blog content only, so the campaigns list is
+// filtered to blog assets for them rather than showing every client email.
+export const SEO_ONLY_PEOPLE: readonly string[] = ["abel", "carlos"] as const;
+
+export function isSeoOnly(slug: string | null): boolean {
+  return Boolean(slug) && SEO_ONLY_PEOPLE.includes(slug as string);
 }
 
 export function entryLevelPeople() {
