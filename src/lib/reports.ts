@@ -8,7 +8,7 @@
 // Reports are read-only aggregations over existing tables. Nothing here writes.
 
 import { getDb } from "./db";
-import { PEOPLE, personLabel } from "./people";
+import { PEOPLE, personLabel, teamLabelFor } from "./people";
 import { teamLabel } from "./team";
 
 export type ReportType =
@@ -378,7 +378,7 @@ function deliverables(): ReportSection[] {
   const names = clientNames();
   const rows = getDb()
     .prepare(
-      `SELECT d.client_id, d.name, d.category, d.kind, d.cadence, d.cadence_unit,
+      `SELECT d.client_id, d.name, d.category, d.team, d.kind, d.cadence, d.cadence_unit,
               d.due_date, d.active,
               (SELECT COUNT(*) FROM snapshot_entries e WHERE e.deliverable_id = d.id) AS entries,
               (SELECT MAX(e.week_start) FROM snapshot_entries e WHERE e.deliverable_id = d.id) AS last_week
@@ -389,6 +389,7 @@ function deliverables(): ReportSection[] {
     client_id: string;
     name: string;
     category: string;
+    team: string;
     kind: string;
     cadence: string;
     cadence_unit: string;
@@ -400,6 +401,9 @@ function deliverables(): ReportSection[] {
 
   const active = rows.filter((r) => r.active);
   const neverReported = active.filter((r) => !r.entries);
+  // Untagged deliverables are visible to every team, so a high count here means
+  // the snapshot is not actually scoped yet.
+  const untagged = active.filter((r) => !r.team);
 
   return [
     {
@@ -413,17 +417,23 @@ function deliverables(): ReportSection[] {
           value: String(neverReported.length),
           hint: neverReported.length ? "no snapshot entry yet" : "all covered",
         },
+        {
+          label: "No owning team",
+          value: String(untagged.length),
+          hint: untagged.length ? "shown to every team" : "all tagged",
+        },
       ],
     },
     {
       title: "Deliverables",
-      columns: ["Client", "Deliverable", "Category", "Kind", "Cadence", "Entries", "Last reported"],
-      numeric: [5],
+      columns: ["Client", "Deliverable", "Category", "Team", "Kind", "Cadence", "Entries", "Last reported"],
+      numeric: [6],
       empty: "No deliverables set up.",
       rows: active.map((r) => [
         names.get(r.client_id) || "Unknown client",
         r.name,
         r.category || "—",
+        r.team ? teamLabelFor(r.team) : "Any",
         titleCaseStatus(r.kind),
         r.cadence || r.cadence_unit || "—",
         String(r.entries),

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
 import { createDeliverable, getAccount, listDeliverables } from "@/lib/snapshot";
 import type { CadenceUnit } from "@/lib/db";
 
@@ -16,7 +16,9 @@ export async function GET(_request: Request, { params }: Params) {
   if (!getAccount(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json({ deliverables: listDeliverables(id) });
+  return NextResponse.json({
+    deliverables: listDeliverables(id, { team: await sessionTeam() }),
+  });
 }
 
 export async function POST(request: Request, { params }: Params) {
@@ -35,6 +37,9 @@ export async function POST(request: Request, { params }: Params) {
   const deliverable = createDeliverable({
     clientId: id,
     category: typeof body.category === "string" ? body.category : "",
+    // Anything that isn't a known team slug is normalised to unassigned in the
+    // lib, so a stale client can't write a bogus team.
+    team: typeof body.team === "string" ? body.team : "",
     name,
     cadence: typeof body.cadence === "string" ? body.cadence : "",
     kind: body.kind === "one_time" ? "one_time" : "recurring",

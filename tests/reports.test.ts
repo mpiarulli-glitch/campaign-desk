@@ -159,10 +159,17 @@ test("reports", async (t) => {
     const stats = r.sections[0].stats!;
     assert.equal(stats.find((s) => s.label === "Active deliverables")?.value, "2");
     assert.equal(stats.find((s) => s.label === "Never reported on")?.value, "1");
+    // Neither fixture was tagged, so both count as unscoped.
+    assert.equal(stats.find((s) => s.label === "No owning team")?.value, "2");
 
     const table = r.sections.find((s) => s.title === "Deliverables")!;
     const audit = table.rows!.find((row) => row[1] === "Site audit")!;
-    assert.equal(audit[6], "Never");
+    // Looked up by column name rather than position, so adding a column to the
+    // report does not break this assertion the way a hardcoded index did.
+    const col = (name: string) => audit[table.columns!.indexOf(name)];
+    assert.equal(col("Last reported"), "Never");
+    // Untagged deliverables read as "Any", i.e. visible to every team.
+    assert.equal(col("Team"), "Any");
   });
 
   await t.test("weekly snapshots roll up by client", () => {

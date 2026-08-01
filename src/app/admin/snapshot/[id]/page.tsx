@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+import { TEAMS } from "@/lib/people";
 
 type Win = { id: string; body: string; happened_on: string };
 type MetricRow = { id: string; metric: string; period: string; value: number; unit: string };
@@ -54,6 +55,7 @@ const CADENCE_UNIT_LABEL: Record<CadenceUnit, string> = {
 type Deliverable = {
   id: string;
   category: string;
+  team: string;
   name: string;
   cadence: string;
   kind: Kind;
@@ -106,6 +108,7 @@ export default function SnapshotEditorPage() {
   const [view, setView] = useState<"team" | "client">("team");
   const [nd, setNd] = useState<{
     category: string;
+    team: string;
     name: string;
     cadence: string;
     kind: Kind;
@@ -113,6 +116,7 @@ export default function SnapshotEditorPage() {
     dueDate: string;
   }>({
     category: "",
+    team: "",
     name: "",
     cadence: "",
     kind: "recurring",
@@ -243,7 +247,9 @@ export default function SnapshotEditorPage() {
       body: JSON.stringify(nd),
     });
     if (!res.ok) { setError("Could not add deliverable."); return; }
-    setNd({ category: nd.category, name: "", cadence: "", kind: nd.kind, cadenceUnit: nd.cadenceUnit, dueDate: "" });
+    // Category and team persist between adds: deliverables are usually entered
+    // a group at a time.
+    setNd({ category: nd.category, team: nd.team, name: "", cadence: "", kind: nd.kind, cadenceUnit: nd.cadenceUnit, dueDate: "" });
     await loadMeta();
     fetchWeek(week);
   }
@@ -422,6 +428,15 @@ export default function SnapshotEditorPage() {
                   <div key={d.id} className="snap-deliv-edit">
                     <input defaultValue={d.category} placeholder="Category"
                       onBlur={(e) => e.target.value !== d.category && updateDeliverable(d.id, { category: e.target.value })} />
+                    {/* Owning team. Unassigned stays visible to everyone, which
+                        is why "Any team" is a real choice and not a blank. */}
+                    <select defaultValue={d.team || ""} aria-label="Owning team"
+                      onChange={(e) => updateDeliverable(d.id, { team: e.target.value })}>
+                      <option value="">Any team</option>
+                      {TEAMS.map((t) => (
+                        <option key={t.slug} value={t.slug}>{t.label}</option>
+                      ))}
+                    </select>
                     <input defaultValue={d.name} placeholder="Deliverable"
                       onBlur={(e) => e.target.value !== d.name && updateDeliverable(d.id, { name: e.target.value })} />
                     <input defaultValue={d.cadence} placeholder="Cadence (e.g. 2x/mo)"
@@ -451,6 +466,12 @@ export default function SnapshotEditorPage() {
             )}
             <form className="snap-deliv-edit" onSubmit={addDeliverable}>
               <input value={nd.category} onChange={(e) => setNd({ ...nd, category: e.target.value })} placeholder="Category" />
+              <select value={nd.team} onChange={(e) => setNd({ ...nd, team: e.target.value })} aria-label="Owning team">
+                <option value="">Any team</option>
+                {TEAMS.map((t) => (
+                  <option key={t.slug} value={t.slug}>{t.label}</option>
+                ))}
+              </select>
               <input value={nd.name} onChange={(e) => setNd({ ...nd, name: e.target.value })} placeholder="New deliverable" />
               <input value={nd.cadence} onChange={(e) => setNd({ ...nd, cadence: e.target.value })} placeholder="Cadence" />
               <select value={nd.kind} onChange={(e) => setNd({ ...nd, kind: e.target.value as Kind })}>

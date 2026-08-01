@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
 import {
   behindDeliverablesForClient,
   contractStatus,
@@ -23,7 +23,8 @@ export async function GET(_request: Request, { params }: Params) {
   }
   return NextResponse.json({
     account: { id: account.id, name: account.name },
-    deliverables: listDeliverables(id),
+    // Scoped to the viewer's team; admins and the owner get everything.
+    deliverables: listDeliverables(id, { team: await sessionTeam() }),
     token: getOrCreateToken(id),
     wins: listWins(id),
     metricsRaw: listMetricsRaw(id),

@@ -74,6 +74,64 @@ export function campaignKindFor(slug: string | null): "blog" | null {
   return focus.length === 1 && focus[0] === "blog_post" ? "blog" : null;
 }
 
+/* ---------------------------------------------------------------------------
+   Teams
+   ---------------------------------------------------------------------------
+   A team owns deliverables. The weekly snapshot shows someone the portion their
+   team is responsible for, which needs two halves: which team a person is on
+   (below) and which team owns a deliverable (snapshot_deliverables.team).
+
+   Both halves fail open. A person with no team, or a deliverable with no team,
+   is unscoped and visible — so an unassigned row is a row somebody still sees,
+   never one that silently vanishes.
+   ------------------------------------------------------------------------- */
+export type Team = "email" | "seo" | "social" | "web";
+
+export const TEAMS: Array<{ slug: Team; label: string }> = [
+  { slug: "email", label: "Email" },
+  { slug: "seo", label: "SEO" },
+  { slug: "social", label: "Social" },
+  { slug: "web", label: "Web" },
+];
+
+export function isTeam(v: unknown): v is Team {
+  return TEAMS.some((t) => t.slug === v);
+}
+
+export function teamLabelFor(slug: string): string {
+  return TEAMS.find((t) => t.slug === slug)?.label || slug;
+}
+
+/**
+ * Which team each person is on.
+ *
+ * Only the assignments that have actually been stated live here. Anyone absent
+ * is unscoped and sees every team's portion, which is the safe direction: the
+ * cost of a missing entry is someone seeing too much, not a team losing sight of
+ * its own work.
+ */
+export const PERSON_TEAM: Record<string, Team> = {
+  // Stated: the SEO pair, social, and web.
+  abel: "seo",
+  carlos: "seo",
+  randi: "social",
+  roy: "web",
+};
+
+export function personTeam(slug: string | null): Team | null {
+  if (!slug) return null;
+  return PERSON_TEAM[slug] ?? null;
+}
+
+// Roster members with no team yet. Surfaced in the admin UI so the gaps are
+// visible rather than being discovered when someone sees more than expected.
+export function peopleWithoutTeam(): Array<{ slug: string; label: string }> {
+  return PEOPLE.filter((p) => !PERSON_TEAM[p.slug]).map((p) => ({
+    slug: p.slug,
+    label: p.label,
+  }));
+}
+
 export function personLabel(slug: string): string {
   return PEOPLE.find((p) => p.slug === slug)?.label || slug;
 }

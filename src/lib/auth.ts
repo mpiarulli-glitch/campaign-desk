@@ -6,7 +6,9 @@ import {
   doesCampaignWork,
   hasProductionAccess,
   isValidPerson,
+  personTeam,
   OWNER_SLUG,
+  type Team,
 } from "./people";
 import { authenticate, getUser, recordLogin } from "./users";
 
@@ -262,6 +264,21 @@ export async function sessionFocusSlug(): Promise<string | null> {
   if (!session) return null;
   if (session.role === "admin" && session.person === null) return null;
   return session.person;
+}
+
+/**
+ * The team whose portion of the snapshot this session should see, or null for no
+ * scoping.
+ *
+ * Null for the owner and for every admin account: they were asked to keep the
+ * full picture. Null also for anyone whose team has not been set, which errs
+ * toward showing too much rather than hiding a team's own work from it.
+ */
+export async function sessionTeam(): Promise<Team | null> {
+  const session = await getSession();
+  if (!session) return null;
+  if (session.role === "admin") return null;
+  return personTeam(session.person);
 }
 
 // True when the campaigns list and any campaign opened should be limited to blog

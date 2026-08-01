@@ -286,6 +286,9 @@ export interface SnapshotDeliverable {
   id: string;
   client_id: string;
   category: string;
+  // Owning team slug (see Team in ./people), or "" for unassigned. Unassigned
+  // deliverables stay visible to every team.
+  team: string;
   name: string;
   cadence: string;
   // "one_time" deliverables are setup work that completes once, then sinks to
@@ -922,6 +925,9 @@ export function getDb(): Database.Database {
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT '',
+      /* Owning team (see Team in ./people). Empty means unassigned, which stays
+         visible to everyone rather than disappearing from every view. */
+      team TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       cadence TEXT NOT NULL DEFAULT '',
       kind TEXT NOT NULL DEFAULT 'recurring',
@@ -1632,6 +1638,13 @@ function migrate(database: Database.Database) {
 
   // Deliverable kind (recurring vs one-time setup), added after the table shipped.
   const snapDelivCols = tableColumns(database, "snapshot_deliverables");
+  // Owning team, for scoping the weekly snapshot. Defaults to empty, i.e. every
+  // existing deliverable stays visible to everyone until it is tagged.
+  if (snapDelivCols.length && !snapDelivCols.includes("team")) {
+    database.exec(
+      `ALTER TABLE snapshot_deliverables ADD COLUMN team TEXT NOT NULL DEFAULT ''`
+    );
+  }
   if (snapDelivCols.length && !snapDelivCols.includes("kind")) {
     database.exec(
       `ALTER TABLE snapshot_deliverables ADD COLUMN kind TEXT NOT NULL DEFAULT 'recurring'`

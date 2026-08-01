@@ -9,7 +9,11 @@ import {
   doesCampaignWork,
   hasProductionAccess,
   isSeoOnly,
+  isTeam,
+  peopleWithoutTeam,
+  personTeam,
   teamFocus,
+  PERSON_TEAM,
   OWNER_SLUG,
 } from "../src/lib/people";
 import { ADMIN_PEOPLE } from "../src/lib/admin-people";
@@ -147,4 +151,49 @@ test("isSeoOnly still agrees with the focus map", () => {
     assert.equal(campaignKindFor(slug), "blog", `${slug} should be blog-scoped`);
   }
   assert.equal(isSeoOnly("randi"), false);
+});
+
+/* -------------------------------------------------------------------- teams */
+
+test("the stated team assignments are in place", () => {
+  assert.equal(personTeam("abel"), "seo");
+  assert.equal(personTeam("carlos"), "seo");
+  assert.equal(personTeam("randi"), "social");
+  assert.equal(personTeam("roy"), "web");
+});
+
+test("an unassigned person is unscoped rather than shut out", () => {
+  // Failing open matters here: a missing entry should mean "sees everything",
+  // never "sees nothing", or a team would lose sight of its own work.
+  assert.equal(personTeam("jack"), null);
+  assert.equal(personTeam("paula"), null);
+  assert.equal(personTeam(OWNER_SLUG), null);
+  assert.equal(personTeam(null), null);
+  assert.equal(personTeam("not-a-person"), null);
+});
+
+test("peopleWithoutTeam lists exactly the gaps still to be filled", () => {
+  const gaps = peopleWithoutTeam().map((p) => p.slug).sort();
+  const assigned = Object.keys(TEAM_FOCUS);
+  // Nobody with a stated team should appear as a gap.
+  for (const slug of ["abel", "carlos", "randi", "roy"]) {
+    assert.ok(!gaps.includes(slug), `${slug} has a team and should not be a gap`);
+  }
+  assert.ok(gaps.includes("jack"), "jack has no team yet");
+  assert.ok(assigned.length > 0);
+});
+
+test("every team slug on a person is a real team", () => {
+  for (const slug of Object.values(PERSON_TEAM)) {
+    assert.equal(isTeam(slug), true, `${slug} is not a known team`);
+  }
+});
+
+test("isTeam rejects anything not on the list", () => {
+  assert.equal(isTeam("email"), true);
+  assert.equal(isTeam("seo"), true);
+  assert.equal(isTeam(""), false);
+  assert.equal(isTeam("Email"), false, "team slugs are lowercase");
+  assert.equal(isTeam("design"), false);
+  assert.equal(isTeam(null), false);
 });

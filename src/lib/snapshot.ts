@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { isTeam } from "./people";
 import {
   getDb,
   nowIso,
@@ -147,14 +148,29 @@ export function getAccountByToken(token: string): RevClient | null {
 
 /* -------------------------------------------------------- deliverables */
 
-export function listDeliverables(clientId: string): SnapshotDeliverable[] {
+/**
+ * A client's active deliverables.
+ *
+ * `team` narrows the list to what that team owns, which is how the weekly
+ * snapshot shows someone their own portion. Untagged deliverables (team = '')
+ * are always included: an unassigned row should be visible to everyone rather
+ * than to nobody. Pass no team to see all of them, which is what admins and the
+ * owner get.
+ */
+export function listDeliverables(
+  clientId: string,
+  opts?: { team?: string | null }
+): SnapshotDeliverable[] {
+  const team = opts?.team;
+  const filter = team ? "AND (team = ? OR team = '')" : "";
+  const params = team ? [clientId, team] : [clientId];
   return getDb()
     .prepare(
       `SELECT * FROM snapshot_deliverables
-       WHERE client_id = ? AND active = 1
+       WHERE client_id = ? AND active = 1 ${filter}
        ORDER BY sort_order ASC, created_at ASC`
     )
-    .all(clientId) as SnapshotDeliverable[];
+    .all(...params) as SnapshotDeliverable[];
 }
 
 export function createDeliverable(input: {
@@ -165,6 +181,7 @@ export function createDeliverable(input: {
   kind?: DeliverableKind;
   cadenceUnit?: CadenceUnit;
   dueDate?: string | null;
+  team?: string;
 }): SnapshotDeliverable {
   const db = getDb();
   const id = nanoid(12);
@@ -176,12 +193,13 @@ export function createDeliverable(input: {
     .get(input.clientId) as { m: number };
   db.prepare(
     `INSERT INTO snapshot_deliverables
-      (id, client_id, category, name, cadence, kind, cadence_unit, due_date, sort_order, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      (id, client_id, category, team, name, cadence, kind, cadence_unit, due_date, sort_order, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     id,
     input.clientId,
     input.category.trim(),
+    isTeam(input.team) ? input.team : "",
     input.name.trim(),
     input.cadence.trim(),
     normKind(input.kind),
@@ -214,6 +232,7 @@ export function updateDeliverable(
     cadenceUnit: CadenceUnit;
     dueDate: string | null;
     sortOrder: number;
+    team: string;
   }>
 ): SnapshotDeliverable | null {
   const existing = getDeliverable(id);
@@ -221,11 +240,17 @@ export function updateDeliverable(
   getDb()
     .prepare(
       `UPDATE snapshot_deliverables
-       SET category = ?, name = ?, cadence = ?, kind = ?, cadence_unit = ?, due_date = ?, sort_order = ?, updated_at = ?
+       SET category = ?, team = ?, name = ?, cadence = ?, kind = ?, cadence_unit = ?, due_date = ?, sort_order = ?, updated_at = ?
        WHERE id = ?`
     )
     .run(
       updates.category?.trim() ?? existing.category,
+      // An explicit "" clears the tag, so undefined is the only "leave alone".
+      updates.team === undefined
+        ? existing.team
+        : isTeam(updates.team)
+          ? updates.team
+          : "",
       updates.name?.trim() ?? existing.name,
       updates.cadence?.trim() ?? existing.cadence,
       updates.kind ? normKind(updates.kind) : existing.kind,

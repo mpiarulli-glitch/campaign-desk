@@ -23,6 +23,8 @@ export async function PATCH(request: Request, { params }: Params) {
   }
   const deliverable = updateDeliverable(id, {
     category: typeof body.category === "string" ? body.category : undefined,
+    // An empty string is meaningful here: it clears the tag back to "any team".
+    team: typeof body.team === "string" ? body.team : undefined,
     name: typeof body.name === "string" ? body.name : undefined,
     cadence: typeof body.cadence === "string" ? body.cadence : undefined,
     kind:
