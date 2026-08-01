@@ -1057,25 +1057,41 @@ function personIsClient(p: { client?: boolean; employee?: boolean } | undefined)
   return Boolean(p.client) && !p.employee;
 }
 
+// Basecamp pages collections at 15.
+const BC_PAGE = 15;
+// Ceiling on comment paging per thread, so one runaway thread can't stall a
+// whole sweep. 20 pages is 300 comments; a message board thread that long is
+// not something this account produces.
+const MAX_COMMENT_PAGES = 20;
+
 /**
  * Message-board threads for a project, with their comments.
  *
- * Capped deliberately: this runs across every client on a sweep, and Basecamp
- * pages at 15. `maxThreads` bounds the comment fan-out, which is one request
- * per thread and the expensive half of the call.
+ * Two things here are correctness-critical rather than performance tuning.
+ *
+ * Comments come back oldest-first, and the verdict depends on the NEWEST post
+ * from each side, so a short page cap does not just lose detail — it loses the
+ * end of the conversation and reports an answered thread as unanswered. Pages
+ * are therefore derived from comments_count so the sweep always reads through
+ * to the last comment.
+ *
+ * maxThreads is a genuine cap, and it is set high because this report is about
+ * old messages: trimming to the most recent threads would drop exactly the ones
+ * worth surfacing. The caller is told when it bites rather than left to assume
+ * full coverage.
  */
 export async function listProjectMessages(
   projectId: string,
-  maxThreads = 30
-): Promise<BcMessageThread[]> {
-  if (!projectId) return [];
+  maxThreads = 200
+): Promise<{ threads: BcMessageThread[]; droppedThreads: number }> {
+  if (!projectId) return { threads: [], droppedThreads: 0 };
   try {
     const pr = await bc(`/projects/${projectId}.json`);
-    if (!pr.ok) return [];
+    if (!pr.ok) return { threads: [], droppedThreads: 0 };
     const project = await pr.json();
     const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
     const board = dock.find((d) => d.name === "message_board" && d.enabled !== false);
-    if (!board) return [];
+    if (!board) return { threads: [], droppedThreads: 0 };
 
     const raw = await bcCollection<{
       id: number;
@@ -1085,12 +1101,21 @@ export async function listProjectMessages(
       app_url?: string;
       comments_count?: number;
       creator?: { name?: string; client?: boolean; employee?: boolean };
-    }>(`/buckets/${projectId}/message_boards/${board.id}/messages.json`);
+    }>(
+      `/buckets/${projectId}/message_boards/${board.id}/messages.json`,
+      Math.ceil(maxThreads / BC_PAGE)
+    );
 
     const threads = raw.slice(0, maxThreads);
+    const droppedThreads = Math.max(0, raw.length - threads.length);
 
-    return await Promise.all(
+    const built = await Promise.all(
       threads.map(async (m) => {
+        // Read to the end of the thread: the last comment decides the verdict.
+        const pages = Math.min(
+          MAX_COMMENT_PAGES,
+          Math.max(1, Math.ceil((m.comments_count ?? BC_PAGE) / BC_PAGE))
+        );
         // Skip the round trip when Basecamp already says there are none.
         const comments =
           m.comments_count === 0
@@ -1098,7 +1123,7 @@ export async function listProjectMessages(
             : await bcCollection<{
                 created_at: string;
                 creator?: { name?: string; client?: boolean; employee?: boolean };
-              }>(`/buckets/${projectId}/recordings/${m.id}/comments.json`, 2);
+              }>(`/buckets/${projectId}/recordings/${m.id}/comments.json`, pages);
 
         return {
           id: m.id,
@@ -1117,8 +1142,10 @@ export async function listProjectMessages(
         };
       })
     );
+
+    return { threads: built, droppedThreads };
   } catch {
-    return [];
+    return { threads: [], droppedThreads: 0 };
   }
 }
 

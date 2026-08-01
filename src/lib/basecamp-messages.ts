@@ -69,6 +69,8 @@ export interface MessageSyncResult {
   projects: number;
   threads: number;
   awaiting: number;
+  /** Threads beyond the per-project cap, reported rather than silently lost. */
+  droppedThreads: number;
 }
 
 /**
@@ -80,7 +82,14 @@ export interface MessageSyncResult {
  */
 export async function syncClientMessages(): Promise<MessageSyncResult> {
   if (!basecampConnected()) {
-    return { ok: false, error: "Basecamp isn't connected.", projects: 0, threads: 0, awaiting: 0 };
+    return {
+      ok: false,
+      error: "Basecamp isn't connected.",
+      projects: 0,
+      threads: 0,
+      awaiting: 0,
+      droppedThreads: 0,
+    };
   }
 
   const clients = listRevClients(true).filter((c) => c.basecamp_project_id);
@@ -91,16 +100,19 @@ export async function syncClientMessages(): Promise<MessageSyncResult> {
       projects: 0,
       threads: 0,
       awaiting: 0,
+      droppedThreads: 0,
     };
   }
 
   const db = getDb();
   const ts = nowIso();
   const rows: BasecampClientMessage[] = [];
+  let dropped = 0;
 
   for (const client of clients) {
     const projectId = String(client.basecamp_project_id);
-    const threads = await listProjectMessages(projectId);
+    const { threads, droppedThreads } = await listProjectMessages(projectId);
+    dropped += droppedThreads;
     for (const t of threads) {
       const verdict = judgeThread(t);
       // Threads our own people talk on among themselves aren't the point.
@@ -148,6 +160,7 @@ export async function syncClientMessages(): Promise<MessageSyncResult> {
     projects: clients.length,
     threads: rows.length,
     awaiting: rows.filter((r) => r.awaiting_reply).length,
+    droppedThreads: dropped,
   };
 }
 
@@ -171,4 +184,24 @@ export function clientsMissingProjectId(): string[] {
   return listRevClients(true)
     .filter((c) => !c.basecamp_project_id)
     .map((c) => c.name);
+}
+
+// Same 12h staleness rule as the events sweep. There is no scheduler in this
+// app, so boot is what keeps the cache current — without this the table only
+// ever fills when somebody POSTs the route by hand, and the report shows an
+// empty queue that looks like good news.
+const STALE_AFTER_MS = 12 * 3600 * 1000;
+
+export async function syncClientMessagesIfStale(): Promise<void> {
+  try {
+    const last = lastMessageSyncAt();
+    if (last && Date.now() - new Date(last).getTime() < STALE_AFTER_MS) return;
+    if (!basecampConnected()) return;
+    const r = await syncClientMessages();
+    console.log(
+      `[basecamp-messages] ${r.ok ? "synced" : "failed"} projects=${r.projects} threads=${r.threads} awaiting=${r.awaiting} dropped=${r.droppedThreads}${r.error ? ` error=${r.error}` : ""}`
+    );
+  } catch (err) {
+    console.error("[basecamp-messages] sync failed", (err as Error).message);
+  }
 }

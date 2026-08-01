@@ -72,6 +72,18 @@ test("a thread answered after several client posts is settled", () => {
   assert.equal(v.lastTeamAt, at(2));
 });
 
+test("a long thread is judged on its newest comment, not its first page", () => {
+  // The regression: comments come back oldest-first, and the sweep used to read
+  // only two pages (30 comments). On a busier thread that meant never seeing our
+  // reply, so an answered thread was reported as waiting on us.
+  const replies: Array<[boolean, number]> = [];
+  for (let i = 40; i > 1; i--) replies.push([true, i]); // 39 client comments
+  replies.push([false, 1]); // our answer, newest and on the fourth page
+  const v = judgeThread(thread(true, 41, replies));
+  assert.equal(v.awaitingReply, false, "the newest post is ours, so nothing is waiting");
+  assert.equal(v.lastTeamAt, at(1));
+});
+
 test("posts with no timestamp are ignored rather than crashing the sweep", () => {
   const t = thread(true, 5);
   t.replies = [{ createdAt: "", authorName: "MEG Person", authorIsClient: false }];

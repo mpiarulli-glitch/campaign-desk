@@ -20,4 +20,8 @@ export async function register() {
   // There's no scheduler here, so boot is what keeps it current.
   const { syncBasecampEventsIfStale } = await import("./lib/basecamp-events");
   void syncBasecampEventsIfStale();
+
+  // Same deal for the unanswered-client-messages cache behind that report.
+  const { syncClientMessagesIfStale } = await import("./lib/basecamp-messages");
+  void syncClientMessagesIfStale();
 }
