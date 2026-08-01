@@ -43,16 +43,31 @@ function normalizeStatus(v: unknown): SendStatus {
 
 // Sends whose date falls in [start, end] (inclusive), ascending. Dates are
 // YYYY-MM-DD strings so lexical comparison is chronological.
-export function listSends(start: string, end: string): SendWithClient[] {
+// `assetTypes` narrows to the kinds of work a team owns (see TEAM_FOCUS). An
+// empty list returns no sends, which is how "does no campaign work" is spelled.
+export function listSends(
+  start: string,
+  end: string,
+  opts?: { assetTypes?: readonly AssetType[] }
+): SendWithClient[] {
+  // An empty list means "owns no campaign work", which must return nothing
+  // rather than falling through to no filter at all.
+  const types = opts?.assetTypes;
+  const filter = types
+    ? types.length
+      ? `AND s.asset_type IN (${types.map(() => "?").join(", ")})`
+      : "AND 1 = 0"
+    : "";
+  const params = types ? [start, end, ...types] : [start, end];
   return getDb()
     .prepare(
       `SELECT s.*, c.business_model AS business_model
        FROM scheduled_sends s
        LEFT JOIN rev_clients c ON c.id = s.client_id
-       WHERE s.send_date >= ? AND s.send_date <= ?
+       WHERE s.send_date >= ? AND s.send_date <= ? ${filter}
        ORDER BY s.send_date ASC, s.created_at ASC`
     )
-    .all(start, end) as SendWithClient[];
+    .all(...params) as SendWithClient[];
 }
 
 // Client-submitted production requests, including the people responsible for

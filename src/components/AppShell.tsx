@@ -4,8 +4,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { entryLevelPeople, hasProductionAccess, isSeoOnly, personLabel as forecastPersonLabel } from "@/lib/people";
+import { doesCampaignWork, entryLevelPeople, hasProductionAccess, campaignKindFor, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
+import {
+  applyTheme,
+  readThemeChoice,
+  storeThemeChoice,
+  type ThemeChoice,
+} from "@/lib/theme";
+
+const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "System" },
+];
 
 type Session = {
   role: "admin" | "forecast" | null;
@@ -88,10 +100,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
+  // Starts as "system" to match what the boot script assumed; the effect below
+  // corrects it from localStorage once mounted. Reading storage during render
+  // would mismatch the server-rendered HTML.
+  const [themeChoice, setThemeChoice] = useState<ThemeChoice>("system");
 
   useEffect(() => {
     setCollapsed(localStorage.getItem("cd-sidebar") !== "expanded");
+    setThemeChoice(readThemeChoice());
   }, []);
+
+  // While the choice is "System", follow the OS live rather than only at load,
+  // so the app changes with the person's schedule without a refresh.
+  useEffect(() => {
+    if (themeChoice !== "system") return;
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyTheme("system");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [themeChoice]);
+
+  function pickTheme(choice: ThemeChoice) {
+    setThemeChoice(choice);
+    storeThemeChoice(choice);
+    applyTheme(choice);
+  }
   function toggleCollapsed() {
     setCollapsed((v) => {
       const next = !v;
@@ -143,9 +176,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const canSeeProduction =
     session.owner || (Boolean(session.person) && hasProductionAccess(session.person!));
 
-  // The SEO side is forecast-role but works in Campaigns, where their list is
-  // filtered to blog assets server-side.
-  const seoOnly = isSeoOnly(session.person);
+  // Campaign features follow TEAM_FOCUS. Someone with a narrowed focus that
+  // still includes campaign work (the SEO side) gets Campaigns even on the
+  // forecast role; someone with an empty focus (the web team) loses the campaign
+  // pages entirely, Calendar included, since it is the campaign calendar.
+  const ownsCampaignWork = session.owner || doesCampaignWork(session.person);
+  const focusedOnCampaigns = campaignKindFor(session.person) !== null;
   const campaignsItem: NavItem = {
     href: "/admin/campaigns",
     label: "Campaigns",
@@ -156,15 +192,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ? [
         FORECAST_NAV[0],
         forecastItem,
-        ...(seoOnly ? [campaignsItem] : []),
-        ...FORECAST_NAV.slice(1),
+        ...(focusedOnCampaigns ? [campaignsItem] : []),
+        ...FORECAST_NAV.slice(1).filter(
+          (item) => ownsCampaignWork || item.href !== "/admin/calendar"
+        ),
         ...(canSeeProduction ? [productionItem] : []),
       ]
-    : ADMIN_NAV.flatMap((item) =>
-        item.href === "/admin/hub"
+    : ADMIN_NAV.flatMap((item) => {
+        if (!ownsCampaignWork && (item.href === "/admin/campaigns" || item.href === "/admin/calendar")) {
+          return [];
+        }
+        return item.href === "/admin/hub"
           ? [...(canSeeProduction ? [productionItem] : []), forecastItem, item]
-          : [item]
-      );
+          : [item];
+      });
 
   const meLabel = session.person
     ? (ADMIN_PEOPLE.find((p) => p.slug === session.person)?.label ||
@@ -259,6 +300,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <span className="app-ava">{initials(meLabel)}</span>
                     <div><b>{meLabel}</b><small>{session.owner ? "Owner" : session.role === "admin" ? "Admin" : "User"}</small></div>
                   </div>
+
+                  <div className="app-menu-sec">Appearance</div>
+                  <div className="app-theme-row" role="group" aria-label="Appearance">
+                    {THEME_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`app-theme-btn ${themeChoice === opt.value ? "is-on" : ""}`}
+                        aria-pressed={themeChoice === opt.value}
+                        onClick={() => pickTheme(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="app-menu-div" />
 
                   <div className="app-menu-sec">Personal tools</div>
                   <Link href={forecastHref} className="app-menu-i" onClick={() => setMenuOpen(false)}><Svg name="forecast" />Forecast</Link>

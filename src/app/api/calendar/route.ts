@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated } from "@/lib/auth";
+import { getSession, isAdminAuthenticated, sessionFocusSlug } from "@/lib/auth";
+import { teamFocus } from "@/lib/people";
 import { createSend, listSends } from "@/lib/calendar";
 import { listEventsBetween } from "@/lib/basecamp-events";
 
@@ -19,12 +20,27 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
-  const sends = listSends(start, end);
+  // People start on the slice of the calendar their team owns (TEAM_FOCUS), and
+  // ?all=1 lifts it. That makes this a default view rather than a wall, except
+  // for an empty focus, which means they do no campaign work at all.
+  const focusSlug = await sessionFocusSlug();
+  const focus = teamFocus(focusSlug);
+  const showAll = url.searchParams.get("all") === "1";
+  // An empty focus is not something a toggle should escape.
+  const ownsNothing = focus !== null && focus.length === 0;
+  const narrowed = focus !== null && (ownsNothing || !showAll);
+  const sends = listSends(start, end, narrowed ? { assetTypes: focus } : undefined);
   // Read-only mirror of Basecamp's schedules, refreshed by the events sync.
   // Only events belonging to a known client are surfaced — the account also
   // carries internal MEG project schedules, which would clutter a calendar
   // that's organised around clients.
   const events = listEventsBetween(start, end, { clientsOnly: true });
+  const scope = {
+    // Only offer the toggle to someone who has a focus they could step outside.
+    canToggle: focus !== null && !ownsNothing,
+    narrowed,
+    assetTypes: focus ?? null,
+  };
   if (session.role === "forecast") {
     return NextResponse.json({
       sends: sends.map((send) => ({
@@ -33,9 +49,10 @@ export async function GET(request: Request) {
         production_brief: "",
       })),
       events,
+      scope,
     });
   }
-  return NextResponse.json({ sends, events });
+  return NextResponse.json({ sends, events, scope });
 }
 
 export async function POST(request: Request) {

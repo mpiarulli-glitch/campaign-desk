@@ -953,10 +953,13 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
-  // Only for completed tasks that came from a Basecamp todo: there's nowhere to
-  // log against otherwise, and logging before the work is done is a guess.
+  // Only for completed rows linked to something in Basecamp, whether that is a
+  // todo or a meeting: there's nowhere to log against otherwise, and logging
+  // before the work is done is a guess. Meetings count, because the hours still
+  // belong on that project's timesheet.
   function LogTimeRow({ task }: { task: Task }) {
-    if (!task.basecamp_todo_id || !task.completed) return null;
+    const linked = task.basecamp_todo_id || task.basecamp_event_id;
+    if (!linked || !task.completed) return null;
     if (task.basecamp_time_entry_id) {
       return (
         <div className="muted" style={{ fontSize: 12, paddingLeft: 26, marginTop: 2 }}>

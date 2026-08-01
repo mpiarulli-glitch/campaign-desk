@@ -16,6 +16,36 @@
   --warning: #c48900;
   --danger: #d64545;
   --pin: #00d4e8;
+
+  /* Foreground colours for text sitting ON a filled surface. These exist so a
+     fill can flip between themes without its label being left unreadable:
+     --ink is near-black in light mode and near-white in dark, so anything
+     hardcoding white on top of it would invert into white-on-white. */
+  --on-ink: #ffffff;
+  --on-accent: #04333a;
+
+  /* Translucent surface for the blurred sticky header. Its own token because an
+     rgba() cannot be derived from an opaque one. */
+  --surface-veil: rgba(255, 255, 255, 0.82);
+
+  /* Chosen segment in a segmented control. */
+  --pill-bg: var(--ink);
+  --pill-text: var(--on-ink);
+
+  /* Label sitting on a --tool fill (hub/snapshot card CTAs). */
+  --tool-ink: #ffffff;
+
+  /* Tinted status surfaces: a pale wash plus the text colour that reads on it.
+     Kept as pairs because a light wash cannot simply be reused on a dark
+     background. */
+  --success-wash: #e8f6ee;
+  --success-ink: #16653d;
+  --warning-wash: #fdf6e6;
+  --warning-ink: #8a6200;
+  --danger-wash: #fdeceb;
+  --danger-ink: #a3282a;
+  --accent-wash: #ecfbfd;
+
   --radius: 12px;
   --radius-sm: 8px;
   --shadow:
@@ -28,7 +58,81 @@
   --font-head:
     var(--font-display), var(--font-inter), "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  color-scheme: light;
 }
+
+/* ---------------------------------------------------------------------------
+   Dark theme
+   ---------------------------------------------------------------------------
+   Same identity, not an inversion. The light palette is cool (#f3f5f8 has blue
+   in it), so the dark surfaces are cool near-navy greys rather than neutral
+   black, and the cyan accent is kept as the one saturated colour.
+
+   Two things flip rather than darken:
+     - Elevation. In light mode an elevated surface is white ON grey; in dark it
+       has to be lighter than the page, so --bg-elevated rises instead of falls.
+     - Separation. Shadows barely read on a dark ground, so they shrink to
+       almost nothing and borders do the work instead.
+
+   data-theme is stamped on <html> by the boot script in layout.tsx. The
+   attribute selectors are listed first so an explicit choice always beats the
+   OS preference, in both directions.
+   ------------------------------------------------------------------------- */
+:root[data-theme="dark"] {
+  --bg: #0f1319;
+  --bg-elevated: #171d26;
+  --bg-soft: #1e242f;
+  --bg-tint: #10262b;
+  --border: #262e3a;
+  --border-strong: #3a4453;
+  --text: #e7ecf3;
+  --text-muted: #8b95a5;
+  --text-body: #b6bfcc;
+  /* Slightly brighter than the light-mode accent: the same cyan reads dimmer
+     against a dark ground. */
+  --accent: #1cdcef;
+  --accent-hover: #55e7f6;
+  /* Accent used AS text needs to be light here, where in light mode it was the
+     dark teal. */
+  --accent-ink: #6fe4f2;
+  --ink: #e7ecf3;
+  --success: #3ecf8e;
+  --warning: #e0a83a;
+  --danger: #f0736f;
+  --pin: #1cdcef;
+
+  --on-ink: #0f1319;
+  --on-accent: #04333a;
+
+  --surface-veil: rgba(23, 29, 38, 0.82);
+
+  /* A near-white slab would glare here, so the chosen segment takes the accent. */
+  --pill-bg: var(--accent);
+  --pill-text: var(--on-accent);
+
+  /* The tool colours are lifted in dark mode, so their labels go dark. */
+  --tool-ink: #0f1319;
+
+  --success-wash: #10291f;
+  --success-ink: #6ee7a8;
+  --warning-wash: #2a2113;
+  --warning-ink: #f0c674;
+  --danger-wash: #2c1719;
+  --danger-ink: #f5a3a0;
+  --accent-wash: #10262b;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 32px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+/* There is deliberately no `@media (prefers-color-scheme: dark)` block here.
+   The boot script in layout.tsx resolves the OS preference itself and always
+   stamps data-theme with a concrete "light" or "dark", so these values live in
+   exactly one place. It also re-resolves when the OS flips, as long as the
+   person is still on "System". */
 
 * {
   box-sizing: border-box;
@@ -50,7 +154,7 @@ body {
 
 body {
   background:
-    radial-gradient(1200px 480px at 50% -260px, #ffffff 0%, transparent 70%),
+    radial-gradient(1200px 480px at 50% -260px, var(--bg-elevated) 0%, transparent 70%),
     var(--bg);
   background-attachment: fixed;
 }
@@ -488,7 +592,7 @@ button {
 }
 
 .btn-secondary {
-  background: #ffffff;
+  background: var(--bg-elevated);
   border-color: var(--border-strong);
   color: var(--text);
 }
@@ -499,7 +603,7 @@ button {
 }
 
 .btn-danger {
-  background: #ffffff;
+  background: var(--bg-elevated);
   border-color: rgba(214, 69, 69, 0.35);
   color: var(--danger);
 }
@@ -557,7 +661,7 @@ button {
 .field textarea,
 .field select {
   width: 100%;
-  background: #ffffff;
+  background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -644,7 +748,7 @@ button {
 .badge-approved {
   color: var(--success);
   border-color: rgba(31, 157, 99, 0.28);
-  background: #edf9f3;
+  background: var(--success-wash);
 }
 
 .badge-scheduled {
@@ -677,8 +781,8 @@ button {
 }
 
 .comment-channel-tag.external {
-  background: #fff1c2;
-  color: #8a6200;
+  background: var(--warning-wash);
+  color: var(--warning-ink);
 }
 
 .error {
@@ -703,9 +807,9 @@ button {
 }
 
 .badge-requested {
-  color: #8a6200;
+  color: var(--warning-ink);
   border-color: rgba(196, 137, 0, 0.28);
-  background: #fff1c2;
+  background: var(--warning-wash);
 }
 
 .badge-scheduled {
@@ -717,7 +821,7 @@ button {
 .badge-sent {
   color: var(--success);
   border-color: rgba(31, 157, 99, 0.28);
-  background: #edf9f3;
+  background: var(--success-wash);
 }
 
 .badge-inactive {
@@ -896,7 +1000,7 @@ button {
   place-items: center;
   padding: 24px;
   background:
-    linear-gradient(180deg, #ffffff 0%, #f4f4f4 100%);
+    linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-soft) 100%);
 }
 
 .login-card {
@@ -914,7 +1018,7 @@ button {
 
 .preview-frame-wrap {
   position: relative;
-  background: #ffffff;
+  background: var(--bg-elevated);
   border-radius: var(--radius);
   border: 1px solid var(--border);
   overflow: auto;
@@ -1430,7 +1534,7 @@ button {
   font-weight: 800;
   line-height: 16px;
   text-align: center;
-  border: 1px solid #ffffff;
+  border: 1px solid var(--bg-elevated);
 }
 
 .pin.resolved {
@@ -1461,7 +1565,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 14px;
-  background: #ffffff;
+  background: var(--bg-elevated);
 }
 
 .comment-card.resolved {
@@ -1496,7 +1600,7 @@ button {
   color: var(--text-muted);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  background: #fafafa;
+  background: var(--bg-soft);
 }
 
 .toolbar {
@@ -1568,7 +1672,7 @@ button {
 
 .tab {
   border: 1px solid var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: var(--text-muted);
   border-radius: 999px;
   padding: 8px 14px;
@@ -1601,7 +1705,7 @@ button {
   font-weight: 700;
 }
 .tab.active .tab-count {
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: #007a87;
 }
 
@@ -1611,7 +1715,7 @@ button {
   padding: 28px;
   text-align: center;
   color: var(--text-muted);
-  background: #fafafa;
+  background: var(--bg-soft);
   transition: 0.15s ease;
 }
 
@@ -1642,7 +1746,7 @@ button {
   gap: 12px 20px;
   padding: 14px 18px;
   border-color: rgba(31, 157, 99, 0.28);
-  background: linear-gradient(180deg, #f4fbf7 0%, #ffffff 100%);
+  background: linear-gradient(180deg, var(--success-wash) 0%, var(--bg-elevated) 100%);
 }
 
 .next-steps-copy {
@@ -1689,7 +1793,7 @@ button {
 
 .approve-card {
   border-color: rgba(31, 157, 99, 0.35);
-  background: linear-gradient(180deg, #edf9f3 0%, #ffffff 100%);
+  background: linear-gradient(180deg, var(--success-wash) 0%, var(--bg-elevated) 100%);
 }
 
 .approve-card.is-approved {
@@ -1717,7 +1821,7 @@ button {
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: var(--text);
   border-radius: 999px;
   padding: 8px 12px;
@@ -1765,8 +1869,8 @@ button {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: #fff1c2;
-  color: #8a6200;
+  background: var(--warning-wash);
+  color: var(--warning-ink);
   font-size: 11px;
   font-weight: 800;
   line-height: 18px;
@@ -1820,7 +1924,7 @@ button {
 
 .ai-preview-card {
   border-color: rgba(124, 92, 255, 0.35);
-  background: linear-gradient(180deg, #f6f2ff 0%, #ffffff 100%);
+  background: linear-gradient(180deg, var(--bg-soft) 0%, var(--bg-elevated) 100%);
 }
 
 .ai-cost-note {
@@ -1839,7 +1943,7 @@ button {
 }
 
 .select-clean {
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
@@ -1942,7 +2046,7 @@ button {
   width: 32px;
   height: 32px;
   border: 1px solid var(--border-strong);
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   font-size: 18px;
   line-height: 1;
@@ -1983,7 +2087,7 @@ button {
 }
 
 .cal-dow {
-  background: #fbfcfd;
+  background: var(--bg-soft);
   padding: 9px 12px;
   font-size: 11px;
   font-weight: 700;
@@ -2003,9 +2107,9 @@ button {
   flex-direction: column;
   gap: 5px;
 }
-.cal-cell:hover { background: #fbfcfd; }
-.cal-empty { background: #fafbfc; cursor: default; }
-.cal-empty:hover { background: #fafbfc; }
+.cal-cell:hover { background: var(--bg-soft); }
+.cal-empty { background: var(--bg); cursor: default; }
+.cal-empty:hover { background: var(--bg); }
 
 .cal-daynum {
   font-size: 12px;
@@ -2019,8 +2123,8 @@ button {
   justify-content: center;
 }
 .cal-today .cal-daynum {
-  background: var(--ink);
-  color: #fff;
+  background: var(--pill-bg);
+  color: var(--pill-text);
   border-radius: 50%;
 }
 
@@ -2035,7 +2139,7 @@ button {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 7px;
   padding: 5px 8px;
   transition: border-color 0.1s ease, box-shadow 0.1s ease;
@@ -2119,9 +2223,9 @@ button {
   white-space: nowrap;
 }
 .cal-pop-status.chip-requested { color: #a21caf; background: #fbe9fc; }
-.cal-pop-status.chip-planned { color: #8a6200; background: #fdf6e6; }
-.cal-pop-status.chip-scheduled { color: #1d4ed8; background: #eaf1ff; }
-.cal-pop-status.chip-sent { color: #146c43; background: #e8f6ee; }
+.cal-pop-status.chip-planned { color: var(--warning-ink); background: var(--warning-wash); }
+.cal-pop-status.chip-scheduled { color: #1d4ed8; background: var(--bg-soft); }
+.cal-pop-status.chip-sent { color: #146c43; background: var(--success-wash); }
 .cal-pop-client {
   font-size: 12px;
   color: var(--text-muted);
@@ -2241,9 +2345,9 @@ button {
   color: var(--text-muted);
 }
 .status-not_started { color: #6b7280; background: #f1f3f5; }
-.status-in_progress { color: #8a6200; background: #fdf6e6; }
-.status-completed { color: #146c43; background: #e8f6ee; }
-.status-shared { color: #1d4ed8; background: #eaf1ff; }
+.status-in_progress { color: var(--warning-ink); background: var(--warning-wash); }
+.status-completed { color: #146c43; background: var(--success-wash); }
+.status-shared { color: #1d4ed8; background: var(--bg-soft); }
 .status-approved { color: #0b6b3a; background: #dcf3e6; }
 select.snap-status-select.status-not_started { background: #f1f3f5; }
 
@@ -2600,7 +2704,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   width: 100%;
   height: 78vh;
   border: 0;
-  background: #ffffff;
+  background: var(--bg-elevated);
 }
 
 /* Standing-status line under a contracted deliverable */
@@ -2628,7 +2732,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .perf-delta { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
 .perf-delta.up { color: #0b6b3a; background: #dcf3e6; }
-.perf-delta.down { color: #b42318; background: #fdeceb; }
+.perf-delta.down { color: #b42318; background: var(--danger-wash); }
 
 .snap-footer {
   text-align: center;
@@ -2933,7 +3037,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   height: 56px;
   margin: 0 auto 18px;
   border-radius: 50%;
-  background: #edf9f3;
+  background: var(--success-wash);
   color: var(--success);
   font-size: 28px;
   font-weight: 800;
@@ -3240,9 +3344,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 3px 9px;
   border-radius: 999px;
 }
-.plan-status-ok { background: #e8f6ee; color: #146c43; }
-.plan-status-wait { background: #fdf6e6; color: #8a6200; }
-.plan-status-note { background: #eaf1ff; color: #1d4ed8; }
+.plan-status-ok { background: var(--success-wash); color: #146c43; }
+.plan-status-wait { background: var(--warning-wash); color: var(--warning-ink); }
+.plan-status-note { background: var(--bg-soft); color: #1d4ed8; }
 
 .cal-chip-note { margin-left: auto; font-size: 10px; line-height: 1; }
 .cal-chip.has-note { box-shadow: inset 0 0 0 1px rgba(0, 212, 232, 0.55); }
@@ -3293,7 +3397,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   cursor: pointer;
 }
 .view-toggle-btn + .view-toggle-btn { border-left: 1px solid var(--border); }
-.view-toggle-btn.is-on { background: var(--ink); color: #fff; }
+.view-toggle-btn.is-on { background: var(--pill-bg); color: var(--pill-text); }
 
 .plan-detail-modal { width: min(480px, 100%); max-height: 90vh; overflow-y: auto; }
 .plan-card-date {
@@ -3404,6 +3508,23 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --ember-tint: rgba(217, 139, 43, 0.14);
   background: var(--bg);
   min-height: 100vh;
+}
+
+/* The Snapshot area runs its own warm cream palette, which would otherwise stay
+   light while everything around it went dark. Keeping the warmth is the point:
+   these greys carry a little more red than the app's cool defaults, so the area
+   still reads as its own space in dark mode. */
+:root[data-theme="dark"] .acct-scope {
+  --bg: #16140f;
+  --bg-elevated: #1f1c16;
+  --bg-soft: #26221b;
+  --border: #332e25;
+  --text: #f0ece3;
+  --text-muted: #9a9384;
+  --text-body: #c4bdae;
+  --ember: #e8a44b;
+  --ember-dim: #d98b2b;
+  --ember-tint: rgba(232, 164, 75, 0.16);
 }
 
 .acct-hero-standing {
@@ -4104,6 +4225,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background: var(--ops-bg);
 }
 
+/* The ops pages (Forecast, Accounts, Production) run a flatter near-white
+   palette under their own --ops-* prefix, so the base dark tokens never reach
+   it and it has to be restated. --ops-bg sits level with the page here so the
+   panels on top of it still read as raised. */
+:root[data-theme="dark"] .ops-scope {
+  --ops-bg: #0f1319;
+  --ops-border: #2a323e;
+  --ops-border-soft: #212833;
+}
+
 .ops-nav {
   display: flex;
   gap: 2px;
@@ -4120,7 +4251,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   text-decoration: none;
 }
 .ops-nav a.is-current {
-  background: #fff;
+  background: var(--bg-elevated);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
@@ -4172,7 +4303,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   margin-bottom: 28px;
 }
 .ops-stat {
-  background: #fff;
+  background: var(--bg-elevated);
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
@@ -4207,7 +4338,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 
 .ops-panel {
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 14px;
   overflow: hidden;
@@ -4344,7 +4475,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .ops-weeknav { display: flex; align-items: center; gap: 10px; }
 .ops-weeknav button {
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 7px;
   width: 30px;
@@ -4541,7 +4672,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   justify-content: space-between;
   align-items: center;
   padding: 14px 20px;
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 12px;
 }
@@ -4558,7 +4689,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   display: flex;
   align-items: center;
   gap: 22px;
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 16px;
   padding: 18px 22px;
@@ -4629,7 +4760,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   display: flex;
   align-items: center;
   gap: 14px;
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 16px;
   padding: 16px;
@@ -4703,7 +4834,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 12px;
   padding: 12px 16px;
@@ -4743,7 +4874,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   flex: none;
   border-radius: 50%;
   overflow: hidden;
-  box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--ops-border);
+  box-shadow: 0 0 0 3px var(--bg-elevated), 0 0 0 4px var(--ops-border);
 }
 .mood-avatar--relaxed { animation: mood-breathe 4s ease-in-out infinite; }
 .mood-avatar--focused { animation: none; }
@@ -5684,6 +5815,31 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .hq-card.t-train { --tool: #7a5cc4; --tool-tint: #f0ebf9; }
 .hq-card.t-todo { --tool: #b8820b; --tool-tint: #fbf2dd; }
 .hq-card.t-senti { --tool: #c25d8a; --tool-tint: #fbebf2; }
+
+/* ---------------------------------------------------------------------------
+   Card accents in dark mode
+   ---------------------------------------------------------------------------
+   The hub and snapshot cards each carry a --tool colour and a pale --tool-tint
+   behind their icon. The tints are near-white, so they have to be restated: a
+   pale lavender chip on a dark card is the most obvious kind of half-finished
+   dark mode. The tool colours are also lifted, because a mid-dark teal that
+   reads as confident on white goes muddy on a dark ground.
+
+   Specificity note: these are (0,3,0) against the (0,2,0) of `.hq-card.t-chat`,
+   so they win without !important.
+   ------------------------------------------------------------------------- */
+:root[data-theme="dark"] .hq-card.t-chat,
+:root[data-theme="dark"] .snap-panel.t-work { --tool: #35c3d1; --tool-tint: #123034; }
+:root[data-theme="dark"] .hq-card.t-res,
+:root[data-theme="dark"] .snap-panel.t-deliv { --tool: #7d92e8; --tool-tint: #1a2039; }
+:root[data-theme="dark"] .hq-card.t-sop,
+:root[data-theme="dark"] .snap-panel.t-perf { --tool: #48c98a; --tool-tint: #142e22; }
+:root[data-theme="dark"] .hq-card.t-train { --tool: #a78bdf; --tool-tint: #241d33; }
+:root[data-theme="dark"] .hq-card.t-todo,
+:root[data-theme="dark"] .snap-panel.t-wins { --tool: #d8a53a; --tool-tint: #2c2412; }
+:root[data-theme="dark"] .hq-card.t-senti { --tool: #dd88ab; --tool-tint: #33202a; }
+:root[data-theme="dark"] .hq-card.t-hr { --tool: #9aabbb; --tool-tint: #1d232b; }
+
 .hq-card.t-hr { --tool: #5a6b7b; --tool-tint: #eef1f4; }
 
 .hq-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
@@ -5736,7 +5892,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .hq-faces { display: flex; gap: 5px; margin-top: 10px; }
 .hq-faces span { font-size: 19px; opacity: .32; }
 .hq-faces span.on { opacity: 1; }
-.hq-cta { margin-top: auto; display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; color: #fff; background: var(--tool); border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; }
+.hq-cta { margin-top: auto; display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; color: var(--tool-ink); background: var(--tool); border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; }
 
 .hq-back { border: none; background: none; color: var(--text-muted); font-size: 13px; cursor: pointer; padding: 0; margin-bottom: 6px; font-family: var(--font); }
 .hq-back:hover { color: var(--accent-ink); }
@@ -5918,10 +6074,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   transition: background 0.12s ease, color 0.12s ease;
 }
 .course-toc-item:hover { background: var(--bg-soft); }
-.course-toc-item.is-on { background: var(--ink); color: #fff; }
+.course-toc-item.is-on { background: var(--pill-bg); color: var(--pill-text); }
 .course-toc-item.is-on .course-toc-num,
 .course-toc-item.is-on .course-toc-meta { color: rgba(255, 255, 255, 0.7); }
-.course-toc-item.is-on .course-toc-title { color: #fff; }
+.course-toc-item.is-on .course-toc-title { color: var(--pill-text); }
 .course-toc-num {
   flex: none;
   width: 22px;
@@ -6243,7 +6399,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .app-body { flex: 1; min-width: 0; height: 100vh; display: flex; flex-direction: column; }
 .app-top {
   height: 60px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 22px;
-  border-bottom: 1px solid var(--border); background: rgba(255,255,255,.82); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border); background: var(--surface-veil); backdrop-filter: blur(8px);
   position: sticky; top: 0; z-index: 25;
 }
 .app-search {
@@ -6251,7 +6407,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px;
   color: var(--text-muted); font-size: 13.5px; cursor: pointer; font-family: var(--font);
 }
-.app-search kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; background: #fff; }
+.app-search kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; background: var(--bg-elevated); }
 .app-top-right { display: flex; align-items: center; gap: 6px; }
 .app-iconbtn { width: 38px; height: 38px; border-radius: 10px; border: none; background: none; color: var(--text-body); display: grid; place-items: center; cursor: pointer; }
 .app-iconbtn:hover { background: var(--bg); }
@@ -6267,8 +6423,30 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .app-content { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 .app-content > * { min-height: 100%; }
 
+/* Light / Dark / System segmented control in the account menu. */
+.app-theme-row { display: flex; gap: 4px; padding: 4px 10px 8px; }
+.app-theme-btn {
+  appearance: none;
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-body);
+  border-radius: 7px;
+  padding: 6px 4px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.app-theme-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.app-theme-btn.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
 /* Work vs Meeting switch on the forecast add form. */
-.fc-mode { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--line, #d8d8d8); border-radius: 6px; overflow: hidden; }
+.fc-mode { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .fc-mode-btn {
   appearance: none;
   border: 0;
@@ -6276,13 +6454,13 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 6px 12px;
   font: inherit;
   font-size: 12px;
-  color: var(--muted, #6b6b6b);
+  color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
 }
-.fc-mode-btn + .fc-mode-btn { border-left: 1px solid var(--line, #d8d8d8); }
-.fc-mode-btn:hover { background: rgba(0, 0, 0, 0.04); }
-.fc-mode-btn.is-on { background: var(--ink, #1c1c1c); color: #fff; }
+.fc-mode-btn + .fc-mode-btn { border-left: 1px solid var(--border); }
+.fc-mode-btn:hover { background: var(--bg-soft); }
+.fc-mode-btn.is-on { background: var(--pill-bg); color: var(--pill-text); }
 
 /* Standing reminder for anyone still on a shared env-var password. */
 .app-banner {
@@ -6292,9 +6470,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   gap: 16px;
   flex-wrap: wrap;
   padding: 12px 20px;
-  background: #fef6e7;
-  border-bottom: 1px solid #f0dcb4;
-  color: #6b4a12;
+  background: var(--warning-wash);
+  border-bottom: 1px solid var(--warning);
+  color: var(--warning-ink);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -6569,6 +6747,18 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --text: #0e1116;
   --text-muted: #737b89;
   --text-body: #4a5262;
+}
+/* This scope exists to cancel .acct-scope's warm cream back to the app default,
+   so in dark mode it has to cancel back to the dark default rather than to the
+   warm dark above. Same values as :root[data-theme="dark"]. */
+:root[data-theme="dark"] .acct-hub {
+  --bg: #0f1319;
+  --bg-elevated: #171d26;
+  --bg-soft: #1e242f;
+  --border: #262e3a;
+  --text: #e7ecf3;
+  --text-muted: #8b95a5;
+  --text-body: #b6bfcc;
 }
 .acct-hub .snap-hero {
   background: var(--bg);
@@ -6891,7 +7081,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 0;
   border-radius: 8px;
   border: 1px solid var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: var(--text-muted);
   font-size: 15px;
   line-height: 1;
@@ -6919,7 +7109,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .review-page .email-tab.active {
   color: var(--text);
-  background: #ffffff;
+  background: var(--bg-elevated);
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
 }
@@ -6953,7 +7143,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 18px 22px;
   border-radius: var(--radius);
   border: 1px solid rgba(31, 157, 99, 0.28);
-  background: linear-gradient(180deg, #f2fbf6 0%, #ffffff 100%);
+  background: linear-gradient(180deg, var(--success-wash) 0%, var(--bg-elevated) 100%);
 }
 
 .rv-approve-copy {
@@ -7079,7 +7269,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 
 .rv-segment button.active {
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: var(--text);
   box-shadow: var(--shadow);
 }
@@ -7151,7 +7341,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 0;
   display: grid;
   place-items: center;
-  border: 2px solid #ffffff;
+  border: 2px solid var(--bg-elevated);
   border-radius: 50%;
   background: var(--ink);
   color: #ffffff;
@@ -7167,7 +7357,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 9px 14px;
   border-radius: var(--radius-sm);
   border: 1px dashed var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-elevated);
   color: var(--text-muted);
   font-size: 12.5px;
   font-weight: 600;

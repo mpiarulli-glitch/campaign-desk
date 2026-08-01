@@ -540,18 +540,23 @@ export interface TimeEntryResult {
  * "timesheetable" thing (todo, card, message, document), so passing the todo id
  * attaches the hours directly to that todo.
  *
- * @param todoId  Basecamp recording id of the todo
- * @param date    YYYY-MM-DD the work happened on
- * @param hours   decimal hours, e.g. 1.5
+ * Because it is recording-scoped, a schedule entry (a meeting) takes hours the
+ * same way a todo does, and with no bucket id in the path an internal MEG event
+ * works exactly like a client one. That's what lets Forecast log a meeting's
+ * time to its Basecamp project without a todo existing for it.
+ *
+ * @param recordingId  Basecamp recording id: a todo, or a schedule entry
+ * @param date         YYYY-MM-DD the work happened on
+ * @param hours        decimal hours, e.g. 1.5
  */
 export async function createTimeEntry(
-  todoId: string,
+  recordingId: string,
   input: { date: string; hours: number; description?: string }
 ): Promise<TimeEntryResult> {
-  if (!todoId) return { ok: false, error: "missing todo id" };
+  if (!recordingId) return { ok: false, error: "missing recording id" };
   if (!(input.hours > 0)) return { ok: false, error: "hours must be greater than 0" };
   try {
-    const res = await bc(`/recordings/${todoId}/timesheet/entries.json`, {
+    const res = await bc(`/recordings/${recordingId}/timesheet/entries.json`, {
       method: "POST",
       body: JSON.stringify({
         date: input.date,

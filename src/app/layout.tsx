@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Chakra_Petch, Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import "./hud.css";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -53,7 +54,14 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} ${spaceGrotesk.variable} ${chakraPetch.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        {/* Stamps data-theme before first paint, so a dark-mode user never gets
+            a white flash. It has to be inline and blocking for that to hold;
+            anything React-driven runs after the first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

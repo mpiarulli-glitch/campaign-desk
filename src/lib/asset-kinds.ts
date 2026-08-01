@@ -316,3 +316,22 @@ export function renderAssetDoc(asset: RenderableAsset): {
   // Everything else (emails, interactive forms, HTML blogs/decks): raw HTML.
   return { html: content, interactive: kind === "interactive" };
 }
+
+// What kind of work a calendar entry represents. Distinct from AssetKind above:
+// AssetKind describes an item inside a review package, AssetType describes a
+// scheduled piece of work on the campaign calendar. Lives here rather than in
+// db.ts so client code and the people roster can import it.
+export type AssetType =
+  | "social_post"
+  | "social_video_carousel"
+  | "email_campaign"
+  | "crm_automation"
+  | "blog_post";
+
+export const ASSET_TYPES: AssetType[] = [
+  "social_post",
+  "social_video_carousel",
+  "email_campaign",
+  "crm_automation",
+  "blog_post",
+];

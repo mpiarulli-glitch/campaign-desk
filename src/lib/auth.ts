@@ -1,7 +1,13 @@
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { isValidAdminPerson } from "./admin-people";
-import { hasProductionAccess, isSeoOnly, isValidPerson, OWNER_SLUG } from "./people";
+import {
+  campaignKindFor,
+  doesCampaignWork,
+  hasProductionAccess,
+  isValidPerson,
+  OWNER_SLUG,
+} from "./people";
 import { authenticate, getUser, recordLogin } from "./users";
 
 const COOKIE_NAME = "cd_session";
@@ -249,25 +255,33 @@ export async function isOwner(): Promise<boolean> {
   return session?.role === "admin" && session.person === null;
 }
 
-// True when the signed-in person works on blog content only (the SEO side), so
-// the campaigns list and any single campaign they open should be limited to blog
-// assets. The owner is never scoped.
-export async function isBlogScopedSession(): Promise<boolean> {
+// The slug whose team focus applies to this session, or null for no scoping.
+// The owner's session carries a null person and is never scoped.
+export async function sessionFocusSlug(): Promise<string | null> {
   const session = await getSession();
-  if (!session) return false;
-  if (session.role === "admin" && session.person === null) return false;
-  return isSeoOnly(session.person);
+  if (!session) return null;
+  if (session.role === "admin" && session.person === null) return null;
+  return session.person;
 }
 
-// Who may READ the campaigns list and open a campaign: admins, plus the SEO-side
-// people, whose view is then filtered to blogs by isBlogScopedSession. Abel is
-// forecast-role, so without this he could not reach campaigns at all.
+// True when the campaigns list and any campaign opened should be limited to blog
+// assets, i.e. the person's whole focus is blog work.
+export async function isBlogScopedSession(): Promise<boolean> {
+  return campaignKindFor(await sessionFocusSlug()) === "blog";
+}
+
+// Who may READ the campaigns list and open a campaign: admins, plus anyone whose
+// team focus includes campaign work. Abel is forecast-role, so without this he
+// could not reach campaigns at all; Roy has an empty focus, so he is kept out
+// even though he is otherwise an ordinary user.
 // Creating and editing campaigns stays on isAdminAuthenticated.
 export async function isCampaignsReadAuthenticated(): Promise<boolean> {
   const session = await getSession();
   if (!session) return false;
+  if (session.role === "admin" && session.person === null) return true;
+  if (!doesCampaignWork(session.person)) return false;
   if (session.role === "admin") return true;
-  return isSeoOnly(session.person);
+  return campaignKindFor(session.person) !== null;
 }
 
 async function setSessionCookie(payload: string): Promise<void> {

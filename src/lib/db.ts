@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
-import type { AssetKind, BodyFormat } from "./asset-kinds";
+import type { AssetKind, AssetType, BodyFormat } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
 import { PEOPLE, OWNER_SLUG } from "./people";
 
@@ -349,12 +349,9 @@ export interface CalendarFeedback {
 
 export type SendStatus = "requested" | "planned" | "scheduled" | "sent";
 
-export type AssetType =
-  | "social_post"
-  | "social_video_carousel"
-  | "email_campaign"
-  | "crm_automation"
-  | "blog_post";
+// Defined in ./asset-kinds so client code and the people roster can import it;
+// re-exported here because most call sites reach for it from db.
+export type { AssetType };
 
 // A single email send plotted on the campaign calendar. client_id is optional
 // (soft link to rev_clients); client_name is always kept as a display fallback.

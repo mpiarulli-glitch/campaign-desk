@@ -143,6 +143,13 @@ export default function CalendarPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [sends, setSends] = useState<Send[]>([]);
+  // Whether this person's calendar is narrowed to the work their team owns, and
+  // whether they've asked to step outside it. See TEAM_FOCUS in lib/people.
+  const [scope, setScope] = useState<{ canToggle: boolean; narrowed: boolean }>({
+    canToggle: false,
+    narrowed: false,
+  });
+  const [showAll, setShowAll] = useState(false);
   // Read-only mirror of Basecamp's schedules, refreshed by the events sync.
   const [events, setEvents] = useState<BcEvent[]>([]);
   const [syncingEvents, setSyncingEvents] = useState(false);
@@ -182,7 +189,7 @@ export default function CalendarPage() {
     const start = ymd(year, month, 1);
     const end = ymd(year, month, daysInMonth);
     const [sr, cr] = await Promise.all([
-      fetch(`/api/calendar?start=${start}&end=${end}`),
+      fetch(`/api/calendar?start=${start}&end=${end}${showAll ? "&all=1" : ""}`),
       fetch(`/api/revenue/clients`),
     ]);
     if (sr.status === 401 || cr.status === 401) {
@@ -193,9 +200,10 @@ export default function CalendarPage() {
       const json = await sr.json();
       setSends(json.sends || []);
       setEvents(json.events || []);
+      if (json.scope) setScope(json.scope);
     }
     if (cr.ok) setClients((await cr.json()).clients || []);
-  }, [year, month, daysInMonth, router]);
+  }, [year, month, daysInMonth, router, showAll]);
 
   useEffect(() => {
     load();
@@ -429,6 +437,21 @@ export default function CalendarPage() {
               <button className="cal-nav-btn" onClick={nextMonth} aria-label="Next month">›</button>
             </div>
             <button className="btn btn-secondary btn-sm" onClick={goToday}>Today</button>
+            {/* Only shown to people whose calendar starts narrowed to their own
+                team's work, so it never appears for an admin who sees it all. */}
+            {scope.canToggle ? (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowAll((v) => !v)}
+                title={
+                  showAll
+                    ? "Show only the work your team owns"
+                    : "Show every campaign on the calendar"
+                }
+              >
+                {showAll ? "Show my team's work" : "See all"}
+              </button>
+            ) : null}
             {isAdmin ? (
               <button
                 className="btn btn-ghost btn-sm"

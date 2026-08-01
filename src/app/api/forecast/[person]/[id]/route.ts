@@ -14,7 +14,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
 
 /**
- * Log time against the task's linked Basecamp todo.
+ * Log time against whatever Basecamp recording the row is linked to: a todo for
+ * work, or a schedule entry for a meeting. Either way the hours land on that
+ * project's timesheet, which is most of the point of booking a meeting here.
  *
  * Separate from the PATCH body's other fields because it writes to Basecamp and
  * must not happen implicitly: hours land on a client-visible timesheet, and a
@@ -27,8 +29,14 @@ async function logTime(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const task = getTask(taskId);
   if (!task) return { status: 404, body: { error: "Not found" } };
-  if (!task.basecamp_todo_id) {
-    return { status: 400, body: { error: "That task isn't linked to a Basecamp todo." } };
+  // At most one of these is ever set (see createTask), so this resolves the
+  // linked recording without caring which kind of row it is.
+  const recordingId = task.basecamp_todo_id || task.basecamp_event_id;
+  if (!recordingId) {
+    return {
+      status: 400,
+      body: { error: "That row isn't linked to a Basecamp todo or meeting." },
+    };
   }
   if (task.basecamp_time_entry_id) {
     return {
@@ -43,7 +51,7 @@ async function logTime(
     return { status: 400, body: { error: "Basecamp isn't connected." } };
   }
 
-  const result = await createTimeEntry(task.basecamp_todo_id, {
+  const result = await createTimeEntry(recordingId, {
     date: task.task_date,
     hours,
     description: `${personLabel(person)} — ${task.notes || task.client}`.trim(),

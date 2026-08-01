@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   isAdminAuthenticated,
-  isBlogScopedSession,
   isCampaignsReadAuthenticated,
   reviewUrl,
 } from "@/lib/auth";
@@ -17,7 +16,6 @@ import {
   setCampaignArchived,
   updateCampaign,
   unapproveCampaign,
-  campaignHasKind,
   countOpenComments,
   markRevisionDone,
   markApproved,
@@ -47,12 +45,11 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Blog-scoped people (the SEO side) can only open a campaign that has a blog
-  // item, so a pasted URL can't reach an email campaign that's filtered out of
-  // their list. 404 rather than 403: they aren't meant to know it exists.
-  if ((await isBlogScopedSession()) && !campaignHasKind(id, "blog")) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  // Deliberately no kind check here. Team focus is a default view, not a wall:
+  // the calendar has a "See all" toggle, so blocking a direct link would mean
+  // showing someone a campaign they then could not open. Who may reach campaigns
+  // at all is decided by isCampaignsReadAuthenticated above, which is what keeps
+  // the web team (empty focus) out entirely.
 
   const emails = listEmailsWithSubjects(id).map((e) => ({
     ...e,

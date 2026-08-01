@@ -1,3 +1,5 @@
+import type { AssetType } from "./asset-kinds";
+
 // productionAccess: entry-level forecast users normally get just Forecast,
 // Calendar, and Snapshot — this additionally unlocks the (read-only, for
 // non-admins) production scheduling tab.
@@ -21,6 +23,56 @@ export const PEOPLE = [
 // admin session that every existing owner check reads (see auth.ts), so the
 // owner keeps full access while still having a real, self-managed password.
 export const OWNER_SLUG = "michael";
+
+/* ---------------------------------------------------------------------------
+   Team focus
+   ---------------------------------------------------------------------------
+   Which kinds of work a person owns. Everything scoped per team reads from this
+   one map, so a new rule is one line here rather than a new flag threaded
+   through the app.
+
+     absent from the map -> owns everything (the default; most admins)
+     a list              -> the campaign calendar shows those types by default
+     an empty list       -> does no campaign work, so those features are hidden
+
+   "By default" is deliberate: the calendar has a "See all" toggle, so this is
+   the view someone starts in, not a wall. The one exception is an empty list,
+   which hides the feature outright.
+
+   Next use for this map: scoping the weekly snapshot to the portion a team owns.
+   ------------------------------------------------------------------------- */
+export const TEAM_FOCUS: Record<string, readonly AssetType[]> = {
+  // SEO: blog content.
+  abel: ["blog_post"],
+  carlos: ["blog_post"],
+  // Social: posts and the video/carousel work that feeds production.
+  randi: ["social_post", "social_video_carousel"],
+  // Web team, no campaign work for now.
+  roy: [],
+};
+
+// The asset types this person's calendar shows by default. null means no
+// restriction at all, which is different from [] meaning "none".
+export function teamFocus(slug: string | null): readonly AssetType[] | null {
+  if (!slug) return null;
+  return Object.prototype.hasOwnProperty.call(TEAM_FOCUS, slug)
+    ? TEAM_FOCUS[slug]
+    : null;
+}
+
+// False only for people whose focus is explicitly empty.
+export function doesCampaignWork(slug: string | null): boolean {
+  const focus = teamFocus(slug);
+  return focus === null || focus.length > 0;
+}
+
+// Campaign review packages are tagged with AssetKind, not AssetType, so the
+// blog overlap is mapped explicitly. Returns null when nothing is restricted.
+export function campaignKindFor(slug: string | null): "blog" | null {
+  const focus = teamFocus(slug);
+  if (!focus) return null;
+  return focus.length === 1 && focus[0] === "blog_post" ? "blog" : null;
+}
 
 export function personLabel(slug: string): string {
   return PEOPLE.find((p) => p.slug === slug)?.label || slug;
