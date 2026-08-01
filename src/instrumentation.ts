@@ -11,8 +11,13 @@ export async function register() {
   const { runClientCleanupOnce } = await import("./lib/client-cleanup");
   runClientCleanupOnce();
 
-  // Calls Basecamp, so deliberately not awaited — a slow or unreachable
+  // Both call Basecamp, so deliberately not awaited — a slow or unreachable
   // Basecamp must not hold up the server coming online.
   const { runBasecampClientBackfillOnce } = await import("./lib/basecamp-clients");
   void runBasecampClientBackfillOnce();
+
+  // Refreshes the calendar's event cache when it's empty or over 12h old.
+  // There's no scheduler here, so boot is what keeps it current.
+  const { syncBasecampEventsIfStale } = await import("./lib/basecamp-events");
+  void syncBasecampEventsIfStale();
 }

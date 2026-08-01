@@ -139,3 +139,28 @@ export function lastEventSyncAt(): string | null {
     .get() as { at: string | null } | undefined;
   return row?.at || null;
 }
+
+const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Refresh the cache on boot when it's empty or old.
+ *
+ * There's no scheduler in this app, so without this the table would stay empty
+ * until someone pressed the button. Deploys and restarts are frequent enough to
+ * keep it reasonably fresh; the admin button and the cron-secret endpoint cover
+ * the rest. Errors are logged and swallowed — the server must still start if
+ * Basecamp is down.
+ */
+export async function syncBasecampEventsIfStale(): Promise<void> {
+  try {
+    const last = lastEventSyncAt();
+    if (last && Date.now() - new Date(last).getTime() < STALE_AFTER_MS) return;
+    if (!basecampConnected()) return;
+    const result = await syncBasecampEvents();
+    console.log(
+      `[basecamp-events] ${result.ok ? "synced" : "failed"} fetched=${result.fetched} stored=${result.stored} removed=${result.removed}${result.error ? ` error=${result.error}` : ""}`
+    );
+  } catch (err) {
+    console.error("[basecamp-events] sync failed", (err as Error).message);
+  }
+}
