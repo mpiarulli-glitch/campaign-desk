@@ -48,6 +48,8 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
   { href: "/admin/snapshot", label: "Snapshots", icon: "doc" },
+  // Aggregates across every client and person, so admin nav only.
+  { href: "/admin/reports", label: "Reports", icon: "note" },
   { href: "/admin/activity", label: "Activity", icon: "activity" },
 ];
 

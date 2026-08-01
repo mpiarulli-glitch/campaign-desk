@@ -7682,6 +7682,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   /* Week and month steppers. Targeted through their container because the
      buttons carry no class of their own. */
   .ops-weeknav > button { min-width: 44px; min-height: 44px; }
+  /* Client row avatars double as the row's tap target. */
+  .avatar-btn { min-width: 44px; min-height: 44px; }
   /* Native controls: 16px also stops iOS zooming the page on focus. */
   input,
   select,
@@ -7708,6 +7710,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .field label,
   .login-card label,
   .ops-stat .l,
+  .client-table th,
+  .rev-table th,
   .hq-tag,
   .hq-msg .t,
   .hq-pulse-item .l {
@@ -7755,5 +7759,286 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
     display: block;
     overflow-x: auto;
     max-width: 100%;
+  }
+}
+
+/* ===========================================================================
+   Reports
+   ===========================================================================
+   One renderer serves the screen and the printed PDF. The screen styles come
+   first; the @media print block at the end re-lays the same markup as a
+   document: letterhead, black on white, repeated table headers, and page breaks
+   that never split a row.
+   ========================================================================= */
+
+.rpt-page { padding-bottom: 40px; }
+
+/* --- picker --------------------------------------------------------------- */
+.rpt-picker { padding: 20px; margin-bottom: 24px; }
+.rpt-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.rpt-type {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.rpt-type:hover { border-color: var(--border-strong); }
+.rpt-type.is-on {
+  border-color: var(--accent);
+  /* A tinted wash rather than a solid fill, so the blurb stays readable. */
+  background: var(--accent-wash);
+}
+.rpt-type-label { font-weight: 600; font-size: 14px; color: var(--text); }
+.rpt-type-blurb { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
+
+.rpt-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.rpt-dates { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rpt-dates label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.rpt-presets { display: flex; gap: 4px; margin-left: 6px; }
+.rpt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rpt-note { margin: 12px 0 0; font-size: 13px; }
+.rpt-blank { padding: 28px 20px; }
+
+/* --- the document -------------------------------------------------------- */
+.rpt-doc {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 36px 40px 28px;
+}
+.rpt-letterhead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+  /* The accent rule is the one piece of brand in the printed document. */
+  border-bottom: 2px solid var(--accent);
+}
+.rpt-org {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.rpt-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+.rpt-meta { margin: 6px 0 0; font-size: 13.5px; color: var(--text-body); }
+.rpt-stamp { text-align: right; flex: none; display: flex; flex-direction: column; gap: 2px; }
+.rpt-stamp-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.rpt-stamp-value { font-size: 12.5px; color: var(--text-body); }
+.rpt-subtitle { margin: 16px 0 26px; font-size: 14px; color: var(--text-body); line-height: 1.6; }
+
+.rpt-section { margin-bottom: 30px; }
+.rpt-section-title {
+  margin: 0 0 12px;
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rpt-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.rpt-stat { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; background: var(--bg-elevated); }
+.rpt-stat-value {
+  font-family: var(--font-head);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.rpt-stat-label { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.rpt-stat-hint { font-size: 12px; color: var(--text-muted); }
+
+.rpt-table-wrap { overflow-x: auto; }
+.rpt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rpt-table th {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1.5px solid var(--border-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.rpt-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-body);
+  vertical-align: top;
+}
+.rpt-table tr:last-child td { border-bottom: none; }
+.rpt-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rpt-table tbody tr:nth-child(even) td { background: var(--bg-soft); }
+.rpt-empty { margin: 0; font-size: 13px; }
+/* Screen-only: the printed version puts this in a running footer instead. */
+.rpt-foot { display: none; }
+
+@media (max-width: 760px) {
+  .rpt-doc { padding: 22px 16px 18px; border-radius: 10px; }
+  .rpt-letterhead { flex-direction: column; gap: 12px; }
+  .rpt-stamp { text-align: left; }
+  .rpt-title { font-size: 24px; }
+  .rpt-controls { flex-direction: column; align-items: stretch; }
+  .rpt-actions .btn { flex: 1; }
+}
+
+/* ===========================================================================
+   Print
+   ===========================================================================
+   Turns the results into the PDF. The browser's "Save as PDF" is the generator,
+   which means no headless Chromium in the image and the file always matches what
+   was on screen.
+   ========================================================================= */
+@media print {
+  /* Ink, paper, and nothing else. Colour-adjust keeps the accent rule and the
+     header borders, which browsers otherwise drop. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-elevated: #ffffff;
+    --bg-soft: #f6f6f6;
+    --border: #d8d8d8;
+    --border-strong: #9a9a9a;
+    --text: #101010;
+    --text-body: #2b2b2b;
+    --text-muted: #5f5f5f;
+    --accent: #04808d;
+    --accent-ink: #04808d;
+    --accent-wash: #ffffff;
+    color-scheme: light;
+  }
+
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+
+  html, body { background: #fff; }
+
+  /* The app chrome is not part of the document. */
+  .side,
+  .side-scrim,
+  .app-top,
+  .app-banner,
+  .app-hamburger,
+  .rpt-setup,
+  .rpt-blank {
+    display: none !important;
+  }
+  /* The shell constrains height and hides overflow for the fixed layout, which
+     on paper would clip everything after page one. */
+  .cd-shell,
+  .app-body,
+  .app-content,
+  .ops-scope,
+  .ops-page,
+  .rpt-page {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    background: #fff !important;
+  }
+
+  .rpt-doc {
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .rpt-title { font-size: 22pt; }
+  .rpt-org { font-size: 8pt; }
+  .rpt-meta, .rpt-stamp-value { font-size: 9.5pt; }
+  .rpt-subtitle { font-size: 10pt; margin: 10pt 0 16pt; }
+  .rpt-section-title { font-size: 12pt; }
+  .rpt-table { font-size: 8.5pt; }
+  .rpt-table th { font-size: 7.5pt; }
+  .rpt-stat-value { font-size: 16pt; }
+  .rpt-stat-label { font-size: 7.5pt; }
+  .rpt-stat-hint { font-size: 8pt; }
+
+  /* A section heading stranded at the foot of a page reads as an error. */
+  .rpt-section { break-inside: auto; margin-bottom: 16pt; }
+  .rpt-section-title { break-after: avoid; }
+  .rpt-stats { break-inside: avoid; }
+  /* Rows must never be split down the middle. */
+  .rpt-table tr, .rpt-stat { break-inside: avoid; }
+  /* Repeat the header on every page a long table runs onto, otherwise page two
+     onwards is a wall of unlabelled columns. */
+  .rpt-table thead { display: table-header-group; }
+  .rpt-table tbody { display: table-row-group; }
+  .rpt-table-wrap { overflow: visible; }
+
+  /* Zebra striping has to be forced or it prints as plain white. */
+  .rpt-table tbody tr:nth-child(even) td {
+    background: #f4f4f4 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .rpt-letterhead {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .rpt-foot {
+    display: block;
+    margin-top: 18pt;
+    padding-top: 8pt;
+    border-top: 1px solid #d8d8d8;
+    font-size: 8pt;
+    color: #5f5f5f;
   }
 }
