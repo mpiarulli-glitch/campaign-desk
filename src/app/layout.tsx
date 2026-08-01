@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Chakra_Petch, Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import "./hud.css";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
@@ -17,16 +17,9 @@ const spaceGrotesk = Space_Grotesk({
   display: "swap",
 });
 
-// Instrument faces for the Lifecycle console. Chakra Petch has clipped,
-// angular corners that read as machined rather than typeset. JetBrains Mono
-// keeps every readout on a fixed grid so figures don't jitter as they update.
-const chakraPetch = Chakra_Petch({
-  subsets: ["latin"],
-  variable: "--font-instrument",
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
-
+// Kept for figures only: a fixed grid stops columns of numbers jittering as
+// they update. Chakra Petch went with the Lifecycle console styling — nothing
+// references --font-instrument any more.
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-readout",
@@ -53,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${spaceGrotesk.variable} ${chakraPetch.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       <head>

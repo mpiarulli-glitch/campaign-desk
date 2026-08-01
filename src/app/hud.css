@@ -1,56 +1,54 @@
 /* ===========================================================================
-   Lifecycle console
+   Lifecycle
    ---------------------------------------------------------------------------
-   An instrument panel, not a page of cards. Everything is scoped under .hud so
-   the rest of Campaign Desk keeps its light theme untouched.
+   This surface used to be a dark instrument console with its own palette. It
+   now reads as the rest of Campaign Desk: the same cards, surfaces and type,
+   and it follows the light/dark theme instead of being pinned dark.
 
-   Rules the whole surface obeys:
-     - No border radius above 2px. Panels are framed by corner brackets.
-     - Every numeral is monospace so figures stay on a fixed grid.
-     - Colour is a signal, never decoration. Cyan reads, amber warns, red is
-       offline. If something is fine it stays grey.
+   The hud-* class names are kept deliberately. They are used across the page
+   and its eight panels, and renaming them would be a large diff with no visual
+   payoff. Treat them as Lifecycle's local names, not a separate design system:
+   every colour below now resolves to an app token, so a change to the app's
+   palette carries here automatically.
    ========================================================================= */
 
 .hud {
-  /* Blue-black rather than pure black: pure #000 kills the glow falloff. */
-  --void: #05080d;
-  --hull: #0b1219;
-  --hull-lift: #101a24;
-  --seam: #16232f;
-  --seam-lit: #1e3444;
+  /* Structural surfaces, mapped onto the app's tokens. */
+  --void: var(--bg);
+  --hull: var(--bg-elevated);
+  --hull-lift: var(--bg-soft);
+  --seam: var(--border);
+  --seam-lit: var(--border-strong);
 
-  --arc: #00d4e8;
-  --arc-deep: #0e5c66;
-  --arc-wash: rgba(0, 212, 232, 0.09);
+  /* The console accent was already the app's cyan, so this is a rename rather
+     than a recolour. --arc-deep was a dim teal that only worked on black; it
+     becomes the app's readable accent ink. */
+  --arc: var(--accent);
+  --arc-deep: var(--accent-ink);
+  --arc-wash: var(--bg-tint);
 
-  --flare: #ff8a3d;
-  --flare-wash: rgba(255, 138, 61, 0.11);
-  --crit: #ff3b47;
-  --crit-wash: rgba(255, 59, 71, 0.1);
-  --good: #35e39a;
+  /* Signal colours now come from the shared status tokens, so amber/red/green
+     match every other status in the app and stay legible in both themes. */
+  --flare: var(--warning);
+  --flare-wash: var(--warning-wash);
+  --crit: var(--danger);
+  --crit-wash: var(--danger-wash);
+  --good: var(--success);
 
-  --ink: #dcecf5;
-  --ghost: #7d96a8;
-  --ghost-dim: #4a5f6f;
+  --ink: var(--text);
+  --ghost: var(--text-body);
+  --ghost-dim: var(--text-muted);
 
-  --instrument: var(--font-instrument), "Chakra Petch", system-ui, sans-serif;
+  /* One typeface, the app's. The monospace readout is kept for figures only —
+     tabular numerals genuinely help columns of hours line up. */
+  --instrument: var(--font);
   --readout: var(--font-readout), ui-monospace, "SF Mono", Menlo, monospace;
-  --prose: var(--font-inter), system-ui, sans-serif;
+  --prose: var(--font);
 
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 18% -10%, rgba(0, 212, 232, 0.07), transparent 62%),
-    radial-gradient(900px 500px at 100% 0%, rgba(255, 138, 61, 0.045), transparent 58%),
-    var(--void);
-  color: var(--ink);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--prose);
-  /* Hairline grid, barely legible. Reads as machined surface, not wallpaper. */
-  background-attachment: fixed;
-}
-
-.hud ::selection {
-  background: var(--arc);
-  color: var(--void);
 }
 
 .hud-page {
@@ -63,42 +61,22 @@
 
 .hud-eyebrow {
   font-family: var(--instrument);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ghost-dim);
 }
 
-/* Panels are framed by brackets at the corners rather than a full border, so
-   the frame reads as a machined bezel instead of a card. */
+/* A card, matching the rest of the app. The corner brackets that used to frame
+   this as a machined bezel are gone. */
 .hud-panel {
   position: relative;
-  background: linear-gradient(180deg, var(--hull) 0%, rgba(11, 18, 25, 0.72) 100%);
-  border: 1px solid var(--seam);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
   padding: 20px 22px;
-}
-
-.hud-panel::before,
-.hud-panel::after {
-  content: "";
-  position: absolute;
-  width: 11px;
-  height: 11px;
-  border: 1px solid var(--arc-deep);
-  pointer-events: none;
-}
-.hud-panel::before {
-  top: -1px;
-  left: -1px;
-  border-right: 0;
-  border-bottom: 0;
-}
-.hud-panel::after {
-  bottom: -1px;
-  right: -1px;
-  border-left: 0;
-  border-top: 0;
 }
 
 .hud-panel-head {
@@ -111,10 +89,9 @@
 
 .hud-panel-title {
   font-family: var(--instrument);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--ink);
   margin: 0;
 }
@@ -143,37 +120,15 @@
   gap: 12px;
 }
 
+/* A page heading like every other page's. The CRT sweep animation that used to
+   run across it has been removed along with the rest of the console styling. */
 .hud-mark h1 {
   font-family: var(--instrument);
-  font-size: 19px;
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: -0.02em;
   margin: 0;
   color: var(--ink);
-}
-
-/* The one ambient effect on the page: a slow sweep across the title, like a
-   refresh line on a CRT. Everything else holds still. */
-.hud-mark h1 {
-  background: linear-gradient(
-    100deg,
-    var(--ink) 0%,
-    var(--ink) 38%,
-    var(--arc) 50%,
-    var(--ink) 62%,
-    var(--ink) 100%
-  );
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: hud-sweep 9s ease-in-out infinite;
-}
-
-@keyframes hud-sweep {
-  0%, 62% { background-position: 130% 0; }
-  100% { background-position: -30% 0; }
 }
 
 .hud-clock {
@@ -195,14 +150,14 @@
 .hud-btn {
   appearance: none;
   font-family: var(--instrument);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--arc);
-  background: transparent;
-  border: 1px solid var(--arc-deep);
-  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0;
+  color: var(--arc-deep);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 14px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -212,8 +167,8 @@
   border-color: var(--arc);
 }
 .hud-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.hud-btn-quiet { color: var(--ghost); border-color: var(--seam-lit); }
-.hud-btn-quiet:hover:not(:disabled) { color: var(--ink); background: rgba(255, 255, 255, 0.03); }
+.hud-btn-quiet { color: var(--ghost); border-color: var(--border); }
+.hud-btn-quiet:hover:not(:disabled) { color: var(--ink); background: var(--bg-soft); }
 
 .hud-link {
   appearance: none;
@@ -227,7 +182,7 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.hud-link:hover { color: var(--arc); }
+.hud-link:hover { color: var(--arc-deep); }
 
 .hud :focus-visible {
   outline: 1px solid var(--arc);
@@ -241,7 +196,9 @@
   gap: 0;
   flex-wrap: wrap;
   border: 1px solid var(--seam);
-  background: rgba(5, 8, 13, 0.6);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-soft);
   margin-bottom: 26px;
 }
 
@@ -252,10 +209,9 @@
   border-right: 1px solid var(--seam);
   padding: 11px 18px;
   font-family: var(--instrument);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0;
   color: var(--ghost-dim);
   cursor: pointer;
   position: relative;
@@ -265,10 +221,10 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 .hud-channel:last-child { border-right: 0; }
-.hud-channel:hover { color: var(--ink); background: rgba(255, 255, 255, 0.02); }
+.hud-channel:hover { color: var(--ink); background: var(--bg-soft); }
 
 .hud-channel.on {
-  color: var(--arc);
+  color: var(--arc-deep);
   background: var(--arc-wash);
 }
 /* Lit rail under the active channel, like a selected instrument bank. */
@@ -280,7 +236,6 @@
   bottom: -1px;
   height: 2px;
   background: var(--arc);
-  box-shadow: 0 0 10px var(--arc);
 }
 
 .hud-channel-count {
@@ -290,7 +245,7 @@
   background: var(--seam-lit);
   color: var(--ghost);
 }
-.hud-channel-count.alert { background: var(--crit); color: #fff; }
+.hud-channel-count.alert { background: var(--crit); color: var(--on-ink); }
 
 /* ======================================================= SIGNATURE: array ==
    One bar per LinkedIn seat. Lit = sending, dark = faulted. This is the first
@@ -345,30 +300,20 @@
   transition: filter 0.18s ease;
 }
 
+/* Flat status fills rather than the neon gradient-and-glow the console used.
+   The bar still reads at a glance; it just does it with the app's palette. */
 .hud-seat.live .hud-seat-bar {
-  background: linear-gradient(
-    180deg,
-    rgba(0, 212, 232, 0.42) 0%,
-    rgba(0, 212, 232, 0.13) 45%,
-    rgba(0, 212, 232, 0.03) 100%
-  );
+  background: var(--arc-wash);
   border-top-color: var(--arc);
-  box-shadow: 0 0 18px rgba(0, 212, 232, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .hud-seat.fault .hud-seat-bar {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 59, 71, 0.34) 0%,
-    rgba(255, 59, 71, 0.1) 48%,
-    rgba(255, 59, 71, 0.02) 100%
-  );
+  background: var(--crit-wash);
   border-top-color: var(--crit);
-  box-shadow: 0 0 14px rgba(255, 59, 71, 0.26);
 }
 
 .hud-seat:hover .hud-seat-bar,
-.hud-seat:focus-visible .hud-seat-bar { filter: brightness(1.5); }
+.hud-seat:focus-visible .hud-seat-bar { filter: brightness(0.95); }
 
 .hud-seat-tip {
   position: absolute;
@@ -420,7 +365,7 @@
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--arc);
+  color: var(--arc-deep);
   line-height: 1;
 }
 .hud-integrity.degraded { color: var(--flare); }
@@ -467,9 +412,9 @@
   color: var(--ghost-dim);
 }
 
-.hud-readout.alert b { color: var(--crit); text-shadow: 0 0 22px rgba(255, 59, 71, 0.5); }
-.hud-readout.warn b { color: var(--flare); text-shadow: 0 0 22px rgba(255, 138, 61, 0.42); }
-.hud-readout.live b { color: var(--arc); text-shadow: 0 0 22px rgba(0, 212, 232, 0.42); }
+.hud-readout.alert b { color: var(--crit); }
+.hud-readout.warn b { color: var(--flare); }
+.hud-readout.live b { color: var(--arc-deep); }
 
 /* ----------------------------------------------------------- priority queue
    Numbered because the order is real: worst first. */
@@ -519,9 +464,9 @@
   border: 1px solid;
   white-space: nowrap;
 }
-.hud-chip-crit { color: var(--crit); border-color: rgba(255, 59, 71, 0.4); background: var(--crit-wash); }
-.hud-chip-warn { color: var(--flare); border-color: rgba(255, 138, 61, 0.4); background: var(--flare-wash); }
-.hud-chip-ok { color: var(--good); border-color: rgba(53, 227, 154, 0.35); background: rgba(53, 227, 154, 0.08); }
+.hud-chip-crit { color: var(--crit); border-color: var(--crit); background: var(--crit-wash); }
+.hud-chip-warn { color: var(--flare); border-color: var(--flare); background: var(--flare-wash); }
+.hud-chip-ok { color: var(--success-ink); border-color: var(--good); background: var(--success-wash); }
 .hud-chip-idle { color: var(--ghost-dim); border-color: var(--seam-lit); }
 
 /* ------------------------------------------------------------- campaign card */
@@ -556,7 +501,7 @@
   font-weight: 600;
   color: var(--ink);
 }
-.hud-camp-name:hover { color: var(--arc); }
+.hud-camp-name:hover { color: var(--arc-deep); }
 .hud-camp-sub {
   font-family: var(--readout);
   font-size: 11px;
@@ -671,7 +616,7 @@
 }
 .hud-row:last-child { border-bottom: 0; }
 .hud-row a { color: var(--ink); text-decoration: none; }
-.hud-row a:hover { color: var(--arc); text-decoration: underline; text-underline-offset: 3px; }
+.hud-row a:hover { color: var(--arc-deep); text-decoration: underline; text-underline-offset: 3px; }
 .hud-row-meta {
   font-family: var(--readout);
   font-size: 11px;
@@ -694,8 +639,9 @@
 .hud-note.pinned { border-left: 2px solid var(--arc); }
 
 .hud-alert {
-  border: 1px solid rgba(255, 59, 71, 0.35);
-  background: linear-gradient(180deg, var(--crit-wash), transparent);
+  border: 1px solid var(--crit);
+  background: var(--crit-wash);
+  border-radius: 10px;
   padding: 16px 18px;
 }
 .hud-alert h3 {
@@ -737,55 +683,9 @@
   .hud-q-faults { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
-/* ================================================== console-mode chrome ====
-   When the Lifecycle console is open the surrounding shell goes dark too, so
-   the page reads as one instrument rather than a black card in a light app.
-   Scoped to .is-console: every other route keeps the light theme exactly.
-   ========================================================================= */
-
-.cd-shell.is-console {
-  --void: #05080d;
-  --hull: #0b1219;
-  --seam: #16232f;
-  --arc: #00d4e8;
-  --ghost: #7d96a8;
-  background: var(--void);
-}
-
-.cd-shell.is-console .side {
-  background: #070c12;
-  border-right-color: var(--seam);
-}
-.cd-shell.is-console .side-brand b,
-.cd-shell.is-console .side .nav-i {
-  color: var(--ghost);
-}
-.cd-shell.is-console .side .nav-i:hover {
-  background: rgba(0, 212, 232, 0.07);
-  color: #dcecf5;
-}
-.cd-shell.is-console .side .nav-i.on {
-  background: rgba(0, 212, 232, 0.1);
-  color: var(--arc);
-}
-.cd-shell.is-console .side-foot,
-.cd-shell.is-console .side-viewas,
-.cd-shell.is-console .side-toggle {
-  color: var(--ghost);
-  border-color: var(--seam);
-}
-
-.cd-shell.is-console .app-top {
-  background: rgba(7, 12, 18, 0.86);
-  border-bottom-color: var(--seam);
-}
-.cd-shell.is-console .app-search {
-  background: #0b1219;
-  border-color: var(--seam);
-  color: var(--ghost);
-}
-.cd-shell.is-console .app-iconbtn { color: var(--ghost); }
-.cd-shell.is-console .app-content { background: var(--void); }
+/* The console-mode chrome that used to darken the sidebar and top bar on the
+   Lifecycle route has been removed, along with the .is-console class that drove
+   it. The shell now looks the same on every route. */
 
 /* --------------------------------------------------------- step sequence
    The message ladder inside a campaign. A left rail with numbered nodes so
@@ -867,7 +767,7 @@
 .hud-step-copy {
   margin: 8px 0 0;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--bg-soft);
   border-left: 1px solid var(--seam-lit);
   font-size: 12.5px;
   line-height: 1.6;
@@ -893,7 +793,6 @@
 .hud-progress-fill {
   height: 100%;
   background: var(--arc);
-  box-shadow: 0 0 8px var(--arc-wash);
   transition: width 0.3s ease;
 }
 
@@ -929,7 +828,7 @@
   cursor: pointer;
   color: var(--ink);
 }
-.hud-issue-title:hover { color: var(--arc); }
+.hud-issue-title:hover { color: var(--arc-deep); }
 .hud-issue-foot {
   display: flex;
   gap: 12px;
@@ -970,7 +869,7 @@
   font-family: var(--prose);
   font-size: 15.5px;
   line-height: 1.72;
-  color: #c8dae6;
+  color: var(--text-body);
 }
 .hud-prose p { margin: 0 0 18px; }
 .hud-prose h2,
@@ -990,7 +889,7 @@
 .hud-prose h6 { font-size: 16px; }
 .hud-prose strong { color: var(--ink); font-weight: 600; }
 .hud-prose em { color: var(--ink); }
-.hud-prose a { color: var(--arc); text-decoration: none; border-bottom: 1px solid var(--arc-deep); }
+.hud-prose a { color: var(--arc-deep); text-decoration: none; border-bottom: 1px solid var(--arc-deep); }
 .hud-prose a:hover { border-bottom-color: var(--arc); }
 .hud-prose ul { margin: 0 0 18px; padding-left: 22px; }
 .hud-prose li { margin-bottom: 9px; }
