@@ -365,6 +365,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <Svg name="eye" />{session.mustSetPassword ? "Set your password" : "Change password"}
                     </Link>
                   )}
+                  {session.impersonating ? null : (
+                    <Link href="/account/basecamp" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="check" />Basecamp connection
+                    </Link>
+                  )}
                   {session.owner ? (
                     <Link href="/admin/users" className="app-menu-i" onClick={() => setMenuOpen(false)}>
                       <Svg name="clients" />Accounts

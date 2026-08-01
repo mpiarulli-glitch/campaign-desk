@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
 import { basecampConnected, listPersonProjectTodos } from "@/lib/basecamp";
+import { getConnection } from "@/lib/basecamp-identity";
 import { isValidPerson, personLabel } from "@/lib/forecast";
 import { getRevClient } from "@/lib/revenue";
 
@@ -35,14 +36,21 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { todos, assignedCount } = await listPersonProjectTodos(projectId, [
-      personLabel(person),
-      person,
-    ]);
+    // With their own connection, "assigned to you" is their actual Basecamp id
+    // rather than a name match. Without one the picker still works off the
+    // service token — a read is harmless to attribute to the app.
+    const conn = getConnection(person);
+    const { todos, assignedCount } = await listPersonProjectTodos(
+      projectId,
+      [personLabel(person), person],
+      conn ? { bcPersonId: conn.bc_person_id } : undefined
+    );
     return NextResponse.json({
       todos,
       assignedCount,
       projectId,
+      // Lets the picker say whether "assigned to you" is exact or a guess.
+      exactAssignees: Boolean(conn),
       reason: todos.length ? null : "no-todos",
     });
   } catch {

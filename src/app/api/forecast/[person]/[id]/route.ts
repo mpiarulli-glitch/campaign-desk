@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
 import {
+  asPerson,
   basecampConnected,
   completeTodo,
   createTimeEntry,
+  hasConnection,
   uncompleteTodo,
 } from "@/lib/basecamp";
 import { deleteTask, getTask, updateTask, personLabel, type ForecastPriority } from "@/lib/forecast";
@@ -50,12 +52,31 @@ async function logTime(
   if (!basecampConnected()) {
     return { status: 400, body: { error: "Basecamp isn't connected." } };
   }
+  // The whole point of logging time is that it lands under the right name, so
+  // this refuses rather than falling back to the service token and crediting the
+  // hours to whoever connected the app.
+  if (!hasConnection(person)) {
+    return {
+      status: 409,
+      body: {
+        error:
+          "Connect your own Basecamp account first, so these hours are logged as you.",
+        needsBasecamp: true,
+      },
+    };
+  }
 
-  const result = await createTimeEntry(recordingId, {
-    date: task.task_date,
-    hours,
-    description: `${personLabel(person)} — ${task.notes || task.client}`.trim(),
-  });
+  const result = await createTimeEntry(
+    recordingId,
+    {
+      date: task.task_date,
+      hours,
+      // The name is no longer needed as a prefix now that Basecamp attributes the
+      // entry to them, so the description is just what the time went on.
+      description: task.notes || task.client || personLabel(person),
+    },
+    asPerson(person)
+  );
   if (!result.ok) {
     return { status: 502, body: { error: result.error || "Could not log time to Basecamp." } };
   }
@@ -107,17 +128,35 @@ export async function PATCH(request: Request, { params }: Params) {
   // already saved, so a Basecamp failure is reported alongside the task rather
   // than failing the request — the local plan shouldn't depend on Basecamp being
   // reachable.
-  let basecamp: { synced: boolean; error?: string } | undefined;
+  let basecamp:
+    | { synced: boolean; error?: string; needsBasecamp?: boolean }
+    | undefined;
   const flipped =
     typeof body.completed === "boolean" &&
     Boolean(existing.completed) !== body.completed;
   if (flipped && existing.basecamp_todo_id && existing.basecamp_project_id) {
     if (!basecampConnected()) {
       basecamp = { synced: false, error: "Basecamp isn't connected" };
+    } else if (!hasConnection(person)) {
+      // The local tick is already saved. Not mirroring it is better than
+      // mirroring it under the wrong name, and the message says what to do.
+      basecamp = {
+        synced: false,
+        error: "Connect your Basecamp account so this shows as your tick",
+        needsBasecamp: true,
+      };
     } else {
       const result = body.completed
-        ? await completeTodo(existing.basecamp_project_id, existing.basecamp_todo_id)
-        : await uncompleteTodo(existing.basecamp_project_id, existing.basecamp_todo_id);
+        ? await completeTodo(
+            existing.basecamp_project_id,
+            existing.basecamp_todo_id,
+            asPerson(person)
+          )
+        : await uncompleteTodo(
+            existing.basecamp_project_id,
+            existing.basecamp_todo_id,
+            asPerson(person)
+          );
       basecamp = { synced: result.ok, error: result.error };
     }
   }

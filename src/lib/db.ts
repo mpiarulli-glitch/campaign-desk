@@ -10,6 +10,19 @@ export type { AssetKind, BodyFormat } from "./asset-kinds";
 
 export type UserRole = "owner" | "admin" | "forecast";
 
+export interface BasecampConnection {
+  person: string;
+  bc_person_id: number;
+  bc_name: string;
+  bc_email: string;
+  // Ciphertext. Use the helpers in ./basecamp-identity, never these directly.
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  connected_at: string;
+  last_error: string | null;
+}
+
 export interface User {
   slug: string;
   label: string;
@@ -1346,6 +1359,25 @@ export function getDb(): Database.Database {
       last_login_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    /* One Basecamp identity per person, so a todo completed or an hour logged
+       from Forecast is attributed to them in Basecamp rather than to whoever
+       connected the app. Tokens are encrypted (see ./secrets); the service
+       connection in app_settings stays for system-initiated work like approval
+       cards and scheduled reminders, which have no signed-in user. */
+    CREATE TABLE IF NOT EXISTS basecamp_connections (
+      person TEXT PRIMARY KEY,
+      bc_person_id INTEGER NOT NULL,
+      bc_name TEXT NOT NULL DEFAULT '',
+      bc_email TEXT NOT NULL DEFAULT '',
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL DEFAULT 0,
+      connected_at TEXT NOT NULL,
+      -- Last refresh failure, so the UI can say "reconnect" instead of silently
+      -- degrading to the service token.
+      last_error TEXT
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite

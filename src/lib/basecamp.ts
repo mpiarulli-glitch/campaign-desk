@@ -8,6 +8,18 @@
 //   BASECAMP_CLIENT_ID, BASECAMP_CLIENT_SECRET, BASECAMP_ACCOUNT_ID
 
 import { getDb, nowIso } from "./db";
+import {
+  SERVICE,
+  asPerson,
+  forcePersonRefresh,
+  hasConnection,
+  personAccessToken,
+  type BcIdentity,
+} from "./basecamp-identity";
+
+// Re-exported so callers get the identity vocabulary from the same module they
+// already import the API functions from.
+export { SERVICE, asPerson, hasConnection, type BcIdentity };
 
 const LAUNCHPAD_TOKEN = "https://launchpad.37signals.com/authorization/token";
 const LAUNCHPAD_AUTH = "https://launchpad.37signals.com/authorization/new";
@@ -167,9 +179,35 @@ async function accessToken(): Promise<string | null> {
   return t?.access_token || null;
 }
 
-async function bc(path: string, init?: RequestInit): Promise<Response> {
-  const tok = await accessToken();
-  if (!tok) throw new Error("Basecamp not connected");
+/**
+ * A Basecamp API request, made as somebody.
+ *
+ * `identity` defaults to the service connection, which is what every
+ * system-initiated call wants and what every existing call site already meant.
+ * Pass asPerson(slug) for anything a human did, so Basecamp attributes it to
+ * them: completing a todo, logging an hour, reading their own assignments.
+ *
+ * A person identity with no working connection throws BasecampNotConnectedError
+ * rather than quietly falling back. Callers decide what that means — reads
+ * generally retry as the service, writes refuse — and that decision has to be
+ * theirs, because a silent fallback on a write is the misattribution this whole
+ * mechanism exists to prevent.
+ */
+async function bc(
+  path: string,
+  init?: RequestInit,
+  identity: BcIdentity = SERVICE
+): Promise<Response> {
+  const tok =
+    identity.kind === "service"
+      ? await accessToken()
+      : await personAccessToken(identity.slug);
+  if (!tok) {
+    if (identity.kind === "person") {
+      throw new BasecampNotConnectedError(identity.slug);
+    }
+    throw new Error("Basecamp not connected");
+  }
   const call = (t: string) =>
     fetch(`${apiBase()}${path}`, {
       ...init,
@@ -182,10 +220,27 @@ async function bc(path: string, init?: RequestInit): Promise<Response> {
       },
     });
   let res = await call(tok);
-  if (res.status === 401 && (await refreshTokens())) {
-    res = await call(getTokens()!.access_token);
+  // A 401 before the recorded expiry means the token was revoked in Basecamp, so
+  // one forced refresh is worth trying before giving up.
+  if (res.status === 401) {
+    const fresh =
+      identity.kind === "service"
+        ? (await refreshTokens()) && getTokens()?.access_token
+        : await forcePersonRefresh(identity.slug);
+    if (fresh) res = await call(fresh);
   }
   return res;
+}
+
+// Thrown when a request was meant to act as a specific person who has not
+// connected their Basecamp account. Carries the slug so the caller can name them.
+export class BasecampNotConnectedError extends Error {
+  readonly person: string;
+  constructor(person: string) {
+    super(`${person} has not connected their Basecamp account`);
+    this.name = "BasecampNotConnectedError";
+    this.person = person;
+  }
 }
 
 // Accepts a raw project id or a Basecamp project URL and returns the numeric id.
@@ -452,10 +507,34 @@ export interface PersonTodosResult {
 // picker look broken, showing a single list's worth of work and hiding the
 // rest. Flagging instead keeps everything pickable while still putting your own
 // work at the top.
+/**
+ * Open todos in a project, flagged with whether they're assigned to this person.
+ *
+ * `identity` decides whose view this is. Reading as the person is better than
+ * reading as the service and matching names, because Basecamp knows who someone
+ * is and name matching is guesswork. Falls back to the service token when they
+ * haven't connected, so the picker still works — see the caller.
+ */
 export async function listPersonProjectTodos(
   projectId: string,
-  identifiers: string[]
+  identifiers: string[],
+  opts?: { bcPersonId?: number }
 ): Promise<PersonTodosResult> {
+  // With a personal connection the caller knows this person's Basecamp id
+  // exactly, so "assigned to me" is a comparison rather than a name match, and
+  // the project-people round trip is not needed at all.
+  if (opts?.bcPersonId) {
+    const todos = await listProjectTodos(projectId);
+    if (!todos.length) return { todos, assignedCount: 0 };
+    let assignedCount = 0;
+    const flagged = todos.map((t) => {
+      const assigned = t.assigneeIds.includes(opts.bcPersonId!);
+      if (assigned) assignedCount++;
+      return { ...t, assigned };
+    });
+    return { todos: flagged, assignedCount };
+  }
+
   // Neither call depends on the other's result, so run them together instead
   // of paying for both round trips back to back.
   const [todos, people] = await Promise.all([
@@ -551,7 +630,8 @@ export interface TimeEntryResult {
  */
 export async function createTimeEntry(
   recordingId: string,
-  input: { date: string; hours: number; description?: string }
+  input: { date: string; hours: number; description?: string },
+  identity: BcIdentity = SERVICE
 ): Promise<TimeEntryResult> {
   if (!recordingId) return { ok: false, error: "missing recording id" };
   if (!(input.hours > 0)) return { ok: false, error: "hours must be greater than 0" };
@@ -564,7 +644,7 @@ export async function createTimeEntry(
         hours: String(input.hours),
         description: (input.description || "").trim(),
       }),
-    });
+    }, identity);
     if (!res.ok) return { ok: false, error: `timesheet ${res.status}` };
     const entry = await res.json();
     return { ok: true, entryId: String(entry.id), appUrl: entry.app_url };
@@ -578,13 +658,14 @@ export async function createTimeEntry(
 // holds either way.
 export async function completeTodo(
   projectId: string,
-  todoId: string
+  todoId: string,
+  identity: BcIdentity = SERVICE
 ): Promise<{ ok: boolean; error?: string }> {
   if (!projectId || !todoId) return { ok: false, error: "missing project or todo id" };
   try {
     const res = await bc(`/buckets/${projectId}/todos/${todoId}/completion.json`, {
       method: "POST",
-    });
+    }, identity);
     if (res.ok || res.status === 404) return { ok: true };
     return { ok: false, error: `completion ${res.status}` };
   } catch (err) {
@@ -595,13 +676,14 @@ export async function completeTodo(
 // Reopen a todo, so unchecking a forecast task doesn't leave Basecamp out of sync.
 export async function uncompleteTodo(
   projectId: string,
-  todoId: string
+  todoId: string,
+  identity: BcIdentity = SERVICE
 ): Promise<{ ok: boolean; error?: string }> {
   if (!projectId || !todoId) return { ok: false, error: "missing project or todo id" };
   try {
     const res = await bc(`/buckets/${projectId}/todos/${todoId}/completion.json`, {
       method: "DELETE",
-    });
+    }, identity);
     if (res.ok || res.status === 404) return { ok: true };
     return { ok: false, error: `completion ${res.status}` };
   } catch (err) {
