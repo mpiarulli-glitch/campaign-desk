@@ -368,6 +368,85 @@ test("reports", async (t) => {
     assert.ok(csv.includes("https://3.basecamp.com/5338018/buckets/p1/messages/1"));
   });
 
+  await t.test("delivery vs contract separates never-reported from unfinished", () => {
+    // d1 has entries in range (see the weekly_snapshots fixture); d2 has none.
+    const r = reports.buildReport("delivery_vs_contract", "2026-07-01", "2026-07-31");
+    const cover = r.sections[0].stats!;
+    assert.equal(cover.find((s) => s.label === "Active deliverables")?.value, "2");
+    assert.equal(cover.find((s) => s.label === "Nothing reported")?.value, "1");
+
+    const quiet = r.sections.find((s) => s.title.startsWith("Gone quiet"))!;
+    assert.ok(
+      quiet.rows!.some((row) => row[1] === "Site audit" && row[4] === "Never reported"),
+      "a deliverable with no entry at all should read as never reported"
+    );
+  });
+
+  await t.test("delivery vs contract surfaces deliverables with no cadence", () => {
+    db.prepare(
+      `INSERT INTO snapshot_deliverables (id, client_id, name, category, kind, cadence, cadence_unit, active, created_at, updated_at)
+       VALUES (?, 'cl_1', ?, 'Social', 'recurring', '', 'monthly', 1, ?, ?)`
+    ).run("d3", "Nobody wrote a cadence", now, now);
+
+    const r = reports.buildReport("delivery_vs_contract", "2026-07-01", "2026-07-31");
+    const gap = r.sections.find((s) => s.title.startsWith("Deliverables with no cadence"))!;
+    assert.ok(gap.rows!.some((row) => row[1] === "Nobody wrote a cadence"));
+  });
+
+  await t.test("contract runway buckets by urgency and lists undated clients", () => {
+    const day = 86_400_000;
+    const ymd = (offset: number) => new Date(Date.now() + offset * day).toISOString().slice(0, 10);
+    const c = db.prepare(
+      `INSERT INTO rev_clients (id, name, active, contract_end, tier, account_manager, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?, ?, ?)`
+    );
+    c.run("cl_x", "Lapsed Co", ymd(-20), "gold", "cassidy", now, now);
+    c.run("cl_y", "Renewing Soon", ymd(12), "silver", "carlos", now, now);
+    c.run("cl_z", "Long Runway", ymd(200), "", "", now, now);
+
+    const r = reports.buildReport("contract_runway", "2026-07-01", "2026-07-31");
+    assert.equal(r.range, null, "runway is a state of play, not a period");
+
+    const stats = r.sections[0].stats!;
+    assert.equal(stats.find((s) => s.label === "Expired")?.value, "1");
+    assert.equal(stats.find((s) => s.label === "Due within 90 days")?.value, "1");
+    // cl_1 from the earlier fixture has no end date, so it must be counted apart
+    // rather than treated as open-ended.
+    assert.ok(Number(stats.find((s) => s.label === "No end date")?.value) >= 1);
+
+    const buckets = r.sections.find((s) => s.title === "Runway")!;
+    const bucket = (label: string) => buckets.rows!.find((x) => x[0] === label)![1];
+    assert.equal(bucket("Already expired"), "1");
+    assert.equal(bucket("Within 30 days"), "1");
+    assert.equal(bucket("Over 90 days"), "1");
+
+    // Expired first, and an expired contract reads as days ago rather than a
+    // negative number.
+    const soonest = r.sections.find((s) => s.title === "Expiring soonest")!;
+    assert.equal(soonest.rows![0][0], "Lapsed Co");
+    assert.match(soonest.rows![0][2], /ago$/);
+    assert.equal(soonest.rows![0][4], "cassidy");
+
+    const undated = r.sections.find((s) => s.title.startsWith("Clients with no contract"))!;
+    assert.ok(undated.rows!.some((row) => row[0] === "Humble Somm"));
+  });
+
+  await t.test("account health counts warnings and shows what drove each one", () => {
+    const r = reports.buildReport("account_health", "2026-07-01", "2026-07-31");
+    assert.equal(r.range, null);
+
+    const table = r.sections.find((s) => s.title.startsWith("Accounts with warnings"))!;
+    const somm = table.rows!.find((x) => x[0] === "Humble Somm");
+    assert.ok(somm, "Humble Somm has an open red flag and stale approvals");
+    // The warning count must equal what the explanation actually lists.
+    assert.equal(Number(somm![1]), somm![7].split(", ").length);
+    assert.ok(somm![7].includes("open flag"), "the open flag should be named");
+
+    // The rules are published on screen so the count can be checked.
+    const rules = r.sections.find((s) => s.title === "What counts as a warning")!;
+    assert.equal(rules.stats!.find((s) => s.label === "Approval waiting")?.value, "14d+");
+  });
+
   await t.test("an unknown report type is rejected", () => {
     assert.equal(reports.isReportType("time_tracking"), true);
     assert.equal(reports.isReportType("nope"), false);

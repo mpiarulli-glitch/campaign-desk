@@ -19,6 +19,9 @@ import { PEOPLE, personLabel, teamLabelFor } from "./people";
 import { teamLabel } from "./team";
 
 export type ReportType =
+  | "account_health"
+  | "delivery_vs_contract"
+  | "contract_runway"
   | "time_tracking"
   | "capacity"
   | "approvals_ageing"
@@ -41,6 +44,24 @@ export interface ReportMeta {
 }
 
 export const REPORTS: ReportMeta[] = [
+  {
+    type: "account_health",
+    label: "Account health",
+    blurb: "Every warning sign against every client, worst first.",
+    ranged: false,
+  },
+  {
+    type: "delivery_vs_contract",
+    label: "Delivery vs contract",
+    blurb: "What each client is owed against what has actually been reported.",
+    ranged: true,
+  },
+  {
+    type: "contract_runway",
+    label: "Contract runway",
+    blurb: "Which contracts have expired or run out within 90 days.",
+    ranged: false,
+  },
   {
     type: "time_tracking",
     label: "Time tracking",
@@ -174,6 +195,456 @@ function titleCaseStatus(s: string): string {
 }
 
 /* ------------------------------------------------------- 1. time tracking */
+
+/* ---------------------------------------------------- account health */
+
+// Thresholds at which a signal counts against an account. Named rather than
+// inlined so the report can state its own rules on screen — a risk count nobody
+// can interrogate is a risk count nobody trusts.
+const HEALTH = {
+  approvalDays: 14,
+  messageDays: 7,
+  quietWeeks: 3,
+};
+
+/**
+ * One row per client, pulling every warning sign into the same place.
+ *
+ * Deliberately NOT a 0-100 score. Any weighting across "an open red flag" and
+ * "a deliverable nobody reported on" would be invented, and an opaque number
+ * invites arguing with the scale instead of acting on the account. Instead each
+ * account carries a count of triggered signals, and every signal is shown
+ * alongside it so the count can be checked.
+ *
+ * Not ranged: this is the state of the book right now.
+ */
+function accountHealth(): ReportSection[] {
+  const db = getDb();
+  const now = Date.now();
+
+  const clients = db
+    .prepare(`SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name`)
+    .all() as Array<{ id: string; name: string }>;
+
+  const openFlags = new Map<string, { n: number; worst: string }>();
+  for (const f of db
+    .prepare(`SELECT client_id, level FROM client_flags WHERE resolved = 0`)
+    .all() as Array<{ client_id: string; level: string }>) {
+    const e = openFlags.get(f.client_id) || { n: 0, worst: "" };
+    e.n += 1;
+    if (f.level === "red" || (f.level === "yellow" && e.worst !== "red")) e.worst = f.level;
+    openFlags.set(f.client_id, e);
+  }
+
+  const oldestApproval = new Map<string, number>();
+  for (const c of db
+    .prepare(
+      `SELECT client_id, COALESCE(NULLIF(basecamp_approval_sent_at, ''), updated_at) AS since
+         FROM campaigns
+        WHERE archived_at IS NULL AND status IN ('in_review', 'needs_changes')
+          AND client_id IS NOT NULL`
+    )
+    .all() as Array<{ client_id: string; since: string }>) {
+    const age = daysSince(c.since, now);
+    oldestApproval.set(c.client_id, Math.max(oldestApproval.get(c.client_id) || 0, age));
+  }
+
+  const oldestMessage = new Map<string, number>();
+  for (const m of db
+    .prepare(
+      `SELECT client_id, last_client_at FROM basecamp_client_messages
+        WHERE awaiting_reply = 1 AND client_id IS NOT NULL`
+    )
+    .all() as Array<{ client_id: string; last_client_at: string }>) {
+    const age = daysSince(m.last_client_at, now);
+    oldestMessage.set(m.client_id, Math.max(oldestMessage.get(m.client_id) || 0, age));
+  }
+
+  const delivery = db
+    .prepare(
+      `SELECT d.client_id,
+              COUNT(*) AS owed,
+              SUM(CASE WHEN (SELECT COUNT(*) FROM snapshot_entries e
+                              WHERE e.deliverable_id = d.id) = 0 THEN 1 ELSE 0 END) AS never
+         FROM snapshot_deliverables d
+        WHERE d.active = 1
+        GROUP BY d.client_id`
+    )
+    .all() as Array<{ client_id: string; owed: number; never: number }>;
+  const owedBy = new Map(delivery.map((d) => [d.client_id, d]));
+
+  const lastEntry = new Map<string, string>();
+  for (const e of db
+    .prepare(`SELECT client_id, MAX(week_start) AS w FROM snapshot_entries GROUP BY client_id`)
+    .all() as Array<{ client_id: string; w: string }>) {
+    lastEntry.set(e.client_id, e.w);
+  }
+
+  const scored = clients.map((c) => {
+    const flags = openFlags.get(c.id);
+    const approval = oldestApproval.get(c.id) || 0;
+    const message = oldestMessage.get(c.id) || 0;
+    const owed = owedBy.get(c.id);
+    const last = lastEntry.get(c.id);
+    const quietWeeks = last ? Math.floor(daysSince(last, now) / 7) : null;
+
+    const signals: string[] = [];
+    if (flags?.n) signals.push(`${flags.n} open flag${flags.n === 1 ? "" : "s"}`);
+    if (approval >= HEALTH.approvalDays) signals.push(`approval ${approval}d`);
+    if (message >= HEALTH.messageDays) signals.push(`message ${message}d`);
+    if (owed?.never) signals.push(`${owed.never} unreported`);
+    if (quietWeeks === null) signals.push("never reported");
+    else if (quietWeeks >= HEALTH.quietWeeks) signals.push(`quiet ${quietWeeks}w`);
+
+    return {
+      name: c.name,
+      risk: signals.length,
+      flags: flags?.n || 0,
+      worst: flags?.worst || "",
+      approval,
+      message,
+      owed: owed?.owed || 0,
+      never: owed?.never || 0,
+      quietWeeks,
+      signals,
+    };
+  });
+
+  const atRisk = scored.filter((s) => s.risk > 0).sort((a, b) => b.risk - a.risk);
+  const clean = scored.length - atRisk.length;
+
+  return [
+    {
+      title: "The book at a glance",
+      stats: [
+        { label: "Active clients", value: String(scored.length) },
+        {
+          label: "Showing no warnings",
+          value: String(clean),
+          hint: pct(clean, scored.length) + " of the book",
+        },
+        {
+          label: "Two or more warnings",
+          value: String(atRisk.filter((s) => s.risk >= 2).length),
+          hint: "worth a conversation this week",
+        },
+        {
+          label: "With an open flag",
+          value: String(scored.filter((s) => s.flags).length),
+          hint: "raised and unresolved",
+        },
+      ],
+    },
+    {
+      title: "Accounts with warnings, worst first",
+      columns: [
+        "Client", "Warnings", "Open flags", "Oldest approval",
+        "Oldest message", "Unreported", "Quiet for", "What is wrong",
+      ],
+      numeric: [1, 2, 3, 4, 5, 6],
+      empty: "No account is showing a warning.",
+      rows: atRisk.map((s) => [
+        s.name,
+        String(s.risk),
+        s.flags ? `${s.flags}${s.worst ? ` (${s.worst})` : ""}` : "—",
+        s.approval ? `${s.approval}d` : "—",
+        s.message ? `${s.message}d` : "—",
+        s.never ? `${s.never} of ${s.owed}` : "—",
+        s.quietWeeks === null ? "never" : s.quietWeeks ? `${s.quietWeeks}w` : "—",
+        s.signals.join(", "),
+      ]),
+    },
+    {
+      title: "What counts as a warning",
+      stats: [
+        { label: "Open flag", value: "any", hint: "raised against the client, unresolved" },
+        { label: "Approval waiting", value: `${HEALTH.approvalDays}d+`, hint: "oldest package in review" },
+        { label: "Message unanswered", value: `${HEALTH.messageDays}d+`, hint: "client spoke last in Basecamp" },
+        { label: "Snapshot quiet", value: `${HEALTH.quietWeeks}w+`, hint: "no entry reported for the client" },
+      ],
+    },
+  ];
+}
+
+/* ------------------------------------------------ delivery against contract */
+
+// Statuses that mean a deliverable actually landed, as opposed to being talked
+// about. Anything else is work in flight. Interpolated into the query below so
+// the list lives in one place rather than being restated in SQL.
+const FINISHED_STATUSES = ["completed", "approved", "shared"] as const;
+const FINISHED_SQL = FINISHED_STATUSES.map((s) => `'${s}'`).join(", ");
+
+// A deliverable with no entry for this long has gone quiet. Snapshot entries are
+// weekly, so three weeks is three missed reports rather than a late one.
+const STALE_WEEKS = 3;
+
+interface DeliverableRow {
+  id: string;
+  client_id: string;
+  name: string;
+  category: string;
+  cadence: string;
+  entries: number;
+  finished: number;
+  last_week: string | null;
+}
+
+/**
+ * Are we delivering what we sold?
+ *
+ * This is coverage, not unit counting, and the difference is deliberate. The
+ * data cannot support "you were owed two blogs and got two":
+ *
+ *   - cadence is free text, and half the active deliverables have none at all.
+ *     What is there ranges from "2x / month" through "Bi-monthly" (which reads
+ *     both as twice a month and every second month) to "$1K/mo managed", which
+ *     is a budget rather than a count.
+ *   - snapshot_entries are weekly status rows, one per deliverable per week.
+ *     They record that something was reported, not how many things shipped.
+ *
+ * Counting either as deliveries would invent a number. So this reports what the
+ * data does support: which owed deliverables have never been reported on, which
+ * have gone quiet, and which never reach a finished status. The cadence gap is
+ * surfaced as its own finding, because a contract nobody wrote a cadence for is
+ * a contract nobody can be held to.
+ */
+function deliveryVsContract(start: string, end: string): ReportSection[] {
+  const names = clientNames();
+  const rows = getDb()
+    .prepare(
+      `SELECT d.id, d.client_id, d.name, d.category, d.cadence,
+              (SELECT COUNT(*) FROM snapshot_entries e
+                WHERE e.deliverable_id = d.id
+                  AND e.week_start >= ? AND e.week_start <= ?) AS entries,
+              (SELECT COUNT(*) FROM snapshot_entries e
+                WHERE e.deliverable_id = d.id
+                  AND e.week_start >= ? AND e.week_start <= ?
+                  AND e.status IN (${FINISHED_SQL})) AS finished,
+              (SELECT MAX(e.week_start) FROM snapshot_entries e
+                WHERE e.deliverable_id = d.id) AS last_week
+         FROM snapshot_deliverables d
+        WHERE d.active = 1
+        ORDER BY d.client_id, d.sort_order`
+    )
+    .all(start, end, start, end) as DeliverableRow[];
+
+  const now = Date.now();
+  const weeksSince = (week: string | null) =>
+    week ? Math.floor(daysSince(week, now) / 7) : null;
+
+  const never = rows.filter((r) => !r.entries);
+  const talkedAbout = rows.filter((r) => r.entries && !r.finished);
+  const stalled = rows.filter((r) => {
+    const w = weeksSince(r.last_week);
+    return w === null || w >= STALE_WEEKS;
+  });
+  const noCadence = rows.filter((r) => !r.cadence.trim());
+
+  const byClient = new Map<
+    string,
+    { owed: number; reported: number; finished: number; never: number }
+  >();
+  for (const r of rows) {
+    const key = names.get(r.client_id) || "Unknown client";
+    const e = byClient.get(key) || { owed: 0, reported: 0, finished: 0, never: 0 };
+    e.owed += 1;
+    if (r.entries) e.reported += 1;
+    else e.never += 1;
+    if (r.finished) e.finished += 1;
+    byClient.set(key, e);
+  }
+
+  return [
+    {
+      title: "Coverage in this range",
+      stats: [
+        { label: "Active deliverables", value: String(rows.length), hint: "what we owe" },
+        {
+          label: "Reported on",
+          value: pct(rows.length - never.length, rows.length),
+          hint: `${rows.length - never.length} of ${rows.length}`,
+        },
+        {
+          label: "Nothing reported",
+          value: String(never.length),
+          hint: never.length ? "no entry in this range" : "all covered",
+        },
+        {
+          label: "Reported, never finished",
+          value: String(talkedAbout.length),
+          hint: "no completed, approved or shared entry",
+        },
+      ],
+    },
+    {
+      title: "By client",
+      columns: ["Client", "Owed", "Reported", "Finished", "Nothing reported", "Coverage"],
+      numeric: [1, 2, 3, 4, 5],
+      empty: "No active deliverables.",
+      rows: [...byClient.entries()]
+        .sort((a, b) => b[1].never - a[1].never || a[0].localeCompare(b[0]))
+        .map(([client, e]) => [
+          client,
+          String(e.owed),
+          String(e.reported),
+          String(e.finished),
+          String(e.never),
+          pct(e.reported, e.owed),
+        ]),
+    },
+    {
+      title: `Gone quiet: no entry for ${STALE_WEEKS}+ weeks`,
+      columns: ["Client", "Deliverable", "Category", "Last reported", "Weeks quiet"],
+      numeric: [4],
+      empty: "Everything owed has been reported on recently.",
+      rows: stalled
+        .map((r) => ({ r, w: weeksSince(r.last_week) }))
+        .sort((a, b) => (b.w ?? 9999) - (a.w ?? 9999))
+        .map(({ r, w }) => [
+          names.get(r.client_id) || "Unknown client",
+          r.name,
+          r.category || "—",
+          r.last_week ? prettyDate(r.last_week) : "Never",
+          w === null ? "Never reported" : String(w),
+        ]),
+    },
+    {
+      title: "Deliverables with no cadence written down",
+      columns: ["Client", "Deliverable", "Category"],
+      empty: "Every active deliverable has a cadence.",
+      rows: noCadence.map((r) => [
+        names.get(r.client_id) || "Unknown client",
+        r.name,
+        r.category || "—",
+      ]),
+    },
+  ];
+}
+
+/* --------------------------------------------------------- contract runway */
+
+const RUNWAY_BUCKETS: Array<{ label: string; min: number; max: number }> = [
+  { label: "Already expired", min: -100000, max: -1 },
+  { label: "Within 30 days", min: 0, max: 30 },
+  { label: "31–60 days", min: 31, max: 60 },
+  { label: "61–90 days", min: 61, max: 90 },
+  { label: "Over 90 days", min: 91, max: 100000 },
+];
+
+/**
+ * Which contracts are running out.
+ *
+ * Not ranged: a contract that expired last month is the most urgent row on the
+ * page, and a date window would hide it.
+ *
+ * Clients with no contract_end are listed separately rather than treated as
+ * open-ended. On the local snapshot that was every one of them, so an empty
+ * report here means the dates are not filled in, not that nothing is expiring —
+ * which is why the count is shown rather than left implicit.
+ */
+function contractRunway(): ReportSection[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT name, contract_start, contract_end, retainer, tier, account_manager
+         FROM rev_clients
+        WHERE active = 1`
+    )
+    .all() as Array<{
+    name: string;
+    contract_start: string | null;
+    contract_end: string | null;
+    retainer: number | null;
+    tier: string | null;
+    account_manager: string | null;
+  }>;
+
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const daysUntil = (ymd: string): number | null => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    if (!y || !m || !d) return null;
+    return Math.round((Date.UTC(y, m - 1, d) - todayMs) / 86_400_000);
+  };
+
+  const dated: Array<{ name: string; end: string; days: number; tier: string; am: string }> = [];
+  const undated: string[] = [];
+  for (const r of rows) {
+    const end = (r.contract_end || "").trim();
+    const days = end ? daysUntil(end) : null;
+    if (days === null) {
+      undated.push(r.name);
+      continue;
+    }
+    dated.push({
+      name: r.name,
+      end,
+      days,
+      tier: (r.tier || "").trim() || "—",
+      am: (r.account_manager || "").trim() || "Unassigned",
+    });
+  }
+  dated.sort((a, b) => a.days - b.days);
+
+  const expired = dated.filter((d) => d.days < 0);
+  const soon = dated.filter((d) => d.days >= 0 && d.days <= 90);
+
+  return [
+    {
+      title: "Renewal pressure",
+      stats: [
+        { label: "Active clients", value: String(rows.length) },
+        {
+          label: "Expired",
+          value: String(expired.length),
+          hint: expired.length ? "past their end date" : "none past due",
+        },
+        {
+          label: "Due within 90 days",
+          value: String(soon.length),
+          hint: soon.length ? `soonest ${soon[0].days}d` : "nothing due",
+        },
+        {
+          label: "No end date",
+          value: String(undated.length),
+          hint: undated.length ? "not tracked, so not counted above" : "every contract dated",
+        },
+      ],
+    },
+    {
+      title: "Runway",
+      columns: ["When", "Clients"],
+      numeric: [1],
+      empty: "No contract end dates are recorded.",
+      rows: dated.length
+        ? RUNWAY_BUCKETS.map((b) => [
+            b.label,
+            String(dated.filter((d) => d.days >= b.min && d.days <= b.max).length),
+          ])
+        : [],
+    },
+    {
+      title: "Expiring soonest",
+      columns: ["Client", "Ends", "Days", "Tier", "Account manager"],
+      numeric: [2],
+      empty: "No contract end dates are recorded.",
+      rows: dated
+        .slice(0, 40)
+        .map((d) => [
+          d.name,
+          prettyDate(d.end),
+          d.days < 0 ? `${Math.abs(d.days)} ago` : String(d.days),
+          d.tier,
+          d.am,
+        ]),
+    },
+    {
+      title: "Clients with no contract end date",
+      columns: ["Client"],
+      empty: "Every active client has an end date.",
+      rows: undated.map((n) => [n]),
+    },
+  ];
+}
 
 /* ------------------------------------------------------- unanswered clients */
 
@@ -1161,6 +1632,15 @@ export function buildReport(
   const meta = reportMeta(type);
   let sections: ReportSection[];
   switch (type) {
+    case "account_health":
+      sections = accountHealth();
+      break;
+    case "delivery_vs_contract":
+      sections = deliveryVsContract(start, end);
+      break;
+    case "contract_runway":
+      sections = contractRunway();
+      break;
     case "time_tracking":
       sections = timeTracking(start, end);
       break;
