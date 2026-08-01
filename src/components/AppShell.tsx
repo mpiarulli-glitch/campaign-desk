@@ -12,6 +12,9 @@ type Session = {
   person: string | null;
   owner: boolean;
   impersonating: boolean;
+  // True while this person is still signing in with a shared env-var password
+  // instead of one they set themselves.
+  mustSetPassword: boolean;
 };
 
 type NavItem = { href: string; label: string; icon: keyof typeof ICONS };
@@ -80,7 +83,7 @@ function initials(label: string): string {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false });
+  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false });
   const [menuOpen, setMenuOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
@@ -103,7 +106,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (on && d?.authenticated) {
-          setSession({ role: d.role, person: d.person || null, owner: Boolean(d.owner), impersonating: Boolean(d.impersonating) });
+          setSession({ role: d.role, person: d.person || null, owner: Boolean(d.owner), impersonating: Boolean(d.impersonating), mustSetPassword: Boolean(d.mustSetPassword) });
         }
       })
       .catch(() => {});
@@ -232,11 +235,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="app-menu" role="menu">
                   <div className="app-menu-head">
                     <span className="app-ava">{initials(meLabel)}</span>
-                    <div><b>{meLabel}</b><small>{session.owner ? "Owner" : session.role === "admin" ? "Admin" : "Team"}</small></div>
+                    <div><b>{meLabel}</b><small>{session.owner ? "Owner" : session.role === "admin" ? "Admin" : "User"}</small></div>
                   </div>
 
                   <div className="app-menu-sec">Personal tools</div>
                   <Link href={forecastHref} className="app-menu-i" onClick={() => setMenuOpen(false)}><Svg name="forecast" />Forecast</Link>
+                  {/* Hidden while impersonating: the password isn't theirs to change. */}
+                  {session.impersonating ? null : (
+                    <Link href="/account/password" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="eye" />{session.mustSetPassword ? "Set your password" : "Change password"}
+                    </Link>
+                  )}
+                  {session.owner ? (
+                    <Link href="/admin/users" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="clients" />Accounts
+                    </Link>
+                  ) : null}
 
                   <div className="app-menu-div" />
 
@@ -251,7 +265,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <optgroup label="Admin accounts">
                           {ADMIN_PEOPLE.map((p) => <option key={p.slug} value={`admin:${p.slug}`}>{p.label}</option>)}
                         </optgroup>
-                        <optgroup label="Team members">
+                        <optgroup label="Users">
                           {entryLevelPeople().map((p) => <option key={p.slug} value={`forecast:${p.slug}`}>{p.label}</option>)}
                         </optgroup>
                       </select>
@@ -270,6 +284,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
+
+        {/* Anyone still on a shared env-var password gets a standing reminder,
+            since their activity is not yet attributable to them alone. */}
+        {session.mustSetPassword && pathname !== "/account/password" ? (
+          <div className="app-banner">
+            <span>
+              You are signing in with a shared password. Set your own so your
+              work is recorded as yours.
+            </span>
+            <Link href="/account/password" className="btn btn-sm">
+              Set password
+            </Link>
+          </div>
+        ) : null}
 
         <main className="app-content">{children}</main>
       </div>

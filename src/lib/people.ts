@@ -17,6 +17,11 @@ export const PEOPLE = [
   { slug: "mike_hines", label: "Mike Hines", productionAccess: false, entryLevel: false },
 ] as const;
 
+// The single owner account. Logging in as this slug issues the null-person
+// admin session that every existing owner check reads (see auth.ts), so the
+// owner keeps full access while still having a real, self-managed password.
+export const OWNER_SLUG = "michael";
+
 export function personLabel(slug: string): string {
   return PEOPLE.find((p) => p.slug === slug)?.label || slug;
 }

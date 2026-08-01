@@ -3,8 +3,27 @@ import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
 import type { AssetKind, BodyFormat } from "./asset-kinds";
+import { ADMIN_PEOPLE } from "./admin-people";
+import { PEOPLE, OWNER_SLUG } from "./people";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
+
+export type UserRole = "owner" | "admin" | "forecast";
+
+export interface User {
+  slug: string;
+  label: string;
+  email: string | null;
+  role: UserRole;
+  password_hash: string | null;
+  active: number;
+  invite_token: string | null;
+  invite_expires_at: string | null;
+  password_set_at: string | null;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export type CampaignStatus =
   | "draft"
@@ -1297,9 +1316,37 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_lc_stats_day ON lifecycle_campaign_stats(captured_on);
+
+    -- Login accounts. The roster itself still lives in code (admin-people.ts,
+    -- people.ts) because client components import it at module scope; this
+    -- table owns credentials and identity only, and is seeded from those
+    -- arrays on boot. Passwords are scrypt hashes (see ./password.ts), never
+    -- plaintext and never env vars.
+    CREATE TABLE IF NOT EXISTS users (
+      slug TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      email TEXT,
+      -- 'owner' issues a null-person admin session (preserving every existing
+      -- owner check); 'admin' and 'forecast' map to the two session roles.
+      role TEXT NOT NULL DEFAULT 'forecast',
+      password_hash TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      invite_token TEXT,
+      invite_expires_at TEXT,
+      password_set_at TEXT,
+      last_login_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite
+      ON users(invite_token) WHERE invite_token IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
+      ON users(email) WHERE email IS NOT NULL;
   `);
 
   migrate(db);
+  seedUsers(db);
 
   return db;
 }
@@ -1697,6 +1744,27 @@ function migrate(database: Database.Database) {
       campaign.updated_at
     );
     updateCommentEmail.run(emailId, campaign.id);
+  }
+}
+
+// Insert a login row for every person in the code roster who does not have one
+// yet. Never touches an existing row, so it cannot clobber a password someone
+// has already set. Overlapping slugs (cassidy, carlos appear in both arrays)
+// get the admin role, matching the "admin label wins" rule in team.ts.
+function seedUsers(database: Database.Database) {
+  const now = nowIso();
+  const insert = database.prepare(
+    `INSERT INTO users (slug, label, role, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(slug) DO NOTHING`
+  );
+
+  insert.run(OWNER_SLUG, "Michael", "owner", now, now);
+  for (const p of ADMIN_PEOPLE) {
+    insert.run(p.slug, p.label, "admin", now, now);
+  }
+  for (const p of PEOPLE) {
+    insert.run(p.slug, p.label, "forecast", now, now);
   }
 }
 

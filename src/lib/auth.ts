@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { isValidAdminPerson } from "./admin-people";
-import { hasProductionAccess, isValidPerson } from "./people";
+import { hasProductionAccess, isValidPerson, OWNER_SLUG } from "./people";
+import { authenticate, getUser, recordLogin } from "./users";
 
 const COOKIE_NAME = "cd_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days
@@ -65,6 +66,10 @@ function timingSafePasswordMatch(password: string, expected: string): boolean {
   }
 }
 
+// Owner break-glass. ADMIN_PASSWORD keeps working for the owner account even
+// after they set their own password, because the alternative is being locked
+// out of a Railway-deployed app whose user table lives in SQLite on the volume.
+// It does NOT grant access to anyone else's account.
 export function verifyPassword(password: string): boolean {
   return validPasswords().some((expected) => {
     return timingSafePasswordMatch(password, expected);
@@ -120,6 +125,128 @@ export function verifyForecastPassword(
       return false;
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Login
+// ---------------------------------------------------------------------------
+
+// Legacy env-var credentials (ADMIN_ACCOUNTS / FORECAST_PASSWORDS / etc).
+// These are a migration bridge only: they work for an account until that person
+// sets their own password, after which the env var is dead for them. Delete the
+// env vars once everyone has set a password.
+function legacyEnvPasswordMatches(
+  slug: string,
+  role: string,
+  password: string
+): boolean {
+  if (role === "owner") return verifyPassword(password);
+  if (role === "admin") {
+    return verifyAdminAccount(slug, password) || verifyPassword(password);
+  }
+  return verifyForecastPassword(slug, password);
+}
+
+export type LoginOutcome =
+  | {
+      ok: true;
+      role: "admin" | "forecast";
+      person: string | null;
+      usedLegacyPassword: boolean;
+      mustSetPassword: boolean;
+    }
+  | { ok: false; error: string; status: number };
+
+// Single entry point for signing in. Resolves the account, checks the password
+// against the users table (falling back to env vars only while a password is
+// unset), then issues the matching session cookie.
+export async function login(
+  slug: string,
+  password: string
+): Promise<LoginOutcome> {
+  const user = getUser(slug);
+
+  if (!user || !user.active) {
+    // Burn a KDF cycle via authenticate() so an unknown or disabled slug costs
+    // the same as a real one.
+    authenticate(slug, password);
+    return { ok: false, error: "Invalid credentials", status: 401 };
+  }
+
+  let usedLegacyPassword = false;
+
+  if (user.password_hash) {
+    const result = authenticate(slug, password);
+    if (!result.ok) {
+      // The owner can still get in with the break-glass env password.
+      if (user.role === "owner" && verifyPassword(password)) {
+        usedLegacyPassword = true;
+      } else {
+        return { ok: false, error: "Invalid credentials", status: 401 };
+      }
+    }
+  } else if (legacyEnvPasswordMatches(slug, user.role, password)) {
+    usedLegacyPassword = true;
+  } else {
+    return { ok: false, error: "Invalid credentials", status: 401 };
+  }
+
+  recordLogin(slug);
+
+  // The owner gets the null-person admin session that all existing owner
+  // checks look for. Everyone else carries their slug.
+  if (user.role === "owner") {
+    await createSession();
+    return {
+      ok: true,
+      role: "admin",
+      person: null,
+      usedLegacyPassword,
+      mustSetPassword: !user.password_hash,
+    };
+  }
+
+  if (user.role === "admin") {
+    if (!isValidAdminPerson(slug)) {
+      return { ok: false, error: "Account is not configured", status: 403 };
+    }
+    await createAdminAccountSession(slug);
+    return {
+      ok: true,
+      role: "admin",
+      person: slug,
+      usedLegacyPassword,
+      mustSetPassword: !user.password_hash,
+    };
+  }
+
+  if (!isValidPerson(slug)) {
+    return { ok: false, error: "Account is not configured", status: 403 };
+  }
+  await createForecastSession(slug);
+  return {
+    ok: true,
+    role: "forecast",
+    person: slug,
+    usedLegacyPassword,
+    mustSetPassword: !user.password_hash,
+  };
+}
+
+// The slug whose password the current session is allowed to change. The owner's
+// session carries a null person, so map it back to the owner slug. Returns null
+// while impersonating, since you must not change someone else's password.
+export async function sessionUserSlug(): Promise<string | null> {
+  const session = await getSession();
+  if (!session) return null;
+  if (session.impersonating) return null;
+  if (session.role === "admin" && session.person === null) return OWNER_SLUG;
+  return session.person;
+}
+
+export async function isOwner(): Promise<boolean> {
+  const session = await getSession();
+  return session?.role === "admin" && session.person === null;
 }
 
 async function setSessionCookie(payload: string): Promise<void> {

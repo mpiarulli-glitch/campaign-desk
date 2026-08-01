@@ -1,26 +1,25 @@
 import { NextResponse } from "next/server";
-import {
-  createAdminAccountSession,
-  createSession,
-  createForecastSession,
-  clearSession,
-  getSession,
-  verifyAdminAccount,
-  verifyPassword,
-  verifyForecastPassword,
-} from "@/lib/auth";
+import { clearSession, getSession, login } from "@/lib/auth";
+import { OWNER_SLUG } from "@/lib/people";
+import { hasOwnPassword } from "@/lib/users";
 import { clientKey, loginAllowed, loginFailed, loginSucceeded } from "@/lib/rate-limit";
 
 export async function GET() {
   const session = await getSession();
+  const owner = session?.role === "admin" && session.person === null;
+  const slug = owner ? OWNER_SLUG : session?.person || null;
   return NextResponse.json({
     authenticated: Boolean(session),
     role: session?.role || null,
     person: session?.person || null,
-    owner:
-      session?.role === "admin" &&
-      session.person === null,
+    owner,
     impersonating: Boolean(session?.impersonating),
+    // Drives the "set your own password" nudge in the shell. Impersonated
+    // sessions never prompt, since the password isn't theirs to change.
+    mustSetPassword:
+      Boolean(session) && !session?.impersonating && slug
+        ? !hasOwnPassword(slug)
+        : false,
   });
 }
 
@@ -37,32 +36,32 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const password = typeof body.password === "string" ? body.password : "";
-  const person = typeof body.person === "string" ? body.person : "";
-  const adminPerson =
-    typeof body.adminPerson === "string" ? body.adminPerson : "";
+  // `account` is the new field: one user slug, no separate admin/forecast mode.
+  // `adminPerson` / `person` are still read so a login tab that was already
+  // open before a deploy keeps working.
+  const account =
+    typeof body.account === "string" && body.account
+      ? body.account
+      : typeof body.adminPerson === "string" && body.adminPerson
+        ? body.adminPerson
+        : typeof body.person === "string" && body.person
+          ? body.person
+          : OWNER_SLUG;
 
-  if (!verifyPassword(password)) {
-    if (adminPerson && verifyAdminAccount(adminPerson, password)) {
-      loginSucceeded(key);
-      await createAdminAccountSession(adminPerson);
-      return NextResponse.json({
-        ok: true,
-        role: "admin",
-        person: adminPerson,
-      });
-    }
-    if (!person || !verifyForecastPassword(person, password)) {
-      loginFailed(key);
-      return NextResponse.json({ error: "Invalid password" }, { status: 401 });
-    }
-    loginSucceeded(key);
-    await createForecastSession(person);
-    return NextResponse.json({ ok: true, role: "forecast", person });
+  const result = await login(account, password);
+
+  if (!result.ok) {
+    loginFailed(key);
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
   loginSucceeded(key);
-  await createSession();
-  return NextResponse.json({ ok: true, role: "admin" });
+  return NextResponse.json({
+    ok: true,
+    role: result.role,
+    person: result.person,
+    mustSetPassword: result.mustSetPassword,
+  });
 }
 
 export async function DELETE() {

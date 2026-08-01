@@ -1,19 +1,59 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brand } from "@/components/Brand";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { PEOPLE } from "@/lib/people";
+import { PEOPLE, OWNER_SLUG } from "@/lib/people";
+
+// One account list instead of the old Admin/Forecast tabs. The role now comes
+// from the users table, so the person picking their name is all we need: the
+// server decides what they can see.
+type Choice = { slug: string; label: string; group: string };
+
+function buildChoices(): Choice[] {
+  const seen = new Set<string>();
+  const choices: Choice[] = [];
+
+  // OWNER_SLUG is listed in PEOPLE, not ADMIN_PEOPLE, so read the label there.
+  const owner = PEOPLE.find((p) => p.slug === OWNER_SLUG);
+  choices.push({
+    slug: OWNER_SLUG,
+    label: owner?.label || "Michael",
+    group: "Owner",
+  });
+  seen.add(OWNER_SLUG);
+
+  for (const p of ADMIN_PEOPLE) {
+    if (seen.has(p.slug)) continue;
+    seen.add(p.slug);
+    choices.push({ slug: p.slug, label: p.label, group: "Admin" });
+  }
+  for (const p of PEOPLE) {
+    if (seen.has(p.slug)) continue;
+    seen.add(p.slug);
+    choices.push({ slug: p.slug, label: p.label, group: "Users" });
+  }
+  return choices;
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"admin" | "forecast">("admin");
-  const [adminPerson, setAdminPerson] = useState<string>("main");
-  const [person, setPerson] = useState<string>(PEOPLE[0]?.slug || "");
+  const choices = useMemo(buildChoices, []);
+  const [account, setAccount] = useState<string>(OWNER_SLUG);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, Choice[]>();
+    for (const c of choices) {
+      const list = map.get(c.group) || [];
+      list.push(c);
+      map.set(c.group, list);
+    }
+    return [...map.entries()];
+  }, [choices]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -23,26 +63,28 @@ export default function LoginPage() {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password,
-          adminPerson:
-            mode === "admin" && adminPerson !== "main"
-              ? adminPerson
-              : undefined,
-          person: mode === "forecast" ? person : undefined,
-        }),
+        body: JSON.stringify({ account, password }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError("Wrong password. Try again.");
+        setError(
+          res.status === 429
+            ? data.error || "Too many attempts. Wait a few minutes."
+            : "Wrong password. Try again."
+        );
         setLoading(false);
         return;
       }
-      const data = await res.json();
-      router.push(
-        data.role === "forecast" && data.person
-          ? `/admin/forecast/${data.person}`
-          : "/admin"
-      );
+      // Anyone still on a shared env password lands on the password page first.
+      if (data.mustSetPassword) {
+        router.push("/account/password");
+      } else {
+        router.push(
+          data.role === "forecast" && data.person
+            ? `/admin/forecast/${data.person}`
+            : "/admin"
+        );
+      }
       router.refresh();
     } catch {
       setError("Could not sign in. Check that the server is running.");
@@ -58,72 +100,39 @@ export default function LoginPage() {
           <p className="eyebrow">Internal tool</p>
           <h1>Sign in</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Upload campaigns, share a private review link, and collect feedback
-            from your team or clients.
+            Pick your name and use your own password. If you have not set one
+            yet, ask Michael for an invite link.
           </p>
         </div>
-        <div className="tabs" style={{ marginBottom: 0 }}>
-          <button
-            type="button"
-            className={`tab ${mode === "admin" ? "active" : ""}`}
-            onClick={() => setMode("admin")}
-          >
-            Admin
-          </button>
-          <button
-            type="button"
-            className={`tab ${mode === "forecast" ? "active" : ""}`}
-            onClick={() => setMode("forecast")}
-          >
-            Forecast
-          </button>
-        </div>
-        {mode === "admin" ? (
-          <div className="field">
-            <label htmlFor="admin-person">Account</label>
-            <select
-              id="admin-person"
-              className="select-clean"
-              value={adminPerson}
-              onChange={(e) => setAdminPerson(e.target.value)}
-            >
-              <option value="main">Main admin</option>
-              {ADMIN_PEOPLE.map((p) => (
-                <option key={p.slug} value={p.slug}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        {mode === "forecast" ? (
-          <div className="field">
-            <label htmlFor="person">Your name</label>
-            <select
-              id="person"
-              className="select-clean"
-              value={person}
-              onChange={(e) => setPerson(e.target.value)}
-            >
-              {PEOPLE.map((p) => (
-                <option key={p.slug} value={p.slug}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
         <div className="field">
-          <label htmlFor="password">
-            {mode === "forecast" ? "Forecast password" : "Admin password"}
-          </label>
+          <label htmlFor="account">Your account</label>
+          <select
+            id="account"
+            className="select-clean"
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+          >
+            {groups.map(([group, list]) => (
+              <optgroup key={group} label={group}>
+                {list.map((c) => (
+                  <option key={c.slug} value={c.slug}>
+                    {c.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="password">Password</label>
           <input
             id="password"
             type="password"
             autoFocus
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
+            placeholder="Enter your password"
             required
           />
         </div>
