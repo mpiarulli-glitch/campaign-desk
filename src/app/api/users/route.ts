@@ -53,6 +53,30 @@ export async function POST(request: Request) {
   const action = typeof body.action === "string" ? body.action : "";
   const slug = typeof body.slug === "string" ? body.slug : "";
 
+  // Mint a link for everyone who still needs one, in a single pass, so the
+  // owner can send them all out in one sitting. Skips anyone who already set
+  // their own password so it never resets a working login by accident.
+  if (action === "invite_all") {
+    const links: Array<{ slug: string; label: string; url: string }> = [];
+    const skipped: string[] = [];
+    for (const u of listUsers()) {
+      if (!u.active) continue;
+      if (u.password_hash) {
+        skipped.push(u.label);
+        continue;
+      }
+      const token = createInvite(u.slug);
+      if (token) {
+        links.push({
+          slug: u.slug,
+          label: u.label,
+          url: `${getAppUrl()}/invite/${token}`,
+        });
+      }
+    }
+    return NextResponse.json({ ok: true, links, skipped });
+  }
+
   const user = getUser(slug);
   if (!user) {
     return NextResponse.json({ error: "Unknown account" }, { status: 404 });

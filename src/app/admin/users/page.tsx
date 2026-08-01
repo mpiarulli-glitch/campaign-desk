@@ -44,6 +44,10 @@ export default function UsersPage() {
     null
   );
   const [copied, setCopied] = useState(false);
+  const [allLinks, setAllLinks] = useState<
+    { links: Array<{ slug: string; label: string; url: string }>; skipped: string[] } | null
+  >(null);
+  const [copiedAll, setCopiedAll] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/users");
@@ -87,6 +91,10 @@ export default function UsersPage() {
       } else if (action === "invite" && data.url) {
         setInviteUrl({ slug, url: data.url });
         setCopied(false);
+      } else if (action === "invite_all" && data.links) {
+        setAllLinks({ links: data.links, skipped: data.skipped || [] });
+        setCopiedAll(false);
+        setInviteUrl(null);
       }
       await load();
     } catch {
@@ -126,6 +134,14 @@ export default function UsersPage() {
               they set it themselves, so nobody else ever knows it.
             </p>
           </div>
+          <button
+            className="btn"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => act("", "invite_all")}
+          >
+            {busy === ":invite_all" ? "Creating..." : "Invite everyone"}
+          </button>
         </div>
 
         {error ? (
@@ -167,6 +183,51 @@ export default function UsersPage() {
                 className="btn btn-ghost btn-sm"
                 type="button"
                 onClick={() => setInviteUrl(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {allLinks ? (
+          <div className="ops-panel" style={{ padding: 20, marginBottom: 16 }}>
+            <p className="ops-eyebrow" style={{ marginTop: 0 }}>
+              Invite links, one per person
+            </p>
+            <p className="muted" style={{ marginTop: 0, lineHeight: 1.6 }}>
+              Send each person their own line. Every link works once and expires
+              in 72 hours.
+              {allLinks.skipped.length
+                ? ` Skipped ${allLinks.skipped.join(", ")}, who already set a password.`
+                : ""}
+            </p>
+            <textarea
+              readOnly
+              rows={Math.min(allLinks.links.length + 1, 16)}
+              value={allLinks.links.map((l) => `${l.label}: ${l.url}`).join("\n")}
+              onFocus={(e) => e.currentTarget.select()}
+              style={{ width: "100%", fontFamily: "var(--font-readout, monospace)", fontSize: 12 }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(
+                      allLinks.links.map((l) => `${l.label}: ${l.url}`).join("\n")
+                    )
+                    .then(() => setCopiedAll(true))
+                    .catch(() => setCopiedAll(false));
+                }}
+              >
+                {copiedAll ? "Copied" : "Copy all"}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={() => setAllLinks(null)}
               >
                 Done
               </button>
