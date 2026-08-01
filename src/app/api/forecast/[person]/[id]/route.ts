@@ -1,12 +1,64 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
-import { basecampConnected, completeTodo, uncompleteTodo } from "@/lib/basecamp";
-import { deleteTask, getTask, updateTask, type ForecastPriority } from "@/lib/forecast";
+import {
+  basecampConnected,
+  completeTodo,
+  createTimeEntry,
+  uncompleteTodo,
+} from "@/lib/basecamp";
+import { deleteTask, getTask, updateTask, personLabel, type ForecastPriority } from "@/lib/forecast";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
+
+/**
+ * Log time against the task's linked Basecamp todo.
+ *
+ * Separate from the PATCH body's other fields because it writes to Basecamp and
+ * must not happen implicitly: hours land on a client-visible timesheet, and a
+ * duplicate entry can't be un-sent. Refuses if time was already logged.
+ */
+async function logTime(
+  taskId: string,
+  person: string,
+  hours: number
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const task = getTask(taskId);
+  if (!task) return { status: 404, body: { error: "Not found" } };
+  if (!task.basecamp_todo_id) {
+    return { status: 400, body: { error: "That task isn't linked to a Basecamp todo." } };
+  }
+  if (task.basecamp_time_entry_id) {
+    return {
+      status: 409,
+      body: { error: "Time is already logged for that task.", entryId: task.basecamp_time_entry_id },
+    };
+  }
+  if (!(hours > 0)) {
+    return { status: 400, body: { error: "hours must be a positive number" } };
+  }
+  if (!basecampConnected()) {
+    return { status: 400, body: { error: "Basecamp isn't connected." } };
+  }
+
+  const result = await createTimeEntry(task.basecamp_todo_id, {
+    date: task.task_date,
+    hours,
+    description: `${personLabel(person)} — ${task.notes || task.client}`.trim(),
+  });
+  if (!result.ok) {
+    return { status: 502, body: { error: result.error || "Could not log time to Basecamp." } };
+  }
+  // Recorded only after Basecamp accepts, so a failed write leaves the task
+  // loggable rather than looking done.
+  const updated = updateTask(taskId, {
+    actualHours: hours,
+    basecampTimeEntryId: result.entryId || "",
+  });
+  return { status: 200, body: { task: updated, entryId: result.entryId, appUrl: result.appUrl } };
+}
 
 export async function PATCH(request: Request, { params }: Params) {
   const { person, id } = await params;
@@ -18,6 +70,13 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
+
+  // { logTimeHours: 1.5 } is its own action, not a field update.
+  if (body.logTimeHours !== undefined) {
+    const { status, body: out } = await logTime(id, person, Number(body.logTimeHours));
+    return NextResponse.json(out, { status });
+  }
+
   if (body.taskDate !== undefined && !DATE_RE.test(body.taskDate)) {
     return NextResponse.json({ error: "taskDate must be YYYY-MM-DD" }, { status: 400 });
   }

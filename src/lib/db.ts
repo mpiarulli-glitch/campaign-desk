@@ -204,6 +204,13 @@ export interface ForecastTask {
   // the visible task text stays the plain copied title in `notes`.
   basecamp_todo_id: string;
   basecamp_project_id: string;
+  // Time actually spent, logged to the linked Basecamp todo's timesheet on
+  // completion. Distinct from `hours`, which is the up-front forecast estimate.
+  // 0 means nothing has been logged yet.
+  actual_hours: number;
+  // Basecamp Timesheet::Entry id, set once time has been logged. Its presence
+  // is what stops the same task logging twice.
+  basecamp_time_entry_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -945,6 +952,8 @@ export function getDb(): Database.Database {
       completed INTEGER NOT NULL DEFAULT 0,
       basecamp_todo_id TEXT NOT NULL DEFAULT '',
       basecamp_project_id TEXT NOT NULL DEFAULT '',
+      actual_hours REAL NOT NULL DEFAULT 0,
+      basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1589,6 +1598,14 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("basecamp_project_id")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN basecamp_project_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("actual_hours")) {
+    database.exec(`ALTER TABLE forecast_tasks ADD COLUMN actual_hours REAL NOT NULL DEFAULT 0`);
+  }
+  if (forecastCols.length && !forecastCols.includes("basecamp_time_entry_id")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN basecamp_time_entry_id TEXT NOT NULL DEFAULT ''`
     );
   }
 

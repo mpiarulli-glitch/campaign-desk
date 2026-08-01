@@ -473,6 +473,51 @@ export async function listPersonProjectTodos(
   return { todos: flagged, assignedCount };
 }
 
+/* -------------------------------------------------------------- timesheets */
+
+export interface TimeEntryResult {
+  ok: boolean;
+  error?: string;
+  entryId?: string;
+  appUrl?: string;
+}
+
+/**
+ * Log time against a Basecamp todo's timesheet.
+ *
+ * Note the path shape: timesheet entries hang off /recordings/{id}, NOT
+ * /buckets/{project}/... like most todo endpoints. The recording can be any
+ * "timesheetable" thing (todo, card, message, document), so passing the todo id
+ * attaches the hours directly to that todo.
+ *
+ * @param todoId  Basecamp recording id of the todo
+ * @param date    YYYY-MM-DD the work happened on
+ * @param hours   decimal hours, e.g. 1.5
+ */
+export async function createTimeEntry(
+  todoId: string,
+  input: { date: string; hours: number; description?: string }
+): Promise<TimeEntryResult> {
+  if (!todoId) return { ok: false, error: "missing todo id" };
+  if (!(input.hours > 0)) return { ok: false, error: "hours must be greater than 0" };
+  try {
+    const res = await bc(`/recordings/${todoId}/timesheet/entries.json`, {
+      method: "POST",
+      body: JSON.stringify({
+        date: input.date,
+        // Basecamp accepts a decimal string ("1.5") or "H:MM".
+        hours: String(input.hours),
+        description: (input.description || "").trim(),
+      }),
+    });
+    if (!res.ok) return { ok: false, error: `timesheet ${res.status}` };
+    const entry = await res.json();
+    return { ok: true, entryId: String(entry.id), appUrl: entry.app_url };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 // Mark a todo complete. Basecamp answers 204 on success and 404 if the todo is
 // already completed or gone, which we treat as success — the desired end state
 // holds either way.

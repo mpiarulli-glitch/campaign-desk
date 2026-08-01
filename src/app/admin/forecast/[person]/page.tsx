@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -18,6 +18,8 @@ type Task = {
   priority: Priority;
   basecamp_todo_id: string;
   basecamp_project_id: string;
+  actual_hours: number;
+  basecamp_time_entry_id: string;
 };
 
 type Data = {
@@ -353,6 +355,11 @@ export default function PersonForecastPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [todosByClient, setTodosByClient] = useState<Record<string, TodoState>>({});
+  // taskId -> hours typed into that task's "log time" box. Logging is explicit:
+  // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
+  // so ticking a task never posts on its own.
+  const [logDrafts, setLogDrafts] = useState<Record<string, string>>({});
+  const [logging, setLogging] = useState<string | null>(null);
 
   function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
@@ -616,6 +623,68 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  async function logTime(task: Task) {
+    const raw = logDrafts[task.id] ?? String(task.hours);
+    const hours = Number(raw);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      setError("Enter the hours actually spent before logging to Basecamp.");
+      return;
+    }
+    setLogging(task.id);
+    const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logTimeHours: hours }),
+    });
+    setLogging(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not log that time to Basecamp.");
+      return;
+    }
+    setError("");
+    setLogDrafts((d) => {
+      const next = { ...d };
+      delete next[task.id];
+      return next;
+    });
+    load(week, { silent: true });
+  }
+
+  // Only for completed tasks that came from a Basecamp todo: there's nowhere to
+  // log against otherwise, and logging before the work is done is a guess.
+  function LogTimeRow({ task }: { task: Task }) {
+    if (!task.basecamp_todo_id || !task.completed) return null;
+    if (task.basecamp_time_entry_id) {
+      return (
+        <div className="muted" style={{ fontSize: 12, paddingLeft: 26, marginTop: 2 }}>
+          {task.actual_hours}h logged to Basecamp
+        </div>
+      );
+    }
+    return (
+      <div className="row" style={{ gap: 6, paddingLeft: 26, marginTop: 4, flexWrap: "wrap" }}>
+        <span className="muted" style={{ fontSize: 12 }}>Actual hours</span>
+        <input
+          value={logDrafts[task.id] ?? String(task.hours)}
+          onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
+          type="number"
+          min="0"
+          step="0.25"
+          aria-label="Actual hours spent"
+          style={{ width: 70 }}
+        />
+        <button
+          className="btn btn-sm"
+          disabled={logging === task.id}
+          onClick={() => logTime(task)}
+        >
+          {logging === task.id ? "Logging..." : "Log to Basecamp"}
+        </button>
+      </div>
+    );
+  }
+
   async function setPriority(task: Task, priority: Priority) {
     if (priority === task.priority) return;
     const res = await fetch(`/api/forecast/${person}/${task.id}`, {
@@ -737,7 +806,8 @@ export default function PersonForecastPage() {
                   <p className="muted" style={{ margin: "4px 0 14px" }}>Nothing planned for today yet. Add your first task below.</p>
                 ) : (
                   tasks.map((t) => (
-                    <div key={t.id} className={`ops-list-row pri-${t.priority}`}>
+                    <Fragment key={t.id}>
+                    <div className={`ops-list-row pri-${t.priority}`}>
                       <input
                         type="checkbox"
                         checked={!!t.completed}
@@ -776,6 +846,8 @@ export default function PersonForecastPage() {
                       <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
                       <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>Remove</button>
                     </div>
+                    <LogTimeRow task={t} />
+                    </Fragment>
                   ))
                 )}
 
@@ -848,6 +920,7 @@ export default function PersonForecastPage() {
                           <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
                         </div>
                         <button className="remove" onClick={() => removeTask(t.id)}>Remove</button>
+                        <LogTimeRow task={t} />
                       </div>
                     ))}
                   </div>
@@ -892,7 +965,8 @@ export default function PersonForecastPage() {
                     <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>Nothing forecasted yet.</p>
                   ) : (
                     tasks.map((t) => (
-                      <div key={t.id} className={`ops-list-row pri-${t.priority}`}>
+                      <Fragment key={t.id}>
+                      <div className={`ops-list-row pri-${t.priority}`}>
                         <input
                           type="checkbox"
                           checked={!!t.completed}
@@ -939,6 +1013,8 @@ export default function PersonForecastPage() {
                           Remove
                         </button>
                       </div>
+                      <LogTimeRow task={t} />
+                      </Fragment>
                     ))
                   )}
 

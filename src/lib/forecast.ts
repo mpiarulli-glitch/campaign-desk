@@ -86,13 +86,15 @@ export function updateTask(
     hours: number;
     completed: boolean;
     priority: ForecastPriority;
+    actualHours: number;
+    basecampTimeEntryId: string;
   }>
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, actual_hours = ?, basecamp_time_entry_id = ?, updated_at = ? WHERE id = ?`
     )
     .run(
       updates.taskDate ?? existing.task_date,
@@ -101,6 +103,8 @@ export function updateTask(
       updates.hours ?? existing.hours,
       updates.completed !== undefined ? (updates.completed ? 1 : 0) : existing.completed,
       updates.priority ? normPriority(updates.priority) : existing.priority,
+      updates.actualHours ?? existing.actual_hours,
+      updates.basecampTimeEntryId ?? existing.basecamp_time_entry_id,
       nowIso(),
       id
     );
