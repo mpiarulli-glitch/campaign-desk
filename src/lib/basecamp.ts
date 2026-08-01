@@ -473,6 +473,56 @@ export async function listPersonProjectTodos(
   return { todos: flagged, assignedCount };
 }
 
+/* ------------------------------------------------------------ schedule feed */
+
+export interface BcScheduleEntry {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  participants: string[];
+  appUrl: string;
+}
+
+/**
+ * Every active schedule entry in the account, across all projects.
+ *
+ * One recordings sweep rather than a call per project: there are ~60 projects
+ * but the recordings endpoint returns them together. It still pages at 15, so
+ * this is ~95 requests for a full account and belongs in a background sync, not
+ * a request path. maxPages caps a runaway.
+ */
+export async function listAllScheduleEntries(maxPages = 140): Promise<BcScheduleEntry[]> {
+  const raw = await bcCollection<{
+    id: number;
+    title?: string;
+    summary?: string;
+    starts_at?: string;
+    ends_at?: string;
+    all_day?: boolean;
+    app_url?: string;
+    bucket?: { id: number; name?: string };
+    participants?: Array<{ name?: string }>;
+  }>(`/projects/recordings.json?type=Schedule::Entry&status=active`, maxPages);
+
+  return raw
+    .map((e) => ({
+      id: String(e.id),
+      title: (e.summary || e.title || "").trim(),
+      projectId: String(e.bucket?.id || ""),
+      projectName: e.bucket?.name || "",
+      startsAt: e.starts_at || "",
+      endsAt: e.ends_at || "",
+      allDay: Boolean(e.all_day),
+      participants: (e.participants || []).map((p) => p.name || "").filter(Boolean),
+      appUrl: e.app_url || "",
+    }))
+    .filter((e) => e.title && e.startsAt);
+}
+
 /* -------------------------------------------------------------- timesheets */
 
 export interface TimeEntryResult {

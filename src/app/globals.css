@@ -2044,6 +2044,17 @@ button {
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
 }
+/* Basecamp schedule entries. Deliberately quieter than a send chip: they're
+   read-only mirrors that open in Basecamp, not work planned in this app, so
+   they shouldn't compete with the sends the calendar exists to manage. */
+.cal-chip-event {
+  background: var(--bg-soft);
+  border-style: dashed;
+  color: var(--text-body);
+  text-decoration: none;
+}
+.cal-chip-event .cal-chip-dot { background: var(--text-muted); }
+.cal-chip-event:hover { border-style: solid; border-color: var(--accent); color: var(--text); }
 .cal-chip-dot {
   width: 7px;
   height: 7px;

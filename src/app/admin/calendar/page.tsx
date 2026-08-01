@@ -34,6 +34,20 @@ type Send = {
 
 type Client = { id: string; name: string };
 
+// A Basecamp schedule entry, mirrored locally. Read-only here: these are edited
+// in Basecamp, and the sync overwrites anything written on this side.
+type BcEvent = {
+  id: string;
+  client_id: string | null;
+  client_name: string;
+  title: string;
+  event_date: string;
+  starts_at: string;
+  all_day: number;
+  participants: string;
+  app_url: string;
+};
+
 // Ordered [key, label] pairs for rendering a submitted production brief.
 const BRIEF_LABELS: [string, string][] = [
   ["locations", "Location(s)"],
@@ -129,6 +143,9 @@ export default function CalendarPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [sends, setSends] = useState<Send[]>([]);
+  // Read-only mirror of Basecamp's schedules, refreshed by the events sync.
+  const [events, setEvents] = useState<BcEvent[]>([]);
+  const [syncingEvents, setSyncingEvents] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [filter, setFilter] = useState<string>("all");
   const [error, setError] = useState("");
@@ -172,7 +189,11 @@ export default function CalendarPage() {
       router.push("/login");
       return;
     }
-    if (sr.ok) setSends((await sr.json()).sends || []);
+    if (sr.ok) {
+      const json = await sr.json();
+      setSends(json.sends || []);
+      setEvents(json.events || []);
+    }
     if (cr.ok) setClients((await cr.json()).clients || []);
   }, [year, month, daysInMonth, router]);
 
@@ -230,6 +251,32 @@ export default function CalendarPage() {
     }
     return map;
   }, [sends, filter]);
+
+  // Same client filter as sends, so filtering to one account hides other
+  // accounts' meetings too.
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, BcEvent[]>();
+    for (const e of events) {
+      if (filter !== "all" && e.client_id !== filter) continue;
+      const arr = map.get(e.event_date) || [];
+      arr.push(e);
+      map.set(e.event_date, arr);
+    }
+    return map;
+  }, [events, filter]);
+
+  async function syncEvents() {
+    setSyncingEvents(true);
+    setError("");
+    const res = await fetch("/api/basecamp/events", { method: "POST" });
+    setSyncingEvents(false);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not sync Basecamp events.");
+      return;
+    }
+    load();
+  }
 
   function prevMonth() {
     if (month === 0) { setYear((y) => y - 1); setMonth(11); }
@@ -382,6 +429,16 @@ export default function CalendarPage() {
               <button className="cal-nav-btn" onClick={nextMonth} aria-label="Next month">›</button>
             </div>
             <button className="btn btn-secondary btn-sm" onClick={goToday}>Today</button>
+            {isAdmin ? (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={syncEvents}
+                disabled={syncingEvents}
+                title="Re-read every project's schedule from Basecamp. Takes a minute."
+              >
+                {syncingEvents ? "Syncing…" : "Sync Basecamp events"}
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -450,6 +507,30 @@ export default function CalendarPage() {
               >
                 <div className="cal-daynum">{d}</div>
                 <div className="cal-events">
+                  {(eventsByDay.get(date) || []).map((ev) => (
+                    <a
+                      key={ev.id}
+                      className="cal-chip cal-chip-event"
+                      href={ev.app_url || undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`${ev.title}${ev.client_name ? ` · ${ev.client_name}` : ""}${
+                        ev.participants ? `\n${ev.participants}` : ""
+                      }\nOpens in Basecamp`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="cal-chip-dot" />
+                      <span className="cal-chip-name">
+                        {!ev.all_day && ev.starts_at
+                          ? `${new Date(ev.starts_at).toLocaleTimeString("en-US", {
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })} · `
+                          : ""}
+                        {ev.title}
+                      </span>
+                    </a>
+                  ))}
                   {items.map((s) => (
                     <button
                       key={s.id}

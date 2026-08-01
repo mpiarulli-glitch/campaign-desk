@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession, isAdminAuthenticated } from "@/lib/auth";
 import { createSend, listSends } from "@/lib/calendar";
+import { listEventsBetween } from "@/lib/basecamp-events";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -19,6 +20,11 @@ export async function GET(request: Request) {
     );
   }
   const sends = listSends(start, end);
+  // Read-only mirror of Basecamp's schedules, refreshed by the events sync.
+  // Only events belonging to a known client are surfaced — the account also
+  // carries internal MEG project schedules, which would clutter a calendar
+  // that's organised around clients.
+  const events = listEventsBetween(start, end, { clientsOnly: true });
   if (session.role === "forecast") {
     return NextResponse.json({
       sends: sends.map((send) => ({
@@ -26,9 +32,10 @@ export async function GET(request: Request) {
         note: "",
         production_brief: "",
       })),
+      events,
     });
   }
-  return NextResponse.json({ sends });
+  return NextResponse.json({ sends, events });
 }
 
 export async function POST(request: Request) {

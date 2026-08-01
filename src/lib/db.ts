@@ -188,6 +188,24 @@ export interface Videographer {
 
 // urgent = can't be moved; important = reschedulable if truly needed;
 // flexible = can be rescheduled but still needs to happen this week.
+export interface BasecampEvent {
+  id: string;
+  project_id: string;
+  client_id: string | null;
+  client_name: string;
+  project_name: string;
+  title: string;
+  // Local (APP_TIME_ZONE) start date, so calendar lookups are a plain string
+  // match rather than a timezone conversion per cell.
+  event_date: string;
+  starts_at: string;
+  ends_at: string;
+  all_day: number;
+  participants: string;
+  app_url: string;
+  synced_at: string;
+}
+
 export type ForecastPriority = "urgent" | "important" | "flexible";
 
 export interface ForecastTask {
@@ -959,6 +977,28 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
+
+    /* Basecamp Schedule::Entry rows, cached locally.
+       The API has no date filter and pages at 15, so the account's ~1,400
+       entries take ~95 requests to sweep — far too slow to do on a page load.
+       A background sync fills this table and the calendar reads it directly. */
+    CREATE TABLE IF NOT EXISTS basecamp_events (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      client_id TEXT,
+      client_name TEXT NOT NULL DEFAULT '',
+      project_name TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      starts_at TEXT NOT NULL DEFAULT '',
+      ends_at TEXT NOT NULL DEFAULT '',
+      all_day INTEGER NOT NULL DEFAULT 1,
+      participants TEXT NOT NULL DEFAULT '',
+      app_url TEXT NOT NULL DEFAULT '',
+      synced_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bcevents_date ON basecamp_events(event_date);
 
     CREATE TABLE IF NOT EXISTS forecast_notes (
       id TEXT PRIMARY KEY,
