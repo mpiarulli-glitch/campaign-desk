@@ -5,6 +5,7 @@ import {
   basecampConnected,
   completeTodo,
   createTimeEntry,
+  ensureForecastTodo,
   hasConnection,
   uncompleteTodo,
 } from "@/lib/basecamp";
@@ -20,6 +21,12 @@ const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
  * work, or a schedule entry for a meeting. Either way the hours land on that
  * project's timesheet, which is most of the point of booking a meeting here.
  *
+ * A task typed by hand instead of picked from the todo list has no recording
+ * of its own yet — it only carries the project it belongs to. In that case a
+ * shadow todo is created (and immediately completed) in that project's
+ * "Forecast" list so there's something real to attach the hours to, same as
+ * picking an existing todo would have given us.
+ *
  * Separate from the PATCH body's other fields because it writes to Basecamp and
  * must not happen implicitly: hours land on a client-visible timesheet, and a
  * duplicate entry can't be un-sent. Refuses if time was already logged.
@@ -29,17 +36,8 @@ async function logTime(
   person: string,
   hours: number
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const task = getTask(taskId);
+  let task = getTask(taskId);
   if (!task) return { status: 404, body: { error: "Not found" } };
-  // At most one of these is ever set (see createTask), so this resolves the
-  // linked recording without caring which kind of row it is.
-  const recordingId = task.basecamp_todo_id || task.basecamp_event_id;
-  if (!recordingId) {
-    return {
-      status: 400,
-      body: { error: "That row isn't linked to a Basecamp todo or meeting." },
-    };
-  }
   if (task.basecamp_time_entry_id) {
     return {
       status: 409,
@@ -63,6 +61,35 @@ async function logTime(
           "Connect your own Basecamp account first, so these hours are logged as you.",
         needsBasecamp: true,
       },
+    };
+  }
+
+  // At most one of these is ever set on a picked/booked row (see createTask).
+  let recordingId = task.basecamp_todo_id || task.basecamp_event_id;
+  if (!recordingId && task.basecamp_project_id) {
+    const created = await ensureForecastTodo(
+      task.basecamp_project_id,
+      task.notes || task.client || personLabel(person),
+      asPerson(person)
+    );
+    if (!created) {
+      return {
+        status: 502,
+        body: { error: "Could not create a Basecamp todo to log time against." },
+      };
+    }
+    // Persisted right away — before the timesheet write, which can still
+    // fail — so a retry reuses this todo instead of creating a duplicate.
+    task = updateTask(taskId, { basecampTodoId: created.id }) || task;
+    recordingId = created.id;
+    // Best-effort: the task is already done locally, so the shadow todo
+    // should read done too. Not fatal if Basecamp doesn't cooperate.
+    await completeTodo(task.basecamp_project_id, created.id, asPerson(person));
+  }
+  if (!recordingId) {
+    return {
+      status: 400,
+      body: { error: "That row isn't linked to a Basecamp project, so there's nothing to log time against." },
     };
   }
 

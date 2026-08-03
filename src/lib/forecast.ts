@@ -95,13 +95,17 @@ export function updateTask(
     priority: ForecastPriority;
     actualHours: number;
     basecampTimeEntryId: string;
+    // Set when a manually-typed task gets a shadow Basecamp todo created for
+    // it on first time-log, so a retry after a failed timesheet write reuses
+    // that todo instead of creating another one.
+    basecampTodoId: string;
   }>
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, actual_hours = ?, basecamp_time_entry_id = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, updated_at = ? WHERE id = ?`
     )
     .run(
       updates.taskDate ?? existing.task_date,
@@ -112,6 +116,7 @@ export function updateTask(
       updates.priority ? normPriority(updates.priority) : existing.priority,
       updates.actualHours ?? existing.actual_hours,
       updates.basecampTimeEntryId ?? existing.basecamp_time_entry_id,
+      updates.basecampTodoId ?? existing.basecamp_todo_id,
       nowIso(),
       id
     );
