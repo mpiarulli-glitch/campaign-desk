@@ -492,6 +492,11 @@ export default function PersonForecastPage() {
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  // Internal MEG Basecamp projects (Empire Leadership HQ, etc.) that aren't
+  // rev_clients but still have todos worth forecasting against. Merged into
+  // the same picker with an "internal:" prefixed id so ensureTodos knows to
+  // hit /api/forecast/todos?project= instead of ?client=.
+  const [internalProjects, setInternalProjects] = useState<ClientOption[]>([]);
   const [todosByClient, setTodosByClient] = useState<Record<string, TodoState>>({});
   // Meeting picker contents, keyed by the day being added to rather than by
   // client, because a meeting is scoped to a date and often has no client.
@@ -574,6 +579,29 @@ export default function PersonForecastPage() {
       })
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!person) return;
+    fetch(`/api/forecast/internal-projects?person=${person}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!Array.isArray(json?.projects)) return;
+        setInternalProjects(
+          json.projects.map((p: { id: string; name: string }) => ({
+            id: `internal:${p.id}`,
+            name: p.name,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, [person]);
+
+  // Client picker contents: revenue clients first, then internal Basecamp
+  // projects (Empire Leadership HQ, etc.) that have todos but aren't billing
+  // clients.
+  const pickerClients = useMemo(
+    () => [...clients, ...internalProjects],
+    [clients, internalProjects]
+  );
 
   // Basecamp is slow enough that this is fetched once per client and reused
   // across every day's form for the rest of the visit.
@@ -600,9 +628,10 @@ export default function PersonForecastPage() {
         },
       }));
       try {
-        const res = await fetch(
-          `/api/forecast/todos?person=${person}&client=${encodeURIComponent(clientId)}`
-        );
+        const query = clientId.startsWith("internal:")
+          ? `project=${encodeURIComponent(clientId.slice("internal:".length))}`
+          : `client=${encodeURIComponent(clientId)}`;
+        const res = await fetch(`/api/forecast/todos?person=${person}&${query}`);
         const json = res.ok ? await res.json() : null;
         if (!res.ok) requestedTodos.current.delete(clientId);
         setTodosByClient((prev) => ({
@@ -1198,7 +1227,7 @@ export default function PersonForecastPage() {
                 <AddTaskForm
                   draft={draft}
                   patch={(p) => setDraft(today, p)}
-                  clients={clients}
+                  clients={pickerClients}
                   todoState={todosByClient[draft.clientId]}
 
                   eventState={eventsByDate[today]}
@@ -1291,7 +1320,7 @@ export default function PersonForecastPage() {
                       <AddTaskForm
                         draft={draft}
                         patch={(p) => setDraft(date, p)}
-                        clients={clients}
+                        clients={pickerClients}
                         todoState={todosByClient[draft.clientId]}
 
                         eventState={eventsByDate[date]}
@@ -1397,7 +1426,7 @@ export default function PersonForecastPage() {
                   <AddTaskForm
                     draft={draft}
                     patch={(p) => setDraft(date, p)}
-                    clients={clients}
+                    clients={pickerClients}
                     todoState={todosByClient[draft.clientId]}
 
                     eventState={eventsByDate[date]}

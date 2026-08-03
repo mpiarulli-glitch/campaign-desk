@@ -29,7 +29,10 @@ export function clientNameFor(projectName: string): string {
 
 // Basecamp projects that are internal MEG workspaces, not client accounts.
 // Curated rather than pattern-matched: a pattern like /HQ|Team|Internal/ would
-// eventually swallow a real client. Anything here is never imported.
+// eventually swallow a real client. Anything here is never imported as a
+// rev_client, but a subset is still readable via listInternalProjects() below
+// so things like the forecast todo picker can reach their todos without
+// turning them into billing clients.
 const INTERNAL_PROJECTS = new Set(
   [
     "Department To-Do's Library",
@@ -58,6 +61,25 @@ const INTERNAL_PROJECTS = new Set(
     "Deliverable Templates",
   ].map((n) => n.trim().toLowerCase())
 );
+
+// Internal projects whose todos are still worth reaching from the forecast
+// picker (leadership, ops work someone forecasts hours against), without
+// making them selectable anywhere revenue or production cares about. Add a
+// project here by its exact Basecamp name; it still has to appear in
+// INTERNAL_PROJECTS above to stay out of the rev_client import pass.
+const FORECAST_VISIBLE_INTERNAL_PROJECTS = new Set(
+  ["Empire Leadership HQ"].map((n) => n.trim().toLowerCase())
+);
+
+// Internal Basecamp projects exposed to the forecast todo picker, resolved by
+// name against the live project list rather than hardcoded ids so a project
+// getting recreated in Basecamp doesn't silently break the link.
+export async function listInternalProjects(): Promise<Array<{ id: string; name: string }>> {
+  const projects = await listProjects();
+  return projects
+    .filter((p) => FORECAST_VISIBLE_INTERNAL_PROJECTS.has(p.name.trim().toLowerCase()))
+    .map((p) => ({ id: String(p.id), name: p.name }));
+}
 
 // Clients whose app name and Basecamp project name differ too much for name
 // matching to bridge. Keyed by project id so a rename on either side can't

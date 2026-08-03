@@ -15,6 +15,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const person = url.searchParams.get("person") || "";
   const clientId = url.searchParams.get("client") || "";
+  // Set instead of `client` for internal MEG projects (e.g. Empire Leadership
+  // HQ) that aren't rev_clients — a raw Basecamp project id straight from
+  // /api/forecast/internal-projects, bypassing the rev_client lookup below.
+  const rawProjectId = url.searchParams.get("project") || "";
 
   if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,14 +27,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unknown person" }, { status: 404 });
   }
 
-  const client = clientId ? getRevClient(clientId) : null;
-  if (!client) {
-    return NextResponse.json({ todos: [], reason: "unknown-client" });
+  let projectId = "";
+  if (rawProjectId) {
+    projectId = rawProjectId.trim();
+  } else {
+    const client = clientId ? getRevClient(clientId) : null;
+    if (!client) {
+      return NextResponse.json({ todos: [], reason: "unknown-client" });
+    }
+    projectId = (client.basecamp_project_id || "").trim();
   }
   if (!basecampConnected()) {
     return NextResponse.json({ todos: [], reason: "not-connected" });
   }
-  const projectId = (client.basecamp_project_id || "").trim();
   if (!projectId) {
     return NextResponse.json({ todos: [], reason: "no-project" });
   }
