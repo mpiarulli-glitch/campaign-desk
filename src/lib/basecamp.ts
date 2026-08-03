@@ -765,7 +765,7 @@ async function getOrCreateForecastTodolist(
   projectId: string,
   identity: BcIdentity
 ): Promise<string | null> {
-  const pr = await bc(`/projects/${projectId}.json`);
+  const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
   if (!pr.ok) return null;
   const project = await pr.json();
   const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
@@ -773,7 +773,9 @@ async function getOrCreateForecastTodolist(
   if (!todoset) return null;
 
   const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
-    `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`
+    `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`,
+    4,
+    identity
   );
   const existing = lists.find(
     (l) => (l.title || l.name || "").trim().toLowerCase() === FORECAST_TODOLIST_NAME.toLowerCase()
