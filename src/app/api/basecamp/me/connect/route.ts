@@ -20,6 +20,10 @@ export async function GET() {
       { status: 400 }
     );
   }
-  const redirectUri = `${getAppUrl()}/api/basecamp/me/callback`;
+  // The shared /api/basecamp/callback, not a personal one: 37signals approves a
+  // single redirect URI per integration, and anything else comes back as
+  // "Provided redirect_uri is not approved". The signed state is what tells the
+  // callback this is a personal connection and whose.
+  const redirectUri = `${getAppUrl()}/api/basecamp/callback`;
   return NextResponse.redirect(authorizeUrlFor(person, redirectUri));
 }
