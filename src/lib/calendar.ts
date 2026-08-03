@@ -185,6 +185,9 @@ export function updateSend(
     offer: string;
     subject: string;
     previewText: string;
+    // JSON blob of the production brief. Admins fill this in when a production
+    // was arranged off-app and the client never submitted one.
+    productionBrief: string;
   }>
 ): ScheduledSend | null {
   const existing = getSend(id);
@@ -200,7 +203,7 @@ export function updateSend(
     `UPDATE scheduled_sends SET
        client_id = ?, client_name = ?, title = ?, send_date = ?, send_time = ?, duration = ?,
        status = ?, platform = ?, asset_type = ?, note = ?, audience = ?, purpose = ?,
-       offer = ?, subject = ?, preview_text = ?, updated_at = ?
+       offer = ?, subject = ?, preview_text = ?, production_brief = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     clientId,
@@ -218,6 +221,7 @@ export function updateSend(
     updates.offer?.trim() ?? existing.offer,
     updates.subject?.trim() ?? existing.subject,
     updates.previewText?.trim() ?? existing.preview_text,
+    updates.productionBrief ?? existing.production_brief,
     nowIso(),
     id
   );

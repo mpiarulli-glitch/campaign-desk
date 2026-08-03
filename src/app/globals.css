@@ -8143,3 +8143,260 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background: var(--accent);
   color: #ffffff;
 }
+
+/* ============================================================ production console
+   The production page's client list. Replaces a sixteen column table whose
+   window was one text cell three columns away from the status that depended on
+   it. Here the window is the object: five weekday cells tinted to the client's
+   colour week, so "who still needs booking" reads without reading.
+
+   Every colour comes from the tokens above, including both themes. The four
+   colour week hues are identity only, on the rail and on a booked day, never
+   decoration. Cyan stays reserved for interaction.
+
+   Layout note: every grid child carries min-width:0, and no label combines
+   nowrap with a max-width. That pair overflows its box and prints on top of the
+   next column, which is exactly how this went wrong the first time. */
+
+.pcon-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pcon-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 13px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-body);
+  cursor: pointer;
+}
+.pcon-chip .n {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.pcon-chip[aria-pressed="true"] {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.pcon-chip[aria-pressed="true"] .n { color: var(--accent-ink); }
+.pcon-chip:hover { border-color: var(--accent); }
+
+.pcon-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.pcon-band { position: relative; border-bottom: 1px solid var(--border); }
+.pcon-band:last-child { border-bottom: 0; }
+.pcon-band:hover { background: var(--bg-soft); }
+.pcon-rail { position: absolute; inset: 0 auto 0 0; width: 3px; }
+.pcon-band[data-week="purple"] .pcon-rail { background: #8b5cf6; }
+.pcon-band[data-week="red"] .pcon-rail { background: #ef4444; }
+.pcon-band[data-week="blue"] .pcon-rail { background: #3b82f6; }
+.pcon-band[data-week="green"] .pcon-rail { background: #22c55e; }
+.pcon-band[data-week=""] .pcon-rail { background: var(--border-strong); }
+
+.pcon-in {
+  display: grid;
+  /* Fixed tracks, deliberately. Each band is its own grid, so an `auto` or
+     content-sized track makes the strip sit at a different x on every row and
+     the list reads ragged. These widths are the same on every band, so the
+     strips align down the page. 190px fits five 33px cells plus their gaps. */
+  grid-template-columns: minmax(0, 1fr) 190px minmax(0, 190px) 300px;
+  gap: 18px;
+  align-items: center;
+  padding: 15px 20px 15px 23px;
+}
+.pcon-in > * { min-width: 0; }
+
+.pcon-who h3 {
+  margin: 0 0 3px;
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.008em;
+  overflow-wrap: break-word;
+}
+.pcon-meta {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+/* The window strip. Stacked so the month and the timing line each own the full
+   width of this column and cannot collide with the facts beside them. */
+.pcon-strip { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.pcon-mon {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.pcon-cells { display: flex; gap: 3px; }
+.pcon-cell {
+  width: 33px;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid transparent;
+}
+.pcon-cell .dow {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+}
+.pcon-cell .dnum {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.pcon-cell.is-open {
+  background: var(--bg-soft);
+  border-color: var(--border);
+  color: var(--text-body);
+}
+.pcon-cell.is-gone {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+.pcon-cell.is-on { color: #ffffff; border-color: transparent; }
+.pcon-band[data-week="purple"] .pcon-cell.is-on { background: #8b5cf6; }
+.pcon-band[data-week="red"] .pcon-cell.is-on { background: #ef4444; }
+.pcon-band[data-week="blue"] .pcon-cell.is-on { background: #3b82f6; }
+.pcon-band[data-week="green"] .pcon-cell.is-on { background: #22c55e; }
+.pcon-band[data-week=""] .pcon-cell.is-on { background: var(--text-muted); }
+
+.pcon-when {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+.pcon-nowindow { font-size: 12.5px; color: var(--text-muted); max-width: 30ch; }
+
+.pcon-facts { display: flex; flex-direction: column; gap: 3px; }
+.pcon-line { display: flex; gap: 8px; font-size: 12.5px; min-width: 0; }
+.pcon-line .k { color: var(--text-muted); flex: 0 0 auto; }
+.pcon-line .v {
+  color: var(--text-body);
+  min-width: 0;
+  overflow-wrap: break-word;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.pcon-act {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  justify-self: end;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.pcon-act .btn { white-space: nowrap; }
+.pcon-pill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pcon-pill.is-bad { background: var(--danger-wash); color: var(--danger-ink); }
+.pcon-pill.is-warn { background: var(--warning-wash); color: var(--warning-ink); }
+.pcon-pill.is-good { background: var(--success-wash); color: var(--success-ink); }
+.pcon-pill.is-quiet { background: var(--bg-soft); color: var(--text-muted); }
+
+/* Secondary fields, opened per row instead of living off the right edge. */
+.pcon-more {
+  padding: 0 20px 18px 23px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px 20px;
+}
+.pcon-more > * { min-width: 0; }
+.pcon-more .k {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.pcon-more .v { font-size: 13.5px; overflow-wrap: break-word; }
+
+.pcon-legend {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.pcon-legend span { display: flex; align-items: center; gap: 7px; }
+.pcon-sw {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.pcon-sw.is-open { background: var(--bg-soft); }
+.pcon-sw.is-gone { background: transparent; opacity: 0.45; }
+.pcon-sw.is-on { background: #ef4444; border-color: transparent; }
+
+@media (max-width: 900px) {
+  .pcon-in { grid-template-columns: 1fr; gap: 13px; }
+  .pcon-act { justify-self: start; justify-content: flex-start; }
+}
+
+/* The inline editors were sized for table cells, where width:100% means "as wide
+   as the column". Inside a band that makes a select in the meta line blow the
+   column out, so here they size to their own content instead. */
+.pcon-in .cell-input,
+.pcon-more .cell-input {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.pcon-in .cell-clickable,
+.pcon-more .cell-clickable {
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 4px;
+}
+.pcon-in .cell-clickable:focus-visible,
+.pcon-more .cell-clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

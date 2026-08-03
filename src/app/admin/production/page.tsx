@@ -143,6 +143,69 @@ const ACCOUNT_MANAGER_OPTIONS = [
   { value: "Luis", label: "Luis" },
 ];
 
+// Which group a client falls into, for the counts across the top. These are the
+// four questions actually asked of this page: who is waiting on us, who needs
+// booking now, who is already handled, and who was never set up.
+type StatusFilter = "all" | "waiting" | "due" | "ahead" | "unset";
+
+function bucketOf(r: Row): Exclude<StatusFilter, "all"> {
+  if (!r.window) return "unset";
+  if (r.status === "requested") return "waiting";
+  if (r.status === "due") return "due";
+  return "ahead";
+}
+
+const TONE: Record<CycleStatus, string> = {
+  not_configured: "is-quiet",
+  inactive: "is-quiet",
+  not_due: "is-quiet",
+  due: "is-bad",
+  requested: "is-warn",
+  scheduled: "is-good",
+  sent: "is-good",
+};
+
+const DOW_LETTER = ["M", "T", "W", "T", "F"];
+const MONTH_SHORT = [
+  "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+  "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+function ymdAdd(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+function dayNumber(ymd: string): number {
+  return Number(ymd.split("-")[2]);
+}
+function monthOf(ymd: string): string {
+  return MONTH_SHORT[Number(ymd.split("-")[1]) - 1] || "";
+}
+function daysApart(from: string, to: string): number {
+  const at = (v: string) => {
+    const [y, m, d] = v.split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((at(to) - at(from)) / 86400000);
+}
+
+// Mon to Fri of the window, in order.
+function windowDays(w: { start: string; end: string }): string[] {
+  const out: string[] = [];
+  for (let i = 0; i <= daysApart(w.start, w.end); i++) out.push(ymdAdd(w.start, i));
+  return out;
+}
+
+// The line under the strip. Says the one thing worth knowing about timing.
+function whenLabel(w: { start: string; end: string }, todayYmd: string): string {
+  if (!todayYmd) return `${dayNumber(w.start)} to ${dayNumber(w.end)}`;
+  const lead = daysApart(todayYmd, w.start);
+  if (lead > 0) return `opens in ${lead} day${lead === 1 ? "" : "s"}`;
+  if (w.end < todayYmd) return "window closed";
+  const left = daysApart(todayYmd, w.end) + 1;
+  return `${left} day${left === 1 ? "" : "s"} left to book`;
+}
+
 function fmtDate(ymd: string | null): string {
   if (!ymd) return "—";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
@@ -189,6 +252,11 @@ export default function ProductionPage() {
   const [linkMessage, setLinkMessage] = useState<Record<string, string>>({});
   const [showInactive, setShowInactive] = useState(true);
   const [colorFilter, setColorFilter] = useState<ColorWeek | "all">("all");
+  // The server's business date. Used to mark the window strip, so "today" is
+  // Pacific rather than whatever the viewer's machine says.
+  const [today, setToday] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   // Per-cell inline editing.
   const [edit, setEdit] = useState<{ id: string; field: Field } | null>(null);
@@ -351,6 +419,7 @@ export default function ProductionPage() {
     setRows(data.clients || []);
     setProductions(data.productions || []);
     setVideographers(data.videographers || []);
+    if (data.today) setToday(data.today);
     setLoading(false);
   }
 
@@ -434,13 +503,37 @@ export default function ProductionPage() {
 
   const enrolled = useMemo(() => rows.filter((r) => r.client.production_enrolled), [rows]);
   const removed = useMemo(() => rows.filter((r) => !r.client.production_enrolled), [rows]);
+  // Ordered by what needs a person: waiting on us, then due, then booked ahead,
+  // then never set up. Within a group, the soonest window first.
+  const BUCKET_ORDER: Record<Exclude<StatusFilter, "all">, number> = {
+    waiting: 0, due: 1, ahead: 2, unset: 3,
+  };
   const visible = useMemo(
     () =>
       enrolled
         .filter((r) => (showInactive ? true : r.client.active))
-        .filter((r) => (colorFilter === "all" ? true : r.client.color_week === colorFilter)),
-    [enrolled, showInactive, colorFilter]
+        .filter((r) => (colorFilter === "all" ? true : r.client.color_week === colorFilter))
+        .filter((r) => (statusFilter === "all" ? true : bucketOf(r) === statusFilter))
+        .slice()
+        .sort((a, b) => {
+          const d = BUCKET_ORDER[bucketOf(a)] - BUCKET_ORDER[bucketOf(b)];
+          if (d !== 0) return d;
+          const aw = a.window?.start || "9999-99-99";
+          const bw = b.window?.start || "9999-99-99";
+          return aw === bw ? a.client.name.localeCompare(b.client.name) : aw.localeCompare(bw);
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enrolled, showInactive, colorFilter, statusFilter]
   );
+
+  const counts = useMemo(() => {
+    const base = { waiting: 0, due: 0, ahead: 0, unset: 0 };
+    for (const r of enrolled) {
+      if (!showInactive && !r.client.active) continue;
+      base[bucketOf(r)]++;
+    }
+    return base;
+  }, [enrolled, showInactive]);
   const activeCount = enrolled.filter((r) => r.client.active).length;
   const requestedProductions = useMemo(
     () => productions.filter((production) => production.status === "requested"),
@@ -525,7 +618,9 @@ export default function ProductionPage() {
   }
 
   // A clickable, editable cell.
-  function editableCell(
+  // Same click-to-edit behaviour as the old table cells, in a span so it works
+  // inside the bands. Non-admins get plain text, never an editable affordance.
+  function editableField(
     r: Row,
     field: Field,
     type: "text" | "date" | "select",
@@ -533,13 +628,25 @@ export default function ProductionPage() {
     display: React.ReactNode,
     options?: { value: string; label: string }[]
   ) {
-    if (!isAdmin) return <td>{display}</td>;
+    if (!isAdmin) return display;
     const active = edit?.id === r.client.id && edit?.field === field;
-    if (active) return <td className="cell-editing">{editor(field, type, options)}</td>;
+    if (active) return <span className="cell-editing">{editor(field, type, options)}</span>;
     return (
-      <td className="cell-clickable" title="Click to edit" onClick={() => beginEdit(r.client.id, field, current)}>
+      <span
+        className="cell-clickable"
+        title="Click to edit"
+        role="button"
+        tabIndex={0}
+        onClick={() => beginEdit(r.client.id, field, current)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            beginEdit(r.client.id, field, current);
+          }
+        }}
+      >
         {display}
-      </td>
+      </span>
     );
   }
 
@@ -777,6 +884,32 @@ export default function ProductionPage() {
 
         {tab === "setup" ? (
           <>
+        {/* Counts before the list, and each one filters. The question this page
+            answers is "who needs me", so that reads first. */}
+        <div className="pcon-chips">
+          {([
+            ["waiting", counts.waiting, "waiting on us"],
+            ["due", counts.due, "due now"],
+            ["ahead", counts.ahead, "booked ahead"],
+            ["unset", counts.unset, "not set up"],
+          ] as Array<[Exclude<StatusFilter, "all">, number, string]>).map(([key, n, label]) => (
+            <button
+              key={key}
+              type="button"
+              className="pcon-chip"
+              aria-pressed={statusFilter === key}
+              onClick={() => setStatusFilter(statusFilter === key ? "all" : key)}
+            >
+              <span className="n">{n}</span> {label}
+            </button>
+          ))}
+          {statusFilter !== "all" ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStatusFilter("all")}>
+              Show all
+            </button>
+          ) : null}
+        </div>
+
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <span className="muted">
             {colorFilter === "all"
@@ -936,109 +1069,219 @@ export default function ProductionPage() {
         ) : visible.length === 0 ? (
           <div className="empty"><p>No clients to show.</p></div>
         ) : (
-          <div className="card card-pad" style={{ overflowX: "auto" }}>
-            <table className="rev-table">
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Contact</th>
-                  <th>Email</th>
-                  <th>POC</th>
-                  <th>Account manager</th>
-                  <th>Active</th>
-                  <th>Color</th>
-                  <th>Videographer</th>
-                  <th>Cadence</th>
-                  <th>Last production</th>
-                  <th>Scheduling window</th>
-                  <th>Last email sent</th>
-                  <th>Last window emailed</th>
-                  <th>Status</th>
-                  <th>Basecamp project</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((r) => (
-                  <tr key={r.client.id} style={{ opacity: r.client.active ? 1 : 0.55 }}>
-                    {editableCell(r, "name", "text", r.client.name, <strong>{r.client.name}</strong>)}
-                    {editableCell(r, "contact_name", "text", r.client.contact_name, r.client.contact_name || "—")}
-                    {editableCell(
-                      r, "contact_email", "text", r.client.contact_email,
-                      r.client.contact_email ? <span style={{ fontSize: 13 }}>{r.client.contact_email}</span> : <span className="muted">no email</span>
-                    )}
-                    {editableCell(
-                      r, "poc", "text", r.client.poc,
-                      r.client.poc ? <span style={{ fontSize: 13 }}>{r.client.poc}</span> : <span className="muted">Set POC</span>
-                    )}
-                    {editableCell(
-                      r, "account_manager", "select", r.client.account_manager,
-                      r.client.account_manager ? <span style={{ fontSize: 13 }}>{r.client.account_manager}</span> : <span className="muted">Set manager</span>,
-                      ACCOUNT_MANAGER_OPTIONS
-                    )}
-                    {editableCell(r, "active", "select", r.client.active ? "1" : "0", r.client.active ? "Yes" : "No", ACTIVE_OPTIONS)}
-                    {editableCell(
-                      r, "color_week", "select", r.client.color_week,
-                      <>{r.client.color_week ? <span className={`color-dot ${r.client.color_week}`} /> : null}{colorLabel(r.client.color_week)}</>,
-                      COLOR_OPTIONS
-                    )}
-                    {editableCell(
-                      r, "videographer_id", "select", r.client.videographer_id,
-                      r.client.videographer_id
-                        ? vidName(r.client.videographer_id)
-                        : <span className="muted">Unassigned</span>,
-                      vidOptions
-                    )}
-                    {editableCell(r, "production_cadence", "select", r.client.production_cadence, CADENCE_LABEL[r.client.production_cadence], CADENCE_OPTIONS)}
-                    {editableCell(r, "last_production_date", "date", r.client.last_production_date || "", fmtDate(r.client.last_production_date))}
-                    <td>{fmtWindow(r.window)}</td>
-                    <td>{r.lastEmailSent ? fmtDate(r.lastEmailSent) : "—"}</td>
-                    <td>{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "—"}</td>
-                    <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
-                    {editableCell(
-                      r, "basecamp_project_id", "text", r.client.basecamp_project_id,
-                      r.client.basecamp_project_id
-                        ? <span style={{ fontSize: 13 }}>{r.client.basecamp_project_id}</span>
-                        : <span className="muted">Set project</span>
-                    )}
-                    <td>
-                      {isAdmin ? (
-                        <>
-                          <div className="row" style={{ gap: 6 }}>
-                            {r.existingSend ? (
-                              <Link
-                                className="btn btn-secondary btn-sm"
-                                href={`/admin/production/${r.existingSend.id}`}
+          <div className="pcon-list">
+            {visible.map((r) => {
+              const c = r.client;
+              const open = openRow === c.id;
+              return (
+                <div
+                  key={c.id}
+                  className="pcon-band"
+                  data-week={c.color_week}
+                  style={{ opacity: c.active ? 1 : 0.55 }}
+                >
+                  <div className="pcon-rail" aria-hidden="true" />
+                  <div className="pcon-in">
+                    <div className="pcon-who">
+                      {editableField(r, "name", "text", c.name, <h3>{c.name}</h3>)}
+                      <p className="pcon-meta">
+                        {editableField(
+                          r, "color_week", "select", c.color_week,
+                          <span>{c.color_week ? `${colorLabel(c.color_week).toLowerCase()} week` : "no colour week"}</span>,
+                          COLOR_OPTIONS
+                        )}
+                        {" · "}
+                        {editableField(
+                          r, "production_cadence", "select", c.production_cadence,
+                          <span>{c.production_cadence ? CADENCE_LABEL[c.production_cadence].toLowerCase() : "no cadence"}</span>,
+                          CADENCE_OPTIONS
+                        )}
+                        {" · "}
+                        {editableField(
+                          r, "account_manager", "select", c.account_manager,
+                          <span>{c.account_manager || "no manager"}</span>,
+                          ACCOUNT_MANAGER_OPTIONS
+                        )}
+                        {" · "}
+                        {editableField(
+                          r, "videographer_id", "select", c.videographer_id,
+                          <span>{vidName(c.videographer_id) || "no videographer"}</span>,
+                          vidOptions
+                        )}
+                      </p>
+                    </div>
+
+                    {r.window ? (
+                      <div className="pcon-strip">
+                        <div className="pcon-mon">{monthOf(r.window.start)}</div>
+                        <div className="pcon-cells">
+                          {windowDays(r.window).map((d, i) => {
+                            const booked = r.existingSend?.sendDate === d;
+                            const past = Boolean(today) && d < today;
+                            const cls = booked ? "is-on" : past ? "is-gone" : "is-open";
+                            return (
+                              <div
+                                key={d}
+                                className={`pcon-cell ${cls}`}
+                                title={
+                                  booked
+                                    ? `Booked ${fmtDate(d)}`
+                                    : past
+                                      ? `${fmtDate(d)} has passed`
+                                      : `${fmtDate(d)} is open`
+                                }
                               >
-                                View details
-                              </Link>
+                                <span className="dow">{DOW_LETTER[i]}</span>
+                                <span className="dnum">{dayNumber(d)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="pcon-when">{whenLabel(r.window, today)}</div>
+                      </div>
+                    ) : (
+                      <p className="pcon-nowindow">
+                        No window until a colour week and cadence are set.
+                      </p>
+                    )}
+
+                    <div className="pcon-facts">
+                      <div className="pcon-line">
+                        <span className="k">Last shoot</span>
+                        {editableField(
+                          r, "last_production_date", "date", c.last_production_date || "",
+                          <span className="v">{fmtDate(c.last_production_date)}</span>
+                        )}
+                      </div>
+                      {r.existingSend ? (
+                        <div className="pcon-line">
+                          <span className="k">Booked</span>
+                          <span className="v">{fmtDate(r.existingSend.sendDate)}</span>
+                        </div>
+                      ) : null}
+                      {r.currentReminderCount > 0 ? (
+                        <div className="pcon-line">
+                          <span className="k">Reminded</span>
+                          <span className="v">
+                            {r.currentReminderCount}x{r.lastEmailSent ? `, ${fmtDate(r.lastEmailSent)}` : ""}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="pcon-act">
+                      <span className={`pcon-pill ${TONE[r.status]}`}>
+                        {STATUS_LABEL[r.status]}
+                      </span>
+                      {r.existingSend ? (
+                        <Link className="btn btn-secondary btn-sm" href={`/admin/production/${r.existingSend.id}`}>
+                          Open
+                        </Link>
+                      ) : isAdmin && r.window ? (
+                        <button className="btn btn-secondary btn-sm" onClick={() => openLog(c.id)}>
+                          Log a shoot
+                        </button>
+                      ) : null}
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        aria-expanded={open}
+                        onClick={() => setOpenRow(open ? null : c.id)}
+                      >
+                        {open ? "Less" : "More"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {open ? (
+                    <div className="pcon-more">
+                      <div>
+                        <span className="k">Contact</span>
+                        <div className="v">
+                          {editableField(r, "contact_name", "text", c.contact_name,
+                            <span>{c.contact_name || "Not set"}</span>)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">Email</span>
+                        <div className="v">
+                          {editableField(r, "contact_email", "text", c.contact_email,
+                            <span>{c.contact_email || "Not set"}</span>)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">POC</span>
+                        <div className="v">
+                          {editableField(r, "poc", "text", c.poc, <span>{c.poc || "Not set"}</span>)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">Active</span>
+                        <div className="v">
+                          {editableField(r, "active", "select", c.active ? "1" : "0",
+                            <span>{c.active ? "Yes" : "No"}</span>, ACTIVE_OPTIONS)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">Basecamp project</span>
+                        <div className="v">
+                          {editableField(r, "basecamp_project_id", "text", c.basecamp_project_id,
+                            <span>{c.basecamp_project_id || "Not set"}</span>)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">Window emailed</span>
+                        <div className="v">{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "Never"}</div>
+                      </div>
+                      {isAdmin ? (
+                        <div>
+                          <span className="k">Scheduling link</span>
+                          <div className="v">
+                            {c.color_week && c.production_cadence ? (
+                              <button className="btn btn-ghost btn-sm" onClick={() => copyLink(c.id)}>
+                                Copy link
+                              </button>
+                            ) : (
+                              <span className="muted">Needs a colour week first</span>
+                            )}
+                            {linkMessage[c.id] ? (
+                              <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                                {linkMessage[c.id]}
+                              </span>
                             ) : null}
-                            {r.client.color_week && r.client.production_cadence ? (
-                              <button className="btn btn-ghost btn-sm" onClick={() => copyLink(r.client.id)}>Copy link</button>
-                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                      {isAdmin ? (
+                        <div>
+                          <span className="k">Production scheduling</span>
+                          <div className="v">
                             <button
                               className="btn btn-danger btn-sm"
                               onClick={() => {
-                                if (confirm(`Remove ${r.client.name} from production scheduling? This keeps the client and all their data — they just won't get productions or reminders.`)) {
-                                  setEnrolled(r.client.id, false);
+                                if (confirm(`Remove ${c.name} from production scheduling? This keeps the client and all their data, they just won't get productions or reminders.`)) {
+                                  setEnrolled(c.id, false);
                                 }
                               }}
                             >
                               Remove
                             </button>
                           </div>
-                          {linkMessage[r.client.id] ? (
-                            <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{linkMessage[r.client.id]}</div>
-                          ) : null}
-                        </>
+                        </div>
                       ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         )}
+
+        <div className="pcon-legend">
+          <span><i className="pcon-sw is-on" /> booked</span>
+          <span><i className="pcon-sw is-open" /> open to book</span>
+          <span><i className="pcon-sw is-gone" /> day has passed</span>
+          <span>The left edge of each row is the client&apos;s colour week.</span>
+        </div>
 
         {isAdmin && removed.length > 0 ? (
           <div className="card card-pad stack">
@@ -1094,55 +1337,80 @@ function ProductionQueue({
     );
   }
 
+  // Same band shape as the client list, so moving between tabs doesn't feel
+  // like moving between two different pages. The strip is a single day here,
+  // because a booked production is one date rather than a range.
   return (
-    <div className="card card-pad" style={{ overflowX: "auto" }}>
-      <table className="rev-table">
-        <thead>
-          <tr>
-            <th>Client</th>
-            <th>Production date</th>
-            <th>Start time</th>
-            <th>Length</th>
-            <th>Videographer</th>
-            <th>Account manager</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {productions.map((production) => {
-            const statusLabel =
-              production.status === "requested"
-                ? "Requested"
-                : production.status === "sent"
-                  ? "Completed"
-                  : "Confirmed";
-            return (
-              <tr key={production.id}>
-                <td><strong>{production.client_name}</strong></td>
-                <td>{fmtDate(production.send_date)}</td>
-                <td>{fmtTime(production.send_time)}</td>
-                <td>{production.duration === "full" ? "Full day" : "4 hours"}</td>
-                <td>{production.videographer || <span className="muted">Unassigned</span>}</td>
-                <td>{production.account_manager || <span className="muted">Not set</span>}</td>
-                <td>
-                  <span className={`badge badge-${production.status}`}>
-                    {statusLabel}
-                  </span>
-                </td>
-                <td>
-                  <Link
-                    className="btn btn-secondary btn-sm"
-                    href={`/admin/production/${production.id}`}
-                  >
-                    View details
-                  </Link>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="pcon-list">
+      {productions.map((production) => {
+        const statusLabel =
+          production.status === "requested"
+            ? "Requested"
+            : production.status === "sent"
+              ? "Completed"
+              : "Confirmed";
+        const tone =
+          production.status === "requested"
+            ? "is-warn"
+            : production.status === "sent"
+              ? "is-good"
+              : "is-good";
+        return (
+          <div key={production.id} className="pcon-band">
+            <div className="pcon-rail" aria-hidden="true" />
+            <div className="pcon-in">
+              <div className="pcon-who">
+                <h3>{production.client_name}</h3>
+                <p className="pcon-meta">
+                  {production.duration === "full" ? "Full day" : "4 hours"}
+                  {" · "}
+                  {production.videographer || "no videographer"}
+                  {" · "}
+                  {production.account_manager || "no manager"}
+                </p>
+              </div>
+
+              <div className="pcon-strip">
+                <div className="pcon-mon">{monthOf(production.send_date)}</div>
+                <div className="pcon-cells">
+                  <div className="pcon-cell is-on" title={fmtDate(production.send_date)}>
+                    <span className="dow">
+                      {DOW_LETTER[
+                        Math.min(
+                          4,
+                          Math.max(
+                            0,
+                            new Date(`${production.send_date}T00:00:00Z`).getUTCDay() - 1
+                          )
+                        )
+                      ]}
+                    </span>
+                    <span className="dnum">{dayNumber(production.send_date)}</span>
+                  </div>
+                </div>
+                <div className="pcon-when">{fmtTime(production.send_time)}</div>
+              </div>
+
+              <div className="pcon-facts">
+                <div className="pcon-line">
+                  <span className="k">Date</span>
+                  <span className="v">{fmtDate(production.send_date)}</span>
+                </div>
+              </div>
+
+              <div className="pcon-act">
+                <span className={`pcon-pill ${tone}`}>{statusLabel}</span>
+                <Link
+                  className="btn btn-secondary btn-sm"
+                  href={`/admin/production/${production.id}`}
+                >
+                  Open
+                </Link>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

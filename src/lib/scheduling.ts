@@ -106,7 +106,10 @@ export type BookingResult =
   | { ok: true; send: ScheduledSend; client: RevClient }
   | { ok: false; httpStatus: number; error: string };
 
-const BRIEF_FIELDS = [
+// The production brief's fields, in one place. The client booking form, the
+// admin log form and the admin edit form all validate against this list, so a
+// field added here reaches every one of them.
+export const BRIEF_FIELDS = [
   "locations",
   "onsiteContactName",
   "onsiteContactPhone",

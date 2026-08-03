@@ -4,6 +4,7 @@ import { deleteSend, getSend, updateSend } from "@/lib/calendar";
 import { advanceLastProduction } from "@/lib/cadence";
 import { getRevClient } from "@/lib/revenue";
 import { sendProductionConfirmed } from "@/lib/production-emails";
+import { BRIEF_FIELDS } from "@/lib/scheduling";
 import { listVideographers } from "@/lib/videographers";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -53,7 +54,24 @@ export async function PATCH(request: Request, { params }: Params) {
     );
   }
   const optStr = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+  // Production brief. Sent as an object and stored as JSON, filtered to the
+  // known fields so an admin form can't write arbitrary keys into the record.
+  // Absent means "leave the brief alone"; an empty object clears it.
+  let productionBrief: string | undefined;
+  if (body.brief && typeof body.brief === "object") {
+    const raw = body.brief as Record<string, unknown>;
+    const brief: Record<string, string> = {};
+    for (const key of BRIEF_FIELDS) {
+      const v = raw[key];
+      if (typeof v === "string" && v.trim()) brief[key] = v.trim();
+    }
+    productionBrief = JSON.stringify(brief);
+  }
+
   const send = updateSend(id, {
+    duration: body.duration === "full" || body.duration === "half" ? body.duration : undefined,
+    productionBrief,
     clientId:
       body.clientId === null || typeof body.clientId === "string"
         ? body.clientId
