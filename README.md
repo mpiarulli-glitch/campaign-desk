@@ -125,11 +125,74 @@ src/
 data/                # sqlite db (created at runtime, gitignored)
 ```
 
+## Accounts, 2FA, and setup
+
+Signing in has two steps for anyone with an authenticator app: password, then a
+six digit code. Backup codes work in place of a code and are spent on use.
+
+A new account is onboarded from **Accounts** (owner only): send an invite link,
+and the person is walked through three steps before the app opens up.
+
+1. **Password.** Their own, at least 12 characters. Setting it signs them in.
+2. **Two-factor.** Scan the QR code, type a code back, save the ten backup codes.
+3. **Basecamp.** Connect their own Basecamp login, so a to-do they tick shows as
+   their tick and hours they log land under their name.
+
+Until all three are done, every page under `/admin` sends them back to
+`/account/setup`. Existing accounts are asked to finish the same steps the next
+time they sign in; nobody is locked out by the change.
+
+Afterwards, people manage their own second factor at `/account/security`, where
+they can issue new backup codes or move to a new phone.
+
+**If somebody loses their phone and their backup codes:** the owner clicks
+**Reset 2FA** next to their name in Accounts, and they enroll again at their
+next sign-in. If that happens to the owner's own account, run
+`node scripts/reset-2fa.mjs michael` on the box holding the database volume.
+
+## Who Basecamp sees
+
+Every Basecamp call goes out on one of two logins, and never on a third
+person's.
+
+- **The person themselves**, for anything a human did: picking to-dos in
+  Forecast, ticking one off, logging hours, sending an approval card. Reading as
+  them also means the picker shows what *they* can see in Basecamp, not what
+  somebody else can.
+- **The company mascot account**, for work with no human behind it: production
+  outreach reminders, the schedule sweep, client message sync, Campfire
+  notifications.
+
+There is no third case. If someone hasn't connected, the app says so rather than
+borrowing a colleague's token, and the one write that still has a fallback (the
+approval card) falls back to the mascot, never to a person.
+
+The Basecamp panel on **Production** names the account the automated jobs are
+posting as, and warns if that account is somebody's personal login instead of
+the mascot.
+
+### Pointing the automated jobs at the mascot account
+
+1. Open Basecamp in a private window and sign in as the mascot account. The
+   OAuth screen uses whichever Basecamp session the browser already has, so
+   doing this in your normal window would just reconnect as you.
+2. Make sure the mascot is a member of every project it has to post into.
+   Basecamp only lets a login act where it has access.
+3. In Campaign Desk, go to **Production** → Basecamp → **Disconnect**, then
+   **Connect Basecamp**, and authorize from that private window.
+4. The panel should then read "Reminders and approval cards post as *the mascot*".
+
+Both setup requirements can be turned off with `REQUIRE_2FA=0` and
+`REQUIRE_BASECAMP_CONNECT=0` (see `.env.example`). The Basecamp step is skipped
+automatically when `BASECAMP_CLIENT_ID` and `BASECAMP_CLIENT_SECRET` are unset,
+since there would be nothing to connect to.
+
 ## Security notes
 
 - Treat magic links like private URLs. Anyone with the link can view the campaign and leave feedback.
 - Change `ADMIN_PASSWORD` and `SESSION_SECRET` before sharing with real clients.
 - Set `NEXT_PUBLIC_APP_URL` to your real HTTPS domain in production.
+- 2FA secrets and Basecamp tokens are encrypted with a key derived from `SESSION_SECRET`. Rotating it forces everybody to re-enroll and reconnect.
 
 ## Later: AI revisions
 

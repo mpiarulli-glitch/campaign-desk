@@ -34,6 +34,14 @@ export interface User {
   invite_expires_at: string | null;
   password_set_at: string | null;
   last_login_at: string | null;
+  // Ciphertext. Use the helpers in ./users, never this directly.
+  totp_secret: string | null;
+  totp_pending_secret: string | null;
+  totp_confirmed_at: string | null;
+  totp_last_counter: number;
+  // JSON array of sha256 hashes.
+  totp_backup_codes: string;
+  setup_completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1398,6 +1406,20 @@ export function getDb(): Database.Database {
       invite_expires_at TEXT,
       password_set_at TEXT,
       last_login_at TEXT,
+      -- Two-factor. The secret is encrypted (see ./secrets) and lives in
+      -- totp_pending_secret until a first code proves the app was set up
+      -- correctly, at which point it moves to totp_secret. Keeping the two
+      -- apart means an abandoned enrollment can never lock anybody out.
+      totp_secret TEXT,
+      totp_pending_secret TEXT,
+      totp_confirmed_at TEXT,
+      -- Highest counter already used, so a code cannot be replayed inside the
+      -- window it is still valid for.
+      totp_last_counter INTEGER NOT NULL DEFAULT 0,
+      -- JSON array of sha256 hashes. See ./totp for why not scrypt.
+      totp_backup_codes TEXT NOT NULL DEFAULT '[]',
+      -- Set once someone has finished onboarding: password, 2FA, Basecamp.
+      setup_completed_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1788,6 +1810,33 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN basecamp_time_entry_id TEXT NOT NULL DEFAULT ''`
     );
+  }
+
+  // Two-factor and the onboarding gate. Existing rows land with 2FA off and
+  // setup_completed_at null, so everybody already in the table is asked to
+  // finish setup the next time they sign in rather than being locked out.
+  const userCols = tableColumns(database, "users");
+  if (userCols.length && !userCols.includes("totp_secret")) {
+    database.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`);
+  }
+  if (userCols.length && !userCols.includes("totp_pending_secret")) {
+    database.exec(`ALTER TABLE users ADD COLUMN totp_pending_secret TEXT`);
+  }
+  if (userCols.length && !userCols.includes("totp_confirmed_at")) {
+    database.exec(`ALTER TABLE users ADD COLUMN totp_confirmed_at TEXT`);
+  }
+  if (userCols.length && !userCols.includes("totp_last_counter")) {
+    database.exec(
+      `ALTER TABLE users ADD COLUMN totp_last_counter INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (userCols.length && !userCols.includes("totp_backup_codes")) {
+    database.exec(
+      `ALTER TABLE users ADD COLUMN totp_backup_codes TEXT NOT NULL DEFAULT '[]'`
+    );
+  }
+  if (userCols.length && !userCols.includes("setup_completed_at")) {
+    database.exec(`ALTER TABLE users ADD COLUMN setup_completed_at TEXT`);
   }
 
   // Move legacy single-html campaigns into campaign_emails

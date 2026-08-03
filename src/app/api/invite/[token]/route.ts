@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { login } from "@/lib/auth";
+import { setupStateFor } from "@/lib/setup";
 import { acceptInvite, getUserByInvite } from "@/lib/users";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { clientKey, loginAllowed, loginFailed, loginSucceeded } from "@/lib/rate-limit";
@@ -55,6 +57,23 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   loginSucceeded(key);
-  // Deliberately no session here: they set a password, then sign in with it.
-  return NextResponse.json({ ok: true, slug: result.user.slug });
+
+  // Sign them straight in on the password they just chose. The rest of account
+  // setup, the authenticator app and their Basecamp connection, both need a
+  // session to happen at all: Basecamp's consent flow has to know who is
+  // connecting. They came in on a single-use token they received by name, and
+  // the password check they just passed is the same one the login page runs.
+  const signedIn = await login(result.user.slug, password);
+  const authenticated = signedIn.ok && !signedIn.needsTotp;
+
+  return NextResponse.json({
+    ok: true,
+    slug: result.user.slug,
+    authenticated,
+    // Where to send them next. False means the sign-in did not take for some
+    // reason and the page falls back to /login.
+    setupComplete: authenticated
+      ? (setupStateFor(result.user.slug)?.complete ?? true)
+      : false,
+  });
 }

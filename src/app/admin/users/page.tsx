@@ -14,6 +14,9 @@ type Row = {
   lastLoginAt: string | null;
   invitePending: boolean;
   inviteExpiresAt: string | null;
+  twoFactor: boolean;
+  basecampConnected: boolean;
+  setupCompletedAt: string | null;
 };
 
 // The stored role value is still "forecast" because the session format and
@@ -247,6 +250,7 @@ export default function UsersPage() {
                   <th style={{ textAlign: "left" }}>Person</th>
                   <th style={{ textAlign: "left" }}>Role</th>
                   <th style={{ textAlign: "left" }}>Password</th>
+                  <th style={{ textAlign: "left" }}>Setup</th>
                   <th style={{ textAlign: "left" }}>Last sign in</th>
                   <th style={{ textAlign: "right" }}>Actions</th>
                 </tr>
@@ -284,6 +288,16 @@ export default function UsersPage() {
                         <span className="muted">Shared password</span>
                       )}
                     </td>
+                    <td>
+                      <span
+                        className="muted"
+                        style={{ fontSize: 12, lineHeight: 1.6 }}
+                      >
+                        {u.twoFactor ? "2FA on" : "2FA off"}
+                        <br />
+                        {u.basecampConnected ? "Basecamp linked" : "No Basecamp"}
+                      </span>
+                    </td>
                     <td>{fmt(u.lastLoginAt)}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <button
@@ -298,6 +312,27 @@ export default function UsersPage() {
                             ? "Reset"
                             : "Invite"}
                       </button>
+                      {/* For someone who has lost their phone and their backup
+                          codes. They enroll a new one at their next sign in. */}
+                      {u.twoFactor ? (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          type="button"
+                          disabled={Boolean(busy)}
+                          style={{ marginLeft: 6 }}
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `Remove two-factor from ${u.label}'s account? They will set it up again next time they sign in.`
+                              )
+                            ) {
+                              act(u.slug, "reset_2fa");
+                            }
+                          }}
+                        >
+                          {busy === `${u.slug}:reset_2fa` ? "..." : "Reset 2FA"}
+                        </button>
+                      ) : null}
                       {u.role !== "owner" ? (
                         <button
                           className="btn btn-ghost btn-sm"

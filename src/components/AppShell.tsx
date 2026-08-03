@@ -365,6 +365,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </Link>
                   )}
                   {session.impersonating ? null : (
+                    <Link href="/account/security" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="eye" />Two-factor
+                    </Link>
+                  )}
+                  {session.impersonating ? null : (
                     <Link href="/account/basecamp" className="app-menu-i" onClick={() => setMenuOpen(false)}>
                       <Svg name="check" />Basecamp connection
                     </Link>

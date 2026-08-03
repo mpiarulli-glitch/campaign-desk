@@ -4,12 +4,15 @@ import { OWNER_SLUG } from "@/lib/people";
 import {
   clearPassword,
   createInvite,
+  disableTotp,
   getUser,
   listUsers,
   revokeInvite,
   setUserActive,
   setUserEmail,
+  totpEnabled,
 } from "@/lib/users";
+import { hasConnection } from "@/lib/basecamp-identity";
 
 // Owner-only. Admins can use the app but cannot mint invite links or disable
 // accounts, since that would let them grant themselves or others access.
@@ -35,6 +38,9 @@ export async function GET() {
       hasPassword: Boolean(u.password_hash),
       passwordSetAt: u.password_set_at,
       lastLoginAt: u.last_login_at,
+      twoFactor: totpEnabled(u.slug),
+      basecampConnected: hasConnection(u.slug),
+      setupCompletedAt: u.setup_completed_at,
       invitePending: Boolean(
         u.invite_token &&
           u.invite_expires_at &&
@@ -111,6 +117,14 @@ export async function POST(request: Request) {
       }
       clearPassword(slug);
       revokeInvite(slug);
+      return NextResponse.json({ ok: true });
+    }
+
+    case "reset_2fa": {
+      // For the "I lost my phone and my backup codes" call. It clears their
+      // second factor and their setup stamp, so the next time they sign in
+      // they are walked through enrolling a new phone before anything opens up.
+      disableTotp(slug);
       return NextResponse.json({ ok: true });
     }
 

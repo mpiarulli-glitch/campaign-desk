@@ -195,7 +195,14 @@ export default function ProductionPage() {
   const [val, setVal] = useState("");
   const skipCommit = useRef(false);
 
-  const [bc, setBc] = useState<{ configured: boolean; connected: boolean } | null>(null);
+  const [bc, setBc] = useState<{
+    configured: boolean;
+    connected: boolean;
+    // Whose Basecamp login the background jobs act as. Should be the mascot
+    // account, never a real person's.
+    identity: { name: string; email: string } | null;
+    personalLoginInUse: { person: string; name: string } | null;
+  } | null>(null);
   const [videographers, setVideographers] = useState<Videographer[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -821,11 +828,23 @@ export default function ProductionPage() {
               <strong>Basecamp</strong>
               <span className="muted">
                 {bc.connected
-                  ? "Connected. Scheduling cards post to each client's project."
+                  ? bc.identity
+                    ? `Reminders and approval cards post as ${bc.identity.name}.`
+                    : "Connected. Scheduling cards post to each client's project."
                   : bc.configured
                     ? "Not connected yet."
                     : "Not configured. Add the Basecamp integration keys on the server."}
               </span>
+              {/* The shared connection is supposed to be the mascot account. If
+                  it is somebody's own login, everything automated is going out
+                  under their name and they should know. */}
+              {bc.personalLoginInUse ? (
+                <span className="error" style={{ fontSize: 12 }}>
+                  This is {bc.personalLoginInUse.name}&apos;s personal Basecamp
+                  login. Reconnect as the mascot account so automated posts are
+                  not attributed to them.
+                </span>
+              ) : null}
             </span>
             {bc.configured && !bc.connected ? (
               <a className="btn btn-sm" href="/api/basecamp/connect">Connect Basecamp</a>

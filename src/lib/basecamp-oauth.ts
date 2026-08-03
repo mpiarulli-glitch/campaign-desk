@@ -71,7 +71,7 @@ export type ConnectResult =
   | { ok: true; name: string; email: string }
   | { ok: false; error: string };
 
-interface Identity {
+export interface Identity {
   id: number;
   name: string;
   email: string;
@@ -85,7 +85,7 @@ interface Identity {
  * somebody's personal account, and a connection pointing at the wrong account
  * would send this app's writes somewhere nobody is looking.
  */
-async function whoAmI(accessToken: string): Promise<Identity | null> {
+export async function whoAmI(accessToken: string): Promise<Identity | null> {
   try {
     const res = await fetch("https://launchpad.37signals.com/authorization.json", {
       headers: {

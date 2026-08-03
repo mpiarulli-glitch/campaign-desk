@@ -50,6 +50,8 @@ Where the "more devs = more secure" logic breaks down:
 - ✅ Secrets live in Railway env vars, not committed to git (`.env` is git- and docker-ignored).
 - ✅ Database queries reviewed so far use parameterized statements (low SQL-injection risk).
 - ✅ HTTPS enforced by Railway.
+- ✅ Two-factor (TOTP) is required on every account, with single-use backup codes, rate-limited code entry, replay protection inside a code's own window, and secrets encrypted at rest. Added 2026-08-03.
+- ✅ New accounts cannot reach the app until they have their own password, an authenticator app, and their own Basecamp connection.
 
 **Gaps to fix:**
 - ⚠️ The **shared `ADMIN_PASSWORD` is weak** (company name + "1!"). Guessable.
@@ -88,7 +90,7 @@ Where the "more devs = more secure" logic breaks down:
 
 | # | Item | Why | Effort |
 |---|------|-----|--------|
-| 11 | **2FA for admin accounts** (TOTP). | Defeats password theft entirely. | 1–2 days |
+| 11 | ✅ **2FA for every account** (TOTP). Done 2026-08-03: required for all accounts, not just admins. | Defeats password theft entirely. | shipped |
 | 12 | **Automated dependency scanning** (Dependabot/GitHub security alerts on the repo). | Continuous, hands-off CVE alerts. | 1 hr |
 | 13 | **A lightweight pen test / `/security-review` each quarter.** | Catch regressions; something concrete to show clients. | recurring |
 | 14 | **Written incident-response runbook** (rotate secrets, revoke sessions, restore backup). | "We have a plan" is what enterprise buyers ask for. | half day |

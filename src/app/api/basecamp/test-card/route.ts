@@ -15,6 +15,10 @@ import {
 // clearly-labeled test card into it. Never touches client records or the
 // reminder sweep, so it's safe to run against the live Basecamp connection
 // without affecting real clients.
+//
+// Deliberately runs as the service account rather than as the admin who pressed
+// the button: the whole point is to see what the cron job will do, and doing it
+// under a different identity would test the wrong thing.
 export async function GET() {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

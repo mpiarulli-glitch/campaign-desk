@@ -182,6 +182,9 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
     if (state.reason === "not-connected") {
       return "Basecamp isn't connected, so type the task instead.";
     }
+    if (state.reason === "person-not-connected") {
+      return "Connect your own Basecamp account to pick from your to-dos. Until then, type the task instead.";
+    }
     return "No open Basecamp todos found here, so type the task instead.";
   }
   return `${state.todos.length} open todos${
@@ -815,7 +818,11 @@ export default function PersonForecastPage() {
         notes: draft.notes,
         hours,
         basecampTodoId: meeting ? "" : draft.todoId,
-        basecampProjectId: !meeting && draft.todoId ? state?.projectId || "" : "",
+        // Carried even for a manually-typed task (no todoId), as long as the
+        // client resolved to a real Basecamp project: it's what lets "Log to
+        // Basecamp" create a shadow todo for that task later instead of
+        // having nothing to attach the hours to.
+        basecampProjectId: meeting ? "" : state?.projectId || "",
         basecampEventId: meeting ? draft.eventId : "",
       }),
     });
@@ -1000,12 +1007,13 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
-  // Only for completed rows linked to something in Basecamp, whether that is a
-  // todo or a meeting: there's nowhere to log against otherwise, and logging
-  // before the work is done is a guess. Meetings count, because the hours still
-  // belong on that project's timesheet.
+  // Only for completed rows linked to something in Basecamp, whether that's a
+  // todo, a meeting, or (for a task typed by hand) just the project it
+  // belongs to — logTime() creates a shadow todo in that project the first
+  // time someone logs against a row like that. There's nowhere to log
+  // against otherwise, and logging before the work is done is a guess.
   function LogTimeRow({ task }: { task: Task }) {
-    const linked = task.basecamp_todo_id || task.basecamp_event_id;
+    const linked = task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id;
     if (!linked || !task.completed) return null;
     if (task.basecamp_time_entry_id) {
       return (

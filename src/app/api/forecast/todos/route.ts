@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
-import { basecampConnected, listPersonProjectTodos } from "@/lib/basecamp";
+import {
+  asPerson,
+  basecampConnected,
+  hasConnection,
+  listPersonProjectTodos,
+} from "@/lib/basecamp";
 import { getConnection } from "@/lib/basecamp-identity";
 import { isValidPerson, personLabel } from "@/lib/forecast";
 import { getRevClient } from "@/lib/revenue";
@@ -44,22 +49,32 @@ export async function GET(request: Request) {
     return NextResponse.json({ todos: [], reason: "no-project" });
   }
 
+  // Read as them, not as the app. The shared service token is the mascot
+  // account and is reserved for work with no human behind it; borrowing it here
+  // would show this person whatever the mascot can see rather than what they
+  // can, and would put their browsing on the mascot's token. Without their own
+  // connection the picker says so and falls back to free text.
+  // hasConnection, not just "a row exists": a stored token that can no longer
+  // be decrypted is not a connection, and saying "reconnect" beats failing with
+  // a generic error once the read is attempted.
+  const conn = getConnection(person);
+  if (!conn || !hasConnection(person)) {
+    return NextResponse.json({ todos: [], reason: "person-not-connected" });
+  }
+
   try {
-    // With their own connection, "assigned to you" is their actual Basecamp id
-    // rather than a name match. Without one the picker still works off the
-    // service token — a read is harmless to attribute to the app.
-    const conn = getConnection(person);
     const { todos, assignedCount } = await listPersonProjectTodos(
       projectId,
       [personLabel(person), person],
-      conn ? { bcPersonId: conn.bc_person_id } : undefined
+      { bcPersonId: conn.bc_person_id, identity: asPerson(person) }
     );
     return NextResponse.json({
       todos,
       assignedCount,
       projectId,
-      // Lets the picker say whether "assigned to you" is exact or a guess.
-      exactAssignees: Boolean(conn),
+      // Always exact now: the read runs on their own connection, so assignment
+      // is an id comparison rather than a name match.
+      exactAssignees: true,
       reason: todos.length ? null : "no-todos",
     });
   } catch {

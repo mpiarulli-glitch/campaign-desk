@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated, reviewUrl } from "@/lib/auth";
+import { isAdminAuthenticated, reviewUrl, sessionUserSlug } from "@/lib/auth";
 import {
+  SERVICE,
+  asPerson,
   basecampConnected,
+  hasConnection,
   sendApprovalToDeliverables,
 } from "@/lib/basecamp";
 import {
@@ -131,8 +134,15 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
+  // Post as whoever pressed send, so the client sees a person they deal with.
+  // If they have not connected Basecamp it goes out as the mascot account,
+  // which is honest. It never goes out as another team member.
+  const sender = await sessionUserSlug();
+  const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
+
   const client = state.client!;
   const result = await sendApprovalToDeliverables({
+    identity,
     projectId: client.basecamp_project_id,
     campaignTitle: state.campaign.title,
     contentHtml: clientApprovalMessageHtml(state.messageInput),

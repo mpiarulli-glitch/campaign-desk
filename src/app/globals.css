@@ -8061,3 +8061,85 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .bc-conn-name { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
 .bc-conn-meta { margin: 3px 0 0; font-size: 12.5px; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Two-factor setup and the account setup wizard
+   --------------------------------------------------------------------------- */
+
+/* White plate behind the QR so it still scans in dark mode, where the code
+   would otherwise be drawn on whatever the card background happens to be. */
+.totp-qr {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.totp-secret {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.totp-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+}
+.totp-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: var(--text);
+}
+
+.setup-steps {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.setup-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.setup-step-now { color: var(--text); font-weight: 600; }
+.setup-step-now .setup-step-num { border-color: var(--accent); color: var(--accent); }
+.setup-step-done .setup-step-num {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}

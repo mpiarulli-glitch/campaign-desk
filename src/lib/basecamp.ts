@@ -16,6 +16,7 @@ import {
   personAccessToken,
   type BcIdentity,
 } from "./basecamp-identity";
+import { whoAmI } from "./basecamp-oauth";
 
 // Re-exported so callers get the identity vocabulary from the same module they
 // already import the API functions from.
@@ -90,6 +91,36 @@ export function basecampConnected(): boolean {
   return basecampConfigured() && Boolean(getTokens());
 }
 
+/**
+ * Who the shared service connection belongs to in Basecamp.
+ *
+ * Worth recording and showing, because the whole point of the service identity
+ * is that it is NOT a real team member. Anything it does is attributed to
+ * whichever Basecamp login authorized it, so "connected" on its own is not
+ * enough to know whether reminders are posting as the mascot account or as
+ * somebody's personal login.
+ */
+export interface ServiceIdentity {
+  id: number;
+  name: string;
+  email: string;
+  connectedAt: string;
+}
+
+export function getServiceIdentity(): ServiceIdentity | null {
+  const raw = getSetting("basecamp_service_identity");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ServiceIdentity;
+  } catch {
+    return null;
+  }
+}
+
+function saveServiceIdentity(id: ServiceIdentity): void {
+  setSetting("basecamp_service_identity", JSON.stringify(id));
+}
+
 export function authorizeUrl(redirectUri: string): string {
   const p = new URLSearchParams({
     type: "web_server",
@@ -122,6 +153,19 @@ export async function exchangeCode(
   const d = await res.json();
   if (!d.access_token) return false;
   saveTokens(d.access_token, d.refresh_token, d.expires_in);
+
+  // Record whose login this is, so the dashboard can say "posting as Rocky"
+  // rather than just "connected". Best effort: a failure here costs a label,
+  // not the connection, so it must not fail the exchange.
+  const me = await whoAmI(d.access_token);
+  if (me?.id) {
+    saveServiceIdentity({
+      id: me.id,
+      name: me.name,
+      email: me.email,
+      connectedAt: nowIso(),
+    });
+  }
   return true;
 }
 
@@ -280,10 +324,13 @@ export interface BcPerson {
 
 // People with access to a project. Used to resolve a POC / account manager
 // (given as an email or name) to the Basecamp person id we tag on a card.
-export async function getProjectPeople(projectId: string): Promise<BcPerson[]> {
+export async function getProjectPeople(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcPerson[]> {
   if (!projectId) return [];
   try {
-    const res = await bc(`/projects/${projectId}/people.json`);
+    const res = await bc(`/projects/${projectId}/people.json`, undefined, identity);
     if (!res.ok) return [];
     const arr = await res.json();
     if (!Array.isArray(arr)) return [];
@@ -367,13 +414,17 @@ export function matchPeople(people: BcPerson[], identifiers: string[]): number[]
 // early with whatever was already fetched, rather than throwing — this runs
 // inside Promise.all fan-outs where one bad request must not blank out every
 // other list's results.
-async function bcCollection<T>(path: string, maxPages = 4): Promise<T[]> {
+async function bcCollection<T>(
+  path: string,
+  maxPages = 4,
+  identity: BcIdentity = SERVICE
+): Promise<T[]> {
   const out: T[] = [];
   let next: string | null = path;
   for (let page = 0; page < maxPages && next; page++) {
     let res: Response;
     try {
-      res = await bc(next);
+      res = await bc(next, undefined, identity);
     } catch {
       break;
     }
@@ -417,10 +468,13 @@ const MAX_TODO_LISTS = 60;
 // Every open todo in a project, across every todoset and todo list (including
 // grouped lists). Returns [] rather than throwing when the project has no
 // todoset or Basecamp is unreachable — the picker degrades to free text.
-export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
+export async function listProjectTodos(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcTodo[]> {
   if (!projectId) return [];
   try {
-    const pr = await bc(`/projects/${projectId}.json`);
+    const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
     if (!pr.ok) return [];
     const project = await pr.json();
     const dock: Array<{ id: number; name: string; title?: string; enabled?: boolean }> =
@@ -436,7 +490,9 @@ export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
     const listsPerSet = await Promise.all(
       todosets.map(async (set) => {
         const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
-          `/buckets/${projectId}/todosets/${set.id}/todolists.json`
+          `/buckets/${projectId}/todosets/${set.id}/todolists.json`,
+          4,
+          identity
         );
         // Carry the todoset's own name so the picker can distinguish an
         // onboarding list from a same-named regular one.
@@ -455,7 +511,8 @@ export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
         const title = `${list.setTitle} › ${listName}`;
         const groups = await bcCollection<{ id: number; title?: string; name?: string }>(
           `/buckets/${projectId}/todolists/${list.id}/groups.json`,
-          1
+          1,
+          identity
         );
         return [
           { id: list.id, title },
@@ -473,7 +530,8 @@ export async function listProjectTodos(projectId: string): Promise<BcTodo[]> {
         // No ?completed param means Basecamp returns only open todos.
         const todos = await bcCollection<BcTodoRaw>(
           `/buckets/${projectId}/todolists/${target.id}/todos.json`,
-          2
+          2,
+          identity
         );
         return todos.map((t) => ({
           id: String(t.id),
@@ -510,21 +568,24 @@ export interface PersonTodosResult {
 /**
  * Open todos in a project, flagged with whether they're assigned to this person.
  *
- * `identity` decides whose view this is. Reading as the person is better than
- * reading as the service and matching names, because Basecamp knows who someone
- * is and name matching is guesswork. Falls back to the service token when they
- * haven't connected, so the picker still works — see the caller.
+ * `opts.identity` decides whose token does the reading, and it should be the
+ * person themselves. That matters for more than attribution: Basecamp only
+ * returns what that login can see, so reading as somebody else can show a
+ * person projects they have no access to. It also makes "assigned to me" an id
+ * comparison instead of guesswork against their name.
  */
 export async function listPersonProjectTodos(
   projectId: string,
   identifiers: string[],
-  opts?: { bcPersonId?: number }
+  opts?: { bcPersonId?: number; identity?: BcIdentity }
 ): Promise<PersonTodosResult> {
+  const identity = opts?.identity || SERVICE;
+
   // With a personal connection the caller knows this person's Basecamp id
   // exactly, so "assigned to me" is a comparison rather than a name match, and
   // the project-people round trip is not needed at all.
   if (opts?.bcPersonId) {
-    const todos = await listProjectTodos(projectId);
+    const todos = await listProjectTodos(projectId, identity);
     if (!todos.length) return { todos, assignedCount: 0 };
     let assignedCount = 0;
     const flagged = todos.map((t) => {
@@ -538,8 +599,8 @@ export async function listPersonProjectTodos(
   // Neither call depends on the other's result, so run them together instead
   // of paying for both round trips back to back.
   const [todos, people] = await Promise.all([
-    listProjectTodos(projectId),
-    getProjectPeople(projectId),
+    listProjectTodos(projectId, identity),
+    getProjectPeople(projectId, identity),
   ]);
   if (!todos.length) return { todos, assignedCount: 0 };
   const ids = matchPeople(people, identifiers);
@@ -688,6 +749,77 @@ export async function uncompleteTodo(
     return { ok: false, error: `completion ${res.status}` };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
+  }
+}
+
+// Name of the todo list Forecast creates its own shadow todos in, for tasks
+// someone typed by hand instead of picking an existing Basecamp todo. Kept in
+// one list per project rather than scattered across whichever list happened
+// to be open, so it's obvious in Basecamp what these entries are for.
+const FORECAST_TODOLIST_NAME = "Forecast";
+
+// Find the "Forecast" todo list in a project's first enabled todoset,
+// creating it if it doesn't exist yet. Returns null if the project has no
+// todoset at all (Basecamp projects can have that tool disabled).
+async function getOrCreateForecastTodolist(
+  projectId: string,
+  identity: BcIdentity
+): Promise<string | null> {
+  const pr = await bc(`/projects/${projectId}.json`);
+  if (!pr.ok) return null;
+  const project = await pr.json();
+  const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
+  const todoset = dock.find((d) => d.name === "todoset" && d.enabled !== false);
+  if (!todoset) return null;
+
+  const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
+    `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`
+  );
+  const existing = lists.find(
+    (l) => (l.title || l.name || "").trim().toLowerCase() === FORECAST_TODOLIST_NAME.toLowerCase()
+  );
+  if (existing) return String(existing.id);
+
+  const created = await bc(
+    `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: FORECAST_TODOLIST_NAME,
+        description: "Auto-created by Campaign Desk to hold time-tracking entries for forecast tasks typed by hand.",
+      }),
+    },
+    identity
+  );
+  if (!created.ok) return null;
+  const list = await created.json();
+  return list.id ? String(list.id) : null;
+}
+
+// Create a shadow Basecamp todo for a forecast task that was typed by hand
+// rather than picked from an existing todo, so there's a real recording to
+// attach a timesheet entry to. Lives in the project's "Forecast" list (see
+// above), created lazily the first time someone logs time on a manual task.
+export async function ensureForecastTodo(
+  projectId: string,
+  content: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ id: string; appUrl?: string } | null> {
+  if (!projectId || !content.trim()) return null;
+  try {
+    const listId = await getOrCreateForecastTodolist(projectId, identity);
+    if (!listId) return null;
+    const res = await bc(
+      `/buckets/${projectId}/todolists/${listId}/todos.json`,
+      { method: "POST", body: JSON.stringify({ content: content.trim().slice(0, 999) }) },
+      identity
+    );
+    if (!res.ok) return null;
+    const todo = await res.json();
+    if (!todo.id) return null;
+    return { id: String(todo.id), appUrl: todo.app_url };
+  } catch {
+    return null;
   }
 }
 
@@ -851,13 +983,18 @@ export async function sendApprovalToDeliverables(input: {
   contentHtml: string;
   recipientIdentifiers: string[];
   existingCardId?: string | null;
+  // Whose Basecamp login posts this. The route passes the person who clicked
+  // send when they have connected, so the client sees a name they know. Falls
+  // back to the mascot account, never to another human.
+  identity?: BcIdentity;
 }): Promise<ApprovalDeliveryResult> {
+  const identity = input.identity || SERVICE;
   if (!input.projectId) {
     return { ok: false, error: "No Basecamp project set for this client." };
   }
 
   try {
-    const projectRes = await bc(`/projects/${input.projectId}.json`);
+    const projectRes = await bc(`/projects/${input.projectId}.json`, undefined, identity);
     if (!projectRes.ok) {
       return { ok: false, error: `Basecamp project lookup failed (${projectRes.status}).` };
     }
@@ -882,7 +1019,7 @@ export async function sendApprovalToDeliverables(input: {
     const checked: string[] = [];
     let lastStatus = 0;
     for (const candidate of candidates) {
-      const tableRes = await bc(`/card_tables/${candidate.id}.json`);
+      const tableRes = await bc(`/card_tables/${candidate.id}.json`, undefined, identity);
       if (!tableRes.ok) {
         lastStatus = tableRes.status;
         continue;
@@ -911,7 +1048,7 @@ export async function sendApprovalToDeliverables(input: {
       };
     }
 
-    const people = await getProjectPeople(input.projectId);
+    const people = await getProjectPeople(input.projectId, identity);
     const matchedIds = matchPeople(people, input.recipientIdentifiers);
     const recipient = people.find((person) => person.id === matchedIds[0]);
     if (!recipient) {
@@ -924,7 +1061,7 @@ export async function sendApprovalToDeliverables(input: {
 
     let card: BcCard | null = null;
     if (input.existingCardId) {
-      const cardRes = await bc(`/card_tables/cards/${input.existingCardId}.json`);
+      const cardRes = await bc(`/card_tables/cards/${input.existingCardId}.json`, undefined, identity);
       if (cardRes.ok) {
         card = (await cardRes.json()) as BcCard;
         // Earlier sends could land a card on the wrong board, and Basecamp
@@ -946,7 +1083,7 @@ export async function sendApprovalToDeliverables(input: {
       const moveRes = await bc(`/card_tables/cards/${card.id}/moves.json`, {
         method: "POST",
         body: JSON.stringify({ column_id: needsApproval.id, position: 1 }),
-      });
+      }, identity);
       if (!moveRes.ok) {
         return { ok: false, error: `Could not move the card (${moveRes.status}).` };
       }
@@ -957,7 +1094,7 @@ export async function sendApprovalToDeliverables(input: {
       const assignRes = await bc(`/card_tables/cards/${card.id}.json`, {
         method: "PUT",
         body: JSON.stringify({ assignee_ids: assigneeIds }),
-      });
+      }, identity);
       if (!assignRes.ok) {
         return {
           ok: false,
@@ -971,7 +1108,7 @@ export async function sendApprovalToDeliverables(input: {
       const commentRes = await bc(`/recordings/${card.id}/comments.json`, {
         method: "POST",
         body: JSON.stringify({ content: input.contentHtml }),
-      });
+      }, identity);
       if (!commentRes.ok) {
         return {
           ok: false,
@@ -998,7 +1135,7 @@ export async function sendApprovalToDeliverables(input: {
         content: input.contentHtml,
         notify: true,
       }),
-    });
+    }, identity);
     if (!createRes.ok) {
       return { ok: false, error: `Could not create the approval card (${createRes.status}).` };
     }
@@ -1007,7 +1144,7 @@ export async function sendApprovalToDeliverables(input: {
     const assignRes = await bc(`/card_tables/cards/${created.id}.json`, {
       method: "PUT",
       body: JSON.stringify({ assignee_ids: [recipient.id] }),
-    });
+    }, identity);
     if (!assignRes.ok) {
       return {
         ok: false,
@@ -1149,10 +1286,12 @@ export async function listProjectMessages(
   }
 }
 
-export async function listProjects(): Promise<Array<{ id: number; name: string }>> {
+export async function listProjects(
+  identity: BcIdentity = SERVICE
+): Promise<Array<{ id: number; name: string }>> {
   const out: Array<{ id: number; name: string }> = [];
   for (let page = 1; page <= 30; page++) {
-    const res = await bc(`/projects.json?page=${page}`);
+    const res = await bc(`/projects.json?page=${page}`, undefined, identity);
     if (!res.ok) break;
     const arr = await res.json();
     if (!Array.isArray(arr) || arr.length === 0) break;
@@ -1163,5 +1302,7 @@ export async function listProjects(): Promise<Array<{ id: number; name: string }
 }
 
 export function disconnectBasecamp() {
-  getDb().prepare(`DELETE FROM app_settings WHERE key = ?`).run("basecamp_tokens");
+  getDb()
+    .prepare(`DELETE FROM app_settings WHERE key IN (?, ?)`)
+    .run("basecamp_tokens", "basecamp_service_identity");
 }

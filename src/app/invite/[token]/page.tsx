@@ -73,7 +73,12 @@ export default function InvitePage({
         return;
       }
       setDone(true);
-      setTimeout(() => router.push("/login"), 1600);
+      // Setting a password signs them in, so they carry straight on to the
+      // rest of setup. If that did not take, fall back to the sign-in page.
+      setTimeout(
+        () => router.push(data.authenticated ? "/account/setup" : "/login"),
+        1400
+      );
     } catch {
       setError("Could not reach the server.");
       setSaving(false);
@@ -117,10 +122,11 @@ export default function InvitePage({
         <div className="card login-card stack">
           <Brand />
           <div>
-            <p className="eyebrow">All set</p>
+            <p className="eyebrow">Step one done</p>
             <h1>Password saved</h1>
             <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-              Taking you to the sign in page so you can log in with it.
+              Two quick things left: your authenticator app and your Basecamp
+              account. Taking you there now.
             </p>
           </div>
         </div>

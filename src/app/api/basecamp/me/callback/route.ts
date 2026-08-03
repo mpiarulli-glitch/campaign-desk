@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppUrl, sessionUserSlug } from "@/lib/auth";
 import { completeConnect, readState } from "@/lib/basecamp-oauth";
+import { setupStateFor } from "@/lib/setup";
 
 /**
  * Where Basecamp sends someone back after they authorize.
@@ -13,7 +14,12 @@ import { completeConnect, readState } from "@/lib/basecamp-oauth";
  */
 export async function GET(request: Request) {
   const person = await sessionUserSlug();
-  const back = `${getAppUrl()}/account/basecamp`;
+
+  // Somebody connecting as part of onboarding goes back to the wizard, which
+  // then either shows the next step or says they are done. Everyone else goes
+  // to the standalone Basecamp page they started from.
+  const midSetup = person ? setupStateFor(person)?.complete === false : false;
+  const back = `${getAppUrl()}${midSetup ? "/account/setup" : "/account/basecamp"}`;
 
   if (!person) {
     return NextResponse.redirect(`${back}?basecamp=signin`);
