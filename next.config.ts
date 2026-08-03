@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // Safe, non-breaking security headers. (A strict Content-Security-Policy is a
 // deliberate follow-up — it needs testing against the whiteboard/email-preview
@@ -18,4 +19,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default process.env.SENTRY_DSN
+  ? withSentryConfig(nextConfig, { silent: true })
+  : nextConfig;
