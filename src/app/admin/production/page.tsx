@@ -62,7 +62,7 @@ type Row = {
 };
 
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
-type ProductionTab = "requested" | "confirmed" | "setup";
+type ProductionTab = "requested" | "confirmed" | "archived" | "setup";
 
 // The "Log a production" form: a production that was arranged over the phone or
 // in another booking system, recorded after the fact.
@@ -89,6 +89,7 @@ type Production = {
   account_manager: string;
   videographer: string;
   created_at: string;
+  archived_at: string | null;
 };
 
 // Which client fields can be edited inline, and how each maps to the PATCH body.
@@ -276,14 +277,18 @@ export default function ProductionPage() {
 
   // "Log a production" form, for productions booked outside the app.
   const [logging, setLogging] = useState<LogForm | null>(null);
+  const logFormRef = useRef<HTMLFormElement>(null);
   const [logSaving, setLogSaving] = useState(false);
   const [logError, setLogError] = useState("");
 
   function openLog(clientId = "") {
     setLogError("");
+    const row = clientId ? rows.find((r) => r.client.id === clientId) : undefined;
     setLogging({
       clientId,
-      date: "",
+      // Opening from a client's row prefills their current window, which is the
+      // date wanted almost every time. Opening the blank form leaves it empty.
+      date: row?.window?.start || "",
       time: "09:00",
       duration: "half",
       status: "scheduled",
@@ -396,6 +401,45 @@ export default function ProductionPage() {
       `Linked ${d.linked.length}${d.created.length ? `, created ${d.created.length}` : ""}. ` +
         (d.noProject.length ? `No project found for: ${d.noProject.join(", ")}.` : "All set.")
     );
+    load({ silent: true });
+  }
+
+  // Bring the form into view when it opens. Clicking "Log a shoot" on a client
+  // twenty rows down otherwise looks like the button did nothing.
+  // Statically checkable: a plain string that changes whenever the form opens or
+  // switches client, and is empty while the form is closed.
+  const logOpenFor = logging ? `open:${logging.clientId}` : "";
+  useEffect(() => {
+    if (logOpenFor && logFormRef.current) {
+      logFormRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [logOpenFor]);
+
+  // Calling a production off. Reversible, and it hands the cadence window back
+  // so the client shows as needing a booking again.
+  async function setArchived(id: string, archived: boolean) {
+    const res = await fetch(`/api/calendar/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    });
+    if (!res.ok) {
+      setError(archived ? "Could not archive that production." : "Could not restore it.");
+      return;
+    }
+    load({ silent: true });
+  }
+
+  // For rows that should never have existed, like a test booking.
+  async function removeProduction(id: string, clientName: string) {
+    if (!confirm(`Delete the ${clientName} production for good? This cannot be undone. Archive it instead if you want to keep the record.`)) {
+      return;
+    }
+    const res = await fetch(`/api/calendar/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError("Could not delete that production.");
+      return;
+    }
     load({ silent: true });
   }
 
@@ -535,16 +579,28 @@ export default function ProductionPage() {
     return base;
   }, [enrolled, showInactive]);
   const activeCount = enrolled.filter((r) => r.client.active).length;
-  const requestedProductions = useMemo(
-    () => productions.filter((production) => production.status === "requested"),
+  const liveProductions = useMemo(
+    () => productions.filter((production) => !production.archived_at),
     [productions]
+  );
+  const archivedProductions = useMemo(
+    () => productions.filter((production) => production.archived_at),
+    [productions]
+  );
+  const requestedProductions = useMemo(
+    () => liveProductions.filter((production) => production.status === "requested"),
+    [liveProductions]
   );
   const confirmedProductions = useMemo(
-    () => productions.filter((production) => production.status !== "requested"),
-    [productions]
+    () => liveProductions.filter((production) => production.status !== "requested"),
+    [liveProductions]
   );
   const visibleProductions =
-    tab === "requested" ? requestedProductions : confirmedProductions;
+    tab === "requested"
+      ? requestedProductions
+      : tab === "archived"
+        ? archivedProductions
+        : confirmedProductions;
 
   // Only clients whose color week and cadence are set can have a production
   // logged, since without them there's no window to record it against.
@@ -683,6 +739,18 @@ export default function ProductionPage() {
             Confirmed
             <span className="tab-count">{confirmedProductions.length}</span>
           </button>
+          {archivedProductions.length ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "archived"}
+              className={`tab ${tab === "archived" ? "active" : ""}`}
+              onClick={() => setTab("archived")}
+            >
+              Archived
+              <span className="tab-count">{archivedProductions.length}</span>
+            </button>
+          ) : null}
           <span className="tab-divider" aria-hidden="true" />
           <button
             type="button"
@@ -698,9 +766,9 @@ export default function ProductionPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        {isAdmin && tab !== "setup" ? (
+        {isAdmin ? (
           logging ? (
-            <form className="card card-pad stack" onSubmit={submitLog}>
+            <form ref={logFormRef} className="card card-pad stack" onSubmit={submitLog}>
               <div>
                 <h2 className="h3" style={{ margin: 0 }}>Log a production</h2>
                 <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
@@ -1307,10 +1375,16 @@ export default function ProductionPage() {
           <ProductionQueue
             productions={visibleProductions}
             loading={loading}
+            isAdmin={isAdmin}
+            onArchive={(id) => setArchived(id, true)}
+            onRestore={(id) => setArchived(id, false)}
+            onDelete={removeProduction}
             emptyLabel={
               tab === "requested"
                 ? "No production requests are waiting for confirmation."
-                : "No productions have been confirmed yet."
+                : tab === "archived"
+                  ? "Nothing archived."
+                  : "No productions have been confirmed yet."
             }
           />
         )}
@@ -1323,10 +1397,18 @@ function ProductionQueue({
   productions,
   loading,
   emptyLabel,
+  isAdmin,
+  onArchive,
+  onRestore,
+  onDelete,
 }: {
   productions: Production[];
   loading: boolean;
   emptyLabel: string;
+  isAdmin: boolean;
+  onArchive: (id: string) => void;
+  onRestore: (id: string) => void;
+  onDelete: (id: string, clientName: string) => void;
 }) {
   if (loading) return <p className="muted">Loading productions...</p>;
   if (!productions.length) {
@@ -1343,18 +1425,18 @@ function ProductionQueue({
   return (
     <div className="pcon-list">
       {productions.map((production) => {
-        const statusLabel =
-          production.status === "requested"
+        const statusLabel = production.archived_at
+          ? "Archived"
+          : production.status === "requested"
             ? "Requested"
             : production.status === "sent"
               ? "Completed"
               : "Confirmed";
-        const tone =
-          production.status === "requested"
+        const tone = production.archived_at
+          ? "is-quiet"
+          : production.status === "requested"
             ? "is-warn"
-            : production.status === "sent"
-              ? "is-good"
-              : "is-good";
+            : "is-good";
         return (
           <div key={production.id} className="pcon-band">
             <div className="pcon-rail" aria-hidden="true" />
@@ -1406,6 +1488,25 @@ function ProductionQueue({
                 >
                   Open
                 </Link>
+                {isAdmin ? (
+                  production.archived_at ? (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => onRestore(production.id)}>
+                        Restore
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => onDelete(production.id, production.client_name)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  ) : (
+                    <button className="btn btn-ghost btn-sm" onClick={() => onArchive(production.id)}>
+                      Archive
+                    </button>
+                  )
+                ) : null}
               </div>
             </div>
           </div>

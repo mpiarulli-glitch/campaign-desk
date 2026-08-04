@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated, isProductionAuthenticated } from "@/lib/auth";
-import { deleteSend, getSend, updateSend } from "@/lib/calendar";
+import { archiveSend, deleteSend, getSend, updateSend } from "@/lib/calendar";
 import { advanceLastProduction } from "@/lib/cadence";
 import { getRevClient } from "@/lib/revenue";
 import { sendProductionConfirmed } from "@/lib/production-emails";
@@ -53,6 +53,12 @@ export async function PATCH(request: Request, { params }: Params) {
       { status: 400 }
     );
   }
+  if (typeof body.archived === "boolean") {
+    const send = archiveSend(id, body.archived);
+    if (!send) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ send });
+  }
+
   const optStr = (v: unknown) => (typeof v === "string" ? v : undefined);
 
   // Production brief. Sent as an object and stored as JSON, filtered to the

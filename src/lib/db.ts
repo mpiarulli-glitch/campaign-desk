@@ -421,6 +421,10 @@ export interface ScheduledSend {
   requested_by_client: number;
   // Set once the day-before "your crew arrives tomorrow" email has gone out.
   shoot_reminder_sent_at: string | null;
+  // Set when a production is called off or was only ever a test. An archived
+  // row keeps its history but stops counting: the client's cadence window reads
+  // as unbooked again, reminders resume, and the day-before email will not fire.
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1720,6 +1724,9 @@ function migrate(database: Database.Database) {
     );
   }
   // Dedupe flag for the day-before "your crew arrives tomorrow" email.
+  if (sendCols.length && !sendCols.includes("archived_at")) {
+    database.exec(`ALTER TABLE scheduled_sends ADD COLUMN archived_at TEXT`);
+  }
   if (sendCols.length && !sendCols.includes("shoot_reminder_sent_at")) {
     database.exec(
       `ALTER TABLE scheduled_sends ADD COLUMN shoot_reminder_sent_at TEXT`

@@ -72,7 +72,7 @@ export function listSends(
 
 // Client-submitted production requests, including the people responsible for
 // the account and shoot. These power the Requested / Confirmed admin queues.
-export function listProductionSends(): ProductionSend[] {
+export function listProductionSends(includeArchived = false): ProductionSend[] {
   return getDb()
     .prepare(
       `SELECT
@@ -83,13 +83,27 @@ export function listProductionSends(): ProductionSend[] {
        LEFT JOIN rev_clients c ON c.id = s.client_id
        LEFT JOIN videographers v ON v.id = c.videographer_id
        WHERE s.requested_by_client = 1
+         AND (? = 1 OR s.archived_at IS NULL)
        ORDER BY
          CASE WHEN s.status = 'requested' THEN 0 ELSE 1 END,
          s.send_date ASC,
          s.send_time ASC,
          s.created_at ASC`
     )
-    .all() as ProductionSend[];
+    .all(includeArchived ? 1 : 0) as ProductionSend[];
+}
+
+// Calling a production off. The row stays for the record, but stops counting:
+// the client's window reads as unbooked again, reminders resume, and the
+// day-before email will not fire. Reversible, unlike deleteSend.
+export function archiveSend(id: string, archived: boolean): ScheduledSend | null {
+  const existing = getSend(id);
+  if (!existing) return null;
+  const ts = nowIso();
+  getDb()
+    .prepare(`UPDATE scheduled_sends SET archived_at = ?, updated_at = ? WHERE id = ?`)
+    .run(archived ? ts : null, ts, id);
+  return getSend(id);
 }
 
 export function getSend(id: string): ScheduledSend | null {

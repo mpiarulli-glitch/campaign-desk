@@ -53,7 +53,7 @@ export async function GET() {
   });
   return NextResponse.json({
     clients,
-    productions: listProductionSends(),
+    productions: listProductionSends(true),
     today,
     videographers: listVideographers(false),
   });

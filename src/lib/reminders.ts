@@ -502,6 +502,7 @@ export async function runShootReminders(opts?: {
          AND status IN ('scheduled', 'planned')
          AND client_id IS NOT NULL
          AND requested_by_client = 1
+         AND archived_at IS NULL
          AND shoot_reminder_sent_at IS NULL`
     )
     .all(tomorrow) as ScheduledSend[];
