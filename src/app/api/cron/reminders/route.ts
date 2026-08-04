@@ -58,7 +58,9 @@ async function handle(request: Request) {
   // &newCard=1 forces a fresh Basecamp card. Ignored without ?only=, so it can
   // never create a card for every client at once.
   const newCard = url.searchParams.get("newCard") === "1";
-  const result = await runReminders({ dryRun, only, newCard, today: asOf || undefined });
+  // &cardOnly=1 does the Basecamp card and sends no email.
+  const cardOnly = url.searchParams.get("cardOnly") === "1";
+  const result = await runReminders({ dryRun, only, newCard, cardOnly, today: asOf || undefined });
   if (only) {
     return NextResponse.json({ ...result, targeted: only });
   }

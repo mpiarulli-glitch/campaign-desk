@@ -388,6 +388,10 @@ export interface ReminderRunResult {
 export async function runReminders(opts?: {
   today?: string;
   dryRun?: boolean;
+  // Do the Basecamp card and skip the client email entirely. For when a card
+  // failed on its own, usually because the service account was not yet a member
+  // of the project, and the email already went out.
+  cardOnly?: boolean;
   // Force a fresh Basecamp card even though this window already has one. Only
   // honoured alongside `only`, so it can never mass-create cards across the
   // book. For seeing the real card after its copy changed, since creation is
@@ -406,6 +410,7 @@ export async function runReminders(opts?: {
   const dryRun = Boolean(opts?.dryRun);
   const only = (opts?.only || "").trim().toLowerCase();
   const forceNewCard = Boolean(only) && Boolean(opts?.newCard);
+  const cardOnly = Boolean(opts?.cardOnly);
   const result: ReminderRunResult = {
     today,
     dryRun,
@@ -538,6 +543,8 @@ export async function runReminders(opts?: {
         }
       }
     }
+
+    if (cardOnly) continue;
 
     if (!client.contact_email?.trim()) {
       result.skipped.noEmail++;
