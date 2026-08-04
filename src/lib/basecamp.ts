@@ -862,8 +862,13 @@ export async function createScheduleCard(
     if (!tableRes.ok) return { ok: false, error: `card table ${tableRes.status}` };
     const table = await tableRes.json();
     const lists: Array<{ id: number; title: string }> = table.lists || [];
+    // Needs Approval: a scheduling card is waiting on the client to pick a day,
+    // not work in progress on our side. Falls back to In Progress, then to the
+    // first column, for a project whose board is laid out differently.
+    const byLabel = (want: string) =>
+      lists.find((l) => normalizedLabel(l.title || "") === want);
     const col =
-      lists.find((l) => /in\s*progress/i.test(l.title || "")) || lists[0];
+      byLabel("needs approval") || byLabel("in progress") || lists[0];
     if (!col) return { ok: false, error: "no columns in card table" };
 
     const cardRes = await bc(
