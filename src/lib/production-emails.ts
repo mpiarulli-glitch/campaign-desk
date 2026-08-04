@@ -1,6 +1,12 @@
 // Client-facing production scheduling emails: request received, booking
 // confirmed, and a day-before heads-up. Shares the branded shell used by the
 // "time to schedule" reminder in reminders.ts.
+//
+// Subjects are written to the client and carry no company-name prefix. The
+// sender is already the agency, so leading with the client's own name read like
+// a system ticket addressed to them about themselves. The account name still
+// appears as the eyebrow inside the email, which is what tells someone managing
+// two accounts which one this is.
 import type { RevClient, ScheduledSend } from "./db";
 import { sendEmail } from "./email";
 
@@ -101,7 +107,7 @@ export async function sendProductionRequestReceived(
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
 
   const { subject, html, text } = shell({
-    subject: `${client.name}: we've got your production request`,
+    subject: "We've got your production request",
     preheader: `Your request for ${when} is in. Your account manager will confirm shortly.`,
     eyebrow: client.name,
     headline: "Your request is in",
@@ -131,7 +137,7 @@ export async function sendProductionConfirmed(
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
 
   const { subject, html, text } = shell({
-    subject: `${client.name}: your production is confirmed`,
+    subject: "Your production is confirmed",
     preheader: `You're booked for ${when}.`,
     eyebrow: client.name,
     headline: "You're booked",
@@ -161,7 +167,7 @@ export async function sendProductionUpcoming(
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
 
   const { subject, html, text } = shell({
-    subject: `${client.name}: your crew arrives tomorrow`,
+    subject: "Your crew arrives tomorrow",
     preheader: `Just a reminder that your production is tomorrow, ${when}.`,
     eyebrow: client.name,
     headline: "Your crew arrives tomorrow",

@@ -253,7 +253,10 @@ export function reminderEmail(
   };
   const year = window.start.split("-")[0];
   const windowText = `${fmtLong(window.start)} – ${fmtLong(window.end)}, ${year}`;
-  const subject = `${client.name}: time to schedule your next production`;
+  // No company-name prefix. The sender is already Marketing Empire Group, so
+  // leading with the client's own name read like a system ticket addressed to
+  // them about themselves. Matches the Basecamp card title.
+  const subject = "Time to schedule your next production";
   const preheader = "Your next production is coming up. Pick a day and time in about a minute.";
   const logo = "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 

@@ -16,6 +16,7 @@ import {
   dayOfWeek,
   isBasecampFollowupDay,
   isEmailFollowupDay,
+  reminderEmail,
   scheduleCardContent,
   scheduleNudgeContent,
 } from "../src/lib/reminders";
@@ -219,4 +220,19 @@ test("the follow-up nudge speaks to the client too", () => {
 
   const oneDay = scheduleNudgeContent(client, w, "https://desk.test/s/t", "2026-08-16");
   assert.match(oneDay, /opens in 1 day,/);
+});
+
+test("email subjects are written to the client, with no company-name prefix", () => {
+  // The sender is already the agency, so "Ecoworkz: ..." sent to Ecoworkz read
+  // like a system ticket addressed to them about themselves.
+  const client = { name: "Ecoworkz", contact_name: "Bret" } as RevClient;
+  const built = reminderEmail(
+    client,
+    { start: "2026-08-17", end: "2026-08-21" },
+    "https://desk.test/s/t"
+  );
+  assert.equal(built.subject, "Time to schedule your next production");
+  assert.doesNotMatch(built.subject, /Ecoworkz/);
+  // The account name still appears inside, as the eyebrow.
+  assert.match(built.html, /Ecoworkz/);
 });
