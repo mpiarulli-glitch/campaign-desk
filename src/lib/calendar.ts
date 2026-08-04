@@ -128,6 +128,44 @@ export function getSendByCrewToken(token: string): ScheduledSend | null {
   );
 }
 
+// The crew accepting a job from their link. Moves it out of "requested", which
+// is what the Needs Approval card is waiting on, and stamps who-when separately
+// from the status so an admin confirmation and a crew acceptance stay tellable
+// apart.
+//
+// Idempotent: pressing it twice, or two people pressing it, is not an error. It
+// refuses only when there is nothing to approve.
+export function approveByCrew(
+  token: string
+): { ok: true; send: ScheduledSend; alreadyDone: boolean } | { ok: false; error: string } {
+  const existing = getSendByCrewToken(token);
+  if (!existing) return { ok: false, error: "Not found" };
+  if (existing.cancelled_at) {
+    return { ok: false, error: "This production was cancelled." };
+  }
+  if (existing.crew_approved_at) {
+    return { ok: true, send: existing, alreadyDone: true };
+  }
+  if (existing.status !== "requested") {
+    // Already confirmed by an admin. Record the acceptance without moving it
+    // backwards through the statuses.
+    const ts = nowIso();
+    getDb()
+      .prepare(`UPDATE scheduled_sends SET crew_approved_at = ?, updated_at = ? WHERE id = ?`)
+      .run(ts, ts, existing.id);
+    return { ok: true, send: getSend(existing.id)!, alreadyDone: false };
+  }
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE scheduled_sends
+       SET status = 'scheduled', crew_approved_at = ?, updated_at = ?
+       WHERE id = ?`
+    )
+    .run(ts, ts, existing.id);
+  return { ok: true, send: getSend(existing.id)!, alreadyDone: false };
+}
+
 export function getSend(id: string): ScheduledSend | null {
   return (
     (getDb()

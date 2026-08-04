@@ -52,6 +52,8 @@ type Data = {
     time: string;
     duration: string;
     status: string;
+    needsApproval: boolean;
+    approvedAt: string | null;
     note: string;
   };
   client: { name: string; accountManager: string };
@@ -82,6 +84,8 @@ export default function CrewPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +103,19 @@ export default function CrewPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function approve() {
+    setApproving(true);
+    setApproveError("");
+    const res = await fetch(`/api/crew/${token}/approve`, { method: "POST" });
+    setApproving(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setApproveError(body.error || "Could not approve this production.");
+      return;
+    }
+    load();
+  }
 
   if (notFound) {
     return (
@@ -142,6 +159,30 @@ export default function CrewPage() {
                 {data.client.accountManager ? ` · ${data.client.accountManager}` : ""}
               </p>
             </div>
+
+            {data.production.needsApproval ? (
+              <section className="card card-pad stack">
+                <h2 className="h2">Can you take this one?</h2>
+                <p style={{ margin: 0, lineHeight: 1.6 }}>
+                  This is a request, not a scheduled production yet. Approving it
+                  books it in, tells the client it is confirmed, and lets the
+                  account manager know.
+                </p>
+                {approveError ? <p className="error">{approveError}</p> : null}
+                <div className="row">
+                  <button className="btn" onClick={approve} disabled={approving}>
+                    {approving ? "Approving..." : "Approve this production"}
+                  </button>
+                </div>
+              </section>
+            ) : data.production.approvedAt ? (
+              <section className="card card-pad">
+                <p style={{ margin: 0, lineHeight: 1.6 }}>
+                  <strong>Approved.</strong> This is on the schedule and the client
+                  has been told.
+                </p>
+              </section>
+            ) : null}
 
             {data.production.note ? (
               <section className="card card-pad stack">

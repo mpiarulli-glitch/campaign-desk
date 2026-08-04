@@ -426,6 +426,10 @@ export interface ScheduledSend {
   // in to read an address, so the Basecamp notification links here instead of
   // into the admin app.
   crew_token: string | null;
+  // When the crew accepted the job from their no-login link. Distinct from the
+  // status alone, which cannot tell an admin confirming a booking apart from the
+  // videographer accepting it.
+  crew_approved_at: string | null;
   // Set when a production is cancelled: called off, or requested by accident.
   // The row keeps its history but stops counting, so the client's cadence window
   // reads as unbooked again, they show as needing a production, reminders resume,
@@ -1730,6 +1734,9 @@ function migrate(database: Database.Database) {
     );
   }
   // Dedupe flag for the day-before "your crew arrives tomorrow" email.
+  if (sendCols.length && !sendCols.includes("crew_approved_at")) {
+    database.exec(`ALTER TABLE scheduled_sends ADD COLUMN crew_approved_at TEXT`);
+  }
   if (sendCols.length && !sendCols.includes("crew_token")) {
     database.exec(`ALTER TABLE scheduled_sends ADD COLUMN crew_token TEXT`);
     database.exec(

@@ -38,6 +38,9 @@ export async function GET(
       time: send.send_time,
       duration: send.duration,
       status: send.status,
+      // A request is not a scheduled production yet: it is waiting on the crew.
+      needsApproval: send.status === "requested" && !send.crew_approved_at,
+      approvedAt: send.crew_approved_at,
       note: send.note,
     },
     client: {

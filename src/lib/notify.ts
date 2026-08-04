@@ -182,3 +182,46 @@ export function notifyCampaignRemoved(args: {
   // Fire and forget.
   void postToCampfire(content);
 }
+
+// The crew accepted a production. Goes back to the same Campfire so the account
+// manager sees it without having to check the app.
+export async function notifyProductionApproved(args: {
+  clientName: string;
+  videographerName?: string;
+  accountManagerName?: string;
+  sendDate: string;
+  sendTime: string;
+  detailsUrl: string;
+}): Promise<boolean> {
+  const projectId = process.env.BASECAMP_VIDEO_EDITING_PROJECT_ID || "";
+  const time = args.sendTime ? ` at ${escapeHtml(args.sendTime)}` : "";
+  const build = (managerMention?: string) =>
+    `<strong>Production approved</strong><br>` +
+    (managerMention ? `${managerMention} the crew has accepted this one.<br>` : "") +
+    `<strong>Client:</strong> ${escapeHtml(args.clientName)}<br>` +
+    `<strong>Date:</strong> ${escapeHtml(args.sendDate)}${time}<br>` +
+    (args.videographerName
+      ? `<strong>Videographer:</strong> ${escapeHtml(args.videographerName)}<br>`
+      : "") +
+    `<a href="${escapeHtml(args.detailsUrl)}">View production details</a>`;
+
+  if (projectId && basecampConnected()) {
+    const people = await getProjectPeopleForMention(projectId);
+    const manager = people.find(
+      (candidate) =>
+        candidate.name.toLowerCase() ===
+        basecampNameForManager(args.accountManagerName || "").toLowerCase()
+    );
+    const result = await postProjectCampfireLine(
+      projectId,
+      build(manager && basecampNameForManager(args.accountManagerName || "") ? mentionHtml(manager) : undefined)
+    );
+    if (result.ok) return true;
+    console.error(`[notify] Basecamp approval Campfire failed: ${result.error}`);
+  }
+  return postToCampfire(
+    build(),
+    process.env.BASECAMP_VIDEO_EDITING_CAMPFIRE_URL ||
+      process.env.BASECAMP_CAMPFIRE_URL
+  );
+}
