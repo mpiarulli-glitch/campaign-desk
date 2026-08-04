@@ -144,11 +144,15 @@ const ACCOUNT_MANAGER_OPTIONS = [
 // Which group a client falls into, for the counts across the top. These are the
 // four questions actually asked of this page: who is waiting on us, who needs
 // booking now, who is already handled, and who was never set up.
-type StatusFilter = "all" | "waiting" | "due" | "ahead" | "unset";
+type StatusFilter = "all" | "waiting" | "asked" | "due" | "ahead" | "unset";
 
 function bucketOf(r: Row): Exclude<StatusFilter, "all"> {
   if (!r.window) return "unset";
   if (r.status === "requested") return "waiting";
+  // Asked and not booked. Distinct from "due" (never asked) and from "ahead"
+  // (nothing needed yet), because the next move is a chase rather than a first
+  // approach.
+  if (!r.existingSend && r.currentReminderCount > 0) return "asked";
   if (r.status === "due") return "due";
   return "ahead";
 }
@@ -547,7 +551,7 @@ export default function ProductionPage() {
   // Ordered by what needs a person: waiting on us, then due, then booked ahead,
   // then never set up. Within a group, the soonest window first.
   const BUCKET_ORDER: Record<Exclude<StatusFilter, "all">, number> = {
-    waiting: 0, due: 1, ahead: 2, unset: 3,
+    waiting: 0, due: 1, asked: 2, ahead: 3, unset: 4,
   };
   const visible = useMemo(
     () =>
@@ -568,7 +572,7 @@ export default function ProductionPage() {
   );
 
   const counts = useMemo(() => {
-    const base = { waiting: 0, due: 0, ahead: 0, unset: 0 };
+    const base = { waiting: 0, due: 0, asked: 0, ahead: 0, unset: 0 };
     for (const r of enrolled) {
       if (!showInactive && !r.client.active) continue;
       base[bucketOf(r)]++;
@@ -955,6 +959,7 @@ export default function ProductionPage() {
           {([
             ["waiting", counts.waiting, "waiting on us"],
             ["due", counts.due, "due now"],
+            ["asked", counts.asked, "asked, no booking"],
             ["ahead", counts.ahead, "booked ahead"],
             ["unset", counts.unset, "not set up"],
           ] as Array<[Exclude<StatusFilter, "all">, number, string]>).map(([key, n, label]) => (
@@ -1226,18 +1231,32 @@ export default function ProductionPage() {
                       ) : null}
                       {r.currentReminderCount > 0 ? (
                         <div className="pcon-line">
-                          <span className="k">Reminded</span>
+                          <span className="k">Outreach</span>
                           <span className="v">
-                            {r.currentReminderCount}x{r.lastEmailSent ? `, ${fmtDate(r.lastEmailSent)}` : ""}
+                            {r.lastEmailSent ? fmtDate(r.lastEmailSent) : "sent"}
+                            {r.currentReminderCount > 1 ? `, ${r.currentReminderCount}x` : ""}
                           </span>
                         </div>
                       ) : null}
                     </div>
 
                     <div className="pcon-act">
-                      <span className={`pcon-pill ${TONE[r.status]}`}>
-                        {STATUS_LABEL[r.status]}
-                      </span>
+                      {/* A client who has been asked and has not booked reads as
+                          "Not due yet" on status alone, which looks like nothing
+                          has happened. Say the ask happened instead: it is the
+                          thing you need to know when deciding whether to chase. */}
+                      {!r.existingSend && r.currentReminderCount > 0 ? (
+                        <span
+                          className="pcon-pill is-warn"
+                          title={`Outreach sent ${r.currentReminderCount} time${r.currentReminderCount === 1 ? "" : "s"}${r.lastEmailSent ? `, last on ${fmtDate(r.lastEmailSent)}` : ""}. Waiting on them to book.`}
+                        >
+                          Asked {r.currentReminderCount}x
+                        </span>
+                      ) : (
+                        <span className={`pcon-pill ${TONE[r.status]}`}>
+                          {STATUS_LABEL[r.status]}
+                        </span>
+                      )}
                       {r.existingSend ? (
                         <Link className="btn btn-secondary btn-sm" href={`/admin/production/${r.existingSend.id}`}>
                           Open
