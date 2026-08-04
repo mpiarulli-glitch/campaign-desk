@@ -11,6 +11,7 @@ import {
   mentionHtml,
   postProjectCampfireLine,
 } from "./basecamp";
+import { basecampNameForManager } from "./people";
 
 function escapeHtml(text: string): string {
   return text
@@ -123,17 +124,29 @@ export async function notifyProductionRequested(
     // The enriched roster, because /projects/{id}/people.json returns no
     // attachable_sgid and a mention without one degrades to plain text.
     const people = await getProjectPeopleForMention(projectId);
-    const find = (want: string | undefined) => {
+    // Exact only. A first name is not enough to identify a colleague here: the
+    // roster holds both Morris Kyle and Kyle Onstott, and matching "Kyle" on a
+    // prefix pinged the wrong one. Where a first name is all we hold, it has to
+    // resolve to exactly one person or to nobody.
+    const exact = (fullName: string) => {
+      const q = fullName.trim().toLowerCase();
+      if (!q) return undefined;
+      return people.find((candidate) => candidate.name.toLowerCase() === q);
+    };
+    const soleMatch = (want: string | undefined) => {
       const q = (want || "").trim().toLowerCase();
       if (!q) return undefined;
-      return (
-        people.find((candidate) => candidate.name.toLowerCase() === q) ||
-        people.find((candidate) => candidate.name.toLowerCase().startsWith(q + " ")) ||
-        people.find((candidate) => candidate.name.toLowerCase().includes(q))
+      const hit = exact(q);
+      if (hit) return hit;
+      const starts = people.filter((candidate) =>
+        candidate.name.toLowerCase().startsWith(q + " ")
       );
+      return starts.length === 1 ? starts[0] : undefined;
     };
-    const videographer = find(args.videographerName);
-    const manager = find(args.accountManagerName);
+    const videographer = soleMatch(args.videographerName);
+    // Account managers come from an explicit map, since their Basecamp names do
+    // not follow from the first name stored on the client.
+    const manager = exact(basecampNameForManager(args.accountManagerName || ""));
     const content = productionRequestedCampfireContent(
       args,
       videographer ? mentionHtml(videographer) : undefined,

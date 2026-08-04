@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { matchExistingContact } from "../src/lib/contact-sync";
+import { basecampNameForManager } from "../src/lib/people";
 import { findDeliverablesTables,
   findClientContact,
 } from "../src/lib/basecamp";
@@ -169,4 +170,28 @@ test("two candidates sharing a first name resolve to nobody", () => {
 
 test("no name on the record matches nobody by name", () => {
   assert.equal(matchExistingContact("", ["Ben Pham", "Van Do"]), null);
+});
+
+/* ------------------------------------------- account manager to Basecamp name */
+
+test("Kyle is Morris Kyle, not Kyle Onstott", () => {
+  // Both are real people on the roster. Matching "Kyle" on a prefix picked
+  // Onstott, so production notifications pinged the wrong colleague.
+  assert.equal(basecampNameForManager("Kyle"), "Morris Kyle");
+  assert.notEqual(basecampNameForManager("Kyle"), "Kyle Onstott");
+});
+
+test("the other two managers map to their full names", () => {
+  assert.equal(basecampNameForManager("Cassidy"), "Cassidy Merideth");
+  assert.equal(basecampNameForManager("Luis"), "Luis Romero");
+});
+
+test("casing and stray spaces do not break the map", () => {
+  assert.equal(basecampNameForManager("  luis "), "Luis Romero");
+  assert.equal(basecampNameForManager("CASSIDY"), "Cassidy Merideth");
+});
+
+test("an unmapped manager resolves to nobody rather than a guess", () => {
+  assert.equal(basecampNameForManager("Randi"), "");
+  assert.equal(basecampNameForManager(""), "");
 });

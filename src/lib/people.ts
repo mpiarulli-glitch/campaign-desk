@@ -172,3 +172,21 @@ export function isSeoOnly(slug: string | null): boolean {
 export function entryLevelPeople() {
   return PEOPLE.filter((p) => p.entryLevel);
 }
+
+// An account manager is stored on a client as a first name, and the Basecamp
+// display name does not follow from it. "Kyle" is Morris Kyle; Kyle Onstott is a
+// different person who was being notified instead. "Luis" matched Luis Romero
+// only by luck of roster order, with Debbie/Luis Mares also a candidate.
+//
+// Mapped explicitly, because a notification that pings the wrong colleague is
+// worse than one that pings nobody. An unmapped value resolves to nothing rather
+// than the nearest name.
+export const ACCOUNT_MANAGER_BASECAMP_NAME: Record<string, string> = {
+  kyle: "Morris Kyle",
+  cassidy: "Cassidy Merideth",
+  luis: "Luis Romero",
+};
+
+export function basecampNameForManager(value: string): string {
+  return ACCOUNT_MANAGER_BASECAMP_NAME[(value || "").trim().toLowerCase()] || "";
+}
