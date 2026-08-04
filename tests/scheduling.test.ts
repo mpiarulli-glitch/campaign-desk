@@ -236,3 +236,23 @@ test("email subjects are written to the client, with no company-name prefix", ()
   // The account name still appears inside, as the eyebrow.
   assert.match(built.html, /Ecoworkz/);
 });
+
+test("a resolved contact is greeted with a real mention, not their name", () => {
+  const client = { name: "Example & Sons", contact_name: "Dana" } as RevClient;
+  const w = { start: "2026-08-17", end: "2026-08-21" };
+  const mention = '<bc-attachment sgid="BAh7CEkiCG"></bc-attachment>';
+
+  const { body } = scheduleCardContent(client, w, "https://desk.test/s/t", mention);
+  // Assigning somebody does not notify them. Only the mention does.
+  assert.match(body, /Hi <bc-attachment sgid="BAh7CEkiCG"><\/bc-attachment>,/);
+  assert.doesNotMatch(body, /Hi Dana,/);
+
+  const nudge = scheduleNudgeContent(client, w, "https://desk.test/s/t", "2026-08-04", mention);
+  assert.match(nudge, /^<div><bc-attachment sgid="BAh7CEkiCG"><\/bc-attachment> Just a friendly nudge/);
+
+  // Falls back to the plain name when the contact is not on the project, so the
+  // card still reads as addressed to somebody.
+  const plain = scheduleCardContent(client, w, "https://desk.test/s/t");
+  assert.match(plain.body, /Hi Dana,/);
+  assert.doesNotMatch(plain.body, /bc-attachment/);
+});

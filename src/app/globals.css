@@ -1,4 +1,14 @@
-:root {
+/* .client-light pins a subtree to the light palette whatever the visitor's OS or
+   stored theme says. Custom properties resolve from the nearest ancestor that
+   declares them, so a descendant scope wins over :root[data-theme="dark"]
+   regardless of selector specificity. Sharing this selector rather than copying
+   the palette means the two can never drift apart.
+
+   Used on the client scheduling link: a client following a link from an email
+   should get one predictable, on-brand page, not whatever their laptop is set
+   to. */
+:root,
+.client-light {
   --bg: #f3f5f8;
   --bg-elevated: #ffffff;
   --bg-soft: #eef1f5;

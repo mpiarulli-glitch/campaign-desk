@@ -16,6 +16,7 @@ import {
   createScheduleCard,
   getProjectPeople,
   matchPeople,
+  mentionHtml,
 } from "./basecamp";
 import { sendProductionUpcoming } from "./production-emails";
 
@@ -90,11 +91,17 @@ function longDate(ymd: string): string {
 export function scheduleCardContent(
   client: RevClient,
   window: Window,
-  url: string
+  url: string,
+  // A real Basecamp mention for the client contact, when they resolve to a
+  // person on the project. Writing "Hi Michael," in plain text looks like an
+  // address but notifies nobody, which is the whole point of the card.
+  contactMention?: string
 ): { title: string; body: string } {
-  const hello = client.contact_name?.trim()
-    ? `Hi ${escapeHtml(client.contact_name.trim())},`
-    : "Hi there,";
+  const hello = contactMention
+    ? `Hi ${contactMention},`
+    : client.contact_name?.trim()
+      ? `Hi ${escapeHtml(client.contact_name.trim())},`
+      : "Hi there,";
   const windowText = `${longDate(window.start)} to ${longDate(window.end)}`;
   const body =
     `<div>${hello}</div>` +
@@ -120,15 +127,17 @@ export function scheduleNudgeContent(
   client: RevClient,
   window: Window,
   url: string,
-  today: string
+  today: string,
+  contactMention?: string
 ): string {
   const daysOut = daysBetween(today, window.start);
   const urgency =
     daysOut > 0
       ? `opens in ${daysOut} day${daysOut === 1 ? "" : "s"}`
       : "is open now";
+  const opener = contactMention ? `${contactMention} ` : "";
   return (
-    `<div>Just a friendly nudge on this one. Your production window ` +
+    `<div>${opener}Just a friendly nudge on this one. Your production window ` +
     `${urgency}, ${escapeHtml(longDate(window.start))} to ` +
     `${escapeHtml(longDate(window.end))}, and we don't have a day booked ` +
     `in yet.</div>` +
@@ -454,7 +463,6 @@ export async function runReminders(opts?: {
       const bcToken = getOrCreateScheduleToken(client.id);
       const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
       if (forceNewCard || !existingCard?.bc_card_at) {
-        const { title: cardTitle, body: cardBody } = scheduleCardContent(client, window, bcUrl);
         try {
           // Tag the account manager reaching out, plus the client contact if
           // they are a person on the Basecamp project. Contact name replaced the
@@ -464,6 +472,17 @@ export async function runReminders(opts?: {
             client.account_manager,
             client.contact_name,
           ]);
+          // Assigning somebody is not the same as mentioning them: only a
+          // mention pings. Resolve the contact to a person so the greeting is a
+          // real @mention rather than their name as plain text.
+          const contactIds = matchPeople(people, [client.contact_name]);
+          const contact = people.find((person) => person.id === contactIds[0]);
+          const { title: cardTitle, body: cardBody } = scheduleCardContent(
+            client,
+            window,
+            bcUrl,
+            contact ? mentionHtml(contact) : undefined
+          );
           // Due a week after the outreach card goes out, so it surfaces as
           // overdue if nobody's followed up with the client by then.
           const dueOn = subDays(today, -7);
@@ -488,8 +507,17 @@ export async function runReminders(opts?: {
         (Boolean(only) ||
           (existingCard.bc_last_nudge !== today && isBasecampFollowupDay(today)))
       ) {
-        const body = scheduleNudgeContent(client, window, bcUrl, today);
         try {
+          const nudgePeople = await getProjectPeople(client.basecamp_project_id);
+          const nudgeIds = matchPeople(nudgePeople, [client.contact_name]);
+          const nudgeContact = nudgePeople.find((person) => person.id === nudgeIds[0]);
+          const body = scheduleNudgeContent(
+            client,
+            window,
+            bcUrl,
+            today,
+            nudgeContact ? mentionHtml(nudgeContact) : undefined
+          );
           const r = await commentOnCard(
             client.basecamp_project_id,
             existingCard.bc_card_id,

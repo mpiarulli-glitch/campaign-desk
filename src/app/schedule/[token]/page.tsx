@@ -7,7 +7,7 @@ import { ScheduleBooking } from "@/components/ScheduleBooking";
 export default function SchedulePage() {
   const { token } = useParams<{ token: string }>();
   return (
-    <div className="app-shell">
+    <div className="app-shell client-light">
       <header className="topbar">
         <Brand href="/" />
       </header>
