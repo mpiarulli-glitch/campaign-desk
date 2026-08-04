@@ -347,6 +347,51 @@ export async function getProjectPeople(
   }
 }
 
+// Project members, enriched with the email address and mention token that the
+// project endpoint does not return.
+//
+// /projects/{id}/people.json gives names and ids but no email_address and no
+// attachable_sgid, which is why matching a client by email always failed and why
+// mentions silently degraded to plain text. /circles/people.json ("pingable")
+// carries both for the whole account, so the two are merged: membership comes
+// from the project, contact details from pingable.
+export async function getProjectPeopleForMention(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcPerson[]> {
+  const members = await getProjectPeople(projectId, identity);
+  if (!members.length) return members;
+  try {
+    const res = await bc(`/circles/people.json`, undefined, identity);
+    if (!res.ok) return members;
+    const all = await res.json();
+    if (!Array.isArray(all)) return members;
+    const byId = new Map<number, { email_address?: string; attachable_sgid?: string }>();
+    for (const person of all) {
+      if (person?.id) {
+        byId.set(person.id, {
+          email_address: person.email_address || "",
+          attachable_sgid: person.attachable_sgid || undefined,
+        });
+      }
+    }
+    return members.map((member) => {
+      const extra = byId.get(member.id);
+      return extra
+        ? {
+            ...member,
+            email_address: member.email_address || extra.email_address || "",
+            attachable_sgid: member.attachable_sgid || extra.attachable_sgid,
+          }
+        : member;
+    });
+  } catch {
+    // Enrichment is best effort. Falling back to the plain roster keeps the card
+    // going out, just without an email match or a real mention.
+    return members;
+  }
+}
+
 // Rich-text @-mention markup for a person, to embed directly in card content.
 export function mentionHtml(person: BcPerson): string {
   return person.attachable_sgid

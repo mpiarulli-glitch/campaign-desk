@@ -15,7 +15,7 @@ import {
   commentOnCard,
   createScheduleCard,
   findClientContact,
-  getProjectPeople,
+  getProjectPeopleForMention,
   mentionHtml,
 } from "./basecamp";
 import { sendProductionUpcoming } from "./production-emails";
@@ -475,7 +475,7 @@ export async function runReminders(opts?: {
           //
           // Assigning is not the same as mentioning: only a mention pings, so
           // the contact is both assigned and tagged in the greeting.
-          const people = await getProjectPeople(client.basecamp_project_id);
+          const people = await getProjectPeopleForMention(client.basecamp_project_id);
           const contact = findClientContact(
             people,
             client.contact_email,
@@ -513,7 +513,7 @@ export async function runReminders(opts?: {
           (existingCard.bc_last_nudge !== today && isBasecampFollowupDay(today)))
       ) {
         try {
-          const nudgePeople = await getProjectPeople(client.basecamp_project_id);
+          const nudgePeople = await getProjectPeopleForMention(client.basecamp_project_id);
           const nudgeContact = findClientContact(
             nudgePeople,
             client.contact_email,
