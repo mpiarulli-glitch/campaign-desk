@@ -38,7 +38,10 @@ async function handle(request: Request) {
   // without mailing everybody else. The shoot reminders are left out of a
   // targeted run: they are a different job and nothing about them is per-client.
   const only = url.searchParams.get("only") || undefined;
-  const result = await runReminders({ dryRun, only });
+  // &newCard=1 forces a fresh Basecamp card. Ignored without ?only=, so it can
+  // never create a card for every client at once.
+  const newCard = url.searchParams.get("newCard") === "1";
+  const result = await runReminders({ dryRun, only, newCard });
   if (only) {
     return NextResponse.json({ ...result, targeted: only });
   }

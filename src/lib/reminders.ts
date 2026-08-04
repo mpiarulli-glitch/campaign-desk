@@ -379,6 +379,11 @@ export interface ReminderRunResult {
 export async function runReminders(opts?: {
   today?: string;
   dryRun?: boolean;
+  // Force a fresh Basecamp card even though this window already has one. Only
+  // honoured alongside `only`, so it can never mass-create cards across the
+  // book. For seeing the real card after its copy changed, since creation is
+  // otherwise once per window.
+  newCard?: boolean;
   // Narrow the sweep to one client, by id or by name. For testing the outreach
   // on a single account without mailing every eligible client.
   //
@@ -391,6 +396,7 @@ export async function runReminders(opts?: {
   const today = opts?.today || todayYmd();
   const dryRun = Boolean(opts?.dryRun);
   const only = (opts?.only || "").trim().toLowerCase();
+  const forceNewCard = Boolean(only) && Boolean(opts?.newCard);
   const result: ReminderRunResult = {
     today,
     dryRun,
@@ -447,7 +453,7 @@ export async function runReminders(opts?: {
       const existingCard = getReminder(client.id, window.start);
       const bcToken = getOrCreateScheduleToken(client.id);
       const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
-      if (!existingCard?.bc_card_at) {
+      if (forceNewCard || !existingCard?.bc_card_at) {
         const { title: cardTitle, body: cardBody } = scheduleCardContent(client, window, bcUrl);
         try {
           // Tag the account manager reaching out, plus the client contact if
