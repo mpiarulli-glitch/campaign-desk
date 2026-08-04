@@ -475,8 +475,12 @@ export async function runReminders(opts?: {
         }
       } else if (
         existingCard.bc_card_id &&
-        existingCard.bc_last_nudge !== today &&
-        (Boolean(only) || isBasecampFollowupDay(today))
+        // Targeting lifts both pacing gates here, the same way it does for the
+        // email. Leaving the daily dedupe in place meant a targeted test sent
+        // the email and silently posted nothing, which is the opposite of what
+        // a test is for.
+        (Boolean(only) ||
+          (existingCard.bc_last_nudge !== today && isBasecampFollowupDay(today)))
       ) {
         const body = scheduleNudgeContent(client, window, bcUrl, today);
         try {
