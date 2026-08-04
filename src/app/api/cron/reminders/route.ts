@@ -34,7 +34,14 @@ async function handle(request: Request) {
   }
   const url = new URL(request.url);
   const dryRun = url.searchParams.get("dryRun") === "1";
-  const result = await runReminders({ dryRun });
+  // ?only=<client id or name> targets one account, for testing the outreach
+  // without mailing everybody else. The shoot reminders are left out of a
+  // targeted run: they are a different job and nothing about them is per-client.
+  const only = url.searchParams.get("only") || undefined;
+  const result = await runReminders({ dryRun, only });
+  if (only) {
+    return NextResponse.json({ ...result, targeted: only });
+  }
   const shootReminders = await runShootReminders({ dryRun });
   return NextResponse.json({ ...result, shootReminders });
 }

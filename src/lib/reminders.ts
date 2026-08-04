@@ -160,7 +160,9 @@ function markReminded(clientId: string, windowStart: string, today: string) {
   }
 }
 
-function reminderEmail(
+// Exported so the outreach can be previewed or sent to a single address for a
+// test, without running the sweep and mailing every eligible client.
+export function reminderEmail(
   client: RevClient,
   window: Window,
   url: string
@@ -303,9 +305,18 @@ export interface ReminderRunResult {
 export async function runReminders(opts?: {
   today?: string;
   dryRun?: boolean;
+  // Narrow the sweep to one client, by id or by name. For testing the outreach
+  // on a single account without mailing every eligible client.
+  //
+  // Targeting one client also lifts the weekday schedule and the once-per-day
+  // limit, because both exist to pace a sweep across the whole book and would
+  // otherwise make a deliberate test silently do nothing. The window and
+  // already-booked checks still apply: those are the behaviour under test.
+  only?: string;
 }): Promise<ReminderRunResult> {
   const today = opts?.today || todayYmd();
   const dryRun = Boolean(opts?.dryRun);
+  const only = (opts?.only || "").trim().toLowerCase();
   const result: ReminderRunResult = {
     today,
     dryRun,
@@ -325,6 +336,9 @@ export async function runReminders(opts?: {
   };
 
   for (const client of listRevClients(false)) {
+    if (only && client.id.toLowerCase() !== only && client.name.toLowerCase() !== only) {
+      continue;
+    }
     // Skip clients removed from production scheduling.
     if (!client.production_enrolled) {
       result.skipped.removed++;
@@ -391,7 +405,7 @@ export async function runReminders(opts?: {
       } else if (
         existingCard.bc_card_id &&
         existingCard.bc_last_nudge !== today &&
-        isBasecampFollowupDay(today)
+        (Boolean(only) || isBasecampFollowupDay(today))
       ) {
         const daysOut = daysBetween(today, window.start);
         const urgency =
@@ -431,11 +445,11 @@ export async function runReminders(opts?: {
     const rec = getReminder(client.id, window.start);
     // Client emails go out on their follow-up weekdays only, so nobody gets a
     // weekend nudge and nobody gets more than two in a week.
-    if (!isEmailFollowupDay(today)) {
+    if (!only && !isEmailFollowupDay(today)) {
       result.skipped.notAFollowupDay++;
       continue;
     }
-    if (rec && rec.last_sent === today) {
+    if (!only && rec && rec.last_sent === today) {
       result.skipped.alreadySentToday++;
       continue;
     }
