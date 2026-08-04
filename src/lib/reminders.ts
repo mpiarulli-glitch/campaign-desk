@@ -14,8 +14,8 @@ import {
   basecampConnected,
   commentOnCard,
   createScheduleCard,
+  findClientContact,
   getProjectPeople,
-  matchPeople,
   mentionHtml,
 } from "./basecamp";
 import { sendProductionUpcoming } from "./production-emails";
@@ -469,19 +469,19 @@ export async function runReminders(opts?: {
       const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
       if (forceNewCard || !existingCard?.bc_card_at) {
         try {
-          // Tag the account manager reaching out, plus the client contact if
-          // they are a person on the Basecamp project. Contact name replaced the
-          // old POC field, which held the same thing.
+          // This card asks the client to do something, so the client is the
+          // only person on it. The account manager used to be an assignee too,
+          // which put our own staff on a card addressed to the client.
+          //
+          // Assigning is not the same as mentioning: only a mention pings, so
+          // the contact is both assigned and tagged in the greeting.
           const people = await getProjectPeople(client.basecamp_project_id);
-          const assigneeIds = matchPeople(people, [
-            client.account_manager,
-            client.contact_name,
-          ]);
-          // Assigning somebody is not the same as mentioning them: only a
-          // mention pings. Resolve the contact to a person so the greeting is a
-          // real @mention rather than their name as plain text.
-          const contactIds = matchPeople(people, [client.contact_name]);
-          const contact = people.find((person) => person.id === contactIds[0]);
+          const contact = findClientContact(
+            people,
+            client.contact_email,
+            client.contact_name
+          );
+          const assigneeIds = contact ? [contact.id] : [];
           const { title: cardTitle, body: cardBody } = scheduleCardContent(
             client,
             window,
@@ -514,8 +514,11 @@ export async function runReminders(opts?: {
       ) {
         try {
           const nudgePeople = await getProjectPeople(client.basecamp_project_id);
-          const nudgeIds = matchPeople(nudgePeople, [client.contact_name]);
-          const nudgeContact = nudgePeople.find((person) => person.id === nudgeIds[0]);
+          const nudgeContact = findClientContact(
+            nudgePeople,
+            client.contact_email,
+            client.contact_name
+          );
           const body = scheduleNudgeContent(
             client,
             window,

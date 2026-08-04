@@ -392,6 +392,36 @@ export async function postProjectCampfireLine(
 // Resolve free-text identifiers (email or name) to Basecamp person ids within a
 // project. An exact email match wins; otherwise an exact name, then a name that
 // contains the text. Duplicates and blanks are dropped.
+// The client contact on a project, resolved strictly.
+//
+// Deliberately no substring matching. A client contact called "Michael" would
+// otherwise match whichever "Michael" sits first in the project roster, which on
+// a live project is as likely to be one of our own people as the client. Email
+// is tried first because it is unambiguous; a full name has to match exactly.
+//
+// Returns null rather than a wrong person. A card with no assignee is a small
+// problem; a card assigning the client's work to our own staff, or tagging the
+// wrong human, is a bigger one.
+export function findClientContact(
+  people: BcPerson[],
+  contactEmail: string,
+  contactName: string
+): BcPerson | null {
+  const email = (contactEmail || "").trim().toLowerCase();
+  if (email) {
+    const byEmail = people.find(
+      (person) => person.email_address.toLowerCase() === email
+    );
+    if (byEmail) return byEmail;
+  }
+  const name = (contactName || "").trim().toLowerCase();
+  if (name) {
+    const exact = people.find((person) => person.name.toLowerCase() === name);
+    if (exact) return exact;
+  }
+  return null;
+}
+
 export function matchPeople(people: BcPerson[], identifiers: string[]): number[] {
   const ids: number[] = [];
   for (const raw of identifiers) {

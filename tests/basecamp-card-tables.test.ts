@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findDeliverablesTables } from "../src/lib/basecamp";
+import { findDeliverablesTables,
+  findClientContact,
+} from "../src/lib/basecamp";
 
 // Client approvals must always land on the Deliverables card table. Projects
 // carry several boards, and the Deliverables board is rarely first in the dock,
@@ -100,4 +102,37 @@ test("a plain Deliverables board outranks a combined title", () => {
     found.map((table) => table.id),
     [9, 8]
   );
+});
+
+/* ------------------------------------------------ resolving the client contact */
+
+const ROSTER = [
+  { id: 1, name: "Piarulli Michael", email_address: "mpiarulli@marketingempiregroup.com", client: false, employee: true },
+  { id: 2, name: "Michael Marx", email_address: "michael@humblesomm.com", client: false, employee: false },
+  { id: 3, name: "Luis Romero", email_address: "luis@marketingempiregroup.com", client: false, employee: true },
+  { id: 4, name: "King Kashflow", email_address: "bot@marketingempiregroup.com", client: false, employee: true },
+];
+
+test("the client contact is found by email, not by a name that collides", () => {
+  const hit = findClientContact(ROSTER, "michael@humblesomm.com", "Michael");
+  assert.equal(hit?.id, 2, "must be the client, not Piarulli Michael");
+});
+
+test("a first name shared with our own staff resolves to nobody", () => {
+  // Substring matching used to pick whoever sat first in the roster, which on a
+  // live project is as likely to be one of ours as the client.
+  assert.equal(findClientContact(ROSTER, "", "Michael"), null);
+});
+
+test("an exact full name is enough when there is no email on file", () => {
+  assert.equal(findClientContact(ROSTER, "", "Michael Marx")?.id, 2);
+});
+
+test("an unknown contact resolves to nobody rather than the nearest guess", () => {
+  assert.equal(findClientContact(ROSTER, "nobody@example.com", "Nobody Here"), null);
+});
+
+test("the account manager is never returned as the client contact", () => {
+  assert.equal(findClientContact(ROSTER, "", "Luis"), null);
+  assert.equal(findClientContact(ROSTER, "", "Kyle"), null);
 });
