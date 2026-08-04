@@ -138,18 +138,20 @@ export async function sendProductionConfirmed(
 
   const { subject, html, text } = shell({
     subject: "Your production is confirmed",
-    preheader: `You're booked for ${when}.`,
+    preheader: `You're booked for ${when}. A shot list is on its way.`,
     eyebrow: client.name,
     headline: "You're booked",
     bodyHtml: `
       <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-      <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Your production is confirmed for <strong>${esc(when)}</strong>. We'll see you then.</p>
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">Your production is confirmed for <strong>${esc(when)}</strong>.</p>
+      <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Our team will send over a shot list shortly. We'll see you then.</p>
     `,
     bodyText: [
       greeting,
       "",
       `Your production is confirmed for ${when}.`,
-      "We'll see you then.",
+      "",
+      "Our team will send over a shot list shortly. We'll see you then.",
     ],
   });
 
