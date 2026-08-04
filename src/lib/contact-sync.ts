@@ -39,6 +39,9 @@ export interface ContactSyncRow {
     | "already correct"
     | "no client on project"
     | "several candidates"
+    // A name is already on the record and no person on the project resembles
+    // it. Left alone: overwriting it would be a guess.
+    | "no candidate matches"
     | "no basecamp project";
   candidates?: string[];
 }
@@ -48,6 +51,44 @@ export interface ContactSyncResult {
   projectsScanned: number;
   internal: string[];
   rows: ContactSyncRow[];
+}
+
+// "Dr. Isaac" and "Kristin" both need to resolve, so compare on the first word
+// with titles and punctuation stripped.
+function firstToken(value: string): string {
+  return (value || "")
+    .toLowerCase()
+    .replace(/\b(dr|mr|mrs|ms|miss|prof)\.?\b/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .trim()
+    .split(/\s+/)[0] || "";
+}
+
+// One substitution, insertion or deletion apart. Enough for Kristin against
+// Kristen, and tight enough that two different people never collide.
+function nearlyEqual(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, slack = 1;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (!slack--) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else { i++; j++; }
+  }
+  return true;
+}
+
+// Which candidate is the person already named on the client record.
+export function matchExistingContact(current: string, candidates: string[]): string | null {
+  const want = firstToken(current);
+  if (!want) return null;
+  const exact = candidates.filter((c) => firstToken(c) === want);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+  const near = candidates.filter((c) => nearlyEqual(firstToken(c), want));
+  return near.length === 1 ? near[0] : null;
 }
 
 export async function syncClientContacts(opts?: {
@@ -100,16 +141,25 @@ export async function syncClientContacts(opts?: {
       rows.push({ ...base, proposed: null, outcome: "no client on project" });
       continue;
     }
-    if (candidates.length > 1) {
+
+    // Match against the name already on the record first. Taking the sole
+    // candidate instead would overwrite a real contact with whoever happens to
+    // be on the project: Bear Windows has "George" on file and one candidate,
+    // Chris Evans, who is staff sitting below the internal threshold. A name
+    // already entered by a human is better evidence than a lone roster entry.
+    const matched = matchExistingContact(base.current, candidates);
+    const proposed =
+      matched || (!base.current.trim() && candidates.length === 1 ? candidates[0] : null);
+
+    if (!proposed) {
       rows.push({
         ...base,
         proposed: null,
-        outcome: "several candidates",
+        outcome: base.current.trim() ? "no candidate matches" : "several candidates",
         candidates,
       });
       continue;
     }
-    const proposed = candidates[0];
     if ((client.contact_name || "").trim() === proposed) {
       rows.push({ ...base, proposed, outcome: "already correct" });
       continue;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { matchExistingContact } from "../src/lib/contact-sync";
 import { findDeliverablesTables,
   findClientContact,
 } from "../src/lib/basecamp";
@@ -135,4 +136,37 @@ test("an unknown contact resolves to nobody rather than the nearest guess", () =
 test("the account manager is never returned as the client contact", () => {
   assert.equal(findClientContact(ROSTER, "", "Luis"), null);
   assert.equal(findClientContact(ROSTER, "", "Kyle"), null);
+});
+
+/* ------------------------------------------- matching a contact to a candidate */
+
+test("the existing first name picks the right person out of several", () => {
+  assert.equal(matchExistingContact("Scott", ["Chris Evans", "Scott Quinn", "Bret Lund"]), "Scott Quinn");
+  assert.equal(matchExistingContact("Demetric", ["Demetric Felton", "Chris Evans"]), "Demetric Felton");
+  assert.equal(matchExistingContact("Naryssa", ["Alex Oseguera", "Jason Lucaci", "Naryssa Colgan"]), "Naryssa Colgan");
+});
+
+test("a title on the record does not stop the match", () => {
+  assert.equal(matchExistingContact("Dr. Isaac", ["Isaac Song", "Lana Verrecchio"]), "Isaac Song");
+});
+
+test("one letter out still matches, which is the Kristin case", () => {
+  assert.equal(
+    matchExistingContact("Kristin", ["Jason Lucaci", "Kristen Black", "SEO Department"]),
+    "Kristen Black"
+  );
+});
+
+test("a real name is never replaced by an unrelated person", () => {
+  // Bear Windows: "George" on file, and the only candidate is staff sitting
+  // below the internal threshold. Overwriting would be a guess.
+  assert.equal(matchExistingContact("George", ["Chris Evans"]), null);
+});
+
+test("two candidates sharing a first name resolve to nobody", () => {
+  assert.equal(matchExistingContact("Kristen", ["Kristen Black", "Kristen Jensen"]), null);
+});
+
+test("no name on the record matches nobody by name", () => {
+  assert.equal(matchExistingContact("", ["Ben Pham", "Van Do"]), null);
 });
