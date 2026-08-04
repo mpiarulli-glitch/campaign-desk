@@ -841,8 +841,21 @@ export async function createScheduleCard(
     const pr = await bc(`/projects/${projectId}.json`);
     if (!pr.ok) return { ok: false, error: `project lookup ${pr.status}` };
     const project = await pr.json();
-    const dock: Array<{ id: number; name: string }> = project.dock || [];
-    const ct = dock.find((d) => d.name === "kanban_board");
+    const dock: Array<{
+      id: number;
+      name: string;
+      title?: string;
+      enabled?: boolean;
+    }> = project.dock || [];
+    // Client projects carry several card tables, typically VIDEOS, Deliverables
+    // and Deliverable Templates. Taking the first kanban_board landed scheduling
+    // cards in VIDEOS. Reuse the same Deliverables lookup the approval flow
+    // uses, which prefers a plain "Deliverables" board and never matches
+    // "Deliverable Templates". Fall back to the first board only when a project
+    // has no Deliverables table at all.
+    const ct =
+      findDeliverablesTables(dock)[0] ||
+      dock.find((d) => d.name === "kanban_board" && d.enabled !== false);
     if (!ct) return { ok: false, error: "no card table in this project" };
 
     const tableRes = await bc(`/buckets/${projectId}/card_tables/${ct.id}.json`);
