@@ -21,6 +21,6 @@ jobs:
     steps:
       - name: Trigger reminder run
         run: |
-          curl -fsS -X POST \
+          curl -fsS --show-error -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://campaign-desk-production.up.railway.app/api/cron/reminders
+            https://hub.marketingempiregroup.com/api/cron/reminders
