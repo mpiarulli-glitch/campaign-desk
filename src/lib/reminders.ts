@@ -64,6 +64,13 @@ export function isBasecampFollowupDay(ymd: string): boolean {
   return BASECAMP_FOLLOWUP_DAYS.includes(dayOfWeek(ymd));
 }
 
+function escapeHtml(text: string): string {
+  return (text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function longDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
@@ -72,6 +79,70 @@ function longDate(ymd: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
+}
+
+// The Basecamp card and its follow-up comments, in one place.
+//
+// Both live on the client's own project and tag their contact, so the client
+// reads them. They are written to the client, never about them: a comment
+// saying "they still haven't booked" on the client's own card is the specific
+// mistake this shape exists to prevent.
+export function scheduleCardContent(
+  client: RevClient,
+  window: Window,
+  url: string
+): { title: string; body: string } {
+  const hello = client.contact_name?.trim()
+    ? `Hi ${escapeHtml(client.contact_name.trim())},`
+    : "Hi there,";
+  const windowText = `${longDate(window.start)} to ${longDate(window.end)}`;
+  const body =
+    `<div>${hello}</div>` +
+    `<div><br></div>` +
+    `<div>It's time to schedule your next production. We have your window ` +
+    `set for <strong>${escapeHtml(windowText)}</strong>.</div>` +
+    `<div><br></div>` +
+    (url
+      ? `<div>Please use the link below to pick a day and a start time that ` +
+        `work best for you.</div>` +
+        `<div><br></div>` +
+        `<div><a href="${url}">${url}</a></div>` +
+        `<div><br></div>`
+      : "") +
+    `<div>If you have any problems, feel free to leave a comment on this ` +
+    `card.</div>` +
+    `<div><br></div>` +
+    `<div>Thanks!</div>`;
+  return { title: "Time to schedule your next production", body };
+}
+
+export function scheduleNudgeContent(
+  client: RevClient,
+  window: Window,
+  url: string,
+  today: string
+): string {
+  const daysOut = daysBetween(today, window.start);
+  const urgency =
+    daysOut > 0
+      ? `opens in ${daysOut} day${daysOut === 1 ? "" : "s"}`
+      : "is open now";
+  return (
+    `<div>Just a friendly nudge on this one. Your production window ` +
+    `${urgency}, ${escapeHtml(longDate(window.start))} to ` +
+    `${escapeHtml(longDate(window.end))}, and we don't have a day booked ` +
+    `in yet.</div>` +
+    `<div><br></div>` +
+    (url
+      ? `<div>Pick a day and a start time here:</div>` +
+        `<div><a href="${url}">${url}</a></div>` +
+        `<div><br></div>`
+      : "") +
+    `<div>If anything is in the way, just leave a comment and we will sort ` +
+    `it out.</div>` +
+    `<div><br></div>` +
+    `<div>Thanks!</div>`
+  );
 }
 
 export function getReminder(
@@ -374,10 +445,7 @@ export async function runReminders(opts?: {
       const bcToken = getOrCreateScheduleToken(client.id);
       const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
       if (!existingCard?.bc_card_at) {
-        const cardTitle = "Pending Production Scheduling";
-        const cardBody =
-          `<div><strong>${longDate(window.start)} to ${longDate(window.end)}</strong> is open for ${client.name}.</div>` +
-          (bcUrl ? `<div>Schedule the production: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
+        const { title: cardTitle, body: cardBody } = scheduleCardContent(client, window, bcUrl);
         try {
           // Tag the account manager reaching out, plus the client contact if
           // they are a person on the Basecamp project. Contact name replaced the
@@ -407,15 +475,7 @@ export async function runReminders(opts?: {
         existingCard.bc_last_nudge !== today &&
         (Boolean(only) || isBasecampFollowupDay(today))
       ) {
-        const daysOut = daysBetween(today, window.start);
-        const urgency =
-          daysOut > 0
-            ? `opens in ${daysOut} day${daysOut === 1 ? "" : "s"}`
-            : "is open now";
-        const body =
-          `<div><strong>${client.name}</strong> still hasn't booked. Their window ${urgency} ` +
-          `(${longDate(window.start)} to ${longDate(window.end)}).</div>` +
-          (bcUrl ? `<div>Scheduling link: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
+        const body = scheduleNudgeContent(client, window, bcUrl, today);
         try {
           const r = await commentOnCard(
             client.basecamp_project_id,

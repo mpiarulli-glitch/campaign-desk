@@ -16,6 +16,8 @@ import {
   dayOfWeek,
   isBasecampFollowupDay,
   isEmailFollowupDay,
+  scheduleCardContent,
+  scheduleNudgeContent,
 } from "../src/lib/reminders";
 
 test("Pacific business date does not roll over with UTC", () => {
@@ -162,4 +164,59 @@ test("no follow-up day falls on a weekend across a full month", () => {
     assert.equal(isEmailFollowupDay(ymd), false, `${ymd} email`);
     assert.equal(isBasecampFollowupDay(ymd), false, `${ymd} Basecamp`);
   }
+});
+
+test("the Basecamp card is written to the client, not about them", () => {
+  const client = { name: "Example & Sons", contact_name: "Dana" } as RevClient;
+  const w = { start: "2026-08-17", end: "2026-08-21" };
+  const { title, body } = scheduleCardContent(client, w, "https://desk.test/schedule/tok");
+
+  assert.match(title, /schedule your next production/i);
+  assert.match(body, /Hi Dana,/);
+  assert.match(body, /your window set for/i);
+  assert.match(body, /Monday, August 17 to Friday, August 21/);
+  assert.match(body, /leave a comment on this card/i);
+  assert.match(body, /https:\/\/desk\.test\/schedule\/tok/);
+  // Second person only. Naming the client in the body would mean writing about
+  // them on a card they can read.
+  assert.doesNotMatch(body, /Example/);
+});
+
+test("a client name with markup cannot break out of the card HTML", () => {
+  const client = { name: "A & B", contact_name: "<b>Dana</b>" } as RevClient;
+  const { body } = scheduleCardContent(
+    client,
+    { start: "2026-08-17", end: "2026-08-21" },
+    ""
+  );
+  assert.match(body, /&lt;b&gt;Dana&lt;\/b&gt;/);
+  assert.doesNotMatch(body, /<b>Dana<\/b>/);
+});
+
+test("no contact name still opens politely", () => {
+  const { body } = scheduleCardContent(
+    { name: "Acme", contact_name: "" } as RevClient,
+    { start: "2026-08-17", end: "2026-08-21" },
+    ""
+  );
+  assert.match(body, /Hi there,/);
+});
+
+test("the follow-up nudge speaks to the client too", () => {
+  const client = { name: "Example & Sons", contact_name: "Dana" } as RevClient;
+  const w = { start: "2026-08-17", end: "2026-08-21" };
+
+  const ahead = scheduleNudgeContent(client, w, "https://desk.test/s/t", "2026-08-04");
+  assert.match(ahead, /Your production window opens in 13 days/);
+  assert.match(ahead, /leave a comment/i);
+  // The old copy read "<client> still hasn't booked", on the client's own card.
+  assert.doesNotMatch(ahead, /Example/);
+  assert.doesNotMatch(ahead, /still hasn't booked/i);
+  assert.doesNotMatch(ahead, /\bThey\b|\bTheir\b/);
+
+  const open = scheduleNudgeContent(client, w, "https://desk.test/s/t", "2026-08-18");
+  assert.match(open, /Your production window is open now/);
+
+  const oneDay = scheduleNudgeContent(client, w, "https://desk.test/s/t", "2026-08-16");
+  assert.match(oneDay, /opens in 1 day,/);
 });
