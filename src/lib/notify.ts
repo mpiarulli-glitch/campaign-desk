@@ -7,7 +7,7 @@
 
 import {
   basecampConnected,
-  getProjectPeople,
+  getProjectPeopleForMention,
   mentionHtml,
   postProjectCampfireLine,
 } from "./basecamp";
@@ -78,6 +78,7 @@ export function notifyClientFeedback(args: {
 export interface ProductionRequestedNotification {
   clientName: string;
   videographerName?: string;
+  accountManagerName?: string;
   sendDate: string;
   sendTime: string;
   duration: string;
@@ -87,20 +88,27 @@ export interface ProductionRequestedNotification {
 
 export function productionRequestedCampfireContent(
   args: ProductionRequestedNotification,
-  videographerMention?: string
+  videographerMention?: string,
+  accountManagerMention?: string
 ): string {
   const note = args.note ? `<br>Note: ${escapeHtml(args.note)}` : "";
   const time = args.sendTime ? ` at ${escapeHtml(args.sendTime)}` : "";
   const length = args.duration === "full" ? "Full day" : "4 hours";
-  const videographer =
-    videographerMention ||
-    (args.videographerName
-      ? `@${escapeHtml(args.videographerName)}`
-      : "Unassigned");
+  const named = (mention: string | undefined, fallback: string | undefined) =>
+    mention || (fallback ? `@${escapeHtml(fallback)}` : "Unassigned");
+  const videographer = named(videographerMention, args.videographerName);
+  const manager = named(accountManagerMention, args.accountManagerName);
+  // Both people are named on the line. Mentioning only the videographer meant a
+  // client with nobody assigned yet, which is when somebody most needs to act,
+  // pinged nobody at all.
+  const pings = [videographerMention, accountManagerMention].filter(Boolean);
+  const ping = pings.length ? `${pings.join(" ")} a production just came in.<br>` : "";
   return (
     `<strong>Production requested</strong><br>` +
+    ping +
     `<strong>Client:</strong> ${escapeHtml(args.clientName)}<br>` +
     `<strong>Videographer:</strong> ${videographer}<br>` +
+    `<strong>Account manager:</strong> ${manager}<br>` +
     `<strong>Date:</strong> ${escapeHtml(args.sendDate)}${time}<br>` +
     `<strong>Length:</strong> ${length}${note}<br>` +
     `<a href="${escapeHtml(args.detailsUrl)}">View production details</a>`
@@ -112,19 +120,24 @@ export async function notifyProductionRequested(
 ): Promise<boolean> {
   const projectId = process.env.BASECAMP_VIDEO_EDITING_PROJECT_ID || "";
   if (projectId && basecampConnected()) {
-    const people = await getProjectPeople(projectId);
-    const name = (args.videographerName || "").trim().toLowerCase();
-    const person = name
-      ? people.find((candidate) => candidate.name.toLowerCase() === name) ||
-        people.find(
-          (candidate) =>
-            candidate.name.toLowerCase().includes(name) ||
-            name.includes(candidate.name.toLowerCase())
-        )
-      : undefined;
+    // The enriched roster, because /projects/{id}/people.json returns no
+    // attachable_sgid and a mention without one degrades to plain text.
+    const people = await getProjectPeopleForMention(projectId);
+    const find = (want: string | undefined) => {
+      const q = (want || "").trim().toLowerCase();
+      if (!q) return undefined;
+      return (
+        people.find((candidate) => candidate.name.toLowerCase() === q) ||
+        people.find((candidate) => candidate.name.toLowerCase().startsWith(q + " ")) ||
+        people.find((candidate) => candidate.name.toLowerCase().includes(q))
+      );
+    };
+    const videographer = find(args.videographerName);
+    const manager = find(args.accountManagerName);
     const content = productionRequestedCampfireContent(
       args,
-      person ? mentionHtml(person) : undefined
+      videographer ? mentionHtml(videographer) : undefined,
+      manager ? mentionHtml(manager) : undefined
     );
     const result = await postProjectCampfireLine(projectId, content);
     if (result.ok) return true;

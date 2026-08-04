@@ -298,6 +298,7 @@ export async function submitProductionBooking(
   await notifyProductionRequested({
     clientName: result.client.name,
     videographerName: videographer?.name,
+    accountManagerName: result.client.account_manager,
     sendDate: date,
     sendTime: time,
     duration,
@@ -449,6 +450,7 @@ export async function recordManualProduction(
     await notifyProductionRequested({
       clientName: result.client.name,
       videographerName: videographer?.name,
+    accountManagerName: result.client.account_manager,
       sendDate: date,
       sendTime: time,
       duration,
