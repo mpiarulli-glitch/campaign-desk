@@ -61,7 +61,7 @@ type Row = {
 };
 
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
-type ProductionTab = "requested" | "confirmed" | "cancelled" | "setup";
+type ProductionTab = "requested" | "awaiting" | "confirmed" | "cancelled" | "setup";
 
 // The "Log a production" form: a production that was arranged over the phone or
 // in another booking system, recorded after the fact.
@@ -571,6 +571,21 @@ export default function ProductionPage() {
     [enrolled, showInactive, colorFilter, statusFilter]
   );
 
+  // Clients who have had outreach and still have not booked. The tally is per
+  // window, which is the number that matters when deciding whether to chase.
+  const awaiting = useMemo(
+    () =>
+      enrolled
+        .filter((r) => r.window && !r.existingSend && r.currentReminderCount > 0)
+        .slice()
+        .sort(
+          (a, b) =>
+            b.currentReminderCount - a.currentReminderCount ||
+            (a.window?.start || "").localeCompare(b.window?.start || "")
+        ),
+    [enrolled]
+  );
+
   const counts = useMemo(() => {
     const base = { waiting: 0, due: 0, asked: 0, ahead: 0, unset: 0 };
     for (const r of enrolled) {
@@ -727,7 +742,7 @@ export default function ProductionPage() {
             className={`tab ${tab === "requested" ? "active" : ""}`}
             onClick={() => setTab("requested")}
           >
-            Requested
+            To confirm
             <span className="tab-count">{requestedProductions.length}</span>
           </button>
           <button
@@ -739,6 +754,16 @@ export default function ProductionPage() {
           >
             Confirmed
             <span className="tab-count">{confirmedProductions.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "awaiting"}
+            className={`tab ${tab === "awaiting" ? "active" : ""}`}
+            onClick={() => setTab("awaiting")}
+          >
+            Awaiting client
+            <span className="tab-count">{awaiting.length}</span>
           </button>
           {cancelledProductions.length ? (
             <button
@@ -1384,6 +1409,111 @@ export default function ProductionPage() {
           </div>
         ) : null}
           </>
+        ) : tab === "awaiting" ? (
+          loading ? (
+            <p className="muted">Loading...</p>
+          ) : awaiting.length === 0 ? (
+            <div className="empty">
+              <p>Nobody is waiting. Every client who has been asked has booked.</p>
+            </div>
+          ) : (
+            <>
+              <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+                Asked and still not booked, most chased first. The tally counts
+                outreach for their current window only, so it resets when the
+                window moves on.
+              </p>
+              <div className="pcon-list">
+                {awaiting.map((r) => {
+                  const c = r.client;
+                  return (
+                    <div key={c.id} className="pcon-band" data-week={c.color_week}>
+                      <div className="pcon-rail" aria-hidden="true" />
+                      <div className="pcon-in">
+                        <div className="pcon-who">
+                          <h3>{c.name}</h3>
+                          <p className="pcon-meta">
+                            {c.contact_name || "no contact"}
+                            {" · "}
+                            {c.color_week ? `${colorLabel(c.color_week).toLowerCase()} week` : "no colour week"}
+                            {" · "}
+                            {c.account_manager || "no manager"}
+                          </p>
+                        </div>
+
+                        {r.window ? (
+                          <div className="pcon-strip">
+                            <div className="pcon-mon">{monthOf(r.window.start)}</div>
+                            <div className="pcon-cells">
+                              {windowDays(r.window).map((d, i) => {
+                                const past = Boolean(today) && d < today;
+                                return (
+                                  <div
+                                    key={d}
+                                    className={`pcon-cell ${past ? "is-gone" : "is-open"}`}
+                                    title={fmtDate(d)}
+                                  >
+                                    <span className="dow">{DOW_LETTER[i]}</span>
+                                    <span className="dnum">{dayNumber(d)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="pcon-when">{whenLabel(r.window, today)}</div>
+                          </div>
+                        ) : null}
+
+                        <div className="pcon-facts">
+                          <div className="pcon-line">
+                            <span className="k">Asked</span>
+                            <span className="v">
+                              {r.currentReminderCount} time
+                              {r.currentReminderCount === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                          <div className="pcon-line">
+                            <span className="k">Last</span>
+                            <span className="v">
+                              {r.lastEmailSent ? fmtDate(r.lastEmailSent) : "unknown"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="pcon-act">
+                          <span className="pcon-pill is-warn">
+                            Asked {r.currentReminderCount}x
+                          </span>
+                          {isAdmin ? (
+                            <>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => copyLink(c.id)}
+                              >
+                                Copy link
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => openLog(c.id)}
+                              >
+                                Log a shoot
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                      {linkMessage[c.id] ? (
+                        <div className="pcon-more">
+                          <div><span className="k">Scheduling link</span>
+                            <div className="v">{linkMessage[c.id]}</div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )
         ) : (
           <ProductionQueue
             productions={visibleProductions}
@@ -1394,7 +1524,7 @@ export default function ProductionPage() {
             onDelete={removeProduction}
             emptyLabel={
               tab === "requested"
-                ? "No production requests are waiting for confirmation."
+                ? "No bookings are waiting for your confirmation."
                 : tab === "cancelled"
                   ? "Nothing cancelled."
                   : "No productions have been confirmed yet."
