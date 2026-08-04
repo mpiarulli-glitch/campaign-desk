@@ -65,6 +65,20 @@ async function handle(request: Request) {
     return NextResponse.json({ ...result, targeted: only });
   }
   const shootReminders = await runShootReminders({ dryRun });
+
+  // One line per run, so a scheduled sweep is visible in the logs whether or not
+  // it had anything to do. Without it a successful no-op run leaves no trace at
+  // all, and "did the cron fire" can only be answered from GitHub's UI.
+  console.log(
+    `[cron] reminders ${dryRun ? "(dry run) " : ""}${result.today}: ` +
+      `${result.sent.length} email(s), ` +
+      `${result.basecampCards.filter((c) => c.ok).length} card(s), ` +
+      `${result.basecampFollowups.filter((c) => c.ok).length} follow-up(s), ` +
+      `${shootReminders.sent.length} crew heads-up, ` +
+      `skipped ${JSON.stringify(result.skipped)}` +
+      (result.failed.length ? ` FAILED ${result.failed.length}` : "")
+  );
+
   return NextResponse.json({ ...result, shootReminders });
 }
 
