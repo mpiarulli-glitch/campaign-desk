@@ -106,6 +106,28 @@ export function cancelSend(id: string, cancelled: boolean): ScheduledSend | null
   return getSend(id);
 }
 
+// The no-login link for the crew. Minted on demand so old productions get one
+// the first time somebody needs it.
+export function getOrCreateCrewToken(id: string): string | null {
+  const existing = getSend(id);
+  if (!existing) return null;
+  if (existing.crew_token) return existing.crew_token;
+  const token = nanoid(24);
+  getDb()
+    .prepare(`UPDATE scheduled_sends SET crew_token = ?, updated_at = ? WHERE id = ?`)
+    .run(token, nowIso(), id);
+  return token;
+}
+
+export function getSendByCrewToken(token: string): ScheduledSend | null {
+  if (!token) return null;
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM scheduled_sends WHERE crew_token = ?`)
+      .get(token) as ScheduledSend | undefined) || null
+  );
+}
+
 export function getSend(id: string): ScheduledSend | null {
   return (
     (getDb()

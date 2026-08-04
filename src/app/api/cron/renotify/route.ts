@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated, getAppUrl } from "@/lib/auth";
 import { findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
+import { getOrCreateCrewToken } from "@/lib/calendar";
 import { notifyProductionRequested } from "@/lib/notify";
 import { listRevClients } from "@/lib/revenue";
 import { listVideographers } from "@/lib/videographers";
@@ -84,7 +85,12 @@ export async function POST(request: Request) {
     sendDate: send.send_date,
     sendTime: send.send_time,
     duration: send.duration,
-    detailsUrl: `${getAppUrl()}/admin/production/${send.id}`,
+    detailsUrl: (() => {
+      const token = getOrCreateCrewToken(send.id);
+      return token
+        ? `${getAppUrl()}/crew/${token}`
+        : `${getAppUrl()}/admin/production/${send.id}`;
+    })(),
     note: send.note,
   });
 

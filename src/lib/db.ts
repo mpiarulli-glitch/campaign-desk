@@ -421,6 +421,11 @@ export interface ScheduledSend {
   requested_by_client: number;
   // Set once the day-before "your crew arrives tomorrow" email has gone out.
   shoot_reminder_sent_at: string | null;
+  // Share token for the no-login crew view. The people who need these details on
+  // the day are videographers and account managers who should not have to sign
+  // in to read an address, so the Basecamp notification links here instead of
+  // into the admin app.
+  crew_token: string | null;
   // Set when a production is cancelled: called off, or requested by accident.
   // The row keeps its history but stops counting, so the client's cadence window
   // reads as unbooked again, they show as needing a production, reminders resume,
@@ -1725,6 +1730,13 @@ function migrate(database: Database.Database) {
     );
   }
   // Dedupe flag for the day-before "your crew arrives tomorrow" email.
+  if (sendCols.length && !sendCols.includes("crew_token")) {
+    database.exec(`ALTER TABLE scheduled_sends ADD COLUMN crew_token TEXT`);
+    database.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_sends_crew_token
+         ON scheduled_sends(crew_token) WHERE crew_token IS NOT NULL`
+    );
+  }
   if (sendCols.length && !sendCols.includes("cancelled_at")) {
     database.exec(`ALTER TABLE scheduled_sends ADD COLUMN cancelled_at TEXT`);
   }

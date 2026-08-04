@@ -10,7 +10,7 @@ import {
   type CycleStatus,
   type Window,
 } from "./cadence";
-import { createSend } from "./calendar";
+import { createSend, getOrCreateCrewToken } from "./calendar";
 import { notifyProductionRequested } from "./notify";
 import { sendProductionRequestReceived } from "./production-emails";
 import { listVideographers, videographerBookedDates } from "./videographers";
@@ -19,6 +19,17 @@ import { getAppUrl } from "./auth";
 import { durationAllowsStart, slotHasPassed } from "./scheduling-rules";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// The link put in front of the crew. Points at the no-login view, because the
+// people who need an address on the day are videographers and account managers
+// who should not have to sign in to read one. Falls back to the admin page if a
+// token cannot be minted.
+function crewUrl(sendId: string): string {
+  const token = getOrCreateCrewToken(sendId);
+  return token
+    ? `${getAppUrl()}/crew/${token}`
+    : `${getAppUrl()}/admin/production/${sendId}`;
+}
 
 export interface SchedulingStatus {
   client: { name: string };
@@ -302,7 +313,7 @@ export async function submitProductionBooking(
     sendDate: date,
     sendTime: time,
     duration,
-    detailsUrl: `${getAppUrl()}/admin/production/${result.send.id}`,
+    detailsUrl: crewUrl(result.send.id),
     note,
   });
   await sendProductionRequestReceived(result.client, result.send);
@@ -454,7 +465,7 @@ export async function recordManualProduction(
       sendDate: date,
       sendTime: time,
       duration,
-      detailsUrl: `${getAppUrl()}/admin/production/${result.send.id}`,
+      detailsUrl: crewUrl(result.send.id),
       note,
     });
   }
