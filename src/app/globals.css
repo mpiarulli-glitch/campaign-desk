@@ -148,6 +148,17 @@
   box-sizing: border-box;
 }
 
+/* Redefining the tokens is not enough on its own. `color` is set on body and
+   inherits down as an already-computed value, resolved against the root tokens,
+   so a descendant redeclaring --text never reaches anything that does not set
+   its own colour. That left the page heading in dark mode's near-white on a
+   light background. Re-establishing colour and background here fixes the whole
+   subtree, because these declarations resolve against the scope's own tokens. */
+.client-light {
+  color: var(--text);
+  background: var(--bg);
+}
+
 html,
 body {
   margin: 0;
