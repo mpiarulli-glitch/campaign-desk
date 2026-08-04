@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -145,6 +145,154 @@ const emptyDraft: Draft = {
   eventId: "",
   manual: false,
 };
+
+/**
+ * Type-to-filter client picker.
+ *
+ * Replaces a plain <select>, which meant scrolling ~60 accounts to find one.
+ * Filtering ranks a leading match above a match anywhere in the name, so typing
+ * "kr" puts Krak Boba above "Looda House Pawn (Krak)" rather than ordering
+ * alphabetically and burying the obvious hit.
+ */
+function ClientCombobox({
+  clients,
+  value,
+  onPick,
+  autoFocus,
+  style,
+}: {
+  clients: ClientOption[];
+  value: string;
+  onPick: (clientId: string) => void;
+  autoFocus?: boolean;
+  style?: React.CSSProperties;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  const selected = clients.find((c) => c.id === value);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return clients;
+    const starts: ClientOption[] = [];
+    const contains: ClientOption[] = [];
+    for (const c of clients) {
+      const n = c.name.toLowerCase();
+      if (n.startsWith(q)) starts.push(c);
+      else if (n.includes(q)) contains.push(c);
+    }
+    return [...starts, ...contains];
+  }, [clients, query]);
+
+  // The list shrinks as you type, so the highlight has to come back in range or
+  // Enter would pick nothing.
+  useEffect(() => {
+    setActive((a) => (a >= matches.length ? 0 : a));
+  }, [matches.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  function choose(c: ClientOption) {
+    onPick(c.id);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) setOpen(true);
+      else setActive((a) => Math.min(matches.length - 1, a + 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => Math.max(0, a - 1));
+      return;
+    }
+    if (e.key === "Enter") {
+      if (!open) return;
+      e.preventDefault();
+      const hit = matches[active];
+      if (hit) choose(hit);
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!open) return;
+      // Stop the week view's add form from closing on the same keystroke.
+      e.stopPropagation();
+      setOpen(false);
+      setQuery("");
+    }
+  }
+
+  return (
+    <div className="fc-combo" ref={wrapRef} style={style}>
+      <input
+        ref={inputRef}
+        // While open the box is a search field; closed, it displays the choice.
+        value={open ? query : selected?.name || ""}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+        placeholder={selected ? selected.name : "Type a client name"}
+        autoFocus={autoFocus}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-label="Client"
+        autoComplete="off"
+      />
+      {open ? (
+        <ul className="fc-combo-list" id={listId} role="listbox">
+          {matches.length === 0 ? (
+            <li className="fc-combo-empty">No client matches that</li>
+          ) : (
+            matches.map((c, i) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={c.id === value}
+                  className={`fc-combo-item ${i === active ? "is-active" : ""} ${
+                    c.id === value ? "is-picked" : ""
+                  }`}
+                  // mousedown fires before the outside-click handler closes the list.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    choose(c);
+                  }}
+                  onMouseEnter={() => setActive(i)}
+                >
+                  {c.name}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 function PriorityPicker({
   value,
@@ -338,20 +486,13 @@ function AddTaskForm({
   );
 
   const clientSelect = (
-    <select
-      autoFocus={autoFocus}
+    <ClientCombobox
+      clients={clients}
       value={draft.clientId}
-      onChange={(e) => onPickClient(e.target.value)}
-      aria-label="Client"
-      style={stack ? undefined : { flex: "1 1 160px" }}
-    >
-      <option value="">Pick a client</option>
-      {clients.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
-    </select>
+      onPick={onPickClient}
+      autoFocus={autoFocus}
+      style={stack ? undefined : { flex: "1 1 170px" }}
+    />
   );
 
   const taskField = usePicker ? (
