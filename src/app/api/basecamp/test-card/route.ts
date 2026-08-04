@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
   // Names/emails to try tagging on the card, same matching the reminder job
-  // uses for the account manager and POC.
+  // uses for the account manager and the client contact.
   const assignTo: string[] = Array.isArray(body.assignTo)
     ? body.assignTo.filter((v: unknown) => typeof v === "string")
     : [];

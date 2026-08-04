@@ -365,12 +365,13 @@ export async function runReminders(opts?: {
           `<div><strong>${longDate(window.start)} to ${longDate(window.end)}</strong> is open for ${client.name}.</div>` +
           (bcUrl ? `<div>Schedule the production: <a href="${bcUrl}">${bcUrl}</a></div>` : "");
         try {
-          // Tag the client POC and the account manager reaching out. Resolved
-          // against the project's Basecamp people (email first, then name).
+          // Tag the account manager reaching out, plus the client contact if
+          // they are a person on the Basecamp project. Contact name replaced the
+          // old POC field, which held the same thing.
           const people = await getProjectPeople(client.basecamp_project_id);
           const assigneeIds = matchPeople(people, [
             client.account_manager,
-            client.poc,
+            client.contact_name,
           ]);
           // Due a week after the outreach card goes out, so it surfaces as
           // overdue if nobody's followed up with the client by then.
@@ -502,7 +503,7 @@ export async function runShootReminders(opts?: {
          AND status IN ('scheduled', 'planned')
          AND client_id IS NOT NULL
          AND requested_by_client = 1
-         AND archived_at IS NULL
+         AND cancelled_at IS NULL
          AND shoot_reminder_sent_at IS NULL`
     )
     .all(tomorrow) as ScheduledSend[];

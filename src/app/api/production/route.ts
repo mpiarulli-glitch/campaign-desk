@@ -25,7 +25,6 @@ export async function GET() {
         active: client.active,
         contact_name: client.contact_name,
         contact_email: client.contact_email,
-        poc: client.poc,
         account_manager: client.account_manager,
         color_week: client.color_week,
         production_cadence: client.production_cadence,
@@ -53,6 +52,7 @@ export async function GET() {
   });
   return NextResponse.json({
     clients,
+    // Cancelled rows come back too, so the Cancelled tab can show them.
     productions: listProductionSends(true),
     today,
     videographers: listVideographers(false),

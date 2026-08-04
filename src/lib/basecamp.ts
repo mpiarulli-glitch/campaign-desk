@@ -322,7 +322,7 @@ export interface BcPerson {
   attachable_sgid?: string;
 }
 
-// People with access to a project. Used to resolve a POC / account manager
+// People with access to a project. Used to resolve a contact / account manager
 // (given as an email or name) to the Basecamp person id we tag on a card.
 export async function getProjectPeople(
   projectId: string,
@@ -977,7 +977,7 @@ function findNeedsApprovalColumn(
 // Send the approved client-review message to the client's Deliverables card
 // table. The first send creates a card directly in Needs Approval. Later sends
 // reuse that card, move it back to Needs Approval, and add the message as a
-// comment. The client POC is assigned before a comment is posted so Basecamp
+// comment. The client contact is assigned before a comment is posted so Basecamp
 // routes the notification to the right person.
 export async function sendApprovalToDeliverables(input: {
   projectId: string;
@@ -1057,7 +1057,7 @@ export async function sendApprovalToDeliverables(input: {
       return {
         ok: false,
         error:
-          "Could not match this account's contact or POC to a person in the Basecamp project.",
+          "Could not match this account's contact to a person in the Basecamp project.",
       };
     }
 

@@ -45,7 +45,7 @@ function approvalState(id: string) {
   const revision = campaignApprovalRevisionKey(campaign, emails);
   const previewUrl = reviewUrl(campaign.external_token);
   const contactName =
-    client?.contact_name || client?.poc || client?.name || campaign.client_name;
+    client?.contact_name || client?.name || campaign.client_name;
   const messageInput = {
     clientContactName: contactName,
     campaignTitle: campaign.title,
@@ -57,13 +57,8 @@ function approvalState(id: string) {
   if (client && !client.basecamp_project_id) {
     missing.push("Basecamp project");
   }
-  if (
-    client &&
-    !client.contact_email.trim() &&
-    !client.poc.trim() &&
-    !client.contact_name.trim()
-  ) {
-    missing.push("client contact or POC");
+  if (client && !client.contact_email.trim() && !client.contact_name.trim()) {
+    missing.push("client contact");
   }
   if (!basecampConnected()) missing.push("Basecamp connection");
 
@@ -94,7 +89,6 @@ export async function GET(_request: Request, { params }: Params) {
     missing: state.missing,
     recipient:
       state.client?.contact_name ||
-      state.client?.poc ||
       state.client?.contact_email ||
       "",
     projectConfigured: Boolean(state.client?.basecamp_project_id),
@@ -148,7 +142,6 @@ export async function POST(request: Request, { params }: Params) {
     contentHtml: clientApprovalMessageHtml(state.messageInput),
     recipientIdentifiers: [
       client.contact_email,
-      client.poc,
       client.contact_name,
     ].filter(Boolean),
     existingCardId: state.campaign.basecamp_card_id,

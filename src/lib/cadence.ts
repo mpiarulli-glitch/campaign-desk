@@ -168,11 +168,11 @@ export function findSendForWindow(
   return (
     (getDb()
       .prepare(
-        // Archived rows are excluded on purpose: calling a production off has
+        // Cancelled rows are excluded on purpose: cancelling a production has
         // to hand the window back, otherwise the client stays "booked" forever
-        // and never gets reminded again.
+        // and never shows as needing one again.
         `SELECT * FROM scheduled_sends
-         WHERE client_id = ? AND cadence_window_start = ? AND archived_at IS NULL
+         WHERE client_id = ? AND cadence_window_start = ? AND cancelled_at IS NULL
          ORDER BY created_at DESC LIMIT 1`
       )
       .get(clientId, windowStart) as ScheduledSend | undefined) || null

@@ -38,7 +38,6 @@ type Client = {
   active: number;
   contact_name: string;
   contact_email: string;
-  poc: string;
   account_manager: string;
   color_week: ColorWeek;
   production_cadence: Cadence;
@@ -62,7 +61,7 @@ type Row = {
 };
 
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
-type ProductionTab = "requested" | "confirmed" | "archived" | "setup";
+type ProductionTab = "requested" | "confirmed" | "cancelled" | "setup";
 
 // The "Log a production" form: a production that was arranged over the phone or
 // in another booking system, recorded after the fact.
@@ -89,7 +88,7 @@ type Production = {
   account_manager: string;
   videographer: string;
   created_at: string;
-  archived_at: string | null;
+  cancelled_at: string | null;
 };
 
 // Which client fields can be edited inline, and how each maps to the PATCH body.
@@ -97,7 +96,6 @@ type Field =
   | "name"
   | "contact_name"
   | "contact_email"
-  | "poc"
   | "account_manager"
   | "active"
   | "color_week"
@@ -110,7 +108,6 @@ const PATCH_KEY: Record<Field, string> = {
   name: "name",
   contact_name: "contactName",
   contact_email: "contactEmail",
-  poc: "poc",
   account_manager: "accountManager",
   active: "active",
   color_week: "colorWeek",
@@ -415,16 +412,16 @@ export default function ProductionPage() {
     }
   }, [logOpenFor]);
 
-  // Calling a production off. Reversible, and it hands the cadence window back
-  // so the client shows as needing a booking again.
-  async function setArchived(id: string, archived: boolean) {
+  // Cancelling hands the cadence window back, so the client goes straight back
+  // to needing a production. Reversible, which is why there is no confirm.
+  async function setCancelled(id: string, cancelled: boolean) {
     const res = await fetch(`/api/calendar/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ archived }),
+      body: JSON.stringify({ cancelled }),
     });
     if (!res.ok) {
-      setError(archived ? "Could not archive that production." : "Could not restore it.");
+      setError(cancelled ? "Could not cancel that production." : "Could not restore it.");
       return;
     }
     load({ silent: true });
@@ -432,7 +429,7 @@ export default function ProductionPage() {
 
   // For rows that should never have existed, like a test booking.
   async function removeProduction(id: string, clientName: string) {
-    if (!confirm(`Delete the ${clientName} production for good? This cannot be undone. Archive it instead if you want to keep the record.`)) {
+    if (!confirm(`Delete the ${clientName} production for good? This cannot be undone. Cancel it instead if you want to keep the record.`)) {
       return;
     }
     const res = await fetch(`/api/calendar/${id}`, { method: "DELETE" });
@@ -580,11 +577,11 @@ export default function ProductionPage() {
   }, [enrolled, showInactive]);
   const activeCount = enrolled.filter((r) => r.client.active).length;
   const liveProductions = useMemo(
-    () => productions.filter((production) => !production.archived_at),
+    () => productions.filter((production) => !production.cancelled_at),
     [productions]
   );
-  const archivedProductions = useMemo(
-    () => productions.filter((production) => production.archived_at),
+  const cancelledProductions = useMemo(
+    () => productions.filter((production) => production.cancelled_at),
     [productions]
   );
   const requestedProductions = useMemo(
@@ -598,8 +595,8 @@ export default function ProductionPage() {
   const visibleProductions =
     tab === "requested"
       ? requestedProductions
-      : tab === "archived"
-        ? archivedProductions
+      : tab === "cancelled"
+        ? cancelledProductions
         : confirmedProductions;
 
   // Only clients whose color week and cadence are set can have a production
@@ -739,16 +736,16 @@ export default function ProductionPage() {
             Confirmed
             <span className="tab-count">{confirmedProductions.length}</span>
           </button>
-          {archivedProductions.length ? (
+          {cancelledProductions.length ? (
             <button
               type="button"
               role="tab"
-              aria-selected={tab === "archived"}
-              className={`tab ${tab === "archived" ? "active" : ""}`}
-              onClick={() => setTab("archived")}
+              aria-selected={tab === "cancelled"}
+              className={`tab ${tab === "cancelled" ? "active" : ""}`}
+              onClick={() => setTab("cancelled")}
             >
-              Archived
-              <span className="tab-count">{archivedProductions.length}</span>
+              Cancelled
+              <span className="tab-count">{cancelledProductions.length}</span>
             </button>
           ) : null}
           <span className="tab-divider" aria-hidden="true" />
@@ -1277,12 +1274,6 @@ export default function ProductionPage() {
                         </div>
                       </div>
                       <div>
-                        <span className="k">POC</span>
-                        <div className="v">
-                          {editableField(r, "poc", "text", c.poc, <span>{c.poc || "Not set"}</span>)}
-                        </div>
-                      </div>
-                      <div>
                         <span className="k">Active</span>
                         <div className="v">
                           {editableField(r, "active", "select", c.active ? "1" : "0",
@@ -1321,17 +1312,20 @@ export default function ProductionPage() {
                       ) : null}
                       {isAdmin ? (
                         <div>
-                          <span className="k">Production scheduling</span>
+                          {/* This acts on the CLIENT, not on a production. It
+                              sits near the per-production Archive and Delete
+                              actions, so the label has to name its object. */}
+                          <span className="k">Whole client</span>
                           <div className="v">
                             <button
                               className="btn btn-danger btn-sm"
                               onClick={() => {
-                                if (confirm(`Remove ${c.name} from production scheduling? This keeps the client and all their data, they just won't get productions or reminders.`)) {
+                                if (confirm(`Take ${c.name} out of production scheduling altogether? They keep every record, they just stop getting production windows and reminders. This is not the same as archiving one production.`)) {
                                   setEnrolled(c.id, false);
                                 }
                               }}
                             >
-                              Remove
+                              Stop scheduling this client
                             </button>
                           </div>
                         </div>
@@ -1376,14 +1370,14 @@ export default function ProductionPage() {
             productions={visibleProductions}
             loading={loading}
             isAdmin={isAdmin}
-            onArchive={(id) => setArchived(id, true)}
-            onRestore={(id) => setArchived(id, false)}
+            onCancel={(id) => setCancelled(id, true)}
+            onRestore={(id) => setCancelled(id, false)}
             onDelete={removeProduction}
             emptyLabel={
               tab === "requested"
                 ? "No production requests are waiting for confirmation."
-                : tab === "archived"
-                  ? "Nothing archived."
+                : tab === "cancelled"
+                  ? "Nothing cancelled."
                   : "No productions have been confirmed yet."
             }
           />
@@ -1398,7 +1392,7 @@ function ProductionQueue({
   loading,
   emptyLabel,
   isAdmin,
-  onArchive,
+  onCancel,
   onRestore,
   onDelete,
 }: {
@@ -1406,7 +1400,7 @@ function ProductionQueue({
   loading: boolean;
   emptyLabel: string;
   isAdmin: boolean;
-  onArchive: (id: string) => void;
+  onCancel: (id: string) => void;
   onRestore: (id: string) => void;
   onDelete: (id: string, clientName: string) => void;
 }) {
@@ -1425,14 +1419,14 @@ function ProductionQueue({
   return (
     <div className="pcon-list">
       {productions.map((production) => {
-        const statusLabel = production.archived_at
-          ? "Archived"
+        const statusLabel = production.cancelled_at
+          ? "Cancelled"
           : production.status === "requested"
             ? "Requested"
             : production.status === "sent"
               ? "Completed"
               : "Confirmed";
-        const tone = production.archived_at
+        const tone = production.cancelled_at
           ? "is-quiet"
           : production.status === "requested"
             ? "is-warn"
@@ -1489,7 +1483,7 @@ function ProductionQueue({
                   Open
                 </Link>
                 {isAdmin ? (
-                  production.archived_at ? (
+                  production.cancelled_at ? (
                     <>
                       <button className="btn btn-ghost btn-sm" onClick={() => onRestore(production.id)}>
                         Restore
@@ -1502,8 +1496,12 @@ function ProductionQueue({
                       </button>
                     </>
                   ) : (
-                    <button className="btn btn-ghost btn-sm" onClick={() => onArchive(production.id)}>
-                      Archive
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      title="Cancel this production. The client goes back to needing one."
+                      onClick={() => onCancel(production.id)}
+                    >
+                      Cancel
                     </button>
                   )
                 ) : null}
