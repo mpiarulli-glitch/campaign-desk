@@ -206,7 +206,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         <div className="sched-hero">
           <p className="eyebrow">{data.client.name}</p>
           <h1 className="h1">
-            {data.extraWindow ? "Let's get an extra production booked in" : "Request an extra production"}
+            {data.extraWindow ? "Let's schedule a production" : "Schedule a production"}
           </h1>
           <p className="sched-sub">
             {data.extraWindow ? (
@@ -218,16 +218,15 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                 . {data.extraWindow.note}
               </>
             ) : (
-              "Behind on content, or just need something outside your usual schedule? Pick a date below and tell us about it."
-            )}{" "}
-            This does not affect your regular production schedule.
+              "Pick a date below and tell us about it."
+            )}
           </p>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => setMode("window")}
           >
-            ← Back to regular scheduling
+            ← Back
           </button>
         </div>
 
@@ -782,7 +781,7 @@ function ExtraRequestLink({
     return (
       <div className="sched-notice" style={{ cursor: "pointer" }} onClick={onClick}>
         <p style={{ margin: 0, fontWeight: 600 }}>
-          You have an open invitation to book an extra production
+          We&apos;d like to schedule a production with you
         </p>
         <p className="muted" style={{ margin: "4px 0 0" }}>
           Any weekday from {dayNumber(openWindow.start)} – {dayNumber(openWindow.end)}. Tap
@@ -793,7 +792,7 @@ function ExtraRequestLink({
   }
   return (
     <p className="sched-hint muted" style={{ marginTop: 8 }}>
-      Behind on content or need something outside your usual schedule?{" "}
+      Need to schedule something else?{" "}
       <button
         type="button"
         onClick={onClick}
@@ -807,7 +806,7 @@ function ExtraRequestLink({
           cursor: "pointer",
         }}
       >
-        Request an extra production
+        Schedule a production
       </button>
       .
     </p>

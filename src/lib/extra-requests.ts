@@ -178,8 +178,8 @@ export function extraRequestCardContent(
   const body =
     `<div>${hello}</div>` +
     `<div><br></div>` +
-    `<div>We'd like to get an additional production booked in for you, outside ` +
-    `your regular schedule. Any weekday between <strong>${escapeHtml(windowText)}</strong> works.</div>` +
+    `<div>We'd like to schedule a production with you. Any weekday between ` +
+    `<strong>${escapeHtml(windowText)}</strong> works.</div>` +
     `<div><br></div>` +
     note +
     (url
@@ -193,7 +193,7 @@ export function extraRequestCardContent(
     `card.</div>` +
     `<div><br></div>` +
     `<div>Thanks!</div>`;
-  return { title: "Let's get an extra production booked in", body };
+  return { title: "Let's schedule a production", body };
 }
 
 export function extraRequestEmail(
@@ -215,8 +215,8 @@ export function extraRequestEmail(
   };
   const year = request.window_start.split("-")[0];
   const windowText = `${fmtLong(request.window_start)} – ${fmtLong(request.window_end)}, ${year}`;
-  const subject = "Let's get an extra production booked in";
-  const preheader = "We'd like to schedule an additional production for you.";
+  const subject = "Let's schedule a production";
+  const preheader = "We'd like to schedule a production with you.";
   const logo =
     "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
   const noteText = request.note ? `\n${request.note}\n` : "";
@@ -224,7 +224,7 @@ export function extraRequestEmail(
   const text = [
     greeting,
     "",
-    "We'd like to get an additional production booked in for you, outside your regular schedule.",
+    "We'd like to schedule a production with you.",
     noteText,
     "Pick a day and time here:",
     url,
@@ -267,9 +267,9 @@ export function extraRequestEmail(
         <tr>
           <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
             <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${company}</p>
-            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Let&rsquo;s get an extra production booked in</h1>
+            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Let&rsquo;s schedule a production</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">We&rsquo;d like to get an additional production booked in for you, outside your regular schedule. Pick the day and time that work best.${request.note ? ` ${esc(request.note)}` : ""}</p>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">We&rsquo;d like to schedule a production with you. Pick the day and time that work best.${request.note ? ` ${esc(request.note)}` : ""}</p>
           </td>
         </tr>
         <tr>
