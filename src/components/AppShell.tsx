@@ -46,6 +46,7 @@ const ADMIN_NAV: NavItem[] = [
   // Production is spliced in below for the people on PRODUCTION_ACCESS only, so
   // it is deliberately absent here.
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
+  { href: "/admin/onboarding", label: "Onboarding", icon: "check" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
   { href: "/admin/snapshot", label: "Snapshots", icon: "doc" },
   // Aggregates across every client and person, so admin nav only.

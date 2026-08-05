@@ -214,6 +214,10 @@ export interface RevClient {
   basecamp_project_id: string;
   // Videographer assigned to this account (one production/day per videographer).
   videographer_id: string;
+  // Stage on the New Client Onboarding board, from lib/onboarding.ts's
+  // ONBOARDING_STAGES ("" = not on the board — either never started or fully
+  // onboarded and graduated off it).
+  onboarding_stage: string;
   created_at: string;
   updated_at: string;
 }
@@ -808,6 +812,21 @@ export interface CourseQuizQuestion {
   updated_at: string;
 }
 
+// One checklist item on the New Client Onboarding board, copied from the
+// board's template card the first time a client is added. Flat and
+// independent of onboarding_stage — a client's column tracks where they are;
+// this tracks what's actually been done, same as a Basecamp card's steps.
+export interface OnboardingStep {
+  id: string;
+  client_id: string;
+  title: string;
+  completed: number;
+  completed_at: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "campaign-desk.db");
 
@@ -1372,6 +1391,20 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_quiz_lesson ON course_quiz_questions(lesson_id);
 
+    CREATE TABLE IF NOT EXISTS onboarding_steps (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      completed_at TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_onboard_steps_client ON onboarding_steps(client_id);
+
     CREATE TABLE IF NOT EXISTS client_strategies (
       client_id TEXT PRIMARY KEY,
       positioning TEXT NOT NULL DEFAULT '',
@@ -1786,6 +1819,11 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("sentiment_override")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN sentiment_override TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("onboarding_stage")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN onboarding_stage TEXT NOT NULL DEFAULT ''`
     );
   }
 
