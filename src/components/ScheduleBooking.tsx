@@ -91,6 +91,10 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [extraSent, setExtraSent] = useState(false);
+  // Set when a client with both an invited window and an open cadence window
+  // chooses to go book the cadence one instead. The invitation leads by
+  // default, so this is the only way past it.
+  const [viewCadence, setViewCadence] = useState(false);
   const briefRef = useRef<HTMLDivElement | null>(null);
 
   const set = (key: string, value: string) =>
@@ -485,12 +489,14 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     );
   }
 
-  // An admin-picked window is itself an open invitation, so it outranks the
-  // "nothing's open" notice below. A client with no regular cadence used to get
-  // both at once, told scheduling was closed directly above an invitation to
-  // schedule. Inactive still loses, because the server refuses those bookings
-  // outright and there'd be nothing behind the invitation.
-  if (data.extraWindow && !canBook && data.status !== "inactive") {
+  // A window an admin entered by hand is a deliberate ask, so it leads the
+  // screen over anything generated from the cadence. It used to lose twice: a
+  // client with no cadence was told "scheduling isn't open yet" directly above
+  // the invitation, and a client who also had a cadence window got that
+  // window's dates instead of the requested ones. Inactive still loses,
+  // because the server refuses those bookings outright and there'd be nothing
+  // behind the invitation.
+  if (data.extraWindow && data.status !== "inactive" && !viewCadence) {
     return (
       <div className="sched-notice">
         <p className="eyebrow">{data.client.name}</p>
@@ -508,6 +514,27 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             Pick a day
           </button>
         </div>
+        {canBook && data.window ? (
+          <p className="sched-hint muted" style={{ marginTop: 16 }}>
+            Looking to book your regular production?{" "}
+            <button
+              type="button"
+              onClick={() => setViewCadence(true)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                font: "inherit",
+                color: "inherit",
+                textDecoration: "underline",
+                cursor: "pointer",
+              }}
+            >
+              Book that instead
+            </button>
+            .
+          </p>
+        ) : null}
       </div>
     );
   }
