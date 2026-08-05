@@ -9,9 +9,11 @@ import type { RevClient } from "../src/lib/db";
 import {
   BOOKING_SLOTS,
   durationAllowsStart,
+  isRealDate,
   slotHasPassed,
 } from "../src/lib/scheduling-rules";
 import { productionRequestedCampfireContent } from "../src/lib/notify";
+import { MAX_FIELD_LENGTH } from "../src/lib/scheduling";
 import {
   dayOfWeek,
   isBasecampFollowupDay,
@@ -255,4 +257,40 @@ test("a resolved contact is greeted with a real mention, not their name", () => 
   const plain = scheduleCardContent(client, w, "https://desk.test/s/t");
   assert.match(plain.body, /Hi Dana,/);
   assert.doesNotMatch(plain.body, /bc-attachment/);
+});
+
+test("a date has to exist, not merely look like one", () => {
+  // Shape plus the window bounds was not enough. The window check compares
+  // strings, so for a window spanning two months "2026-09-31" sorts between
+  // "2026-09-28" and "2026-10-02" and passed both. Purple windows always span
+  // two months, so this reached real accounts.
+  assert.equal(isRealDate("2026-09-30"), true);
+  assert.equal(isRealDate("2026-09-31"), false);
+  assert.equal(isRealDate("2026-09-99"), false);
+  assert.equal(isRealDate("2026-10-00"), false);
+  assert.equal(isRealDate("2026-02-31"), false);
+  assert.equal(isRealDate("2026-13-01"), false);
+  assert.equal(isRealDate("08/12/2026"), false);
+  assert.equal(isRealDate(""), false);
+});
+
+test("leap years are respected in both directions", () => {
+  assert.equal(isRealDate("2028-02-29"), true, "2028 is a leap year");
+  assert.equal(isRealDate("2026-02-29"), false, "2026 is not");
+  assert.equal(isRealDate("2100-02-29"), false, "2100 is not, despite dividing by 4");
+});
+
+test("an impossible date can no longer sit inside a month-spanning window", () => {
+  // Cisco's purple quarterly window runs 28 Sep to 2 Oct 2026.
+  const w = { start: "2026-09-28", end: "2026-10-02" };
+  const sortsInside = (d: string) => d >= w.start && d <= w.end;
+  assert.equal(sortsInside("2026-09-31"), true, "still sorts inside, by design");
+  assert.equal(isRealDate("2026-09-31"), false, "and is now rejected anyway");
+});
+
+test("a brief field cannot be unbounded", () => {
+  // The booking endpoint needs no login, so without a cap a 200KB address would
+  // be stored, mailed and rendered on the crew page without complaint.
+  assert.equal(MAX_FIELD_LENGTH, 2000);
+  assert.ok(MAX_FIELD_LENGTH > 500, "roomy enough for an address plus access notes");
 });

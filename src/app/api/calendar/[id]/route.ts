@@ -4,10 +4,9 @@ import { cancelSend, deleteSend, getSend, updateSend } from "@/lib/calendar";
 import { advanceLastProduction } from "@/lib/cadence";
 import { getRevClient } from "@/lib/revenue";
 import { sendProductionConfirmed } from "@/lib/production-emails";
-import { BRIEF_FIELDS } from "@/lib/scheduling";
+import { BRIEF_FIELDS, MAX_FIELD_LENGTH } from "@/lib/scheduling";
+import { isRealDate } from "@/lib/scheduling-rules";
 import { listVideographers } from "@/lib/videographers";
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -47,9 +46,9 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
-  if (body.sendDate !== undefined && !DATE_RE.test(body.sendDate)) {
+  if (body.sendDate !== undefined && !isRealDate(body.sendDate)) {
     return NextResponse.json(
-      { error: "sendDate must be YYYY-MM-DD" },
+      { error: "sendDate must be a real date, as YYYY-MM-DD" },
       { status: 400 }
     );
   }
@@ -71,6 +70,12 @@ export async function PATCH(request: Request, { params }: Params) {
     for (const key of BRIEF_FIELDS) {
       const v = raw[key];
       if (typeof v === "string" && v.trim()) brief[key] = v.trim();
+    }
+    if (Object.values(brief).some((value) => value.length > MAX_FIELD_LENGTH)) {
+      return NextResponse.json(
+        { error: `Keep each answer under ${MAX_FIELD_LENGTH} characters.` },
+        { status: 400 }
+      );
     }
     productionBrief = JSON.stringify(brief);
   }

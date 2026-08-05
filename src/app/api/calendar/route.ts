@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession, isAdminAuthenticated, sessionFocusSlug } from "@/lib/auth";
 import { teamFocus } from "@/lib/people";
 import { createSend, listSends } from "@/lib/calendar";
+import { isRealDate } from "@/lib/scheduling-rules";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -61,9 +62,9 @@ export async function POST(request: Request) {
   if (!title) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
-  if (!DATE_RE.test(sendDate)) {
+  if (!isRealDate(sendDate)) {
     return NextResponse.json(
-      { error: "sendDate must be YYYY-MM-DD" },
+      { error: "sendDate must be a real date, as YYYY-MM-DD" },
       { status: 400 }
     );
   }

@@ -16,7 +16,7 @@ import { sendProductionRequestReceived } from "./production-emails";
 import { listVideographers, videographerBookedDates } from "./videographers";
 import { getDb, type RevClient, type ScheduledSend } from "./db";
 import { getAppUrl } from "./auth";
-import { durationAllowsStart, slotHasPassed } from "./scheduling-rules";
+import { durationAllowsStart, isRealDate, slotHasPassed } from "./scheduling-rules";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -117,6 +117,13 @@ export type BookingResult =
   | { ok: true; send: ScheduledSend; client: RevClient }
   | { ok: false; httpStatus: number; error: string };
 
+// Longest accepted value for a brief field or a crew note. Generous for anything
+// real: the longest field in use is an address plus access instructions. It
+// exists because the booking endpoint needs no login, so the input is unbounded
+// otherwise, and a 200KB address would be stored, mailed and rendered on the crew
+// page without complaint.
+export const MAX_FIELD_LENGTH = 2000;
+
 // The production brief's fields, in one place. The client booking form, the
 // admin log form and the admin edit form all validate against this list, so a
 // field added here reaches every one of them.
@@ -184,6 +191,16 @@ export async function submitProductionBooking(
     const v = rawBrief[key];
     if (typeof v === "string" && v.trim()) brief[key] = v.trim();
   }
+  const tooLong = Object.entries(brief).find(
+    ([, value]) => value.length > MAX_FIELD_LENGTH
+  );
+  if (tooLong || note.length > MAX_FIELD_LENGTH) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: `Keep each answer under ${MAX_FIELD_LENGTH} characters.`,
+    };
+  }
   if (!brief.locations) {
     return {
       ok: false,
@@ -199,8 +216,8 @@ export async function submitProductionBooking(
     };
   }
 
-  if (!DATE_RE.test(date)) {
-    return { ok: false, httpStatus: 400, error: "date must be YYYY-MM-DD" };
+  if (!isRealDate(date)) {
+    return { ok: false, httpStatus: 400, error: "That is not a real date." };
   }
   if (date < window.start || date > window.end) {
     return {
@@ -351,8 +368,8 @@ export async function recordManualProduction(
   }
 
   const date = typeof body.date === "string" ? body.date : "";
-  if (!DATE_RE.test(date)) {
-    return { ok: false, httpStatus: 400, error: "date must be YYYY-MM-DD" };
+  if (!isRealDate(date)) {
+    return { ok: false, httpStatus: 400, error: "That is not a real date." };
   }
 
   const time = typeof body.time === "string" ? body.time : "";
@@ -406,6 +423,16 @@ export async function recordManualProduction(
   for (const key of BRIEF_FIELDS) {
     const v = rawBrief[key];
     if (typeof v === "string" && v.trim()) brief[key] = v.trim();
+  }
+  if (
+    Object.values(brief).some((value) => value.length > MAX_FIELD_LENGTH) ||
+    note.length > MAX_FIELD_LENGTH
+  ) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: `Keep each answer under ${MAX_FIELD_LENGTH} characters.`,
+    };
   }
 
   // Serialize the duplicate check with the insert so two people logging the
