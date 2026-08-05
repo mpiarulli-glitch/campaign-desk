@@ -50,6 +50,14 @@ type Client = {
 
 type Videographer = { id: string; name: string; active: number };
 
+type OpenExtraRequest = {
+  id: string;
+  windowStart: string;
+  windowEnd: string;
+  bcCardAt: string | null;
+  emailSentAt: string | null;
+};
+
 type Row = {
   client: Client;
   window: { start: string; end: string } | null;
@@ -58,6 +66,7 @@ type Row = {
   currentReminderCount: number;
   lastEmailSent: string | null;
   lastWindowEmailed: string | null;
+  openExtraRequest: OpenExtraRequest | null;
 };
 
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
@@ -287,6 +296,18 @@ export default function ProductionPage() {
   const [logSaving, setLogSaving] = useState(false);
   const [logError, setLogError] = useState("");
 
+  // "Ask to schedule" form: reach out to a client about an extra production
+  // in a hand-picked window, via Basecamp card + email.
+  const [extraAsk, setExtraAsk] = useState<{
+    clientId: string;
+    windowStart: string;
+    windowEnd: string;
+    note: string;
+  } | null>(null);
+  const [extraAskSaving, setExtraAskSaving] = useState(false);
+  const [extraAskError, setExtraAskError] = useState("");
+  const [extraAskBusyId, setExtraAskBusyId] = useState("");
+
   function openLog(clientId = "") {
     setLogError("");
     const row = clientId ? rows.find((r) => r.client.id === clientId) : undefined;
@@ -358,6 +379,60 @@ export default function ProductionPage() {
       return;
     }
     setLogging(null);
+    load({ silent: true });
+  }
+
+  function openExtraAsk(clientId: string) {
+    setExtraAskError("");
+    const start = new Date();
+    start.setDate(start.getDate() + 3);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    setExtraAsk({
+      clientId,
+      windowStart: iso(start),
+      windowEnd: iso(end),
+      note: "",
+    });
+  }
+
+  async function submitExtraAsk(e: FormEvent) {
+    e.preventDefault();
+    if (!extraAsk) return;
+    if (!extraAsk.windowStart || !extraAsk.windowEnd) {
+      setExtraAskError("Pick a start and end date.");
+      return;
+    }
+    setExtraAskSaving(true);
+    setExtraAskError("");
+    const res = await fetch("/api/production/extra-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(extraAsk),
+    });
+    setExtraAskSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setExtraAskError(data.error || "Could not send the request.");
+      return;
+    }
+    setExtraAsk(null);
+    load({ silent: true });
+  }
+
+  async function resendExtraAsk(id: string) {
+    setExtraAskBusyId(id);
+    await fetch(`/api/production/extra-request/${id}`, { method: "POST" });
+    setExtraAskBusyId("");
+    load({ silent: true });
+  }
+
+  async function cancelExtraAsk(id: string) {
+    if (!confirm("Cancel this scheduling request? The client's link will no longer offer this window.")) return;
+    setExtraAskBusyId(id);
+    await fetch(`/api/production/extra-request/${id}`, { method: "DELETE" });
+    setExtraAskBusyId("");
     load({ silent: true });
   }
 
@@ -1365,6 +1440,84 @@ export default function ProductionPage() {
                         <span className="k">Window emailed</span>
                         <div className="v">{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "Never"}</div>
                       </div>
+                      {isAdmin ? (
+                        <div>
+                          <span className="k">Extra production</span>
+                          <div className="v">
+                            {r.openExtraRequest ? (
+                              <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                <span className="pcon-pill is-warn">
+                                  Asked: {fmtDate(r.openExtraRequest.windowStart)} – {fmtDate(r.openExtraRequest.windowEnd)}
+                                </span>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={extraAskBusyId === r.openExtraRequest.id}
+                                  onClick={() => resendExtraAsk(r.openExtraRequest!.id)}
+                                >
+                                  Resend
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={extraAskBusyId === r.openExtraRequest.id}
+                                  onClick={() => cancelExtraAsk(r.openExtraRequest!.id)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : extraAsk?.clientId === c.id ? (
+                              <form className="stack" style={{ gap: 10, maxWidth: 420 }} onSubmit={submitExtraAsk}>
+                                <div className="rev-form-grid">
+                                  <div className="field">
+                                    <label htmlFor={`extra-start-${c.id}`}>Window start</label>
+                                    <input
+                                      id={`extra-start-${c.id}`}
+                                      type="date"
+                                      value={extraAsk.windowStart}
+                                      onChange={(e) => setExtraAsk({ ...extraAsk, windowStart: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="field">
+                                    <label htmlFor={`extra-end-${c.id}`}>Window end</label>
+                                    <input
+                                      id={`extra-end-${c.id}`}
+                                      type="date"
+                                      value={extraAsk.windowEnd}
+                                      onChange={(e) => setExtraAsk({ ...extraAsk, windowEnd: e.target.value })}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="field">
+                                  <label htmlFor={`extra-note-${c.id}`}>Note (optional)</label>
+                                  <textarea
+                                    id={`extra-note-${c.id}`}
+                                    rows={2}
+                                    value={extraAsk.note}
+                                    onChange={(e) => setExtraAsk({ ...extraAsk, note: e.target.value })}
+                                    placeholder="Anything to tell the client about why this one's extra."
+                                  />
+                                </div>
+                                {extraAskError ? <p className="error">{extraAskError}</p> : null}
+                                <div className="row" style={{ gap: 10 }}>
+                                  <button className="btn btn-sm" type="submit" disabled={extraAskSaving}>
+                                    {extraAskSaving ? "Sending..." : "Send Basecamp card + email"}
+                                  </button>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    type="button"
+                                    onClick={() => setExtraAsk(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            ) : (
+                              <button className="btn btn-secondary btn-sm" onClick={() => openExtraAsk(c.id)}>
+                                Ask to schedule
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
                       {isAdmin ? (
                         <div>
                           <span className="k">Scheduling link</span>

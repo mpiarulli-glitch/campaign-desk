@@ -28,6 +28,7 @@ type Data = {
     note: string;
   } | null;
   extraRequests: { sendDate: string; sendTime: string; status: string }[];
+  extraWindow: { start: string; end: string; note: string } | null;
 };
 
 type Brief = Record<string, string>;
@@ -204,11 +205,22 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       <div className="stack">
         <div className="sched-hero">
           <p className="eyebrow">{data.client.name}</p>
-          <h1 className="h1">Request an extra production</h1>
+          <h1 className="h1">
+            {data.extraWindow ? "Let's get an extra production booked in" : "Request an extra production"}
+          </h1>
           <p className="sched-sub">
-            Behind on content, or just need something outside your usual schedule?
-            Pick a date below and tell us about it. This does not affect your regular
-            production schedule.
+            {data.extraWindow ? (
+              <>
+                Pick any weekday from{" "}
+                <strong>
+                  {dayNumber(data.extraWindow.start)} – {dayNumber(data.extraWindow.end)}
+                </strong>
+                . {data.extraWindow.note}
+              </>
+            ) : (
+              "Behind on content, or just need something outside your usual schedule? Pick a date below and tell us about it."
+            )}{" "}
+            This does not affect your regular production schedule.
           </p>
           <button
             type="button"
@@ -256,7 +268,12 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                 <label>Date</label>
                 <input
                   type="date"
-                  min={data.today}
+                  min={
+                    data.extraWindow && data.extraWindow.start > data.today
+                      ? data.extraWindow.start
+                      : data.today
+                  }
+                  max={data.extraWindow ? data.extraWindow.end : undefined}
                   value={extraDate}
                   onChange={(e) => setExtraDate(e.target.value)}
                 />
@@ -353,7 +370,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           ) : null}
         </div>
 
-        <ExtraRequestLink onClick={startExtraRequest} />
+        <ExtraRequestLink onClick={startExtraRequest} openWindow={data.extraWindow} />
 
         <div className="sched-referral">
           <p className="sched-referral-eyebrow">Did you know?</p>
@@ -411,7 +428,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           manager will reach out when it&apos;s time to book the next one.
         </p>
         {data.status === "not_configured" ? (
-          <ExtraRequestLink onClick={startExtraRequest} />
+          <ExtraRequestLink onClick={startExtraRequest} openWindow={data.extraWindow} />
         ) : null}
       </div>
     );
@@ -552,7 +569,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         <p className="sched-hint muted">Tap a slot above to get started.</p>
       )}
 
-      <ExtraRequestLink onClick={startExtraRequest} />
+      <ExtraRequestLink onClick={startExtraRequest} openWindow={data.extraWindow} />
     </div>
   );
 }
@@ -754,7 +771,26 @@ function BriefFields({
 // The persistent secondary entry point into the out-of-cycle flow. Shown on
 // every screen where a client is otherwise in good standing, so falling
 // behind on the regular cadence is never the only way to get a shoot booked.
-function ExtraRequestLink({ onClick }: { onClick: () => void }) {
+function ExtraRequestLink({
+  onClick,
+  openWindow,
+}: {
+  onClick: () => void;
+  openWindow?: { start: string; end: string } | null;
+}) {
+  if (openWindow) {
+    return (
+      <div className="sched-notice" style={{ cursor: "pointer" }} onClick={onClick}>
+        <p style={{ margin: 0, fontWeight: 600 }}>
+          You have an open invitation to book an extra production
+        </p>
+        <p className="muted" style={{ margin: "4px 0 0" }}>
+          Any weekday from {dayNumber(openWindow.start)} – {dayNumber(openWindow.end)}. Tap
+          to pick a day.
+        </p>
+      </div>
+    );
+  }
   return (
     <p className="sched-hint muted" style={{ marginTop: 8 }}>
       Behind on content or need something outside your usual schedule?{" "}

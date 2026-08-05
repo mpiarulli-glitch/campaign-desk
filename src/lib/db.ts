@@ -457,6 +457,29 @@ export interface ScheduleReminder {
   updated_at: string;
 }
 
+// An admin-defined invitation to book a production outside the client's
+// regular cadence: "here's a window, pick a day in it." Reaches the client
+// the same way a cadence reminder does (Basecamp card + email), but the
+// window is picked by hand rather than derived from color_week/cadence, and
+// there is exactly one outreach rather than a recurring nudge sweep.
+export interface ExtraProductionRequest {
+  id: string;
+  client_id: string;
+  window_start: string; // YYYY-MM-DD
+  window_end: string; // YYYY-MM-DD
+  note: string;
+  created_by: string;
+  bc_card_id: string | null;
+  bc_card_at: string | null;
+  email_sent_at: string | null;
+  // The scheduled_sends row that satisfied this window, once booked.
+  fulfilled_send_id: string | null;
+  fulfilled_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // One row per client per month. Revenue/orders are typically manual (or from
 // Klaviyo for ecomm); recipients/opens/clicks/appointments/leads come from GHL.
 // A thing the app tried and could not do. See the table comment for why this
@@ -985,6 +1008,28 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reminders_client ON schedule_reminders(client_id);
+
+    CREATE TABLE IF NOT EXISTS extra_production_requests (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      window_start TEXT NOT NULL,
+      window_end TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      bc_card_id TEXT,
+      bc_card_at TEXT,
+      email_sent_at TEXT,
+      fulfilled_send_id TEXT,
+      fulfilled_at TEXT,
+      cancelled_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_extra_req_client ON extra_production_requests(client_id);
+    CREATE INDEX IF NOT EXISTS idx_extra_req_open
+      ON extra_production_requests(client_id, fulfilled_at, cancelled_at);
 
     -- Things the app tried and failed to do.
     --

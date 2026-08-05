@@ -17,6 +17,10 @@ import { listVideographers, videographerBookedDates } from "./videographers";
 import { getDb, type RevClient, type ScheduledSend } from "./db";
 import { getAppUrl } from "./auth";
 import { durationAllowsStart, isRealDate, slotHasPassed } from "./scheduling-rules";
+import {
+  fulfillMatchingExtraRequest,
+  listOpenExtraRequests as listOpenExtraWindows,
+} from "./extra-requests";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -54,12 +58,15 @@ export interface SchedulingStatus {
     sendTime: string;
     status: string;
   }[];
+  // An admin-picked window inviting an extra production, if one is open. When
+  // present, the client's out-of-cycle date picker is bounded to it.
+  extraWindow: { start: string; end: string; note: string } | null;
 }
 
-// A client's own not-cancelled, not-yet-sent out-of-cycle requests. Ordered
+// A client's own not-cancelled, not-yet-sent out-of-cycle bookings. Ordered
 // newest first so a repeat request always reads as "still pending" rather
 // than getting buried under an older one.
-function listOpenExtraRequests(clientId: string): {
+function listOpenExtraBookings(clientId: string): {
   sendDate: string;
   sendTime: string;
   status: string;
@@ -139,7 +146,13 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
           note: existing.note,
         }
       : null,
-    extraRequests: listOpenExtraRequests(client.id),
+    extraRequests: listOpenExtraBookings(client.id),
+    extraWindow: (() => {
+      const open = listOpenExtraWindows(client.id)[0];
+      return open
+        ? { start: open.window_start, end: open.window_end, note: open.note }
+        : null;
+    })(),
   };
 }
 
@@ -459,6 +472,16 @@ export async function submitOutOfCycleBooking(
       error: "That day isn't available. Pick another day.",
     };
   }
+  // An open window an admin invited them into bounds the date. Without one,
+  // any real upcoming date is fair game.
+  const openWindow = listOpenExtraWindows(client.id)[0];
+  if (openWindow && (date < openWindow.window_start || date > openWindow.window_end)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Pick a day inside the window you were invited to.",
+    };
+  }
 
   const reserve = getDb().transaction((): BookingResult => {
     const currentClient = getDb()
@@ -500,6 +523,7 @@ export async function submitOutOfCycleBooking(
 
   const result = reserve.immediate();
   if (!result.ok) return result;
+  fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
   const videographer = result.client.videographer_id
     ? listVideographers(true).find(
         (person) => person.id === result.client.videographer_id
@@ -764,6 +788,7 @@ export async function recordOutOfCycleProduction(
 
   const result = reserve.immediate();
   if (!result.ok) return result;
+  fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
 
   if (body.notifyTeam === true) {
     const videographer = result.client.videographer_id

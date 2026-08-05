@@ -6,6 +6,7 @@ import { recordManualProduction, recordOutOfCycleProduction } from "@/lib/schedu
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
 import { listProductionSends } from "@/lib/calendar";
+import { listOpenExtraRequests } from "@/lib/extra-requests";
 
 export async function GET() {
   if (!(await isProductionAuthenticated())) {
@@ -18,6 +19,7 @@ export async function GET() {
     const existingSend = window ? findSendForWindow(client.id, window.start) : null;
     const currentReminder = window ? getReminder(client.id, window.start) : null;
     const latestReminder = getLatestReminder(client.id);
+    const openExtraRequest = listOpenExtraRequests(client.id)[0] || null;
     return {
       client: {
         id: client.id,
@@ -48,6 +50,15 @@ export async function GET() {
       currentReminderCount: currentReminder?.count || 0,
       lastEmailSent: latestReminder?.last_sent || null,
       lastWindowEmailed: latestReminder?.window_start || null,
+      openExtraRequest: openExtraRequest
+        ? {
+            id: openExtraRequest.id,
+            windowStart: openExtraRequest.window_start,
+            windowEnd: openExtraRequest.window_end,
+            bcCardAt: openExtraRequest.bc_card_at,
+            emailSentAt: openExtraRequest.email_sent_at,
+          }
+        : null,
     };
   });
   return NextResponse.json({
