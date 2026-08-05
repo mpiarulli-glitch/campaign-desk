@@ -49,9 +49,14 @@ Looking forward to hearing from you!`;
 }
 
 export function clientApprovalMessageHtml(
-  input: ClientApprovalMessageInput
+  input: ClientApprovalMessageInput,
+  // A real Basecamp mention for the client contact, when they resolve to a
+  // person on the project. Assigning somebody to the card does not notify them;
+  // only a mention does, so "Hi Dana," in plain text looked like an address and
+  // pinged nobody.
+  contactMention?: string
 ): string {
-  const name = escapeHtml(firstName(input.clientContactName));
+  const name = contactMention || escapeHtml(firstName(input.clientContactName));
   const title = escapeHtml(input.campaignTitle);
   const url = escapeHtml(input.previewUrl);
 
@@ -61,10 +66,10 @@ export function clientApprovalMessageHtml(
     "<hr>",
     "<p><strong>Here's what to check:</strong></p>",
     "<ul>",
-    "<li><strong>Copy</strong> — does the messaging reflect your brand and what you want to communicate?</li>",
-    "<li><strong>CTAs</strong> — are the calls to action clear? Do the wording and links feel right?</li>",
-    "<li><strong>Links</strong> — do all links point to the right pages?</li>",
-    "<li><strong>Imagery</strong> — do the visuals match your brand and the message?</li>",
+    "<li><strong>Copy.</strong> Does the messaging reflect your brand and what you want to communicate?</li>",
+    "<li><strong>CTAs.</strong> Are the calls to action clear, and do the wording and links feel right?</li>",
+    "<li><strong>Links.</strong> Do they all point to the right pages?</li>",
+    "<li><strong>Imagery.</strong> Do the visuals match your brand and the message?</li>",
     "</ul>",
     "<hr>",
     "<p><strong>Preview Link:</strong></p>",

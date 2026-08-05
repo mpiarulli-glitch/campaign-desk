@@ -126,7 +126,7 @@ test("basecamp attribution", async (t) => {
     await basecamp.sendApprovalToDeliverables({
       projectId: "123",
       campaignTitle: "Test",
-      contentHtml: "<p>hi</p>",
+      buildContent: () => "<p>hi</p>",
       recipientIdentifiers: ["client@example.com"],
       identity: basecamp.asPerson("jack"),
     });
@@ -139,7 +139,7 @@ test("basecamp attribution", async (t) => {
     await basecamp.sendApprovalToDeliverables({
       projectId: "123",
       campaignTitle: "Test",
-      contentHtml: "<p>hi</p>",
+      buildContent: () => "<p>hi</p>",
       recipientIdentifiers: ["client@example.com"],
     });
     assert.ok(seen.length > 0);

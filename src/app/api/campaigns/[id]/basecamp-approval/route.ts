@@ -139,7 +139,9 @@ export async function POST(request: Request, { params }: Params) {
     identity,
     projectId: client.basecamp_project_id,
     campaignTitle: state.campaign.title,
-    contentHtml: clientApprovalMessageHtml(state.messageInput),
+    // Built after the recipient resolves, so the greeting is a real mention.
+    buildContent: (contactMention?: string) =>
+      clientApprovalMessageHtml(state.messageInput, contactMention),
     recipientIdentifiers: [
       client.contact_email,
       client.contact_name,

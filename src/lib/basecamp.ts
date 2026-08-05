@@ -1075,7 +1075,9 @@ function findNeedsApprovalColumn(
 export async function sendApprovalToDeliverables(input: {
   projectId: string;
   campaignTitle: string;
-  contentHtml: string;
+  // Built once the recipient is resolved, so the greeting can be a real mention
+  // rather than their name as plain text.
+  buildContent: (contactMention?: string) => string;
   recipientIdentifiers: string[];
   existingCardId?: string | null;
   // Whose Basecamp login posts this. The route passes the person who clicked
@@ -1143,14 +1145,25 @@ export async function sendApprovalToDeliverables(input: {
       };
     }
 
-    const people = await getProjectPeople(input.projectId, identity);
-    const matchedIds = matchPeople(people, input.recipientIdentifiers);
-    const recipient = people.find((person) => person.id === matchedIds[0]);
+    // The enriched roster: /projects/{id}/people.json returns no email_address
+    // and no attachable_sgid, so matching a client by email could never succeed
+    // and any mention degraded to plain text.
+    const people = await getProjectPeopleForMention(input.projectId, identity);
+    // Email first, then an exact full name, and nobody otherwise. No substring
+    // matching: a contact called "Michael" would otherwise match whichever
+    // Michael sits first in the roster, and on a live project that is as likely
+    // to be one of ours as the client.
+    const recipient = findClientContact(
+      people,
+      input.recipientIdentifiers[0] || "",
+      input.recipientIdentifiers[1] || ""
+    );
     if (!recipient) {
       return {
         ok: false,
         error:
-          "Could not match this account's contact to a person in the Basecamp project.",
+          "Could not match this account's contact to a person on the Basecamp project. " +
+          "Check the client's Contact name matches their Basecamp name exactly, and that they are a member of the project.",
       };
     }
 
@@ -1202,7 +1215,9 @@ export async function sendApprovalToDeliverables(input: {
 
       const commentRes = await bc(`/recordings/${card.id}/comments.json`, {
         method: "POST",
-        body: JSON.stringify({ content: input.contentHtml }),
+        body: JSON.stringify({
+          content: input.buildContent(mentionHtml(recipient)),
+        }),
       }, identity);
       if (!commentRes.ok) {
         return {
@@ -1227,7 +1242,7 @@ export async function sendApprovalToDeliverables(input: {
       method: "POST",
       body: JSON.stringify({
         title: input.campaignTitle,
-        content: input.contentHtml,
+        content: input.buildContent(mentionHtml(recipient)),
         notify: true,
       }),
     }, identity);
