@@ -119,6 +119,17 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     () => (data?.window ? daysBetween(data.window.start, data.window.end) : []),
     [data]
   );
+  // The one-off flow picks days out of the window an admin entered, never the
+  // client's cadence window. When there's no invited window the client is
+  // asking off their own bat, so there's nothing to bound them to and they get
+  // the open date field instead.
+  const extraDays = useMemo(
+    () =>
+      data?.extraWindow
+        ? daysBetween(data.extraWindow.start, data.extraWindow.end)
+        : [],
+    [data]
+  );
   const blackout = useMemo(
     () => new Set([...(data?.blackoutDates || []), ...(data?.videographerBooked || [])]),
     [data]
@@ -262,37 +273,91 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           </div>
         ) : (
           <div ref={briefRef} className="brief stack">
-            <div className="rev-form-grid">
-              <div className="field">
-                <label>Date</label>
-                <input
-                  type="date"
-                  min={
-                    data.extraWindow && data.extraWindow.start > data.today
-                      ? data.extraWindow.start
-                      : data.today
-                  }
-                  max={data.extraWindow ? data.extraWindow.end : undefined}
-                  value={extraDate}
-                  onChange={(e) => setExtraDate(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Start time</label>
-                <select
-                  className="select-clean"
-                  value={extraTime}
-                  onChange={(e) => setExtraTime(e.target.value)}
+            {data.extraWindow ? (
+              <div className="sched-grid-card">
+                <div
+                  className="sched-grid"
+                  style={{
+                    gridTemplateColumns: `72px repeat(${extraDays.length}, 1fr)`,
+                  }}
                 >
-                  <option value="">Select one</option>
+                  <div className="sched-corner" />
+                  {extraDays.map((d) => {
+                    const off = blackout.has(d) || d < data.today;
+                    return (
+                      <div key={d} className={`sched-daycol ${off ? "is-off" : ""}`}>
+                        <span className="sched-dow">{dayName(d)}</span>
+                        <span className="sched-date">{dayNumber(d)}</span>
+                      </div>
+                    );
+                  })}
                   {data.slots.map((slot) => (
-                    <option key={slot} value={slot}>
-                      {slotLabel(slot)}
-                    </option>
+                    <div key={slot} className="sched-row-contents">
+                      <div className="sched-timelabel">{slotLabel(slot)}</div>
+                      {extraDays.map((d) => {
+                        const off = blackout.has(d) || isPastSlot(d, slot);
+                        const selected = extraDate === d && extraTime === slot;
+                        return (
+                          <button
+                            key={d + slot}
+                            type="button"
+                            className={`sched-slot ${selected ? "is-selected" : ""}`}
+                            disabled={off}
+                            aria-pressed={selected}
+                            aria-label={`${longDate(d)} at ${slotLabel(slot)}`}
+                            onClick={() => {
+                              setExtraDate(d);
+                              setExtraTime(slot);
+                              setError("");
+                            }}
+                          >
+                            {selected ? "✓" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
                   ))}
-                </select>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rev-form-grid">
+                <div className="field">
+                  <label>Date</label>
+                  <input
+                    type="date"
+                    min={data.today}
+                    value={extraDate}
+                    onChange={(e) => setExtraDate(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>Start time</label>
+                  <select
+                    className="select-clean"
+                    value={extraTime}
+                    onChange={(e) => setExtraTime(e.target.value)}
+                  >
+                    <option value="">Select one</option>
+                    {data.slots.map((slot) => (
+                      <option key={slot} value={slot}>
+                        {slotLabel(slot)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {extraDate && extraTime ? (
+              <div className="brief-selected">
+                <div>
+                  <span className="brief-selected-label">Booking</span>
+                  <strong>
+                    {longDate(extraDate)} · {slotLabel(extraTime)}
+                  </strong>
+                </div>
+              </div>
+            ) : null}
 
             <div className="brief-duration">
               <span className="brief-duration-label">Production length</span>
@@ -307,6 +372,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                 <button
                   type="button"
                   className={`brief-dur ${duration === "full" ? "is-on" : ""}`}
+                  disabled={
+                    extraDate === data.today && "09:00" <= data.currentTime
+                  }
                   onClick={() => {
                     setDuration("full");
                     setExtraTime("09:00");
@@ -414,6 +482,33 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           </p>
         </div>
       </>
+    );
+  }
+
+  // An admin-picked window is itself an open invitation, so it outranks the
+  // "nothing's open" notice below. A client with no regular cadence used to get
+  // both at once, told scheduling was closed directly above an invitation to
+  // schedule. Inactive still loses, because the server refuses those bookings
+  // outright and there'd be nothing behind the invitation.
+  if (data.extraWindow && !canBook && data.status !== "inactive") {
+    return (
+      <div className="sched-notice">
+        <p className="eyebrow">{data.client.name}</p>
+        <h1 className="h1">Let&apos;s schedule a production</h1>
+        <p className="muted">
+          Pick any weekday from{" "}
+          <strong>
+            {dayNumber(data.extraWindow.start)} – {dayNumber(data.extraWindow.end)}
+          </strong>
+          , then tell us a bit about the shoot.
+          {data.extraWindow.note ? ` ${data.extraWindow.note}` : ""}
+        </p>
+        <div style={{ marginTop: 16 }}>
+          <button className="btn" onClick={startExtraRequest}>
+            Pick a day
+          </button>
+        </div>
+      </div>
     );
   }
 

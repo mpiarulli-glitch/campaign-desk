@@ -109,6 +109,25 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
     : "inactive";
   const existing = window ? findSendForWindow(client.id, window.start) : null;
 
+  const openExtra = listOpenExtraWindows(client.id)[0];
+  const extraWindow = openExtra
+    ? {
+        start: openExtra.window_start,
+        end: openExtra.window_end,
+        note: openExtra.note,
+      }
+    : null;
+
+  // Availability has to cover every range a client can actually pick a day in,
+  // not just their cadence window. An admin-invited one-off window gets the
+  // same day grid, and for a client with no cadence configured it is the only
+  // range there is — computing over `window` alone left that grid showing
+  // every weekday as free, so blackouts and videographer conflicts only
+  // surfaced as a rejection after the whole brief was filled in.
+  const bookableRanges = [window, extraWindow].filter(
+    (range): range is { start: string; end: string } => Boolean(range)
+  );
+
   return {
     client: { name: client.name },
     window,
@@ -124,20 +143,28 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
           return [];
         }
       })();
-      const contractBlocked = window
-        ? datesBetween(window.start, window.end).filter((date) =>
-            isBlackout(date, { ...client, blackout_dates: "[]" })
-          )
-        : [];
+      const contractBlocked = bookableRanges.flatMap((range) =>
+        datesBetween(range.start, range.end).filter((date) =>
+          isBlackout(date, { ...client, blackout_dates: "[]" })
+        )
+      );
       try {
         return [...new Set([...configured, ...contractBlocked])];
       } catch {
         return [];
       }
     })(),
-    videographerBooked: window
-      ? videographerBookedDates(client.videographer_id, window.start, window.end)
-      : [],
+    videographerBooked: [
+      ...new Set(
+        bookableRanges.flatMap((range) =>
+          videographerBookedDates(
+            client.videographer_id,
+            range.start,
+            range.end
+          )
+        )
+      ),
+    ],
     existingSend: existing
       ? {
           sendDate: existing.send_date,
@@ -147,12 +174,7 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
         }
       : null,
     extraRequests: listOpenExtraBookings(client.id),
-    extraWindow: (() => {
-      const open = listOpenExtraWindows(client.id)[0];
-      return open
-        ? { start: open.window_start, end: open.window_end, note: open.note }
-        : null;
-    })(),
+    extraWindow,
   };
 }
 
