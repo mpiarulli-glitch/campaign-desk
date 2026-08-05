@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type WhiteboardBoard } from "./db";
+import { getDb, nowIso, type WhiteboardBoard, type WhiteboardFolder } from "./db";
 
-export type { WhiteboardBoard };
+export type { WhiteboardBoard, WhiteboardFolder };
 
 // One tldraw record as it travels over the wire: the record id plus the record.
 export interface WireRecord {
@@ -40,6 +40,57 @@ export function getBoard(id: string): WhiteboardBoard | undefined {
   return getDb()
     .prepare(`SELECT * FROM whiteboard_boards WHERE id = ?`)
     .get(id) as WhiteboardBoard | undefined;
+}
+
+export function deleteBoard(id: string): void {
+  getDb().prepare(`DELETE FROM whiteboard_boards WHERE id = ?`).run(id);
+}
+
+// null clears the board back to unfiled.
+export function moveBoardToFolder(boardId: string, folderId: string | null): void {
+  getDb()
+    .prepare(
+      `UPDATE whiteboard_boards SET folder_id = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(folderId, nowIso(), boardId);
+}
+
+export function listFolders(): WhiteboardFolder[] {
+  return getDb()
+    .prepare(`SELECT * FROM whiteboard_folders ORDER BY title COLLATE NOCASE ASC`)
+    .all() as WhiteboardFolder[];
+}
+
+export function createFolder(title: string): WhiteboardFolder {
+  const db = getDb();
+  const id = nanoid(12);
+  const ts = nowIso();
+  db.prepare(
+    `INSERT INTO whiteboard_folders (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`
+  ).run(id, (title || "").trim() || "Untitled folder", ts, ts);
+  return db
+    .prepare(`SELECT * FROM whiteboard_folders WHERE id = ?`)
+    .get(id) as WhiteboardFolder;
+}
+
+export function renameFolder(id: string, title: string): void {
+  getDb()
+    .prepare(
+      `UPDATE whiteboard_folders SET title = ?, updated_at = ? WHERE id = ?`
+    )
+    .run((title || "").trim() || "Untitled folder", nowIso(), id);
+}
+
+// Boards in this folder fall back to unfiled rather than being deleted.
+export function deleteFolder(id: string): void {
+  const db = getDb();
+  const run = db.transaction(() => {
+    db.prepare(
+      `UPDATE whiteboard_boards SET folder_id = NULL WHERE folder_id = ?`
+    ).run(id);
+    db.prepare(`DELETE FROM whiteboard_folders WHERE id = ?`).run(id);
+  });
+  run();
 }
 
 export function createBoard(input: {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated, isProductionAuthenticated } from "@/lib/auth";
 import { getRevClient, listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
-import { recordManualProduction } from "@/lib/scheduling";
+import { recordManualProduction, recordOutOfCycleProduction } from "@/lib/scheduling";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
 import { listProductionSends } from "@/lib/calendar";
@@ -59,8 +59,10 @@ export async function GET() {
   });
 }
 
-// Logs a production that was booked outside the app. Admin only, since it can
-// backdate a production and move the client's cadence anchor.
+// Logs a production that was booked outside the app, or (when outOfCycle is
+// set) books an extra shoot for a client who's fallen behind. Admin only:
+// the manual path can backdate a production and move the client's cadence
+// anchor, and the out-of-cycle path skips the cadence link entirely.
 export async function POST(request: Request) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -74,7 +76,9 @@ export async function POST(request: Request) {
   if (!client) {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }
-  const result = await recordManualProduction(client, body);
+  const result = body.outOfCycle === true
+    ? await recordOutOfCycleProduction(client, body)
+    : await recordManualProduction(client, body);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.httpStatus });
   }

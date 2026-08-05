@@ -18,6 +18,7 @@ type ProductionData = {
     note: string;
     production_brief: string;
     created_at: string;
+    cadence_window_start: string | null;
   };
   client: {
     id: string;
@@ -238,7 +239,18 @@ export default function ProductionDetailPage() {
         {data ? (
           <>
             <div className="page-hero">
-              <p className="eyebrow">Production request</p>
+              <p className="eyebrow">
+                Production request
+                {!data.send.cadence_window_start ? (
+                  <span
+                    className="pcon-pill is-quiet"
+                    style={{ marginLeft: 8, verticalAlign: "middle" }}
+                    title="Requested outside the client's regular cadence. Does not affect their normal schedule."
+                  >
+                    Out of cycle
+                  </span>
+                ) : null}
+              </p>
               <h1 className="h1">{data.client?.name || data.send.client_name}</h1>
               <p className="muted" style={{ margin: "8px 0 0" }}>
                 Requested {fmtDate(data.send.send_date)} at{" "}

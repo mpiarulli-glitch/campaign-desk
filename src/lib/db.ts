@@ -580,9 +580,19 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface WhiteboardFolder {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WhiteboardBoard {
   id: string;
   title: string;
+  // Soft link to whiteboard_folders — null means unfiled. Not enforced with a
+  // DB-level FK so deleting a folder can never cascade into deleting boards.
+  folder_id: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1342,9 +1352,17 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_subjects_email ON email_subjects(email_id);
     CREATE INDEX IF NOT EXISTS idx_subjects_campaign ON email_subjects(campaign_id);
 
+    CREATE TABLE IF NOT EXISTS whiteboard_folders (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT 'Untitled folder',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS whiteboard_boards (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL DEFAULT 'Untitled board',
+      folder_id TEXT,
       created_by TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -1907,6 +1925,16 @@ function migrate(database: Database.Database) {
   }
   if (userCols.length && !userCols.includes("setup_completed_at")) {
     database.exec(`ALTER TABLE users ADD COLUMN setup_completed_at TEXT`);
+  }
+
+  const whiteboardBoardCols = tableColumns(database, "whiteboard_boards");
+  if (whiteboardBoardCols.length && !whiteboardBoardCols.includes("folder_id")) {
+    database.exec(`ALTER TABLE whiteboard_boards ADD COLUMN folder_id TEXT`);
+  }
+  if (whiteboardBoardCols.length) {
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_wb_boards_folder ON whiteboard_boards(folder_id)`
+    );
   }
 
   // Move legacy single-html campaigns into campaign_emails

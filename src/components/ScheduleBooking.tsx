@@ -27,6 +27,7 @@ type Data = {
     status: string;
     note: string;
   } | null;
+  extraRequests: { sendDate: string; sendTime: string; status: string }[];
 };
 
 type Brief = Record<string, string>;
@@ -80,11 +81,15 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   const [data, setData] = useState<Data | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [mode, setMode] = useState<"window" | "extra">("window");
   const [pick, setPick] = useState<{ date: string; time: string } | null>(null);
+  const [extraDate, setExtraDate] = useState("");
+  const [extraTime, setExtraTime] = useState("");
   const [duration, setDuration] = useState<"half" | "full">("half");
   const [brief, setBrief] = useState<Brief>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [extraSent, setExtraSent] = useState(false);
   const briefRef = useRef<HTMLDivElement | null>(null);
 
   const set = (key: string, value: string) =>
@@ -129,16 +134,28 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     setTimeout(() => briefRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   }
 
+  function startExtraRequest() {
+    setMode("extra");
+    setExtraSent(false);
+    setExtraDate("");
+    setExtraTime("");
+    setDuration("half");
+    setBrief({});
+    setError("");
+  }
+
   async function submit() {
-    if (!pick) return;
+    const chosen = mode === "extra" ? { date: extraDate, time: extraTime } : pick;
+    if (!chosen?.date || !chosen?.time) return;
     setSaving(true);
     setError("");
     const res = await fetch(apiPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        date: pick.date,
-        time: pick.time,
+        ...(mode === "extra" ? { mode: "extra" } : {}),
+        date: chosen.date,
+        time: chosen.time,
         duration,
         note: brief.additionalNotes || "",
         brief,
@@ -150,6 +167,11 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       setError(b.error || "Could not book that slot.");
       briefRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
+    }
+    if (mode === "extra") {
+      setExtraSent(true);
+      setExtraDate("");
+      setExtraTime("");
     }
     load();
   }
@@ -177,6 +199,139 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     return <p className="muted">Loading your calendar...</p>;
   }
 
+  if (mode === "extra") {
+    return (
+      <div className="stack">
+        <div className="sched-hero">
+          <p className="eyebrow">{data.client.name}</p>
+          <h1 className="h1">Request an extra production</h1>
+          <p className="sched-sub">
+            Behind on content, or just need something outside your usual schedule?
+            Pick a date below and tell us about it. This does not affect your regular
+            production schedule.
+          </p>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setMode("window")}
+          >
+            ← Back to regular scheduling
+          </button>
+        </div>
+
+        {data.extraRequests.length > 0 ? (
+          <div className="sched-notice">
+            <p className="muted" style={{ margin: 0 }}>
+              You already have {data.extraRequests.length === 1 ? "an open request" : "open requests"}
+              {": "}
+              {data.extraRequests
+                .map(
+                  (r) =>
+                    `${longDate(r.sendDate)}${r.sendTime ? ` · ${slotLabel(r.sendTime)}` : ""}`
+                )
+                .join(", ")}
+              . Your account manager will confirm shortly.
+            </p>
+          </div>
+        ) : null}
+
+        {extraSent ? (
+          <div className="sched-confirmed">
+            <div className="sched-confirmed-check">✓</div>
+            <h1 className="h1">Your request is in</h1>
+            <p className="muted">Your account manager will confirm shortly.</p>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginTop: 12 }}
+              onClick={startExtraRequest}
+            >
+              Request another
+            </button>
+          </div>
+        ) : (
+          <div ref={briefRef} className="brief stack">
+            <div className="rev-form-grid">
+              <div className="field">
+                <label>Date</label>
+                <input
+                  type="date"
+                  min={data.today}
+                  value={extraDate}
+                  onChange={(e) => setExtraDate(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Start time</label>
+                <select
+                  className="select-clean"
+                  value={extraTime}
+                  onChange={(e) => setExtraTime(e.target.value)}
+                >
+                  <option value="">Select one</option>
+                  {data.slots.map((slot) => (
+                    <option key={slot} value={slot}>
+                      {slotLabel(slot)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="brief-duration">
+              <span className="brief-duration-label">Production length</span>
+              <div className="brief-duration-opts">
+                <button
+                  type="button"
+                  className={`brief-dur ${duration === "half" ? "is-on" : ""}`}
+                  onClick={() => setDuration("half")}
+                >
+                  4 hours
+                </button>
+                <button
+                  type="button"
+                  className={`brief-dur ${duration === "full" ? "is-on" : ""}`}
+                  onClick={() => {
+                    setDuration("full");
+                    setExtraTime("09:00");
+                  }}
+                >
+                  Full day
+                </button>
+              </div>
+              <span className="brief-duration-note">
+                {duration === "full"
+                  ? "Full day runs 9:00 AM to 5:30 PM."
+                  : "Four hours from your selected start time."}{" "}
+                All productions must finish by 5:30 PM.
+              </span>
+            </div>
+
+            <p className="brief-intro muted">
+              A videographer typically arrives 15 to 30 minutes early for setup. Only
+              the location and on-site contact are required. Everything else just
+              helps us plan the production.
+            </p>
+
+            {error ? <p className="error">{error}</p> : null}
+
+            <BriefFields brief={brief} set={set} />
+
+            <div className="brief-submit">
+              <button
+                className="btn"
+                disabled={saving || !extraDate || !extraTime}
+                onClick={submit}
+              >
+                {saving ? "Requesting..." : "Send request"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const canBook = data.status === "due" || data.status === "not_due";
 
   if (!canBook && data.existingSend) {
@@ -197,6 +352,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             </p>
           ) : null}
         </div>
+
+        <ExtraRequestLink onClick={startExtraRequest} />
 
         <div className="sched-referral">
           <p className="sched-referral-eyebrow">Did you know?</p>
@@ -253,6 +410,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           There&apos;s no production window open for you right now. Your account
           manager will reach out when it&apos;s time to book the next one.
         </p>
+        {data.status === "not_configured" ? (
+          <ExtraRequestLink onClick={startExtraRequest} />
+        ) : null}
       </div>
     );
   }
@@ -377,184 +537,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
 
           {error ? <p className="error">{error}</p> : null}
 
-          <BriefSection num="01" title="Essential details">
-            <div className="field">
-              <label>Production location(s) <span className="req">required</span></label>
-              <textarea
-                value={brief.locations || ""}
-                onChange={(e) => set("locations", e.target.value)}
-                placeholder="Full address (business or residential). List every location, in order, if there's more than one."
-              />
-            </div>
-            <div className="rev-form-grid">
-              <div className="field">
-                <label>On-site contact name <span className="req">required</span></label>
-                <input
-                  value={brief.onsiteContactName || ""}
-                  onChange={(e) => set("onsiteContactName", e.target.value)}
-                  placeholder="Who the crew asks for"
-                />
-              </div>
-              <div className="field">
-                <label>On-site contact phone <span className="req">required</span></label>
-                <input
-                  value={brief.onsiteContactPhone || ""}
-                  onChange={(e) => set("onsiteContactPhone", e.target.value)}
-                  placeholder="Reachable on production day"
-                />
-              </div>
-            </div>
-          </BriefSection>
-
-          <BriefSection num="02" title="Access & environment">
-            <div className="rev-form-grid">
-              <div className="field">
-                <label>Location on production day</label>
-                <select
-                  className="select-clean"
-                  value={brief.locationState || ""}
-                  onChange={(e) => set("locationState", e.target.value)}
-                >
-                  <option value="">Select one</option>
-                  <option>Clean & camera-ready</option>
-                  <option>Busy / active during filming</option>
-                  <option>Both / mixed</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>Power access on site?</label>
-                <select
-                  className="select-clean"
-                  value={brief.powerAccess || ""}
-                  onChange={(e) => set("powerAccess", e.target.value)}
-                >
-                  <option value="">Select one</option>
-                  <option>Yes, power available</option>
-                  <option>No / unsure</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>Time restrictions</label>
-                <input
-                  value={brief.timeRestrictions || ""}
-                  onChange={(e) => set("timeRestrictions", e.target.value)}
-                  placeholder="Any times we should work around"
-                />
-              </div>
-              <div className="field">
-                <label>Parking</label>
-                <input
-                  value={brief.parking || ""}
-                  onChange={(e) => set("parking", e.target.value)}
-                  placeholder="Where the crew should park"
-                />
-              </div>
-            </div>
-          </BriefSection>
-
-          <BriefSection num="03" title="People & permissions">
-            <div className="field">
-              <label>Who will be on camera or on site?</label>
-              <input
-                value={brief.onCameraPeople || ""}
-                onChange={(e) => set("onCameraPeople", e.target.value)}
-                placeholder="Names of anyone who'll be around, so we know who to expect"
-              />
-            </div>
-            <div className="rev-form-grid">
-              <div className="field">
-                <label>Everyone on site is okay being filmed?</label>
-                <select
-                  className="select-clean"
-                  value={brief.participantsConsent || ""}
-                  onChange={(e) => set("participantsConsent", e.target.value)}
-                >
-                  <option value="">Select one</option>
-                  <option>Yes</option>
-                  <option>Some</option>
-                  <option>Not sure yet</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>Customers being filmed?</label>
-                <select
-                  className="select-clean"
-                  value={brief.mediaRelease || ""}
-                  onChange={(e) => set("mediaRelease", e.target.value)}
-                >
-                  <option value="">Select one</option>
-                  <option>Yes, releases signed</option>
-                  <option>Yes, not signed yet</option>
-                  <option>No customers on camera</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>Filming on private property?</label>
-                <select
-                  className="select-clean"
-                  value={brief.propertyApproval || ""}
-                  onChange={(e) => set("propertyApproval", e.target.value)}
-                >
-                  <option value="">Select one</option>
-                  <option>Yes, approved</option>
-                  <option>Yes, approval pending</option>
-                  <option>No</option>
-                </select>
-              </div>
-            </div>
-          </BriefSection>
-
-          <BriefSection num="04" title="Safety compliance">
-            <p className="brief-intro muted" style={{ margin: 0 }}>
-              As we prepare for this production, please inform us of any specific OSHA
-              regulations or safety gear required for your industry (hard hats, high
-              visibility vests, etc). It&rsquo;s crucial that both our team and yours adhere
-              to all safety guidelines to ensure a smooth and secure production process.
-            </p>
-            <div className="field">
-              <label>Required safety gear or regulations</label>
-              <input
-                value={brief.safetyCompliance || ""}
-                onChange={(e) => set("safetyCompliance", e.target.value)}
-                placeholder="e.g. hard hats, hi-vis vests, steel-toe boots, site check-in"
-              />
-            </div>
-          </BriefSection>
-
-          <BriefSection num="05" title="Anything you'd like us to capture?">
-            <div className="field">
-              <label>Shots or moments you&rsquo;d like</label>
-              <textarea
-                value={brief.captureRequests || ""}
-                onChange={(e) => set("captureRequests", e.target.value)}
-                placeholder="Optional. A specific service, product, space, or team member you'd love to see featured."
-              />
-            </div>
-            <div className="field">
-              <label>Any offers or promotions to highlight?</label>
-              <input
-                value={brief.offersPromotions || ""}
-                onChange={(e) => set("offersPromotions", e.target.value)}
-                placeholder="Optional. A current deal, promo, or seasonal offer you want featured."
-              />
-            </div>
-            <div className="field">
-              <label>Anything we should avoid?</label>
-              <input
-                value={brief.avoidRequests || ""}
-                onChange={(e) => set("avoidRequests", e.target.value)}
-                placeholder="Optional. Areas, people, or details to keep off camera."
-              />
-            </div>
-            <div className="field">
-              <label>Anything else we should know?</label>
-              <textarea
-                value={brief.additionalNotes || ""}
-                onChange={(e) => set("additionalNotes", e.target.value)}
-                placeholder="Optional. Anything that helps the production go smoothly."
-              />
-            </div>
-          </BriefSection>
+          <BriefFields brief={brief} set={set} />
 
           <div className="brief-submit">
             <button className="btn" disabled={saving} onClick={submit}>
@@ -568,7 +551,230 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       ) : (
         <p className="sched-hint muted">Tap a slot above to get started.</p>
       )}
+
+      <ExtraRequestLink onClick={startExtraRequest} />
     </div>
+  );
+}
+
+// The five sections every production booking form asks for, shared by the
+// regular window-booking flow and the out-of-cycle request flow so the two
+// never drift apart.
+function BriefFields({
+  brief,
+  set,
+}: {
+  brief: Brief;
+  set: (key: string, value: string) => void;
+}) {
+  return (
+    <>
+      <BriefSection num="01" title="Essential details">
+        <div className="field">
+          <label>Production location(s) <span className="req">required</span></label>
+          <textarea
+            value={brief.locations || ""}
+            onChange={(e) => set("locations", e.target.value)}
+            placeholder="Full address (business or residential). List every location, in order, if there's more than one."
+          />
+        </div>
+        <div className="rev-form-grid">
+          <div className="field">
+            <label>On-site contact name <span className="req">required</span></label>
+            <input
+              value={brief.onsiteContactName || ""}
+              onChange={(e) => set("onsiteContactName", e.target.value)}
+              placeholder="Who the crew asks for"
+            />
+          </div>
+          <div className="field">
+            <label>On-site contact phone <span className="req">required</span></label>
+            <input
+              value={brief.onsiteContactPhone || ""}
+              onChange={(e) => set("onsiteContactPhone", e.target.value)}
+              placeholder="Reachable on production day"
+            />
+          </div>
+        </div>
+      </BriefSection>
+
+      <BriefSection num="02" title="Access & environment">
+        <div className="rev-form-grid">
+          <div className="field">
+            <label>Location on production day</label>
+            <select
+              className="select-clean"
+              value={brief.locationState || ""}
+              onChange={(e) => set("locationState", e.target.value)}
+            >
+              <option value="">Select one</option>
+              <option>Clean & camera-ready</option>
+              <option>Busy / active during filming</option>
+              <option>Both / mixed</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Power access on site?</label>
+            <select
+              className="select-clean"
+              value={brief.powerAccess || ""}
+              onChange={(e) => set("powerAccess", e.target.value)}
+            >
+              <option value="">Select one</option>
+              <option>Yes, power available</option>
+              <option>No / unsure</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Time restrictions</label>
+            <input
+              value={brief.timeRestrictions || ""}
+              onChange={(e) => set("timeRestrictions", e.target.value)}
+              placeholder="Any times we should work around"
+            />
+          </div>
+          <div className="field">
+            <label>Parking</label>
+            <input
+              value={brief.parking || ""}
+              onChange={(e) => set("parking", e.target.value)}
+              placeholder="Where the crew should park"
+            />
+          </div>
+        </div>
+      </BriefSection>
+
+      <BriefSection num="03" title="People & permissions">
+        <div className="field">
+          <label>Who will be on camera or on site?</label>
+          <input
+            value={brief.onCameraPeople || ""}
+            onChange={(e) => set("onCameraPeople", e.target.value)}
+            placeholder="Names of anyone who'll be around, so we know who to expect"
+          />
+        </div>
+        <div className="rev-form-grid">
+          <div className="field">
+            <label>Everyone on site is okay being filmed?</label>
+            <select
+              className="select-clean"
+              value={brief.participantsConsent || ""}
+              onChange={(e) => set("participantsConsent", e.target.value)}
+            >
+              <option value="">Select one</option>
+              <option>Yes</option>
+              <option>Some</option>
+              <option>Not sure yet</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Customers being filmed?</label>
+            <select
+              className="select-clean"
+              value={brief.mediaRelease || ""}
+              onChange={(e) => set("mediaRelease", e.target.value)}
+            >
+              <option value="">Select one</option>
+              <option>Yes, releases signed</option>
+              <option>Yes, not signed yet</option>
+              <option>No customers on camera</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Filming on private property?</label>
+            <select
+              className="select-clean"
+              value={brief.propertyApproval || ""}
+              onChange={(e) => set("propertyApproval", e.target.value)}
+            >
+              <option value="">Select one</option>
+              <option>Yes, approved</option>
+              <option>Yes, approval pending</option>
+              <option>No</option>
+            </select>
+          </div>
+        </div>
+      </BriefSection>
+
+      <BriefSection num="04" title="Safety compliance">
+        <p className="brief-intro muted" style={{ margin: 0 }}>
+          As we prepare for this production, please inform us of any specific OSHA
+          regulations or safety gear required for your industry (hard hats, high
+          visibility vests, etc). It&rsquo;s crucial that both our team and yours adhere
+          to all safety guidelines to ensure a smooth and secure production process.
+        </p>
+        <div className="field">
+          <label>Required safety gear or regulations</label>
+          <input
+            value={brief.safetyCompliance || ""}
+            onChange={(e) => set("safetyCompliance", e.target.value)}
+            placeholder="e.g. hard hats, hi-vis vests, steel-toe boots, site check-in"
+          />
+        </div>
+      </BriefSection>
+
+      <BriefSection num="05" title="Anything you'd like us to capture?">
+        <div className="field">
+          <label>Shots or moments you&rsquo;d like</label>
+          <textarea
+            value={brief.captureRequests || ""}
+            onChange={(e) => set("captureRequests", e.target.value)}
+            placeholder="Optional. A specific service, product, space, or team member you'd love to see featured."
+          />
+        </div>
+        <div className="field">
+          <label>Any offers or promotions to highlight?</label>
+          <input
+            value={brief.offersPromotions || ""}
+            onChange={(e) => set("offersPromotions", e.target.value)}
+            placeholder="Optional. A current deal, promo, or seasonal offer you want featured."
+          />
+        </div>
+        <div className="field">
+          <label>Anything we should avoid?</label>
+          <input
+            value={brief.avoidRequests || ""}
+            onChange={(e) => set("avoidRequests", e.target.value)}
+            placeholder="Optional. Areas, people, or details to keep off camera."
+          />
+        </div>
+        <div className="field">
+          <label>Anything else we should know?</label>
+          <textarea
+            value={brief.additionalNotes || ""}
+            onChange={(e) => set("additionalNotes", e.target.value)}
+            placeholder="Optional. Anything that helps the production go smoothly."
+          />
+        </div>
+      </BriefSection>
+    </>
+  );
+}
+
+// The persistent secondary entry point into the out-of-cycle flow. Shown on
+// every screen where a client is otherwise in good standing, so falling
+// behind on the regular cadence is never the only way to get a shoot booked.
+function ExtraRequestLink({ onClick }: { onClick: () => void }) {
+  return (
+    <p className="sched-hint muted" style={{ marginTop: 8 }}>
+      Behind on content or need something outside your usual schedule?{" "}
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          background: "none",
+          border: "none",
+          padding: 0,
+          font: "inherit",
+          color: "inherit",
+          textDecoration: "underline",
+          cursor: "pointer",
+        }}
+      >
+        Request an extra production
+      </button>
+      .
+    </p>
   );
 }
 

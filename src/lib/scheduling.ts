@@ -46,6 +46,35 @@ export interface SchedulingStatus {
     status: string;
     note: string;
   } | null;
+  // Productions requested outside the normal cadence (cadence_window_start is
+  // null), open ones first. Shown so a client doesn't lose track of an extra
+  // request they already sent in, or fire off a second one by accident.
+  extraRequests: {
+    sendDate: string;
+    sendTime: string;
+    status: string;
+  }[];
+}
+
+// A client's own not-cancelled, not-yet-sent out-of-cycle requests. Ordered
+// newest first so a repeat request always reads as "still pending" rather
+// than getting buried under an older one.
+function listOpenExtraRequests(clientId: string): {
+  sendDate: string;
+  sendTime: string;
+  status: string;
+}[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT send_date, send_time, status FROM scheduled_sends
+         WHERE client_id = ? AND requested_by_client = 1
+           AND cadence_window_start IS NULL
+           AND cancelled_at IS NULL AND status != 'sent'
+         ORDER BY created_at DESC`
+      )
+      .all(clientId) as Array<{ send_date: string; send_time: string; status: string }>
+  ).map((r) => ({ sendDate: r.send_date, sendTime: r.send_time, status: r.status }));
 }
 
 function datesBetween(start: string, end: string): string[] {
@@ -110,6 +139,7 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
           note: existing.note,
         }
       : null,
+    extraRequests: listOpenExtraRequests(client.id),
   };
 }
 
@@ -338,6 +368,159 @@ export async function submitProductionBooking(
   return result;
 }
 
+// A client asking for a shoot outside their regular cadence — usually because
+// they've fallen behind and don't want to wait for their next window. Same
+// validation as a normal booking minus anything window-shaped: no window to
+// stay inside, so any real upcoming date works. Written with
+// cadence_window_start left null, which is what keeps it from ever advancing
+// or fulfilling the client's regular cycle (see advanceLastProduction's
+// callers, which all gate on that column being set).
+export async function submitOutOfCycleBooking(
+  client: RevClient,
+  body: Record<string, unknown>
+): Promise<BookingResult> {
+  if (!client.production_enrolled) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Scheduling isn't open for this account right now.",
+    };
+  }
+  const now = appDateTime();
+  const today = now.date;
+
+  const date = typeof body.date === "string" ? body.date : "";
+  const time = typeof body.time === "string" ? body.time : "";
+  const duration = body.duration === "full" ? "full" : "half";
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+
+  const rawBrief =
+    body.brief && typeof body.brief === "object"
+      ? (body.brief as Record<string, unknown>)
+      : {};
+  const brief: Record<string, string> = {};
+  for (const key of BRIEF_FIELDS) {
+    const v = rawBrief[key];
+    if (typeof v === "string" && v.trim()) brief[key] = v.trim();
+  }
+  const tooLong = Object.entries(brief).find(
+    ([, value]) => value.length > MAX_FIELD_LENGTH
+  );
+  if (tooLong || note.length > MAX_FIELD_LENGTH) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: `Keep each answer under ${MAX_FIELD_LENGTH} characters.`,
+    };
+  }
+  if (!brief.locations) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Add the production location so the crew knows where to go.",
+    };
+  }
+  if (!brief.onsiteContactName || !brief.onsiteContactPhone) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Add an on-site contact name and phone number.",
+    };
+  }
+
+  if (!isRealDate(date) || date < today) {
+    return { ok: false, httpStatus: 400, error: "Pick a real, upcoming date." };
+  }
+  if (slotHasPassed(date, time, today, now.time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "That start time has already passed. Pick a future slot.",
+    };
+  }
+  if (!BOOKING_SLOTS.includes(time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Pick a start time between 9 AM and 1 PM.",
+    };
+  }
+  if (!durationAllowsStart(duration, time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Full-day productions start at 9 AM.",
+    };
+  }
+  if (isBlackout(date, client)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "That day isn't available. Pick another day.",
+    };
+  }
+
+  const reserve = getDb().transaction((): BookingResult => {
+    const currentClient = getDb()
+      .prepare(`SELECT * FROM rev_clients WHERE id = ?`)
+      .get(client.id) as RevClient | undefined;
+    if (!currentClient?.production_enrolled) {
+      return {
+        ok: false,
+        httpStatus: 404,
+        error: "This scheduling link is no longer active.",
+      };
+    }
+    if (
+      videographerBookedDates(currentClient.videographer_id, date, date)
+        .length > 0
+    ) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: "That day was just taken. Please pick another day.",
+      };
+    }
+
+    const send = createSend({
+      clientId: currentClient.id,
+      clientName: currentClient.name,
+      title: `${currentClient.name} out-of-cycle production`,
+      sendDate: date,
+      sendTime: time,
+      duration,
+      status: "requested",
+      note,
+      productionBrief: JSON.stringify(brief),
+      cadenceWindowStart: null,
+      requestedByClient: true,
+    });
+    return { ok: true, send, client: currentClient };
+  });
+
+  const result = reserve.immediate();
+  if (!result.ok) return result;
+  const videographer = result.client.videographer_id
+    ? listVideographers(true).find(
+        (person) => person.id === result.client.videographer_id
+      )
+    : undefined;
+
+  await notifyProductionRequested({
+    clientName: result.client.name,
+    videographerName: videographer?.name,
+    accountManagerName: result.client.account_manager,
+    sendDate: date,
+    sendTime: time,
+    duration,
+    detailsUrl: crewUrl(result.send.id),
+    note: note ? `Out-of-cycle request. ${note}` : "Out-of-cycle request.",
+  });
+  await sendProductionRequestReceived(result.client, result.send);
+
+  return result;
+}
+
 const MANUAL_STATUSES = ["requested", "scheduled", "sent"] as const;
 export type ManualProductionStatus = (typeof MANUAL_STATUSES)[number];
 
@@ -494,6 +677,109 @@ export async function recordManualProduction(
       duration,
       detailsUrl: crewUrl(result.send.id),
       note,
+    });
+  }
+  if (body.notifyClient === true) {
+    await sendProductionRequestReceived(result.client, result.send);
+  }
+
+  return result;
+}
+
+// The admin-side counterpart to submitOutOfCycleBooking: the team books an
+// extra shoot directly, on behalf of a client who's fallen behind, without
+// touching that client's regular cadence. Deliberately does not accept
+// advanceAnchor at all — an out-of-cycle production must never move the
+// cadence anchor, unlike recordManualProduction where that's the caller's
+// choice. Doesn't require color_week/production_cadence to be set either,
+// since there's no window to derive.
+export async function recordOutOfCycleProduction(
+  client: RevClient,
+  body: Record<string, unknown>
+): Promise<BookingResult> {
+  const date = typeof body.date === "string" ? body.date : "";
+  if (!isRealDate(date)) {
+    return { ok: false, httpStatus: 400, error: "That is not a real date." };
+  }
+
+  const time = typeof body.time === "string" ? body.time : "";
+  if (time && !BOOKING_SLOTS.includes(time)) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Pick a start time between 9 AM and 1 PM.",
+    };
+  }
+
+  const duration = body.duration === "full" ? "full" : "half";
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const status: ManualProductionStatus = MANUAL_STATUSES.includes(
+    body.status as ManualProductionStatus
+  )
+    ? (body.status as ManualProductionStatus)
+    : "scheduled";
+
+  const rawBrief =
+    body.brief && typeof body.brief === "object"
+      ? (body.brief as Record<string, unknown>)
+      : {};
+  const brief: Record<string, string> = {};
+  for (const key of BRIEF_FIELDS) {
+    const v = rawBrief[key];
+    if (typeof v === "string" && v.trim()) brief[key] = v.trim();
+  }
+  if (
+    Object.values(brief).some((value) => value.length > MAX_FIELD_LENGTH) ||
+    note.length > MAX_FIELD_LENGTH
+  ) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: `Keep each answer under ${MAX_FIELD_LENGTH} characters.`,
+    };
+  }
+
+  const reserve = getDb().transaction((): BookingResult => {
+    const currentClient = getDb()
+      .prepare(`SELECT * FROM rev_clients WHERE id = ?`)
+      .get(client.id) as RevClient | undefined;
+    if (!currentClient) {
+      return { ok: false, httpStatus: 404, error: "Client not found." };
+    }
+    const send = createSend({
+      clientId: currentClient.id,
+      clientName: currentClient.name,
+      title: `${currentClient.name} out-of-cycle production`,
+      sendDate: date,
+      sendTime: time,
+      duration,
+      status,
+      note,
+      productionBrief: JSON.stringify(brief),
+      cadenceWindowStart: null,
+      requestedByClient: true,
+    });
+    return { ok: true, send, client: currentClient };
+  });
+
+  const result = reserve.immediate();
+  if (!result.ok) return result;
+
+  if (body.notifyTeam === true) {
+    const videographer = result.client.videographer_id
+      ? listVideographers(true).find(
+          (person) => person.id === result.client.videographer_id
+        )
+      : undefined;
+    await notifyProductionRequested({
+      clientName: result.client.name,
+      videographerName: videographer?.name,
+      accountManagerName: result.client.account_manager,
+      sendDate: date,
+      sendTime: time,
+      duration,
+      detailsUrl: crewUrl(result.send.id),
+      note: note ? `Out-of-cycle request. ${note}` : "Out-of-cycle request.",
     });
   }
   if (body.notifyClient === true) {

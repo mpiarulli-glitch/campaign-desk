@@ -76,6 +76,10 @@ type LogForm = {
   notifyClient: boolean;
   notifyTeam: boolean;
   advanceAnchor: boolean;
+  // An extra shoot outside the client's regular cadence — a client fell
+  // behind, or just needs something ad hoc. Never touches their cadence
+  // anchor and doesn't require a color week / cadence to be set at all.
+  outOfCycle: boolean;
 };
 
 type Production = {
@@ -89,6 +93,7 @@ type Production = {
   videographer: string;
   created_at: string;
   cancelled_at: string | null;
+  cadence_window_start: string | null;
 };
 
 // Which client fields can be edited inline, and how each maps to the PATCH body.
@@ -298,6 +303,9 @@ export default function ProductionPage() {
       notifyClient: false,
       notifyTeam: false,
       advanceAnchor: true,
+      // No window to derive from (cadence not set up yet) is the one case
+      // where out-of-cycle is clearly the only option, so default to it.
+      outOfCycle: Boolean(clientId) && !row?.window,
     });
   }
 
@@ -330,12 +338,17 @@ export default function ProductionPage() {
         duration: logging.duration,
         status: logging.status,
         note: logging.note,
-        cadenceWindowStart: logging.cadenceWindowStart || undefined,
+        outOfCycle: logging.outOfCycle,
+        cadenceWindowStart: logging.outOfCycle
+          ? undefined
+          : logging.cadenceWindowStart || undefined,
         notifyClient: logging.notifyClient,
         notifyTeam: logging.notifyTeam,
         // Only meaningful on a completed production; the server ignores it
-        // otherwise, but don't send a misleading true.
-        advanceAnchor: logging.status === "sent" && logging.advanceAnchor,
+        // otherwise, but don't send a misleading true. Out-of-cycle never
+        // advances the anchor, regardless of what the checkbox says.
+        advanceAnchor:
+          !logging.outOfCycle && logging.status === "sent" && logging.advanceAnchor,
       }),
     });
     setLogSaving(false);
@@ -796,13 +809,28 @@ export default function ProductionPage() {
           logging ? (
             <form ref={logFormRef} className="card card-pad stack" onSubmit={submitLog}>
               <div>
-                <h2 className="h3" style={{ margin: 0 }}>Log a production</h2>
+                <h2 className="h3" style={{ margin: 0 }}>
+                  {logging.outOfCycle ? "Request an out-of-cycle production" : "Log a production"}
+                </h2>
                 <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-                  For a production booked over the phone or in another system.
-                  This records it against the client&apos;s cadence window, so it
-                  shows in the queue and stops their scheduling reminders.
+                  {logging.outOfCycle
+                    ? "An extra shoot outside the client's regular cadence — they fell behind, or just need something ad hoc. Never moves their cadence anchor or their next regular window."
+                    : "For a production booked over the phone or in another system. This records it against the client's cadence window, so it shows in the queue and stops their scheduling reminders."}
                 </p>
               </div>
+
+              <label className="row" style={{ gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={logging.outOfCycle}
+                  onChange={(e) =>
+                    setLogging({ ...logging, outOfCycle: e.target.checked })
+                  }
+                />
+                <span className="muted">
+                  This is an out-of-cycle request (doesn&apos;t affect their regular schedule)
+                </span>
+              </label>
 
               <div className="rev-form-grid">
                 <div className="field">
@@ -876,22 +904,24 @@ export default function ProductionPage() {
                     <option value="sent">Already happened</option>
                   </select>
                 </div>
-                <div className="field">
-                  <label htmlFor="log-window">Counts toward window</label>
-                  <input
-                    id="log-window"
-                    type="date"
-                    value={logging.cadenceWindowStart}
-                    onChange={(e) =>
-                      setLogging({ ...logging, cadenceWindowStart: e.target.value })
-                    }
-                  />
-                  <span className="muted" style={{ fontSize: 12, marginTop: 4, display: "block" }}>
-                    {logSelectedWindow
-                      ? `Leave blank to work it out from the date. Their current window is ${fmtWindow(logSelectedWindow)}.`
-                      : "Leave blank to work it out from the production date."}
-                  </span>
-                </div>
+                {logging.outOfCycle ? null : (
+                  <div className="field">
+                    <label htmlFor="log-window">Counts toward window</label>
+                    <input
+                      id="log-window"
+                      type="date"
+                      value={logging.cadenceWindowStart}
+                      onChange={(e) =>
+                        setLogging({ ...logging, cadenceWindowStart: e.target.value })
+                      }
+                    />
+                    <span className="muted" style={{ fontSize: 12, marginTop: 4, display: "block" }}>
+                      {logSelectedWindow
+                        ? `Leave blank to work it out from the date. Their current window is ${fmtWindow(logSelectedWindow)}.`
+                        : "Leave blank to work it out from the production date."}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="field">
@@ -926,7 +956,7 @@ export default function ProductionPage() {
                   />
                   <span className="muted">Post to the Video Editing Campfire</span>
                 </label>
-                {logging.status === "sent" ? (
+                {!logging.outOfCycle && logging.status === "sent" ? (
                   <label className="row" style={{ gap: 8 }}>
                     <input
                       type="checkbox"
@@ -942,7 +972,7 @@ export default function ProductionPage() {
                 ) : null}
               </div>
 
-              {logging.status === "sent" && logging.advanceAnchor && logSelectedCadence ? (
+              {!logging.outOfCycle && logging.status === "sent" && logging.advanceAnchor && logSelectedCadence ? (
                 <p className="muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>
                   {logSelectedCadence === "monthly"
                     ? "Safe on a monthly client: every month has a window, so their next one stays where it is."
@@ -1286,9 +1316,9 @@ export default function ProductionPage() {
                         <Link className="btn btn-secondary btn-sm" href={`/admin/production/${r.existingSend.id}`}>
                           Open
                         </Link>
-                      ) : isAdmin && r.window ? (
+                      ) : isAdmin ? (
                         <button className="btn btn-secondary btn-sm" onClick={() => openLog(c.id)}>
-                          Log a shoot
+                          {r.window ? "Log a shoot" : "Request extra"}
                         </button>
                       ) : null}
                       <button
@@ -1585,7 +1615,18 @@ function ProductionQueue({
             <div className="pcon-rail" aria-hidden="true" />
             <div className="pcon-in">
               <div className="pcon-who">
-                <h3>{production.client_name}</h3>
+                <h3>
+                  {production.client_name}
+                  {!production.cadence_window_start ? (
+                    <span
+                      className="pcon-pill is-quiet"
+                      style={{ marginLeft: 8, verticalAlign: "middle" }}
+                      title="Requested outside the client's regular cadence. Does not affect their normal schedule."
+                    >
+                      Out of cycle
+                    </span>
+                  ) : null}
+                </h3>
                 <p className="pcon-meta">
                   {production.duration === "full" ? "Full day" : "4 hours"}
                   {" · "}
