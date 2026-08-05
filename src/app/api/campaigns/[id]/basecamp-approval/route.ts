@@ -7,6 +7,7 @@ import {
   hasConnection,
   sendApprovalToDeliverables,
 } from "@/lib/basecamp";
+import { clearFailure, recordFailure } from "@/lib/failures";
 import {
   getCampaignById,
   listEmails,
@@ -150,6 +151,14 @@ export async function POST(request: Request, { params }: Params) {
   });
 
   if (!result.ok) {
+    // The sender sees this immediately, so the record is for history: a client
+    // whose approvals keep failing is a pattern nobody spots one send at a time.
+    recordFailure({
+      kind: "basecamp_approval",
+      subject: client.name,
+      detail: result.error || "Could not send the approval in Basecamp.",
+      hint: "Fix it in Basecamp, then press send approval again.",
+    });
     if (result.cardId) {
       rememberBasecampApprovalCard(
         id,
@@ -165,6 +174,8 @@ export async function POST(request: Request, { params }: Params) {
       { status: 502 }
     );
   }
+
+  clearFailure("basecamp_approval", client.name);
 
   const campaign = recordBasecampApproval(id, {
     cardId: result.cardId!,

@@ -459,6 +459,24 @@ export interface ScheduleReminder {
 
 // One row per client per month. Revenue/orders are typically manual (or from
 // Klaviyo for ecomm); recipients/opens/clicks/appointments/leads come from GHL.
+// A thing the app tried and could not do. See the table comment for why this
+// exists at all.
+export interface AppFailure {
+  id: string;
+  // Coarse category, so like failures group: "email", "basecamp_card",
+  // "basecamp_campfire", "basecamp_comment", "contact_unresolved".
+  kind: string;
+  // What it was about, usually a client name. Part of the dedupe key.
+  subject: string;
+  detail: string;
+  // What to do about it, written for whoever reads the list.
+  hint: string;
+  occurred_at: string;
+  last_seen_at: string;
+  seen_count: number;
+  dismissed_at: string | null;
+}
+
 export interface RevMetric {
   id: string;
   client_id: string;
@@ -957,6 +975,31 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reminders_client ON schedule_reminders(client_id);
+
+    -- Things the app tried and failed to do.
+    --
+    -- Nearly every integration here swallows its own failures on purpose: a
+    -- Campfire outage must never cost a client their booking, so the code logs
+    -- and carries on. The cost is that a failure leaves no trace anybody looks
+    -- at, and a reminder sweep that never ran looked identical to one with
+    -- nothing to do. This is the trace.
+    CREATE TABLE IF NOT EXISTS app_failures (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      detail TEXT NOT NULL DEFAULT '',
+      hint TEXT NOT NULL DEFAULT '',
+      occurred_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      seen_count INTEGER NOT NULL DEFAULT 1,
+      dismissed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_failures_open
+      ON app_failures(dismissed_at, last_seen_at);
+    -- One row per kind and subject, so a nightly job failing for a month is one
+    -- entry with a count rather than thirty rows burying everything else.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_failures_unique
+      ON app_failures(kind, subject) WHERE dismissed_at IS NULL;
 
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
+import { FailuresPanel } from "@/components/FailuresPanel";
 import { currentWeek } from "@/lib/week";
 
 type Attention = {
@@ -191,6 +192,9 @@ function AdminHome() {
         </div>
 
         {error ? <p className="error">{error}</p> : null}
+
+        {/* Renders nothing when the app is behaving, so it stays an alert. */}
+        <FailuresPanel />
 
         {loading || !s ? (
           <p className="muted">Loading…</p>

@@ -11,6 +11,7 @@ import {
   mentionHtml,
   postProjectCampfireLine,
 } from "./basecamp";
+import { recordFailure } from "./failures";
 import { basecampNameForManager } from "./people";
 
 function escapeHtml(text: string): string {
@@ -155,6 +156,13 @@ export async function notifyProductionRequested(
     const result = await postProjectCampfireLine(projectId, content);
     if (result.ok) return true;
     console.error(`[notify] Basecamp production Campfire failed: ${result.error}`);
+    recordFailure({
+      kind: "basecamp_campfire",
+      subject: `${args.clientName}: production request`,
+      detail: `Could not post to the Video Editing chat. ${result.error || ""}`,
+      hint:
+        "Usually King Kashflow is not on that Basecamp project. Add the mascot to it, then repost.",
+    });
   }
 
   const content = productionRequestedCampfireContent(args);
@@ -218,6 +226,13 @@ export async function notifyProductionApproved(args: {
     );
     if (result.ok) return true;
     console.error(`[notify] Basecamp approval Campfire failed: ${result.error}`);
+    recordFailure({
+      kind: "basecamp_campfire",
+      subject: `${args.clientName}: approval`,
+      detail: `Could not post the approval to the Video Editing chat. ${result.error || ""}`,
+      hint:
+        "Usually King Kashflow is not on that Basecamp project. Add the mascot to it, then repost.",
+    });
   }
   return postToCampfire(
     build(),

@@ -1,3 +1,4 @@
+import { recordFailure, clearFailure } from "./failures";
 import { nanoid } from "nanoid";
 import { getDb, nowIso, type RevClient, type ScheduledSend, type ScheduleReminder } from "./db";
 import {
@@ -482,6 +483,21 @@ export async function runReminders(opts?: {
             client.contact_name
           );
           const assigneeIds = contact ? [contact.id] : [];
+          // Nobody to tag means the card goes out addressed to no one. That is
+          // worth knowing before the client wonders why they were never asked.
+          if (!contact) {
+            recordFailure({
+              kind: "contact_unresolved",
+              subject: client.name,
+              detail: client.contact_name
+                ? `No Basecamp person matches "${client.contact_name}" on this project, so the card was not assigned or tagged.`
+                : "No contact name on this client, so the card was not assigned or tagged.",
+              hint:
+                "Check the contact name on the client matches their name in Basecamp exactly, then post a new card.",
+            });
+          } else {
+            clearFailure("contact_unresolved", client.name);
+          }
           const { title: cardTitle, body: cardBody } = scheduleCardContent(
             client,
             window,
@@ -498,9 +514,26 @@ export async function runReminders(opts?: {
             assigneeIds,
             dueOn
           );
-          if (r.ok) markBasecampCard(client.id, window.start, today, r.cardId);
+          if (r.ok) {
+            markBasecampCard(client.id, window.start, today, r.cardId);
+            clearFailure("basecamp_card", client.name);
+          } else {
+            recordFailure({
+              kind: "basecamp_card",
+              subject: client.name,
+              detail: `Could not create the scheduling card. ${r.error || ""}`,
+              hint:
+                "Check King Kashflow is on this Basecamp project and that it still has a Deliverables card table.",
+            });
+          }
           result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });
         } catch (e) {
+          recordFailure({
+            kind: "basecamp_card",
+            subject: client.name,
+            detail: `Creating the scheduling card threw. ${(e as Error).message}`,
+            hint: "Check the client's Basecamp project id is still correct.",
+          });
           result.basecampCards.push({ client: client.name, ok: false, error: (e as Error).message });
         }
       } else if (
@@ -531,13 +564,29 @@ export async function runReminders(opts?: {
             existingCard.bc_card_id,
             body
           );
-          if (r.ok) markBasecampNudge(existingCard.id, today);
+          if (r.ok) {
+            markBasecampNudge(existingCard.id, today);
+            clearFailure("basecamp_comment", client.name);
+          } else {
+            recordFailure({
+              kind: "basecamp_comment",
+              subject: client.name,
+              detail: `Could not comment the follow-up on the card. ${r.error || ""}`,
+              hint: "The card may have been deleted. Post a fresh card for this client.",
+            });
+          }
           result.basecampFollowups.push({
             client: client.name,
             ok: r.ok,
             error: r.error,
           });
         } catch (e) {
+          recordFailure({
+            kind: "basecamp_comment",
+            subject: client.name,
+            detail: `The follow-up comment threw. ${(e as Error).message}`,
+            hint: "Check the card still exists in Basecamp.",
+          });
           result.basecampFollowups.push({
             client: client.name,
             ok: false,
