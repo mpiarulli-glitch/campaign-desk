@@ -975,23 +975,23 @@
 
 .hud-board-cols {
   display: flex;
-  gap: 14px;
+  gap: 8px;
   overflow-x: auto;
   padding-bottom: 8px;
   align-items: flex-start;
 }
 
 .hud-board-col {
-  flex: 0 0 300px;
-  width: 300px;
+  flex: 0 0 210px;
+  width: 210px;
   background: var(--hull-lift);
   border: 1px solid var(--seam);
-  border-radius: 12px;
-  padding: 10px;
+  border-radius: 10px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 120px;
+  gap: 6px;
+  min-height: 100px;
   transition: background-color 0.15s ease;
 }
 .hud-board-col.drag-over { background: var(--arc-wash); }
@@ -1001,41 +1001,41 @@
   align-items: center;
   justify-content: space-between;
   font-family: var(--instrument);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.01em;
   color: var(--ink);
-  padding: 2px 4px;
+  padding: 2px 3px;
 }
 .hud-board-col-count {
   font-family: var(--readout);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ghost-dim);
   background: var(--hull);
   border: 1px solid var(--seam);
   border-radius: 999px;
-  padding: 1px 8px;
+  padding: 0 6px;
 }
 
 .hud-board-empty-col {
   border: 1px dashed var(--seam-lit);
   border-radius: 8px;
-  padding: 14px 10px;
+  padding: 10px 6px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ghost-dim);
 }
 
 .hud-board-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
-  padding: 12px 14px;
+  padding: 7px 8px;
   cursor: grab;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 .hud-board-card:active { cursor: grabbing; }
 .hud-board-card.dragging { opacity: 0.45; }
@@ -1044,33 +1044,41 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
-.hud-board-card-head b { font-size: 13px; color: var(--ink); }
+.hud-board-card-head b {
+  font-size: 11.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hud-board-card-head .hud-link { font-size: 10px; flex-shrink: 0; }
 
 .hud-board-card-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
-.hud-board-card-row select { font-size: 12px; padding: 4px 6px; }
+.hud-board-card-row select { font-size: 10px; padding: 2px 4px; }
+.hud-board-card-row .hud-link { font-size: 10px; }
 
 .hud-board-chip-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .hud-board-camp-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 10.5px;
   color: var(--ink);
   text-decoration: none;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 2px 3px;
+  border-radius: 5px;
 }
 .hud-board-camp-chip:hover { background: var(--hull-lift); }
 .hud-board-camp-chip span {
@@ -1078,9 +1086,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.hud-board-camp-chip .badge {
+  font-size: 8px;
+  padding: 2px 6px 2px 5px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.hud-board-camp-chip .badge::before { width: 4px; height: 4px; }
 
 .hud-board-nocamp {
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--ghost-dim);
   margin: 0;
 }
@@ -1088,13 +1103,13 @@
 .hud-board-items {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 .hud-board-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 10.5px;
   color: var(--ghost);
 }
 .hud-board-item input { width: auto; accent-color: var(--arc); }
@@ -1105,7 +1120,7 @@
   border: none;
   color: var(--ghost-dim);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   padding: 0 2px;
 }
@@ -1113,13 +1128,93 @@
 
 .hud-board-item-add input {
   width: 100%;
-  font-size: 12px;
-  padding: 5px 8px;
+  font-size: 10.5px;
+  padding: 3px 6px;
 }
 
 .hud-board-notes {
   width: 100%;
-  font-size: 12px;
+  font-size: 10.5px;
   resize: vertical;
-  padding: 6px 8px;
+  padding: 3px 6px;
+  min-height: 24px;
+}
+
+.hud-board-card .hud-progress { margin: 0; height: 3px; }
+
+/* Contracted-volume counter. Colour carries the state so a card that is short
+   on its contract reads at a glance without being read word by word. */
+.hud-board-summary {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  font-family: var(--instrument);
+  font-size: 12px;
+  color: var(--ghost);
+  padding: 8px 12px;
+  background: var(--hull-lift);
+  border: 1px solid var(--seam);
+  border-radius: 8px;
+}
+.hud-board-summary b {
+  font-family: var(--readout);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--ink);
+}
+.hud-board-summary .warn { color: var(--flare); margin-left: auto; }
+
+.hud-board-quota {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  background: var(--hull-lift);
+  border-left: 2px solid var(--seam-lit);
+}
+.hud-board-quota.is-met { border-left-color: var(--good); }
+.hud-board-quota.is-open { border-left-color: var(--flare); }
+.hud-board-quota.is-met .hud-progress-fill { background: var(--good); }
+.hud-board-quota.is-open .hud-progress-fill { background: var(--flare); }
+
+.hud-board-quota-head {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--ghost);
+}
+.hud-board-quota-head b {
+  font-family: var(--readout);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--ink);
+}
+.hud-board-quota.is-met .hud-board-quota-head b { color: var(--success-ink); }
+
+.hud-board-quota-edit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  color: var(--ghost-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.hud-board-quota-edit input {
+  width: 42px;
+  font-size: 10.5px;
+  padding: 1px 4px;
+  text-align: center;
+}
+
+.hud-board-camp-chip.pending { opacity: 0.62; }
+.hud-board-camp-n {
+  font-family: var(--readout);
+  font-style: normal;
+  font-size: 9px;
+  color: var(--ghost-dim);
+  flex-shrink: 0;
 }

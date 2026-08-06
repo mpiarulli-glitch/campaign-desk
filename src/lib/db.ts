@@ -214,6 +214,10 @@ export interface RevClient {
   basecamp_project_id: string;
   // Videographer assigned to this account (one production/day per videographer).
   videographer_id: string;
+  // Emails per month this account is contracted for. 0 means no contracted
+  // volume on file, which the Deliverables board shows as untracked rather
+  // than as a failed quota.
+  monthly_email_quota: number;
   created_at: string;
   updated_at: string;
 }
@@ -1012,6 +1016,7 @@ export function getDb(): Database.Database {
       ltv REAL,
       snapshot_token TEXT,
       active INTEGER NOT NULL DEFAULT 1,
+      monthly_email_quota INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1911,6 +1916,11 @@ function migrate(database: Database.Database) {
   }
   if (revClientCols.length && !revClientCols.includes("calendar_approved_by")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_approved_by TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("monthly_email_quota")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN monthly_email_quota INTEGER NOT NULL DEFAULT 0`
+    );
   }
   if (revClientCols.length && !revClientCols.includes("contract_start")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN contract_start TEXT`);

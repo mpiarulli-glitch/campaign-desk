@@ -64,6 +64,13 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     return map;
   }, [cards]);
 
+  const totals = useMemo(() => {
+    const quota = cards.reduce((n, c) => n + c.quota, 0);
+    const delivered = cards.reduce((n, c) => n + c.delivered, 0);
+    const missingQuota = cards.filter((c) => c.quota === 0).length;
+    return { quota, delivered, missingQuota };
+  }, [cards]);
+
   const availableClients = useMemo(() => {
     const carded = new Set(cards.map((c) => c.clientId));
     return clients.filter((c) => !carded.has(c.id)).sort((a, b) => a.name.localeCompare(b.name));
@@ -75,6 +82,22 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ columnKey }),
+    });
+    if (!res.ok) void load(period);
+  }
+
+  // The quota is a client-level contract term, so every card for that client
+  // (this month and any other) updates together.
+  async function saveQuota(cardId: string, quota: number) {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+    setCards((prev) =>
+      prev.map((c) => (c.clientId === card.clientId ? { ...c, quota } : c))
+    );
+    const res = await fetch(`/api/lifecycle/board/cards/${cardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quota }),
     });
     if (!res.ok) void load(period);
   }
@@ -181,6 +204,24 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
 
       {error ? <p className="hud-err">{error}</p> : null}
 
+      {!loading && cards.length > 0 ? (
+        <div className="hud-board-summary">
+          <span>
+            <b>
+              {totals.delivered}/{totals.quota}
+            </b>{" "}
+            emails delivered against contract this month
+          </span>
+          {totals.missingQuota > 0 ? (
+            <span className="warn">
+              {totals.missingQuota}{" "}
+              {totals.missingQuota === 1 ? "client has" : "clients have"} no contracted
+              volume set
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="hud-empty">Loading the board…</p>
       ) : cards.length === 0 ? (
@@ -216,7 +257,19 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
                 ) : (
                   colCards.map((card) => {
                     const total = card.campaigns.length;
-                    const done = card.campaigns.filter((c) => c.status === "sent").length;
+                    // Progress is measured against the contract, not against
+                    // what happens to be on the board, so a client with no
+                    // quota on file shows a plain count instead of a bar.
+                    const pct =
+                      card.quota > 0
+                        ? Math.min(100, (card.delivered / card.quota) * 100)
+                        : 0;
+                    const quotaState =
+                      card.quota === 0
+                        ? "none"
+                        : card.delivered >= card.quota
+                          ? "met"
+                          : "open";
                     const suggestHint =
                       card.suggestedColumnKey !== card.columnKey
                         ? columns.find((c) => c.key === card.suggestedColumnKey)?.label
@@ -259,28 +312,59 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
                           ) : null}
                         </div>
 
+                        <div className={`hud-board-quota is-${quotaState}`}>
+                          {card.quota > 0 ? (
+                            <>
+                              <div className="hud-board-quota-head">
+                                <b>
+                                  {card.delivered}/{card.quota}
+                                </b>
+                                <span>emails this month</span>
+                              </div>
+                              <div className="hud-progress">
+                                <div className="hud-progress-fill" style={{ width: `${pct}%` }} />
+                              </div>
+                            </>
+                          ) : (
+                            <div className="hud-board-quota-head">
+                              <b>{card.delivered}</b>
+                              <span>sent, no contract volume set</span>
+                            </div>
+                          )}
+                          <label className="hud-board-quota-edit">
+                            <span>Contracted /mo</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={99}
+                              defaultValue={card.quota || ""}
+                              placeholder="0"
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => {
+                                const next = Number(e.target.value || 0);
+                                if (next !== card.quota) void saveQuota(card.id, next);
+                              }}
+                            />
+                          </label>
+                        </div>
+
                         {total > 0 ? (
-                          <>
-                            <div className="hud-progress">
-                              <div
-                                className="hud-progress-fill"
-                                style={{ width: `${(done / total) * 100}%` }}
-                              />
-                            </div>
-                            <div className="hud-board-chip-row">
-                              {card.campaigns.map((camp) => (
-                                <Link
-                                  key={camp.id}
-                                  href={`/admin/campaigns/${camp.id}`}
-                                  className="hud-board-camp-chip"
-                                  title={camp.title}
-                                >
-                                  <StatusBadge status={camp.status} />
-                                  <span>{camp.title}</span>
-                                </Link>
-                              ))}
-                            </div>
-                          </>
+                          <div className="hud-board-chip-row">
+                            {card.campaigns.map((camp) => (
+                              <Link
+                                key={camp.id}
+                                href={`/admin/campaigns/${camp.id}`}
+                                className={`hud-board-camp-chip ${camp.delivered ? "" : "pending"}`}
+                                title={`${camp.title} — ${camp.emailCount} email${camp.emailCount === 1 ? "" : "s"}`}
+                              >
+                                <StatusBadge status={camp.status} />
+                                <span>{camp.title}</span>
+                                {camp.emailCount > 1 ? (
+                                  <em className="hud-board-camp-n">×{camp.emailCount}</em>
+                                ) : null}
+                              </Link>
+                            ))}
+                          </div>
                         ) : (
                           <p className="hud-board-nocamp">No campaigns this month yet.</p>
                         )}
@@ -321,7 +405,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
 
                         <textarea
                           className="hud-board-notes"
-                          rows={2}
+                          rows={1}
                           defaultValue={card.notes}
                           placeholder="Notes for this client's month…"
                           onBlur={(e) => {

@@ -314,6 +314,8 @@ export interface BoardCampaignItem {
   status: string;
   updatedAt: string;
   magicToken: string;
+  emailCount: number;
+  delivered: boolean;
 }
 
 export interface BoardManualItem {
@@ -334,6 +336,8 @@ export interface BoardCard {
   notes: string;
   campaigns: BoardCampaignItem[];
   manualItems: BoardManualItem[];
+  quota: number;
+  delivered: number;
   updatedAt: string;
 }
 

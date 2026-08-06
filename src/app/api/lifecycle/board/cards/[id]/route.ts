@@ -3,6 +3,7 @@ import { isAdminAuthenticated } from "@/lib/auth";
 import {
   deleteBoardCard,
   moveBoardCard,
+  setBoardCardQuota,
   updateBoardCardNotes,
 } from "@/lib/lifecycle-board";
 
@@ -18,6 +19,15 @@ export async function PATCH(
 
   if (typeof body.notes === "string") {
     const ok = updateBoardCardNotes(id, body.notes);
+    if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // The quota lives on the client, not the card, so setting it here changes
+  // every month's card for that client. That is deliberate: it is a contract
+  // term, not a per-month value.
+  if (typeof body.quota === "number") {
+    const ok = setBoardCardQuota(id, body.quota);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   }

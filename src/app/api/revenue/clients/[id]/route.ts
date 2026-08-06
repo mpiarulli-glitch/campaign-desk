@@ -111,6 +111,8 @@ export async function PATCH(request: Request, { params }: Params) {
         : undefined,
     videographerId:
       typeof body.videographerId === "string" ? body.videographerId : undefined,
+    monthlyEmailQuota:
+      typeof body.monthlyEmailQuota === "number" ? body.monthlyEmailQuota : undefined,
   });
   return NextResponse.json({ client });
 }

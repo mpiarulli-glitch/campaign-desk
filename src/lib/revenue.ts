@@ -180,6 +180,7 @@ export function updateRevClient(
     productionEnrolled: boolean;
     basecampProjectId: string;
     videographerId: string;
+    monthlyEmailQuota: number;
   }>
 ): RevClient | null {
   const existing = getRevClient(id);
@@ -194,7 +195,8 @@ export function updateRevClient(
        contact_name = ?, contact_email = ?, poc = ?, account_manager = ?, tier = ?,
        website = ?, sentiment_override = ?,
        production_enrolled = ?,
-       basecamp_project_id = ?, videographer_id = ?, updated_at = ?
+       basecamp_project_id = ?, videographer_id = ?,
+       monthly_email_quota = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     updates.name?.trim() ?? existing.name,
@@ -233,6 +235,9 @@ export function updateRevClient(
     updates.videographerId === undefined
       ? existing.videographer_id
       : updates.videographerId.trim(),
+    updates.monthlyEmailQuota === undefined
+      ? existing.monthly_email_quota
+      : Math.max(0, Math.round(updates.monthlyEmailQuota)),
     nowIso(),
     id
   );

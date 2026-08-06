@@ -20,7 +20,7 @@ import {
   type LifecycleBoardCard,
   type LifecycleBoardItem,
 } from "./db";
-import { listRevClients } from "./revenue";
+import { listRevClients, updateRevClient } from "./revenue";
 
 export interface BoardColumn {
   key: BoardColumnKey;
@@ -54,12 +54,33 @@ export function isValidPeriod(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-\d{2}$/.test(v);
 }
 
+/**
+ * A campaign counts toward the month's contracted volume once it has left our
+ * hands, not once the client signs off. `needs_changes` still counts: the work
+ * was delivered and is now in a revision loop, so dropping it would make the
+ * number fall backwards when a client sends notes.
+ */
+const DELIVERED_STATUSES: CampaignStatus[] = [
+  "in_review",
+  "needs_changes",
+  "approved",
+  "scheduled",
+  "sent",
+];
+
 export interface BoardCampaignItem {
   id: string;
   title: string;
   status: CampaignStatus;
   updatedAt: string;
   magicToken: string;
+  /**
+   * Emails inside this campaign. A campaign is a review package and routinely
+   * holds several, so the quota counts these rather than campaign rows.
+   */
+  emailCount: number;
+  /** Whether this campaign's emails count toward the month's quota yet. */
+  delivered: boolean;
 }
 
 export interface BoardManualItem {
@@ -81,6 +102,10 @@ export interface BoardCard {
   notes: string;
   campaigns: BoardCampaignItem[];
   manualItems: BoardManualItem[];
+  /** Emails per month this client is contracted for. 0 means none on file. */
+  quota: number;
+  /** Emails delivered against that quota this month. */
+  delivered: number;
   updatedAt: string;
 }
 
@@ -97,6 +122,7 @@ function suggestColumn(campaigns: BoardCampaignItem[]): BoardColumnKey {
 function toBoardCard(
   row: LifecycleBoardCard,
   clientName: string,
+  quota: number,
   campaigns: BoardCampaignItem[],
   items: LifecycleBoardItem[]
 ): BoardCard {
@@ -113,6 +139,8 @@ function toBoardCard(
     manualItems: [...items]
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((i) => ({ id: i.id, label: i.label, done: i.done === 1, sortOrder: i.sort_order })),
+    quota,
+    delivered: campaigns.reduce((n, c) => n + (c.delivered ? c.emailCount : 0), 0),
     updatedAt: row.updated_at,
   };
 }
@@ -143,13 +171,20 @@ export function listBoardCards(period: string): BoardCard[] {
     .all(period) as LifecycleBoardCard[];
   if (!cardRows.length) return [];
 
-  const clientNames = new Map(listRevClients(true).map((c) => [c.id, c.name]));
+  const allClients = listRevClients(true);
+  const clientNames = new Map(allClients.map((c) => [c.id, c.name]));
+  const clientQuotas = new Map(allClients.map((c) => [c.id, c.monthly_email_quota ?? 0]));
 
+  // email_count comes from campaign_emails: a campaign is a review package and
+  // routinely bundles several emails, so counting campaign rows would under-
+  // report a client's delivered volume against a contract written in emails.
   const campaignRows = db
     .prepare(
-      `SELECT id, title, client_id, status, updated_at, magic_token FROM campaigns
-        WHERE archived_at IS NULL AND client_id IS NOT NULL
-          AND strftime('%Y-%m', created_at) = ?`
+      `SELECT c.id, c.title, c.client_id, c.status, c.updated_at, c.magic_token,
+              (SELECT COUNT(*) FROM campaign_emails e WHERE e.campaign_id = c.id) AS email_count
+         FROM campaigns c
+        WHERE c.archived_at IS NULL AND c.client_id IS NOT NULL
+          AND strftime('%Y-%m', c.created_at) = ?`
     )
     .all(period) as Array<{
     id: string;
@@ -158,6 +193,7 @@ export function listBoardCards(period: string): BoardCard[] {
     status: CampaignStatus;
     updated_at: string;
     magic_token: string;
+    email_count: number;
   }>;
   const campaignsByClient = new Map<string, BoardCampaignItem[]>();
   for (const r of campaignRows) {
@@ -168,6 +204,10 @@ export function listBoardCards(period: string): BoardCard[] {
       status: r.status,
       updatedAt: r.updated_at,
       magicToken: r.magic_token,
+      // A campaign with no emails attached yet still represents one planned
+      // send, so it never counts as zero.
+      emailCount: Math.max(1, r.email_count),
+      delivered: DELIVERED_STATUSES.includes(r.status),
     });
     campaignsByClient.set(r.client_id, list);
   }
@@ -193,6 +233,7 @@ export function listBoardCards(period: string): BoardCard[] {
       return toBoardCard(
         row,
         clientName,
+        clientQuotas.get(row.client_id) ?? 0,
         campaignsByClient.get(row.client_id) ?? [],
         itemsByCard.get(row.id) ?? []
       );
@@ -241,6 +282,20 @@ export function moveBoardCard(
     )
     .run(columnKey, sortOrder, nowIso(), id);
   return true;
+}
+
+/**
+ * Set the contracted monthly email volume from a board card. The value lives on
+ * the client record, so it applies to every month rather than just this card's.
+ */
+export function setBoardCardQuota(id: string, quota: number): boolean {
+  const card = getCardRow(id);
+  if (!card) return false;
+  return Boolean(
+    updateRevClient(card.client_id, {
+      monthlyEmailQuota: Math.max(0, Math.round(quota)),
+    })
+  );
 }
 
 export function updateBoardCardNotes(id: string, notes: string): boolean {
