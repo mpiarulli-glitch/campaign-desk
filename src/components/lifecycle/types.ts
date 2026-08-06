@@ -319,13 +319,6 @@ export interface BoardCampaignItem {
   delivered: boolean;
 }
 
-export interface BoardManualItem {
-  id: string;
-  label: string;
-  done: boolean;
-  sortOrder: number;
-}
-
 export interface BoardCard {
   id: string;
   clientId: string;
@@ -334,9 +327,7 @@ export interface BoardCard {
   columnKey: BoardColumnKey;
   suggestedColumnKey: BoardColumnKey;
   sortOrder: number;
-  notes: string;
   campaigns: BoardCampaignItem[];
-  manualItems: BoardManualItem[];
   quota: number;
   delivered: number;
   updatedAt: string;

@@ -736,6 +736,8 @@ export interface LifecycleBoardCard {
   column_key: BoardColumnKey;
   sort_order: number;
   notes: string;
+  /** 1 = removed from the board. Rows are kept so re-seeding cannot undo it. */
+  dismissed: number;
   created_at: string;
   updated_at: string;
 }
@@ -1653,6 +1655,10 @@ export function getDb(): Database.Database {
       column_key TEXT NOT NULL DEFAULT 'triage',
       sort_order INTEGER NOT NULL DEFAULT 0,
       notes TEXT NOT NULL DEFAULT '',
+      /* Removing a card dismisses it rather than deleting the row. The board
+         re-seeds a card for every active client on load, so a hard delete
+         would be undone the moment the page refreshed. */
+      dismissed INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE (client_id, period),
@@ -1923,6 +1929,11 @@ function migrate(database: Database.Database) {
   // default that nobody has touched (created_at still equals updated_at) move
   // across; anything someone actually placed in Next Up stays put.
   const boardCardCols = tableColumns(database, "lifecycle_board_cards");
+  if (boardCardCols.length && !boardCardCols.includes("dismissed")) {
+    database.exec(
+      `ALTER TABLE lifecycle_board_cards ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0`
+    );
+  }
   if (boardCardCols.length) {
     database.exec(
       `UPDATE lifecycle_board_cards

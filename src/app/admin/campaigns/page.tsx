@@ -78,16 +78,88 @@ function CampaignCard({
   filter,
   busyId,
   onArchive,
+  onRename,
 }: {
   c: CampaignRow;
   filter: "active" | "archived";
   busyId: string | null;
   onArchive: (id: string, archived: boolean) => void;
+  onRename: (id: string, title: string) => Promise<void>;
 }) {
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(c.title);
+  const [saving, setSaving] = useState(false);
+
+  // The whole row is a link to the campaign, so anything interactive inside it
+  // has to stop the click from navigating.
+  function swallow(e: React.MouseEvent | React.KeyboardEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  async function save() {
+    const next = draft.trim();
+    if (!next || next === c.title) {
+      setRenaming(false);
+      setDraft(c.title);
+      return;
+    }
+    setSaving(true);
+    await onRename(c.id, next);
+    setSaving(false);
+    setRenaming(false);
+  }
+
   return (
     <Link href={`/admin/campaigns/${c.id}`} className="campaign-item">
-      <div>
-        <h3>{c.title}</h3>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        {renaming ? (
+          <div className="row" style={{ gap: 6, alignItems: "center" }} onClick={swallow}>
+            <input
+              autoFocus
+              value={draft}
+              disabled={saving}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={swallow}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  swallow(e);
+                  void save();
+                } else if (e.key === "Escape") {
+                  swallow(e);
+                  setDraft(c.title);
+                  setRenaming(false);
+                }
+              }}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={saving}
+              onClick={(e) => {
+                swallow(e);
+                void save();
+              }}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={saving}
+              onClick={(e) => {
+                swallow(e);
+                setDraft(c.title);
+                setRenaming(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <h3>{c.title}</h3>
+        )}
         <div className="meta">
           {c.client_name ? `${c.client_name} · ` : ""}
           {c.email_count
@@ -103,6 +175,19 @@ function CampaignCard({
       </div>
       <div className="row" style={{ alignItems: "center", gap: 8 }}>
         <StatusBadge status={c.status} />
+        {!renaming ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={(e) => {
+              swallow(e);
+              setDraft(c.title);
+              setRenaming(true);
+            }}
+          >
+            Rename
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -171,6 +256,19 @@ export default function AdminPage() {
     const data = await res.json();
     setCampaigns(data.campaigns || []);
     setLoading(false);
+  }
+
+  async function renameCampaign(id: string, title: string) {
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) {
+      setError("Could not rename that campaign.");
+      return;
+    }
+    setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
   }
 
   async function setArchived(id: string, archived: boolean) {
@@ -328,6 +426,7 @@ export default function AdminPage() {
                     filter={filter}
                     busyId={busyId}
                     onArchive={setArchived}
+                    onRename={renameCampaign}
                   />
                 ))}
               </div>
@@ -366,6 +465,7 @@ export default function AdminPage() {
                                   filter={filter}
                                   busyId={busyId}
                                   onArchive={setArchived}
+                                  onRename={renameCampaign}
                                 />
                               ))}
                             </div>

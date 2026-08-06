@@ -1103,24 +1103,28 @@
   box-shadow: var(--shadow);
 }
 
-/* The whole header is the open/close control, so it has to reset the button
-   defaults rather than inherit a centred, bordered, system-font look. */
 .hud-board-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The name is the open/close control, so it resets the button defaults rather
+   than inheriting a centred, bordered, system-font look. */
+.hud-board-card-title {
   appearance: none;
   background: none;
   border: 0;
   padding: 0;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   font: inherit;
   color: inherit;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
-.hud-board-card-head b {
+.hud-board-card-title b {
+  display: block;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--ink);
@@ -1128,6 +1132,25 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Always visible: removing a client from the month should not take two clicks
+   through an editor panel. */
+.hud-board-dismiss {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ghost-dim);
+  cursor: pointer;
+  opacity: 0.5;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.hud-board-card:hover .hud-board-dismiss { opacity: 1; }
+.hud-board-dismiss:hover,
+.hud-board-dismiss:focus-visible { color: var(--crit); opacity: 1; }
 
 .hud-board-count {
   font-family: var(--readout);
@@ -1139,17 +1162,6 @@
 }
 .hud-board-count.is-met { color: var(--success-ink); }
 .hud-board-count.is-open { color: var(--flare); }
-
-.hud-board-meta {
-  font-size: 10px;
-  color: var(--ghost-dim);
-}
-.hud-board-meta.note {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-style: italic;
-}
 
 .hud-board-card-edit {
   display: flex;
@@ -1182,12 +1194,6 @@
   text-align: center;
 }
 .hud-board-card-edit .hud-link { font-size: 10px; align-self: flex-start; }
-.hud-board-add-item {
-  width: 100%;
-  font-size: 10.5px;
-  padding: 3px 6px;
-}
-.hud-board-remove { color: var(--crit) !important; }
 
 .hud-board-chip-row {
   display: flex;
@@ -1225,41 +1231,6 @@
   margin: 0;
 }
 
-.hud-board-items {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.hud-board-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
-  color: var(--ghost);
-}
-.hud-board-item input { width: auto; accent-color: var(--arc); }
-.hud-board-item span { flex: 1; }
-.hud-board-item span.done { text-decoration: line-through; color: var(--ghost-dim); }
-.hud-board-item-del {
-  background: none;
-  border: none;
-  color: var(--ghost-dim);
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 0 2px;
-}
-.hud-board-item-del:hover { color: var(--crit); }
-
-.hud-board-notes {
-  width: 100%;
-  font-size: 10.5px;
-  line-height: 1.45;
-  resize: vertical;
-  padding: 4px 6px;
-  min-height: 38px;
-}
-
 .hud-board-card .hud-progress { margin: 0; height: 3px; border-radius: 2px; overflow: hidden; }
 .hud-board-card .hud-progress.is-met .hud-progress-fill { background: var(--good); }
 .hud-board-card .hud-progress.is-open .hud-progress-fill { background: var(--flare); }
@@ -1287,7 +1258,6 @@
 }
 .hud-board-summary .warn { color: var(--flare); margin-left: auto; }
 
-.hud-board-camp-chip.pending { opacity: 0.62; }
 .hud-board-camp-n {
   font-family: var(--readout);
   font-style: normal;

@@ -18,7 +18,6 @@ import {
   type BoardColumnKey,
   type CampaignStatus,
   type LifecycleBoardCard,
-  type LifecycleBoardItem,
 } from "./db";
 import { listRevClients, updateRevClient } from "./revenue";
 
@@ -91,13 +90,6 @@ export interface BoardCampaignItem {
   delivered: boolean;
 }
 
-export interface BoardManualItem {
-  id: string;
-  label: string;
-  done: boolean;
-  sortOrder: number;
-}
-
 export interface BoardCard {
   id: string;
   clientId: string;
@@ -107,9 +99,7 @@ export interface BoardCard {
   /** Best guess from this month's campaign statuses. A hint only — never applied automatically. */
   suggestedColumnKey: BoardColumnKey;
   sortOrder: number;
-  notes: string;
   campaigns: BoardCampaignItem[];
-  manualItems: BoardManualItem[];
   /** Emails per month this client is contracted for. 0 means none on file. */
   quota: number;
   /** Emails delivered against that quota this month. */
@@ -117,11 +107,15 @@ export interface BoardCard {
   updatedAt: string;
 }
 
+/**
+ * Only campaigns that reached the client appear on a card, so this reads the
+ * worst live status: anything in revision outranks anything awaiting sign-off,
+ * and a card is only "met" once every send has actually gone out.
+ */
 function suggestColumn(campaigns: BoardCampaignItem[]): BoardColumnKey {
-  if (campaigns.length === 0) return "next_up";
+  if (campaigns.length === 0) return "triage";
   if (campaigns.some((c) => c.status === "needs_changes")) return "needs_revisions";
   if (campaigns.some((c) => c.status === "in_review")) return "sent_for_approval";
-  if (campaigns.some((c) => c.status === "draft")) return "qa";
   if (campaigns.every((c) => c.status === "sent")) return "deliverables_met";
   if (campaigns.every((c) => c.status === "scheduled" || c.status === "sent")) return "scheduling";
   return "completed";
@@ -131,8 +125,7 @@ function toBoardCard(
   row: LifecycleBoardCard,
   clientName: string,
   quota: number,
-  campaigns: BoardCampaignItem[],
-  items: LifecycleBoardItem[]
+  campaigns: BoardCampaignItem[]
 ): BoardCard {
   return {
     id: row.id,
@@ -142,13 +135,9 @@ function toBoardCard(
     columnKey: row.column_key,
     suggestedColumnKey: suggestColumn(campaigns),
     sortOrder: row.sort_order,
-    notes: row.notes,
     campaigns: [...campaigns].sort((a, b) => a.title.localeCompare(b.title)),
-    manualItems: [...items]
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((i) => ({ id: i.id, label: i.label, done: i.done === 1, sortOrder: i.sort_order })),
     quota,
-    delivered: campaigns.reduce((n, c) => n + (c.delivered ? c.emailCount : 0), 0),
+    delivered: campaigns.reduce((n, c) => n + c.emailCount, 0),
     updatedAt: row.updated_at,
   };
 }
@@ -175,7 +164,7 @@ export function listBoardCards(period: string): BoardCard[] {
   const db = getDb();
 
   const cardRows = db
-    .prepare(`SELECT * FROM lifecycle_board_cards WHERE period = ?`)
+    .prepare(`SELECT * FROM lifecycle_board_cards WHERE period = ? AND dismissed = 0`)
     .all(period) as LifecycleBoardCard[];
   if (!cardRows.length) return [];
 
@@ -183,18 +172,28 @@ export function listBoardCards(period: string): BoardCard[] {
   const clientNames = new Map(allClients.map((c) => [c.id, c.name]));
   const clientQuotas = new Map(allClients.map((c) => [c.id, c.monthly_email_quota ?? 0]));
 
-  // email_count comes from campaign_emails: a campaign is a review package and
-  // routinely bundles several emails, so counting campaign rows would under-
-  // report a client's delivered volume against a contract written in emails.
+  // This board tracks lifecycle sends only, so it counts assets of kind
+  // 'email' and ignores blog posts, copy decks and website mock-ups — a
+  // review package can hold any of those, and they are not what a client's
+  // email contract is written in. Campaigns left with no emails drop out
+  // entirely via the HAVING clause.
+  //
+  // email_count matters because a campaign is a review package that routinely
+  // bundles several emails; counting campaign rows would under-report a
+  // client's delivered volume.
   const campaignRows = db
     .prepare(
       `SELECT c.id, c.title, c.client_id, c.status, c.updated_at, c.magic_token,
-              (SELECT COUNT(*) FROM campaign_emails e WHERE e.campaign_id = c.id) AS email_count
+              COUNT(e.id) AS email_count
          FROM campaigns c
+         JOIN campaign_emails e ON e.campaign_id = c.id AND e.kind = 'email'
         WHERE c.archived_at IS NULL AND c.client_id IS NOT NULL
-          AND strftime('%Y-%m', c.created_at) = ?`
+          AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
+          AND strftime('%Y-%m', c.created_at) = ?
+        GROUP BY c.id
+        HAVING COUNT(e.id) > 0`
     )
-    .all(period) as Array<{
+    .all(...DELIVERED_STATUSES, period) as Array<{
     id: string;
     title: string;
     client_id: string;
@@ -212,26 +211,10 @@ export function listBoardCards(period: string): BoardCard[] {
       status: r.status,
       updatedAt: r.updated_at,
       magicToken: r.magic_token,
-      // A campaign with no emails attached yet still represents one planned
-      // send, so it never counts as zero.
-      emailCount: Math.max(1, r.email_count),
-      delivered: DELIVERED_STATUSES.includes(r.status),
+      emailCount: r.email_count,
+      delivered: true,
     });
     campaignsByClient.set(r.client_id, list);
-  }
-
-  const cardIds = cardRows.map((c) => c.id);
-  const itemsByCard = new Map<string, LifecycleBoardItem[]>();
-  if (cardIds.length) {
-    const placeholders = cardIds.map(() => "?").join(",");
-    const itemRows = db
-      .prepare(`SELECT * FROM lifecycle_board_items WHERE card_id IN (${placeholders})`)
-      .all(...cardIds) as LifecycleBoardItem[];
-    for (const r of itemRows) {
-      const list = itemsByCard.get(r.card_id) ?? [];
-      list.push(r);
-      itemsByCard.set(r.card_id, list);
-    }
   }
 
   return cardRows
@@ -242,8 +225,7 @@ export function listBoardCards(period: string): BoardCard[] {
         row,
         clientName,
         clientQuotas.get(row.client_id) ?? 0,
-        campaignsByClient.get(row.client_id) ?? [],
-        itemsByCard.get(row.id) ?? []
+        campaignsByClient.get(row.client_id) ?? []
       );
     })
     .filter((c): c is BoardCard => c !== null)
@@ -306,55 +288,17 @@ export function setBoardCardQuota(id: string, quota: number): boolean {
   );
 }
 
-export function updateBoardCardNotes(id: string, notes: string): boolean {
-  if (!getCardRow(id)) return false;
-  getDb()
-    .prepare(`UPDATE lifecycle_board_cards SET notes = ?, updated_at = ? WHERE id = ?`)
-    .run(notes.trim(), nowIso(), id);
-  return true;
-}
-
+/**
+ * Remove a card from the board. This dismisses rather than deletes: the board
+ * re-seeds a card for every active client whenever it loads, so deleting the
+ * row would simply bring the card back on the next refresh.
+ */
 export function deleteBoardCard(id: string): boolean {
-  return getDb().prepare(`DELETE FROM lifecycle_board_cards WHERE id = ?`).run(id).changes > 0;
-}
-
-/* ------------------------------------------------------------- manual items */
-
-export function addBoardItem(cardId: string, label: string): BoardManualItem | null {
-  if (!label.trim() || !getCardRow(cardId)) return null;
-  const db = getDb();
-  const id = nanoid(12);
-  const ts = nowIso();
-  const { n } = db
-    .prepare(`SELECT COUNT(*) AS n FROM lifecycle_board_items WHERE card_id = ?`)
-    .get(cardId) as { n: number };
-  db.prepare(
-    `INSERT INTO lifecycle_board_items (id, card_id, label, done, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, 0, ?, ?, ?)`
-  ).run(id, cardId, label.trim(), n, ts, ts);
-  return { id, label: label.trim(), done: false, sortOrder: n };
-}
-
-export function updateBoardItem(
-  id: string,
-  patch: { label?: string; done?: boolean }
-): boolean {
-  const db = getDb();
-  const existing = db
-    .prepare(`SELECT * FROM lifecycle_board_items WHERE id = ?`)
-    .get(id) as LifecycleBoardItem | undefined;
-  if (!existing) return false;
-  db.prepare(
-    `UPDATE lifecycle_board_items SET label = ?, done = ?, updated_at = ? WHERE id = ?`
-  ).run(
-    patch.label !== undefined ? patch.label.trim() : existing.label,
-    patch.done !== undefined ? (patch.done ? 1 : 0) : existing.done,
-    nowIso(),
-    id
+  return (
+    getDb()
+      .prepare(
+        `UPDATE lifecycle_board_cards SET dismissed = 1, updated_at = ? WHERE id = ?`
+      )
+      .run(nowIso(), id).changes > 0
   );
-  return true;
-}
-
-export function deleteBoardItem(id: string): boolean {
-  return getDb().prepare(`DELETE FROM lifecycle_board_items WHERE id = ?`).run(id).changes > 0;
 }
