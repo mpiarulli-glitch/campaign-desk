@@ -712,6 +712,40 @@ export interface LifecycleCampaignMeta {
   updated_at: string;
 }
 
+/** The Deliverables board: one row per client per month. */
+export type BoardColumnKey =
+  | "next_up"
+  | "qa"
+  | "internal_revisions"
+  | "sent_for_approval"
+  | "follow_up_sent"
+  | "needs_revisions"
+  | "scheduling"
+  | "completed"
+  | "deliverables_met";
+
+export interface LifecycleBoardCard {
+  id: string;
+  client_id: string;
+  period: string;
+  column_key: BoardColumnKey;
+  sort_order: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A non-email deliverable (LinkedIn, SMS, landing page, etc.) on a board card. */
+export interface LifecycleBoardItem {
+  id: string;
+  card_id: string;
+  label: string;
+  done: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // A daily marketing or AI training post. kind = "marketing" | "ai".
 export interface TrainingPost {
   id: string;
@@ -1597,6 +1631,42 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_lc_stats_day ON lifecycle_campaign_stats(captured_on);
+
+    -- The Deliverables board: one card per client per month. The card's
+    -- column is always hand-set (drag or the status picker) so a page reload
+    -- never fights a placement the person just made. Campaign-linked
+    -- checklist rows are never stored here — they are read live off the
+    -- campaigns table by client_id + created_at month, so that line of the
+    -- card can never drift from the Campaigns tab. Only the extra, non-email
+    -- deliverables (LinkedIn, SMS, landing pages, etc.) live in
+    -- lifecycle_board_items.
+    CREATE TABLE IF NOT EXISTS lifecycle_board_cards (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      period TEXT NOT NULL,
+      column_key TEXT NOT NULL DEFAULT 'next_up',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, period),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_board_cards_period ON lifecycle_board_cards(period);
+
+    CREATE TABLE IF NOT EXISTS lifecycle_board_items (
+      id TEXT PRIMARY KEY,
+      card_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (card_id) REFERENCES lifecycle_board_cards(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_board_items_card ON lifecycle_board_items(card_id);
 
     -- Login accounts. The roster itself still lives in code (admin-people.ts,
     -- people.ts) because client components import it at module scope; this

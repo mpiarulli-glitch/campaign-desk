@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
+import { BoardPanel } from "@/components/lifecycle/BoardPanel";
 import { SubjectBankPanel } from "@/components/lifecycle/SubjectBankPanel";
 import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
 import { LinkedInPanel } from "@/components/lifecycle/LinkedInPanel";
@@ -14,6 +15,7 @@ import { PLATFORM_LABELS, type LifecycleDashboard } from "@/components/lifecycle
 
 type Channel =
   | "status"
+  | "board"
   | "subjects"
   | "linkedin"
   | "automations"
@@ -27,9 +29,11 @@ type Channel =
 // else's day. Approvals used to sit second; the Approvals ageing report covers
 // the same ground with ageing and per-client breakdowns, so the channel went
 // rather than being maintained in two places. The Status readout still carries
-// the pending count.
+// the pending count. Deliverables sits right after Status since it's the
+// other tab someone opens daily: where every client stands this month.
 const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "status", label: "Status" },
+  { id: "board", label: "Deliverables" },
   { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
   { id: "report", label: "Account report" },
@@ -292,6 +296,8 @@ export default function LifecyclePage() {
             ) : null}
           </div>
         ) : null}
+
+        {channel === "board" ? <BoardPanel clients={data.clients} /> : null}
 
         {channel === "linkedin" ? (
           <LinkedInPanel data={li} clients={data.clients} onChanged={refresh} />

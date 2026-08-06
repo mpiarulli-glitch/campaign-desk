@@ -290,6 +290,53 @@ export interface SwipeRow {
   templateImage: string;
 }
 
+/* ------------------------------------------------------- deliverables board */
+
+export type BoardColumnKey =
+  | "next_up"
+  | "qa"
+  | "internal_revisions"
+  | "sent_for_approval"
+  | "follow_up_sent"
+  | "needs_revisions"
+  | "scheduling"
+  | "completed"
+  | "deliverables_met";
+
+export interface BoardColumn {
+  key: BoardColumnKey;
+  label: string;
+}
+
+export interface BoardCampaignItem {
+  id: string;
+  title: string;
+  status: string;
+  updatedAt: string;
+  magicToken: string;
+}
+
+export interface BoardManualItem {
+  id: string;
+  label: string;
+  done: boolean;
+  sortOrder: number;
+}
+
+export interface BoardCard {
+  id: string;
+  clientId: string;
+  clientName: string;
+  period: string;
+  columnKey: BoardColumnKey;
+  suggestedColumnKey: BoardColumnKey;
+  sortOrder: number;
+  notes: string;
+  campaigns: BoardCampaignItem[];
+  manualItems: BoardManualItem[];
+  updatedAt: string;
+}
+
 export const PLATFORM_LABELS: Record<string, string> = {
   ghl: "GoHighLevel",
   klaviyo: "Klaviyo",
