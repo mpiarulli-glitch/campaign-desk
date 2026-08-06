@@ -247,6 +247,34 @@
 }
 .hud-channel-count.alert { background: var(--crit); color: var(--on-ink); }
 
+/* Secondary tab row, for a channel that has its own sub-pages. Lighter than
+   .hud-channels so the hierarchy (page tab -> sub-tab) reads at a glance. */
+.hud-subtabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.hud-subtab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--seam);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--instrument);
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ghost-dim);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.hud-subtab:hover { color: var(--ink); background: var(--bg-soft); }
+.hud-subtab.on {
+  color: var(--arc-deep);
+  background: var(--arc-wash);
+  border-color: var(--arc);
+}
+
 /* ======================================================= SIGNATURE: array ==
    One bar per LinkedIn seat. Lit = sending, dark = faulted. This is the first
    thing on the page because it is the first thing that is wrong.

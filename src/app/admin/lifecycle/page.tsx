@@ -7,10 +7,9 @@ import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
 import { BoardPanel } from "@/components/lifecycle/BoardPanel";
 import { SubjectBankPanel } from "@/components/lifecycle/SubjectBankPanel";
 import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
-import { LinkedInPanel } from "@/components/lifecycle/LinkedInPanel";
+import { LinkedInHub } from "@/components/lifecycle/LinkedInHub";
 import { NotesPanel } from "@/components/lifecycle/NotesPanel";
 import { ReportPanel } from "@/components/lifecycle/ReportPanel";
-import { SeatArray } from "@/components/lifecycle/SeatArray";
 import { PLATFORM_LABELS, type LifecycleDashboard } from "@/components/lifecycle/types";
 
 type Channel =
@@ -40,7 +39,7 @@ const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "sops", label: "Playbooks" },
   { id: "knowledge", label: "Knowledge" },
   { id: "notes", label: "Notes" },
-  { id: "linkedin", label: "Outreach" },
+  { id: "linkedin", label: "LinkedIn" },
 ];
 
 /** Zulu-style clock. A console shows the time in one unambiguous zone. */
@@ -107,11 +106,6 @@ export default function LifecyclePage() {
 
   const c = data.counts;
   const li = data.linkedIn;
-  const seatsTotal = li.seats.length;
-  const seatsLive = seatsTotal - li.brokenSeats;
-  // Only campaigns that would otherwise be running are "stranded". Counting
-  // switched-off ones here would inflate the number and make the alert lie.
-  const stranded = li.campaigns.filter((c) => c.verdict.severity === "blocked").length;
 
   return (
     <div className="hud">
@@ -155,57 +149,7 @@ export default function LifecyclePage() {
 
         {channel === "status" ? (
           <div className="hud-stack">
-            {seatsTotal > 0 ? (
-              <div className="hud-panel hud-array-panel hud-in hud-in-2">
-                <div className="hud-panel-head">
-                  <div>
-                    <div className="hud-eyebrow">Network integrity</div>
-                    <h2 className="hud-panel-title" style={{ marginTop: 6 }}>
-                      LinkedIn seat array
-                    </h2>
-                  </div>
-                  <div
-                    className={`hud-integrity ${li.brokenSeats > 0 ? "degraded" : ""}`}
-                  >
-                    {seatsLive}
-                    <small> / {seatsTotal}</small>
-                  </div>
-                </div>
-
-                <SeatArray seats={li.seats} />
-
-                <div className="hud-array-legend">
-                  <span>
-                    <b>{seatsLive}</b> sending
-                  </span>
-                  <span className={li.brokenSeats > 0 ? "crit" : ""}>
-                    <b>{li.brokenSeats}</b> faulted
-                  </span>
-                  {stranded > 0 ? (
-                    <span className="crit">
-                      <b>{stranded}</b> campaigns stranded on faulted seats
-                    </span>
-                  ) : null}
-                  {li.hiddenSeats > 0 ? (
-                    <span>
-                      <b>{li.hiddenSeats}</b> cancelled{" "}
-                      {li.hiddenSeats === 1 ? "seat" : "seats"} hidden
-                    </span>
-                  ) : null}
-                  <span style={{ marginLeft: "auto" }}>bar height = campaign load</span>
-                </div>
-              </div>
-            ) : null}
-
             <div className="hud-readouts hud-in hud-in-2">
-              <div className={`hud-readout ${c.campaignsNeedingRefresh > 0 ? "alert" : ""}`}>
-                <b>{String(c.campaignsNeedingRefresh).padStart(2, "0")}</b>
-                <span>Need work</span>
-              </div>
-              <div className="hud-readout live">
-                <b>{String(c.linkedInLive).padStart(2, "0")}</b>
-                <span>Live outreach</span>
-              </div>
               <div className={`hud-readout ${c.pendingApprovals > 0 ? "warn" : ""}`}>
                 <b>{String(c.pendingApprovals).padStart(2, "0")}</b>
                 <span>Approvals open</span>
@@ -219,47 +163,6 @@ export default function LifecyclePage() {
                 <span>GHL workflows</span>
               </div>
             </div>
-
-            {li.needsRefresh.length > 0 ? (
-              <div className="hud-panel hud-in hud-in-3">
-                <div className="hud-panel-head">
-                  <h2 className="hud-panel-title">Priority queue</h2>
-                  <span className="hud-eyebrow">Worst first</span>
-                </div>
-                <div className="hud-queue">
-                  {li.needsRefresh.slice(0, 10).map((row, i) => (
-                    <div key={row.id} className="hud-q">
-                      <span className="hud-q-rank hud-num">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <div>
-                        <div className="hud-q-name">{row.name}</div>
-                        <div className="hud-q-meta">
-                          {row.seatName}
-                          {row.clientName ? ` · ${row.clientName}` : ""}
-                        </div>
-                      </div>
-                      <div className="hud-q-faults">
-                        {row.verdict.reasons.map((r) => (
-                          <span key={r.code} className={`hud-chip hud-chip-${r.severity === "refresh" ? "crit" : "warn"}`}>
-                            {r.label}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {li.needsRefresh.length > 10 ? (
-                  <button
-                    className="hud-link"
-                    style={{ marginTop: 12 }}
-                    onClick={() => setChannel("linkedin")}
-                  >
-                    Open all {li.needsRefresh.length} in Outreach
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
 
             {data.approvals.length > 0 ? (
               <div className="hud-panel hud-in hud-in-3">
@@ -300,7 +203,13 @@ export default function LifecyclePage() {
         {channel === "board" ? <BoardPanel clients={data.clients} /> : null}
 
         {channel === "linkedin" ? (
-          <LinkedInPanel data={li} clients={data.clients} onChanged={refresh} />
+          <LinkedInHub
+            data={li}
+            clients={data.clients}
+            counts={data.counts}
+            refreshSettings={data.refreshSettings}
+            onChanged={refresh}
+          />
         ) : null}
 
         {channel === "automations" ? (
