@@ -973,6 +973,64 @@
 }
 .hud-board-add select { min-width: 200px; }
 
+/* Triage: the parking lot every client starts in. Laid out as a wrapping grid
+   rather than a column, because it holds the whole roster and a vertical
+   column of fifty cards is unusable. */
+.hud-triage {
+  border: 1px solid var(--seam);
+  border-radius: 10px;
+  background: var(--hull-lift);
+  padding: 8px 10px;
+  transition: background-color 0.15s ease;
+}
+.hud-triage.drag-over { background: var(--arc-wash); border-color: var(--arc); }
+
+.hud-triage-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hud-triage.open .hud-triage-head { margin-bottom: 9px; }
+
+.hud-triage-toggle {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--instrument);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.hud-triage-chevron { color: var(--ghost-dim); font-size: 10px; }
+
+.hud-triage-search {
+  flex: 0 0 180px;
+  width: 180px;
+  font-size: 10.5px;
+  padding: 3px 8px;
+}
+.hud-triage-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ghost-dim);
+}
+
+.hud-triage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  gap: 7px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 2px;
+  align-content: start;
+}
+
 .hud-board-cols {
   display: flex;
   gap: 8px;
@@ -992,6 +1050,8 @@
   flex-direction: column;
   gap: 6px;
   min-height: 100px;
+  max-height: 620px;
+  overflow-y: auto;
   transition: background-color 0.15s ease;
 }
 .hud-board-col.drag-over { background: var(--arc-wash); }
@@ -1030,39 +1090,104 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: var(--shadow);
-  padding: 7px 8px;
+  padding: 7px 9px;
   cursor: grab;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 .hud-board-card:active { cursor: grabbing; }
 .hud-board-card.dragging { opacity: 0.45; }
+.hud-board-card.open {
+  border-color: var(--arc);
+  box-shadow: var(--shadow);
+}
 
+/* The whole header is the open/close control, so it has to reset the button
+   defaults rather than inherit a centred, bordered, system-font look. */
 .hud-board-card-head {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
 }
 .hud-board-card-head b {
   font-size: 11.5px;
+  font-weight: 600;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hud-board-card-head .hud-link { font-size: 10px; flex-shrink: 0; }
 
-.hud-board-card-row {
+.hud-board-count {
+  font-family: var(--readout);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ghost-dim);
+  flex-shrink: 0;
+}
+.hud-board-count.is-met { color: var(--success-ink); }
+.hud-board-count.is-open { color: var(--flare); }
+
+.hud-board-meta {
+  font-size: 10px;
+  color: var(--ghost-dim);
+}
+.hud-board-meta.note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+.hud-board-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 7px;
+  margin-top: 2px;
+  border-top: 1px solid var(--seam);
+}
+.hud-board-field {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ghost-dim);
 }
-.hud-board-card-row select { font-size: 10px; padding: 2px 4px; }
-.hud-board-card-row .hud-link { font-size: 10px; }
+.hud-board-field select {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  padding: 2px 4px;
+}
+.hud-board-field input {
+  width: 46px;
+  font-size: 10.5px;
+  padding: 2px 4px;
+  text-align: center;
+}
+.hud-board-card-edit .hud-link { font-size: 10px; align-self: flex-start; }
+.hud-board-add-item {
+  width: 100%;
+  font-size: 10.5px;
+  padding: 3px 6px;
+}
+.hud-board-remove { color: var(--crit) !important; }
 
 .hud-board-chip-row {
   display: flex;
@@ -1126,21 +1251,18 @@
 }
 .hud-board-item-del:hover { color: var(--crit); }
 
-.hud-board-item-add input {
-  width: 100%;
-  font-size: 10.5px;
-  padding: 3px 6px;
-}
-
 .hud-board-notes {
   width: 100%;
   font-size: 10.5px;
+  line-height: 1.45;
   resize: vertical;
-  padding: 3px 6px;
-  min-height: 24px;
+  padding: 4px 6px;
+  min-height: 38px;
 }
 
-.hud-board-card .hud-progress { margin: 0; height: 3px; }
+.hud-board-card .hud-progress { margin: 0; height: 3px; border-radius: 2px; overflow: hidden; }
+.hud-board-card .hud-progress.is-met .hud-progress-fill { background: var(--good); }
+.hud-board-card .hud-progress.is-open .hud-progress-fill { background: var(--flare); }
 
 /* Contracted-volume counter. Colour carries the state so a card that is short
    on its contract reads at a glance without being read word by word. */
@@ -1164,51 +1286,6 @@
   color: var(--ink);
 }
 .hud-board-summary .warn { color: var(--flare); margin-left: auto; }
-
-.hud-board-quota {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  background: var(--hull-lift);
-  border-left: 2px solid var(--seam-lit);
-}
-.hud-board-quota.is-met { border-left-color: var(--good); }
-.hud-board-quota.is-open { border-left-color: var(--flare); }
-.hud-board-quota.is-met .hud-progress-fill { background: var(--good); }
-.hud-board-quota.is-open .hud-progress-fill { background: var(--flare); }
-
-.hud-board-quota-head {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  font-size: 10.5px;
-  color: var(--ghost);
-}
-.hud-board-quota-head b {
-  font-family: var(--readout);
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  color: var(--ink);
-}
-.hud-board-quota.is-met .hud-board-quota-head b { color: var(--success-ink); }
-
-.hud-board-quota-edit {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 9.5px;
-  color: var(--ghost-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.hud-board-quota-edit input {
-  width: 42px;
-  font-size: 10.5px;
-  padding: 1px 4px;
-  text-align: center;
-}
 
 .hud-board-camp-chip.pending { opacity: 0.62; }
 .hud-board-camp-n {

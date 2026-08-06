@@ -7,6 +7,9 @@ import type { BoardCard, BoardColumn, ClientRef } from "./types";
 
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 
+/** Where cards wait before anyone picks them up. Not part of the pipeline. */
+const TRIAGE = "triage";
+
 function currentPeriod(): string {
   return new Date().toISOString().slice(0, 7);
 }
@@ -22,6 +25,187 @@ function periodLabel(period: string): string {
   return MONTH_FORMAT.format(new Date(Date.UTC(y, m - 1, 1)));
 }
 
+interface CardHandlers {
+  columns: BoardColumn[];
+  isOpen: boolean;
+  draft: string;
+  dragging: boolean;
+  onToggle: (id: string) => void;
+  onMove: (id: string, columnKey: string) => void;
+  onQuota: (id: string, quota: number) => void;
+  onNotes: (id: string, notes: string) => void;
+  onRemove: (card: BoardCard) => void;
+  onDraft: (id: string, value: string) => void;
+  onAddItem: (id: string) => void;
+  onToggleItem: (cardId: string, itemId: string, done: boolean) => void;
+  onRemoveItem: (cardId: string, itemId: string) => void;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+}
+
+/**
+ * At rest a card is a name, a progress reading, and whatever is actually on it.
+ * Every control lives behind the header toggle: a column can hold fifty of
+ * these, and showing four form fields on each one is unreadable.
+ */
+function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
+  const pct = card.quota > 0 ? Math.min(100, (card.delivered / card.quota) * 100) : 0;
+  const state =
+    card.quota === 0 ? "none" : card.delivered >= card.quota ? "met" : "open";
+  const suggestHint =
+    card.suggestedColumnKey !== card.columnKey
+      ? h.columns.find((c) => c.key === card.suggestedColumnKey)?.label
+      : null;
+  const doneItems = card.manualItems.filter((i) => i.done).length;
+
+  return (
+    <div
+      className={`hud-board-card ${h.dragging ? "dragging" : ""} ${h.isOpen ? "open" : ""}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", card.id);
+        h.onDragStart(card.id);
+      }}
+      onDragEnd={h.onDragEnd}
+    >
+      <button
+        type="button"
+        className="hud-board-card-head"
+        onClick={() => h.onToggle(card.id)}
+        aria-expanded={h.isOpen}
+      >
+        <b>{card.clientName}</b>
+        <span className={`hud-board-count is-${state}`}>
+          {card.quota > 0 ? `${card.delivered}/${card.quota}` : card.delivered || "—"}
+        </span>
+      </button>
+
+      {card.quota > 0 ? (
+        <div className={`hud-progress is-${state}`}>
+          <div className="hud-progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+      ) : null}
+
+      {card.campaigns.length > 0 ? (
+        <div className="hud-board-chip-row">
+          {card.campaigns.map((camp) => (
+            <Link
+              key={camp.id}
+              href={`/admin/campaigns/${camp.id}`}
+              className={`hud-board-camp-chip ${camp.delivered ? "" : "pending"}`}
+              title={`${camp.title} — ${camp.emailCount} email${camp.emailCount === 1 ? "" : "s"}`}
+            >
+              <StatusBadge status={camp.status} />
+              <span>{camp.title}</span>
+              {camp.emailCount > 1 ? (
+                <em className="hud-board-camp-n">×{camp.emailCount}</em>
+              ) : null}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
+      {card.manualItems.length > 0 ? (
+        h.isOpen ? (
+          <div className="hud-board-items">
+            {card.manualItems.map((item) => (
+              <label key={item.id} className="hud-board-item">
+                <input
+                  type="checkbox"
+                  checked={item.done}
+                  onChange={(e) => h.onToggleItem(card.id, item.id, e.target.checked)}
+                />
+                <span className={item.done ? "done" : ""}>{item.label}</span>
+                <button
+                  type="button"
+                  className="hud-board-item-del"
+                  onClick={() => h.onRemoveItem(card.id, item.id)}
+                  aria-label="Remove deliverable"
+                >
+                  ×
+                </button>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <div className="hud-board-meta">
+            {doneItems}/{card.manualItems.length} other deliverables
+          </div>
+        )
+      ) : null}
+
+      {!h.isOpen && card.notes ? (
+        <div className="hud-board-meta note">{card.notes}</div>
+      ) : null}
+
+      {h.isOpen ? (
+        <div className="hud-board-card-edit">
+          <label className="hud-board-field">
+            <span>Stage</span>
+            <select
+              value={card.columnKey}
+              onChange={(e) => h.onMove(card.id, e.target.value)}
+            >
+              {h.columns.map((c) => (
+                <option key={c.key} value={c.key}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="hud-board-field">
+            <span>Contracted /mo</span>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              defaultValue={card.quota || ""}
+              placeholder="0"
+              onBlur={(e) => {
+                const next = Number(e.target.value || 0);
+                if (next !== card.quota) h.onQuota(card.id, next);
+              }}
+            />
+          </label>
+
+          {suggestHint ? (
+            <button
+              className="hud-link"
+              title="Suggested from this month's campaign statuses"
+              onClick={() => h.onMove(card.id, card.suggestedColumnKey)}
+            >
+              Move to {suggestHint}
+            </button>
+          ) : null}
+
+          <input
+            className="hud-board-add-item"
+            value={h.draft}
+            onChange={(e) => h.onDraft(card.id, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") h.onAddItem(card.id);
+            }}
+            placeholder="Add a deliverable, then Enter"
+          />
+
+          <textarea
+            className="hud-board-notes"
+            rows={2}
+            defaultValue={card.notes}
+            placeholder="Notes"
+            onBlur={(e) => {
+              if (e.target.value !== card.notes) h.onNotes(card.id, e.target.value);
+            }}
+          />
+
+          <button className="hud-link hud-board-remove" onClick={() => h.onRemove(card)}>
+            Remove from board
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   const [period, setPeriod] = useState(currentPeriod);
   const [columns, setColumns] = useState<BoardColumn[]>([]);
@@ -32,6 +216,18 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [addingClientId, setAddingClientId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  const [triageOpen, setTriageOpen] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const toggleCard = useCallback((id: string) => {
+    setOpenCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async (p: string) => {
     setLoading(true);
@@ -54,6 +250,13 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     void load(period);
   }, [period, load]);
 
+  // Triage is rendered as its own area above the board, so it is kept out of
+  // the pipeline column list rather than shown as a first column.
+  const pipelineColumns = useMemo(
+    () => columns.filter((c) => c.key !== TRIAGE),
+    [columns]
+  );
+
   const cardsByColumn = useMemo(() => {
     const map = new Map<string, BoardCard[]>();
     for (const c of cards) {
@@ -64,11 +267,17 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     return map;
   }, [cards]);
 
+  const triageCards = useMemo(() => {
+    const all = cardsByColumn.get(TRIAGE) ?? [];
+    const q = search.trim().toLowerCase();
+    return q ? all.filter((c) => c.clientName.toLowerCase().includes(q)) : all;
+  }, [cardsByColumn, search]);
+
   const totals = useMemo(() => {
     const quota = cards.reduce((n, c) => n + c.quota, 0);
     const delivered = cards.reduce((n, c) => n + c.delivered, 0);
-    const missingQuota = cards.filter((c) => c.quota === 0).length;
-    return { quota, delivered, missingQuota };
+    const inPlay = cards.filter((c) => c.columnKey !== TRIAGE).length;
+    return { quota, delivered, inPlay };
   }, [cards]);
 
   const availableClients = useMemo(() => {
@@ -76,46 +285,56 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     return clients.filter((c) => !carded.has(c.id)).sort((a, b) => a.name.localeCompare(b.name));
   }, [clients, cards]);
 
-  async function moveCard(cardId: string, columnKey: string) {
-    setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, columnKey: columnKey as BoardCard["columnKey"] } : c)));
-    const res = await fetch(`/api/lifecycle/board/cards/${cardId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ columnKey }),
-    });
-    if (!res.ok) void load(period);
-  }
+  const moveCard = useCallback(
+    async (cardId: string, columnKey: string) => {
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId ? { ...c, columnKey: columnKey as BoardCard["columnKey"] } : c
+        )
+      );
+      const res = await fetch(`/api/lifecycle/board/cards/${cardId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ columnKey }),
+      });
+      if (!res.ok) void load(period);
+    },
+    [load, period]
+  );
 
   // The quota is a client-level contract term, so every card for that client
   // (this month and any other) updates together.
-  async function saveQuota(cardId: string, quota: number) {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    setCards((prev) =>
-      prev.map((c) => (c.clientId === card.clientId ? { ...c, quota } : c))
-    );
-    const res = await fetch(`/api/lifecycle/board/cards/${cardId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quota }),
-    });
-    if (!res.ok) void load(period);
-  }
+  const saveQuota = useCallback(
+    async (cardId: string, quota: number) => {
+      let clientId: string | null = null;
+      setCards((prev) => {
+        clientId = prev.find((c) => c.id === cardId)?.clientId ?? null;
+        return prev.map((c) => (c.clientId === clientId ? { ...c, quota } : c));
+      });
+      const res = await fetch(`/api/lifecycle/board/cards/${cardId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quota }),
+      });
+      if (!res.ok) void load(period);
+    },
+    [load, period]
+  );
 
-  async function saveNotes(cardId: string, notes: string) {
+  const saveNotes = useCallback(async (cardId: string, notes: string) => {
     setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, notes } : c)));
     await fetch(`/api/lifecycle/board/cards/${cardId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ notes }),
     });
-  }
+  }, []);
 
-  async function removeCard(card: BoardCard) {
+  const removeCard = useCallback(async (card: BoardCard) => {
     if (!confirm(`Remove ${card.clientName}'s card for ${periodLabel(card.period)}?`)) return;
     setCards((prev) => prev.filter((c) => c.id !== card.id));
     await fetch(`/api/lifecycle/board/cards/${card.id}`, { method: "DELETE" });
-  }
+  }, []);
 
   async function addCard() {
     if (!addingClientId) return;
@@ -128,24 +347,29 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     if (res.ok) void load(period);
   }
 
-  async function addItem(cardId: string) {
-    const label = (drafts[cardId] || "").trim();
-    if (!label) return;
-    const res = await fetch("/api/lifecycle/board/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId, label }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setCards((prev) =>
-        prev.map((c) => (c.id === cardId ? { ...c, manualItems: [...c.manualItems, data.item] } : c))
-      );
-      setDrafts((d) => ({ ...d, [cardId]: "" }));
-    }
-  }
+  const addItem = useCallback(
+    async (cardId: string) => {
+      const label = (drafts[cardId] || "").trim();
+      if (!label) return;
+      const res = await fetch("/api/lifecycle/board/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId, label }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCards((prev) =>
+          prev.map((c) =>
+            c.id === cardId ? { ...c, manualItems: [...c.manualItems, data.item] } : c
+          )
+        );
+        setDrafts((d) => ({ ...d, [cardId]: "" }));
+      }
+    },
+    [drafts]
+  );
 
-  async function toggleItem(cardId: string, itemId: string, done: boolean) {
+  const toggleItem = useCallback(async (cardId: string, itemId: string, done: boolean) => {
     setCards((prev) =>
       prev.map((c) =>
         c.id === cardId
@@ -158,15 +382,56 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ done }),
     });
-  }
+  }, []);
 
-  async function removeItem(cardId: string, itemId: string) {
+  const removeItem = useCallback(async (cardId: string, itemId: string) => {
     setCards((prev) =>
       prev.map((c) =>
         c.id === cardId ? { ...c, manualItems: c.manualItems.filter((i) => i.id !== itemId) } : c
       )
     );
     await fetch(`/api/lifecycle/board/items/${itemId}`, { method: "DELETE" });
+  }, []);
+
+  const setDraft = useCallback((id: string, value: string) => {
+    setDrafts((d) => ({ ...d, [id]: value }));
+  }, []);
+
+  function handlersFor(card: BoardCard): CardHandlers {
+    return {
+      columns,
+      isOpen: openCards.has(card.id),
+      draft: drafts[card.id] || "",
+      dragging: draggingId === card.id,
+      onToggle: toggleCard,
+      onMove: (id, key) => void moveCard(id, key),
+      onQuota: (id, q) => void saveQuota(id, q),
+      onNotes: (id, n) => void saveNotes(id, n),
+      onRemove: (c) => void removeCard(c),
+      onDraft: setDraft,
+      onAddItem: (id) => void addItem(id),
+      onToggleItem: (cid, iid, done) => void toggleItem(cid, iid, done),
+      onRemoveItem: (cid, iid) => void removeItem(cid, iid),
+      onDragStart: setDraggingId,
+      onDragEnd: () => setDraggingId(null),
+    };
+  }
+
+  function dropProps(key: string) {
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOverCol(key);
+      },
+      onDragLeave: () => setDragOverCol((cur) => (cur === key ? null : cur)),
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        const id = e.dataTransfer.getData("text/plain");
+        setDragOverCol(null);
+        setDraggingId(null);
+        if (id) void moveCard(id, key);
+      },
+    };
   }
 
   return (
@@ -184,7 +449,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
           </button>
           {period !== currentPeriod() ? (
             <button className="hud-link" onClick={() => setPeriod(currentPeriod())}>
-              Back to this month
+              This month
             </button>
           ) : null}
         </div>
@@ -210,15 +475,11 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
             <b>
               {totals.delivered}/{totals.quota}
             </b>{" "}
-            emails delivered against contract this month
+            emails delivered against contract
           </span>
-          {totals.missingQuota > 0 ? (
-            <span className="warn">
-              {totals.missingQuota}{" "}
-              {totals.missingQuota === 1 ? "client has" : "clients have"} no contracted
-              volume set
-            </span>
-          ) : null}
+          <span>
+            <b>{totals.inPlay}</b> in the pipeline
+          </span>
         </div>
       ) : null}
 
@@ -227,199 +488,78 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
       ) : cards.length === 0 ? (
         <p className="hud-empty">No clients on the board yet. Add one above.</p>
       ) : (
-        <div className="hud-board-cols">
-          {columns.map((col) => {
-            const colCards = cardsByColumn.get(col.key) ?? [];
-            return (
-              <div
-                key={col.key}
-                className={`hud-board-col ${dragOverCol === col.key ? "drag-over" : ""}`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOverCol(col.key);
-                }}
-                onDragLeave={() => setDragOverCol((cur) => (cur === col.key ? null : cur))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const id = e.dataTransfer.getData("text/plain");
-                  setDragOverCol(null);
-                  setDraggingId(null);
-                  if (id) void moveCard(id, col.key);
-                }}
+        <>
+          <div
+            className={`hud-triage ${triageOpen ? "open" : ""} ${
+              dragOverCol === TRIAGE ? "drag-over" : ""
+            }`}
+            {...dropProps(TRIAGE)}
+          >
+            <div className="hud-triage-head">
+              <button
+                type="button"
+                className="hud-triage-toggle"
+                onClick={() => setTriageOpen((v) => !v)}
+                aria-expanded={triageOpen}
               >
-                <div className="hud-board-col-head">
-                  <span>{col.label}</span>
-                  <span className="hud-board-col-count">{colCards.length}</span>
+                <span className="hud-triage-chevron">{triageOpen ? "▾" : "▸"}</span>
+                Triage
+                <span className="hud-board-col-count">
+                  {cardsByColumn.get(TRIAGE)?.length ?? 0}
+                </span>
+              </button>
+              {triageOpen ? (
+                <input
+                  className="hud-triage-search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Find a client…"
+                />
+              ) : null}
+              <span className="hud-triage-hint">Drag one into a stage to start work</span>
+            </div>
+
+            {triageOpen ? (
+              triageCards.length === 0 ? (
+                <p className="hud-empty" style={{ margin: 0 }}>
+                  {search ? "No client matches that." : "Triage is clear."}
+                </p>
+              ) : (
+                <div className="hud-triage-grid">
+                  {triageCards.map((card) => (
+                    <Card key={card.id} card={card} {...handlersFor(card)} />
+                  ))}
                 </div>
+              )
+            ) : null}
+          </div>
 
-                {colCards.length === 0 ? (
-                  <div className="hud-board-empty-col">Drop a card here</div>
-                ) : (
-                  colCards.map((card) => {
-                    const total = card.campaigns.length;
-                    // Progress is measured against the contract, not against
-                    // what happens to be on the board, so a client with no
-                    // quota on file shows a plain count instead of a bar.
-                    const pct =
-                      card.quota > 0
-                        ? Math.min(100, (card.delivered / card.quota) * 100)
-                        : 0;
-                    const quotaState =
-                      card.quota === 0
-                        ? "none"
-                        : card.delivered >= card.quota
-                          ? "met"
-                          : "open";
-                    const suggestHint =
-                      card.suggestedColumnKey !== card.columnKey
-                        ? columns.find((c) => c.key === card.suggestedColumnKey)?.label
-                        : null;
-                    return (
-                      <div
-                        key={card.id}
-                        className={`hud-board-card ${draggingId === card.id ? "dragging" : ""}`}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", card.id);
-                          setDraggingId(card.id);
-                        }}
-                        onDragEnd={() => setDraggingId(null)}
-                      >
-                        <div className="hud-board-card-head">
-                          <b>{card.clientName}</b>
-                          <button className="hud-link" onClick={() => removeCard(card)}>
-                            Remove
-                          </button>
-                        </div>
+          <div className="hud-board-cols">
+            {pipelineColumns.map((col) => {
+              const colCards = cardsByColumn.get(col.key) ?? [];
+              return (
+                <div
+                  key={col.key}
+                  className={`hud-board-col ${dragOverCol === col.key ? "drag-over" : ""}`}
+                  {...dropProps(col.key)}
+                >
+                  <div className="hud-board-col-head">
+                    <span>{col.label}</span>
+                    <span className="hud-board-col-count">{colCards.length}</span>
+                  </div>
 
-                        <div className="hud-board-card-row">
-                          <select
-                            value={card.columnKey}
-                            onChange={(e) => void moveCard(card.id, e.target.value)}
-                          >
-                            {columns.map((c) => (
-                              <option key={c.key} value={c.key}>{c.label}</option>
-                            ))}
-                          </select>
-                          {suggestHint ? (
-                            <button
-                              className="hud-link"
-                              title={`Suggested from this month's campaign statuses`}
-                              onClick={() => void moveCard(card.id, card.suggestedColumnKey)}
-                            >
-                              Suggested: {suggestHint}
-                            </button>
-                          ) : null}
-                        </div>
-
-                        <div className={`hud-board-quota is-${quotaState}`}>
-                          {card.quota > 0 ? (
-                            <>
-                              <div className="hud-board-quota-head">
-                                <b>
-                                  {card.delivered}/{card.quota}
-                                </b>
-                                <span>emails this month</span>
-                              </div>
-                              <div className="hud-progress">
-                                <div className="hud-progress-fill" style={{ width: `${pct}%` }} />
-                              </div>
-                            </>
-                          ) : (
-                            <div className="hud-board-quota-head">
-                              <b>{card.delivered}</b>
-                              <span>sent, no contract volume set</span>
-                            </div>
-                          )}
-                          <label className="hud-board-quota-edit">
-                            <span>Contracted /mo</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={99}
-                              defaultValue={card.quota || ""}
-                              placeholder="0"
-                              onClick={(e) => e.stopPropagation()}
-                              onBlur={(e) => {
-                                const next = Number(e.target.value || 0);
-                                if (next !== card.quota) void saveQuota(card.id, next);
-                              }}
-                            />
-                          </label>
-                        </div>
-
-                        {total > 0 ? (
-                          <div className="hud-board-chip-row">
-                            {card.campaigns.map((camp) => (
-                              <Link
-                                key={camp.id}
-                                href={`/admin/campaigns/${camp.id}`}
-                                className={`hud-board-camp-chip ${camp.delivered ? "" : "pending"}`}
-                                title={`${camp.title} — ${camp.emailCount} email${camp.emailCount === 1 ? "" : "s"}`}
-                              >
-                                <StatusBadge status={camp.status} />
-                                <span>{camp.title}</span>
-                                {camp.emailCount > 1 ? (
-                                  <em className="hud-board-camp-n">×{camp.emailCount}</em>
-                                ) : null}
-                              </Link>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="hud-board-nocamp">No campaigns this month yet.</p>
-                        )}
-
-                        {card.manualItems.length > 0 ? (
-                          <div className="hud-board-items">
-                            {card.manualItems.map((item) => (
-                              <label key={item.id} className="hud-board-item">
-                                <input
-                                  type="checkbox"
-                                  checked={item.done}
-                                  onChange={(e) => void toggleItem(card.id, item.id, e.target.checked)}
-                                />
-                                <span className={item.done ? "done" : ""}>{item.label}</span>
-                                <button
-                                  type="button"
-                                  className="hud-board-item-del"
-                                  onClick={() => void removeItem(card.id, item.id)}
-                                  aria-label="Remove deliverable"
-                                >
-                                  ×
-                                </button>
-                              </label>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        <div className="hud-board-item-add">
-                          <input
-                            value={drafts[card.id] || ""}
-                            onChange={(e) => setDrafts((d) => ({ ...d, [card.id]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void addItem(card.id);
-                            }}
-                            placeholder="+ LinkedIn, SMS, landing page…"
-                          />
-                        </div>
-
-                        <textarea
-                          className="hud-board-notes"
-                          rows={1}
-                          defaultValue={card.notes}
-                          placeholder="Notes for this client's month…"
-                          onBlur={(e) => {
-                            if (e.target.value !== card.notes) void saveNotes(card.id, e.target.value);
-                          }}
-                        />
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {colCards.length === 0 ? (
+                    <div className="hud-board-empty-col">Drop a card here</div>
+                  ) : (
+                    colCards.map((card) => (
+                      <Card key={card.id} card={card} {...handlersFor(card)} />
+                    ))
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

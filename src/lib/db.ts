@@ -718,6 +718,7 @@ export interface LifecycleCampaignMeta {
 
 /** The Deliverables board: one row per client per month. */
 export type BoardColumnKey =
+  | "triage"
   | "next_up"
   | "qa"
   | "internal_revisions"
@@ -1649,7 +1650,7 @@ export function getDb(): Database.Database {
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
       period TEXT NOT NULL,
-      column_key TEXT NOT NULL DEFAULT 'next_up',
+      column_key TEXT NOT NULL DEFAULT 'triage',
       sort_order INTEGER NOT NULL DEFAULT 0,
       notes TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
@@ -1917,6 +1918,19 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("calendar_approved_by")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN calendar_approved_by TEXT`);
   }
+  // The board's landing column became Triage, so every client starts parked
+  // there and is pulled into Next Up deliberately. Cards created under the old
+  // default that nobody has touched (created_at still equals updated_at) move
+  // across; anything someone actually placed in Next Up stays put.
+  const boardCardCols = tableColumns(database, "lifecycle_board_cards");
+  if (boardCardCols.length) {
+    database.exec(
+      `UPDATE lifecycle_board_cards
+          SET column_key = 'triage'
+        WHERE column_key = 'next_up' AND created_at = updated_at`
+    );
+  }
+
   if (revClientCols.length && !revClientCols.includes("monthly_email_quota")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN monthly_email_quota INTEGER NOT NULL DEFAULT 0`

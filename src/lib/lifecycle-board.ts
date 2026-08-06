@@ -27,7 +27,15 @@ export interface BoardColumn {
   label: string;
 }
 
+/**
+ * Where every client starts each month. Triage is not part of the pipeline —
+ * it's the parking lot you pull work out of — so the UI renders it as its own
+ * area above the columns rather than as the first column.
+ */
+export const TRIAGE_COLUMN: BoardColumn = { key: "triage", label: "Triage" };
+
 export const BOARD_COLUMNS: BoardColumn[] = [
+  TRIAGE_COLUMN,
   { key: "next_up", label: "Next Up" },
   { key: "qa", label: "Sent for QA Check" },
   { key: "internal_revisions", label: "Internal Revisions" },
@@ -154,7 +162,7 @@ function ensureCardsForPeriod(period: string): void {
   const insert = db.prepare(
     `INSERT OR IGNORE INTO lifecycle_board_cards
        (id, client_id, period, column_key, sort_order, notes, created_at, updated_at)
-     VALUES (?, ?, ?, 'next_up', 0, '', ?, ?)`
+     VALUES (?, ?, ?, 'triage', 0, '', ?, ?)`
   );
   const run = db.transaction((rows: typeof clients) => {
     for (const c of rows) insert.run(nanoid(12), c.id, period, ts, ts);
@@ -261,7 +269,7 @@ export function addBoardCard(clientId: string, period: string): boolean {
   db.prepare(
     `INSERT INTO lifecycle_board_cards
        (id, client_id, period, column_key, sort_order, notes, created_at, updated_at)
-     VALUES (?, ?, ?, 'next_up', 0, '', ?, ?)
+     VALUES (?, ?, ?, 'triage', 0, '', ?, ?)
      ON CONFLICT(client_id, period) DO NOTHING`
   ).run(nanoid(12), clientId, period, ts, ts);
   return true;

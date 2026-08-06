@@ -293,6 +293,7 @@ export interface SwipeRow {
 /* ------------------------------------------------------- deliverables board */
 
 export type BoardColumnKey =
+  | "triage"
   | "next_up"
   | "qa"
   | "internal_revisions"
