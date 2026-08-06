@@ -1416,3 +1416,96 @@ export function disconnectBasecamp() {
     .prepare(`DELETE FROM app_settings WHERE key IN (?, ?)`)
     .run("basecamp_tokens", "basecamp_service_identity");
 }
+
+// --------------------------------------------------------------- Onboarding
+
+export interface ProjectConstructionResult {
+  ok: boolean;
+  error?: string;
+  projectId?: string;
+}
+
+// Creates a project from an existing Basecamp project template (the standard
+// new-client setup: message board, to-dos, card table, etc. already laid
+// out). Construction is async on Basecamp's side — POST starts it, then this
+// polls the same resource until it reports completed. Requires the connected
+// identity to be an account admin/owner in Basecamp; a 403 here means that,
+// not a bug in this call.
+export async function createProjectFromTemplate(
+  templateId: string,
+  name: string,
+  description: string,
+  identity: BcIdentity = SERVICE
+): Promise<ProjectConstructionResult> {
+  const startRes = await bc(
+    `/templates/${templateId}/project_constructions.json`,
+    { method: "POST", body: JSON.stringify({ project: { name, description } }) },
+    identity
+  );
+  if (!startRes.ok) {
+    return { ok: false, error: `start ${startRes.status}` };
+  }
+  const started = await startRes.json();
+  const constructionId = started.id;
+  if (!constructionId) return { ok: false, error: "no construction id returned" };
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const pollRes = await bc(
+      `/templates/${templateId}/project_constructions/${constructionId}.json`,
+      undefined,
+      identity
+    );
+    if (!pollRes.ok) continue;
+    const status = await pollRes.json();
+    if (status.status === "completed" && status.project_id) {
+      return { ok: true, projectId: String(status.project_id) };
+    }
+    if (status.status === "failed") {
+      return { ok: false, error: "construction failed" };
+    }
+  }
+  return { ok: false, error: "construction did not finish in time" };
+}
+
+// Finds an existing Basecamp person by email, account-wide (not just one
+// project). Basecamp's API grants project access to people already in the
+// account — it does not expose a way to invite a brand-new email by API, so
+// the caller must treat a null result as "invite them from Basecamp's People
+// settings first," not as a retriable failure.
+export async function findPersonByEmail(
+  email: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcPerson | null> {
+  if (!email.trim()) return null;
+  const res = await bc(`/circles/people.json`, undefined, identity);
+  if (!res.ok) return null;
+  const all = await res.json();
+  if (!Array.isArray(all)) return null;
+  const want = email.trim().toLowerCase();
+  const match = all.find(
+    (p: BcPerson) => (p.email_address || "").toLowerCase() === want
+  );
+  return match || null;
+}
+
+export interface GrantAccessResult {
+  ok: boolean;
+  error?: string;
+}
+
+// Grants an already-known Basecamp person access to a project. This is the
+// "add the client to Basecamp" half of onboarding — findPersonByEmail first.
+export async function grantProjectAccess(
+  projectId: string,
+  personId: number,
+  identity: BcIdentity = SERVICE
+): Promise<GrantAccessResult> {
+  const res = await bc(
+    `/projects/${projectId}/people/users.json`,
+    { method: "PUT", body: JSON.stringify({ grant: [personId] }) },
+    identity
+  );
+  if (res.ok) return { ok: true };
+  return { ok: false, error: `${res.status}` };
+}
