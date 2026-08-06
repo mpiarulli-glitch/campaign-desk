@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  isAdminAuthenticated,
+  isAdminOrSyncAuthenticated,
   isCampaignsReadAuthenticated,
   reviewUrl,
 } from "@/lib/auth";
@@ -35,7 +35,7 @@ const STATUSES: CampaignStatus[] = [
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await isCampaignsReadAuthenticated())) {
+  if (!(await isCampaignsReadAuthenticated()) && !(await isAdminOrSyncAuthenticated(_request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -71,7 +71,7 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminOrSyncAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -209,8 +209,8 @@ export async function PATCH(request: Request, { params }: Params) {
   });
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+export async function DELETE(request: Request, { params }: Params) {
+  if (!(await isAdminOrSyncAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

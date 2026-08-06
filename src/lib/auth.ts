@@ -518,6 +518,30 @@ export async function isAdminAuthenticated(): Promise<boolean> {
   return (await getSession())?.role === "admin";
 }
 
+function syncTokenMatches(request: Request): boolean {
+  const expected = process.env.CAMPAIGN_DESK_SYNC_TOKEN;
+  if (!expected) return false;
+
+  const header = request.headers.get("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return false;
+
+  const actual = match[1];
+  const a = Buffer.from(actual);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+export async function isAdminOrSyncAuthenticated(request: Request): Promise<boolean> {
+  if (syncTokenMatches(request)) return true;
+  return isAdminAuthenticated();
+}
+
 export async function isForecastAuthenticated(
   person?: string
 ): Promise<boolean> {

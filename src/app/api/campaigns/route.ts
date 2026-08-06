@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  isAdminAuthenticated,
+  isAdminOrSyncAuthenticated,
   isBlogScopedSession,
   isCampaignsReadAuthenticated,
 } from "@/lib/auth";
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminOrSyncAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
