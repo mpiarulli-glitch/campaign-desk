@@ -222,47 +222,45 @@ export default function OnboardingPage() {
 
   return (
     <div>
-      <div className="page-actions">
-        {!data?.ghlConfigured ? (
-          <span className="muted" style={{ fontSize: 12 }}>
-            GHL opportunities not configured yet
-          </span>
-        ) : data?.ghlError ? (
-          <span className="error" style={{ fontSize: 12 }}>
-            GHL error: {data.ghlError}
-          </span>
-        ) : (
-          <>
-            <select
-              className="select-clean"
-              value={addPick}
-              onChange={(e) => setAddPick(e.target.value)}
-              style={{ minWidth: 260 }}
-            >
-              <option value="">Add an opportunity...</option>
-              {(data?.offBoard || []).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                  {o.contactName ? ` — ${o.contactName}` : ""}
-                  {o.monetaryValue ? ` (${fmtMoney(o.monetaryValue)})` : ""}
-                </option>
-              ))}
-            </select>
-            <button className="btn btn-sm" onClick={addOpportunity} disabled={!addPick || adding}>
-              {adding ? "Adding..." : "+ Add to board"}
-            </button>
-          </>
-        )}
-      </div>
-
       <main className="container stack">
         <div className="page-hero">
           <p className="eyebrow">Onboarding</p>
           <h1 className="h1">New Client Onboarding</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Pulled from the 🚀 Empire Launch Pipeline in GHL. Drag a prospect between stages;
-            the checkmarks with a colored dot actually do the thing when clicked.
+            Pulled from the 🚀 Empire Launch Pipeline in GHL. Drag a prospect between stages.
+            Pill-shaped buttons in a card actually do the thing when clicked.
           </p>
+        </div>
+
+        <div className="onb-toolbar">
+          {!data?.ghlConfigured ? (
+            <span className="onb-toolbar-note">GHL opportunities not configured yet</span>
+          ) : data?.ghlError ? (
+            <span className="onb-toolbar-note error" style={{ margin: 0 }}>
+              GHL error: {data.ghlError}
+            </span>
+          ) : (
+            <>
+              <span className="onb-toolbar-label">Add from GHL</span>
+              <select
+                className="select-clean"
+                value={addPick}
+                onChange={(e) => setAddPick(e.target.value)}
+              >
+                <option value="">Pick an opportunity...</option>
+                {(data?.offBoard || []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                    {o.contactName ? ` — ${o.contactName}` : ""}
+                    {o.monetaryValue ? ` (${fmtMoney(o.monetaryValue)})` : ""}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn-sm" onClick={addOpportunity} disabled={!addPick || adding}>
+                {adding ? "Adding..." : "+ Add to board"}
+              </button>
+            </>
+          )}
         </div>
 
         {error ? <p className="error">{error}</p> : null}
@@ -275,17 +273,16 @@ export default function OnboardingPage() {
               const cards = byStage.get(stage.key) || [];
               const isOver = overStage === stage.key;
               const isNotNow = stage.key === "not_now";
+              const colorHex = COLOR_HEX[stage.color];
               return (
                 <div
                   key={stage.key}
                   className={`onb-col ${isOver ? "is-over" : ""} ${isNotNow ? "is-notnow" : ""}`}
+                  style={isOver ? undefined : { borderTopColor: colorHex || "var(--border-strong)" }}
                   {...columnDropProps(stage.key)}
                 >
                   <div className="onb-col-head">
-                    <span
-                      className="onb-dot"
-                      style={{ background: COLOR_HEX[stage.color] || "var(--border-strong)" }}
-                    />
+                    <span className="onb-dot" style={{ background: colorHex || "var(--border-strong)" }} />
                     <span className="onb-col-title">{stage.label}</span>
                     <span className="onb-col-count">{cards.length}</span>
                   </div>
@@ -296,10 +293,13 @@ export default function OnboardingPage() {
                       cards.map((card) => {
                         const open = openCard === card.prospect.id;
                         const done = card.steps.filter((s) => s.completed).length;
+                        const pct = card.steps.length ? Math.round((done / card.steps.length) * 100) : 0;
+                        const actionSteps = card.steps.filter((s) => s.kind === "action");
+                        const trackedSteps = card.steps.filter((s) => s.kind !== "action");
                         return (
                           <div
                             key={card.prospect.id}
-                            className={`onb-card ${dragId === card.prospect.id ? "is-dragging" : ""}`}
+                            className={`onb-card ${dragId === card.prospect.id ? "is-dragging" : ""} ${open ? "is-open" : ""}`}
                             {...dragProps(card.prospect.id)}
                           >
                             <div
@@ -307,18 +307,22 @@ export default function OnboardingPage() {
                               onClick={() => setOpenCard(open ? null : card.prospect.id)}
                             >
                               <span className="onb-card-name">{card.prospect.name}</span>
-                              <span className="onb-card-meta">
-                                {done}/{card.steps.length}
-                              </span>
+                              <span className="onb-chevron">›</span>
                             </div>
-                            {card.prospect.contact_name ? (
+                            {card.prospect.contact_name || card.prospect.monetary_value ? (
                               <span className="onb-card-sub">
                                 {card.prospect.contact_name}
                                 {card.prospect.monetary_value
-                                  ? ` · ${fmtMoney(card.prospect.monetary_value)}`
+                                  ? `${card.prospect.contact_name ? " · " : ""}${fmtMoney(card.prospect.monetary_value)}`
                                   : ""}
                               </span>
                             ) : null}
+                            <div className="onb-progress-track">
+                              <div className="onb-progress-fill" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="onb-progress-label">
+                              {done}/{card.steps.length} done
+                            </span>
                             {open ? (
                               <div className="onb-card-steps">
                                 {actionError?.prospectId === card.prospect.id ? (
@@ -326,46 +330,65 @@ export default function OnboardingPage() {
                                     {actionError.message}
                                   </p>
                                 ) : null}
-                                {card.steps.map((step) =>
-                                  step.kind === "action" ? (
-                                    <button
-                                      key={step.id}
-                                      type="button"
-                                      className={`onb-action ${step.completed ? "is-done" : ""}`}
-                                      disabled={actionBusy === step.id}
-                                      onClick={() =>
-                                        !step.completed &&
-                                        runAction(card.prospect.id, step.actionKey, step.id)
-                                      }
+
+                                <span className="onb-section-label">Quick actions</span>
+                                {actionSteps.map((step) => (
+                                  <button
+                                    key={step.id}
+                                    type="button"
+                                    className={`onb-action ${step.completed ? "is-done" : ""}`}
+                                    disabled={actionBusy === step.id}
+                                    onClick={() =>
+                                      !step.completed &&
+                                      runAction(card.prospect.id, step.actionKey, step.id)
+                                    }
+                                  >
+                                    <span className="onb-action-dot" />
+                                    {actionBusy === step.id
+                                      ? "Working..."
+                                      : step.completed
+                                        ? `${step.title} ✓`
+                                        : step.title}
+                                  </button>
+                                ))}
+
+                                <span className="onb-section-label">Checklist</span>
+                                {trackedSteps.map((step) => (
+                                  <label key={step.id} className="onb-step">
+                                    <input
+                                      type="checkbox"
+                                      checked={step.completed}
+                                      disabled={step.kind === "auto"}
+                                      onChange={(e) => toggleStep(step.id, e.target.checked)}
+                                    />
+                                    <span className={step.completed ? "is-done" : ""}>
+                                      {step.title}
+                                    </span>
+                                  </label>
+                                ))}
+
+                                <div className="onb-card-footer">
+                                  {card.prospect.basecamp_project_id ? (
+                                    <a
+                                      className="onb-link"
+                                      href={`https://3.basecamp.com/5338018/buckets/${card.prospect.basecamp_project_id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
                                     >
-                                      <span className="onb-action-dot" />
-                                      {actionBusy === step.id
-                                        ? "Working..."
-                                        : step.completed
-                                          ? `${step.title} ✓`
-                                          : step.title}
-                                    </button>
+                                      Open Basecamp project ↗
+                                    </a>
                                   ) : (
-                                    <label key={step.id} className="onb-step">
-                                      <input
-                                        type="checkbox"
-                                        checked={step.completed}
-                                        disabled={step.kind === "auto"}
-                                        onChange={(e) => toggleStep(step.id, e.target.checked)}
-                                      />
-                                      <span className={step.completed ? "is-done" : ""}>
-                                        {step.title}
-                                      </span>
-                                    </label>
-                                  )
-                                )}
-                                <button
-                                  className="btn btn-danger btn-sm"
-                                  style={{ marginTop: 8 }}
-                                  onClick={() => removeProspect(card.prospect.id, card.prospect.name)}
-                                >
-                                  Remove from board
-                                </button>
+                                    <span />
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="onb-link is-danger"
+                                    onClick={() => removeProspect(card.prospect.id, card.prospect.name)}
+                                  >
+                                    Remove from board
+                                  </button>
+                                </div>
                               </div>
                             ) : null}
                           </div>
