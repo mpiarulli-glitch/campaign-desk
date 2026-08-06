@@ -214,10 +214,6 @@ export interface RevClient {
   basecamp_project_id: string;
   // Videographer assigned to this account (one production/day per videographer).
   videographer_id: string;
-  // Stage on the New Client Onboarding board, from lib/onboarding.ts's
-  // ONBOARDING_STAGES ("" = not on the board — either never started or fully
-  // onboarded and graduated off it).
-  onboarding_stage: string;
   created_at: string;
   updated_at: string;
 }
@@ -812,14 +808,47 @@ export interface CourseQuizQuestion {
   updated_at: string;
 }
 
-// One checklist item on the New Client Onboarding board, copied from the
-// board's template card the first time a client is added. Flat and
-// independent of onboarding_stage — a client's column tracks where they are;
-// this tracks what's actually been done, same as a Basecamp card's steps.
+// A prospect on the New Client Onboarding board — pulled from a GHL
+// opportunity, not an app client. Most of these never become a `RevClient`
+// row until (if ever) they graduate off this board entirely; the board's
+// whole point is tracking them before that's true. Denormalizes the GHL
+// contact fields it needs for display so the board never has to re-fetch
+// GHL just to render a card.
+export interface OnboardingProspect {
+  id: string;
+  ghl_opportunity_id: string;
+  ghl_contact_id: string;
+  name: string; // opportunity name, usually the company name
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+  monetary_value: number;
+  stage: string; // lib/onboarding.ts's ONBOARDING_STAGES key
+  basecamp_project_id: string;
+  basecamp_project_created_at: string | null;
+  welcome_email_sent_at: string | null;
+  basecamp_client_added_at: string | null;
+  team_notified_at: string | null;
+  strategy_meeting_token: string | null;
+  strategy_meeting_requested_at: string | null;
+  strategy_meeting_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// One checklist item on a prospect's card, copied from the template the
+// first time a prospect is added. "action" steps run a real side effect when
+// checked (see lib/onboarding.ts's ACTION_HANDLERS); "manual" steps are a
+// plain checkbox; "auto" steps are stamped complete at creation and never
+// clicked.
+export type OnboardingStepKind = "manual" | "action" | "auto";
 export interface OnboardingStep {
   id: string;
-  client_id: string;
+  prospect_id: string;
   title: string;
+  kind: OnboardingStepKind;
+  action_key: string;
   completed: number;
   completed_at: string | null;
   sort_order: number;
@@ -1391,19 +1420,47 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_quiz_lesson ON course_quiz_questions(lesson_id);
 
+    CREATE TABLE IF NOT EXISTS onboarding_prospects (
+      id TEXT PRIMARY KEY,
+      ghl_opportunity_id TEXT NOT NULL,
+      ghl_contact_id TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      contact_name TEXT NOT NULL DEFAULT '',
+      contact_email TEXT NOT NULL DEFAULT '',
+      contact_phone TEXT NOT NULL DEFAULT '',
+      monetary_value REAL NOT NULL DEFAULT 0,
+      stage TEXT NOT NULL DEFAULT 'triage',
+      basecamp_project_id TEXT NOT NULL DEFAULT '',
+      basecamp_project_created_at TEXT,
+      welcome_email_sent_at TEXT,
+      basecamp_client_added_at TEXT,
+      team_notified_at TEXT,
+      strategy_meeting_token TEXT,
+      strategy_meeting_requested_at TEXT,
+      strategy_meeting_at TEXT,
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_onboard_prospect_opp ON onboarding_prospects(ghl_opportunity_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_onboard_prospect_meeting_token ON onboarding_prospects(strategy_meeting_token);
+
     CREATE TABLE IF NOT EXISTS onboarding_steps (
       id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL,
+      prospect_id TEXT NOT NULL,
       title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'manual',
+      action_key TEXT NOT NULL DEFAULT '',
       completed INTEGER NOT NULL DEFAULT 0,
       completed_at TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+      FOREIGN KEY (prospect_id) REFERENCES onboarding_prospects(id) ON DELETE CASCADE
     );
 
-    CREATE INDEX IF NOT EXISTS idx_onboard_steps_client ON onboarding_steps(client_id);
+    CREATE INDEX IF NOT EXISTS idx_onboard_steps_prospect ON onboarding_steps(prospect_id);
 
     CREATE TABLE IF NOT EXISTS client_strategies (
       client_id TEXT PRIMARY KEY,
@@ -1617,6 +1674,31 @@ function tableColumns(database: Database.Database, table: string): string[] {
 }
 
 function migrate(database: Database.Database) {
+  // The very first cut of the onboarding board was client_id-based and shipped
+  // for a few hours with nothing ever added to it before the prospect-based
+  // rebuild. Safe to drop and recreate in the new shape rather than migrate
+  // real data that never existed.
+  const onboardingStepCols = tableColumns(database, "onboarding_steps");
+  if (onboardingStepCols.length && onboardingStepCols.includes("client_id")) {
+    database.exec(`DROP TABLE onboarding_steps`);
+    database.exec(`
+      CREATE TABLE onboarding_steps (
+        id TEXT PRIMARY KEY,
+        prospect_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'manual',
+        action_key TEXT NOT NULL DEFAULT '',
+        completed INTEGER NOT NULL DEFAULT 0,
+        completed_at TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (prospect_id) REFERENCES onboarding_prospects(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_onboard_steps_prospect ON onboarding_steps(prospect_id);
+    `);
+  }
+
   const campaignCols = tableColumns(database, "campaigns");
   if (!campaignCols.includes("star_rating")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN star_rating INTEGER`);

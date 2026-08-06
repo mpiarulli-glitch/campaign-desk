@@ -4,27 +4,42 @@ import { useEffect, useMemo, useState } from "react";
 
 type Stage = { key: string; label: string; color: string };
 
-type Step = { id: string; title: string; completed: boolean };
+type Step = {
+  id: string;
+  title: string;
+  kind: "manual" | "action" | "auto";
+  actionKey: string;
+  completed: boolean;
+};
+
+type ProspectSummary = {
+  id: string;
+  name: string;
+  contact_name: string;
+  contact_email: string;
+  monetary_value: number;
+  basecamp_project_id: string;
+};
 
 type Card = {
-  client: {
-    id: string;
-    name: string;
-    tier: string;
-    account_manager: string;
-    business_model: string;
-    contact_name: string;
-  };
+  prospect: ProspectSummary;
   steps: Step[];
   stage: string;
 };
 
-type OffBoardClient = { id: string; name: string };
+type OffBoardOpportunity = {
+  id: string;
+  name: string;
+  contactName: string;
+  monetaryValue: number;
+};
 
 type Data = {
   stages: Stage[];
   onBoard: Card[];
-  offBoard: OffBoardClient[];
+  offBoard: OffBoardOpportunity[];
+  ghlConfigured: boolean;
+  ghlError: string;
 };
 
 // Basecamp's own column colors, translated to a light wash + a solid dot so
@@ -46,6 +61,11 @@ function stageWash(color: string): string {
   return `${hex}1a`; // ~10% alpha
 }
 
+function fmtMoney(n: number): string {
+  if (!n) return "";
+  return `$${n.toLocaleString()}`;
+}
+
 export default function OnboardingPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +75,10 @@ export default function OnboardingPage() {
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [addPick, setAddPick] = useState("");
+  const [actionBusy, setActionBusy] = useState<string>("");
+  const [actionError, setActionError] = useState<{ prospectId: string; message: string } | null>(
+    null
+  );
 
   async function load(opts?: { silent?: boolean }) {
     if (!opts?.silent) setLoading(true);
@@ -82,13 +106,13 @@ export default function OnboardingPage() {
     return map;
   }, [data]);
 
-  function dragProps(clientId: string) {
+  function dragProps(prospectId: string) {
     return {
       draggable: true,
       onDragStart: (e: React.DragEvent) => {
-        setDragId(clientId);
+        setDragId(prospectId);
         e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", clientId);
+        e.dataTransfer.setData("text/plain", prospectId);
       },
       onDragEnd: () => {
         setDragId(null);
@@ -111,67 +135,67 @@ export default function OnboardingPage() {
       },
       onDrop: async (e: React.DragEvent) => {
         e.preventDefault();
-        const clientId = dragId || e.dataTransfer.getData("text/plain");
+        const prospectId = dragId || e.dataTransfer.getData("text/plain");
         setDragId(null);
         setOverStage(null);
-        if (!clientId || !data) return;
-        const card = data.onBoard.find((c) => c.client.id === clientId);
+        if (!prospectId || !data) return;
+        const card = data.onBoard.find((c) => c.prospect.id === prospectId);
         if (!card || card.stage === stageKey) return;
         setData({
           ...data,
           onBoard: data.onBoard.map((c) =>
-            c.client.id === clientId ? { ...c, stage: stageKey } : c
+            c.prospect.id === prospectId ? { ...c, stage: stageKey } : c
           ),
         });
-        const res = await fetch(`/api/onboarding/${clientId}`, {
+        const res = await fetch(`/api/onboarding/${prospectId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ stage: stageKey }),
         });
         if (!res.ok) {
-          setError("Could not move that client.");
+          setError("Could not move that prospect.");
           load({ silent: true });
         }
       },
     };
   }
 
-  async function addClient() {
+  async function addOpportunity() {
     if (!addPick) return;
     setAdding(true);
     const res = await fetch("/api/onboarding", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId: addPick }),
+      body: JSON.stringify({ opportunityId: addPick }),
     });
     setAdding(false);
     if (res.ok) {
       setAddPick("");
       load({ silent: true });
     } else {
-      setError("Could not add that client.");
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Could not add that opportunity.");
     }
   }
 
-  async function removeClient(clientId: string, name: string) {
-    if (!confirm(`Take ${name} off the onboarding board? Their checklist is kept — adding them back later resumes it.`)) return;
+  async function removeProspect(prospectId: string, name: string) {
+    if (!confirm(`Take ${name} off the onboarding board? This deletes their checklist too.`)) return;
     setOpenCard(null);
     if (data) {
-      setData({ ...data, onBoard: data.onBoard.filter((c) => c.client.id !== clientId) });
+      setData({ ...data, onBoard: data.onBoard.filter((c) => c.prospect.id !== prospectId) });
     }
-    await fetch(`/api/onboarding/${clientId}`, { method: "DELETE" });
+    await fetch(`/api/onboarding/${prospectId}`, { method: "DELETE" });
     load({ silent: true });
   }
 
-  async function toggleStep(clientId: string, stepId: string, completed: boolean) {
+  async function toggleStep(stepId: string, completed: boolean) {
     if (data) {
       setData({
         ...data,
-        onBoard: data.onBoard.map((c) =>
-          c.client.id === clientId
-            ? { ...c, steps: c.steps.map((s) => (s.id === stepId ? { ...s, completed } : s)) }
-            : c
-        ),
+        onBoard: data.onBoard.map((c) => ({
+          ...c,
+          steps: c.steps.map((s) => (s.id === stepId ? { ...s, completed } : s)),
+        })),
       });
     }
     await fetch(`/api/onboarding/steps/${stepId}`, {
@@ -181,25 +205,54 @@ export default function OnboardingPage() {
     });
   }
 
+  async function runAction(prospectId: string, actionKey: string, stepId: string) {
+    setActionBusy(stepId);
+    setActionError(null);
+    const res = await fetch(`/api/onboarding/${prospectId}/actions/${actionKey}`, {
+      method: "POST",
+    });
+    setActionBusy("");
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setActionError({ prospectId, message: d.error || "That didn't work." });
+      return;
+    }
+    load({ silent: true });
+  }
+
   return (
     <div>
       <div className="page-actions">
-        <select
-          className="select-clean"
-          value={addPick}
-          onChange={(e) => setAddPick(e.target.value)}
-          style={{ minWidth: 200 }}
-        >
-          <option value="">Add a client...</option>
-          {(data?.offBoard || []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <button className="btn btn-sm" onClick={addClient} disabled={!addPick || adding}>
-          {adding ? "Adding..." : "+ Add to board"}
-        </button>
+        {!data?.ghlConfigured ? (
+          <span className="muted" style={{ fontSize: 12 }}>
+            GHL opportunities not configured yet
+          </span>
+        ) : data?.ghlError ? (
+          <span className="error" style={{ fontSize: 12 }}>
+            GHL error: {data.ghlError}
+          </span>
+        ) : (
+          <>
+            <select
+              className="select-clean"
+              value={addPick}
+              onChange={(e) => setAddPick(e.target.value)}
+              style={{ minWidth: 260 }}
+            >
+              <option value="">Add an opportunity...</option>
+              {(data?.offBoard || []).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                  {o.contactName ? ` — ${o.contactName}` : ""}
+                  {o.monetaryValue ? ` (${fmtMoney(o.monetaryValue)})` : ""}
+                </option>
+              ))}
+            </select>
+            <button className="btn btn-sm" onClick={addOpportunity} disabled={!addPick || adding}>
+              {adding ? "Adding..." : "+ Add to board"}
+            </button>
+          </>
+        )}
       </div>
 
       <main className="container stack">
@@ -207,8 +260,8 @@ export default function OnboardingPage() {
           <p className="eyebrow">Onboarding</p>
           <h1 className="h1">New Client Onboarding</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Drag a client between stages as they move through onboarding. Matches the New
-            Client Onboarding board in Basecamp.
+            Pulled from the 🚀 Empire Launch Pipeline in GHL. Drag a prospect between stages;
+            the checkmarks with a colored dot actually do the thing when clicked.
           </p>
         </div>
 
@@ -236,54 +289,80 @@ export default function OnboardingPage() {
                     <span className="onb-col-title">{stage.label}</span>
                     <span className="onb-col-count">{cards.length}</span>
                   </div>
-                  <div
-                    className="onb-col-body"
-                    style={{ background: stageWash(stage.color) }}
-                  >
+                  <div className="onb-col-body" style={{ background: stageWash(stage.color) }}>
                     {cards.length === 0 ? (
-                      <p className="muted onb-empty">Drop a client here</p>
+                      <p className="muted onb-empty">Drop a prospect here</p>
                     ) : (
                       cards.map((card) => {
-                        const open = openCard === card.client.id;
+                        const open = openCard === card.prospect.id;
                         const done = card.steps.filter((s) => s.completed).length;
                         return (
                           <div
-                            key={card.client.id}
-                            className={`onb-card ${dragId === card.client.id ? "is-dragging" : ""}`}
-                            {...dragProps(card.client.id)}
+                            key={card.prospect.id}
+                            className={`onb-card ${dragId === card.prospect.id ? "is-dragging" : ""}`}
+                            {...dragProps(card.prospect.id)}
                           >
                             <div
                               className="onb-card-top"
-                              onClick={() => setOpenCard(open ? null : card.client.id)}
+                              onClick={() => setOpenCard(open ? null : card.prospect.id)}
                             >
-                              <span className="onb-card-name">{card.client.name}</span>
+                              <span className="onb-card-name">{card.prospect.name}</span>
                               <span className="onb-card-meta">
                                 {done}/{card.steps.length}
                               </span>
                             </div>
-                            {card.client.account_manager ? (
-                              <span className="onb-card-sub">{card.client.account_manager}</span>
+                            {card.prospect.contact_name ? (
+                              <span className="onb-card-sub">
+                                {card.prospect.contact_name}
+                                {card.prospect.monetary_value
+                                  ? ` · ${fmtMoney(card.prospect.monetary_value)}`
+                                  : ""}
+                              </span>
                             ) : null}
                             {open ? (
                               <div className="onb-card-steps">
-                                {card.steps.map((step) => (
-                                  <label key={step.id} className="onb-step">
-                                    <input
-                                      type="checkbox"
-                                      checked={step.completed}
-                                      onChange={(e) =>
-                                        toggleStep(card.client.id, step.id, e.target.checked)
+                                {actionError?.prospectId === card.prospect.id ? (
+                                  <p className="error" style={{ margin: "0 0 4px", fontSize: 12 }}>
+                                    {actionError.message}
+                                  </p>
+                                ) : null}
+                                {card.steps.map((step) =>
+                                  step.kind === "action" ? (
+                                    <button
+                                      key={step.id}
+                                      type="button"
+                                      className={`onb-action ${step.completed ? "is-done" : ""}`}
+                                      disabled={actionBusy === step.id}
+                                      onClick={() =>
+                                        !step.completed &&
+                                        runAction(card.prospect.id, step.actionKey, step.id)
                                       }
-                                    />
-                                    <span className={step.completed ? "is-done" : ""}>
-                                      {step.title}
-                                    </span>
-                                  </label>
-                                ))}
+                                    >
+                                      <span className="onb-action-dot" />
+                                      {actionBusy === step.id
+                                        ? "Working..."
+                                        : step.completed
+                                          ? `${step.title} ✓`
+                                          : step.title}
+                                    </button>
+                                  ) : (
+                                    <label key={step.id} className="onb-step">
+                                      <input
+                                        type="checkbox"
+                                        checked={step.completed}
+                                        disabled={step.kind === "auto"}
+                                        onChange={(e) => toggleStep(step.id, e.target.checked)}
+                                      />
+                                      <span className={step.completed ? "is-done" : ""}>
+                                        {step.title}
+                                      </span>
+                                    </label>
+                                  )
+                                )}
                                 <button
                                   className="btn btn-danger btn-sm"
                                   style={{ marginTop: 8 }}
-                                  onClick={() => removeClient(card.client.id, card.client.name)}
+                                  onClick={() => removeProspect(card.prospect.id, card.prospect.name)}
                                 >
                                   Remove from board
                                 </button>

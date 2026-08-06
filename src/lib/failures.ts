@@ -19,6 +19,7 @@ export type FailureKind =
   | "basecamp_campfire"
   | "basecamp_comment"
   | "basecamp_approval"
+  | "basecamp_project"
   | "contact_unresolved";
 
 export interface RecordFailureInput {
