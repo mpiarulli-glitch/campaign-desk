@@ -32,6 +32,18 @@ const STATUS_LABEL: Record<CycleStatus, string> = {
   sent: "Sent",
 };
 
+// The hand-set status choices. "" hands the row back to the cadence engine,
+// which is why it reads as "Automatic" rather than as an empty option.
+const STATUS_OVERRIDE_OPTIONS = [
+  { value: "", label: "Automatic" },
+  { value: "not_due", label: "Not due yet" },
+  { value: "due", label: "Due" },
+  { value: "requested", label: "Requested" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "sent", label: "Sent" },
+  { value: "inactive", label: "Inactive" },
+];
+
 type Client = {
   id: string;
   name: string;
@@ -44,6 +56,8 @@ type Client = {
   last_production_date: string | null;
   schedule_token: string | null;
   production_enrolled: number;
+  status_override: string;
+  outreach_paused: number;
   basecamp_project_id: string;
   videographer_id: string;
 };
@@ -79,7 +93,12 @@ type Reachout = {
 type Row = {
   client: Client;
   window: { start: string; end: string } | null;
+  // What to display: the hand-set status if there is one, else the real one.
   status: CycleStatus;
+  // What the cadence engine actually computes, kept so an override never hides
+  // the truth: it still shows in the tooltip and on the edit control.
+  realStatus: CycleStatus;
+  overridden: boolean;
   existingSend: { id: string; sendDate: string; status: string } | null;
   currentReminderCount: number;
   lastEmailSent: string | null;
@@ -153,6 +172,7 @@ type Field =
   | "color_week"
   | "production_cadence"
   | "last_production_date"
+  | "status_override"
   | "basecamp_project_id"
   | "videographer_id";
 
@@ -165,6 +185,7 @@ const PATCH_KEY: Record<Field, string> = {
   color_week: "colorWeek",
   production_cadence: "productionCadence",
   last_production_date: "lastProductionDate",
+  status_override: "statusOverride",
   basecamp_project_id: "basecampProjectId",
   videographer_id: "videographerId",
 };
@@ -644,6 +665,19 @@ export default function ProductionPage() {
     });
     if (!res.ok) {
       setError("Could not save that change.");
+      return;
+    }
+    load({ silent: true });
+  }
+
+  async function setOutreachPaused(clientId: string, paused: boolean) {
+    const res = await fetch(`/api/revenue/clients/${clientId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outreachPaused: paused }),
+    });
+    if (!res.ok) {
+      setError("Could not change the outreach setting.");
       return;
     }
     load({ silent: true });
@@ -1440,7 +1474,18 @@ export default function ProductionPage() {
                           Reminders start 21 days before a window opens, so this
                           state is normal for three weeks while status still,
                           truthfully, says the window has not started. */}
-                      {!r.existingSend && outreachCount(r) > 0 ? (
+                      {r.overridden ? (
+                        // Hand-set, so it wins over everything the row could
+                        // work out for itself. The real status stays in the
+                        // tooltip: a pinned row should never be able to lie
+                        // about what the cadence engine thinks.
+                        <span
+                          className={`pcon-pill ${TONE[r.status]}`}
+                          title={`Set by hand to "${STATUS_LABEL[r.status]}". Actual status is "${STATUS_LABEL[r.realStatus]}". Outreach is unaffected; set it back to Automatic in the row below.`}
+                        >
+                          {STATUS_LABEL[r.status]} (set)
+                        </span>
+                      ) : !r.existingSend && outreachCount(r) > 0 ? (
                         <span
                           className="pcon-pill is-warn"
                           title={`Outreach sent ${outreachCount(r)} time${outreachCount(r) === 1 ? "" : "s"}${
@@ -1458,6 +1503,14 @@ export default function ProductionPage() {
                           {STATUS_LABEL[r.status]}
                         </span>
                       )}
+                      {c.outreach_paused ? (
+                        <span
+                          className="pcon-pill is-bad"
+                          title="Outreach is paused by hand. This client gets no emails and no Basecamp nudges until it is switched back on."
+                        >
+                          Paused
+                        </span>
+                      ) : null}
                       {r.existingSend ? (
                         <Link className="btn btn-secondary btn-sm" href={`/admin/production/${r.existingSend.id}`}>
                           Open
@@ -1511,6 +1564,42 @@ export default function ProductionPage() {
                         <span className="k">Window emailed</span>
                         <div className="v">{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "Never"}</div>
                       </div>
+                      {isAdmin ? (
+                        <div>
+                          <span className="k">Status</span>
+                          <div className="v">
+                            {editableField(
+                              r, "status_override", "select", c.status_override || "",
+                              <span>
+                                {c.status_override
+                                  ? `${STATUS_LABEL[r.status]} (set by hand)`
+                                  : `${STATUS_LABEL[r.realStatus]} (automatic)`}
+                              </span>,
+                              STATUS_OVERRIDE_OPTIONS
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                      {isAdmin ? (
+                        <div>
+                          <span className="k">Outreach</span>
+                          <div className="v">
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() =>
+                                setOutreachPaused(c.id, !c.outreach_paused)
+                              }
+                              title={
+                                c.outreach_paused
+                                  ? "Start emailing and posting Basecamp nudges again."
+                                  : "Stop all automated outreach for this client until you switch it back on."
+                              }
+                            >
+                              {c.outreach_paused ? "Resume outreach" : "Pause outreach"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                       <div>
                         <span className="k">Last contacted</span>
                         <div className="v">

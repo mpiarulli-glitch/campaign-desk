@@ -196,6 +196,40 @@ export function computeCycleStatus(
   return today >= window.start ? "due" : "not_due";
 }
 
+export const CYCLE_STATUSES: CycleStatus[] = [
+  "not_configured",
+  "inactive",
+  "not_due",
+  "due",
+  "requested",
+  "scheduled",
+  "sent",
+];
+
+export function isCycleStatus(value: string): value is CycleStatus {
+  return (CYCLE_STATUSES as string[]).includes(value);
+}
+
+// The status to show for a client: their hand-set one if they have it,
+// otherwise the real one off the cadence engine.
+//
+// Display only, deliberately. The sweep never reads this, so pinning a status
+// cannot stop a client being asked. Pausing outreach is a separate, explicit
+// switch, which keeps "what this row says" and "what the robot does" from
+// silently drifting apart.
+export function effectiveCycleStatus(
+  client: RevClient,
+  window: Window | null,
+  today: string
+): { status: CycleStatus; real: CycleStatus; overridden: boolean } {
+  const real = computeCycleStatus(client, window, today);
+  const pinned = (client.status_override || "").trim();
+  if (pinned && isCycleStatus(pinned)) {
+    return { status: pinned, real, overridden: true };
+  }
+  return { status: real, real, overridden: false };
+}
+
 // Advance a client's last_production_date once a cadence-linked send is
 // marked sent, so the next window is computed from what actually happened.
 export function advanceLastProduction(clientId: string, sendDate: string): void {

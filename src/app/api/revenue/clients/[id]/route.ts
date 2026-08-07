@@ -10,6 +10,7 @@ import {
 } from "@/lib/revenue";
 import type { BusinessModel } from "@/lib/db";
 import { extractProjectId } from "@/lib/basecamp";
+import { isCycleStatus } from "@/lib/cadence";
 import { contractStatus, listDeliverables } from "@/lib/snapshot";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
@@ -105,6 +106,15 @@ export async function PATCH(request: Request, { params }: Params) {
       typeof body.productionEnrolled === "boolean"
         ? body.productionEnrolled
         : undefined,
+    // "" is a real value here, it hands the row back to the cadence engine, so
+    // this validates against the status list rather than requiring truthiness.
+    statusOverride:
+      typeof body.statusOverride === "string" &&
+      (body.statusOverride === "" || isCycleStatus(body.statusOverride))
+        ? body.statusOverride
+        : undefined,
+    outreachPaused:
+      typeof body.outreachPaused === "boolean" ? body.outreachPaused : undefined,
     basecampProjectId:
       typeof body.basecampProjectId === "string"
         ? extractProjectId(body.basecampProjectId)

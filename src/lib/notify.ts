@@ -252,9 +252,12 @@ export async function notifyReachouts(args: {
   today: string;
   reachedOut: Array<{ client: string; channel: string; detail?: string }>;
   blocked: Array<{ client: string; reason: string }>;
+  paused?: Array<{ client: string }>;
   crewHeadsUp: number;
 }): Promise<boolean> {
-  if (!args.reachedOut.length && !args.blocked.length) return false;
+  const paused = args.paused || [];
+  if (!args.reachedOut.length && !args.blocked.length && !paused.length)
+    return false;
 
   const CHANNEL: Record<string, string> = {
     email: "email",
@@ -294,6 +297,19 @@ export async function notifyReachouts(args: {
     );
     for (const b of args.blocked) {
       lines.push(`• ${escapeHtml(b.client)}: ${escapeHtml(b.reason)}`);
+    }
+  }
+
+  // Named every run, on purpose. A pause is set by hand and cleared by hand, so
+  // the only thing stopping a paused client being forgotten is seeing them here.
+  if (paused.length) {
+    lines.push(
+      `<br><strong>Outreach paused by hand:</strong> ` +
+        `${paused.length} client${paused.length === 1 ? "" : "s"}. ` +
+        `They get nothing until someone un-pauses them.`
+    );
+    for (const p of paused) {
+      lines.push(`• ${escapeHtml(p.client)}`);
     }
   }
 

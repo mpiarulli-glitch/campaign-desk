@@ -390,6 +390,9 @@ export interface ReminderRunResult {
   // Clients we deliberately did not contact because we could not tell who the
   // contact is. Not a failure of sending, a refusal to send blind.
   blocked: Array<{ client: string; clientId: string; reason: string }>;
+  // Clients deliberately held back by hand. Named rather than counted, because
+  // a pause nobody remembers setting is a client who is never asked again.
+  paused: Array<{ client: string; clientId: string }>;
   sent: Array<{ client: string; email: string; window: Window; attempt: number }>;
   failed: Array<{ client: string; email: string }>;
   basecampCards: Array<{ client: string; ok: boolean; error?: string }>;
@@ -402,6 +405,7 @@ export interface ReminderRunResult {
     alreadySentToday: number;
     notAFollowupDay: number;
     noContact: number;
+    paused: number;
     removed: number;
   };
 }
@@ -440,6 +444,7 @@ export async function runReminders(opts?: {
     dryRun,
     reachedOut: [],
     blocked: [],
+    paused: [],
     sent: [],
     failed: [],
     basecampCards: [],
@@ -452,6 +457,7 @@ export async function runReminders(opts?: {
       alreadySentToday: 0,
       notAFollowupDay: 0,
       noContact: 0,
+      paused: 0,
       removed: 0,
     },
   };
@@ -494,6 +500,15 @@ export async function runReminders(opts?: {
     // Skip clients removed from production scheduling.
     if (!client.production_enrolled) {
       result.skipped.removed++;
+      continue;
+    }
+    // Outreach paused by hand. Nothing clears this on its own, which is the
+    // point: it is a decision somebody made, not a cooldown. It is also the
+    // one skip that can hide a client indefinitely, so paused clients are
+    // named in the run result and the Campfire report rather than just tallied.
+    if (client.outreach_paused) {
+      result.paused.push({ client: client.name, clientId: client.id });
+      result.skipped.paused++;
       continue;
     }
     if (!client.color_week || !client.production_cadence) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated, isProductionAuthenticated } from "@/lib/auth";
 import { getRevClient, listRevClients } from "@/lib/revenue";
-import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
+import { effectiveCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
 import { recordManualProduction, recordOutOfCycleProduction } from "@/lib/scheduling";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
 import {
@@ -20,7 +20,11 @@ export async function GET() {
   const today = todayYmd();
   const clients = listRevClients(true).map((client) => {
     const window = nextWindow(client, today);
-    const status = computeCycleStatus(client, window, today);
+    const { status, real: realStatus, overridden } = effectiveCycleStatus(
+      client,
+      window,
+      today
+    );
     const existingSend = window ? findSendForWindow(client.id, window.start) : null;
     const currentReminder = window ? getReminder(client.id, window.start) : null;
     const latestReminder = getLatestReminder(client.id);
@@ -45,11 +49,18 @@ export async function GET() {
         last_production_date: client.last_production_date,
         schedule_token: client.schedule_token,
         production_enrolled: client.production_enrolled,
+        status_override: client.status_override,
+        outreach_paused: client.outreach_paused,
         basecamp_project_id: client.basecamp_project_id,
         videographer_id: client.videographer_id,
       },
       window,
+      // `status` is what the row should display: the hand-set one if there is
+      // one. `realStatus` is what the cadence engine actually computes, kept
+      // alongside so an override never hides the truth.
       status,
+      realStatus,
+      overridden,
       existingSend: existingSend
         ? {
             id: existingSend.id,

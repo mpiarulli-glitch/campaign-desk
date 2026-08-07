@@ -219,3 +219,93 @@ test("outreach for a window is counted across every channel", async (t) => {
   assert.equal(reachouts.reachoutsForWindow("krak", "2026-09-14").count, 0);
   assert.equal(reachouts.reachoutsForWindow("someone-else", AUG).count, 0);
 });
+
+// A hand-set status pins the row, and a hand-set pause stops the sweep. They
+// are deliberately two switches: pinning a status must never quietly stop a
+// client being asked.
+test("hand-set status and hand-set pause", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-override-test-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const { createRevClient, updateRevClient, getRevClient } = await import(
+    "../src/lib/revenue"
+  );
+  const { runReminders } = await import("../src/lib/reminders");
+  const { effectiveCycleStatus, nextWindow, isCycleStatus } = await import(
+    "../src/lib/cadence"
+  );
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const today = "2026-08-03"; // Monday of red's August window, an email day
+  const created = createRevClient({ name: "Pin Co", businessModel: "home_service" });
+  updateRevClient(created.id, {
+    colorWeek: "red",
+    productionCadence: "monthly",
+    productionEnrolled: true,
+    contactName: "Sam Doe",
+    contactEmail: "sam@pin.co",
+  });
+
+  await t.test("no override means the real status shows", () => {
+    const client = getRevClient(created.id)!;
+    const w = nextWindow(client, today);
+    const s = effectiveCycleStatus(client, w, today);
+    assert.equal(s.overridden, false);
+    assert.equal(s.status, s.real);
+    assert.equal(s.status, "due"); // today is the window's first day
+  });
+
+  await t.test("a pinned status wins but keeps the real one visible", () => {
+    updateRevClient(created.id, { statusOverride: "sent" });
+    const client = getRevClient(created.id)!;
+    const w = nextWindow(client, today);
+    const s = effectiveCycleStatus(client, w, today);
+    assert.equal(s.overridden, true);
+    assert.equal(s.status, "sent");
+    assert.equal(s.real, "due", "the real status is never lost");
+  });
+
+  await t.test("pinning a status does NOT stop the outreach", async () => {
+    const run = await runReminders({ today, dryRun: true });
+    assert.equal(run.reachedOut.length, 1, "a pinned row still gets chased");
+    assert.equal(run.skipped.paused, 0);
+  });
+
+  await t.test("clearing it hands the row back to the engine", () => {
+    updateRevClient(created.id, { statusOverride: "" });
+    const client = getRevClient(created.id)!;
+    const s = effectiveCycleStatus(client, nextWindow(client, today), today);
+    assert.equal(s.overridden, false);
+    assert.equal(s.status, "due");
+  });
+
+  await t.test("pausing stops every channel and names the client", async () => {
+    updateRevClient(created.id, { outreachPaused: true });
+    const run = await runReminders({ today, dryRun: true });
+    assert.equal(run.reachedOut.length, 0);
+    assert.equal(run.skipped.paused, 1);
+    assert.deepEqual(
+      run.paused.map((p) => p.client),
+      ["Pin Co"],
+      "paused clients are named, not just counted"
+    );
+  });
+
+  await t.test("resuming starts it again", async () => {
+    updateRevClient(created.id, { outreachPaused: false });
+    const run = await runReminders({ today, dryRun: true });
+    assert.equal(run.reachedOut.length, 1);
+    assert.equal(run.paused.length, 0);
+  });
+
+  await t.test("garbage is not a status", () => {
+    assert.equal(isCycleStatus("sent"), true);
+    assert.equal(isCycleStatus("shipped"), false);
+    assert.equal(isCycleStatus(""), false);
+  });
+});

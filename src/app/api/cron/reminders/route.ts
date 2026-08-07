@@ -88,6 +88,11 @@ async function handle(request: Request) {
             .map((b) => b.client)
             .join(", ")}]; `
         : "") +
+      (result.paused.length
+        ? `PAUSED ${result.paused.length} [${result.paused
+            .map((p) => p.client)
+            .join(", ")}]; `
+        : "") +
       `skipped ${JSON.stringify(result.skipped)}` +
       (result.failed.length ? ` FAILED ${result.failed.length}` : "")
   );
@@ -100,6 +105,7 @@ async function handle(request: Request) {
       today: result.today,
       reachedOut: result.reachedOut,
       blocked: result.blocked,
+      paused: result.paused,
       crewHeadsUp: shootReminders.sent.length,
     });
   }

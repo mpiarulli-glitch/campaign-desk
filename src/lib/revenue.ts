@@ -178,6 +178,8 @@ export function updateRevClient(
     website: string;
     sentimentOverride: string;
     productionEnrolled: boolean;
+    statusOverride: string;
+    outreachPaused: boolean;
     basecampProjectId: string;
     videographerId: string;
     monthlyEmailQuota: number;
@@ -195,6 +197,7 @@ export function updateRevClient(
        contact_name = ?, contact_email = ?, poc = ?, account_manager = ?, tier = ?,
        website = ?, sentiment_override = ?,
        production_enrolled = ?,
+       status_override = ?, outreach_paused = ?,
        basecamp_project_id = ?, videographer_id = ?,
        monthly_email_quota = ?, updated_at = ?
      WHERE id = ?`
@@ -227,6 +230,14 @@ export function updateRevClient(
     updates.productionEnrolled === undefined
       ? existing.production_enrolled
       : updates.productionEnrolled
+        ? 1
+        : 0,
+    updates.statusOverride === undefined
+      ? existing.status_override
+      : updates.statusOverride.trim(),
+    updates.outreachPaused === undefined
+      ? existing.outreach_paused
+      : updates.outreachPaused
         ? 1
         : 0,
     updates.basecampProjectId === undefined

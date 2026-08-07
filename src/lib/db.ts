@@ -210,6 +210,15 @@ export interface RevClient {
   // 1 = shown on the production scheduler, 0 = removed from it (client and all
   // other data are kept; they just don't get productions).
   production_enrolled: number;
+  // Hand-set cycle status, pinned until it is cleared. Empty means read the
+  // real one off the cadence engine. This is a display override only: it never
+  // changes what the sweep does, so a pinned status cannot quietly stop a
+  // client being asked. Pausing outreach is the separate switch below.
+  status_override: string;
+  // 1 = the reminder sweep leaves this client alone. Set and cleared by hand,
+  // never automatically, and surfaced everywhere a paused client could
+  // otherwise be forgotten.
+  outreach_paused: number;
   // Basecamp project (bucket) id where the "time to schedule" card is created.
   basecamp_project_id: string;
   // Videographer assigned to this account (one production/day per videographer).
@@ -2013,6 +2022,16 @@ function migrate(database: Database.Database) {
     // scheduler doesn't show revenue-only accounts.
     database.exec(
       `UPDATE rev_clients SET production_enrolled = 0 WHERE color_week = '' OR production_cadence = ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("status_override")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN status_override TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("outreach_paused")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN outreach_paused INTEGER NOT NULL DEFAULT 0`
     );
   }
   if (revClientCols.length && !revClientCols.includes("poc")) {
