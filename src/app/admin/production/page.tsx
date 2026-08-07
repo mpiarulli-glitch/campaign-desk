@@ -58,6 +58,24 @@ type OpenExtraRequest = {
   emailSentAt: string | null;
 };
 
+type ReachoutChannel = "email" | "basecamp_card" | "basecamp_comment";
+
+const REACHOUT_LABEL: Record<ReachoutChannel, string> = {
+  email: "Email",
+  basecamp_card: "Basecamp card",
+  basecamp_comment: "Basecamp follow-up",
+};
+
+type Reachout = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  channel: ReachoutChannel;
+  window_start: string | null;
+  ymd: string;
+  detail: string | null;
+};
+
 type Row = {
   client: Client;
   window: { start: string; end: string } | null;
@@ -66,11 +84,31 @@ type Row = {
   currentReminderCount: number;
   lastEmailSent: string | null;
   lastWindowEmailed: string | null;
+  // Last contact on any channel. `lastEmailSent` above covers email only, so it
+  // reads "Never" for a client who has only ever been chased on Basecamp.
+  lastReachout: { channel: ReachoutChannel; ymd: string; detail: string | null } | null;
+  // Outreach for the window in front of them, counted across all channels.
+  // `currentReminderCount` is the email-only version of this.
+  currentReachoutCount: number;
+  currentReachoutLast: { channel: ReachoutChannel; ymd: string } | null;
   openExtraRequest: OpenExtraRequest | null;
 };
 
+// Has this client been contacted about the window they are currently in?
+// Falls back to the email count so rows still read correctly for outreach that
+// predates the reach-out log.
+function outreachCount(r: Row): number {
+  return Math.max(r.currentReachoutCount || 0, r.currentReminderCount || 0);
+}
+
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
-type ProductionTab = "requested" | "awaiting" | "confirmed" | "cancelled" | "setup";
+type ProductionTab =
+  | "requested"
+  | "awaiting"
+  | "confirmed"
+  | "cancelled"
+  | "setup"
+  | "reachouts";
 
 // The "Log a production" form: a production that was arranged over the phone or
 // in another booking system, recorded after the fact.
@@ -166,7 +204,11 @@ function bucketOf(r: Row): Exclude<StatusFilter, "all"> {
   // Asked and not booked. Distinct from "due" (never asked) and from "ahead"
   // (nothing needed yet), because the next move is a chase rather than a first
   // approach.
-  if (!r.existingSend && r.currentReminderCount > 0) return "asked";
+  //
+  // "Asked" means contacted on any channel about THIS window. Keying this off
+  // the email count alone put clients we had already chased on Basecamp back in
+  // "due", so they read as never approached and got approached again.
+  if (!r.existingSend && outreachCount(r) > 0) return "asked";
   if (r.status === "due") return "due";
   return "ahead";
 }
@@ -262,6 +304,7 @@ export default function ProductionPage() {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
   const [productions, setProductions] = useState<Production[]>([]);
+  const [reachouts, setReachouts] = useState<Reachout[]>([]);
   const [tab, setTab] = useState<ProductionTab>("requested");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -552,6 +595,7 @@ export default function ProductionPage() {
     setRows(data.clients || []);
     setProductions(data.productions || []);
     setVideographers(data.videographers || []);
+    setReachouts(data.reachouts || []);
     if (data.today) setToday(data.today);
     setLoading(false);
   }
@@ -664,11 +708,11 @@ export default function ProductionPage() {
   const awaiting = useMemo(
     () =>
       enrolled
-        .filter((r) => r.window && !r.existingSend && r.currentReminderCount > 0)
+        .filter((r) => r.window && !r.existingSend && outreachCount(r) > 0)
         .slice()
         .sort(
           (a, b) =>
-            b.currentReminderCount - a.currentReminderCount ||
+            outreachCount(b) - outreachCount(a) ||
             (a.window?.start || "").localeCompare(b.window?.start || "")
         ),
     [enrolled]
@@ -866,6 +910,16 @@ export default function ProductionPage() {
             </button>
           ) : null}
           <span className="tab-divider" aria-hidden="true" />
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "reachouts"}
+            className={`tab ${tab === "reachouts" ? "active" : ""}`}
+            onClick={() => setTab("reachouts")}
+          >
+            Reach-outs
+            <span className="tab-count">{reachouts.length}</span>
+          </button>
           <button
             type="button"
             role="tab"
@@ -1079,6 +1133,10 @@ export default function ProductionPage() {
               </button>
             </div>
           )
+        ) : null}
+
+        {tab === "reachouts" ? (
+          <ReachoutLog reachouts={reachouts} loading={loading} today={today} />
         ) : null}
 
         {tab === "setup" ? (
@@ -1359,12 +1417,16 @@ export default function ProductionPage() {
                           <span className="v">{fmtDate(r.existingSend.sendDate)}</span>
                         </div>
                       ) : null}
-                      {r.currentReminderCount > 0 ? (
+                      {outreachCount(r) > 0 ? (
                         <div className="pcon-line">
                           <span className="k">Outreach</span>
                           <span className="v">
-                            {r.lastEmailSent ? fmtDate(r.lastEmailSent) : "sent"}
-                            {r.currentReminderCount > 1 ? `, ${r.currentReminderCount}x` : ""}
+                            {r.currentReachoutLast
+                              ? `${fmtDate(r.currentReachoutLast.ymd)} (${REACHOUT_LABEL[r.currentReachoutLast.channel]})`
+                              : r.lastEmailSent
+                                ? fmtDate(r.lastEmailSent)
+                                : "sent"}
+                            {outreachCount(r) > 1 ? `, ${outreachCount(r)}x` : ""}
                           </span>
                         </div>
                       ) : null}
@@ -1374,13 +1436,22 @@ export default function ProductionPage() {
                       {/* A client who has been asked and has not booked reads as
                           "Not due yet" on status alone, which looks like nothing
                           has happened. Say the ask happened instead: it is the
-                          thing you need to know when deciding whether to chase. */}
-                      {!r.existingSend && r.currentReminderCount > 0 ? (
+                          thing you need to know when deciding whether to chase.
+                          Reminders start 21 days before a window opens, so this
+                          state is normal for three weeks while status still,
+                          truthfully, says the window has not started. */}
+                      {!r.existingSend && outreachCount(r) > 0 ? (
                         <span
                           className="pcon-pill is-warn"
-                          title={`Outreach sent ${r.currentReminderCount} time${r.currentReminderCount === 1 ? "" : "s"}${r.lastEmailSent ? `, last on ${fmtDate(r.lastEmailSent)}` : ""}. Waiting on them to book.`}
+                          title={`Outreach sent ${outreachCount(r)} time${outreachCount(r) === 1 ? "" : "s"}${
+                            r.currentReachoutLast
+                              ? `, last on ${fmtDate(r.currentReachoutLast.ymd)} by ${REACHOUT_LABEL[r.currentReachoutLast.channel].toLowerCase()}`
+                              : r.lastEmailSent
+                                ? `, last on ${fmtDate(r.lastEmailSent)}`
+                                : ""
+                          }. ${STATUS_LABEL[r.status]}. Waiting on them to book.`}
                         >
-                          Asked {r.currentReminderCount}x
+                          Outreach sent{outreachCount(r) > 1 ? ` ${outreachCount(r)}x` : ""}
                         </span>
                       ) : (
                         <span className={`pcon-pill ${TONE[r.status]}`}>
@@ -1439,6 +1510,21 @@ export default function ProductionPage() {
                       <div>
                         <span className="k">Window emailed</span>
                         <div className="v">{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "Never"}</div>
+                      </div>
+                      <div>
+                        <span className="k">Last contacted</span>
+                        <div className="v">
+                          {r.lastReachout ? (
+                            <span title={r.lastReachout.detail || undefined}>
+                              {fmtDate(r.lastReachout.ymd)}{" "}
+                              <span className="muted">
+                                ({REACHOUT_LABEL[r.lastReachout.channel]})
+                              </span>
+                            </span>
+                          ) : (
+                            "Never"
+                          )}
+                        </div>
                       </div>
                       {isAdmin ? (
                         <div>
@@ -1650,21 +1736,25 @@ export default function ProductionPage() {
                           <div className="pcon-line">
                             <span className="k">Asked</span>
                             <span className="v">
-                              {r.currentReminderCount} time
-                              {r.currentReminderCount === 1 ? "" : "s"}
+                              {outreachCount(r)} time
+                              {outreachCount(r) === 1 ? "" : "s"}
                             </span>
                           </div>
                           <div className="pcon-line">
                             <span className="k">Last</span>
                             <span className="v">
-                              {r.lastEmailSent ? fmtDate(r.lastEmailSent) : "unknown"}
+                              {r.currentReachoutLast
+                                ? `${fmtDate(r.currentReachoutLast.ymd)} (${REACHOUT_LABEL[r.currentReachoutLast.channel]})`
+                                : r.lastEmailSent
+                                  ? fmtDate(r.lastEmailSent)
+                                  : "unknown"}
                             </span>
                           </div>
                         </div>
 
                         <div className="pcon-act">
                           <span className="pcon-pill is-warn">
-                            Asked {r.currentReminderCount}x
+                            Outreach sent{outreachCount(r) > 1 ? ` ${outreachCount(r)}x` : ""}
                           </span>
                           {isAdmin ? (
                             <>
@@ -1715,6 +1805,90 @@ export default function ProductionPage() {
           />
         )}
       </main>
+    </div>
+  );
+}
+
+// Every outbound contact, newest first, grouped by the day it went out.
+//
+// This is the surface that answers "who did we reach out to". The sweep touches
+// clients on three channels and only the email channel was ever reported, so a
+// run that chased six clients on Basecamp read as having contacted nobody.
+function ReachoutLog({
+  reachouts,
+  loading,
+  today,
+}: {
+  reachouts: Reachout[];
+  loading: boolean;
+  today: string;
+}) {
+  if (loading) return <p className="muted">Loading reach-outs...</p>;
+  if (!reachouts.length) {
+    return (
+      <div className="empty">
+        <p>No reach-outs logged yet.</p>
+        <p className="muted">
+          Every scheduling email, Basecamp card, and follow-up comment lands here
+          once the next sweep runs.
+        </p>
+      </div>
+    );
+  }
+
+  // Group by date. The API returns newest first, so insertion order is already
+  // the order we want.
+  const days = new Map<string, Reachout[]>();
+  for (const r of reachouts) {
+    const list = days.get(r.ymd) || [];
+    list.push(r);
+    days.set(r.ymd, list);
+  }
+
+  return (
+    <div className="stack">
+      {[...days].map(([ymd, items]) => {
+        const clients = new Set(items.map((i) => i.client_id));
+        return (
+          <div key={ymd} className="card card-pad stack">
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+              <h2 className="h3" style={{ margin: 0 }}>
+                {ymd === today ? "Today" : fmtDate(ymd)}
+              </h2>
+              <span className="muted">
+                {clients.size} client{clients.size === 1 ? "" : "s"},{" "}
+                {items.length} contact{items.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Channel</th>
+                  <th>Sent to</th>
+                  <th>Window</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.client_name}</td>
+                    <td>
+                      <span className="pcon-pill is-quiet">
+                        {REACHOUT_LABEL[r.channel]}
+                      </span>
+                    </td>
+                    <td className="muted">{r.detail || "Not recorded"}</td>
+                    <td className="muted">
+                      {r.window_start ? fmtDate(r.window_start) : "None"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }

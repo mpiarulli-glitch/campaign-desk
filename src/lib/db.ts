@@ -461,6 +461,19 @@ export interface ScheduleReminder {
   updated_at: string;
 }
 
+export type ReachoutChannel = "email" | "basecamp_card" | "basecamp_comment";
+
+export interface Reachout {
+  id: string;
+  client_id: string;
+  client_name: string;
+  channel: ReachoutChannel;
+  window_start: string | null;
+  ymd: string;
+  detail: string | null;
+  created_at: string;
+}
+
 // An admin-defined invitation to book a production outside the client's
 // regular cadence: "here's a window, pick a day in it." Reaches the client
 // the same way a cadence reminder does (Basecamp card + email), but the
@@ -1098,6 +1111,30 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reminders_client ON schedule_reminders(client_id);
+
+    -- Every outbound contact with a client, whatever channel carried it.
+    --
+    -- The reminder sweep reaches clients three ways: an email, a Basecamp card,
+    -- and a comment on that card. Each used to be counted in its own array on
+    -- the run result, and only the email array was called "sent", so a client
+    -- reached on Basecamp was invisible in any summary read off it. This table
+    -- is the one place that answers "who did we contact, and when".
+    --
+    -- Append-only. The client name is denormalised so the log still reads
+    -- correctly after a client is renamed or removed.
+    CREATE TABLE IF NOT EXISTS reachouts (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      client_name TEXT NOT NULL,
+      channel TEXT NOT NULL, -- 'email' | 'basecamp_card' | 'basecamp_comment'
+      window_start TEXT,
+      ymd TEXT NOT NULL, -- calendar date the contact went out
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reachouts_client ON reachouts(client_id);
+    CREATE INDEX IF NOT EXISTS idx_reachouts_ymd ON reachouts(ymd);
 
     CREATE TABLE IF NOT EXISTS extra_production_requests (
       id TEXT PRIMARY KEY,

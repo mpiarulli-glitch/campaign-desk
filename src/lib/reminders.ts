@@ -1,6 +1,14 @@
 import { recordFailure, clearFailure } from "./failures";
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type RevClient, type ScheduledSend, type ScheduleReminder } from "./db";
+import {
+  getDb,
+  nowIso,
+  type ReachoutChannel,
+  type RevClient,
+  type ScheduledSend,
+  type ScheduleReminder,
+} from "./db";
+import { recordReachout } from "./reachouts";
 import {
   findSendForWindow,
   getOrCreateScheduleToken,
@@ -368,6 +376,20 @@ export function reminderEmail(
 export interface ReminderRunResult {
   today: string;
   dryRun: boolean;
+  // Every client contacted this run, on any channel. Read this, not `sent`,
+  // to answer "who did we reach out to". `sent` covers the email channel only,
+  // so a client reached on Basecamp never appears in it, and used to be
+  // counted under a `skipped` bucket instead.
+  reachedOut: Array<{
+    client: string;
+    clientId: string;
+    channel: ReachoutChannel;
+    window: Window;
+    detail?: string;
+  }>;
+  // Clients we deliberately did not contact because we could not tell who the
+  // contact is. Not a failure of sending, a refusal to send blind.
+  blocked: Array<{ client: string; clientId: string; reason: string }>;
   sent: Array<{ client: string; email: string; window: Window; attempt: number }>;
   failed: Array<{ client: string; email: string }>;
   basecampCards: Array<{ client: string; ok: boolean; error?: string }>;
@@ -379,6 +401,7 @@ export interface ReminderRunResult {
     noEmail: number;
     alreadySentToday: number;
     notAFollowupDay: number;
+    noContact: number;
     removed: number;
   };
 }
@@ -415,6 +438,8 @@ export async function runReminders(opts?: {
   const result: ReminderRunResult = {
     today,
     dryRun,
+    reachedOut: [],
+    blocked: [],
     sent: [],
     failed: [],
     basecampCards: [],
@@ -426,8 +451,40 @@ export async function runReminders(opts?: {
       noEmail: 0,
       alreadySentToday: 0,
       notAFollowupDay: 0,
+      noContact: 0,
       removed: 0,
     },
+  };
+
+  // Log a contact once, in both places that need it: the run result the caller
+  // reports from, and the durable log the console reads.
+  const noteReachout = (
+    client: RevClient,
+    channel: ReachoutChannel,
+    window: Window,
+    detail?: string
+  ) => {
+    result.reachedOut.push({
+      client: client.name,
+      clientId: client.id,
+      channel,
+      window,
+      detail,
+    });
+    if (!dryRun) {
+      recordReachout({
+        clientId: client.id,
+        clientName: client.name,
+        channel,
+        windowStart: window.start,
+        ymd: today,
+        detail,
+      });
+    }
+  };
+
+  const noteBlocked = (client: RevClient, reason: string) => {
+    result.blocked.push({ client: client.name, clientId: client.id, reason });
   };
 
   for (const client of listRevClients(false)) {
@@ -460,11 +517,24 @@ export async function runReminders(opts?: {
       continue;
     }
 
+    // Whether this client has already been contacted on some channel in this
+    // pass. The Basecamp block runs before the email gates, and those gates
+    // `continue`, so without this a client who just got a card was counted
+    // under a `skipped` bucket in the same run that messaged them.
+    let contacted = false;
+
     // Basecamp team nudge, independent of the client email. The card is created
     // once per window; after that, follow-ups are comments on that same card so
-    // the board doesn't fill with duplicates. Both are limited to the
-    // Basecamp follow-up weekdays.
-    if (!dryRun && client.basecamp_project_id && basecampConnected()) {
+    // the board doesn't fill with duplicates. Both are limited to the Basecamp
+    // follow-up weekdays.
+    //
+    // The weekday gate used to sit on the follow-up branch only, so a first card
+    // could go out any day the sweep ran, weekends included, despite the rule
+    // stated here. Targeting one client still lifts it, the same way it lifts
+    // the email gates, because a deliberate test that silently does nothing is
+    // the opposite of a test.
+    const basecampDayOk = Boolean(only) || isBasecampFollowupDay(today);
+    if (!dryRun && client.basecamp_project_id && basecampConnected() && basecampDayOk) {
       const existingCard = getReminder(client.id, window.start);
       const bcToken = getOrCreateScheduleToken(client.id);
       const bcUrl = bcToken ? scheduleUrl(bcToken) : "";
@@ -482,51 +552,65 @@ export async function runReminders(opts?: {
             client.contact_email,
             client.contact_name
           );
-          const assigneeIds = contact ? [contact.id] : [];
-          // Nobody to tag means the card goes out addressed to no one. That is
-          // worth knowing before the client wonders why they were never asked.
+          // No resolvable contact means we do not know who this card is
+          // addressed to, so it does not go up. A card with no assignee and no
+          // mention pings nobody, yet sits on the board looking like the client
+          // was asked. Not posting and saying so beats posting into the void.
+          //
+          // This blocks the Basecamp channel only. The email still goes if we
+          // have an address: not being findable on a Basecamp project is not
+          // the same as not knowing where to reach somebody.
           if (!contact) {
             recordFailure({
               kind: "contact_unresolved",
               subject: client.name,
               detail: client.contact_name
-                ? `No Basecamp person matches "${client.contact_name}" on this project, so the card was not assigned or tagged.`
-                : "No contact name on this client, so the card was not assigned or tagged.",
+                ? `No Basecamp person matches "${client.contact_name}" on this project, so no scheduling card was posted.`
+                : "No contact name on this client, so no scheduling card was posted.",
               hint:
-                "Check the contact name on the client matches their name in Basecamp exactly, then post a new card.",
+                "Check the contact name on the client matches their name in Basecamp exactly, then post a card with ?only=<client>&newCard=1.",
             });
+            noteBlocked(
+              client,
+              client.contact_name
+                ? `Not on the Basecamp project: "${client.contact_name}". No card posted.`
+                : "No contact name on this client. No card posted."
+            );
+            result.skipped.noContact++;
           } else {
             clearFailure("contact_unresolved", client.name);
+            const { title: cardTitle, body: cardBody } = scheduleCardContent(
+              client,
+              window,
+              bcUrl,
+              mentionHtml(contact)
+            );
+            // Due a week after the outreach card goes out, so it surfaces as
+            // overdue if nobody's followed up with the client by then.
+            const dueOn = subDays(today, -7);
+            const r = await createScheduleCard(
+              client.basecamp_project_id,
+              cardTitle,
+              cardBody,
+              [contact.id],
+              dueOn
+            );
+            if (r.ok) {
+              markBasecampCard(client.id, window.start, today, r.cardId);
+              clearFailure("basecamp_card", client.name);
+              contacted = true;
+              noteReachout(client, "basecamp_card", window, contact.name);
+            } else {
+              recordFailure({
+                kind: "basecamp_card",
+                subject: client.name,
+                detail: `Could not create the scheduling card. ${r.error || ""}`,
+                hint:
+                  "Check King Kashflow is on this Basecamp project and that it still has a Deliverables card table.",
+              });
+            }
+            result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });
           }
-          const { title: cardTitle, body: cardBody } = scheduleCardContent(
-            client,
-            window,
-            bcUrl,
-            contact ? mentionHtml(contact) : undefined
-          );
-          // Due a week after the outreach card goes out, so it surfaces as
-          // overdue if nobody's followed up with the client by then.
-          const dueOn = subDays(today, -7);
-          const r = await createScheduleCard(
-            client.basecamp_project_id,
-            cardTitle,
-            cardBody,
-            assigneeIds,
-            dueOn
-          );
-          if (r.ok) {
-            markBasecampCard(client.id, window.start, today, r.cardId);
-            clearFailure("basecamp_card", client.name);
-          } else {
-            recordFailure({
-              kind: "basecamp_card",
-              subject: client.name,
-              detail: `Could not create the scheduling card. ${r.error || ""}`,
-              hint:
-                "Check King Kashflow is on this Basecamp project and that it still has a Deliverables card table.",
-            });
-          }
-          result.basecampCards.push({ client: client.name, ok: r.ok, error: r.error });
         } catch (e) {
           recordFailure({
             kind: "basecamp_card",
@@ -552,34 +636,58 @@ export async function runReminders(opts?: {
             client.contact_email,
             client.contact_name
           );
-          const body = scheduleNudgeContent(
-            client,
-            window,
-            bcUrl,
-            today,
-            nudgeContact ? mentionHtml(nudgeContact) : undefined
-          );
-          const r = await commentOnCard(
-            client.basecamp_project_id,
-            existingCard.bc_card_id,
-            body
-          );
-          if (r.ok) {
-            markBasecampNudge(existingCard.id, today);
-            clearFailure("basecamp_comment", client.name);
-          } else {
+          // Same rule as the card: an untagged follow-up pings nobody, so it is
+          // a comment that only looks like a chase. Flag it instead.
+          if (!nudgeContact) {
             recordFailure({
-              kind: "basecamp_comment",
+              kind: "contact_unresolved",
               subject: client.name,
-              detail: `Could not comment the follow-up on the card. ${r.error || ""}`,
-              hint: "The card may have been deleted. Post a fresh card for this client.",
+              detail: client.contact_name
+                ? `No Basecamp person matches "${client.contact_name}" on this project, so no follow-up comment was posted.`
+                : "No contact name on this client, so no follow-up comment was posted.",
+              hint:
+                "Check the contact name on the client matches their name in Basecamp exactly.",
+            });
+            noteBlocked(
+              client,
+              client.contact_name
+                ? `Not on the Basecamp project: "${client.contact_name}". No follow-up posted.`
+                : "No contact name on this client. No follow-up posted."
+            );
+            result.skipped.noContact++;
+          } else {
+            clearFailure("contact_unresolved", client.name);
+            const body = scheduleNudgeContent(
+              client,
+              window,
+              bcUrl,
+              today,
+              mentionHtml(nudgeContact)
+            );
+            const r = await commentOnCard(
+              client.basecamp_project_id,
+              existingCard.bc_card_id,
+              body
+            );
+            if (r.ok) {
+              markBasecampNudge(existingCard.id, today);
+              clearFailure("basecamp_comment", client.name);
+              contacted = true;
+              noteReachout(client, "basecamp_comment", window, nudgeContact.name);
+            } else {
+              recordFailure({
+                kind: "basecamp_comment",
+                subject: client.name,
+                detail: `Could not comment the follow-up on the card. ${r.error || ""}`,
+                hint: "The card may have been deleted. Post a fresh card for this client.",
+              });
+            }
+            result.basecampFollowups.push({
+              client: client.name,
+              ok: r.ok,
+              error: r.error,
             });
           }
-          result.basecampFollowups.push({
-            client: client.name,
-            ok: r.ok,
-            error: r.error,
-          });
         } catch (e) {
           recordFailure({
             kind: "basecamp_comment",
@@ -598,19 +706,38 @@ export async function runReminders(opts?: {
 
     if (cardOnly) continue;
 
+    // A skip bucket only counts when nothing else already reached this client
+    // in this pass, so the counters stay an honest answer to "who did we not
+    // contact" rather than double-counting somebody we just messaged.
+    const skip = (bucket: keyof ReminderRunResult["skipped"]) => {
+      if (!contacted) result.skipped[bucket]++;
+    };
+
+    // No email address is the same refusal as no Basecamp contact: we do not
+    // know where to send it, so it does not go, and somebody is told.
     if (!client.contact_email?.trim()) {
-      result.skipped.noEmail++;
+      skip("noEmail");
+      if (!contacted) {
+        recordFailure({
+          kind: "contact_unresolved",
+          subject: client.name,
+          detail:
+            "No contact email on this client, so no scheduling reminder was emailed.",
+          hint: "Add a contact email on the client in the revenue console.",
+        });
+        noteBlocked(client, "No contact email on this client");
+      }
       continue;
     }
     const rec = getReminder(client.id, window.start);
     // Client emails go out on their follow-up weekdays only, so nobody gets a
     // weekend nudge and nobody gets more than two in a week.
     if (!only && !isEmailFollowupDay(today)) {
-      result.skipped.notAFollowupDay++;
+      skip("notAFollowupDay");
       continue;
     }
     if (!only && rec && rec.last_sent === today) {
-      result.skipped.alreadySentToday++;
+      skip("alreadySentToday");
       continue;
     }
 
@@ -634,6 +761,8 @@ export async function runReminders(opts?: {
         window,
         attempt: (rec?.count || 0) + 1,
       });
+      contacted = true;
+      noteReachout(client, "email", window, client.contact_email);
     } else {
       result.failed.push({ client: client.name, email: client.contact_email });
     }

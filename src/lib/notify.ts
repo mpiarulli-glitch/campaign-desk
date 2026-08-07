@@ -240,3 +240,68 @@ export async function notifyProductionApproved(args: {
       process.env.BASECAMP_CAMPFIRE_URL
   );
 }
+
+// The reminder sweep's own report, posted after every run that did something.
+//
+// This exists because the run result has three separate outbound channels and
+// only one of them was ever called "sent". Reading a summary off that array
+// under-reported who was contacted, so a client chased on Basecamp looked
+// untouched. This posts the unified list, and the blocked list beside it, so
+// the answer to "who did we reach out to" arrives without anyone going looking.
+export async function notifyReachouts(args: {
+  today: string;
+  reachedOut: Array<{ client: string; channel: string; detail?: string }>;
+  blocked: Array<{ client: string; reason: string }>;
+  crewHeadsUp: number;
+}): Promise<boolean> {
+  if (!args.reachedOut.length && !args.blocked.length) return false;
+
+  const CHANNEL: Record<string, string> = {
+    email: "email",
+    basecamp_card: "Basecamp card",
+    basecamp_comment: "Basecamp follow-up",
+  };
+
+  // One line per client, listing every channel that reached them, so a client
+  // contacted twice reads as one contact on two channels rather than twice.
+  const byClient = new Map<string, string[]>();
+  for (const r of args.reachedOut) {
+    const channels = byClient.get(r.client) || [];
+    channels.push(CHANNEL[r.channel] || r.channel);
+    byClient.set(r.client, channels);
+  }
+
+  const lines: string[] = [];
+  if (byClient.size) {
+    lines.push(
+      `<strong>Scheduling reach-outs, ${escapeHtml(args.today)}</strong><br>` +
+        `${byClient.size} client${byClient.size === 1 ? "" : "s"} contacted.`
+    );
+    for (const [client, channels] of byClient) {
+      lines.push(`• ${escapeHtml(client)} (${escapeHtml(channels.join(", "))})`);
+    }
+  } else {
+    lines.push(
+      `<strong>Scheduling sweep, ${escapeHtml(args.today)}</strong><br>` +
+        `Nobody was contacted.`
+    );
+  }
+
+  if (args.blocked.length) {
+    lines.push(
+      `<br><strong>Not contacted, needs a person:</strong> ` +
+        `${args.blocked.length} client${args.blocked.length === 1 ? "" : "s"}.`
+    );
+    for (const b of args.blocked) {
+      lines.push(`• ${escapeHtml(b.client)}: ${escapeHtml(b.reason)}`);
+    }
+  }
+
+  if (args.crewHeadsUp) {
+    lines.push(
+      `<br>${args.crewHeadsUp} crew heads-up email${args.crewHeadsUp === 1 ? "" : "s"} also went out.`
+    );
+  }
+
+  return postToCampfire(lines.join("<br>"));
+}

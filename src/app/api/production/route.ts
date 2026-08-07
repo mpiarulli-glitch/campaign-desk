@@ -4,6 +4,11 @@ import { getRevClient, listRevClients } from "@/lib/revenue";
 import { computeCycleStatus, findSendForWindow, nextWindow, todayYmd } from "@/lib/cadence";
 import { recordManualProduction, recordOutOfCycleProduction } from "@/lib/scheduling";
 import { getReminder, getLatestReminder } from "@/lib/reminders";
+import {
+  lastReachoutForClient,
+  listRecentReachouts,
+  reachoutsForWindow,
+} from "@/lib/reachouts";
 import { listVideographers } from "@/lib/videographers";
 import { listProductionSends } from "@/lib/calendar";
 import { listOpenExtraRequests } from "@/lib/extra-requests";
@@ -19,6 +24,13 @@ export async function GET() {
     const existingSend = window ? findSendForWindow(client.id, window.start) : null;
     const currentReminder = window ? getReminder(client.id, window.start) : null;
     const latestReminder = getLatestReminder(client.id);
+    const lastReachout = lastReachoutForClient(client.id);
+    // Outreach for the window in front of them, on every channel. This is what
+    // the status pill reads: a client asked only on Basecamp has an email count
+    // of zero and used to show as untouched.
+    const currentReachout = window
+      ? reachoutsForWindow(client.id, window.start)
+      : { count: 0, last: null };
     const openExtraRequest = listOpenExtraRequests(client.id)[0] || null;
     return {
       client: {
@@ -50,6 +62,23 @@ export async function GET() {
       currentReminderCount: currentReminder?.count || 0,
       lastEmailSent: latestReminder?.last_sent || null,
       lastWindowEmailed: latestReminder?.window_start || null,
+      // The last time this client was contacted on ANY channel. The email
+      // fields above miss a client chased on Basecamp, which is most of them
+      // on a Wednesday or Friday.
+      lastReachout: lastReachout
+        ? {
+            channel: lastReachout.channel,
+            ymd: lastReachout.ymd,
+            detail: lastReachout.detail,
+          }
+        : null,
+      currentReachoutCount: currentReachout.count,
+      currentReachoutLast: currentReachout.last
+        ? {
+            channel: currentReachout.last.channel,
+            ymd: currentReachout.last.ymd,
+          }
+        : null,
       openExtraRequest: openExtraRequest
         ? {
             id: openExtraRequest.id,
@@ -67,6 +96,9 @@ export async function GET() {
     productions: listProductionSends(true),
     today,
     videographers: listVideographers(false),
+    // The reach-out log, newest first. Every outbound contact on every channel,
+    // which is the surface that answers "who have we chased and when".
+    reachouts: listRecentReachouts(200),
   });
 }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { runReminders, runShootReminders } from "@/lib/reminders";
+import { notifyReachouts } from "@/lib/notify";
 
 // Constant-time compare so the secret can't be probed by timing.
 function secretMatches(provided: string | null): boolean {
@@ -69,15 +70,39 @@ async function handle(request: Request) {
   // One line per run, so a scheduled sweep is visible in the logs whether or not
   // it had anything to do. Without it a successful no-op run leaves no trace at
   // all, and "did the cron fire" can only be answered from GitHub's UI.
+  //
+  // The clients are named, not just counted. A count answers "did it run" but
+  // not "who did it touch", and the latter is the question that actually gets
+  // asked the morning after.
+  const contactedNames = [...new Set(result.reachedOut.map((r) => r.client))];
   console.log(
     `[cron] reminders ${dryRun ? "(dry run) " : ""}${result.today}: ` +
-      `${result.sent.length} email(s), ` +
+      `reached ${contactedNames.length} client(s)` +
+      (contactedNames.length ? ` [${contactedNames.join(", ")}]` : "") +
+      ` via ${result.sent.length} email(s), ` +
       `${result.basecampCards.filter((c) => c.ok).length} card(s), ` +
-      `${result.basecampFollowups.filter((c) => c.ok).length} follow-up(s), ` +
-      `${shootReminders.sent.length} crew heads-up, ` +
+      `${result.basecampFollowups.filter((c) => c.ok).length} follow-up(s); ` +
+      `${shootReminders.sent.length} crew heads-up; ` +
+      (result.blocked.length
+        ? `BLOCKED ${result.blocked.length} [${result.blocked
+            .map((b) => b.client)
+            .join(", ")}]; `
+        : "") +
       `skipped ${JSON.stringify(result.skipped)}` +
       (result.failed.length ? ` FAILED ${result.failed.length}` : "")
   );
+
+  // Push the same report to Campfire, so a reach-out is something you are told
+  // about rather than something you find. Fire and forget: a chat outage must
+  // never fail the sweep that already sent the mail.
+  if (!dryRun) {
+    void notifyReachouts({
+      today: result.today,
+      reachedOut: result.reachedOut,
+      blocked: result.blocked,
+      crewHeadsUp: shootReminders.sent.length,
+    });
+  }
 
   return NextResponse.json({ ...result, shootReminders });
 }
