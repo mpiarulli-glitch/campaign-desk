@@ -152,6 +152,11 @@ export default function AdminCampaignPage() {
   const [basecampApproval, setBasecampApproval] =
     useState<BasecampApprovalState | null>(null);
   const [sendingBasecampApproval, setSendingBasecampApproval] = useState(false);
+  // Two-step confirm lives in the page rather than a native confirm() dialog.
+  // A browser that has suppressed dialogs for the tab returns false from
+  // confirm() instantly, which made this button look dead with no error.
+  const [confirmingBasecampApproval, setConfirmingBasecampApproval] =
+    useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -398,20 +403,18 @@ export default function AdminCampaignPage() {
   }
 
   async function sendBasecampApproval() {
-    if (!basecampApproval?.ready || sendingBasecampApproval) return;
-    const resend = basecampApproval.alreadySent;
-    const action = resend ? "Resend" : "Send";
-    const destination = basecampApproval.recipient
-      ? ` to ${basecampApproval.recipient}`
-      : "";
-    if (
-      !confirm(
-        `${action} this client approval in Basecamp${destination} and move its Deliverables card to Needs Approval?`
-      )
-    ) {
+    if (sendingBasecampApproval) return;
+    if (!basecampApproval?.ready) {
+      setError(
+        basecampApproval?.missing?.length
+          ? `Setup needed before this can send: ${basecampApproval.missing.join(", ")}.`
+          : "This campaign is not ready to send for approval yet."
+      );
       return;
     }
+    const resend = basecampApproval.alreadySent;
 
+    setConfirmingBasecampApproval(false);
     setSendingBasecampApproval(true);
     setError("");
     setMessage("");
@@ -1048,22 +1051,49 @@ export default function AdminCampaignPage() {
                 Basecamp{" "}
                 <span className="muted">· client approval workflow</span>
               </span>
-              <button
-                className={`btn btn-sm ${
-                  basecampApproval?.alreadySent ? "btn-secondary" : ""
-                }`}
-                onClick={sendBasecampApproval}
-                disabled={
-                  !basecampApproval?.ready || sendingBasecampApproval
-                }
-              >
-                {sendingBasecampApproval
-                  ? "Sending..."
-                  : basecampApproval?.alreadySent
-                    ? "Resend approval"
-                    : "Send approval"}
-              </button>
+              {confirmingBasecampApproval && !sendingBasecampApproval ? (
+                <div className="row" style={{ gap: 8 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setConfirmingBasecampApproval(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button className="btn btn-sm" onClick={sendBasecampApproval}>
+                    {basecampApproval?.alreadySent
+                      ? "Yes, resend it"
+                      : "Yes, send it"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className={`btn btn-sm ${
+                    basecampApproval?.alreadySent ? "btn-secondary" : ""
+                  }`}
+                  onClick={() => setConfirmingBasecampApproval(true)}
+                  disabled={
+                    !basecampApproval?.ready || sendingBasecampApproval
+                  }
+                >
+                  {sendingBasecampApproval
+                    ? "Sending..."
+                    : basecampApproval?.alreadySent
+                      ? "Resend approval"
+                      : "Send approval"}
+                </button>
+              )}
             </div>
+
+            {confirmingBasecampApproval && !sendingBasecampApproval ? (
+              <p style={{ margin: "8px 0 0", fontSize: 13 }}>
+                {basecampApproval?.alreadySent ? "Resend" : "Send"} this
+                approval
+                {basecampApproval?.recipient
+                  ? ` to ${basecampApproval.recipient}`
+                  : ""}{" "}
+                and move its Deliverables card to Needs Approval?
+              </p>
+            ) : null}
 
             {basecampApproval ? (
               <>
