@@ -360,7 +360,7 @@ export default function ProductionPage() {
   const [people, setPeople] = useState<
     Record<string, { loading: boolean; people: BasecampPerson[]; reason?: string }>
   >({});
-  const [tab, setTab] = useState<ProductionTab>("requested");
+  const [tab, setTab] = useState<ProductionTab>("setup");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [linkMessage, setLinkMessage] = useState<Record<string, string>>({});
@@ -970,12 +970,22 @@ export default function ProductionPage() {
           <p className="eyebrow">Email department</p>
           <h1 className="h1">Productions</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Review new production requests, see confirmed shoots, or manage the
-            master scheduling setup.
+            See where every client stands, review new production requests, and
+            check what the scheduler has been sending.
           </p>
         </div>
 
         <div className="tabs" role="tablist" aria-label="Production views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "setup"}
+            className={`tab ${tab === "setup" ? "active" : ""}`}
+            onClick={() => setTab("setup")}
+          >
+            Production dashboard
+            <span className="tab-count">{enrolled.length}</span>
+          </button>
           <button
             type="button"
             role="tab"
@@ -1028,16 +1038,6 @@ export default function ProductionPage() {
           >
             Reach-outs
             <span className="tab-count">{reachouts.length}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "setup"}
-            className={`tab ${tab === "setup" ? "active" : ""}`}
-            onClick={() => setTab("setup")}
-          >
-            Client setup
-            <span className="tab-count">{enrolled.length}</span>
           </button>
         </div>
 

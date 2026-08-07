@@ -32,7 +32,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SLOTS = ["09:00", "10:00", "11:00", "12:00", "13:00"];
 
 // What an admin can change about a production after the fact. The videographer
-// is a client-level setting and stays on the Client setup tab.
+// is a client-level setting and stays on the Production dashboard tab.
 type EditForm = {
   sendDate: string;
   sendTime: string;
