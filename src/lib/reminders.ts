@@ -13,6 +13,7 @@ import {
   findSendForWindow,
   getOrCreateScheduleToken,
   nextWindow,
+  statusMeansHandled,
   todayYmd,
   type Window,
 } from "./cadence";
@@ -393,6 +394,10 @@ export interface ReminderRunResult {
   // Clients deliberately held back by hand. Named rather than counted, because
   // a pause nobody remembers setting is a client who is never asked again.
   paused: Array<{ client: string; clientId: string }>;
+  // Clients held back by a hand-set status that means handled. Same reasoning
+  // as `paused`: it stops outreach and only a person can undo it, so it is
+  // named every run rather than disappearing into a counter.
+  heldByStatus: Array<{ client: string; clientId: string; status: string }>;
   sent: Array<{ client: string; email: string; window: Window; attempt: number }>;
   failed: Array<{ client: string; email: string }>;
   basecampCards: Array<{ client: string; ok: boolean; error?: string }>;
@@ -406,6 +411,7 @@ export interface ReminderRunResult {
     notAFollowupDay: number;
     noContact: number;
     paused: number;
+    heldByStatus: number;
     removed: number;
   };
 }
@@ -445,6 +451,7 @@ export async function runReminders(opts?: {
     reachedOut: [],
     blocked: [],
     paused: [],
+    heldByStatus: [],
     sent: [],
     failed: [],
     basecampCards: [],
@@ -458,6 +465,7 @@ export async function runReminders(opts?: {
       notAFollowupDay: 0,
       noContact: 0,
       paused: 0,
+      heldByStatus: 0,
       removed: 0,
     },
   };
@@ -509,6 +517,21 @@ export async function runReminders(opts?: {
     if (client.outreach_paused) {
       result.paused.push({ client: client.name, clientId: client.id });
       result.skipped.paused++;
+      continue;
+    }
+    // Status set by hand to something that means handled. A row marked
+    // "Requested" is saying the client already asked, and asking them again is
+    // the nag this whole surface exists to avoid. Named rather than tallied,
+    // for the same reason a pause is: it is a decision that stops outreach and
+    // nothing clears it on its own.
+    const pinnedStatus = (client.status_override || "").trim();
+    if (statusMeansHandled(pinnedStatus)) {
+      result.heldByStatus.push({
+        client: client.name,
+        clientId: client.id,
+        status: pinnedStatus,
+      });
+      result.skipped.heldByStatus++;
       continue;
     }
     if (!client.color_week || !client.production_cadence) {

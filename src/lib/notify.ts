@@ -253,10 +253,17 @@ export async function notifyReachouts(args: {
   reachedOut: Array<{ client: string; channel: string; detail?: string }>;
   blocked: Array<{ client: string; reason: string }>;
   paused?: Array<{ client: string }>;
+  heldByStatus?: Array<{ client: string; status: string }>;
   crewHeadsUp: number;
 }): Promise<boolean> {
   const paused = args.paused || [];
-  if (!args.reachedOut.length && !args.blocked.length && !paused.length)
+  const held = args.heldByStatus || [];
+  if (
+    !args.reachedOut.length &&
+    !args.blocked.length &&
+    !paused.length &&
+    !held.length
+  )
     return false;
 
   const CHANNEL: Record<string, string> = {
@@ -310,6 +317,19 @@ export async function notifyReachouts(args: {
     );
     for (const p of paused) {
       lines.push(`• ${escapeHtml(p.client)}`);
+    }
+  }
+
+  // Named every run, same as a pause. A status set to "Requested" by hand stops
+  // the chasing, so if it was set in error the client silently waits forever.
+  if (held.length) {
+    lines.push(
+      `<br><strong>Held by a hand-set status:</strong> ` +
+        `${held.length} client${held.length === 1 ? "" : "s"}. ` +
+        `Marked as handled, so they get no outreach.`
+    );
+    for (const h of held) {
+      lines.push(`• ${escapeHtml(h.client)} (${escapeHtml(h.status)})`);
     }
   }
 

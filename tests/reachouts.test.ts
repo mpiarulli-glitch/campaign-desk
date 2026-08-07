@@ -270,10 +270,36 @@ test("hand-set status and hand-set pause", async (t) => {
     assert.equal(s.real, "due", "the real status is never lost");
   });
 
-  await t.test("pinning a status does NOT stop the outreach", async () => {
+  await t.test("a status meaning handled stops the outreach", async () => {
+    // "sent" is still pinned from the test above.
     const run = await runReminders({ today, dryRun: true });
-    assert.equal(run.reachedOut.length, 1, "a pinned row still gets chased");
-    assert.equal(run.skipped.paused, 0);
+    assert.equal(run.reachedOut.length, 0, "a handled row is not chased");
+    assert.equal(run.skipped.heldByStatus, 1);
+    assert.deepEqual(
+      run.heldByStatus.map((h) => [h.client, h.status]),
+      [["Pin Co", "sent"]],
+      "held clients are named, not just counted"
+    );
+  });
+
+  await t.test('"requested" stops it too, because they already asked', async () => {
+    updateRevClient(created.id, { statusOverride: "requested" });
+    const run = await runReminders({ today, dryRun: true });
+    assert.equal(run.reachedOut.length, 0);
+    assert.equal(run.heldByStatus[0]?.status, "requested");
+  });
+
+  await t.test('"due" and "not_due" keep the outreach running', async () => {
+    for (const pinned of ["due", "not_due"]) {
+      updateRevClient(created.id, { statusOverride: pinned });
+      const run = await runReminders({ today, dryRun: true });
+      assert.equal(
+        run.reachedOut.length,
+        1,
+        `pinning "${pinned}" still means they have to book, so keep chasing`
+      );
+      assert.equal(run.skipped.heldByStatus, 0);
+    }
   });
 
   await t.test("clearing it hands the row back to the engine", () => {

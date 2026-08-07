@@ -211,9 +211,12 @@ export interface RevClient {
   // other data are kept; they just don't get productions).
   production_enrolled: number;
   // Hand-set cycle status, pinned until it is cleared. Empty means read the
-  // real one off the cadence engine. This is a display override only: it never
-  // changes what the sweep does, so a pinned status cannot quietly stop a
-  // client being asked. Pausing outreach is the separate switch below.
+  // real one off the cadence engine.
+  //
+  // Setting it to a status that means "handled" (requested, scheduled, sent,
+  // inactive) also stops the outreach, because those describe a client who has
+  // already been dealt with. Pinning "due" or "not_due" does not, since both
+  // still mean somebody has to book. See HANDLED_STATUSES in cadence.ts.
   status_override: string;
   // 1 = the reminder sweep leaves this client alone. Set and cleared by hand,
   // never automatically, and surfaced everywhere a paused client could

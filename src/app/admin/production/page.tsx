@@ -34,15 +34,23 @@ const STATUS_LABEL: Record<CycleStatus, string> = {
 
 // The hand-set status choices. "" hands the row back to the cadence engine,
 // which is why it reads as "Automatic" rather than as an empty option.
+//
+// The ones that mean the client is handled also stop the outreach, and say so
+// on the option itself. Choosing "Requested" is a statement that they already
+// asked, so continuing to chase them would be the exact nag worth avoiding.
 const STATUS_OVERRIDE_OPTIONS = [
   { value: "", label: "Automatic" },
   { value: "not_due", label: "Not due yet" },
   { value: "due", label: "Due" },
-  { value: "requested", label: "Requested" },
-  { value: "scheduled", label: "Scheduled" },
-  { value: "sent", label: "Sent" },
-  { value: "inactive", label: "Inactive" },
+  { value: "requested", label: "Requested (stops outreach)" },
+  { value: "scheduled", label: "Scheduled (stops outreach)" },
+  { value: "sent", label: "Sent (stops outreach)" },
+  { value: "inactive", label: "Inactive (stops outreach)" },
 ];
+
+// Statuses that mean handled. Mirrors HANDLED_STATUSES in cadence.ts, which is
+// what the sweep actually enforces.
+const HANDLED: CycleStatus[] = ["requested", "scheduled", "sent", "inactive"];
 
 type Client = {
   id: string;
@@ -1481,7 +1489,11 @@ export default function ProductionPage() {
                         // about what the cadence engine thinks.
                         <span
                           className={`pcon-pill ${TONE[r.status]}`}
-                          title={`Set by hand to "${STATUS_LABEL[r.status]}". Actual status is "${STATUS_LABEL[r.realStatus]}". Outreach is unaffected; set it back to Automatic in the row below.`}
+                          title={`Set by hand to "${STATUS_LABEL[r.status]}". Actual status is "${STATUS_LABEL[r.realStatus]}". ${
+                            HANDLED.includes(r.status)
+                              ? "Outreach is stopped while this is set."
+                              : "Outreach continues."
+                          } Set it back to Automatic in the row below.`}
                         >
                           {STATUS_LABEL[r.status]} (set)
                         </span>
@@ -1572,7 +1584,11 @@ export default function ProductionPage() {
                               r, "status_override", "select", c.status_override || "",
                               <span>
                                 {c.status_override
-                                  ? `${STATUS_LABEL[r.status]} (set by hand)`
+                                  ? `${STATUS_LABEL[r.status]} (set by hand${
+                                      HANDLED.includes(r.status)
+                                        ? ", outreach stopped"
+                                        : ""
+                                    })`
                                   : `${STATUS_LABEL[r.realStatus]} (automatic)`}
                               </span>,
                               STATUS_OVERRIDE_OPTIONS

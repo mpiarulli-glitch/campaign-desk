@@ -210,13 +210,28 @@ export function isCycleStatus(value: string): value is CycleStatus {
   return (CYCLE_STATUSES as string[]).includes(value);
 }
 
+// Statuses that mean this client is handled for the window in front of them.
+//
+// These are the ones that describe an outcome rather than a waiting state: they
+// asked, it is on the calendar, or it happened. Chasing someone who has already
+// requested a production is the exact nag worth preventing, so a hand-set status
+// from this list stops the sweep the same way a real booking does.
+//
+// "due" and "not_due" are deliberately absent. Both mean the client still has to
+// book, so pinning either has to leave the outreach running.
+export const HANDLED_STATUSES: CycleStatus[] = [
+  "requested",
+  "scheduled",
+  "sent",
+  "inactive",
+];
+
+export function statusMeansHandled(value: string): boolean {
+  return isCycleStatus(value) && HANDLED_STATUSES.includes(value);
+}
+
 // The status to show for a client: their hand-set one if they have it,
 // otherwise the real one off the cadence engine.
-//
-// Display only, deliberately. The sweep never reads this, so pinning a status
-// cannot stop a client being asked. Pausing outreach is a separate, explicit
-// switch, which keeps "what this row says" and "what the robot does" from
-// silently drifting apart.
 export function effectiveCycleStatus(
   client: RevClient,
   window: Window | null,

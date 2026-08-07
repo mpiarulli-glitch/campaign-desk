@@ -93,6 +93,11 @@ async function handle(request: Request) {
             .map((p) => p.client)
             .join(", ")}]; `
         : "") +
+      (result.heldByStatus.length
+        ? `HELD ${result.heldByStatus.length} [${result.heldByStatus
+            .map((h) => `${h.client}=${h.status}`)
+            .join(", ")}]; `
+        : "") +
       `skipped ${JSON.stringify(result.skipped)}` +
       (result.failed.length ? ` FAILED ${result.failed.length}` : "")
   );
@@ -106,6 +111,7 @@ async function handle(request: Request) {
       reachedOut: result.reachedOut,
       blocked: result.blocked,
       paused: result.paused,
+      heldByStatus: result.heldByStatus,
       crewHeadsUp: shootReminders.sent.length,
     });
   }
