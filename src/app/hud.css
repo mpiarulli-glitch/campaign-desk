@@ -972,6 +972,11 @@
   gap: 8px;
 }
 .hud-board-add select { min-width: 200px; }
+.hud-board-add-none {
+  font-size: 11px;
+  color: var(--ghost-dim);
+  align-self: center;
+}
 
 /* Triage: the parking lot every client starts in. Laid out as a wrapping grid
    rather than a column, because it holds the whole roster and a vertical

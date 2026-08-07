@@ -249,7 +249,14 @@ export function boardCardExists(id: string): boolean {
   return Boolean(getCardRow(id));
 }
 
-/** Adds a card for a client outside the normal active-client sweep (inactive client, one-off). */
+/**
+ * Put a client on the board for a period. Covers both a client the sweep skips
+ * (inactive, one-off) and one that was removed earlier.
+ *
+ * Removal dismisses rather than deletes, so the row usually already exists.
+ * On conflict this un-dismisses and returns it to Triage; DO NOTHING here would
+ * leave the card dismissed and the add would silently fail.
+ */
 export function addBoardCard(clientId: string, period: string): boolean {
   const db = getDb();
   const client = listRevClients(true).find((c) => c.id === clientId);
@@ -257,9 +264,13 @@ export function addBoardCard(clientId: string, period: string): boolean {
   const ts = nowIso();
   db.prepare(
     `INSERT INTO lifecycle_board_cards
-       (id, client_id, period, column_key, sort_order, notes, created_at, updated_at)
-     VALUES (?, ?, ?, 'triage', 0, '', ?, ?)
-     ON CONFLICT(client_id, period) DO NOTHING`
+       (id, client_id, period, column_key, sort_order, notes, dismissed, created_at, updated_at)
+     VALUES (?, ?, ?, 'triage', 0, '', 0, ?, ?)
+     ON CONFLICT(client_id, period) DO UPDATE SET
+       dismissed = 0,
+       column_key = CASE WHEN lifecycle_board_cards.dismissed = 1
+                         THEN 'triage' ELSE lifecycle_board_cards.column_key END,
+       updated_at = excluded.updated_at`
   ).run(nanoid(12), clientId, period, ts, ts);
   return true;
 }

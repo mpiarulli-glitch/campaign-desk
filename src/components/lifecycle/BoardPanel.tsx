@@ -291,13 +291,25 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
 
   async function addCard() {
     if (!addingClientId) return;
+    const wanted = addingClientId;
+    setError("");
     const res = await fetch("/api/lifecycle/board", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId: addingClientId, period }),
+      body: JSON.stringify({ clientId: wanted, period }),
     });
+    if (!res.ok) {
+      setError("Could not add that client to the board.");
+      return;
+    }
+    const data = await res.json();
     setAddingClientId("");
-    if (res.ok) void load(period);
+    setCards(data.cards || []);
+    // A 200 that didn't actually put the client on the board is the failure
+    // mode worth shouting about — it used to look like nothing happened.
+    if (!(data.cards || []).some((c: BoardCard) => c.clientId === wanted)) {
+      setError("That client could not be added. Reload and try again.");
+    }
   }
 
   function handlersFor(card: BoardCard): CardHandlers {
@@ -351,16 +363,28 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
           ) : null}
         </div>
 
+        {/* Every active client is seeded onto the board automatically, so this
+            only has anything to offer once someone has been removed, or for a
+            client the sweep skips. Saying so beats an empty dropdown. */}
         <div className="hud-board-add">
-          <select value={addingClientId} onChange={(e) => setAddingClientId(e.target.value)}>
-            <option value="">Add a client card…</option>
-            {availableClients.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <button className="hud-btn" disabled={!addingClientId} onClick={addCard}>
-            Add
-          </button>
+          {availableClients.length === 0 ? (
+            <span className="hud-board-add-none">Every client is already on the board</span>
+          ) : (
+            <>
+              <select
+                value={addingClientId}
+                onChange={(e) => setAddingClientId(e.target.value)}
+              >
+                <option value="">Add a client…</option>
+                {availableClients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <button className="hud-btn" disabled={!addingClientId} onClick={addCard}>
+                Add
+              </button>
+            </>
+          )}
         </div>
       </div>
 
