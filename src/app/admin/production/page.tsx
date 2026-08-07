@@ -11,6 +11,8 @@ type CycleStatus =
   | "inactive"
   | "not_due"
   | "due"
+  // Hand-set only. The cadence engine never produces this one.
+  | "outreach_sent"
   | "requested"
   | "scheduled"
   | "sent";
@@ -27,6 +29,7 @@ const STATUS_LABEL: Record<CycleStatus, string> = {
   inactive: "Inactive",
   not_due: "Not due yet",
   due: "Due",
+  outreach_sent: "Outreach sent",
   requested: "Requested",
   scheduled: "Scheduled",
   sent: "Sent",
@@ -42,6 +45,7 @@ const STATUS_OVERRIDE_OPTIONS = [
   { value: "", label: "Automatic" },
   { value: "not_due", label: "Not due yet" },
   { value: "due", label: "Due" },
+  { value: "outreach_sent", label: "Outreach sent" },
   { value: "requested", label: "Requested (stops outreach)" },
   { value: "scheduled", label: "Scheduled (stops outreach)" },
   { value: "sent", label: "Sent (stops outreach)" },
@@ -246,6 +250,10 @@ function bucketOf(r: Row): Exclude<StatusFilter, "all"> {
   // "Asked" means contacted on any channel about THIS window. Keying this off
   // the email count alone put clients we had already chased on Basecamp back in
   // "due", so they read as never approached and got approached again.
+  // A hand-set "Outreach sent" counts the same as a logged one. It exists for
+  // outreach that happened off the app, so it has to land in the same bucket as
+  // the outreach the app did itself.
+  if (r.status === "outreach_sent") return "asked";
   if (!r.existingSend && outreachCount(r) > 0) return "asked";
   if (r.status === "due") return "due";
   return "ahead";
@@ -256,6 +264,9 @@ const TONE: Record<CycleStatus, string> = {
   inactive: "is-quiet",
   not_due: "is-quiet",
   due: "is-bad",
+  // Warn, not good: they were asked and still have not booked, which is the
+  // same tone the automatic version of this state already uses.
+  outreach_sent: "is-warn",
   requested: "is-warn",
   scheduled: "is-good",
   sent: "is-good",

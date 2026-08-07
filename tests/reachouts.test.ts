@@ -409,3 +409,75 @@ test("a picked contact resolves by Basecamp id, not by name", async (t) => {
     );
   });
 });
+
+// "Outreach sent" is a hand-set status for outreach that happened off the app,
+// a phone call or a conversation. It records that we asked; it does not mean
+// they are handled, so the chasing has to continue.
+test('"Outreach sent" is settable and keeps the chasing running', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-osent-test-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const { createRevClient, updateRevClient, getRevClient } = await import(
+    "../src/lib/revenue"
+  );
+  const { runReminders } = await import("../src/lib/reminders");
+  const {
+    effectiveCycleStatus,
+    nextWindow,
+    isCycleStatus,
+    statusMeansHandled,
+    computeCycleStatus,
+  } = await import("../src/lib/cadence");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const today = "2026-08-03";
+  const created = createRevClient({ name: "Call Co", businessModel: "home_service" });
+  updateRevClient(created.id, {
+    colorWeek: "red",
+    productionCadence: "monthly",
+    productionEnrolled: true,
+    contactName: "Sam Doe",
+    contactEmail: "sam@call.co",
+  });
+
+  await t.test("it is a real status and it is not a handled one", () => {
+    assert.equal(isCycleStatus("outreach_sent"), true);
+    assert.equal(statusMeansHandled("outreach_sent"), false);
+  });
+
+  await t.test("the engine never produces it on its own", () => {
+    const client = getRevClient(created.id)!;
+    const real = computeCycleStatus(client, nextWindow(client, today), today);
+    assert.notEqual(real, "outreach_sent");
+    assert.equal(real, "due");
+  });
+
+  await t.test("setting it pins the row without hiding the real status", () => {
+    updateRevClient(created.id, { statusOverride: "outreach_sent" });
+    const client = getRevClient(created.id)!;
+    const s = effectiveCycleStatus(client, nextWindow(client, today), today);
+    assert.equal(s.status, "outreach_sent");
+    assert.equal(s.overridden, true);
+    assert.equal(s.real, "due");
+  });
+
+  // Asserted per client rather than on totals: db.ts resolves its path on first
+  // import, so every test in this file shares one database and earlier clients
+  // are still in it.
+  await t.test("and the sweep keeps chasing, because asking once is not booking", async () => {
+    const run = await runReminders({ today, dryRun: true });
+    assert.ok(
+      run.reachedOut.some((x) => x.clientId === created.id),
+      "a row marked Outreach sent is still chased"
+    );
+    assert.ok(
+      !run.heldByStatus.some((h) => h.clientId === created.id),
+      "and it is not held"
+    );
+  });
+});

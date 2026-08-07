@@ -57,6 +57,12 @@ export type CycleStatus =
   | "inactive"
   | "not_due"
   | "due"
+  // Hand-set only: the cadence engine never returns this. It says somebody was
+  // asked and has not booked, which is a fact about us rather than about the
+  // window, so nothing can compute it from a date. The sweep derives the same
+  // state from the reach-out log; this is for outreach that happened off the
+  // app, like a phone call.
+  | "outreach_sent"
   | "requested"
   | "scheduled"
   | "sent";
@@ -201,6 +207,7 @@ export const CYCLE_STATUSES: CycleStatus[] = [
   "inactive",
   "not_due",
   "due",
+  "outreach_sent",
   "requested",
   "scheduled",
   "sent",
@@ -217,8 +224,10 @@ export function isCycleStatus(value: string): value is CycleStatus {
 // requested a production is the exact nag worth preventing, so a hand-set status
 // from this list stops the sweep the same way a real booking does.
 //
-// "due" and "not_due" are deliberately absent. Both mean the client still has to
-// book, so pinning either has to leave the outreach running.
+// "due", "not_due" and "outreach_sent" are deliberately absent. All three mean
+// the client still has to book, so pinning any of them has to leave the
+// outreach running. "outreach_sent" especially: it records that we asked, and
+// asking once is not a reason to stop asking.
 export const HANDLED_STATUSES: CycleStatus[] = [
   "requested",
   "scheduled",
