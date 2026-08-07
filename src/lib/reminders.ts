@@ -27,8 +27,28 @@ import {
   findClientContact,
   getProjectPeopleForMention,
   mentionHtml,
+  type BcPerson,
 } from "./basecamp";
 import { sendProductionUpcoming } from "./production-emails";
+
+// The client's contact on a Basecamp project.
+//
+// Prefers the person picked by hand on the client record, matched by Basecamp
+// id, which cannot drift the way a typed name can. Falls back to the old
+// email-then-exact-name resolution for clients where nobody has been picked
+// yet, so existing accounts keep working untouched.
+function resolveContact(client: RevClient, people: BcPerson[]): BcPerson | null {
+  if (client.basecamp_contact_id) {
+    const picked = people.find(
+      (person) => person.id === client.basecamp_contact_id
+    );
+    if (picked) return picked;
+    // Picked once, gone now: removed from the project, or moved. Fall through
+    // to name matching rather than silently doing nothing, but this is worth
+    // surfacing, which the caller's contact_unresolved failure already does.
+  }
+  return findClientContact(people, client.contact_email, client.contact_name);
+}
 
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
@@ -585,11 +605,7 @@ export async function runReminders(opts?: {
           // Assigning is not the same as mentioning: only a mention pings, so
           // the contact is both assigned and tagged in the greeting.
           const people = await getProjectPeopleForMention(client.basecamp_project_id);
-          const contact = findClientContact(
-            people,
-            client.contact_email,
-            client.contact_name
-          );
+          const contact = resolveContact(client, people);
           // No resolvable contact means we do not know who this card is
           // addressed to, so it does not go up. A card with no assignee and no
           // mention pings nobody, yet sits on the board looking like the client
@@ -669,11 +685,7 @@ export async function runReminders(opts?: {
       ) {
         try {
           const nudgePeople = await getProjectPeopleForMention(client.basecamp_project_id);
-          const nudgeContact = findClientContact(
-            nudgePeople,
-            client.contact_email,
-            client.contact_name
-          );
+          const nudgeContact = resolveContact(client, nudgePeople);
           // Same rule as the card: an untagged follow-up pings nobody, so it is
           // a comment that only looks like a chase. Flag it instead.
           if (!nudgeContact) {

@@ -115,6 +115,13 @@ export async function PATCH(request: Request, { params }: Params) {
         : undefined,
     outreachPaused:
       typeof body.outreachPaused === "boolean" ? body.outreachPaused : undefined,
+    // 0 is meaningful: it clears the picked contact and hands resolution back
+    // to email-then-exact-name matching.
+    basecampContactId:
+      typeof body.basecampContactId === "number" &&
+      Number.isFinite(body.basecampContactId)
+        ? body.basecampContactId
+        : undefined,
     basecampProjectId:
       typeof body.basecampProjectId === "string"
         ? extractProjectId(body.basecampProjectId)

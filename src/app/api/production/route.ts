@@ -52,6 +52,7 @@ export async function GET() {
         status_override: client.status_override,
         outreach_paused: client.outreach_paused,
         basecamp_project_id: client.basecamp_project_id,
+        basecamp_contact_id: client.basecamp_contact_id,
         videographer_id: client.videographer_id,
       },
       window,

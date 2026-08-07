@@ -64,6 +64,7 @@ type Client = {
   last_production_date: string | null;
   schedule_token: string | null;
   production_enrolled: number;
+  basecamp_contact_id: number;
   status_override: string;
   outreach_paused: number;
   basecamp_project_id: string;
@@ -71,6 +72,14 @@ type Client = {
 };
 
 type Videographer = { id: string; name: string; active: number };
+
+type BasecampPerson = {
+  id: number;
+  name: string;
+  email: string;
+  isClient: boolean;
+  mentionable: boolean;
+};
 
 type OpenExtraRequest = {
   id: string;
@@ -334,6 +343,12 @@ export default function ProductionPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [productions, setProductions] = useState<Production[]>([]);
   const [reachouts, setReachouts] = useState<Reachout[]>([]);
+  // Basecamp rosters, fetched per client the first time its picker is opened.
+  // Not loaded up front: it is one API call per project and most rows are never
+  // expanded.
+  const [people, setPeople] = useState<
+    Record<string, { loading: boolean; people: BasecampPerson[]; reason?: string }>
+  >({});
   const [tab, setTab] = useState<ProductionTab>("requested");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -673,6 +688,47 @@ export default function ProductionPage() {
     });
     if (!res.ok) {
       setError("Could not save that change.");
+      return;
+    }
+    load({ silent: true });
+  }
+
+  async function loadPeople(clientId: string) {
+    if (people[clientId]?.loading || people[clientId]?.people.length) return;
+    setPeople((m) => ({ ...m, [clientId]: { loading: true, people: [] } }));
+    const res = await fetch(`/api/revenue/clients/${clientId}/basecamp-people`);
+    if (!res.ok) {
+      setPeople((m) => ({
+        ...m,
+        [clientId]: { loading: false, people: [], reason: "Could not load the project roster." },
+      }));
+      return;
+    }
+    const data = await res.json();
+    setPeople((m) => ({
+      ...m,
+      [clientId]: { loading: false, people: data.people || [], reason: data.reason },
+    }));
+  }
+
+  // Picking a person writes all three fields at once: the id we match on, plus
+  // the name and email so every existing surface that reads them stays correct.
+  async function pickContact(clientId: string, person: BasecampPerson | null) {
+    const res = await fetch(`/api/revenue/clients/${clientId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        person
+          ? {
+              basecampContactId: person.id,
+              contactName: person.name,
+              contactEmail: person.email,
+            }
+          : { basecampContactId: 0 }
+      ),
+    });
+    if (!res.ok) {
+      setError("Could not set the contact.");
       return;
     }
     load({ silent: true });
@@ -1547,8 +1603,16 @@ export default function ProductionPage() {
                       <div>
                         <span className="k">Contact</span>
                         <div className="v">
-                          {editableField(r, "contact_name", "text", c.contact_name,
-                            <span>{c.contact_name || "Not set"}</span>)}
+                          {isAdmin ? (
+                            <ContactPicker
+                              client={c}
+                              roster={people[c.id]}
+                              onOpen={() => loadPeople(c.id)}
+                              onPick={(person) => pickContact(c.id, person)}
+                            />
+                          ) : (
+                            <span>{c.contact_name || "Not set"}</span>
+                          )}
                         </div>
                       </div>
                       <div>
@@ -1995,6 +2059,114 @@ function ReachoutLog({
         );
       })}
     </div>
+  );
+}
+
+// Pick the client contact from their Basecamp project's actual roster.
+//
+// A typed name had to match Basecamp exactly or the scheduling card was
+// withheld and the client was never asked. Selecting from the real list makes
+// that mistake unreachable, and stores the person's Basecamp id so a later
+// rename on their side does not break the match either.
+function ContactPicker({
+  client,
+  roster,
+  onOpen,
+  onPick,
+}: {
+  client: Client;
+  roster?: { loading: boolean; people: BasecampPerson[]; reason?: string };
+  onOpen: () => void;
+  onPick: (person: BasecampPerson | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (!editing) {
+    const picked = client.basecamp_contact_id > 0;
+    return (
+      <span
+        className="cell-clickable"
+        title={
+          picked
+            ? "Picked from the Basecamp project. Click to change."
+            : "Not picked from Basecamp, so this has to match a name on the project exactly. Click to pick from the roster."
+        }
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          setEditing(true);
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setEditing(true);
+            onOpen();
+          }
+        }}
+      >
+        {client.contact_name || "Not set"}
+        {client.contact_name && !picked ? (
+          <span className="muted"> (typed)</span>
+        ) : null}
+      </span>
+    );
+  }
+
+  if (roster?.loading) return <span className="muted">Loading roster...</span>;
+
+  // No roster means the reason matters more than the control. Say what is wrong
+  // rather than showing an empty dropdown.
+  if (roster && !roster.people.length) {
+    return (
+      <span>
+        <span className="muted">{roster.reason || "Nobody on that project."}</span>{" "}
+        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </span>
+    );
+  }
+
+  const clients = (roster?.people || []).filter((p) => p.isClient);
+  const staff = (roster?.people || []).filter((p) => !p.isClient);
+
+  return (
+    <span className="cell-editing">
+      <select
+        autoFocus
+        defaultValue={String(client.basecamp_contact_id || "")}
+        onChange={(e) => {
+          const id = Number(e.target.value);
+          const person = (roster?.people || []).find((p) => p.id === id) || null;
+          setEditing(false);
+          onPick(person);
+        }}
+        onBlur={() => setEditing(false)}
+      >
+        <option value="">Nobody picked</option>
+        {clients.length ? (
+          <optgroup label="On the client's side">
+            {clients.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.mentionable ? "" : " (cannot be mentioned)"}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        {staff.length ? (
+          <optgroup label="Our people">
+            {staff.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.mentionable ? "" : " (cannot be mentioned)"}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+      </select>
+    </span>
   );
 }
 

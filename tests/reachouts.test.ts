@@ -335,3 +335,77 @@ test("hand-set status and hand-set pause", async (t) => {
     assert.equal(isCycleStatus(""), false);
   });
 });
+
+// Picking the contact from the Basecamp roster stores their person id, so the
+// match cannot be broken by a typo or by them changing their display name.
+test("a picked contact resolves by Basecamp id, not by name", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-contact-test-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const { createRevClient, updateRevClient, getRevClient } = await import(
+    "../src/lib/revenue"
+  );
+  const { findClientContact } = await import("../src/lib/basecamp");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const roster = [
+    { id: 101, name: "Jamie Cruz", email_address: "jamie@krak.co", client: true },
+    { id: 202, name: "Michael Piarulli", email_address: "mp@meg.com", employee: true },
+  ];
+
+  const created = createRevClient({ name: "Krak", businessModel: "home_service" });
+
+  await t.test("a typed name that does not match exactly resolves to nobody", () => {
+    updateRevClient(created.id, { contactName: "Jamie", contactEmail: "" });
+    const c = getRevClient(created.id)!;
+    assert.equal(
+      findClientContact(roster, c.contact_email, c.contact_name),
+      null,
+      '"Jamie" is not "Jamie Cruz", and a near-match must not pick a person'
+    );
+  });
+
+  await t.test("picking from the roster stores the id and the real name", () => {
+    updateRevClient(created.id, {
+      basecampContactId: 101,
+      contactName: "Jamie Cruz",
+      contactEmail: "jamie@krak.co",
+    });
+    const c = getRevClient(created.id)!;
+    assert.equal(c.basecamp_contact_id, 101);
+    // Same resolution the sweep does: id first, then the old fallbacks.
+    const byId = roster.find((p) => p.id === c.basecamp_contact_id);
+    assert.equal(byId?.name, "Jamie Cruz");
+  });
+
+  await t.test("the id still matches after they are renamed in Basecamp", () => {
+    const renamed = [{ ...roster[0], name: "Jamie Cruz-Alvarez" }, roster[1]];
+    const c = getRevClient(created.id)!;
+    assert.equal(
+      renamed.find((p) => p.id === c.basecamp_contact_id)?.id,
+      101,
+      "an id survives a rename that would break exact-name matching"
+    );
+    assert.equal(
+      findClientContact(renamed, "", "Jamie Cruz"),
+      null,
+      "and the old name-based path would indeed have broken"
+    );
+  });
+
+  await t.test("clearing it hands resolution back to email and name", () => {
+    updateRevClient(created.id, { basecampContactId: 0 });
+    const c = getRevClient(created.id)!;
+    assert.equal(c.basecamp_contact_id, 0);
+    assert.equal(
+      findClientContact(roster, c.contact_email, c.contact_name)?.id,
+      101,
+      "email still resolves them"
+    );
+  });
+});

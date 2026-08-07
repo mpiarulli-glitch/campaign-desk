@@ -181,6 +181,7 @@ export function updateRevClient(
     statusOverride: string;
     outreachPaused: boolean;
     basecampProjectId: string;
+    basecampContactId: number;
     videographerId: string;
     monthlyEmailQuota: number;
   }>
@@ -198,7 +199,7 @@ export function updateRevClient(
        website = ?, sentiment_override = ?,
        production_enrolled = ?,
        status_override = ?, outreach_paused = ?,
-       basecamp_project_id = ?, videographer_id = ?,
+       basecamp_project_id = ?, basecamp_contact_id = ?, videographer_id = ?,
        monthly_email_quota = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -243,6 +244,9 @@ export function updateRevClient(
     updates.basecampProjectId === undefined
       ? existing.basecamp_project_id
       : updates.basecampProjectId.trim(),
+    updates.basecampContactId === undefined
+      ? existing.basecamp_contact_id
+      : Math.max(0, Math.round(updates.basecampContactId)),
     updates.videographerId === undefined
       ? existing.videographer_id
       : updates.videographerId.trim(),

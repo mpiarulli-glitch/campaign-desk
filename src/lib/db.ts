@@ -224,6 +224,14 @@ export interface RevClient {
   outreach_paused: number;
   // Basecamp project (bucket) id where the "time to schedule" card is created.
   basecamp_project_id: string;
+  // The Basecamp person id of the client contact, picked from that project's
+  // roster. 0 means nobody is picked and we fall back to matching on email and
+  // then exact name.
+  //
+  // Storing the id is the point: a typed name has to match Basecamp exactly or
+  // the card is withheld, and "Mike" vs "Michael Piarulli" is enough to break
+  // it. An id cannot be misspelled.
+  basecamp_contact_id: number;
   // Videographer assigned to this account (one production/day per videographer).
   videographer_id: string;
   // Emails per month this account is contracted for. 0 means no contracted
@@ -2025,6 +2033,11 @@ function migrate(database: Database.Database) {
     // scheduler doesn't show revenue-only accounts.
     database.exec(
       `UPDATE rev_clients SET production_enrolled = 0 WHERE color_week = '' OR production_cadence = ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("basecamp_contact_id")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN basecamp_contact_id INTEGER NOT NULL DEFAULT 0`
     );
   }
   if (revClientCols.length && !revClientCols.includes("status_override")) {
