@@ -1,11 +1,12 @@
 // Shared, dependency-free definitions for the different kinds of work that can
-// be pushed into a review package: emails, interactive forms/quizzes, blog
+// be pushed into a review package: emails, SMS, interactive forms/quizzes, blog
 // posts, copy decks, and website mock-ups. Both server code (db, API routes)
 // and client components import from here, so this file must stay free of any
 // Node-only dependencies (no better-sqlite3, no fs).
 
 export type AssetKind =
   | "email"
+  | "sms"
   | "interactive"
   | "blog"
   | "copydeck"
@@ -14,9 +15,10 @@ export type AssetKind =
 // How the stored content should be interpreted when rendering a preview.
 //   html     -> content is raw HTML (emails, interactive forms, HTML blogs)
 //   markdown -> content is markdown we render to styled HTML (blogs, copy decks)
+//   text     -> content is plain text shown as a phone message bubble (SMS)
 //   image    -> media_url points at a hosted image export (mock-ups)
 //   figma    -> media_url is a Figma link we embed as a live frame (mock-ups)
-export type BodyFormat = "html" | "markdown" | "image" | "figma";
+export type BodyFormat = "html" | "markdown" | "text" | "image" | "figma";
 
 export interface AssetKindMeta {
   kind: AssetKind;
@@ -36,6 +38,13 @@ export const ASSET_KINDS: AssetKindMeta[] = [
     noun: "email",
     formats: ["html"],
     description: "A standard HTML email.",
+  },
+  {
+    kind: "sms",
+    label: "SMS",
+    noun: "text message",
+    formats: ["text"],
+    description: "A text message, previewed the way it lands on a phone.",
   },
   {
     kind: "interactive",
@@ -77,6 +86,7 @@ export function isBodyFormat(value: unknown): value is BodyFormat {
   return (
     value === "html" ||
     value === "markdown" ||
+    value === "text" ||
     value === "image" ||
     value === "figma"
   );
@@ -105,6 +115,46 @@ export function kindLabel(kind: AssetKind): string {
 
 export function kindNoun(kind: AssetKind): string {
   return kindMeta(kind).noun;
+}
+
+// Title Case name for the kind of work, used to prefix the Basecamp
+// Deliverables card title so a client scanning the board sees what the card is
+// before they read the campaign name.
+const KIND_DELIVERABLE_LABEL: Record<AssetKind, string> = {
+  email: "Email Campaign",
+  sms: "SMS Campaign",
+  interactive: "Form / Quiz",
+  blog: "Blog Post",
+  copydeck: "Copy Deck",
+  mockup: "Website Mock-Up",
+};
+
+export function kindDeliverableLabel(kind: AssetKind): string {
+  return KIND_DELIVERABLE_LABEL[coerceKind(kind)];
+}
+
+/**
+ * Basecamp Deliverables card title: "<asset type> - <campaign title>".
+ *
+ * A package can hold more than one kind of asset. When the kinds disagree the
+ * prefix has to describe the package rather than pick a winner, otherwise a
+ * mock-up plus a copy deck would go up as an "Email Campaign". An empty package
+ * falls back to email, matching coerceKind's default.
+ */
+export function deliverableCardTitle(
+  campaignTitle: string,
+  kinds: Array<AssetKind | null | undefined>
+): string {
+  const title = (campaignTitle || "").trim();
+  const distinct = Array.from(new Set(kinds.map(coerceKind)));
+  const prefix =
+    distinct.length > 1
+      ? "Creative Package"
+      : kindDeliverableLabel(distinct[0] ?? "email");
+  if (!title) return prefix;
+  // Already prefixed (a resend of a card we titled earlier) — leave it alone.
+  if (title.toLowerCase().startsWith(`${prefix.toLowerCase()} - `)) return title;
+  return `${prefix} - ${title}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +303,18 @@ const DOC_STYLE = `
   .cd-deck{border-top:6px solid #6c5ce7;}
 `;
 
+// SMS preview: a single received-message bubble on a phone-ish canvas.
+const SMS_STYLE = `
+  .sms-phone{max-width:380px;margin:0 auto;padding:26px 20px 22px;background:#ffffff;
+    border-radius:22px;box-shadow:0 1px 3px rgba(0,0,0,.08);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
+  .sms-bubble{background:#e9e9eb;color:#1a1a2e;padding:11px 15px;border-radius:19px;
+    border-bottom-left-radius:5px;font-size:16px;line-height:1.42;
+    word-wrap:break-word;overflow-wrap:anywhere;}
+  .sms-empty{color:#999;font-size:15px;text-align:center;padding:22px 0;}
+  .sms-meta{margin-top:14px;font-size:12px;color:#8a8a94;text-align:right;}
+`;
+
 function figmaEmbedUrl(url: string): string {
   const trimmed = (url || "").trim();
   if (!trimmed) return "";
@@ -298,6 +360,24 @@ export function renderAssetDoc(asset: RenderableAsset): {
       : `<div style="padding:40px;text-align:center;color:#999;font:15px Arial,sans-serif;">No image uploaded yet.</div>`;
     return {
       html: `<div style="max-width:900px;margin:0 auto;">${img}${caption}</div>`,
+      interactive: false,
+    };
+  }
+
+  // SMS: plain text in a phone message bubble. Segment counts matter to whoever
+  // is approving it (each one bills), so they are shown alongside the copy.
+  if (kind === "sms" && format === "text") {
+    const body = content.trim();
+    const chars = body.length;
+    // GSM-7 single segment is 160 chars, concatenated segments drop to 153.
+    const segments = chars === 0 ? 0 : chars <= 160 ? 1 : Math.ceil(chars / 153);
+    const bubble = body
+      ? `<div class="sms-bubble">${escapeHtml(body).replace(/\n/g, "<br>")}</div>`
+      : `<div class="sms-empty">No message written yet.</div>`;
+    return {
+      html: `<style>${SMS_STYLE}</style><div class="sms-phone">${bubble}<div class="sms-meta">${chars} character${
+        chars === 1 ? "" : "s"
+      } &middot; ${segments} segment${segments === 1 ? "" : "s"}</div></div>`,
       interactive: false,
     };
   }

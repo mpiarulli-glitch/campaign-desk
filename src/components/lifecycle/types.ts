@@ -316,6 +316,7 @@ export interface BoardCampaignItem {
   updatedAt: string;
   magicToken: string;
   emailCount: number;
+  smsCount: number;
   delivered: boolean;
 }
 

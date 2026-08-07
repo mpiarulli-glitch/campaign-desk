@@ -86,6 +86,9 @@ export interface BoardCampaignItem {
    * holds several, so the quota counts these rather than campaign rows.
    */
   emailCount: number;
+  /** Text messages inside this campaign. Shown, but never counted against the
+   *  email quota — a client's contract is written in emails. */
+  smsCount: number;
   /** Whether this campaign's emails count toward the month's quota yet. */
   delivered: boolean;
 }
@@ -172,21 +175,23 @@ export function listBoardCards(period: string): BoardCard[] {
   const clientNames = new Map(allClients.map((c) => [c.id, c.name]));
   const clientQuotas = new Map(allClients.map((c) => [c.id, c.monthly_email_quota ?? 0]));
 
-  // This board tracks lifecycle sends only, so it counts assets of kind
-  // 'email' and ignores blog posts, copy decks and website mock-ups — a
-  // review package can hold any of those, and they are not what a client's
-  // email contract is written in. Campaigns left with no emails drop out
-  // entirely via the HAVING clause.
+  // This board tracks lifecycle sends only: emails and SMS. Blog posts, copy
+  // decks and website mock-ups are ignored — a review package can hold any of
+  // those, and they are not lifecycle work. A campaign carrying none of the
+  // two drops out entirely via the HAVING clause.
   //
-  // email_count matters because a campaign is a review package that routinely
-  // bundles several emails; counting campaign rows would under-report a
-  // client's delivered volume.
+  // The counts are split because a client's contract is written in emails.
+  // SMS shows on the card but does not tick off an email quota, and per-kind
+  // counts matter because a package routinely bundles several sends; counting
+  // campaign rows would under-report delivered volume.
   const campaignRows = db
     .prepare(
       `SELECT c.id, c.title, c.client_id, c.status, c.updated_at, c.magic_token,
-              COUNT(e.id) AS email_count
+              SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
+              SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
          FROM campaigns c
-         JOIN campaign_emails e ON e.campaign_id = c.id AND e.kind = 'email'
+         JOIN campaign_emails e
+           ON e.campaign_id = c.id AND e.kind IN ('email', 'sms')
         WHERE c.archived_at IS NULL AND c.client_id IS NOT NULL
           AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
           AND strftime('%Y-%m', c.created_at) = ?
@@ -201,6 +206,7 @@ export function listBoardCards(period: string): BoardCard[] {
     updated_at: string;
     magic_token: string;
     email_count: number;
+    sms_count: number;
   }>;
   const campaignsByClient = new Map<string, BoardCampaignItem[]>();
   for (const r of campaignRows) {
@@ -212,6 +218,7 @@ export function listBoardCards(period: string): BoardCard[] {
       updatedAt: r.updated_at,
       magicToken: r.magic_token,
       emailCount: r.email_count,
+      smsCount: r.sms_count,
       delivered: true,
     });
     campaignsByClient.set(r.client_id, list);

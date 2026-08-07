@@ -93,20 +93,31 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
 
       {card.campaigns.length > 0 ? (
         <div className="hud-board-chip-row">
-          {card.campaigns.map((camp) => (
-            <Link
-              key={camp.id}
-              href={`/admin/campaigns/${camp.id}`}
-              className="hud-board-camp-chip"
-              title={`${camp.title} — ${camp.emailCount} email${camp.emailCount === 1 ? "" : "s"}`}
-            >
-              <StatusBadge status={camp.status} />
-              <span>{camp.title}</span>
-              {camp.emailCount > 1 ? (
-                <em className="hud-board-camp-n">×{camp.emailCount}</em>
-              ) : null}
-            </Link>
-          ))}
+          {card.campaigns.map((camp) => {
+            const parts = [
+              camp.emailCount > 0
+                ? `${camp.emailCount} email${camp.emailCount === 1 ? "" : "s"}`
+                : "",
+              camp.smsCount > 0 ? `${camp.smsCount} SMS` : "",
+            ].filter(Boolean);
+            return (
+              <Link
+                key={camp.id}
+                href={`/admin/campaigns/${camp.id}`}
+                className="hud-board-camp-chip"
+                title={`${camp.title} — ${parts.join(" + ")}`}
+              >
+                <StatusBadge status={camp.status} />
+                <span>{camp.title}</span>
+                {camp.smsCount > 0 ? (
+                  <em className="hud-board-camp-sms">SMS</em>
+                ) : null}
+                {camp.emailCount > 1 ? (
+                  <em className="hud-board-camp-n">×{camp.emailCount}</em>
+                ) : null}
+              </Link>
+            );
+          })}
         </div>
       ) : (
         <p className="hud-board-nocamp">None</p>
