@@ -75,7 +75,30 @@ type Client = {
   videographer_id: string;
 };
 
-type Videographer = { id: string; name: string; active: number };
+type Videographer = {
+  id: string;
+  name: string;
+  active: number;
+  // Comma-separated day numbers, 0 = Sunday. Weekdays this person never shoots.
+  unavailable_weekdays: string;
+};
+
+const WEEKDAYS: Array<{ n: number; label: string }> = [
+  { n: 1, label: "Mon" },
+  { n: 2, label: "Tue" },
+  { n: 3, label: "Wed" },
+  { n: 4, label: "Thu" },
+  { n: 5, label: "Fri" },
+];
+
+function daysOff(v: Videographer): number[] {
+  return (v.unavailable_weekdays || "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p !== "")
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+}
 
 type BasecampPerson = {
   id: number;
@@ -745,6 +768,21 @@ export default function ProductionPage() {
     load({ silent: true });
   }
 
+  // A standing day off for a videographer, applied to every client assigned to
+  // them. Beats re-entering the same date as a blackout on each client forever.
+  async function setDaysOff(videographerId: string, days: number[]) {
+    const res = await fetch(`/api/videographers/${videographerId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unavailableWeekdays: days }),
+    });
+    if (!res.ok) {
+      setError("Could not change that videographer's availability.");
+      return;
+    }
+    load({ silent: true });
+  }
+
   async function setOutreachPaused(clientId: string, paused: boolean) {
     const res = await fetch(`/api/revenue/clients/${clientId}`, {
       method: "PATCH",
@@ -1306,16 +1344,67 @@ export default function ProductionPage() {
           </div>
         </div>
 
-        <div className="row" style={{ gap: 8 }}>
-          <span className="muted" style={{ fontSize: 13 }}>
-            Videographers: {videographers.length ? videographers.map((v) => v.name).join(", ") : "none yet"}
-          </span>
-          {isAdmin ? (
-            <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add videographer</button>
-          ) : null}
-          <span className="muted" style={{ fontSize: 12 }}>
-            One production per day each. A booked day blocks that videographer&apos;s other clients.
-          </span>
+        <div className="stack" style={{ gap: 8 }}>
+          <div className="row" style={{ gap: 8 }}>
+            <span className="muted" style={{ fontSize: 13 }}>
+              Videographers
+            </span>
+            {isAdmin ? (
+              <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add videographer</button>
+            ) : null}
+            <span className="muted" style={{ fontSize: 12 }}>
+              One production per day each. A booked day blocks that videographer&apos;s other clients.
+            </span>
+          </div>
+          {videographers.length ? (
+            <div className="stack" style={{ gap: 6 }}>
+              {videographers.map((v) => {
+                const off = daysOff(v);
+                return (
+                  <div key={v.id} className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 13, minWidth: 120 }}>{v.name}</span>
+                    {isAdmin ? (
+                      <span className="row" style={{ gap: 6, alignItems: "center" }}>
+                        <span className="muted" style={{ fontSize: 12 }}>Shoots on</span>
+                        {WEEKDAYS.map((d) => {
+                          const available = !off.includes(d.n);
+                          return (
+                            <button
+                              key={d.n}
+                              type="button"
+                              className={`btn btn-sm ${available ? "btn-secondary" : "btn-ghost"}`}
+                              title={
+                                available
+                                  ? `${v.name} shoots on ${d.label}. Click to make it a standing day off.`
+                                  : `${v.name} never shoots on ${d.label}. Click to open it back up.`
+                              }
+                              style={available ? undefined : { textDecoration: "line-through", opacity: 0.5 }}
+                              onClick={() =>
+                                setDaysOff(
+                                  v.id,
+                                  available ? [...off, d.n] : off.filter((n) => n !== d.n)
+                                )
+                              }
+                            >
+                              {d.label}
+                            </button>
+                          );
+                        })}
+                      </span>
+                    ) : (
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        {off.length
+                          ? `No ${off.map((n) => WEEKDAYS.find((d) => d.n === n)?.label || n).join(", ")}`
+                          : "Every weekday"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>None yet.</span>
+          )}
         </div>
 
         {bc ? (

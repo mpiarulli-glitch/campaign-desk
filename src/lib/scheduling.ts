@@ -13,7 +13,11 @@ import {
 import { createSend, getOrCreateCrewToken } from "./calendar";
 import { notifyProductionRequested } from "./notify";
 import { sendProductionRequestReceived } from "./production-emails";
-import { listVideographers, videographerBookedDates } from "./videographers";
+import {
+  listVideographers,
+  videographerBookedDates,
+  videographerOffDates,
+} from "./videographers";
 import { getDb, type RevClient, type ScheduledSend } from "./db";
 import { getAppUrl } from "./auth";
 import { durationAllowsStart, isRealDate, slotHasPassed } from "./scheduling-rules";
@@ -44,6 +48,9 @@ export interface SchedulingStatus {
   slots: string[];
   blackoutDates: string[];
   videographerBooked: string[];
+  // Standing days off for the assigned videographer, e.g. they never shoot
+  // Wednesdays. Unavailable to the client just like a booked day.
+  videographerOff: string[];
   existingSend: {
     sendDate: string;
     sendTime: string;
@@ -162,6 +169,16 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
             range.start,
             range.end
           )
+        )
+      ),
+    ],
+    // Standing days off, kept separate from days they are booked. Both are
+    // unavailable to the client, but one is a schedule and the other is a
+    // consequence, and conflating them would make the reason unreadable here.
+    videographerOff: [
+      ...new Set(
+        bookableRanges.flatMap((range) =>
+          videographerOffDates(client.videographer_id, range.start, range.end)
         )
       ),
     ],
@@ -350,6 +367,18 @@ export async function submitProductionBooking(
         error: "This production window has already been scheduled.",
       };
     }
+    // A standing day off is not a race for the slot, so it gets its own message.
+    // "That day was just taken" would send them off to reload a grid that will
+    // never offer that weekday.
+    if (
+      videographerOffDates(currentClient.videographer_id, date, date).length > 0
+    ) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: "We don't shoot on that day. Please pick another day in the window.",
+      };
+    }
     if (
       videographerBookedDates(
         currentClient.videographer_id,
@@ -514,6 +543,15 @@ export async function submitOutOfCycleBooking(
         ok: false,
         httpStatus: 404,
         error: "This scheduling link is no longer active.",
+      };
+    }
+    if (
+      videographerOffDates(currentClient.videographer_id, date, date).length > 0
+    ) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: "We don't shoot on that day. Please pick another day.",
       };
     }
     if (

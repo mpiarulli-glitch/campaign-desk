@@ -481,3 +481,62 @@ test('"Outreach sent" is settable and keeps the chasing running', async (t) => {
     );
   });
 });
+
+// A videographer's standing day off. Distinct from a client blackout (one
+// date) and from being booked (a real production), and the reason it exists is
+// that a recurring commitment should not have to be re-entered forever.
+test("a videographer's standing days off block those weekdays", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-daysoff-test-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const {
+    createVideographer,
+    updateVideographer,
+    videographerOffDates,
+    unavailableWeekdays,
+    formatUnavailableWeekdays,
+  } = await import("../src/lib/videographers");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const jack = createVideographer("Jack");
+
+  await t.test("nobody has a day off to begin with", () => {
+    assert.deepEqual(unavailableWeekdays(jack), []);
+    assert.equal(videographerOffDates(jack.id, "2026-08-01", "2026-08-31").length, 0);
+  });
+
+  await t.test("setting Wednesday blocks every Wednesday in a range", () => {
+    updateVideographer(jack.id, { unavailableWeekdays: [3] });
+    const off = videographerOffDates(jack.id, "2026-08-01", "2026-08-31");
+    // August 2026 Wednesdays: 5, 12, 19, 26.
+    assert.deepEqual(off, ["2026-08-05", "2026-08-12", "2026-08-19", "2026-08-26"]);
+  });
+
+  await t.test("it only blocks that weekday, inside a real window", () => {
+    // Blue week's August production window is Mon 10 to Fri 14.
+    const off = videographerOffDates(jack.id, "2026-08-10", "2026-08-14");
+    assert.deepEqual(off, ["2026-08-12"], "Wednesday only, the rest stay bookable");
+  });
+
+  await t.test("it reads back for a human", () => {
+    const updated = updateVideographer(jack.id, { unavailableWeekdays: [3] })!;
+    assert.equal(formatUnavailableWeekdays(updated), "No Wednesday");
+  });
+
+  await t.test("clearing it opens the week back up", () => {
+    const cleared = updateVideographer(jack.id, { unavailableWeekdays: [] })!;
+    assert.deepEqual(unavailableWeekdays(cleared), []);
+    assert.equal(formatUnavailableWeekdays(cleared), "Every weekday");
+    assert.equal(videographerOffDates(jack.id, "2026-08-01", "2026-08-31").length, 0);
+  });
+
+  await t.test("garbage day numbers are dropped", () => {
+    const odd = updateVideographer(jack.id, { unavailableWeekdays: [3, 3, 9, -1] })!;
+    assert.deepEqual(unavailableWeekdays(odd), [3], "deduped and bounded");
+  });
+});

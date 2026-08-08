@@ -21,6 +21,7 @@ type Data = {
   slots: string[];
   blackoutDates: string[];
   videographerBooked: string[];
+  videographerOff: string[];
   existingSend: {
     sendDate: string;
     sendTime: string;
@@ -135,7 +136,12 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     [data]
   );
   const blackout = useMemo(
-    () => new Set([...(data?.blackoutDates || []), ...(data?.videographerBooked || [])]),
+    () =>
+      new Set([
+        ...(data?.blackoutDates || []),
+        ...(data?.videographerBooked || []),
+        ...(data?.videographerOff || []),
+      ]),
     [data]
   );
 
@@ -914,7 +920,7 @@ function ExtraRequestLink({
   }
   return (
     <p className="sched-hint muted" style={{ marginTop: 8 }}>
-      Need to schedule something else?{" "}
+      None of these times work for you?{" "}
       <button
         type="button"
         onClick={onClick}
@@ -928,7 +934,7 @@ function ExtraRequestLink({
           cursor: "pointer",
         }}
       >
-        Schedule a production
+        Click here to request a different time
       </button>
       .
     </p>

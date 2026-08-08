@@ -246,6 +246,13 @@ export interface Videographer {
   id: string;
   name: string;
   active: number;
+  // Weekdays this videographer never shoots, as comma-separated day numbers
+  // (0 = Sunday ... 6 = Saturday). Empty means available every weekday.
+  //
+  // A standing day off, distinct from a client's blackout_dates (specific
+  // calendar dates) and from being booked (a real production that day). Without
+  // it a recurring commitment had to be re-entered as individual dates forever.
+  unavailable_weekdays: string;
   created_at: string;
   updated_at: string;
 }
@@ -2033,6 +2040,15 @@ function migrate(database: Database.Database) {
     // scheduler doesn't show revenue-only accounts.
     database.exec(
       `UPDATE rev_clients SET production_enrolled = 0 WHERE color_week = '' OR production_cadence = ''`
+    );
+  }
+  const videographerCols = tableColumns(database, "videographers");
+  if (
+    videographerCols.length &&
+    !videographerCols.includes("unavailable_weekdays")
+  ) {
+    database.exec(
+      `ALTER TABLE videographers ADD COLUMN unavailable_weekdays TEXT NOT NULL DEFAULT ''`
     );
   }
   if (revClientCols.length && !revClientCols.includes("basecamp_contact_id")) {
