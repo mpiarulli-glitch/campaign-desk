@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { runReminders, runShootReminders } from "@/lib/reminders";
+import { runReminders } from "@/lib/reminders";
 import { notifyReachouts } from "@/lib/notify";
 
 // Constant-time compare so the secret can't be probed by timing.
@@ -53,8 +53,7 @@ async function handle(request: Request) {
     );
   }
   // ?only=<client id or name> targets one account, for testing the outreach
-  // without mailing everybody else. The shoot reminders are left out of a
-  // targeted run: they are a different job and nothing about them is per-client.
+  // without mailing everybody else.
   const only = url.searchParams.get("only") || undefined;
   // &newCard=1 forces a fresh Basecamp card. Ignored without ?only=, so it can
   // never create a card for every client at once.
@@ -65,8 +64,6 @@ async function handle(request: Request) {
   if (only) {
     return NextResponse.json({ ...result, targeted: only });
   }
-  const shootReminders = await runShootReminders({ dryRun });
-
   // One line per run, so a scheduled sweep is visible in the logs whether or not
   // it had anything to do. Without it a successful no-op run leaves no trace at
   // all, and "did the cron fire" can only be answered from GitHub's UI.
@@ -82,7 +79,6 @@ async function handle(request: Request) {
       ` via ${result.sent.length} email(s), ` +
       `${result.basecampCards.filter((c) => c.ok).length} card(s), ` +
       `${result.basecampFollowups.filter((c) => c.ok).length} follow-up(s); ` +
-      `${shootReminders.sent.length} crew heads-up; ` +
       (result.blocked.length
         ? `BLOCKED ${result.blocked.length} [${result.blocked
             .map((b) => b.client)
@@ -112,11 +108,10 @@ async function handle(request: Request) {
       blocked: result.blocked,
       paused: result.paused,
       heldByStatus: result.heldByStatus,
-      crewHeadsUp: shootReminders.sent.length,
     });
   }
 
-  return NextResponse.json({ ...result, shootReminders });
+  return NextResponse.json(result);
 }
 
 // Support GET so simple cron pingers work, and POST for stricter setups.

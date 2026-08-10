@@ -158,32 +158,9 @@ export async function sendProductionConfirmed(
   return sendEmail({ to: client.contact_email, subject, html, text });
 }
 
-// Fired the day before a confirmed production.
-export async function sendProductionUpcoming(
-  client: RevClient,
-  send: ScheduledSend
-): Promise<boolean> {
-  if (!client.contact_email?.trim()) return false;
-  const name = client.contact_name?.trim();
-  const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
-  const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
-
-  const { subject, html, text } = shell({
-    subject: "Your crew arrives tomorrow",
-    preheader: `Just a reminder that your production is tomorrow, ${when}.`,
-    eyebrow: client.name,
-    headline: "Your crew arrives tomorrow",
-    bodyHtml: `
-      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-      <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Just a heads up: your production is tomorrow, <strong>${esc(when)}</strong>. Your crew typically arrives 15-30 minutes early to set up.</p>
-    `,
-    bodyText: [
-      greeting,
-      "",
-      `Just a heads up: your production is tomorrow, ${when}.`,
-      "Your crew typically arrives 15-30 minutes early to set up.",
-    ],
-  });
-
-  return sendEmail({ to: client.contact_email, subject, html, text });
-}
+// The day-before "Your crew arrives tomorrow" email was removed 2026-08-10.
+// The production team coordinates the shoot with the client directly, so an
+// automated heads-up was a second, quieter voice saying the same thing.
+//
+// The two emails above stay: both answer something the client just did, rather
+// than arriving unprompted.

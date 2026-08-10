@@ -450,7 +450,9 @@ export interface ScheduledSend {
   // Monday (YYYY-MM-DD) of the cadence window this send fulfills, if any.
   cadence_window_start: string | null;
   requested_by_client: number;
-  // Set once the day-before "your crew arrives tomorrow" email has gone out.
+  // Historical. Recorded when the day-before "your crew arrives tomorrow" email
+  // had gone out. That email was removed 2026-08-10; the column is kept so the
+  // record of who was already emailed survives, and nothing writes it now.
   shoot_reminder_sent_at: string | null;
   // Share token for the no-login crew view. The people who need these details on
   // the day are videographers and account managers who should not have to sign
@@ -2152,7 +2154,9 @@ function migrate(database: Database.Database) {
       `ALTER TABLE scheduled_sends ADD COLUMN requested_by_client INTEGER NOT NULL DEFAULT 0`
     );
   }
-  // Dedupe flag for the day-before "your crew arrives tomorrow" email.
+  // Historical dedupe flag for the removed day-before crew email. Kept rather
+  // than dropped: SQLite column drops rewrite the table, and the old values are
+  // a record of what clients were actually sent.
   if (sendCols.length && !sendCols.includes("crew_approved_at")) {
     database.exec(`ALTER TABLE scheduled_sends ADD COLUMN crew_approved_at TEXT`);
   }

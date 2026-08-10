@@ -5,7 +5,6 @@ import {
   nowIso,
   type ReachoutChannel,
   type RevClient,
-  type ScheduledSend,
   type ScheduleReminder,
 } from "./db";
 import { recordReachout } from "./reachouts";
@@ -17,7 +16,7 @@ import {
   todayYmd,
   type Window,
 } from "./cadence";
-import { listRevClients, getRevClient } from "./revenue";
+import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
 import {
@@ -29,7 +28,6 @@ import {
   mentionHtml,
   type BcPerson,
 } from "./basecamp";
-import { sendProductionUpcoming } from "./production-emails";
 
 // The client's contact on a Basecamp project.
 //
@@ -60,9 +58,8 @@ export const REMINDER_LEAD_DAYS = 21;
 // at most three Basecamp nudges a week. Changing the cap is a matter of editing
 // these arrays.
 //
-// This governs FOLLOW-UPS only. Booking confirmations and the day-before
-// "crew arrives tomorrow" email are operational and still send whenever due,
-// weekends included.
+// This governs FOLLOW-UPS only. Booking confirmations answer something the
+// client just did, so they still send whenever due, weekends included.
 export const REMINDER_EMAIL_DAYS = [1, 4]; // Monday, Thursday
 export const BASECAMP_FOLLOWUP_DAYS = [1, 3, 5]; // Monday, Wednesday, Friday
 
@@ -821,60 +818,11 @@ export async function runReminders(opts?: {
   return result;
 }
 
-export interface ShootReminderRunResult {
-  today: string;
-  dryRun: boolean;
-  sent: Array<{ client: string; sendDate: string }>;
-  failed: Array<{ client: string; sendDate: string }>;
-}
-
-function markShootReminded(sendId: string) {
-  getDb()
-    .prepare(`UPDATE scheduled_sends SET shoot_reminder_sent_at = ?, updated_at = ? WHERE id = ?`)
-    .run(nowIso(), nowIso(), sendId);
-}
-
-// Emails clients a "your crew arrives tomorrow" heads-up for confirmed
-// productions happening the next day. Runs alongside the scheduling
-// reminders; dedupes via shoot_reminder_sent_at so it fires at most once.
-export async function runShootReminders(opts?: {
-  today?: string;
-  dryRun?: boolean;
-}): Promise<ShootReminderRunResult> {
-  const today = opts?.today || todayYmd();
-  const dryRun = Boolean(opts?.dryRun);
-  const tomorrow = subDays(today, -1);
-  const result: ShootReminderRunResult = { today, dryRun, sent: [], failed: [] };
-
-  const sends = getDb()
-    .prepare(
-      // requested_by_client is what marks a row as a production. Without it
-      // this picks up ordinary campaign sends too, and tells the client a
-      // camera crew is arriving for their email blast.
-      `SELECT * FROM scheduled_sends
-       WHERE send_date = ?
-         AND status IN ('scheduled', 'planned')
-         AND client_id IS NOT NULL
-         AND requested_by_client = 1
-         AND cancelled_at IS NULL
-         AND shoot_reminder_sent_at IS NULL`
-    )
-    .all(tomorrow) as ScheduledSend[];
-
-  for (const send of sends) {
-    const client = send.client_id ? getRevClient(send.client_id) : null;
-    if (!client?.contact_email?.trim()) continue;
-    const ok = dryRun ? true : await sendProductionUpcoming(client, send);
-    if (ok) {
-      if (!dryRun) markShootReminded(send.id);
-      result.sent.push({ client: client.name, sendDate: send.send_date });
-    } else {
-      result.failed.push({ client: client.name, sendDate: send.send_date });
-    }
-  }
-
-  return result;
-}
+// The day-before "your crew arrives tomorrow" client email used to live here.
+// Removed 2026-08-10: the production team coordinates the shoot with the client
+// directly, so an automated heads-up was a second, quieter voice saying the same
+// thing. scheduled_sends.shoot_reminder_sent_at is left in place rather than
+// dropped, so the record of which clients were already emailed survives.
 
 // Used by the admin production view to show whether/when a client was last
 // reminded for their current window.

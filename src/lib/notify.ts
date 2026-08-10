@@ -254,7 +254,6 @@ export async function notifyReachouts(args: {
   blocked: Array<{ client: string; reason: string }>;
   paused?: Array<{ client: string }>;
   heldByStatus?: Array<{ client: string; status: string }>;
-  crewHeadsUp: number;
 }): Promise<boolean> {
   const paused = args.paused || [];
   const held = args.heldByStatus || [];
@@ -331,12 +330,6 @@ export async function notifyReachouts(args: {
     for (const h of held) {
       lines.push(`• ${escapeHtml(h.client)} (${escapeHtml(h.status)})`);
     }
-  }
-
-  if (args.crewHeadsUp) {
-    lines.push(
-      `<br>${args.crewHeadsUp} crew heads-up email${args.crewHeadsUp === 1 ? "" : "s"} also went out.`
-    );
   }
 
   return postToCampfire(lines.join("<br>"));
