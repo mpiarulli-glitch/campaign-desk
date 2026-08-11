@@ -20,6 +20,7 @@ import {
   type LifecycleBoardCard,
   type LifecycleBoardRemoval,
 } from "./db";
+import { currentPeriod, shiftPeriod } from "./period";
 import { listRevClients, updateRevClient } from "./revenue";
 
 export interface BoardColumn {
@@ -53,21 +54,9 @@ function isColumnKey(v: unknown): v is BoardColumnKey {
   return typeof v === "string" && COLUMN_KEYS.includes(v);
 }
 
-/** This month's key, e.g. "2026-08". */
-export function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7);
-}
-
-export function isValidPeriod(v: unknown): v is string {
-  return typeof v === "string" && /^\d{4}-\d{2}$/.test(v);
-}
-
-/** Period keys are zero-padded, so plain string compare is a date compare. */
-function shiftPeriod(period: string, months: number): string {
-  const [y, m] = period.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + months, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
+// Month keys are shared with the board page, timezone rules and all. See
+// ./period for why they are not derived from UTC.
+export { currentPeriod, isValidPeriod } from "./period";
 
 /**
  * The first month a board change is allowed to sweep forward from. Adding or

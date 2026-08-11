@@ -3,27 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
+// The month in the header and the server's idea of "this month" have to be the
+// same month, so the period helpers are shared rather than written twice.
+import { currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
 import type { BoardCard, BoardColumn, ClientRef } from "./types";
-
-const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 
 /** Where cards wait before anyone picks them up. Not part of the pipeline. */
 const TRIAGE = "triage";
-
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function shiftPeriod(period: string, months: number): string {
-  const [y, m] = period.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + months, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function periodLabel(period: string): string {
-  const [y, m] = period.split("-").map(Number);
-  return MONTH_FORMAT.format(new Date(Date.UTC(y, m - 1, 1)));
-}
 
 interface CardHandlers {
   columns: BoardColumn[];
