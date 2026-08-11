@@ -18,6 +18,7 @@ import {
   type BoardColumnKey,
   type CampaignStatus,
   type LifecycleBoardCard,
+  type LifecycleBoardRemoval,
 } from "./db";
 import { listRevClients, updateRevClient } from "./revenue";
 
@@ -59,6 +60,43 @@ export function currentPeriod(): string {
 
 export function isValidPeriod(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-\d{2}$/.test(v);
+}
+
+/** Period keys are zero-padded, so plain string compare is a date compare. */
+function shiftPeriod(period: string, months: number): string {
+  const [y, m] = period.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + months, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * The first month a board change is allowed to sweep forward from. Adding or
+ * removing a client is a standing decision, so it carries into every later
+ * month — but months that have already been worked are a record of what
+ * happened, so the sweep never starts earlier than the current one. Acting on
+ * an old board still changes that one card; it just doesn't rewrite its
+ * neighbours.
+ */
+function sweepFrom(period: string): string {
+  const current = currentPeriod();
+  return period > current ? period : current;
+}
+
+/** How far ahead a removal will pre-fill dismissed rows when it is undone. */
+const MAX_GAP_MONTHS = 240;
+
+function getRemoval(clientId: string): LifecycleBoardRemoval | undefined {
+  return getDb()
+    .prepare(`SELECT * FROM lifecycle_board_removals WHERE client_id = ?`)
+    .get(clientId) as LifecycleBoardRemoval | undefined;
+}
+
+/** Clients that are off the board for `period`, by standing removal. */
+function removedClientIds(period: string): Set<string> {
+  const rows = getDb()
+    .prepare(`SELECT client_id FROM lifecycle_board_removals WHERE from_period <= ?`)
+    .all(period) as Array<{ client_id: string }>;
+  return new Set(rows.map((r) => r.client_id));
 }
 
 /**
@@ -145,10 +183,19 @@ function toBoardCard(
   };
 }
 
-/** Every active client gets a card for `period` the first time the board opens on it. */
+/**
+ * Every active client gets a card for `period` the first time the board opens
+ * on it, except the ones removed from the board on or before that month. A
+ * removal has to be honoured here rather than only on existing rows: a future
+ * month has no rows yet, and seeding it blind would put a client the team
+ * already took off back on the board.
+ */
 function ensureCardsForPeriod(period: string): void {
   const db = getDb();
-  const clients = listRevClients(false).filter((c) => c.active === 1);
+  const removed = removedClientIds(period);
+  const clients = listRevClients(false).filter(
+    (c) => c.active === 1 && !removed.has(c.id)
+  );
   if (!clients.length) return;
   const ts = nowIso();
   const insert = db.prepare(
@@ -250,19 +297,33 @@ export function boardCardExists(id: string): boolean {
 }
 
 /**
- * Put a client on the board for a period. Covers both a client the sweep skips
- * (inactive, one-off) and one that was removed earlier.
+ * Put a client on the board for a period and every month after it. Covers both
+ * a client the sweep skips (inactive, one-off) and one that was removed
+ * earlier.
  *
  * Removal dismisses rather than deletes, so the row usually already exists.
  * On conflict this un-dismisses and returns it to Triage; DO NOTHING here would
  * leave the card dismissed and the add would silently fail.
+ *
+ * Months before the sweep point that the removal had been suppressing get a
+ * dismissed row written for them first, so clearing the standing removal
+ * doesn't quietly repopulate boards that were worked without this client.
  */
 export function addBoardCard(clientId: string, period: string): boolean {
   const db = getDb();
   const client = listRevClients(true).find((c) => c.id === clientId);
   if (!client) return false;
   const ts = nowIso();
-  db.prepare(
+  const from = sweepFrom(period);
+  const removal = getRemoval(clientId);
+
+  const insert = db.prepare(
+    `INSERT INTO lifecycle_board_cards
+       (id, client_id, period, column_key, sort_order, notes, dismissed, created_at, updated_at)
+     VALUES (?, ?, ?, 'triage', 0, '', ?, ?, ?)
+     ON CONFLICT(client_id, period) DO NOTHING`
+  );
+  const undismiss = db.prepare(
     `INSERT INTO lifecycle_board_cards
        (id, client_id, period, column_key, sort_order, notes, dismissed, created_at, updated_at)
      VALUES (?, ?, ?, 'triage', 0, '', 0, ?, ?)
@@ -271,7 +332,33 @@ export function addBoardCard(clientId: string, period: string): boolean {
        column_key = CASE WHEN lifecycle_board_cards.dismissed = 1
                          THEN 'triage' ELSE lifecycle_board_cards.column_key END,
        updated_at = excluded.updated_at`
-  ).run(nanoid(12), clientId, period, ts, ts);
+  );
+
+  const run = db.transaction(() => {
+    if (removal) {
+      // Freeze the already-removed past: every month the removal covered that
+      // sits before the sweep point keeps a dismissed row, apart from the one
+      // being added right now.
+      for (let p = removal.from_period, i = 0; p < from && i < MAX_GAP_MONTHS; p = shiftPeriod(p, 1), i++) {
+        if (p === period) continue;
+        insert.run(nanoid(12), clientId, p, 1, ts, ts);
+      }
+      db.prepare(`DELETE FROM lifecycle_board_removals WHERE client_id = ?`).run(clientId);
+    }
+
+    // The month being acted on, then every month from the sweep point forward
+    // that already has a row. Later months with no row are handled by the
+    // per-period seed now that the standing removal is gone.
+    undismiss.run(nanoid(12), clientId, period, ts, ts);
+    db.prepare(
+      `UPDATE lifecycle_board_cards
+          SET dismissed = 0,
+              column_key = CASE WHEN dismissed = 1 THEN 'triage' ELSE column_key END,
+              updated_at = ?
+        WHERE client_id = ? AND period >= ? AND dismissed = 1`
+    ).run(ts, clientId, from);
+  });
+  run();
   return true;
 }
 
@@ -307,16 +394,39 @@ export function setBoardCardQuota(id: string, quota: number): boolean {
 }
 
 /**
- * Remove a card from the board. This dismisses rather than deletes: the board
- * re-seeds a card for every active client whenever it loads, so deleting the
- * row would simply bring the card back on the next refresh.
+ * Remove a card from the board, this month and every month after it. Taking a
+ * client off is a standing decision, so it carries forward instead of having to
+ * be repeated on each month's board. Months already in the past keep whatever
+ * they had — the one exception being the card actually clicked, so acting on an
+ * old board still does the obvious thing.
+ *
+ * This dismisses rather than deletes: the board re-seeds a card for every
+ * active client whenever it loads, so deleting the row would simply bring the
+ * card back on the next refresh. The standing removal row covers later months
+ * that have no row yet.
  */
 export function deleteBoardCard(id: string): boolean {
-  return (
-    getDb()
-      .prepare(
-        `UPDATE lifecycle_board_cards SET dismissed = 1, updated_at = ? WHERE id = ?`
-      )
-      .run(nowIso(), id).changes > 0
-  );
+  const card = getCardRow(id);
+  if (!card) return false;
+  const db = getDb();
+  const ts = nowIso();
+  const from = sweepFrom(card.period);
+
+  const run = db.transaction(() => {
+    db.prepare(`UPDATE lifecycle_board_cards SET dismissed = 1, updated_at = ? WHERE id = ?`)
+      .run(ts, id);
+    db.prepare(
+      `UPDATE lifecycle_board_cards SET dismissed = 1, updated_at = ?
+        WHERE client_id = ? AND period >= ?`
+    ).run(ts, card.client_id, from);
+    db.prepare(
+      `INSERT INTO lifecycle_board_removals (client_id, from_period, created_at, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(client_id) DO UPDATE SET
+         from_period = MIN(lifecycle_board_removals.from_period, excluded.from_period),
+         updated_at = excluded.updated_at`
+    ).run(card.client_id, from, ts, ts);
+  });
+  run();
+  return true;
 }

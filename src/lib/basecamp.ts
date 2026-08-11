@@ -1009,6 +1009,36 @@ export interface ApprovalDeliveryResult {
   created?: boolean;
 }
 
+// Who ends up owning the approval card. The recipient is always first: they are
+// the person being asked, and the card is how Basecamp notifies them. Extras
+// are dropped unless they are really on the project, so a pick left over from a
+// stale page cannot fail the send with a 422 from Basecamp.
+export function resolveApprovalAssignees(
+  recipientId: number,
+  extraIds: number[] | undefined,
+  projectPersonIds: number[]
+): number[] {
+  const onProject = new Set(projectPersonIds);
+  const ids = [recipientId];
+  for (const id of extraIds || []) {
+    if (id !== recipientId && onProject.has(id) && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+// The due date part of a card write. Undefined means the send form said nothing
+// about the due date, and sending no key at all is what leaves a date already on
+// the card alone. An empty string is an explicit clear, which Basecamp wants as
+// null.
+export function approvalDueFields(
+  dueOn: string | null | undefined
+): { due_on?: string | null } {
+  if (dueOn === undefined) return {};
+  return { due_on: dueOn || null };
+}
+
 interface BcCard {
   id: number;
   title: string;
@@ -1080,6 +1110,16 @@ export async function sendApprovalToDeliverables(input: {
   buildContent: (contactMention?: string) => string;
   recipientIdentifiers: string[];
   existingCardId?: string | null;
+  // An explicit pick from the send form. Beats the saved contact, which is why
+  // a client with nobody on file can still be sent to: the sender chooses from
+  // the project roster instead of the send being withheld.
+  recipientId?: number;
+  // Anyone else who should own the card. The recipient is always assigned;
+  // these are added alongside.
+  extraAssigneeIds?: number[];
+  // YYYY-MM-DD for the card's due date, "" to clear it, undefined to leave
+  // whatever the card already has alone.
+  dueOn?: string | null;
   // Whose Basecamp login posts this. The route passes the person who clicked
   // send when they have connected, so the client sees a name they know. Falls
   // back to the mascot account, never to another human.
@@ -1153,19 +1193,29 @@ export async function sendApprovalToDeliverables(input: {
     // matching: a contact called "Michael" would otherwise match whichever
     // Michael sits first in the roster, and on a live project that is as likely
     // to be one of ours as the client.
-    const recipient = findClientContact(
-      people,
-      input.recipientIdentifiers[0] || "",
-      input.recipientIdentifiers[1] || ""
-    );
+    const recipient = input.recipientId
+      ? people.find((person) => person.id === input.recipientId) || null
+      : findClientContact(
+          people,
+          input.recipientIdentifiers[0] || "",
+          input.recipientIdentifiers[1] || ""
+        );
     if (!recipient) {
       return {
         ok: false,
-        error:
-          "Could not match this account's contact to a person on the Basecamp project. " +
-          "Check the client's Contact name matches their Basecamp name exactly, and that they are a member of the project.",
+        error: input.recipientId
+          ? "The person picked to receive this is not on the client's Basecamp project. Reload the page and pick again."
+          : "Could not match this account's contact to a person on the Basecamp project. " +
+            "Check the client's Contact name matches their Basecamp name exactly, and that they are a member of the project.",
       };
     }
+
+    const chosenAssigneeIds = resolveApprovalAssignees(
+      recipient.id,
+      input.extraAssigneeIds,
+      people.map((person) => person.id)
+    );
+    const dueFields = approvalDueFields(input.dueOn);
 
     let card: BcCard | null = null;
     if (input.existingCardId) {
@@ -1197,11 +1247,14 @@ export async function sendApprovalToDeliverables(input: {
       }
 
       const assigneeIds = Array.from(
-        new Set([...(card.assignees || []).map((person) => person.id), recipient.id])
+        new Set([
+          ...(card.assignees || []).map((person) => person.id),
+          ...chosenAssigneeIds,
+        ])
       );
       const assignRes = await bc(`/card_tables/cards/${card.id}.json`, {
         method: "PUT",
-        body: JSON.stringify({ assignee_ids: assigneeIds }),
+        body: JSON.stringify({ assignee_ids: assigneeIds, ...dueFields }),
       }, identity);
       if (!assignRes.ok) {
         return {
@@ -1244,6 +1297,7 @@ export async function sendApprovalToDeliverables(input: {
         title: input.campaignTitle,
         content: input.buildContent(mentionHtml(recipient)),
         notify: true,
+        ...dueFields,
       }),
     }, identity);
     if (!createRes.ok) {
@@ -1253,7 +1307,7 @@ export async function sendApprovalToDeliverables(input: {
 
     const assignRes = await bc(`/card_tables/cards/${created.id}.json`, {
       method: "PUT",
-      body: JSON.stringify({ assignee_ids: [recipient.id] }),
+      body: JSON.stringify({ assignee_ids: chosenAssigneeIds }),
     }, identity);
     if (!assignRes.ok) {
       return {

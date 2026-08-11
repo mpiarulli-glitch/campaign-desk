@@ -4,6 +4,8 @@ import { matchExistingContact } from "../src/lib/contact-sync";
 import { basecampNameForManager } from "../src/lib/people";
 import { findDeliverablesTables,
   findClientContact,
+  approvalDueFields,
+  resolveApprovalAssignees,
 } from "../src/lib/basecamp";
 
 // Client approvals must always land on the Deliverables card table. Projects
@@ -194,4 +196,50 @@ test("casing and stray spaces do not break the map", () => {
 test("an unmapped manager resolves to nobody rather than a guess", () => {
   assert.equal(basecampNameForManager("Randi"), "");
   assert.equal(basecampNameForManager(""), "");
+});
+
+/* ---------------------------------------------- send form: who and when */
+
+// The send form lets the sender pick the recipient and extra assignees. Bryan
+// Luu was on BLuu Construction's project the whole time the send was refused,
+// so the picker is the fix, and these guard what it puts on the card.
+const projectPeople = [50582617, 44903667, 42850672];
+
+test("the recipient is always assigned, and first", () => {
+  assert.deepEqual(
+    resolveApprovalAssignees(50582617, [], projectPeople),
+    [50582617]
+  );
+  assert.deepEqual(
+    resolveApprovalAssignees(50582617, [42850672], projectPeople),
+    [50582617, 42850672]
+  );
+});
+
+test("an extra assignee who left the project is dropped, not sent", () => {
+  // Basecamp rejects the whole update for an id that is not on the project, so
+  // a page left open across a roster change would fail the send outright.
+  assert.deepEqual(
+    resolveApprovalAssignees(50582617, [99999999, 42850672], projectPeople),
+    [50582617, 42850672]
+  );
+});
+
+test("the recipient is not assigned twice when also ticked as an extra", () => {
+  assert.deepEqual(
+    resolveApprovalAssignees(50582617, [50582617, 50582617], projectPeople),
+    [50582617]
+  );
+});
+
+test("a due date is only written when the form said something about it", () => {
+  // Undefined has to send no key at all: a resend that never touched the field
+  // must leave the date already on the card alone.
+  assert.deepEqual(approvalDueFields(undefined), {});
+  assert.deepEqual(approvalDueFields("2026-08-20"), { due_on: "2026-08-20" });
+});
+
+test("clearing the due date sends null rather than an empty string", () => {
+  assert.deepEqual(approvalDueFields(""), { due_on: null });
+  assert.deepEqual(approvalDueFields(null), { due_on: null });
 });

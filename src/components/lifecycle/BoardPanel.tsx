@@ -78,8 +78,8 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
           type="button"
           className="hud-board-dismiss"
           onClick={() => h.onRemove(card)}
-          title={`Remove ${card.clientName} from this month`}
-          aria-label={`Remove ${card.clientName} from this month`}
+          title={`Remove ${card.clientName} from this month and every month after`}
+          aria-label={`Remove ${card.clientName} from this month and every month after`}
         >
           ×
         </button>
@@ -282,7 +282,8 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   );
 
   // Removing dismisses the card rather than deleting it, so the board's
-  // per-client re-seed cannot bring it back on the next load.
+  // per-client re-seed cannot bring it back on the next load. It also carries
+  // into every later month, which past months never see.
   const removeCard = useCallback(async (card: BoardCard) => {
     setCards((prev) => prev.filter((c) => c.id !== card.id));
     const res = await fetch(`/api/lifecycle/board/cards/${card.id}`, { method: "DELETE" });

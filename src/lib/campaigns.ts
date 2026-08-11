@@ -530,11 +530,16 @@ export function recordBasecampApproval(
     cardId: string;
     cardUrl: string;
     revision: string;
+    // Omitted when the send did not touch the due date, which keeps whatever
+    // was stored from the previous send.
+    dueOn?: string | null;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
   if (!existing) return null;
   const ts = nowIso();
+  const dueOn =
+    input.dueOn === undefined ? existing.basecamp_due_on : input.dueOn || null;
   getDb()
     .prepare(
       `UPDATE campaigns
@@ -543,10 +548,11 @@ export function recordBasecampApproval(
            basecamp_card_url = ?,
            basecamp_approval_revision = ?,
            basecamp_approval_sent_at = ?,
+           basecamp_due_on = ?,
            updated_at = ?
        WHERE id = ?`
     )
-    .run(input.cardId, input.cardUrl, input.revision, ts, ts, id);
+    .run(input.cardId, input.cardUrl, input.revision, ts, dueOn, ts, id);
   return getCampaignById(id);
 }
 

@@ -81,6 +81,8 @@ export interface Campaign {
   basecamp_card_url: string | null;
   basecamp_approval_revision: string | null;
   basecamp_approval_sent_at: string | null;
+  // YYYY-MM-DD last sent to the Deliverables card, or null when none was set.
+  basecamp_due_on: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -795,6 +797,17 @@ export interface LifecycleBoardItem {
   updated_at: string;
 }
 
+/**
+ * A client taken off the Deliverables board from `from_period` onward. Absence
+ * of a row means the client is on the board for every month.
+ */
+export interface LifecycleBoardRemoval {
+  client_id: string;
+  from_period: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // A daily marketing or AI training post. kind = "marketing" | "ai".
 export interface TrainingPost {
   id: string;
@@ -971,6 +984,7 @@ export function getDb(): Database.Database {
       basecamp_card_url TEXT,
       basecamp_approval_revision TEXT,
       basecamp_approval_sent_at TEXT,
+      basecamp_due_on TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1746,6 +1760,20 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_board_items_card ON lifecycle_board_items(card_id);
 
+    -- Taking a client off the Deliverables board is a standing decision, not a
+    -- one-month edit: once they are off, they stay off every month from there
+    -- on. Dismissing card rows alone cannot express that, because months in the
+    -- future have no rows yet and would be re-seeded the first time someone
+    -- opened them. One row per removed client, holding the month the removal
+    -- takes effect from. Putting the client back deletes the row.
+    CREATE TABLE IF NOT EXISTS lifecycle_board_removals (
+      client_id TEXT PRIMARY KEY,
+      from_period TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
     -- Login accounts. The roster itself still lives in code (admin-people.ts,
     -- people.ts) because client components import it at module scope; this
     -- table owns credentials and identity only, and is seeded from those
@@ -1900,6 +1928,11 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE campaigns ADD COLUMN basecamp_approval_sent_at TEXT`
     );
+  }
+  // The due date last put on the Deliverables card, so the send form opens on
+  // what was actually sent rather than blank.
+  if (!campaignCols.includes("basecamp_due_on")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN basecamp_due_on TEXT`);
   }
   // Best-effort backfill by exact name match — only fills rows still unset,
   // so it's safe to run on every boot and never clobbers a manually-set link.

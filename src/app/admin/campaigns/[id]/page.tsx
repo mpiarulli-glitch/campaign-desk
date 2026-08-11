@@ -92,6 +92,14 @@ type Campaign = {
   archived_at?: string | null;
 };
 
+type BasecampPerson = {
+  id: number;
+  name: string;
+  email: string;
+  isClient: boolean;
+  mentionable: boolean;
+};
+
 type BasecampApprovalState = {
   ready: boolean;
   missing: string[];
@@ -101,6 +109,10 @@ type BasecampApprovalState = {
   alreadySent: boolean;
   lastSentAt: string | null;
   cardUrl: string | null;
+  people: BasecampPerson[];
+  peopleReason: string;
+  defaultRecipientId: number | null;
+  dueOn: string;
 };
 
 export default function AdminCampaignPage() {
@@ -157,6 +169,12 @@ export default function AdminCampaignPage() {
   // confirm() instantly, which made this button look dead with no error.
   const [confirmingBasecampApproval, setConfirmingBasecampApproval] =
     useState(false);
+  // The send form's own choices. They start from what the server suggests and
+  // are only sent when the sender has actually seen the form, so a send from a
+  // stale tab cannot silently reassign a card.
+  const [approvalRecipientId, setApprovalRecipientId] = useState<number | "">("");
+  const [approvalAssigneeIds, setApprovalAssigneeIds] = useState<number[]>([]);
+  const [approvalDueOn, setApprovalDueOn] = useState("");
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -226,7 +244,14 @@ export default function AdminCampaignPage() {
       setBasecampApproval(null);
       return;
     }
-    setBasecampApproval(await res.json());
+    const data: BasecampApprovalState = await res.json();
+    setBasecampApproval(data);
+    // Seed the form from the server's view, but never overwrite a choice the
+    // sender has already made: this reloads after a send and after a save.
+    setApprovalRecipientId((current) =>
+      current === "" ? (data.defaultRecipientId ?? "") : current
+    );
+    setApprovalDueOn((current) => current || data.dueOn || "");
   }
 
   const [revClients, setRevClients] = useState<{ id: string; name: string }[]>([]);
@@ -412,6 +437,10 @@ export default function AdminCampaignPage() {
       );
       return;
     }
+    if (!approvalRecipientId && !basecampApproval.recipient) {
+      setError("Pick who this approval goes to before sending it.");
+      return;
+    }
     const resend = basecampApproval.alreadySent;
 
     setConfirmingBasecampApproval(false);
@@ -421,7 +450,12 @@ export default function AdminCampaignPage() {
     const res = await fetch(`/api/campaigns/${id}/basecamp-approval`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force: resend }),
+      body: JSON.stringify({
+        force: resend,
+        recipientId: approvalRecipientId || undefined,
+        assigneeIds: approvalAssigneeIds,
+        dueOn: approvalDueOn,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     setSendingBasecampApproval(false);
@@ -437,7 +471,8 @@ export default function AdminCampaignPage() {
 
     setStatus(data.status || "in_review");
     setMessage(
-      `Approval sent to ${data.recipient || "the client"} in Basecamp.`
+      `Approval sent to ${data.recipient || "the client"} in Basecamp.` +
+        (data.dueOn ? ` Due ${data.dueOn}.` : "")
     );
     await load(activeEmailId);
     await loadBasecampApproval();
@@ -793,6 +828,16 @@ export default function AdminCampaignPage() {
     );
   }
 
+  // Who the send form is actually pointed at, which is what every line of the
+  // Basecamp panel should name. Falls back to the account's saved contact so a
+  // roster that failed to load does not make the panel claim nobody.
+  const approvalRecipientName =
+    basecampApproval?.people.find(
+      (person) => person.id === approvalRecipientId
+    )?.name ||
+    basecampApproval?.recipient ||
+    "";
+
   return (
     <div className="app-shell">
       <div className="page-actions">
@@ -1084,14 +1129,97 @@ export default function AdminCampaignPage() {
               )}
             </div>
 
+            {basecampApproval?.ready && !sendingBasecampApproval ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                  <span className="muted">Send to</span>
+                  <select
+                    value={approvalRecipientId}
+                    onChange={(e) =>
+                      setApprovalRecipientId(
+                        e.target.value ? Number(e.target.value) : ""
+                      )
+                    }
+                    disabled={!basecampApproval.people.length}
+                  >
+                    <option value="">
+                      {basecampApproval.people.length
+                        ? "Pick a person..."
+                        : basecampApproval.peopleReason ||
+                          "No project roster available"}
+                    </option>
+                    {basecampApproval.people.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
+                        {person.isClient ? "" : " (our team)"}
+                        {person.mentionable ? "" : " — cannot be mentioned"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                  <span className="muted">Due date</span>
+                  <input
+                    type="date"
+                    value={approvalDueOn}
+                    onChange={(e) => setApprovalDueOn(e.target.value)}
+                  />
+                </label>
+
+                {basecampApproval.people.length > 1 ? (
+                  <details>
+                    <summary
+                      className="muted"
+                      style={{ cursor: "pointer", fontSize: 13 }}
+                    >
+                      Also assign
+                      {approvalAssigneeIds.length
+                        ? ` (${approvalAssigneeIds.length})`
+                        : ""}
+                    </summary>
+                    <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
+                      {basecampApproval.people
+                        .filter((person) => person.id !== approvalRecipientId)
+                        .map((person) => (
+                          <label
+                            key={person.id}
+                            className="row"
+                            style={{ gap: 6, fontSize: 13 }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={approvalAssigneeIds.includes(person.id)}
+                              onChange={(e) =>
+                                setApprovalAssigneeIds((current) =>
+                                  e.target.checked
+                                    ? [...current, person.id]
+                                    : current.filter((pid) => pid !== person.id)
+                                )
+                              }
+                            />
+                            <span>
+                              {person.name}
+                              {person.isClient ? "" : " (our team)"}
+                            </span>
+                          </label>
+                        ))}
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+
             {confirmingBasecampApproval && !sendingBasecampApproval ? (
               <p style={{ margin: "8px 0 0", fontSize: 13 }}>
                 {basecampApproval?.alreadySent ? "Resend" : "Send"} this
                 approval
-                {basecampApproval?.recipient
-                  ? ` to ${basecampApproval.recipient}`
-                  : ""}{" "}
-                and move its Deliverables card to Needs Approval?
+                {approvalRecipientName ? ` to ${approvalRecipientName}` : ""}
+                {approvalAssigneeIds.length
+                  ? `, assign ${approvalAssigneeIds.length} more`
+                  : ""}
+                {approvalDueOn ? `, due ${approvalDueOn}` : ""} and move its
+                Deliverables card to Needs Approval?
               </p>
             ) : null}
 
@@ -1099,7 +1227,7 @@ export default function AdminCampaignPage() {
               <>
                 <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
                   {basecampApproval.ready
-                    ? `Sends to ${basecampApproval.recipient || "the configured client contact"} and moves the Deliverables card to Needs Approval.`
+                    ? `Sends to ${approvalRecipientName || "whoever you pick above"} and moves the Deliverables card to Needs Approval.`
                     : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
                   {basecampApproval.lastSentAt
                     ? ` Last sent ${new Date(basecampApproval.lastSentAt).toLocaleString()}.`
