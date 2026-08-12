@@ -378,6 +378,28 @@ export async function isOwner(): Promise<boolean> {
   return session?.role === "admin" && session.person === null;
 }
 
+/**
+ * Who is acting, as a tag to store on a record for an audit trail.
+ *
+ * Distinct from sessionUserSlug, which answers "whose password may this session
+ * change" and so refuses to answer at all while impersonating. For a "who logged
+ * this" trail the opposite is wanted: never nothing. An impersonated session
+ * records the person being impersonated with an `:impersonated` marker, because
+ * the cookie does not carry the admin behind it and filing the work under that
+ * person unmarked would credit it to someone who may not have done it.
+ *
+ * Empty string when there is no session, or for the legacy password-only admin
+ * login that carries no person at all. Render with actorLabel in ./people.
+ */
+export async function sessionActor(): Promise<string> {
+  const session = await getSession();
+  if (!session) return "";
+  const slug =
+    session.role === "admin" && session.person === null ? OWNER_SLUG : session.person;
+  if (!slug) return "";
+  return session.impersonating ? `${slug}:impersonated` : slug;
+}
+
 // The slug whose team focus applies to this session, or null for no scoping.
 // The owner's session carries a null person and is never scoped.
 export async function sessionFocusSlug(): Promise<string | null> {

@@ -16,6 +16,92 @@ Upload an email, share a magic link with your boss or client, collect general an
 
 AI “Make revision” is intentionally deferred for a later release.
 
+## Importing an editorial calendar from a spreadsheet
+
+Clients plan a year of content in a sheet, so the sheet is the source. On
+**Calendar** → **Import CSV**, pick the client, upload the export, and read the
+preview before anything is written.
+
+The importer is deliberately forgiving about column names. It needs a date column
+and a title column; everything else is picked up when it recognises the header.
+`Send Date`, `Campaign Name`, `Segment`, `Objective`, `CTA`, `Hook`, and
+`Preheader` all map, and columns it cannot place are listed in the preview rather
+than dropped silently. Dates may be `2026-09-01`, `9/1/2026`, `Sep 1, 2026`, or an
+Excel serial; slash dates are read month-first. **Download template** gives you a
+sheet whose columns already map cleanly.
+
+The preview shows how each column was read, every row that will land, which rows
+are already on the calendar, and how many client productions sit in the window.
+Then pick one of three modes:
+
+- **Add what is new** skips rows already on the calendar. Use this to re-upload a
+  corrected sheet.
+- **Replace this date range** deletes the planned entries between the file's first
+  and last date and rebuilds them. Client productions are never touched.
+- **Add everything** imports every row, duplicates included.
+
+Two things happen on every import. Each created send is stamped with a batch id,
+so **Recent imports** → **Undo** removes exactly that import and nothing a person
+typed by hand. And the client's sign-off on the plan is cleared, because an
+"Approved" badge over a calendar they have not seen is worse than no badge.
+
+A row with an unreadable date or no title is left out and named by line number.
+The rest of the file still imports.
+
+## Building deliverables from a contract PDF
+
+The weekly snapshot only tells the truth if the deliverable list matches what the
+client bought. On **Account snapshots** → an account → **Edit deliverables**,
+**Import contract** reads the signed agreement's scope of work into a list.
+
+It reads the text of the PDF directly, with no external service and no new
+dependency, then finds the scope-of-work section and proposes one row per
+deliverable with a category, an owning team, the cadence as written, and whether
+it is recurring or one-time setup. Legal and payment sections are excluded, which
+is why locating the scope section matters: without it "Client shall indemnify the
+Agency" becomes a deliverable.
+
+Nothing is saved from the parse. Every proposed row is editable, individually
+deselectable, and shows the contract line it came from, so checking the parse
+means reading two things side by side. What is in the table when you press **Add**
+is what gets saved. Rows matching an existing deliverable start unticked.
+
+The retainer and contract dates are read too, and applied only if you tick the
+box. A figure lifted out of the payment terms is the easiest thing to get wrong,
+so check it against the contract first.
+
+A scanned or photographed contract has no text layer to read. The app says so and
+offers a box to paste the scope of work into, which is parsed exactly the same way.
+
+## Reading the weekly snapshot
+
+**Who logged what.** Each deliverable card names the person who last wrote it and
+when. Entries logged before the app recorded this show no name, which is true
+rather than a guess. If somebody was signed in as a colleague, the line reads
+"Randi (via admin)": the session does not record which admin was acting, so the
+work is filed under that person but never credited to them outright. None of this
+reaches the client link, which is signed by the agency.
+
+**Saves are confirmed.** A card says *Saving*, *Saved*, or *Not saved* with a
+**Retry** next to it. Retry re-sends every field that failed on that row, so
+nothing typed is lost to a dropped connection.
+
+**Contract fulfillment** is scored against the period that has closed, not the one
+running. A monthly deliverable resets on the 1st, so scoring the open period made a
+fully delivered account read 0% and "Significantly behind" on the 2nd of every
+month. Anything too new to have finished a period counts as in flight and is
+reported separately instead of as a failure. The percentage and the overdue banner
+share one definition of late, so they cannot disagree.
+
+**Performance metrics** take a month, picked or typed. `2026-04`, `April 2026`, and
+`Apr '26` all store the same month, and a month the app cannot read is refused
+rather than saved where no chart can plot it. Metric names match without regard to
+case, so `leads` typed once does not fork `Leads` into a second half-empty chart.
+
+**The client's week picker** stops at the first week you logged and at the current
+week. It used to page forward indefinitely, which showed a client years of "no
+updates logged for this week yet" and read like an account going quiet.
+
 ## Knowledge base (Lifecycle → Knowledge)
 
 The Lifecycle console carries a searchable archive of Max Sturtevant's *The

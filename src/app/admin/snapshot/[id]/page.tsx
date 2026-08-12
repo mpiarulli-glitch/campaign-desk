@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { ContractImportPanel } from "@/components/ContractImportPanel";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
-import { TEAMS } from "@/lib/people";
+import { actorLabel, TEAMS } from "@/lib/people";
+import { metricPeriodLabel } from "@/lib/metric-period";
 
 type Win = { id: string; body: string; happened_on: string };
 type MetricRow = { id: string; metric: string; period: string; value: number; unit: string };
@@ -13,6 +15,9 @@ type Contract = {
   pct: number;
   doneCount: number;
   totalCount: number;
+  // Recurring deliverables whose current period is still running. Not scored, so
+  // the percentage is about periods that have actually closed.
+  inFlightCount: number;
   onTrack: boolean;
   label: string;
 };
@@ -82,7 +87,29 @@ type Row = {
   work_done: string;
   next_steps: string;
   notes: string;
+  logged_by: string;
+  updated_at: string;
 };
+
+// Per-row save state. A save that failed has to look different from one that
+// worked: the old code fired the request and never read the response, so a
+// dropped connection left the typed text on screen looking saved.
+type SaveState = "saving" | "saved" | "failed";
+
+// "2 hours ago" for a recent write, a date once that stops being the useful fact.
+function relativeTime(iso: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function groupByCategory(rows: Row[]): [string, Row[]][] {
   const map = new Map<string, Row[]>();
@@ -128,6 +155,11 @@ export default function SnapshotEditorPage() {
   const [contract, setContract] = useState<Contract | null>(null);
   const [behind, setBehind] = useState<BehindItem[]>([]);
   const [showBehindOnly, setShowBehindOnly] = useState(false);
+  const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
+  // What failed to save, per row, so Retry re-sends every field and not just the
+  // last one the person happened to leave.
+  const [failedPatch, setFailedPatch] = useState<Record<string, Partial<Row>>>({});
+  const [metricError, setMetricError] = useState("");
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
@@ -143,7 +175,13 @@ export default function SnapshotEditorPage() {
       try {
         const res = await fetch(`/api/snapshot/accounts/${id}/week?week=${w}`);
         if (res.status === 401) return router.push("/login");
-        if (res.ok) setRows((await res.json()).rows || []);
+        if (res.ok) {
+          setRows((await res.json()).rows || []);
+          // Save badges belong to the week that was on screen. Carrying a "failed"
+          // marker into a different week would point at the wrong row.
+          setSaveState({});
+          setFailedPatch({});
+        }
       } catch {
         setError("Network error. Check your connection and try again.");
       }
@@ -187,6 +225,7 @@ export default function SnapshotEditorPage() {
   }
   async function addMetric(e: FormEvent) {
     e.preventDefault();
+    setMetricError("");
     if (!nm.metric.trim() || !nm.period.trim() || nm.value === "") return;
     const res = await fetch("/api/snapshot/metric", {
       method: "POST",
@@ -199,7 +238,13 @@ export default function SnapshotEditorPage() {
         unit: nm.unit,
       }),
     });
-    if (!res.ok) { setError("Could not save metric."); return; }
+    if (!res.ok) {
+      // The server explains an unreadable month specifically. Showing that beats
+      // "Could not save metric", which leaves the person guessing which field.
+      const data = await res.json().catch(() => ({}));
+      setMetricError(data.error || "Could not save metric.");
+      return;
+    }
     setNm({ metric: nm.metric, period: "", value: "", unit: nm.unit });
     loadMeta();
   }
@@ -219,23 +264,73 @@ export default function SnapshotEditorPage() {
       .catch(() => {});
   }, []);
 
+  // Undefined keys are dropped rather than assigned, so a caller passing a field
+  // it has no news about ("the response did not include an author") leaves the
+  // existing value alone instead of blanking it.
   function patchRow(delivId: string, patch: Partial<Row>) {
-    setRows((rs) => rs.map((r) => (r.deliverable_id === delivId ? { ...r, ...patch } : r)));
+    const defined = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined)
+    ) as Partial<Row>;
+    setRows((rs) => rs.map((r) => (r.deliverable_id === delivId ? { ...r, ...defined } : r)));
   }
 
+  /**
+   * Write one field of one row.
+   *
+   * The result is read and shown. This used to be fire-and-forget: the request
+   * went out, the response was dropped on the floor, and a failed save was
+   * indistinguishable from a good one — the text stayed on screen and vanished on
+   * the next reload. Now a row says saving, saved, or failed, and a failure keeps
+   * a Retry next to it so the typing is not lost.
+   */
   async function saveEntry(delivId: string, patch: Partial<Row>) {
-    await fetch("/api/snapshot/entry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        deliverableId: delivId,
-        weekStart: week,
-        status: patch.status,
-        workDone: patch.work_done,
-        nextSteps: patch.next_steps,
-        notes: patch.notes,
-      }),
-    });
+    setSaveState((s) => ({ ...s, [delivId]: "saving" }));
+    try {
+      const res = await fetch("/api/snapshot/entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deliverableId: delivId,
+          weekStart: week,
+          status: patch.status,
+          workDone: patch.work_done,
+          nextSteps: patch.next_steps,
+          notes: patch.notes,
+        }),
+      });
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (!res.ok) {
+        setSaveState((s) => ({ ...s, [delivId]: "failed" }));
+        setFailedPatch((f) => ({ ...f, [delivId]: { ...(f[delivId] || {}), ...patch } }));
+        return;
+      }
+      // Reflect the new author on the row without reloading the whole week.
+      const data = await res.json().catch(() => ({}));
+      patchRow(delivId, {
+        logged_by: typeof data.loggedBy === "string" ? data.loggedBy : undefined,
+        updated_at: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
+      });
+      setSaveState((s) => ({ ...s, [delivId]: "saved" }));
+      setFailedPatch((f) => {
+        if (!f[delivId]) return f;
+        const next = { ...f };
+        delete next[delivId];
+        return next;
+      });
+    } catch {
+      setSaveState((s) => ({ ...s, [delivId]: "failed" }));
+      setFailedPatch((f) => ({ ...f, [delivId]: { ...(f[delivId] || {}), ...patch } }));
+    }
+  }
+
+  // Re-send everything that failed on this row, not just the last field touched.
+  async function retryEntry(delivId: string) {
+    const pending = failedPatch[delivId];
+    if (!pending) return;
+    await saveEntry(delivId, pending);
   }
 
   async function addDeliverable(e: FormEvent) {
@@ -350,8 +445,13 @@ export default function SnapshotEditorPage() {
               <strong>Contract fulfillment</strong>
               <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
                 {contract.totalCount > 0
-                  ? `${contract.doneCount} of ${contract.totalCount} recurring deliverables currently completed.`
-                  : "No recurring deliverables tracked yet."}
+                  ? `${contract.doneCount} of ${contract.totalCount} recurring deliverables landed in their last period.`
+                  : "Nothing has been due long enough to score yet."}
+                {/* Named so the figure is readable: a low count here explains why
+                    the percentage is based on fewer items than the account has. */}
+                {contract.inFlightCount > 0
+                  ? ` ${contract.inFlightCount} still in this period.`
+                  : ""}
               </p>
             </div>
             <span style={{ color: contractColor(contract), fontWeight: 700, fontSize: 20 }}>
@@ -417,6 +517,16 @@ export default function SnapshotEditorPage() {
           </div>
         ) : (
         <>
+        {managing && isAdmin ? (
+          <ContractImportPanel
+            clientId={id}
+            onAdded={() => {
+              loadMeta();
+              fetchWeek(week);
+            }}
+          />
+        ) : null}
+
         {managing ? (
           <div className="card card-pad stack">
             <strong>Deliverables</strong>
@@ -522,20 +632,47 @@ export default function SnapshotEditorPage() {
                             {r.kind === "one_time" ? "One-time" : CADENCE_UNIT_LABEL[r.cadence_unit]}
                             {r.cadence ? ` · ${r.cadence}` : ""}
                           </div>
+                          {/* Who logged this and when. Blank for a period nobody
+                              has touched, and for entries that predate the app
+                              recording it. Team-side only. */}
+                          {r.logged_by || r.updated_at ? (
+                            <div className="snap-logged-by">
+                              {r.logged_by ? actorLabel(r.logged_by) : "Logged"}
+                              {r.updated_at ? ` · ${relativeTime(r.updated_at)}` : ""}
+                            </div>
+                          ) : null}
                         </div>
-                        <select
-                          className={`snap-status-select status-${r.status}`}
-                          value={r.status}
-                          onChange={(e) => {
-                            const status = e.target.value as Status;
-                            patchRow(r.deliverable_id, { status });
-                            saveEntry(r.deliverable_id, { status });
-                          }}
-                        >
-                          {STATUSES.map((s) => (
-                            <option key={s.value} value={s.value}>{s.label}</option>
-                          ))}
-                        </select>
+                        <div className="snap-card-actions">
+                          {saveState[r.deliverable_id] === "saving" ? (
+                            <span className="snap-save snap-save-busy">Saving…</span>
+                          ) : saveState[r.deliverable_id] === "saved" ? (
+                            <span className="snap-save snap-save-ok">Saved</span>
+                          ) : saveState[r.deliverable_id] === "failed" ? (
+                            <span className="snap-save snap-save-bad">
+                              Not saved
+                              <button
+                                type="button"
+                                className="link-button"
+                                onClick={() => retryEntry(r.deliverable_id)}
+                              >
+                                Retry
+                              </button>
+                            </span>
+                          ) : null}
+                          <select
+                            className={`snap-status-select status-${r.status}`}
+                            value={r.status}
+                            onChange={(e) => {
+                              const status = e.target.value as Status;
+                              patchRow(r.deliverable_id, { status });
+                              saveEntry(r.deliverable_id, { status });
+                            }}
+                          >
+                            {STATUSES.map((s) => (
+                              <option key={s.value} value={s.value}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div className="snap-fields">
                         <label>
@@ -609,17 +746,39 @@ export default function SnapshotEditorPage() {
           <strong>Performance</strong>
           <PerfCharts series={groupSeries(metricsRaw)} />
           <form className="snap-metric-form" onSubmit={addMetric}>
-            <input value={nm.metric} onChange={(e) => setNm({ ...nm, metric: e.target.value })} placeholder="Metric (e.g. Leads)" />
-            <input value={nm.period} onChange={(e) => setNm({ ...nm, period: e.target.value })} placeholder="Period (YYYY-MM)" />
+            {/* A datalist of the metrics already on this account, so a second
+                month of "Leads" is picked rather than retyped. A near-miss used to
+                fork the series in two and plot half the data. */}
+            <input
+              list="snap-metric-names"
+              value={nm.metric}
+              onChange={(e) => setNm({ ...nm, metric: e.target.value })}
+              placeholder="Metric (e.g. Leads)"
+            />
+            <datalist id="snap-metric-names">
+              {Array.from(new Set(metricsRaw.map((m) => m.metric))).map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+            {/* A month picker, so the stored period is always canonical YYYY-MM and
+                the chart's x-axis sorts chronologically. Typed months are still
+                accepted by the API for anything scripted. */}
+            <input
+              type="month"
+              value={nm.period}
+              onChange={(e) => setNm({ ...nm, period: e.target.value })}
+              aria-label="Month"
+            />
             <input value={nm.value} onChange={(e) => setNm({ ...nm, value: e.target.value })} placeholder="Value" type="number" step="any" />
             <input value={nm.unit} onChange={(e) => setNm({ ...nm, unit: e.target.value })} placeholder="Unit ($, %, blank)" />
             <button className="btn btn-sm" type="submit">Add / update</button>
           </form>
+          {metricError ? <p className="error" style={{ margin: 0 }}>{metricError}</p> : null}
           {metricsRaw.length > 0 ? (
             <div className="snap-metric-list">
               {metricsRaw.map((m) => (
                 <div key={m.id} className="snap-metric-row">
-                  <span><strong>{m.metric}</strong> · {m.period}</span>
+                  <span><strong>{m.metric}</strong> · {metricPeriodLabel(m.period)}</span>
                   <span>{m.unit === "$" ? "$" : ""}{m.value.toLocaleString()}{m.unit === "%" ? "%" : ""}</span>
                   <button className="btn btn-ghost btn-sm" aria-label="Remove metric" onClick={() => removeMetric(m.id)}>×</button>
                 </div>

@@ -1,4 +1,5 @@
 import type { AssetType } from "./asset-kinds";
+import { ADMIN_PEOPLE } from "./admin-people";
 
 // productionAccess: entry-level forecast users normally get just Forecast,
 // Calendar, and Snapshot — this additionally unlocks the (read-only, for
@@ -134,6 +135,30 @@ export function peopleWithoutTeam(): Array<{ slug: string; label: string }> {
 
 export function personLabel(slug: string): string {
   return PEOPLE.find((p) => p.slug === slug)?.label || slug;
+}
+
+/**
+ * Display name for a stored actor tag, as written by sessionActor in ./auth.
+ *
+ * Consults both rosters because the two do not overlap: several admin logins
+ * (sylvia, kyle_onstott) are not in PEOPLE at all, and personLabel alone would
+ * render them as their raw slug.
+ *
+ * A tag can carry an `:impersonated` marker. That is kept visible on purpose. The
+ * session cookie does not record which admin was acting, so the only honest
+ * reading of an impersonated write is "this is filed under Randi, but Randi may
+ * not have typed it" — and crediting it to her flatly would be a small lie in a
+ * record whose entire job is saying who did the work.
+ */
+export function actorLabel(tag: string): string {
+  if (!tag) return "";
+  const [slug, marker] = tag.split(":");
+  if (!slug) return "";
+  const label =
+    PEOPLE.find((p) => p.slug === slug)?.label ||
+    ADMIN_PEOPLE.find((p) => p.slug === slug)?.label ||
+    slug;
+  return marker === "impersonated" ? `${label} (via admin)` : label;
 }
 
 export function isValidPerson(slug: string): boolean {

@@ -204,6 +204,8 @@ export function createSend(input: {
   productionBrief?: string;
   cadenceWindowStart?: string | null;
   requestedByClient?: boolean;
+  // Set by the spreadsheet importer so the whole batch can be undone together.
+  importBatch?: string;
 }): ScheduledSend {
   const db = getDb();
   const id = nanoid(12);
@@ -213,8 +215,8 @@ export function createSend(input: {
     `INSERT INTO scheduled_sends
       (id, client_id, client_name, title, send_date, send_time, duration, status, platform, asset_type, note,
        audience, purpose, offer, subject, preview_text, production_brief,
-       cadence_window_start, requested_by_client, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       cadence_window_start, requested_by_client, import_batch, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     clientId,
@@ -235,6 +237,7 @@ export function createSend(input: {
     input.productionBrief || "",
     input.cadenceWindowStart || null,
     input.requestedByClient ? 1 : 0,
+    (input.importBatch || "").trim(),
     ts,
     ts
   );

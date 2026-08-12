@@ -101,6 +101,11 @@ export default function SnapshotClientPage() {
   const [wins, setWins] = useState<Win[]>([]);
   const [metrics, setMetrics] = useState<MetricSeries[]>([]);
   const [week, setWeek] = useState(currentWeek());
+  // How far the week picker may move. Empty until the first load answers.
+  const [bounds, setBounds] = useState<{ earliest: string; latest: string }>({
+    earliest: "",
+    latest: "",
+  });
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
@@ -119,6 +124,7 @@ export default function SnapshotClientPage() {
           setOverview(data.overview || []);
           setWins(data.wins || []);
           setMetrics(data.metrics || []);
+          if (data.bounds) setBounds(data.bounds);
         }
       } catch {
         setError("Network error. Check your connection and try again.");
@@ -163,6 +169,12 @@ export default function SnapshotClientPage() {
   const grouped = groupByCategory(rows);
   const anyUpdates = updatedRows.length > 0;
 
+  // Bounds are only enforced once the server has stated them, so the arrows are
+  // never dead on the first paint. An account with no entries at all reports no
+  // earliest week, which leaves back disabled because there is nothing behind.
+  const canGoBack = !bounds.earliest || week > bounds.earliest;
+  const canGoForward = !bounds.latest || week < bounds.latest;
+
   // Ongoing contracted work, grouped by category; completed one-time setup
   // items are pulled out and shown at the very bottom.
   const setupDone = overview.filter((o) => o.kind === "one_time" && !!o.completed_on);
@@ -204,9 +216,23 @@ export default function SnapshotClientPage() {
                 </p>
               </div>
               <div className="snap-week-nav">
-                <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
+                <button
+                  onClick={() => setWeek((w) => addWeeks(w, -1))}
+                  disabled={!canGoBack}
+                  title={canGoBack ? "Previous week" : "This is the first week we logged"}
+                  aria-label="Previous week"
+                >
+                  ‹
+                </button>
                 <button onClick={() => setWeek(currentWeek())} className="snap-week-today">This week</button>
-                <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
+                <button
+                  onClick={() => setWeek((w) => addWeeks(w, 1))}
+                  disabled={!canGoForward}
+                  title={canGoForward ? "Next week" : "This is the latest week"}
+                  aria-label="Next week"
+                >
+                  ›
+                </button>
               </div>
             </div>
 

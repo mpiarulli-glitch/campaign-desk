@@ -2341,6 +2341,30 @@ button {
 }
 .snap-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
 .snap-cadence { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+/* Who logged this period's update, team-side only. */
+.snap-logged-by {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+/* Status select plus the save badge for the row, kept on one line. */
+.snap-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.snap-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.snap-save-busy { color: var(--text-muted); }
+.snap-save-ok { color: var(--success-ink); }
+.snap-save-bad { color: var(--danger-ink); }
 
 /* Editable status select, colored by status */
 .snap-status-select {
@@ -2809,6 +2833,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   transition: border-color .15s ease, background .15s ease;
 }
 .snap-week-nav button:hover { border-color: var(--accent); }
+/* An arrow at the end of the record reads as unavailable rather than broken. */
+.snap-week-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.snap-week-nav button:disabled:hover { border-color: var(--border); }
 .snap-week-today { font-size: 13px !important; font-weight: 700 !important; letter-spacing: 0.02em; }
 
 /* Section panels styled after the Team Hub bento cards */
@@ -8844,4 +8874,241 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .onb-link.is-danger {
   color: var(--danger-ink);
+}
+
+/* --------------------------------------------------- Spreadsheet + PDF imports */
+/* Shared by the calendar CSV import modal and the contract import panel. Both
+   follow the same shape: read the file, show exactly what will land, then commit.
+   The styling exists to make the review step legible enough that people use it
+   rather than clicking past it. */
+
+.modal-wide {
+  width: min(980px, 100%);
+}
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--accent-wash);
+  font-size: 13px;
+}
+.import-stat {
+  font-weight: 700;
+}
+.import-flag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning-ink);
+  background: var(--warning-wash);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.import-result {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--success);
+  border-radius: 10px;
+  background: var(--success-wash);
+}
+
+.import-issues {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--warning-wash);
+  font-size: 13px;
+}
+.import-issues-error {
+  background: var(--danger-wash);
+  border-left: 3px solid var(--danger);
+}
+.import-issues ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.import-warn {
+  margin: 0;
+  font-size: 13px;
+  color: var(--warning-ink);
+}
+.import-warn-inline {
+  color: var(--warning-ink);
+}
+
+.import-details > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+.import-mapping {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.import-table-wrap {
+  /* A year of planning is a wide, tall table. It scrolls inside its own box so
+     the modal itself never grows a horizontal scrollbar. */
+  overflow: auto;
+  max-height: 340px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.import-table th,
+.import-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.import-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  z-index: 1;
+}
+.import-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.import-table tr.is-duplicate {
+  background: var(--warning-wash);
+}
+.import-table .nowrap {
+  white-space: nowrap;
+}
+.import-dupe-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warning-ink);
+  white-space: nowrap;
+}
+
+.import-radio {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.import-radio input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.import-batch {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.import-terms {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, var(--accent-wash));
+}
+
+.import-raw {
+  margin: 8px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+
+/* One proposed deliverable under review, with the contract line it came from. */
+.contract-row {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.contract-row.is-off {
+  opacity: 0.5;
+}
+.contract-row-check input {
+  margin-top: 9px;
+}
+.contract-row-fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.contract-row-main {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 0.8fr 1fr 0.9fr 0.8fr;
+  gap: 6px;
+}
+.contract-row-main input,
+.contract-row-main select {
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+}
+.contract-row-source {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+@media (max-width: 860px) {
+  .contract-row-main {
+    grid-template-columns: 1fr 1fr;
+  }
+  .import-summary {
+    gap: 10px;
+  }
 }

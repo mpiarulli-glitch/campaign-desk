@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
 import { getAccount, listWins, metricsSeries, weekData } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -20,7 +20,9 @@ export async function GET(request: Request, { params }: Params) {
   }
   return NextResponse.json({
     week,
-    rows: weekData(id, week),
+    // Scoped to the viewer's team, matching the deliverable list they manage.
+    // Admins and the owner get everything.
+    rows: weekData(id, week, { team: await sessionTeam() }),
     wins: listWins(id),
     metrics: metricsSeries(id),
   });
