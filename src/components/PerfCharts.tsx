@@ -1,18 +1,14 @@
 "use client";
 
+// Shared with the API's period validation, so what the axis can render and what
+// the server will store are the same rule rather than two copies of it.
+import { metricPeriodShortLabel as periodLabel } from "@/lib/metric-period";
+
 export type MetricSeries = {
   metric: string;
   unit: string;
   points: { period: string; value: number }[];
 };
-
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-function periodLabel(p: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(p);
-  if (m) return MONTHS[Number(m[2]) - 1] || p;
-  return p;
-}
 
 function fmt(v: number, unit: string): string {
   if (unit === "$") {

@@ -20,7 +20,10 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const saved = upsertMetric({
+  // The period is canonicalised in the lib, which is also where an unreadable one
+  // is refused. Passing that message through matters: "April 2026" and "Q2" fail
+  // for different reasons and the person typing needs to know which.
+  const result = upsertMetric({
     clientId,
     metric,
     period,
@@ -28,5 +31,8 @@ export async function POST(request: Request) {
     unit: typeof body.unit === "string" ? body.unit : "",
     sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : undefined,
   });
-  return NextResponse.json({ metric: saved });
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
+  }
+  return NextResponse.json({ metric: result.metric });
 }

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarImportModal } from "@/components/CalendarImportModal";
 
 type Status = "requested" | "planned" | "scheduled" | "sent";
 
@@ -154,6 +155,7 @@ export default function CalendarPage() {
     feedback: { send_id: string; body: string }[];
   } | null>(null);
   const [planCopied, setPlanCopied] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const isAdmin = role === "admin";
 
@@ -372,9 +374,14 @@ export default function CalendarPage() {
     <div className="app-shell">
       <div className="page-actions">
         {isAdmin ? (
-          <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>
-            Add send
-          </button>
+          <>
+            <button className="btn btn-secondary btn-sm" onClick={() => setImporting(true)}>
+              Import CSV
+            </button>
+            <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>
+              Add send
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -559,6 +566,20 @@ export default function CalendarPage() {
             )}
           </dl>
         </div>
+      ) : null}
+
+      {importing && isAdmin ? (
+        <CalendarImportModal
+          clients={clients}
+          // The client the calendar is already filtered to, so the common case of
+          // "I am looking at this account, import its sheet" skips a step.
+          initialClientId={filter === "all" ? "" : filter}
+          onClose={() => setImporting(false)}
+          onImported={() => {
+            load();
+            loadPlan();
+          }}
+        />
       ) : null}
 
       {editing && isAdmin ? (

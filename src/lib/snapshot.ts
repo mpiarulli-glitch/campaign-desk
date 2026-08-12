@@ -12,6 +12,7 @@ import {
   type SnapshotWin,
 } from "./db";
 import { addWeeks, mondayOf } from "./week";
+import { metricPeriodLabel, normalizeMetricPeriod } from "./metric-period";
 
 export type {
   CadenceUnit,
@@ -21,6 +22,11 @@ export type {
   SnapshotWin,
   SnapshotMetric,
 };
+
+// Re-exported so server code reaching for snapshot helpers finds these here too.
+// They live in ./metric-period because they are pure, and a client component that
+// needs to format a period must not pull better-sqlite3 in behind it.
+export { metricPeriodLabel, normalizeMetricPeriod };
 
 function normKind(v: unknown): DeliverableKind {
   return v === "one_time" ? "one_time" : "recurring";
@@ -293,6 +299,10 @@ export interface WeekRow {
   work_done: string;
   next_steps: string;
   notes: string;
+  // Who last logged this and when. Both empty for a period nobody has touched.
+  // Team-side only: the client-facing page never shows internal names.
+  logged_by: string;
+  updated_at: string;
 }
 
 // Existing entries predate cadence_unit and are keyed by whichever literal
@@ -300,15 +310,27 @@ export interface WeekRow {
 // date. Rather than rewrite that history, reads are range-based: "the latest
 // entry logged anywhere inside this period" stands in for an exact-key match,
 // so nothing pre-existing gets silently dropped or needs migrating.
-export function weekData(clientId: string, weekStart: string): WeekRow[] {
+//
+// `team` scopes the rows the same way listDeliverables does, so the grid a person
+// fills in matches the deliverable list they are allowed to manage. Without it
+// the two disagreed: the editor showed every team's work while "Edit
+// deliverables" showed only their own.
+export function weekData(
+  clientId: string,
+  weekStart: string,
+  opts?: { team?: string | null }
+): WeekRow[] {
+  const team = opts?.team;
+  const teamFilter = team ? "AND (team = ? OR team = '')" : "";
+  const teamParams = team ? [clientId, team] : [clientId];
   const deliverables = getDb()
     .prepare(
       `SELECT id, category, name, cadence, kind, cadence_unit
        FROM snapshot_deliverables
-       WHERE client_id = ? AND active = 1
+       WHERE client_id = ? AND active = 1 ${teamFilter}
        ORDER BY sort_order ASC, created_at ASC`
     )
-    .all(clientId) as Array<{
+    .all(...teamParams) as Array<{
     id: string;
     category: string;
     name: string;
@@ -318,37 +340,49 @@ export function weekData(clientId: string, weekStart: string): WeekRow[] {
   }>;
   if (!deliverables.length) return [];
 
+  const FIELDS = `status, work_done, next_steps, notes, logged_by, updated_at`;
   const exactStmt = getDb().prepare(
-    `SELECT status, work_done, next_steps, notes FROM snapshot_entries
+    `SELECT ${FIELDS} FROM snapshot_entries
      WHERE deliverable_id = ? AND week_start = ?`
   );
+  // Ordered by when it was last written, not by which week it is filed under.
+  // For a monthly item every week in the month shows the same entry, and the one
+  // to show is the team's most recent edit — ordering by week_start meant an
+  // update made while viewing an earlier week in the period was invisible.
   const rangeStmt = getDb().prepare(
-    `SELECT status, work_done, next_steps, notes FROM snapshot_entries
+    `SELECT ${FIELDS} FROM snapshot_entries
      WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
-     ORDER BY week_start DESC LIMIT 1`
+     ORDER BY updated_at DESC, week_start DESC LIMIT 1`
   );
   const latestEverStmt = getDb().prepare(
-    `SELECT status, work_done, next_steps, notes FROM snapshot_entries
+    `SELECT ${FIELDS} FROM snapshot_entries
      WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
   );
+
+  type EntryFields = {
+    status: SnapshotStatus;
+    work_done: string;
+    next_steps: string;
+    notes: string;
+    logged_by: string;
+    updated_at: string;
+  };
 
   return deliverables.map((d) => {
     const kind = normKind(d.kind);
     const cadence_unit = normCadenceUnit(d.cadence_unit);
-    let e:
-      | { status: SnapshotStatus; work_done: string; next_steps: string; notes: string }
-      | undefined;
+    let e: EntryFields | undefined;
     let period_start = "";
 
     if (kind === "one_time") {
-      e = latestEverStmt.get(d.id) as typeof e;
+      e = latestEverStmt.get(d.id) as EntryFields | undefined;
     } else if (cadence_unit === "weekly") {
       period_start = weekStart;
-      e = exactStmt.get(d.id, weekStart) as typeof e;
+      e = exactStmt.get(d.id, weekStart) as EntryFields | undefined;
     } else {
       period_start = periodStartFor(cadence_unit, weekStart);
       const end = periodEndExclusiveFor(cadence_unit, weekStart);
-      e = rangeStmt.get(d.id, period_start, end) as typeof e;
+      e = rangeStmt.get(d.id, period_start, end) as EntryFields | undefined;
     }
 
     return {
@@ -363,6 +397,8 @@ export function weekData(clientId: string, weekStart: string): WeekRow[] {
       work_done: e?.work_done ?? "",
       next_steps: e?.next_steps ?? "",
       notes: e?.notes ?? "",
+      logged_by: e?.logged_by ?? "",
+      updated_at: e?.updated_at ?? "",
     };
   });
 }
@@ -374,19 +410,34 @@ export function upsertEntry(input: {
   workDone?: string;
   nextSteps?: string;
   notes?: string;
+  /**
+   * Actor tag from sessionActor. Undefined leaves whoever is already on the row,
+   * which matters because the admin page saves one field at a time: a blur that
+   * only changes "Next steps" must not blank out the author of the rest.
+   */
+  loggedBy?: string;
 }): SnapshotEntryResult {
   const deliverable = getDeliverable(input.deliverableId);
   if (!deliverable) return { ok: false };
   const db = getDb();
   const ts = nowIso();
 
-  // One-time items have a single lifetime entry, not one per week: update
-  // whichever entry already exists (any week) instead of always writing to
-  // the literal week being viewed. Recurring items still write to the exact
-  // week viewed — weekData's range-based read is what makes a monthly/
-  // quarterly item's status hold across every week in that period.
-  const isOneTime = normKind(deliverable.kind) === "one_time";
-  const writeKey = input.weekStart;
+  // A write lands on the same key the read resolves to, which is what makes
+  // editing idempotent:
+  //
+  //   - One-time items have a single lifetime entry, so whichever entry exists
+  //     (any week) is the one updated.
+  //   - Monthly and quarterly items have one entry per PERIOD. The existing entry
+  //     is looked up across the whole period and a new one is filed under the
+  //     period's start. Writing to the literal week being viewed instead meant a
+  //     month could accumulate four rows, and an edit made from week 1 lost to
+  //     the row already sitting at week 3.
+  //   - Weekly items are one entry per week, which is already the same thing.
+  const kind = normKind(deliverable.kind);
+  const unit = normCadenceUnit(deliverable.cadence_unit);
+  const isOneTime = kind === "one_time";
+  const periodKeyed = !isOneTime && unit !== "weekly";
+  const writeKey = periodKeyed ? periodStartFor(unit, input.weekStart) : input.weekStart;
 
   const existing = (
     isOneTime
@@ -395,13 +446,32 @@ export function upsertEntry(input: {
             `SELECT * FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
           )
           .get(input.deliverableId)
-      : db
-          .prepare(
-            `SELECT * FROM snapshot_entries WHERE deliverable_id = ? AND week_start = ?`
-          )
-          .get(input.deliverableId, writeKey)
+      : periodKeyed
+        ? db
+            .prepare(
+              `SELECT * FROM snapshot_entries
+               WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
+               ORDER BY updated_at DESC, week_start DESC LIMIT 1`
+            )
+            .get(
+              input.deliverableId,
+              periodStartFor(unit, input.weekStart),
+              periodEndExclusiveFor(unit, input.weekStart)
+            )
+        : db
+            .prepare(
+              `SELECT * FROM snapshot_entries WHERE deliverable_id = ? AND week_start = ?`
+            )
+            .get(input.deliverableId, writeKey)
   ) as
-    | { id: string; status: SnapshotStatus; work_done: string; next_steps: string; notes: string }
+    | {
+        id: string;
+        status: SnapshotStatus;
+        work_done: string;
+        next_steps: string;
+        notes: string;
+        logged_by: string;
+      }
     | undefined;
 
   const merged = {
@@ -409,26 +479,30 @@ export function upsertEntry(input: {
     work_done: input.workDone ?? existing?.work_done ?? "",
     next_steps: input.nextSteps ?? existing?.next_steps ?? "",
     notes: input.notes ?? existing?.notes ?? "",
+    // The last person to touch the row owns it. An undefined loggedBy is a caller
+    // with no session (a seed script), which must not erase a real name.
+    logged_by: input.loggedBy ?? existing?.logged_by ?? "",
   };
 
   if (existing) {
     db.prepare(
       `UPDATE snapshot_entries
-       SET status = ?, work_done = ?, next_steps = ?, notes = ?, updated_at = ?
+       SET status = ?, work_done = ?, next_steps = ?, notes = ?, logged_by = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       merged.status,
       merged.work_done,
       merged.next_steps,
       merged.notes,
+      merged.logged_by,
       ts,
       existing.id
     );
   } else {
     db.prepare(
       `INSERT INTO snapshot_entries
-        (id, deliverable_id, client_id, week_start, status, work_done, next_steps, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (id, deliverable_id, client_id, week_start, status, work_done, next_steps, notes, logged_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       nanoid(12),
       input.deliverableId,
@@ -438,16 +512,25 @@ export function upsertEntry(input: {
       merged.work_done,
       merged.next_steps,
       merged.notes,
+      merged.logged_by,
       ts,
       ts
     );
   }
-  return { ok: true, clientId: deliverable.client_id };
+  return {
+    ok: true,
+    clientId: deliverable.client_id,
+    loggedBy: merged.logged_by,
+    updatedAt: ts,
+  };
 }
 
 interface SnapshotEntryResult {
   ok: boolean;
   clientId?: string;
+  /** Actor tag now on the row, so a caller can reflect it without re-reading. */
+  loggedBy?: string;
+  updatedAt?: string;
 }
 
 /* --------------------------------------------------------------- wins */
@@ -489,6 +572,10 @@ export interface MetricSeries {
 }
 
 // All metric data points for an account, grouped into ordered series.
+//
+// Series are keyed case-insensitively so "Leads" and "leads" are one line on the
+// chart rather than two, which is what a shift-key slip used to produce. The
+// first spelling seen keeps its casing for the label.
 export function metricsSeries(clientId: string): MetricSeries[] {
   const rows = getDb()
     .prepare(
@@ -498,18 +585,36 @@ export function metricsSeries(clientId: string): MetricSeries[] {
     .all(clientId) as SnapshotMetric[];
   const map = new Map<string, MetricSeries>();
   for (const r of rows) {
-    let s = map.get(r.metric);
+    const key = r.metric.trim().toLowerCase();
+    let s = map.get(key);
     if (!s) {
-      s = { metric: r.metric, unit: r.unit, points: [] };
-      map.set(r.metric, s);
+      s = { metric: r.metric.trim(), unit: r.unit, points: [] };
+      map.set(key, s);
     }
     if (r.unit && !s.unit) s.unit = r.unit;
     s.points.push({ period: r.period, value: r.value });
   }
+  // Periods are canonical YYYY-MM, so sorting them as text is chronological.
   for (const s of map.values()) s.points.sort((a, b) => a.period.localeCompare(b.period));
   return Array.from(map.values());
 }
 
+export interface UpsertMetricResult {
+  ok: boolean;
+  error?: string;
+  metric?: SnapshotMetric;
+}
+
+/**
+ * Add or update one data point.
+ *
+ * An unreadable period is refused rather than stored as typed: a point the chart
+ * cannot place is worse than a point that was never saved, because the first one
+ * looks like it worked.
+ *
+ * Matching an existing point is case-insensitive on the metric name, so correcting
+ * "leads" to "Leads" updates the series instead of forking it.
+ */
 export function upsertMetric(input: {
   clientId: string;
   metric: string;
@@ -517,26 +622,51 @@ export function upsertMetric(input: {
   value: number;
   unit?: string;
   sortOrder?: number;
-}): SnapshotMetric {
+}): UpsertMetricResult {
   const db = getDb();
   const ts = nowIso();
+  const metric = input.metric.trim();
+  const period = normalizeMetricPeriod(input.period);
+
+  if (!metric) return { ok: false, error: "A metric name is required." };
+  if (!period) {
+    return {
+      ok: false,
+      error: `Could not read "${input.period.trim()}" as a month. Use a month like 2026-04 or April 2026.`,
+    };
+  }
+  if (!Number.isFinite(input.value)) {
+    return { ok: false, error: "A numeric value is required." };
+  }
+
   const existing = db
-    .prepare(`SELECT * FROM snapshot_metrics WHERE client_id = ? AND metric = ? AND period = ?`)
-    .get(input.clientId, input.metric.trim(), input.period.trim()) as
-    | SnapshotMetric
-    | undefined;
+    .prepare(
+      `SELECT * FROM snapshot_metrics
+       WHERE client_id = ? AND lower(trim(metric)) = ? AND period = ?`
+    )
+    .get(input.clientId, metric.toLowerCase(), period) as SnapshotMetric | undefined;
+
   if (existing) {
     db.prepare(
-      `UPDATE snapshot_metrics SET value = ?, unit = ?, sort_order = ?, updated_at = ? WHERE id = ?`
+      `UPDATE snapshot_metrics
+       SET metric = ?, value = ?, unit = ?, sort_order = ?, updated_at = ?
+       WHERE id = ?`
     ).run(
+      metric,
       input.value,
       input.unit ?? existing.unit,
       input.sortOrder ?? existing.sort_order,
       ts,
       existing.id
     );
-    return db.prepare(`SELECT * FROM snapshot_metrics WHERE id = ?`).get(existing.id) as SnapshotMetric;
+    return {
+      ok: true,
+      metric: db
+        .prepare(`SELECT * FROM snapshot_metrics WHERE id = ?`)
+        .get(existing.id) as SnapshotMetric,
+    };
   }
+
   const id = nanoid(12);
   db.prepare(
     `INSERT INTO snapshot_metrics
@@ -545,15 +675,18 @@ export function upsertMetric(input: {
   ).run(
     id,
     input.clientId,
-    input.metric.trim(),
-    input.period.trim(),
+    metric,
+    period,
     input.value,
     (input.unit || "").trim(),
     input.sortOrder ?? 0,
     ts,
     ts
   );
-  return db.prepare(`SELECT * FROM snapshot_metrics WHERE id = ?`).get(id) as SnapshotMetric;
+  return {
+    ok: true,
+    metric: db.prepare(`SELECT * FROM snapshot_metrics WHERE id = ?`).get(id) as SnapshotMetric,
+  };
 }
 
 export function deleteMetric(id: string): boolean {
@@ -687,15 +820,39 @@ function rank(o: DeliverableOverview): number {
   return o.kind === "one_time" && o.completed_on ? 1 : 0;
 }
 
-// weeks that have any logged activity, for the client-facing week picker.
-export function weeksWithActivity(clientId: string): string[] {
-  return (
-    getDb()
-      .prepare(
-        `SELECT DISTINCT week_start FROM snapshot_entries WHERE client_id = ? ORDER BY week_start ASC`
-      )
-      .all(clientId) as Array<{ week_start: string }>
-  ).map((r) => r.week_start);
+export interface WeekBounds {
+  /** Monday of the earliest week there is anything to show, or "" if none. */
+  earliest: string;
+  /** Monday of the latest week worth showing: this week, never a future one. */
+  latest: string;
+}
+
+/**
+ * The range the client-facing week picker is allowed to move through.
+ *
+ * The picker used to be two unbounded arrows, so a client could page forward into
+ * 2031 a week at a time and read "No updates logged for this week yet" the whole
+ * way — which looks like an account going quiet rather than the end of the record.
+ *
+ * The floor is the first week anything was logged. The ceiling is the current
+ * week, even when an entry sits beyond it: a monthly deliverable's entry is filed
+ * under the start of its period, and work planned ahead is not a week the client
+ * should be reading yet.
+ */
+export function weekBounds(clientId: string): WeekBounds {
+  const row = getDb()
+    .prepare(
+      `SELECT MIN(week_start) AS earliest FROM snapshot_entries WHERE client_id = ?`
+    )
+    .get(clientId) as { earliest: string | null };
+  const thisWeek = mondayOf(new Date());
+  const earliest = row.earliest || "";
+  return {
+    earliest,
+    // An account whose only entries are period-keyed ahead of today still gets a
+    // sane range rather than one that ends before it begins.
+    latest: earliest && earliest > thisWeek ? earliest : thisWeek,
+  };
 }
 
 /* -------------------------------------------------------- contract status */
@@ -704,28 +861,105 @@ export interface ContractStatus {
   pct: number; // 0-100
   doneCount: number;
   totalCount: number;
+  /** Recurring items whose current period is still open. Not counted as misses. */
+  inFlightCount: number;
   onTrack: boolean;
   label: string;
 }
 
-// % of active recurring deliverables currently standing as completed/approved
-// (their latest logged status — the same rollup the client-facing snapshot
-// page shows). Deliberately not tied to a weekly cadence grid: cadence is
-// free text ("Monthly", "Quarterly", blank) and accounts can carry dozens of
-// deliverables, so requiring a fresh "completed" entry every single week for
-// every one of them punishes exactly the accounts with the most deliverables.
-// One-time setup items don't count — they aren't a recurring promise.
+/**
+ * How much of the recurring contract is being delivered.
+ *
+ * Scored against the last CLOSED period, not the one in progress. Scoring the
+ * open period made the number tell an untruth on a schedule: every monthly
+ * deliverable resets to "not started" on the 1st, so on the 2nd of the month a
+ * fully-delivered account read 0% and "Significantly behind" — and it disagreed
+ * with the overdue banner sitting next to it, which correctly waits for a period
+ * to end before calling anything late.
+ *
+ * So a deliverable counts one of three ways:
+ *
+ *   - **A miss**, if the period that just ended closed without it being done.
+ *     This is exactly what the behind report flags, and reusing that set is what
+ *     keeps the percentage and the "N overdue" banner from contradicting.
+ *   - **A hit**, if it has a closed period it did not miss, or it is already done
+ *     in the current one.
+ *   - **In flight**, if it is too new to have a closed period. There is no fact
+ *     yet about whether it will be delivered, so it is counted separately rather
+ *     than scored as a failure. An account where everything is in flight has
+ *     nothing to score, which is more honest than 0%.
+ *
+ * One-time setup items never count. They are not a recurring promise.
+ */
 export function contractStatus(clientId: string): ContractStatus {
-  const recurring = deliverableOverview(clientId).filter((d) => d.kind === "recurring");
-  if (!recurring.length) {
-    return { pct: 0, doneCount: 0, totalCount: 0, onTrack: true, label: "No recurring deliverables" };
+  const overview = deliverableOverview(clientId).filter((d) => d.kind === "recurring");
+  if (!overview.length) {
+    return {
+      pct: 0,
+      doneCount: 0,
+      totalCount: 0,
+      inFlightCount: 0,
+      onTrack: true,
+      label: "No recurring deliverables",
+    };
   }
-  const doneCount = recurring.filter((d) => DONE_STATUSES.includes(d.status)).length;
-  const totalCount = recurring.length;
+
+  const behind = new Set(
+    behindDeliverablesForClient(clientId)
+      .filter((b) => b.kind === "recurring")
+      .map((b) => b.deliverable_id)
+  );
+
+  // A deliverable can only be judged once it has lived through a whole period.
+  const today = todayYmd();
+  const createdAt = new Map(
+    (
+      getDb()
+        .prepare(
+          `SELECT id, cadence_unit, created_at FROM snapshot_deliverables
+           WHERE client_id = ? AND active = 1`
+        )
+        .all(clientId) as Array<{ id: string; cadence_unit: string; created_at: string }>
+    ).map((d) => [d.id, d])
+  );
+  const hasClosedPeriod = (id: string, unit: CadenceUnit): boolean => {
+    const row = createdAt.get(id);
+    if (!row) return false;
+    return row.created_at.slice(0, 10) < periodStartFor(unit, today);
+  };
+
+  let doneCount = 0;
+  let totalCount = 0;
+  let inFlightCount = 0;
+
+  for (const d of overview) {
+    if (behind.has(d.deliverable_id)) {
+      totalCount++;
+      continue;
+    }
+    if (hasClosedPeriod(d.deliverable_id, d.cadence_unit) || DONE_STATUSES.includes(d.status)) {
+      doneCount++;
+      totalCount++;
+      continue;
+    }
+    inFlightCount++;
+  }
+
+  if (!totalCount) {
+    return {
+      pct: 100,
+      doneCount: 0,
+      totalCount: 0,
+      inFlightCount,
+      onTrack: true,
+      label: "Nothing due yet",
+    };
+  }
+
   const pct = Math.round((doneCount / totalCount) * 100);
   const onTrack = pct >= 90;
   const label = pct >= 90 ? "On track" : pct >= 60 ? "Behind" : "Significantly behind";
-  return { pct, doneCount, totalCount, onTrack, label };
+  return { pct, doneCount, totalCount, inFlightCount, onTrack, label };
 }
 
 /* ------------------------------------------------------------- behind */
@@ -757,17 +991,38 @@ export function behindDeliverablesForClient(clientId: string): BehindItem[] {
   const deliverables = getDb()
     .prepare(`SELECT * FROM snapshot_deliverables WHERE client_id = ? AND active = 1`)
     .all(clientId) as SnapshotDeliverable[];
+  if (!deliverables.length) return [];
+
+  // Every entry for the account in one read, then grouped in memory. This used to
+  // be a query per deliverable, which the cross-account behind report multiplied
+  // by the client count — roughly a thousand round trips to render one page.
+  const entries = getDb()
+    .prepare(
+      `SELECT deliverable_id, week_start, status, updated_at FROM snapshot_entries
+       WHERE client_id = ?
+       ORDER BY updated_at ASC, week_start ASC`
+    )
+    .all(clientId) as Array<{
+    deliverable_id: string;
+    week_start: string;
+    status: string;
+    updated_at: string;
+  }>;
+
+  const byDeliverable = new Map<string, Array<{ week_start: string; status: SnapshotStatus }>>();
+  for (const e of entries) {
+    const list = byDeliverable.get(e.deliverable_id) || [];
+    list.push({ week_start: e.week_start, status: normStatus(e.status) });
+    byDeliverable.set(e.deliverable_id, list);
+  }
 
   const out: BehindItem[] = [];
   for (const d of deliverables) {
+    const own = byDeliverable.get(d.id) || [];
+
     if (normKind(d.kind) === "one_time") {
       if (!d.due_date || d.due_date >= today) continue; // no deadline set, or not due yet
-      const done = getDb()
-        .prepare(
-          `SELECT 1 FROM snapshot_entries WHERE deliverable_id = ? AND status IN ('completed','approved') LIMIT 1`
-        )
-        .get(d.id);
-      if (done) continue;
+      if (own.some((e) => DONE_STATUSES.includes(e.status))) continue;
       out.push({
         deliverable_id: d.id,
         client_id: clientId,
@@ -787,14 +1042,12 @@ export function behindDeliverablesForClient(clientId: string): BehindItem[] {
     if (d.created_at.slice(0, 10) >= currentStart) continue;
     const dueDate = subDaysYmd(currentStart, 1); // last day of the period that just ended
     const priorPeriodStart = periodStartFor(unit, dueDate);
-    const row = getDb()
-      .prepare(
-        `SELECT status FROM snapshot_entries
-         WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
-         ORDER BY week_start DESC LIMIT 1`
-      )
-      .get(d.id, priorPeriodStart, currentStart) as { status: SnapshotStatus } | undefined;
-    const status = row ? normStatus(row.status) : "not_started";
+    // Entries arrive in write order, so the last one inside the closed period is
+    // the team's final word on it.
+    const inPeriod = own.filter(
+      (e) => e.week_start >= priorPeriodStart && e.week_start < currentStart
+    );
+    const status = inPeriod.length ? inPeriod[inPeriod.length - 1].status : "not_started";
     if (DONE_STATUSES.includes(status)) continue;
     out.push({
       deliverable_id: d.id,

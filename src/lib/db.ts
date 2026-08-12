@@ -406,6 +406,10 @@ export interface SnapshotEntry {
   work_done: string;
   next_steps: string;
   notes: string;
+  // Who last wrote this entry, as an actor tag (see sessionActor in ./auth and
+  // actorLabel in ./people). Empty for entries logged before this was recorded
+  // and for writes with no session behind them, such as a seed script.
+  logged_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -449,6 +453,9 @@ export interface ScheduledSend {
   preview_text: string;
   // JSON string of the client's production intake brief, "" if none.
   production_brief: string;
+  // Id of the spreadsheet import that created this row, "" if a person did.
+  // Groups a batch so it can be undone in one move.
+  import_batch: string;
   // Monday (YYYY-MM-DD) of the cadence window this send fulfills, if any.
   cadence_window_start: string | null;
   requested_by_client: number;
@@ -952,14 +959,25 @@ export interface OnboardingStep {
   updated_at: string;
 }
 
-const dataDir = path.join(process.cwd(), "data");
-const dbPath = path.join(dataDir, "campaign-desk.db");
+// Resolved when the connection is opened, not when this module is loaded.
+//
+// Reading process.cwd() at load time made the database location depend on
+// import order: a test that changes directory to get a throwaway database only
+// got one if nothing had already imported this file, and merely importing a
+// helper that touches the db pinned every later write to the developer's real
+// data/campaign-desk.db. Deferring it means the directory in effect at the first
+// getDb() call is the one that counts, which is what callers assume.
+function dbLocation(): { dataDir: string; dbPath: string } {
+  const dataDir = path.join(process.cwd(), "data");
+  return { dataDir, dbPath: path.join(dataDir, "campaign-desk.db") };
+}
 
 let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (db) return db;
 
+  const { dataDir, dbPath } = dbLocation();
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
@@ -1119,6 +1137,7 @@ export function getDb(): Database.Database {
       offer TEXT NOT NULL DEFAULT '',
       subject TEXT NOT NULL DEFAULT '',
       preview_text TEXT NOT NULL DEFAULT '',
+      import_batch TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE SET NULL
@@ -1268,6 +1287,7 @@ export function getDb(): Database.Database {
       work_done TEXT NOT NULL DEFAULT '',
       next_steps TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
+      logged_by TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE (deliverable_id, week_start),
@@ -2213,6 +2233,18 @@ function migrate(database: Database.Database) {
       `ALTER TABLE scheduled_sends ADD COLUMN asset_type TEXT NOT NULL DEFAULT ''`
     );
   }
+  // Which spreadsheet import created this row, so a bad import can be undone in
+  // one move instead of deleting twenty sends by hand. Empty for anything
+  // entered by a person or requested by a client.
+  if (sendCols.length && !sendCols.includes("import_batch")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN import_batch TEXT NOT NULL DEFAULT ''`
+    );
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_sends_import_batch
+         ON scheduled_sends(import_batch) WHERE import_batch <> ''`
+    );
+  }
 
   // Deliverable kind (recurring vs one-time setup), added after the table shipped.
   const snapDelivCols = tableColumns(database, "snapshot_deliverables");
@@ -2248,6 +2280,30 @@ function migrate(database: Database.Database) {
   // implicit due date from their cadence period instead).
   if (snapDelivCols.length && !snapDelivCols.includes("due_date")) {
     database.exec(`ALTER TABLE snapshot_deliverables ADD COLUMN due_date TEXT`);
+  }
+
+  // Who last wrote each snapshot entry. Existing rows stay empty rather than
+  // being attributed to a guess: "we don't know who logged this" is a true
+  // statement about work done before the column existed, and crediting it to
+  // whoever happens to own the account now would not be.
+  const snapEntryCols = tableColumns(database, "snapshot_entries");
+  if (snapEntryCols.length && !snapEntryCols.includes("logged_by")) {
+    database.exec(
+      `ALTER TABLE snapshot_entries ADD COLUMN logged_by TEXT NOT NULL DEFAULT ''`
+    );
+  }
+
+  // Metric periods are canonicalised to YYYY-MM so a chart's x-axis sorts
+  // chronologically and a typo cannot silently start a second series. Anything
+  // already in that shape is left alone; the rest is normalised in ./snapshot on
+  // read and write, since a lossy in-place rewrite here could collide with the
+  // UNIQUE (client_id, metric, period) index.
+  const snapMetricCols = tableColumns(database, "snapshot_metrics");
+  if (snapMetricCols.length) {
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_snapmetrics_series
+         ON snapshot_metrics(client_id, metric, period)`
+    );
   }
 
   const todoCols = tableColumns(database, "todos");
