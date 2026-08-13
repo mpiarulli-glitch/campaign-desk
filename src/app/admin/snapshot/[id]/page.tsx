@@ -10,6 +10,31 @@ import { actorLabel, TEAMS } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
 
 type Win = { id: string; body: string; happened_on: string };
+type Converted = "unknown" | "yes" | "no";
+type LeadSource = "form" | "call" | "other";
+type Lead = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  source: LeadSource;
+  received_on: string;
+  notes: string;
+  converted: Converted;
+  client_note: string;
+  answered_at: string;
+};
+const LEAD_SOURCES: { value: LeadSource; label: string }[] = [
+  { value: "form", label: "Filled a form" },
+  { value: "call", label: "Called in" },
+  { value: "other", label: "Other" },
+];
+const CONVERTED_LABEL: Record<Converted, string> = {
+  unknown: "Waiting on client",
+  yes: "Converted",
+  no: "Did not convert",
+};
 type MetricRow = { id: string; metric: string; period: string; value: number; unit: string };
 type Contract = {
   pct: number;
@@ -161,6 +186,25 @@ export default function SnapshotEditorPage() {
   const [failedPatch, setFailedPatch] = useState<Record<string, Partial<Row>>>({});
   const [metricError, setMetricError] = useState("");
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadScope, setLeadScope] = useState<"week" | "all">("week");
+  const [nl, setNl] = useState<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    source: LeadSource;
+    receivedOn: string;
+    notes: string;
+  }>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    source: "form",
+    receivedOn: "",
+    notes: "",
+  });
   const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const isAdmin = role === "admin";
@@ -206,6 +250,60 @@ export default function SnapshotEditorPage() {
       setError("Network error. Check your connection and try again.");
     }
   }, [id, router]);
+
+  // Leads are scoped to the week being viewed by default, with "All" as an
+  // escape hatch — the same choice the client gets on the shared link.
+  const fetchLeads = useCallback(
+    async (w: string, scope: "week" | "all") => {
+      try {
+        const res = await fetch(
+          `/api/snapshot/accounts/${id}/leads${scope === "week" ? `?week=${w}` : ""}`
+        );
+        if (res.status === 401) return router.push("/login");
+        if (res.ok) setLeads((await res.json()).leads || []);
+      } catch {
+        setError("Network error. Check your connection and try again.");
+      }
+    },
+    [id, router]
+  );
+
+  async function addLead(e: FormEvent) {
+    e.preventDefault();
+    if (!nl.firstName.trim()) return;
+    const res = await fetch(`/api/snapshot/accounts/${id}/leads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nl),
+    });
+    if (!res.ok) { setError("Could not add lead."); return; }
+    // Source and date carry over: leads get entered in batches off one report.
+    setNl({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      source: nl.source,
+      receivedOn: nl.receivedOn,
+      notes: "",
+    });
+    fetchLeads(week, leadScope);
+  }
+
+  async function patchLead(leadId: string, patch: Record<string, unknown>) {
+    await fetch(`/api/snapshot/lead/${leadId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    fetchLeads(week, leadScope);
+  }
+
+  async function removeLead(leadId: string) {
+    if (!confirm("Remove this lead? The client's answer goes with it.")) return;
+    await fetch(`/api/snapshot/lead/${leadId}`, { method: "DELETE" });
+    fetchLeads(week, leadScope);
+  }
 
   async function addWin(e: FormEvent) {
     e.preventDefault();
@@ -255,6 +353,7 @@ export default function SnapshotEditorPage() {
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
   useEffect(() => { fetchWeek(week); }, [week, fetchWeek]);
+  useEffect(() => { fetchLeads(week, leadScope); }, [week, leadScope, fetchLeads]);
   useEffect(() => {
     fetch("/api/auth")
       .then((res) => (res.ok ? res.json() : null))
@@ -710,6 +809,82 @@ export default function SnapshotEditorPage() {
             ))}
           </div>
         )}
+
+        <div className="card card-pad stack">
+          <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <strong>Leads</strong>
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                Log every lead you see come through. The client marks each one converted or
+                not from their snapshot link.
+              </p>
+            </div>
+            <select
+              aria-label="Which leads to show"
+              value={leadScope}
+              onChange={(e) => setLeadScope(e.target.value as "week" | "all")}
+            >
+              <option value="week">This week only</option>
+              <option value="all">All leads</option>
+            </select>
+          </div>
+          <form className="snap-lead-form" onSubmit={addLead}>
+            <input value={nl.firstName} onChange={(e) => setNl({ ...nl, firstName: e.target.value })} placeholder="First name" />
+            <input value={nl.lastName} onChange={(e) => setNl({ ...nl, lastName: e.target.value })} placeholder="Last name" />
+            <input value={nl.email} onChange={(e) => setNl({ ...nl, email: e.target.value })} placeholder="Email" type="email" />
+            <input value={nl.phone} onChange={(e) => setNl({ ...nl, phone: e.target.value })} placeholder="Phone" />
+            <select value={nl.source} onChange={(e) => setNl({ ...nl, source: e.target.value as LeadSource })}>
+              {LEAD_SOURCES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <input type="date" value={nl.receivedOn}
+              title="Date they filled the form or called. Defaults to today."
+              onChange={(e) => setNl({ ...nl, receivedOn: e.target.value })} />
+            <button className="btn btn-sm" type="submit">Add lead</button>
+          </form>
+          {leads.length === 0 ? (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              {leadScope === "week"
+                ? "No leads logged for this week yet."
+                : "No leads logged for this account yet."}
+            </p>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {leads.map((l) => (
+                <div key={l.id} className="snap-lead-row">
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontWeight: 600 }}>
+                      {[l.first_name, l.last_name].filter(Boolean).join(" ") || "Unnamed lead"}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {[l.email, l.phone].filter(Boolean).join(" · ")}
+                      {l.email || l.phone ? " · " : ""}
+                      {LEAD_SOURCES.find((s) => s.value === l.source)?.label} · {l.received_on}
+                    </div>
+                    {l.client_note ? (
+                      <div className="muted" style={{ fontSize: 12.5 }}>
+                        Client said: {l.client_note}
+                      </div>
+                    ) : null}
+                  </div>
+                  {/* Normally the client's answer, but editable here for the
+                      ones who answer on a call instead of on the link. */}
+                  <select
+                    value={l.converted}
+                    aria-label="Converted"
+                    onChange={(e) => patchLead(l.id, { converted: e.target.value })}
+                  >
+                    {(["unknown", "yes", "no"] as Converted[]).map((c) => (
+                      <option key={c} value={c}>{CONVERTED_LABEL[c]}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn-ghost btn-sm" aria-label="Remove lead" onClick={() => removeLead(l.id)}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="card card-pad stack">
           <div className="row" style={{ justifyContent: "space-between" }}>

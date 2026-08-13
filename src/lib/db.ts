@@ -396,6 +396,31 @@ export interface SnapshotMetric {
   updated_at: string;
 }
 
+export type LeadSource = "form" | "call" | "other";
+// How the client answered "did this one turn into business?".
+export type LeadConverted = "unknown" | "yes" | "no";
+
+// A lead the client service team saw come through, logged so we can ask the
+// client whether it converted. `converted` and `client_note` are written by
+// the CLIENT from the shared snapshot link — everything else is team-entered.
+export interface SnapshotLead {
+  id: string;
+  client_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  source: LeadSource;
+  received_on: string; // YYYY-MM-DD the form was filled or the call came in
+  week_start: string; // Monday of received_on, derived on write
+  notes: string; // internal, team-only
+  converted: LeadConverted;
+  client_note: string; // what the client typed back, if anything
+  answered_at: string; // when the client answered, or ''
+  created_at: string;
+  updated_at: string;
+}
+
 // One row per deliverable per week (week_start = Monday, YYYY-MM-DD).
 export interface SnapshotEntry {
   id: string;
@@ -1323,8 +1348,28 @@ export function getDb(): Database.Database {
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS snapshot_leads (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      first_name TEXT NOT NULL DEFAULT '',
+      last_name TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT 'form',
+      received_on TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      converted TEXT NOT NULL DEFAULT 'unknown',
+      client_note TEXT NOT NULL DEFAULT '',
+      answered_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_snapwins_client ON snapshot_wins(client_id);
     CREATE INDEX IF NOT EXISTS idx_snapmetrics_client ON snapshot_metrics(client_id);
+    CREATE INDEX IF NOT EXISTS idx_snapleads_client ON snapshot_leads(client_id, week_start);
 
     CREATE TABLE IF NOT EXISTS forecast_tasks (
       id TEXT PRIMARY KEY,

@@ -2493,6 +2493,31 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   border-radius: 8px;
 }
 
+/* Team-side lead entry (admin snapshot editor) */
+.snap-lead-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr 1fr 1fr auto auto;
+  gap: 8px;
+}
+.snap-lead-form input,
+.snap-lead-form select {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+.snap-lead-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
 .snap-metric-form {
   display: grid;
   grid-template-columns: 1.4fr 1fr 0.8fr 0.8fr auto;
@@ -2580,6 +2605,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 @media (max-width: 720px) {
   .snap-metric-form { grid-template-columns: 1fr 1fr; }
+  .snap-lead-form { grid-template-columns: 1fr 1fr; }
 }
 
 /* ============================================ snapshot client — polished ==== */
@@ -2862,7 +2888,81 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .snap-panel.t-work { --tool: #04808d; --tool-tint: #e6f6f8; }
 .snap-panel.t-deliv { --tool: #3f5bd6; --tool-tint: #eceffb; }
 .snap-panel.t-perf { --tool: #1f9d63; --tool-tint: #e7f6ee; }
+.snap-panel.t-leads { --tool: #8a4fd4; --tool-tint: #f1eafc; }
 .snap-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+
+/* Show/hide control that sits at the right edge of a panel heading */
+.snap-toggle {
+  margin-left: auto;
+  flex: none;
+  background: var(--tool-tint, var(--bg-subtle));
+  color: var(--tool, var(--accent-ink));
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.snap-toggle:hover { border-color: var(--tool, var(--accent)); }
+
+/* Leads the service team logged, for the client to mark converted or not */
+.snap-lead-scope {
+  margin-left: auto;
+  flex: none;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.snap-lead-tally { margin: 0 0 4px; font-size: 13px; color: var(--text-muted); }
+.snap-leads { display: flex; flex-direction: column; }
+.snap-lead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 13px 0;
+}
+.snap-lead + .snap-lead { border-top: 1px solid var(--border); }
+.snap-lead-main { flex: 1; min-width: 200px; }
+.snap-lead-name { font-weight: 600; font-size: 15px; color: var(--text); }
+.snap-lead-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.snap-lead-meta a { color: var(--text-muted); text-decoration: none; }
+.snap-lead-meta a:hover { color: var(--accent-ink); text-decoration: underline; }
+.snap-lead-answer { display: flex; gap: 8px; flex: none; }
+.snap-lead-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 7px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.snap-lead-btn:hover { border-color: var(--text-muted); color: var(--text); }
+/* The chosen answer stays filled in so the client can see at a glance which
+   leads they've already been through. */
+.snap-lead-btn.yes.on {
+  background: #1f9d63;
+  border-color: #1f9d63;
+  color: #ffffff;
+}
+.snap-lead-btn.no.on {
+  background: var(--text-muted);
+  border-color: var(--text-muted);
+  color: #ffffff;
+}
 
 /* Wins list inside the top panel */
 .snap-wins2 { display: flex; flex-direction: column; }
@@ -2879,6 +2979,18 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 @media (max-width: 640px) {
   .snap-head-row { flex-direction: column; }
   .snap-panel { padding: 20px 16px; }
+  /* A control next to the heading squeezes the title into a two-word column
+     on a phone, so it drops to its own full-width row instead. */
+  .snap-panel-head { flex-wrap: wrap; }
+  .snap-panel-head > div { flex: 1 1 auto; min-width: 0; }
+  .snap-panel-head .snap-toggle,
+  .snap-panel-head .snap-lead-scope {
+    margin-left: 0;
+    width: 100%;
+    text-align: center;
+  }
+  .snap-lead-answer { width: 100%; }
+  .snap-lead-btn { flex: 1; }
 }
 
 /* ---------------------------------------------------- client scheduling page */
@@ -5955,6 +6067,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 :root[data-theme="dark"] .hq-card.t-train { --tool: #a78bdf; --tool-tint: #241d33; }
 :root[data-theme="dark"] .hq-card.t-todo,
 :root[data-theme="dark"] .snap-panel.t-wins { --tool: #d8a53a; --tool-tint: #2c2412; }
+:root[data-theme="dark"] .snap-panel.t-leads { --tool: #b18ae8; --tool-tint: #261b38; }
 :root[data-theme="dark"] .hq-card.t-senti { --tool: #dd88ab; --tool-tint: #33202a; }
 :root[data-theme="dark"] .hq-card.t-hr { --tool: #9aabbb; --tool-tint: #1d232b; }
 

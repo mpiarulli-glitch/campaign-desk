@@ -5,8 +5,11 @@ import {
   nowIso,
   type CadenceUnit,
   type DeliverableKind,
+  type LeadConverted,
+  type LeadSource,
   type RevClient,
   type SnapshotDeliverable,
+  type SnapshotLead,
   type SnapshotMetric,
   type SnapshotStatus,
   type SnapshotWin,
@@ -17,7 +20,10 @@ import { metricPeriodLabel, normalizeMetricPeriod } from "./metric-period";
 export type {
   CadenceUnit,
   DeliverableKind,
+  LeadConverted,
+  LeadSource,
   SnapshotDeliverable,
+  SnapshotLead,
   SnapshotStatus,
   SnapshotWin,
   SnapshotMetric,
@@ -561,6 +567,198 @@ export function addWin(input: {
 
 export function deleteWin(id: string): boolean {
   return getDb().prepare(`DELETE FROM snapshot_wins WHERE id = ?`).run(id).changes > 0;
+}
+
+/* --------------------------------------------------------------- leads */
+
+const LEAD_SOURCES: LeadSource[] = ["form", "call", "other"];
+function normSource(v: unknown): LeadSource {
+  return LEAD_SOURCES.includes(v as LeadSource) ? (v as LeadSource) : "form";
+}
+
+const LEAD_CONVERTED: LeadConverted[] = ["unknown", "yes", "no"];
+function normConverted(v: unknown): LeadConverted {
+  return LEAD_CONVERTED.includes(v as LeadConverted) ? (v as LeadConverted) : "unknown";
+}
+
+export const LEAD_SOURCE_OPTIONS: { value: LeadSource; label: string }[] = [
+  { value: "form", label: "Filled a form" },
+  { value: "call", label: "Called in" },
+  { value: "other", label: "Other" },
+];
+
+function weekOfYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return mondayOf(new Date(y, (m || 1) - 1, d || 1));
+}
+
+/**
+ * Leads for an account, newest first.
+ *
+ * Passing a week narrows to leads that came in during that week — the default
+ * view on both sides. Omitting it returns every lead ever, which is what the
+ * "show all" toggle asks for.
+ */
+export function listLeads(clientId: string, opts?: { week?: string }): SnapshotLead[] {
+  const week = opts?.week;
+  return getDb()
+    .prepare(
+      `SELECT * FROM snapshot_leads
+       WHERE client_id = ? ${week ? "AND week_start = ?" : ""}
+       ORDER BY received_on DESC, created_at DESC`
+    )
+    .all(...(week ? [clientId, week] : [clientId])) as SnapshotLead[];
+}
+
+// Weeks that have at least one lead, so the client-facing picker can jump
+// straight to a week that actually has something in it.
+export function weeksWithLeads(clientId: string): string[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT DISTINCT week_start FROM snapshot_leads WHERE client_id = ?
+         ORDER BY week_start DESC`
+      )
+      .all(clientId) as Array<{ week_start: string }>
+  ).map((r) => r.week_start);
+}
+
+export function getLead(id: string): SnapshotLead | null {
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM snapshot_leads WHERE id = ?`)
+      .get(id) as SnapshotLead | undefined) || null
+  );
+}
+
+export function addLead(input: {
+  clientId: string;
+  firstName: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  source?: LeadSource;
+  receivedOn?: string;
+  notes?: string;
+}): SnapshotLead {
+  const db = getDb();
+  const id = nanoid(12);
+  const ts = nowIso();
+  const receivedOn = (input.receivedOn || "").trim() || todayYmd();
+  db.prepare(
+    `INSERT INTO snapshot_leads
+      (id, client_id, first_name, last_name, email, phone, source, received_on,
+       week_start, notes, converted, client_note, answered_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', '', '', ?, ?)`
+  ).run(
+    id,
+    input.clientId,
+    input.firstName.trim(),
+    (input.lastName || "").trim(),
+    (input.email || "").trim(),
+    (input.phone || "").trim(),
+    normSource(input.source),
+    receivedOn,
+    weekOfYmd(receivedOn),
+    (input.notes || "").trim(),
+    ts,
+    ts
+  );
+  return getLead(id)!;
+}
+
+export function updateLead(
+  id: string,
+  updates: Partial<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    source: LeadSource;
+    receivedOn: string;
+    notes: string;
+  }>
+): SnapshotLead | null {
+  const existing = getLead(id);
+  if (!existing) return null;
+  // Moving the date moves the lead to that date's week, so the two can never
+  // disagree about which week a lead belongs to.
+  const receivedOn = updates.receivedOn?.trim() || existing.received_on;
+  getDb()
+    .prepare(
+      `UPDATE snapshot_leads
+       SET first_name = ?, last_name = ?, email = ?, phone = ?, source = ?,
+           received_on = ?, week_start = ?, notes = ?, updated_at = ?
+       WHERE id = ?`
+    )
+    .run(
+      updates.firstName?.trim() ?? existing.first_name,
+      updates.lastName?.trim() ?? existing.last_name,
+      updates.email?.trim() ?? existing.email,
+      updates.phone?.trim() ?? existing.phone,
+      updates.source ? normSource(updates.source) : existing.source,
+      receivedOn,
+      weekOfYmd(receivedOn),
+      updates.notes?.trim() ?? existing.notes,
+      nowIso(),
+      id
+    );
+  return getLead(id);
+}
+
+/**
+ * Record the client's answer on a lead.
+ *
+ * Scoped to a client id because the caller is the public snapshot link: the
+ * token proves which account the visitor may touch, and a lead from another
+ * account must not be writable by passing its id.
+ */
+export function answerLead(
+  clientId: string,
+  leadId: string,
+  converted: LeadConverted,
+  clientNote?: string
+): SnapshotLead | null {
+  const lead = getLead(leadId);
+  if (!lead || lead.client_id !== clientId) return null;
+  const status = normConverted(converted);
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE snapshot_leads
+       SET converted = ?, client_note = ?, answered_at = ?, updated_at = ?
+       WHERE id = ?`
+    )
+    .run(
+      status,
+      clientNote !== undefined ? clientNote.trim() : lead.client_note,
+      // Clearing the answer back to "unknown" clears the timestamp too, so an
+      // un-answered lead never looks like it was answered.
+      status === "unknown" ? "" : ts,
+      ts,
+      leadId
+    );
+  return getLead(leadId);
+}
+
+export function deleteLead(id: string): boolean {
+  return getDb().prepare(`DELETE FROM snapshot_leads WHERE id = ?`).run(id).changes > 0;
+}
+
+export interface LeadTally {
+  total: number;
+  converted: number;
+  notConverted: number;
+  unanswered: number;
+}
+
+export function leadTally(leads: SnapshotLead[]): LeadTally {
+  return {
+    total: leads.length,
+    converted: leads.filter((l) => l.converted === "yes").length,
+    notConverted: leads.filter((l) => l.converted === "no").length,
+    unanswered: leads.filter((l) => l.converted === "unknown").length,
+  };
 }
 
 /* ------------------------------------------------------- performance */

@@ -7,6 +7,25 @@ import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
+type Converted = "unknown" | "yes" | "no";
+type Lead = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  source: "form" | "call" | "other";
+  received_on: string;
+  week_start: string;
+  converted: Converted;
+  client_note: string;
+  answered_at: string;
+};
+const SOURCE_LABEL: Record<Lead["source"], string> = {
+  form: "Filled a form",
+  call: "Called in",
+  other: "Other",
+};
 type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
 const STATUS_LABEL: Record<Status, string> = {
   not_started: "Not started",
@@ -65,6 +84,13 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M7 15l4-4 3 3 5-6" />
     </>
   ),
+  leads: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M17 11l2 2 4-4" />
+    </>
+  ),
 };
 function Icon({ name }: { name: string }) {
   return (
@@ -72,6 +98,21 @@ function Icon({ name }: { name: string }) {
       {ICONS[name]}
     </svg>
   );
+}
+
+// "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
+function ymdLabel(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function leadName(l: Lead): string {
+  return [l.first_name, l.last_name].filter(Boolean).join(" ") || "Unnamed lead";
 }
 
 function groupByCategory(rows: Row[]): [string, Row[]][] {
@@ -100,6 +141,9 @@ export default function SnapshotClientPage() {
   const [overview, setOverview] = useState<Overview[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
   const [metrics, setMetrics] = useState<MetricSeries[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadWeeks, setLeadWeeks] = useState<string[]>([]);
+  const [leadScope, setLeadScope] = useState<"week" | "all">("week");
   const [week, setWeek] = useState(currentWeek());
   // How far the week picker may move. Empty until the first load answers.
   const [bounds, setBounds] = useState<{ earliest: string; latest: string }>({
@@ -109,13 +153,18 @@ export default function SnapshotClientPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
+  // Contracted deliverables is the longest section and the least urgent, so it
+  // starts folded away and opens on request.
+  const [showDeliverables, setShowDeliverables] = useState(false);
 
   const load = useCallback(
-    async (w: string) => {
+    async (w: string, scope: "week" | "all") => {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch(`/api/snapshot/shared/${token}?week=${w}`);
+        const res = await fetch(
+          `/api/snapshot/shared/${token}?week=${w}${scope === "all" ? "&leads=all" : ""}`
+        );
         if (res.status === 404) { setNotFound(true); return; }
         if (res.ok) {
           const data = await res.json();
@@ -125,6 +174,8 @@ export default function SnapshotClientPage() {
           setWins(data.wins || []);
           setMetrics(data.metrics || []);
           if (data.bounds) setBounds(data.bounds);
+          setLeads(data.leads || []);
+          setLeadWeeks(data.leadWeeks || []);
         }
       } catch {
         setError("Network error. Check your connection and try again.");
@@ -135,7 +186,27 @@ export default function SnapshotClientPage() {
     [token]
   );
 
-  useEffect(() => { load(week); }, [week, load]);
+  useEffect(() => { load(week, leadScope); }, [week, leadScope, load]);
+
+  // Answer optimistically so the buttons feel instant, then reconcile with
+  // whatever the server actually stored.
+  async function answerLead(leadId: string, converted: Converted) {
+    const prev = leads;
+    setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, converted } : l)));
+    try {
+      const res = await fetch(`/api/snapshot/shared/${token}/lead`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId, converted }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      const data = await res.json();
+      setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, ...data.lead } : l)));
+    } catch {
+      setLeads(prev);
+      setError("Could not save that answer. Try again.");
+    }
+  }
 
   const updatedRows = useMemo(() => rows.filter(hasUpdate), [rows]);
 
@@ -154,6 +225,16 @@ export default function SnapshotClientPage() {
     }
     return { delivered, active, wins: wins.length, headlineText };
   }, [updatedRows, metrics, wins]);
+
+  const leadAnswered = useMemo(
+    () => ({
+      total: leads.length,
+      yes: leads.filter((l) => l.converted === "yes").length,
+      no: leads.filter((l) => l.converted === "no").length,
+      pending: leads.filter((l) => l.converted === "unknown").length,
+    }),
+    [leads]
+  );
 
   if (notFound) {
     return (
@@ -268,6 +349,73 @@ export default function SnapshotClientPage() {
               </section>
             ) : null}
 
+            {/* LEADS — the client answers these */}
+            {leads.length > 0 || leadWeeks.length > 0 ? (
+              <section className="snap-panel t-leads">
+                <div className="snap-panel-head">
+                  <span className="hq-icon"><Icon name="leads" /></span>
+                  <div>
+                    <h3 className="hq-card-title">Leads we saw come through</h3>
+                    <p className="hq-card-desc">
+                      Tell us which ones turned into business so we can double down on what works
+                    </p>
+                  </div>
+                  <select
+                    className="snap-lead-scope"
+                    aria-label="Which leads to show"
+                    value={leadScope}
+                    onChange={(e) => setLeadScope(e.target.value as "week" | "all")}
+                  >
+                    <option value="week">This week only</option>
+                    <option value="all">All leads</option>
+                  </select>
+                </div>
+                <div className="hq-divider" />
+                {leadAnswered.total > 0 ? (
+                  <p className="snap-lead-tally">
+                    <b>{leadAnswered.yes}</b> converted · <b>{leadAnswered.no}</b> did not ·{" "}
+                    <b>{leadAnswered.pending}</b> still to answer
+                  </p>
+                ) : null}
+                {leads.length === 0 ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    No leads logged for this week. Switch to &quot;All leads&quot; to see earlier ones.
+                  </p>
+                ) : (
+                  <div className="snap-leads">
+                    {leads.map((l) => (
+                      <div key={l.id} className={`snap-lead conv-${l.converted}`}>
+                        <div className="snap-lead-main">
+                          <div className="snap-lead-name">{leadName(l)}</div>
+                          <div className="snap-lead-meta">
+                            {l.email ? <a href={`mailto:${l.email}`}>{l.email}</a> : null}
+                            {l.phone ? <a href={`tel:${l.phone}`}>{l.phone}</a> : null}
+                            <span>
+                              {SOURCE_LABEL[l.source]} · {ymdLabel(l.received_on)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="snap-lead-answer">
+                          <button
+                            className={`snap-lead-btn yes ${l.converted === "yes" ? "on" : ""}`}
+                            onClick={() => answerLead(l.id, l.converted === "yes" ? "unknown" : "yes")}
+                          >
+                            Converted
+                          </button>
+                          <button
+                            className={`snap-lead-btn no ${l.converted === "no" ? "on" : ""}`}
+                            onClick={() => answerLead(l.id, l.converted === "no" ? "unknown" : "no")}
+                          >
+                            Not yet
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
+
             {/* This week's work */}
             <section className="snap-panel t-work">
               <div className="snap-panel-head">
@@ -338,7 +486,16 @@ export default function SnapshotClientPage() {
                 <div className="snap-panel-head">
                   <span className="hq-icon"><Icon name="deliv" /></span>
                   <div><h3 className="hq-card-title">Contracted deliverables</h3><p className="hq-card-desc">Everything in your agreement and where it stands</p></div>
+                  <button
+                    className="snap-toggle"
+                    aria-expanded={showDeliverables}
+                    onClick={() => setShowDeliverables((v) => !v)}
+                  >
+                    {showDeliverables ? "Hide" : `Show all ${overview.length}`}
+                  </button>
                 </div>
+                {showDeliverables ? (
+                <>
                 <div className="hq-divider" />
                 <div className="stack" style={{ gap: 18 }}>
                   {ongoingGroups.map(([category, items]) => (
@@ -394,6 +551,8 @@ export default function SnapshotClientPage() {
                     </div>
                   ) : null}
                 </div>
+                </>
+                ) : null}
               </section>
             ) : null}
 
