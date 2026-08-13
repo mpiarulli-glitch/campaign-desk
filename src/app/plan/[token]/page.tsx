@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { isProductionBrief } from "@/lib/production-brief";
 
 type Send = {
   id: string;
@@ -27,10 +28,11 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-// Production shoots always carry a non-empty intake brief; editorial content
-// (blog/social/email) never does. That's the only signal telling them apart.
+// A production carries a structured intake brief. See lib/production-brief: the
+// old test was "the brief is not empty", which showed clients their own editorial
+// calendar as a list of camera shoots.
 function isProduction(s: Pick<Send, "production_brief">): boolean {
-  return !!s.production_brief?.trim();
+  return isProductionBrief(s.production_brief);
 }
 
 const ASSET_TYPE_LABEL: Record<string, string> = {

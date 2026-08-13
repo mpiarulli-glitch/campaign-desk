@@ -17,7 +17,7 @@
 
 import { nanoid } from "nanoid";
 import { getDb, type AssetType, type SendStatus } from "./db";
-import { createSend } from "./calendar";
+import { createSend, EDITORIAL_PREDICATE } from "./calendar";
 import { clearApproval } from "./plan";
 import { cell, mapColumns, parseCsv } from "./csv";
 
@@ -524,7 +524,7 @@ export function applyCalendarImport(
         .prepare(
           `DELETE FROM scheduled_sends
            WHERE client_id = ? AND send_date >= ? AND send_date <= ?
-             AND requested_by_client = 0 AND TRIM(production_brief) = ''`
+             AND ${EDITORIAL_PREDICATE}`
         )
         .run(clientId, preview.start, preview.end).changes;
     }

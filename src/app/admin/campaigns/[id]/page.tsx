@@ -101,7 +101,23 @@ type BasecampApprovalState = {
   alreadySent: boolean;
   lastSentAt: string | null;
   cardUrl: string | null;
+  cardTitle: string;
+  dueOn: string;
+  dueDays: number;
 };
+
+// "2026-08-08" -> "Sat, Aug 8". Split by hand rather than new Date(str): the
+// bare date string parses as UTC midnight, which renders as the day before for
+// anyone west of London.
+function formatApprovalDue(dueOn: string): string {
+  const [year, month, day] = (dueOn || "").split("-").map(Number);
+  if (!year || !month || !day) return dueOn;
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 export default function AdminCampaignPage() {
   const { id } = useParams<{ id: string }>();
@@ -404,9 +420,12 @@ export default function AdminCampaignPage() {
     const destination = basecampApproval.recipient
       ? ` to ${basecampApproval.recipient}`
       : "";
+    const dueNote = basecampApproval.dueOn
+      ? ` The card will be due ${formatApprovalDue(basecampApproval.dueOn)}.`
+      : "";
     if (
       !confirm(
-        `${action} this client approval in Basecamp${destination} and move its Deliverables card to Needs Approval?`
+        `${action} this client approval in Basecamp${destination} and move its Deliverables card to Needs Approval?${dueNote}`
       )
     ) {
       return;
@@ -434,7 +453,8 @@ export default function AdminCampaignPage() {
 
     setStatus(data.status || "in_review");
     setMessage(
-      `Approval sent to ${data.recipient || "the client"} in Basecamp.`
+      `Approval sent to ${data.recipient || "the client"} in Basecamp.` +
+        (data.dueOn ? ` Due ${formatApprovalDue(data.dueOn)}.` : "")
     );
     await load(activeEmailId);
     await loadBasecampApproval();
@@ -1066,17 +1086,43 @@ export default function AdminCampaignPage() {
             </div>
 
             {basecampApproval ? (
-              <>
-                <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              <div className="bc-approval">
+                <p className="muted bc-approval-lede">
                   {basecampApproval.ready
                     ? `Sends to ${basecampApproval.recipient || "the configured client contact"} and moves the Deliverables card to Needs Approval.`
                     : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
-                  {basecampApproval.lastSentAt
-                    ? ` Last sent ${new Date(basecampApproval.lastSentAt).toLocaleString()}.`
-                    : ""}
                 </p>
+
+                <dl className="bc-approval-meta muted">
+                  {basecampApproval.cardTitle ? (
+                    <div>
+                      <dt>Card</dt>
+                      <dd>{basecampApproval.cardTitle}</dd>
+                    </div>
+                  ) : null}
+                  {basecampApproval.dueOn ? (
+                    <div>
+                      <dt>Due</dt>
+                      <dd>
+                        {formatApprovalDue(basecampApproval.dueOn)} (
+                        {basecampApproval.dueDays} days out)
+                      </dd>
+                    </div>
+                  ) : null}
+                  {basecampApproval.lastSentAt ? (
+                    <div>
+                      <dt>Last sent</dt>
+                      <dd>
+                        {new Date(
+                          basecampApproval.lastSentAt
+                        ).toLocaleString()}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+
                 {basecampApproval.cardUrl ? (
-                  <p style={{ margin: "6px 0 0", fontSize: 13 }}>
+                  <p style={{ margin: 0, fontSize: 13 }}>
                     <a
                       href={basecampApproval.cardUrl}
                       target="_blank"
@@ -1086,26 +1132,14 @@ export default function AdminCampaignPage() {
                     </a>
                   </p>
                 ) : null}
-                <details style={{ marginTop: 10 }}>
-                  <summary className="muted" style={{ cursor: "pointer" }}>
-                    Preview approval message
-                  </summary>
-                  <pre
-                    className="copy-box"
-                    style={{
-                      marginTop: 8,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "inherit",
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    {basecampApproval.message}
-                  </pre>
+
+                <details className="bc-approval-preview">
+                  <summary className="muted">Preview approval message</summary>
+                  <pre className="copy-box">{basecampApproval.message}</pre>
                 </details>
-              </>
+              </div>
             ) : (
-              <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              <p className="muted bc-approval-lede">
                 Checking Basecamp setup...
               </p>
             )}

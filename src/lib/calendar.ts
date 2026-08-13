@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { HAS_PRODUCTION_BRIEF_SQL } from "./production-brief";
 import {
   getDb,
   nowIso,
@@ -26,10 +27,96 @@ function normalizeAssetType(v: unknown): AssetType | "" {
   return ASSET_TYPES.includes(v as AssetType) ? (v as AssetType) : "";
 }
 
+/**
+ * Which rows on the calendar are editorial planning rather than real scheduling.
+ *
+ * A production is a shoot the client booked or an admin briefed. It shares the
+ * table with planned content but is not part of an editorial calendar: it must
+ * never be swept up by a replace-the-range import, and a client whose only rows
+ * are shoots still has no editorial calendar.
+ *
+ * Written once and shared, because the importer, the calendar, and the "has this
+ * client got a calendar" check have to agree. When they drifted, one of them was
+ * always wrong about somebody's shoot.
+ *
+ * See ./production-brief for why a real brief is one that parses as JSON rather
+ * than one that is merely non-empty.
+ */
+export const EDITORIAL_PREDICATE = `requested_by_client = 0 AND NOT ${HAS_PRODUCTION_BRIEF_SQL}`;
+export const PRODUCTION_PREDICATE = `(requested_by_client = 1 OR ${HAS_PRODUCTION_BRIEF_SQL})`;
+
 // A send joined with its client's model (for calendar color-coding). model is
 // null when the send has no linked client.
 export interface SendWithClient extends ScheduledSend {
   business_model: BusinessModel | null;
+}
+
+export interface ClientCalendarSummary {
+  clientId: string;
+  /**
+   * Editorial entries for this client, all time and every month. Zero is the
+   * signal that there is no calendar to look at yet, which is a different fact
+   * from "nothing in the month you happen to be viewing" and has to be told
+   * apart from it: prompting somebody to build a calendar that already exists
+   * because they paged into an empty December would be worse than saying nothing.
+   */
+  total: number;
+  /** Production shoots. Named separately so an account with only shoots reads right. */
+  productions: number;
+  firstDate: string;
+  lastDate: string;
+  /** Months (YYYY-MM) that hold editorial entries, ascending. */
+  months: string[];
+}
+
+/**
+ * The editorial footprint of one client's calendar.
+ *
+ * Deliberately not team-scoped. Whether an account has a calendar at all is a
+ * fact about the account, not about who is looking: a social-team viewer must not
+ * be told to build a calendar that is already full of email work they cannot see.
+ */
+export function clientCalendarSummary(clientId: string): ClientCalendarSummary {
+  const db = getDb();
+  // Cancelled rows are excluded: a called-off entry is not something the client
+  // is owed, so it should not make an empty calendar look occupied.
+  const where = `client_id = ? AND cancelled_at IS NULL`;
+
+  const totals = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(MIN(send_date), '') AS firstDate,
+              COALESCE(MAX(send_date), '') AS lastDate
+       FROM scheduled_sends
+       WHERE ${where} AND ${EDITORIAL_PREDICATE}`
+    )
+    .get(clientId) as { total: number; firstDate: string; lastDate: string };
+
+  const productions = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM scheduled_sends
+       WHERE ${where} AND ${PRODUCTION_PREDICATE}`
+    )
+    .get(clientId) as { n: number };
+
+  const months = (
+    db
+      .prepare(
+        `SELECT DISTINCT substr(send_date, 1, 7) AS month FROM scheduled_sends
+         WHERE ${where} AND ${EDITORIAL_PREDICATE}
+         ORDER BY month ASC`
+      )
+      .all(clientId) as Array<{ month: string }>
+  ).map((r) => r.month);
+
+  return {
+    clientId,
+    total: totals.total,
+    productions: productions.n,
+    firstDate: totals.firstDate,
+    lastDate: totals.lastDate,
+    months,
+  };
 }
 
 export interface ProductionSend extends ScheduledSend {

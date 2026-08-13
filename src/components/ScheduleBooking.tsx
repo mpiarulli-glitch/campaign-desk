@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { slotHasPassed } from "@/lib/scheduling-rules";
+import {
+  DECLINE_REASONS,
+  slotHasPassed,
+  type DeclineReason,
+} from "@/lib/scheduling-rules";
 
 type CycleStatus =
   | "not_configured"
@@ -29,6 +33,14 @@ type Data = {
   } | null;
   extraRequests: { sendDate: string; sendTime: string; status: string }[];
   extraWindow: { start: string; end: string; note: string } | null;
+  declined: {
+    windowStart: string;
+    windowEnd: string;
+    reason: string;
+    reasonLabel: string;
+    note: string;
+    wantsOtherDate: boolean;
+  } | null;
 };
 
 type Brief = Record<string, string>;
@@ -82,7 +94,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   const [data, setData] = useState<Data | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [mode, setMode] = useState<"window" | "extra">("window");
+  const [mode, setMode] = useState<"window" | "extra" | "decline">("window");
   const [pick, setPick] = useState<{ date: string; time: string } | null>(null);
   const [extraDate, setExtraDate] = useState("");
   const [extraTime, setExtraTime] = useState("");
@@ -91,6 +103,12 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [extraSent, setExtraSent] = useState(false);
+  const [declineReason, setDeclineReason] = useState<DeclineReason | "">("");
+  const [declineNote, setDeclineNote] = useState("");
+  // Set when a client who has already declined chooses to look at that week's
+  // grid again anyway. People change their minds, and the answer they gave us
+  // should not lock them out of the week it was about.
+  const [reopenWindow, setReopenWindow] = useState(false);
   // Set when a client with both an invited window and an open cadence window
   // chooses to go book the cadence one instead. The invitation leads by
   // default, so this is the only way past it.
@@ -160,6 +178,48 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     setError("");
   }
 
+  function startDecline() {
+    setMode("decline");
+    setDeclineReason("");
+    setDeclineNote("");
+    setError("");
+  }
+
+  // Tell us the window is out, and say what should happen next. Picking
+  // another date sends the client straight into the out-of-cycle form, since
+  // making them find it again after answering is how requests get lost.
+  async function sendDecline(wantsOtherDate: boolean) {
+    if (!declineReason) {
+      setError("Pick a reason so we know what to work around.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    const res = await fetch(apiPath, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "decline",
+        reason: declineReason,
+        note: declineNote,
+        wantsOtherDate,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      setError(b.error || "Could not send that. Try again.");
+      return;
+    }
+    setReopenWindow(false);
+    if (wantsOtherDate) {
+      startExtraRequest();
+    } else {
+      setMode("window");
+    }
+    load();
+  }
+
   async function submit() {
     const chosen = mode === "extra" ? { date: extraDate, time: extraTime } : pick;
     if (!chosen?.date || !chosen?.time) return;
@@ -213,6 +273,107 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       );
     }
     return <p className="muted">Loading your calendar...</p>;
+  }
+
+  // Answering the ask with "not that week". Deliberately short: a reason, an
+  // optional note, and the one decision that changes what we do next.
+  if (mode === "decline") {
+    const declineWindow = data.window;
+    return (
+      <div className="stack">
+        <div className="sched-hero">
+          <p className="eyebrow">{data.client.name}</p>
+          <h1 className="h1">None of these days work</h1>
+          <p className="sched-sub">
+            {declineWindow ? (
+              <>
+                Tell us what is in the way that week of{" "}
+                <strong>
+                  {dayNumber(declineWindow.start)} – {dayNumber(declineWindow.end)}
+                </strong>
+                . Then pick a date outside it, or wait for your next window.
+              </>
+            ) : (
+              "Tell us what is in the way, and we will find another time."
+            )}
+          </p>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode("window");
+              setError("");
+            }}
+          >
+            ← Back
+          </button>
+        </div>
+
+        <section className="card card-pad stack">
+          <div className="field">
+            <label>What is in the way?</label>
+            <div className="stack" style={{ gap: 8 }}>
+              {DECLINE_REASONS.map((reason) => (
+                <label
+                  key={reason.value}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="decline-reason"
+                    value={reason.value}
+                    checked={declineReason === reason.value}
+                    onChange={() => {
+                      setDeclineReason(reason.value);
+                      setError("");
+                    }}
+                  />
+                  <span>{reason.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="decline-note">Anything else we should know?</label>
+            <textarea
+              id="decline-note"
+              value={declineNote}
+              onChange={(e) => setDeclineNote(e.target.value)}
+              placeholder="Optional. Dates you are away, or a week that would work better."
+            />
+          </div>
+
+          {error ? <p className="error">{error}</p> : null}
+
+          <div className="brief-submit">
+            <button
+              className="btn"
+              disabled={saving || !declineReason}
+              onClick={() => sendDecline(true)}
+            >
+              {saving ? "Sending..." : "Send and pick another date"}
+            </button>
+            <button
+              className="btn btn-secondary"
+              disabled={saving || !declineReason}
+              onClick={() => sendDecline(false)}
+            >
+              Send and wait for my next window
+            </button>
+          </div>
+          <p className="muted" style={{ margin: 0 }}>
+            Either way the reminders stop and your account manager picks it up
+            from here.
+          </p>
+        </section>
+      </div>
+    );
   }
 
   if (mode === "extra") {
@@ -539,6 +700,77 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     );
   }
 
+  // They have already told us this window is out. The grid would be asking
+  // again for something they answered, so their answer takes the screen and
+  // the two ways forward sit under it.
+  if (data.declined && !data.existingSend && !reopenWindow) {
+    const d = data.declined;
+    return (
+      <div className="stack">
+        <p className="eyebrow">{data.client.name}</p>
+        <div className="sched-confirmed">
+          <div className="sched-confirmed-check">✓</div>
+          <h1 className="h1">Thanks, we have got it</h1>
+          <p className="sched-confirmed-when">
+            {dayNumber(d.windowStart)} – {dayNumber(d.windowEnd)} is off your
+            schedule
+          </p>
+          <p className="muted">
+            You will not get any more reminders about that week. Your account
+            manager has been told.
+          </p>
+        </div>
+
+        {data.extraRequests.length > 0 ? (
+          <div className="sched-notice">
+            <p className="muted" style={{ margin: 0 }}>
+              Your request for{" "}
+              {data.extraRequests
+                .map(
+                  (r) =>
+                    `${longDate(r.sendDate)}${r.sendTime ? ` · ${slotLabel(r.sendTime)}` : ""}`
+                )
+                .join(", ")}{" "}
+              is in. Your account manager will confirm shortly.
+            </p>
+          </div>
+        ) : (
+          <div className="sched-notice">
+            <p style={{ margin: 0, fontWeight: 600 }}>
+              Want to shoot on another date?
+            </p>
+            <p className="muted" style={{ margin: "4px 0 12px" }}>
+              Pick any day that suits you better and we will take it from there.
+            </p>
+            <button className="btn" onClick={startExtraRequest}>
+              Pick a date
+            </button>
+          </div>
+        )}
+
+        <p className="sched-hint muted">
+          Changed your mind about that week?{" "}
+          <button
+            type="button"
+            onClick={() => setReopenWindow(true)}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              font: "inherit",
+              color: "inherit",
+              textDecoration: "underline",
+              cursor: "pointer",
+            }}
+          >
+            Book a day in it
+          </button>
+          .
+        </p>
+      </div>
+    );
+  }
+
   if (data.status === "not_configured" || data.status === "inactive") {
     return (
       <div className="sched-notice">
@@ -689,6 +921,29 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       ) : (
         <p className="sched-hint muted">Tap a slot above to get started.</p>
       )}
+
+      {/* The way out of the grid. Without it the only honest answer to a week
+          that does not work was to ignore the link, which reads to us as a
+          client who never replied. */}
+      <p className="sched-hint muted">
+        None of these days work?{" "}
+        <button
+          type="button"
+          onClick={startDecline}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            font: "inherit",
+            color: "inherit",
+            textDecoration: "underline",
+            cursor: "pointer",
+          }}
+        >
+          Tell us
+        </button>
+        .
+      </p>
 
       <ExtraRequestLink onClick={startExtraRequest} openWindow={data.extraWindow} />
     </div>

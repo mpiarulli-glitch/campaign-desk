@@ -20,6 +20,7 @@ import {
   mentionHtml,
 } from "./basecamp";
 import { sendProductionUpcoming } from "./production-emails";
+import { isWindowDeclined } from "./window-declines";
 
 // How far ahead of the window's first day the first reminder goes out.
 export const REMINDER_LEAD_DAYS = 21;
@@ -380,6 +381,7 @@ export interface ReminderRunResult {
     alreadySentToday: number;
     notAFollowupDay: number;
     removed: number;
+    declined: number;
   };
 }
 
@@ -427,6 +429,7 @@ export async function runReminders(opts?: {
       alreadySentToday: 0,
       notAFollowupDay: 0,
       removed: 0,
+      declined: 0,
     },
   };
 
@@ -457,6 +460,14 @@ export async function runReminders(opts?: {
     // Booked already? Stop reminding.
     if (findSendForWindow(client.id, window.start)) {
       result.skipped.alreadyBooked++;
+      continue;
+    }
+    // The client has already answered this ask with "not that week". Chasing
+    // them anyway is the reason this state exists. Targeting one client does
+    // not lift this the way it lifts the pacing gates: a decline is the
+    // client's word, not a rate limit.
+    if (isWindowDeclined(client.id, window.start)) {
+      result.skipped.declined++;
       continue;
     }
 

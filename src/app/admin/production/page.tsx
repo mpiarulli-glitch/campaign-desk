@@ -58,6 +58,20 @@ type OpenExtraRequest = {
   emailSentAt: string | null;
 };
 
+// The client's answer to the scheduling ask: that week does not work. Set from
+// their own link, which is also what stopped the reminders, so this is the only
+// thing telling you the ask was answered at all.
+type DeclinedWindow = {
+  id: string;
+  windowStart: string;
+  windowEnd: string;
+  reasonLabel: string;
+  note: string;
+  wantsOtherDate: boolean;
+  resolvedSendId: string | null;
+  createdAt: string;
+};
+
 type Row = {
   client: Client;
   window: { start: string; end: string } | null;
@@ -67,6 +81,7 @@ type Row = {
   lastEmailSent: string | null;
   lastWindowEmailed: string | null;
   openExtraRequest: OpenExtraRequest | null;
+  declined: DeclinedWindow | null;
 };
 
 type ProductionStatus = "requested" | "planned" | "scheduled" | "sent";
@@ -158,11 +173,22 @@ const ACCOUNT_MANAGER_OPTIONS = [
 // Which group a client falls into, for the counts across the top. These are the
 // four questions actually asked of this page: who is waiting on us, who needs
 // booking now, who is already handled, and who was never set up.
-type StatusFilter = "all" | "waiting" | "asked" | "due" | "ahead" | "unset";
+type StatusFilter =
+  | "all"
+  | "waiting"
+  | "declined"
+  | "asked"
+  | "due"
+  | "ahead"
+  | "unset";
 
 function bucketOf(r: Row): Exclude<StatusFilter, "all"> {
   if (!r.window) return "unset";
   if (r.status === "requested") return "waiting";
+  // Answered, and answered no. Its own group because the next move is a make-up
+  // date, not a chase, and because the reminders have stopped: nothing else on
+  // this page would show that the ask ever got a reply.
+  if (!r.existingSend && r.declined && !r.declined.resolvedSendId) return "declined";
   // Asked and not booked. Distinct from "due" (never asked) and from "ahead"
   // (nothing needed yet), because the next move is a chase rather than a first
   // approach.
@@ -436,6 +462,21 @@ export default function ProductionPage() {
     load({ silent: true });
   }
 
+  // Hands a declined window back so the client is asked for it again. For when
+  // whatever was in the way has gone away.
+  async function reopenDeclinedWindow(id: string) {
+    if (
+      !confirm(
+        "Ask this client for that window again? They told us it doesn't work, so reminders will start back up."
+      )
+    )
+      return;
+    setExtraAskBusyId(id);
+    await fetch(`/api/production/decline/${id}`, { method: "DELETE" });
+    setExtraAskBusyId("");
+    load({ silent: true });
+  }
+
   async function addVideographer() {
     const name = (prompt("Videographer name") || "").trim();
     if (!name) return;
@@ -639,7 +680,7 @@ export default function ProductionPage() {
   // Ordered by what needs a person: waiting on us, then due, then booked ahead,
   // then never set up. Within a group, the soonest window first.
   const BUCKET_ORDER: Record<Exclude<StatusFilter, "all">, number> = {
-    waiting: 0, due: 1, asked: 2, ahead: 3, unset: 4,
+    waiting: 0, declined: 1, due: 2, asked: 3, ahead: 4, unset: 5,
   };
   const visible = useMemo(
     () =>
@@ -675,7 +716,7 @@ export default function ProductionPage() {
   );
 
   const counts = useMemo(() => {
-    const base = { waiting: 0, due: 0, asked: 0, ahead: 0, unset: 0 };
+    const base = { waiting: 0, declined: 0, due: 0, asked: 0, ahead: 0, unset: 0 };
     for (const r of enrolled) {
       if (!showInactive && !r.client.active) continue;
       base[bucketOf(r)]++;
@@ -1088,6 +1129,7 @@ export default function ProductionPage() {
         <div className="pcon-chips">
           {([
             ["waiting", counts.waiting, "waiting on us"],
+            ["declined", counts.declined, "can't make it"],
             ["due", counts.due, "due now"],
             ["asked", counts.asked, "asked, no booking"],
             ["ahead", counts.ahead, "booked ahead"],
@@ -1368,6 +1410,20 @@ export default function ProductionPage() {
                           </span>
                         </div>
                       ) : null}
+                      {r.declined ? (
+                        <div className="pcon-line">
+                          <span className="k">Can&apos;t make it</span>
+                          <span className="v">
+                            {r.declined.reasonLabel}
+                            {r.declined.note ? `. "${r.declined.note}"` : ""}
+                            {r.declined.resolvedSendId
+                              ? ". Make-up booked."
+                              : r.declined.wantsOtherDate
+                                ? ". They are picking another date."
+                                : ". Waiting for their next window."}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="pcon-act">
@@ -1375,7 +1431,17 @@ export default function ProductionPage() {
                           "Not due yet" on status alone, which looks like nothing
                           has happened. Say the ask happened instead: it is the
                           thing you need to know when deciding whether to chase. */}
-                      {!r.existingSend && r.currentReminderCount > 0 ? (
+                      {/* A declined window outranks the outreach tally: the ask
+                          was answered, so "Asked 3x" would read as still
+                          waiting on a client who already replied. */}
+                      {!r.existingSend && r.declined ? (
+                        <span
+                          className="pcon-pill is-warn"
+                          title={`${r.declined.reasonLabel}. Told us on ${fmtDate(r.declined.createdAt.slice(0, 10))}. Reminders for this window have stopped.`}
+                        >
+                          {r.declined.resolvedSendId ? "Moved" : "Can't make it"}
+                        </span>
+                      ) : !r.existingSend && r.currentReminderCount > 0 ? (
                         <span
                           className="pcon-pill is-warn"
                           title={`Outreach sent ${r.currentReminderCount} time${r.currentReminderCount === 1 ? "" : "s"}${r.lastEmailSent ? `, last on ${fmtDate(r.lastEmailSent)}` : ""}. Waiting on them to book.`}
@@ -1440,6 +1506,27 @@ export default function ProductionPage() {
                         <span className="k">Window emailed</span>
                         <div className="v">{r.lastWindowEmailed ? fmtDate(r.lastWindowEmailed) : "Never"}</div>
                       </div>
+                      {r.declined ? (
+                        <div>
+                          <span className="k">Declined window</span>
+                          <div className="v">
+                            <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                              <span className="pcon-pill is-warn">
+                                {fmtDate(r.declined.windowStart)} – {fmtDate(r.declined.windowEnd)}
+                              </span>
+                              {isAdmin ? (
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={extraAskBusyId === r.declined.id}
+                                  onClick={() => reopenDeclinedWindow(r.declined!.id)}
+                                >
+                                  Ask again
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                       {isAdmin ? (
                         <div>
                           <span className="k">Extra production</span>

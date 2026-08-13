@@ -19,9 +19,24 @@ import {
   clientApprovalMessageHtml,
   clientApprovalMessageText,
 } from "@/lib/client-approval";
+import { deliverableCardTitle } from "@/lib/asset-kinds";
 import { getRevClient, listRevClients } from "@/lib/revenue";
 
 type Params = { params: Promise<{ id: string }> };
+
+// How long the client gets before the approval is late. Three days is the
+// window we quote them, so the card carries the same deadline.
+const APPROVAL_DUE_DAYS = 3;
+
+function approvalDueOn(days = APPROVAL_DUE_DAYS): string {
+  const due = new Date();
+  due.setDate(due.getDate() + days);
+  // Local calendar date, not UTC: toISOString would roll the date forward for
+  // anyone sending in the evening from a negative-offset zone.
+  const month = String(due.getMonth() + 1).padStart(2, "0");
+  const day = String(due.getDate()).padStart(2, "0");
+  return `${due.getFullYear()}-${month}-${day}`;
+}
 
 function resolveClient(campaign: ReturnType<typeof getCampaignById>) {
   if (!campaign) return null;
@@ -68,6 +83,12 @@ function approvalState(id: string) {
     client,
     revision,
     messageInput,
+    // The card is named for the kind of work inside it, so the Deliverables
+    // board reads as a list of asset types rather than bare campaign names.
+    cardTitle: deliverableCardTitle(
+      campaign.title,
+      emails.map((email) => email.kind)
+    ),
     missing,
     alreadySent:
       Boolean(campaign.basecamp_approval_sent_at) &&
@@ -97,6 +118,9 @@ export async function GET(_request: Request, { params }: Params) {
     alreadySent: state.alreadySent,
     lastSentAt: state.campaign.basecamp_approval_sent_at,
     cardUrl: state.campaign.basecamp_card_url,
+    cardTitle: state.cardTitle,
+    dueOn: approvalDueOn(),
+    dueDays: APPROVAL_DUE_DAYS,
   });
 }
 
@@ -136,10 +160,12 @@ export async function POST(request: Request, { params }: Params) {
   const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
 
   const client = state.client!;
+  const dueOn = approvalDueOn();
   const result = await sendApprovalToDeliverables({
     identity,
     projectId: client.basecamp_project_id,
-    campaignTitle: state.campaign.title,
+    campaignTitle: state.cardTitle,
+    dueOn,
     // Built after the recipient resolves, so the greeting is a real mention.
     buildContent: (contactMention?: string) =>
       clientApprovalMessageHtml(state.messageInput, contactMention),
@@ -190,5 +216,6 @@ export async function POST(request: Request, { params }: Params) {
     cardUrl: result.cardUrl,
     status: campaign?.status || "in_review",
     sentAt: campaign?.basecamp_approval_sent_at,
+    dueOn,
   });
 }

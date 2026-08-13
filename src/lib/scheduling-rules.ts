@@ -29,6 +29,31 @@ export function durationAllowsStart(
     : time === "09:00";
 }
 
+// Why a client says a production window will not work, offered as a short list
+// so the answer is something the board can group and count rather than free
+// text nobody reads twice. "Something else" plus the note covers the rest.
+//
+// Lives here, with the other rules both sides share, because the client link
+// renders this list in the browser and the API validates against it. The
+// database side re-exports it from lib/window-declines.
+export const DECLINE_REASONS = [
+  { value: "closed", label: "We are closed or away that week" },
+  { value: "busy", label: "Too busy that week" },
+  { value: "people", label: "The people we need will not be around" },
+  { value: "location", label: "The location will not be ready" },
+  { value: "other", label: "Something else" },
+] as const;
+
+export type DeclineReason = (typeof DECLINE_REASONS)[number]["value"];
+
+export function isDeclineReason(value: unknown): value is DeclineReason {
+  return DECLINE_REASONS.some((reason) => reason.value === value);
+}
+
+export function declineReasonLabel(value: string): string {
+  return DECLINE_REASONS.find((reason) => reason.value === value)?.label || "Not given";
+}
+
 // A calendar date that exists, not merely one shaped like a date.
 //
 // Shape plus the window bounds is not enough. The window check compares strings,

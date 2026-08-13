@@ -1812,6 +1812,63 @@ button {
   font-weight: 400;
 }
 
+/* Basecamp approval block. Spacing lives here rather than in inline margins so
+   the lede, the card facts, and the preview toggle sit on one rhythm. */
+.bc-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bc-approval-lede {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 68ch;
+}
+
+.bc-approval-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.bc-approval-meta > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bc-approval-meta dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bc-approval-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bc-approval-preview {
+  margin: 0;
+}
+
+.bc-approval-preview summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.bc-approval-preview pre {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .approve-card {
   border-color: rgba(31, 157, 99, 0.35);
   background: linear-gradient(180deg, var(--success-wash) 0%, var(--bg-elevated) 100%);
@@ -9111,4 +9168,45 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .import-summary {
     gap: 10px;
   }
+}
+
+/* ------------------------------------------- Calendar: a client with no calendar */
+/* Shown in place of the approval card when a client has nothing planned at all.
+   Asking somebody to share an empty plan for sign-off is not a useful offer, so
+   this takes that slot rather than stacking above it. */
+.cal-onboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  border-left: 3px solid var(--accent);
+}
+.cal-onboard-copy {
+  flex: 1;
+  min-width: 260px;
+}
+.cal-onboard-title {
+  font-family: var(--font-head);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 2px 0 0;
+}
+.cal-onboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The lighter note for "this client has a calendar, just not this month". */
+.cal-month-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--text-muted);
 }

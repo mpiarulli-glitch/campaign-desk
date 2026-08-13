@@ -491,6 +491,36 @@ export interface ExtraProductionRequest {
   updated_at: string;
 }
 
+// A client telling us, from their own scheduling link, that a cadence window
+// does not work for them.
+//
+// Without this the only way to answer the outreach was to reply on the
+// Basecamp card, which nothing in the app reads, so the nudges kept coming and
+// the window rolled past unbooked with no record it was ever owed. One row per
+// client per window; declining a second time overwrites the first.
+export interface ProductionWindowDecline {
+  id: string;
+  client_id: string;
+  window_start: string; // YYYY-MM-DD, the cadence window's Monday
+  window_end: string; // YYYY-MM-DD
+  // One of DECLINE_REASONS in lib/window-declines.ts.
+  reason: string;
+  // The client's own words, optional.
+  note: string;
+  // 1 when they said they would pick a date outside the window, 0 when they
+  // would rather wait for their next one. Drives what we say back to them and
+  // what the team is asked to do about it.
+  wants_other_date: number;
+  // The out-of-cycle booking that made up for this window, once one lands.
+  resolved_send_id: string | null;
+  resolved_at: string | null;
+  // Set when the window is handed back, either because the client booked it
+  // after all or because an admin reopened it.
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // One row per client per month. Revenue/orders are typically manual (or from
 // Klaviyo for ecomm); recipients/opens/clicks/appointments/leads come from GHL.
 // A thing the app tried and could not do. See the table comment for why this
@@ -1139,6 +1169,28 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_extra_req_client ON extra_production_requests(client_id);
     CREATE INDEX IF NOT EXISTS idx_extra_req_open
       ON extra_production_requests(client_id, fulfilled_at, cancelled_at);
+
+    -- A client saying a cadence window does not work for them. Unique per
+    -- window: re-declining updates the row rather than stacking up copies.
+    CREATE TABLE IF NOT EXISTS production_window_declines (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      window_start TEXT NOT NULL,
+      window_end TEXT NOT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      wants_other_date INTEGER NOT NULL DEFAULT 0,
+      resolved_send_id TEXT,
+      resolved_at TEXT,
+      cancelled_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, window_start),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_window_decline_open
+      ON production_window_declines(client_id, cancelled_at);
 
     -- Things the app tried and failed to do.
     --

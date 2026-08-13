@@ -442,11 +442,33 @@ export async function postProjectCampfireLine(
 // Deliberately no substring matching. A client contact called "Michael" would
 // otherwise match whichever "Michael" sits first in the project roster, which on
 // a live project is as likely to be one of our own people as the client. Email
-// is tried first because it is unambiguous; a full name has to match exactly.
+// is tried first because it is unambiguous; a name has to match exactly, or open
+// the Basecamp name unambiguously under the rules below.
 //
 // Returns null rather than a wrong person. A card with no assignee is a small
 // problem; a card assigning the client's work to our own staff, or tagging the
 // wrong human, is a bigger one.
+//
+// One loosening: a recorded name of two or more words that opens a person's
+// Basecamp name resolves, as long as that person is not one of our own and is
+// the only one it fits. Krak Boba Temecula holds "Debbie/luis" while Basecamp
+// has "Debbie/Luis Mares", so the card went out tagging nobody. A lone first
+// name is still refused, because "Michael" fits a client and one of ours
+// equally well.
+function nameTokens(value: string): string[] {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function openingTokensMatch(recorded: string[], full: string[]): boolean {
+  if (recorded.length > full.length) return false;
+  return recorded.every((token, i) => full[i] === token);
+}
+
 export function findClientContact(
   people: BcPerson[],
   contactEmail: string,
@@ -463,6 +485,15 @@ export function findClientContact(
   if (name) {
     const exact = people.find((person) => person.name.toLowerCase() === name);
     if (exact) return exact;
+  }
+  const recorded = nameTokens(name);
+  if (recorded.length >= 2) {
+    const opens = people.filter(
+      (person) =>
+        person.employee !== true &&
+        openingTokensMatch(recorded, nameTokens(person.name))
+    );
+    if (opens.length === 1) return opens[0];
   }
   return null;
 }
@@ -1075,6 +1106,9 @@ function findNeedsApprovalColumn(
 export async function sendApprovalToDeliverables(input: {
   projectId: string;
   campaignTitle: string;
+  // YYYY-MM-DD. Set on create and refreshed on every resend, so the clock on a
+  // client's approval starts from the send they were actually notified about.
+  dueOn?: string;
   // Built once the recipient is resolved, so the greeting can be a real mention
   // rather than their name as plain text.
   buildContent: (contactMention?: string) => string;
@@ -1201,7 +1235,11 @@ export async function sendApprovalToDeliverables(input: {
       );
       const assignRes = await bc(`/card_tables/cards/${card.id}.json`, {
         method: "PUT",
-        body: JSON.stringify({ assignee_ids: assigneeIds }),
+        body: JSON.stringify({
+          title: input.campaignTitle,
+          assignee_ids: assigneeIds,
+          ...(input.dueOn ? { due_on: input.dueOn } : {}),
+        }),
       }, identity);
       if (!assignRes.ok) {
         return {
@@ -1244,6 +1282,7 @@ export async function sendApprovalToDeliverables(input: {
         title: input.campaignTitle,
         content: input.buildContent(mentionHtml(recipient)),
         notify: true,
+        ...(input.dueOn ? { due_on: input.dueOn } : {}),
       }),
     }, identity);
     if (!createRes.ok) {
@@ -1251,9 +1290,15 @@ export async function sendApprovalToDeliverables(input: {
     }
     const created = (await createRes.json()) as BcCard;
 
+    // due_on is repeated here on purpose: the create endpoint has quietly
+    // ignored it in the past, and the follow-up PUT is the one Basecamp
+    // reliably honours.
     const assignRes = await bc(`/card_tables/cards/${created.id}.json`, {
       method: "PUT",
-      body: JSON.stringify({ assignee_ids: [recipient.id] }),
+      body: JSON.stringify({
+        assignee_ids: [recipient.id],
+        ...(input.dueOn ? { due_on: input.dueOn } : {}),
+      }),
     }, identity);
     if (!assignRes.ok) {
       return {

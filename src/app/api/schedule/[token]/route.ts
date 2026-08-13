@@ -4,6 +4,7 @@ import {
   getSchedulingStatus,
   submitOutOfCycleBooking,
   submitProductionBooking,
+  submitWindowDecline,
 } from "@/lib/scheduling";
 
 type Params = { params: Promise<{ token: string }> };
@@ -24,6 +25,20 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
+
+  // "This window doesn't work for us." Books nothing, so it answers with the
+  // decline rather than a send.
+  if (body.mode === "decline") {
+    const declined = await submitWindowDecline(client, body);
+    if (!declined.ok) {
+      return NextResponse.json(
+        { error: declined.error },
+        { status: declined.httpStatus }
+      );
+    }
+    return NextResponse.json({ decline: declined.decline }, { status: 201 });
+  }
+
   const result =
     body.mode === "extra"
       ? await submitOutOfCycleBooking(client, body)

@@ -7,6 +7,7 @@ import { getReminder, getLatestReminder } from "@/lib/reminders";
 import { listVideographers } from "@/lib/videographers";
 import { listProductionSends } from "@/lib/calendar";
 import { listOpenExtraRequests } from "@/lib/extra-requests";
+import { activeDecline, declineReasonLabel } from "@/lib/window-declines";
 
 export async function GET() {
   if (!(await isProductionAuthenticated())) {
@@ -20,6 +21,7 @@ export async function GET() {
     const currentReminder = window ? getReminder(client.id, window.start) : null;
     const latestReminder = getLatestReminder(client.id);
     const openExtraRequest = listOpenExtraRequests(client.id)[0] || null;
+    const declined = window ? activeDecline(client.id, window.start) : null;
     return {
       client: {
         id: client.id,
@@ -57,6 +59,20 @@ export async function GET() {
             windowEnd: openExtraRequest.window_end,
             bcCardAt: openExtraRequest.bc_card_at,
             emailSentAt: openExtraRequest.email_sent_at,
+          }
+        : null,
+      // The client said this window does not work. Reminders have stopped, so
+      // this row is only visible work if the board says so.
+      declined: declined
+        ? {
+            id: declined.id,
+            windowStart: declined.window_start,
+            windowEnd: declined.window_end,
+            reasonLabel: declineReasonLabel(declined.reason),
+            note: declined.note,
+            wantsOtherDate: declined.wants_other_date === 1,
+            resolvedSendId: declined.resolved_send_id,
+            createdAt: declined.created_at,
           }
         : null,
     };

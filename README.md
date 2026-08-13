@@ -16,6 +16,25 @@ Upload an email, share a magic link with your boss or client, collect general an
 
 AI “Make revision” is intentionally deferred for a later release.
 
+## Starting a client's editorial calendar
+
+Filter the calendar to a client who has nothing planned and the page offers the
+two ways to begin: **Import a CSV**, or **Add the first send** and build it by
+hand. There is a template download next to them for anyone starting from a blank
+sheet. The approval card is hidden until there is a calendar, since asking a
+client to sign off on an empty plan is not a useful offer.
+
+"Nothing planned" means nothing on any date, not nothing in the month you happen
+to be looking at. Paging into a quiet December never suggests starting over. When
+a client does have a calendar but not in the month on screen, the page says so and
+offers a jump to the nearest month that has content, because an unexplained empty
+grid reads like lost data.
+
+Booked production shoots do not count as an editorial calendar. They are
+scheduling rather than a plan for what to publish, so a client with shoots and no
+content still gets the prompt, and the prompt names the shoots so it does not look
+like it missed them.
+
 ## Importing an editorial calendar from a spreadsheet
 
 Clients plan a year of content in a sheet, so the sheet is the source. On
@@ -235,6 +254,31 @@ they can issue new backup codes or move to a new phone.
 **Reset 2FA** next to their name in Accounts, and they enroll again at their
 next sign-in. If that happens to the owner's own account, run
 `node scripts/reset-2fa.mjs michael` on the box holding the database volume.
+
+## When a client can't make their window
+
+The scheduling link takes "not that week" for an answer. Under the booking grid
+there is a **None of these days work?** link: the client picks a reason, adds a
+note if they want, and chooses whether to pick a date outside the window or wait
+for their next one.
+
+What that does:
+
+- **Stops the reminders for that window.** The sweep skips a declined window
+  outright, so a client who answered us is never chased again. Targeting one
+  client with `--only` does not lift this, unlike the pacing gates.
+- **Answers them where they were asked.** A comment goes on their Basecamp
+  scheduling card saying the week is off their schedule, and the Video Editing
+  Campfire gets the reason plus what the client wants to happen next.
+- **Keeps the production owed.** A decline never books anything and never moves
+  the cadence anchor. The client shows on **Production** under **can't make it**
+  until somebody books a make-up.
+
+If they go on to book a date outside the window, that out-of-cycle production is
+linked back to the declined window as its make-up and the row reads **Moved**.
+Booking a day inside the window after all simply clears the decline. An admin
+can hand the window back with **Ask again** on the client's row, which starts the
+reminders up from the next sweep.
 
 ## Who Basecamp sees
 

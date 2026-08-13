@@ -11,16 +11,32 @@ import {
   type Window,
 } from "./cadence";
 import { createSend, getOrCreateCrewToken } from "./calendar";
-import { notifyProductionRequested } from "./notify";
+import { notifyProductionRequested, notifyWindowDeclined } from "./notify";
 import { sendProductionRequestReceived } from "./production-emails";
 import { listVideographers, videographerBookedDates } from "./videographers";
-import { getDb, type RevClient, type ScheduledSend } from "./db";
+import {
+  getDb,
+  type ProductionWindowDecline,
+  type RevClient,
+  type ScheduledSend,
+} from "./db";
 import { getAppUrl } from "./auth";
 import { durationAllowsStart, isRealDate, slotHasPassed } from "./scheduling-rules";
 import {
   fulfillMatchingExtraRequest,
   listOpenExtraRequests as listOpenExtraWindows,
 } from "./extra-requests";
+import {
+  activeDecline,
+  clearDecline,
+  declineReasonLabel,
+  declineWindow,
+  isDeclineReason,
+  resolveDeclineWithSend,
+} from "./window-declines";
+import { getReminder } from "./reminders";
+import { basecampConnected, commentOnCard } from "./basecamp";
+import { recordFailure, clearFailure } from "./failures";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -61,6 +77,17 @@ export interface SchedulingStatus {
   // An admin-picked window inviting an extra production, if one is open. When
   // present, the client's out-of-cycle date picker is bounded to it.
   extraWindow: { start: string; end: string; note: string } | null;
+  // Set once the client has told us this window does not work. The booking
+  // grid gives way to their answer, so the link stops asking for something
+  // they already declined.
+  declined: {
+    windowStart: string;
+    windowEnd: string;
+    reason: string;
+    reasonLabel: string;
+    note: string;
+    wantsOtherDate: boolean;
+  } | null;
 }
 
 // A client's own not-cancelled, not-yet-sent out-of-cycle bookings. Ordered
@@ -109,6 +136,7 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
     : "inactive";
   const existing = window ? findSendForWindow(client.id, window.start) : null;
 
+  const decline = window ? activeDecline(client.id, window.start) : null;
   const openExtra = listOpenExtraWindows(client.id)[0];
   const extraWindow = openExtra
     ? {
@@ -175,7 +203,185 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
       : null,
     extraRequests: listOpenExtraBookings(client.id),
     extraWindow,
+    declined: decline
+      ? {
+          windowStart: decline.window_start,
+          windowEnd: decline.window_end,
+          reason: decline.reason,
+          reasonLabel: declineReasonLabel(decline.reason),
+          note: decline.note,
+          wantsOtherDate: decline.wants_other_date === 1,
+        }
+      : null,
   };
+}
+
+export type DeclineResult =
+  | { ok: true; decline: ProductionWindowDecline }
+  | { ok: false; httpStatus: number; error: string };
+
+// What the client is told back on the Basecamp card they were asked from.
+//
+// Exported so it can be read and tested without a Basecamp connection. Written
+// to the client, like everything else on their card: it thanks them, says the
+// reminders have stopped, and names the one next step.
+export function declineCardComment(
+  windowText: string,
+  wantsOtherDate: boolean,
+  note: string
+): string {
+  const theirWords = note
+    ? `<div>You told us: ${escapeSchedulingHtml(note)}</div><div><br></div>`
+    : "";
+  const next = wantsOtherDate
+    ? `<div>Use your scheduling link to pick a day that works better, and we ` +
+      `will get it on the calendar.</div>`
+    : `<div>We will pick this back up with you for your next production ` +
+      `window.</div>`;
+  return (
+    `<div>Thanks for letting us know that ` +
+    `<strong>${escapeSchedulingHtml(windowText)}</strong> will not work.</div>` +
+    `<div><br></div>` +
+    theirWords +
+    `<div>We have taken that week off your schedule, so you will not get any ` +
+    `more reminders about it.</div>` +
+    `<div><br></div>` +
+    next
+  );
+}
+
+function escapeSchedulingHtml(text: string): string {
+  return (text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function longWindowText(start: string, end: string): string {
+  const fmt = (ymd: string) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  };
+  return `${fmt(start)} to ${fmt(end)}`;
+}
+
+// The client answering the scheduling outreach with "not that week".
+//
+// Recording it is the whole point: it stops the reminder sweep for that window
+// and puts the client on the board as owed a production. It does not book
+// anything and never advances the cadence anchor, so the window stays a debt
+// until somebody books a make-up.
+export async function submitWindowDecline(
+  client: RevClient,
+  body: Record<string, unknown>
+): Promise<DeclineResult> {
+  const today = appDateTime().date;
+  const window = nextWindow(client, today);
+  if (!client.production_enrolled || !window) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: "Scheduling isn't open for this account right now.",
+    };
+  }
+  // A window that is already booked has nothing to decline. Cancelling a
+  // booked production is a conversation with the account manager, not a form.
+  if (findSendForWindow(client.id, window.start)) {
+    return {
+      ok: false,
+      httpStatus: 409,
+      error:
+        "This window is already booked. Reach out to your account manager to change it.",
+    };
+  }
+
+  const reason = body.reason;
+  if (!isDeclineReason(reason)) {
+    return { ok: false, httpStatus: 400, error: "Pick a reason." };
+  }
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  if (note.length > MAX_FIELD_LENGTH) {
+    return {
+      ok: false,
+      httpStatus: 400,
+      error: `Keep your note under ${MAX_FIELD_LENGTH} characters.`,
+    };
+  }
+  const wantsOtherDate = body.wantsOtherDate === true;
+
+  // Saying the same thing twice is not news. The scheduling link needs no
+  // login, so without this a refresh or a bored click reposts to the Campfire
+  // and comments on the client's card again, every time. Storing it is still
+  // cheap and idempotent, so only the outbound half is gated.
+  const previous = activeDecline(client.id, window.start);
+  const unchanged =
+    previous !== null &&
+    previous.reason === reason &&
+    previous.note === note &&
+    previous.wants_other_date === (wantsOtherDate ? 1 : 0);
+
+  const decline = declineWindow({
+    clientId: client.id,
+    windowStart: window.start,
+    windowEnd: window.end,
+    reason,
+    note,
+    wantsOtherDate,
+  });
+
+  if (unchanged) return { ok: true, decline };
+
+  await notifyWindowDeclined({
+    clientName: client.name,
+    accountManagerName: client.account_manager,
+    windowStart: window.start,
+    windowEnd: window.end,
+    reasonLabel: declineReasonLabel(reason),
+    note,
+    wantsOtherDate,
+  });
+
+  // Answer on the card they were asked from, when there is one. The client is
+  // watching that thread, and leaving the ask sitting there unanswered is what
+  // made a comment feel like the only way to reply in the first place.
+  const reminder = getReminder(client.id, window.start);
+  if (client.basecamp_project_id && reminder?.bc_card_id && basecampConnected()) {
+    try {
+      const r = await commentOnCard(
+        client.basecamp_project_id,
+        reminder.bc_card_id,
+        declineCardComment(
+          longWindowText(window.start, window.end),
+          wantsOtherDate,
+          note
+        )
+      );
+      if (r.ok) {
+        clearFailure("basecamp_comment", client.name);
+      } else {
+        recordFailure({
+          kind: "basecamp_comment",
+          subject: client.name,
+          detail: `The client declined their window but the reply could not be posted on their card. ${r.error || ""}`,
+          hint: "Answer them on the card by hand, then book a make-up date.",
+        });
+      }
+    } catch (e) {
+      recordFailure({
+        kind: "basecamp_comment",
+        subject: client.name,
+        detail: `The client declined their window and the card reply threw. ${(e as Error).message}`,
+        hint: "Answer them on the card by hand, then book a make-up date.",
+      });
+    }
+  }
+
+  return { ok: true, decline };
 }
 
 export type BookingResult =
@@ -382,6 +588,9 @@ export async function submitProductionBooking(
 
   const result = reserve.immediate();
   if (!result.ok) return result;
+  // Booking the window is the client changing their mind about it, so the
+  // decline stops standing in the way of anything.
+  clearDecline(result.client.id, window.start);
   const videographer = result.client.videographer_id
     ? listVideographers(true).find(
         (person) => person.id === result.client.videographer_id
@@ -546,6 +755,10 @@ export async function submitOutOfCycleBooking(
   const result = reserve.immediate();
   if (!result.ok) return result;
   fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
+  // A client who turned down their window and then picked a date outside it
+  // has just booked the make-up for it. Linking the two is what keeps a
+  // skipped window readable as settled rather than still owed.
+  resolveDeclineWithSend(result.client.id, result.send.id);
   const videographer = result.client.videographer_id
     ? listVideographers(true).find(
         (person) => person.id === result.client.videographer_id
@@ -811,6 +1024,9 @@ export async function recordOutOfCycleProduction(
   const result = reserve.immediate();
   if (!result.ok) return result;
   fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
+  // Same as the client-booked path: an extra shoot booked by hand settles the
+  // window the client turned down.
+  resolveDeclineWithSend(result.client.id, result.send.id);
 
   if (body.notifyTeam === true) {
     const videographer = result.client.videographer_id

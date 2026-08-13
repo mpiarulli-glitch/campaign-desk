@@ -177,6 +177,80 @@ export async function notifyProductionRequested(
   );
 }
 
+// A client turned down their production window from the scheduling link.
+//
+// Goes to the same Campfire as a booking, because it is the same queue of
+// work: somebody has to pick this up. Says what the client wants to happen
+// next, since "they will send a date" and "they are waiting on us" need
+// different moves.
+export interface WindowDeclinedNotification {
+  clientName: string;
+  accountManagerName?: string;
+  windowStart: string;
+  windowEnd: string;
+  reasonLabel: string;
+  note?: string;
+  wantsOtherDate: boolean;
+}
+
+export function windowDeclinedCampfireContent(
+  args: WindowDeclinedNotification,
+  accountManagerMention?: string
+): string {
+  const manager =
+    accountManagerMention ||
+    (args.accountManagerName ? `@${escapeHtml(args.accountManagerName)}` : "Unassigned");
+  const ping = accountManagerMention
+    ? `${accountManagerMention} this one needs a new date.<br>`
+    : "";
+  const note = args.note ? `<br><strong>They said:</strong> ${escapeHtml(args.note)}` : "";
+  const next = args.wantsOtherDate
+    ? "They are picking a date outside the window."
+    : "They would rather wait for their next window.";
+  return (
+    `<strong>Production window declined</strong><br>` +
+    ping +
+    `<strong>Client:</strong> ${escapeHtml(args.clientName)}<br>` +
+    `<strong>Account manager:</strong> ${manager}<br>` +
+    `<strong>Window:</strong> ${escapeHtml(args.windowStart)} to ${escapeHtml(args.windowEnd)}<br>` +
+    `<strong>Reason:</strong> ${escapeHtml(args.reasonLabel)}${note}<br>` +
+    `${next}`
+  );
+}
+
+export async function notifyWindowDeclined(
+  args: WindowDeclinedNotification
+): Promise<boolean> {
+  const projectId = process.env.BASECAMP_VIDEO_EDITING_PROJECT_ID || "";
+  if (projectId && basecampConnected()) {
+    const people = await getProjectPeopleForMention(projectId);
+    const wanted = basecampNameForManager(args.accountManagerName || "");
+    const manager = wanted
+      ? people.find(
+          (candidate) => candidate.name.toLowerCase() === wanted.toLowerCase()
+        )
+      : undefined;
+    const result = await postProjectCampfireLine(
+      projectId,
+      windowDeclinedCampfireContent(args, manager ? mentionHtml(manager) : undefined)
+    );
+    if (result.ok) return true;
+    console.error(`[notify] Basecamp decline Campfire failed: ${result.error}`);
+    recordFailure({
+      kind: "basecamp_campfire",
+      subject: `${args.clientName}: window declined`,
+      detail: `Could not post the declined window to the Video Editing chat. ${result.error || ""}`,
+      hint:
+        "Usually King Kashflow is not on that Basecamp project. Add the mascot to it, then repost.",
+    });
+  }
+  return postToCampfire(
+    windowDeclinedCampfireContent(args),
+    process.env.BASECAMP_VIDEO_EDITING_CAMPFIRE_URL ||
+      process.env.BASECAMP_CAMPFIRE_URL
+  );
+}
+
 // A campaign was deleted from the admin dashboard.
 export function notifyCampaignRemoved(args: {
   campaignTitle: string;

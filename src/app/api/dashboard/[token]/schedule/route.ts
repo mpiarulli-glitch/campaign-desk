@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getClientByDashboardToken } from "@/lib/dashboard";
-import { getSchedulingStatus, submitProductionBooking } from "@/lib/scheduling";
+import {
+  getSchedulingStatus,
+  submitOutOfCycleBooking,
+  submitProductionBooking,
+  submitWindowDecline,
+} from "@/lib/scheduling";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -23,7 +28,26 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
-  const result = await submitProductionBooking(client, body);
+
+  // The dashboard renders the same booking component as the schedule link, so
+  // it has to accept the same three answers. It used to take only the plain
+  // booking, which quietly turned an out-of-cycle request into a booking
+  // against the client's cadence window.
+  if (body.mode === "decline") {
+    const declined = await submitWindowDecline(client, body);
+    if (!declined.ok) {
+      return NextResponse.json(
+        { error: declined.error },
+        { status: declined.httpStatus }
+      );
+    }
+    return NextResponse.json({ decline: declined.decline }, { status: 201 });
+  }
+
+  const result =
+    body.mode === "extra"
+      ? await submitOutOfCycleBooking(client, body)
+      : await submitProductionBooking(client, body);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.httpStatus });
   }

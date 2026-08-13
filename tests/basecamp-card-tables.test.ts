@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { matchExistingContact } from "../src/lib/contact-sync";
 import { basecampNameForManager } from "../src/lib/people";
+import { deliverableCardTitle } from "../src/lib/asset-kinds";
 import { findDeliverablesTables,
   findClientContact,
 } from "../src/lib/basecamp";
@@ -134,6 +135,26 @@ test("an unknown contact resolves to nobody rather than the nearest guess", () =
   assert.equal(findClientContact(ROSTER, "nobody@example.com", "Nobody Here"), null);
 });
 
+test("a recorded name that opens the Basecamp name resolves", () => {
+  // Krak Boba Temecula holds "Debbie/luis" and Basecamp has "Debbie/Luis Mares",
+  // so the extra-production card went out tagging and assigning nobody.
+  const roster = [
+    ...ROSTER,
+    { id: 5, name: "Debbie/Luis Mares", email_address: "", client: false, employee: false },
+  ];
+  assert.equal(findClientContact(roster, "", "Debbie/luis")?.id, 5);
+  assert.equal(findClientContact(roster, "", "Debbie Sanchez"), null);
+});
+
+test("opening-name matching never reaches one of our own", () => {
+  const roster = [
+    ...ROSTER,
+    { id: 6, name: "Mary Jane Onstott", email_address: "", client: false, employee: true },
+  ];
+  assert.equal(findClientContact(roster, "", "Mary Jane Onstott")?.id, 6, "an exact name still wins");
+  assert.equal(findClientContact(roster, "", "Mary Jane"), null);
+});
+
 test("the account manager is never returned as the client contact", () => {
   assert.equal(findClientContact(ROSTER, "", "Luis"), null);
   assert.equal(findClientContact(ROSTER, "", "Kyle"), null);
@@ -194,4 +215,37 @@ test("casing and stray spaces do not break the map", () => {
 test("an unmapped manager resolves to nobody rather than a guess", () => {
   assert.equal(basecampNameForManager("Randi"), "");
   assert.equal(basecampNameForManager(""), "");
+});
+
+// The Deliverables card title leads with the kind of work, so a client scanning
+// the board can tell an email campaign from a mock-up without opening cards.
+test("card title is prefixed with the asset type", () => {
+  assert.equal(
+    deliverableCardTitle("August Reactivation", ["email"]),
+    "Email Campaign - August Reactivation"
+  );
+  assert.equal(
+    deliverableCardTitle("Homepage Refresh", ["mockup", "mockup"]),
+    "Website Mock-Up - Homepage Refresh"
+  );
+  assert.equal(
+    deliverableCardTitle("Q3 Content", ["blog"]),
+    "Blog Post - Q3 Content"
+  );
+});
+
+test("a package holding different kinds is not labelled as one of them", () => {
+  assert.equal(
+    deliverableCardTitle("Launch Kit", ["email", "mockup", "copydeck"]),
+    "Creative Package - Launch Kit"
+  );
+});
+
+test("an empty package falls back to email, matching coerceKind", () => {
+  assert.equal(deliverableCardTitle("Untitled", []), "Email Campaign - Untitled");
+});
+
+test("resending does not stack a second prefix on the card title", () => {
+  const once = deliverableCardTitle("August Reactivation", ["email"]);
+  assert.equal(deliverableCardTitle(once, ["email"]), once);
 });
