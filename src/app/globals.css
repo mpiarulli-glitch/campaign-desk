@@ -9112,3 +9112,44 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
     gap: 10px;
   }
 }
+
+/* ------------------------------------------- Calendar: a client with no calendar */
+/* Shown in place of the approval card when a client has nothing planned at all.
+   Asking somebody to share an empty plan for sign-off is not a useful offer, so
+   this takes that slot rather than stacking above it. */
+.cal-onboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  border-left: 3px solid var(--accent);
+}
+.cal-onboard-copy {
+  flex: 1;
+  min-width: 260px;
+}
+.cal-onboard-title {
+  font-family: var(--font-head);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 2px 0 0;
+}
+.cal-onboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The lighter note for "this client has a calendar, just not this month". */
+.cal-month-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--text-muted);
+}

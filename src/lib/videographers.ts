@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { getDb, nowIso, type Videographer } from "./db";
+import { hasProductionBriefSql } from "./production-brief";
 
 export type { Videographer };
 
@@ -134,7 +135,7 @@ export function videographerBookedDates(
        FROM scheduled_sends s
        JOIN rev_clients c ON c.id = s.client_id
        WHERE c.videographer_id = ?
-         AND s.production_brief != ''
+         AND ${hasProductionBriefSql("s")}
          AND s.send_date >= ? AND s.send_date <= ?`
     )
     .all(videographerId, start, end) as Array<{

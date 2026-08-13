@@ -263,6 +263,25 @@ test("importing an editorial calendar", async (t) => {
     assert.equal(ids.length, 4);
   });
 
+  await t.test("replacing a range does replace content whose brief holds prose", () => {
+    const id = client("cal_prose");
+    // An earlier editorial import wrote descriptions into production_brief. Those
+    // rows are content, so a replace must rebuild them; treating a non-empty brief
+    // as a shoot left them behind and silently duplicated the whole calendar.
+    const stale = createSend({ clientId: id, title: "Old September newsletter", sendDate: "2026-09-01" });
+    getDb()
+      .prepare(`UPDATE scheduled_sends SET production_brief = ? WHERE id = ?`)
+      .run("Description: a newsletter\nHook/message: something\nCTA: click", stale.id);
+
+    const result = applyCalendarImport(id, SHEET, "replace_range");
+    assert.equal(result.deleted, 1, "the mislabelled content row was replaced");
+    assert.equal(result.created, 3);
+    assert.deepEqual(
+      sendsFor(id).map((r) => r.title),
+      ["September newsletter", "Fall promo", "Behind the scenes"]
+    );
+  });
+
   await t.test("an import clears the client's sign-off on the old plan", () => {
     const id = client("cal_appr");
     const approvedAt = "2026-08-01T00:00:00.000Z";

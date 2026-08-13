@@ -16,6 +16,25 @@ Upload an email, share a magic link with your boss or client, collect general an
 
 AI “Make revision” is intentionally deferred for a later release.
 
+## Starting a client's editorial calendar
+
+Filter the calendar to a client who has nothing planned and the page offers the
+two ways to begin: **Import a CSV**, or **Add the first send** and build it by
+hand. There is a template download next to them for anyone starting from a blank
+sheet. The approval card is hidden until there is a calendar, since asking a
+client to sign off on an empty plan is not a useful offer.
+
+"Nothing planned" means nothing on any date, not nothing in the month you happen
+to be looking at. Paging into a quiet December never suggests starting over. When
+a client does have a calendar but not in the month on screen, the page says so and
+offers a jump to the nearest month that has content, because an unexplained empty
+grid reads like lost data.
+
+Booked production shoots do not count as an editorial calendar. They are
+scheduling rather than a plan for what to publish, so a client with shoots and no
+content still gets the prompt, and the prompt names the shoots so it does not look
+like it missed them.
+
 ## Importing an editorial calendar from a spreadsheet
 
 Clients plan a year of content in a sheet, so the sheet is the source. On

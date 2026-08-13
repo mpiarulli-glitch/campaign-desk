@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarImportModal } from "@/components/CalendarImportModal";
+import { isProductionBrief, parseProductionBrief } from "@/lib/production-brief";
 
 type Status = "requested" | "planned" | "scheduled" | "sent";
 
@@ -58,13 +59,9 @@ const BRIEF_LABELS: [string, string][] = [
 ];
 
 function parseBrief(raw: string): [string, string][] {
-  if (!raw) return [];
-  try {
-    const obj = JSON.parse(raw) as Record<string, string>;
-    return BRIEF_LABELS.filter(([k]) => obj[k]).map(([k, label]) => [label, obj[k]]);
-  } catch {
-    return [];
-  }
+  const obj = parseProductionBrief(raw);
+  if (!obj) return [];
+  return BRIEF_LABELS.filter(([k]) => obj[k]).map(([k, label]) => [label, obj[k]]);
 }
 
 const MONTHS = [
@@ -72,6 +69,18 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// "2026-09-01" -> "Sep 1, 2026". Blank stays blank.
+function fmtDate(ymdStr: string): string {
+  if (!ymdStr) return "";
+  const [y, m, d] = ymdStr.split("-").map(Number);
+  if (!y || !m || !d) return ymdStr;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 // 24h HH:MM -> "10 AM"; blank stays blank.
 function fmtTime(hhmm: string): string {
@@ -98,11 +107,12 @@ const ASSET_TYPE_LABEL: Record<Exclude<AssetType, "">, string> = {
   blog_post: "Blog post",
 };
 
-// Production shoot requests always carry a non-empty intake brief; editorial
-// content entries (blog/social/email) never do. That's the only signal we
-// have to tell the two apart, so treat it as the source of truth.
+// A production carries a structured intake brief. See lib/production-brief: the
+// old test was "the brief is not empty", which turned a year of imported editorial
+// content into camera shoots because its descriptions had been written into that
+// column.
 function isProduction(s: Pick<Send, "production_brief">): boolean {
-  return !!s.production_brief?.trim();
+  return isProductionBrief(s.production_brief);
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -156,6 +166,16 @@ export default function CalendarPage() {
   } | null>(null);
   const [planCopied, setPlanCopied] = useState(false);
   const [importing, setImporting] = useState(false);
+  // The selected client's editorial footprint across all time, which is what
+  // tells "this client has no calendar" apart from "this month happens to be
+  // empty". Null while no single client is selected.
+  const [summary, setSummary] = useState<{
+    total: number;
+    productions: number;
+    firstDate: string;
+    lastDate: string;
+    months: string[];
+  } | null>(null);
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const isAdmin = role === "admin";
 
@@ -205,6 +225,20 @@ export default function CalendarPage() {
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
+  // Whether this client has an editorial calendar at all. Read for any role: the
+  // prompt it drives is admin-only, but the "no calendar yet" fact is not.
+  const loadSummary = useCallback(async () => {
+    if (filter === "all") { setSummary(null); return; }
+    try {
+      const res = await fetch(`/api/calendar/summary?clientId=${filter}`);
+      setSummary(res.ok ? await res.json() : null);
+    } catch {
+      setSummary(null);
+    }
+  }, [filter]);
+
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+
   const feedbackBySend = useMemo(() => {
     const m = new Map<string, string>();
     for (const f of plan?.feedback || []) m.set(f.send_id, f.body);
@@ -246,6 +280,37 @@ export default function CalendarPage() {
     return map;
   }, [sends, filter]);
 
+  const viewedMonth = `${year}-${pad(month + 1)}`;
+  const clientName = clients.find((c) => c.id === filter)?.name || "this client";
+
+  // Nothing planned, ever. The prompt to build a calendar hangs off this and not
+  // off an empty grid, so paging into a quiet month never suggests starting over.
+  const hasNoCalendar = !!summary && summary.total === 0;
+  // A calendar exists, but not in the month on screen. Worth saying, because an
+  // empty grid with no explanation is the thing that makes people doubt the data.
+  const monthIsEmpty =
+    !!summary && summary.total > 0 && !summary.months.includes(viewedMonth);
+
+  // The month with content nearest the one being viewed, so the note can offer a
+  // way back to the calendar rather than only reporting its absence.
+  const nearestMonth = useMemo(() => {
+    if (!summary?.months.length) return "";
+    const index = (m: string) => {
+      const [y, mo] = m.split("-").map(Number);
+      return y * 12 + (mo - 1);
+    };
+    const target = index(viewedMonth);
+    return summary.months.reduce((best, m) =>
+      Math.abs(index(m) - target) < Math.abs(index(best) - target) ? m : best
+    );
+  }, [summary, viewedMonth]);
+
+  function goToMonth(ym: string) {
+    const [y, m] = ym.split("-").map(Number);
+    setYear(y);
+    setMonth(m - 1);
+  }
+
   // Same client filter as sends, so filtering to one account hides other
   // accounts' meetings too.
   function prevMonth() {
@@ -261,8 +326,17 @@ export default function CalendarPage() {
     setMonth(now.getMonth());
   }
 
+  // Filtering to a client and then clicking a day means that client, so the
+  // selection carries into the form rather than having to be picked again.
   function openNew(date: string) {
-    setEditing({ ...EMPTY, sendDate: date });
+    setEditing({ ...EMPTY, sendDate: date, clientId: filter === "all" ? "" : filter });
+  }
+
+  // The day a first send should default to: today when the current month is on
+  // screen, otherwise the 1st of whichever month is being looked at.
+  function firstDayInView(): string {
+    const isThisMonth = year === now.getFullYear() && month === now.getMonth();
+    return isThisMonth ? ymd(year, month, now.getDate()) : ymd(year, month, 1);
   }
   function openEdit(s: Send) {
     setHover(null);
@@ -337,6 +411,8 @@ export default function CalendarPage() {
     if (!res.ok) { setError("Could not save."); return; }
     setEditing(null);
     load();
+    // The first send a client gets has to clear the "no calendar" prompt.
+    loadSummary();
   }
 
   async function createClient() {
@@ -360,7 +436,7 @@ export default function CalendarPage() {
     if (!editing?.id) return;
     if (!confirm("Delete this send?")) return;
     const res = await fetch(`/api/calendar/${editing.id}`, { method: "DELETE" });
-    if (res.ok) { setEditing(null); load(); }
+    if (res.ok) { setEditing(null); load(); loadSummary(); }
   }
 
   const cells: (number | null)[] = [];
@@ -424,7 +500,82 @@ export default function CalendarPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        {isAdmin && filter !== "all" && plan ? (
+        {/* No calendar for this client yet. Asking a client to approve an empty
+            plan makes no sense, so this replaces the approval card rather than
+            sitting above it. */}
+        {hasNoCalendar ? (
+          isAdmin ? (
+            <div className="card card-pad cal-onboard">
+              <div className="cal-onboard-copy">
+                <p className="eyebrow">Nothing planned yet</p>
+                <h2 className="cal-onboard-title">
+                  Build {clientName}&apos;s editorial calendar
+                </h2>
+                <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+                  There are no planned emails, posts, or blogs on the calendar for
+                  them. Import the calendar sheet if one already exists, or add the
+                  first send and build it here.
+                </p>
+                {summary && summary.productions > 0 ? (
+                  <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+                    They do have {summary.productions} production shoot
+                    {summary.productions === 1 ? "" : "s"} booked. Shoots are
+                    scheduling rather than editorial planning, so they are not part
+                    of this.
+                  </p>
+                ) : null}
+              </div>
+              <div className="cal-onboard-actions">
+                <button className="btn" onClick={() => setImporting(true)}>
+                  Import a CSV
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => openNew(firstDayInView())}
+                >
+                  Add the first send
+                </button>
+                <a
+                  className="btn btn-ghost btn-sm"
+                  href="/api/calendar/import/template"
+                  download
+                >
+                  Download template
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="card card-pad">
+              <strong>No editorial calendar for {clientName} yet</strong>
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                Nothing has been planned for them. An admin can import a calendar
+                sheet or add the first send.
+              </p>
+            </div>
+          )
+        ) : null}
+
+        {/* A calendar exists, just not in this month. Said out loud, with a way
+            back, because an unexplained empty grid reads like lost data. */}
+        {monthIsEmpty && summary ? (
+          <div className="card card-pad cal-month-empty">
+            <span>
+              Nothing planned for {clientName} in {MONTHS[month]} {year}. Their
+              calendar runs {fmtDate(summary.firstDate)} to {fmtDate(summary.lastDate)}.
+            </span>
+            {nearestMonth && nearestMonth !== viewedMonth ? (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => goToMonth(nearestMonth)}
+              >
+                Go to {MONTHS[Number(nearestMonth.split("-")[1]) - 1]}{" "}
+                {nearestMonth.split("-")[0]}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isAdmin && filter !== "all" && plan && !hasNoCalendar ? (
           <div className="card card-pad plan-share">
             <div className="plan-share-main">
               <div className="row" style={{ gap: 10, alignItems: "center" }}>
@@ -578,6 +729,7 @@ export default function CalendarPage() {
           onImported={() => {
             load();
             loadPlan();
+            loadSummary();
           }}
         />
       ) : null}
