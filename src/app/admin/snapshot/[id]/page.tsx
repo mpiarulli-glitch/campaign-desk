@@ -30,6 +30,14 @@ const LEAD_SOURCES: { value: LeadSource; label: string }[] = [
   { value: "call", label: "Called in" },
   { value: "other", label: "Other" },
 ];
+type RevenueReport = {
+  id: string;
+  month: string;
+  amount: number;
+  note: string;
+  reported_at: string;
+  accepted_at: string;
+};
 const CONVERTED_LABEL: Record<Converted, string> = {
   unknown: "Waiting on client",
   yes: "Converted",
@@ -187,6 +195,7 @@ export default function SnapshotEditorPage() {
   const [metricError, setMetricError] = useState("");
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [revReports, setRevReports] = useState<RevenueReport[]>([]);
   const [leadScope, setLeadScope] = useState<"week" | "all">("week");
   const [nl, setNl] = useState<{
     firstName: string;
@@ -246,6 +255,7 @@ export default function SnapshotEditorPage() {
       setMetricsRaw(data.metricsRaw || []);
       setContract(data.contract || null);
       setBehind(data.behind || []);
+      setRevReports(data.revenueReports || []);
     } catch {
       setError("Network error. Check your connection and try again.");
     }
@@ -267,6 +277,21 @@ export default function SnapshotEditorPage() {
     },
     [id, router]
   );
+
+  // Taking the client's figure into rev_metrics. Deliberately a decision
+  // someone makes, not something their typing does on its own.
+  async function acceptRevReport(reportId: string) {
+    const res = await fetch(`/api/snapshot/revenue-report/${reportId}`, { method: "POST" });
+    if (!res.ok) { setError("Could not accept that revenue figure."); return; }
+    setRevReports((await res.json()).reports || []);
+  }
+
+  async function dismissRevReport(reportId: string) {
+    if (!confirm("Dismiss this reported figure? The client can send a new one.")) return;
+    const res = await fetch(`/api/snapshot/revenue-report/${reportId}`, { method: "DELETE" });
+    if (!res.ok) { setError("Could not dismiss that revenue figure."); return; }
+    setRevReports((await res.json()).reports || []);
+  }
 
   async function addLead(e: FormEvent) {
     e.preventDefault();
@@ -809,6 +834,41 @@ export default function SnapshotEditorPage() {
             ))}
           </div>
         )}
+
+        {revReports.length > 0 ? (
+          <div className="card card-pad stack">
+            <div>
+              <strong>Client-reported revenue</strong>
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                What the client typed into their snapshot page. Accepting writes it to the
+                revenue tracker for that month.
+              </p>
+            </div>
+            <div className="stack" style={{ gap: 8 }}>
+              {revReports.map((r) => (
+                <div key={r.id} className="snap-lead-row">
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ fontWeight: 600 }}>
+                      {metricPeriodLabel(r.month)} · ${r.amount.toLocaleString()}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {r.accepted_at ? "Accepted into revenue" : "Waiting on your review"}
+                      {r.note ? ` · ${r.note}` : ""}
+                    </div>
+                  </div>
+                  {r.accepted_at ? null : (
+                    <button className="btn btn-sm" onClick={() => acceptRevReport(r.id)}>
+                      Accept
+                    </button>
+                  )}
+                  <button className="btn btn-ghost btn-sm" onClick={() => dismissRevReport(r.id)}>
+                    {r.accepted_at ? "Remove" : "Dismiss"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="card card-pad stack">
           <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>

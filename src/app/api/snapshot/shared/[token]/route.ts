@@ -5,6 +5,7 @@ import {
   listLeads,
   listWins,
   metricsSeries,
+  revenueAsk,
   weekBounds,
   weekData,
   weeksWithLeads,
@@ -49,5 +50,7 @@ export async function GET(request: Request, { params }: Params) {
     bounds: weekBounds(account.id),
     leads: listLeads(account.id, allLeads ? undefined : { week }),
     leadWeeks: weeksWithLeads(account.id),
+    // Last month's revenue, if we're still asking them for it.
+    revenueAsk: revenueAsk(account.id),
   });
 }

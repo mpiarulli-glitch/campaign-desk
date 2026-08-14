@@ -11,6 +11,7 @@ import {
   type SnapshotDeliverable,
   type SnapshotLead,
   type SnapshotMetric,
+  type SnapshotRevenueReport,
   type SnapshotStatus,
   type SnapshotWin,
 } from "./db";
@@ -24,6 +25,7 @@ export type {
   LeadSource,
   SnapshotDeliverable,
   SnapshotLead,
+  SnapshotRevenueReport,
   SnapshotStatus,
   SnapshotWin,
   SnapshotMetric,
@@ -759,6 +761,127 @@ export function leadTally(leads: SnapshotLead[]): LeadTally {
     notConverted: leads.filter((l) => l.converted === "no").length,
     unanswered: leads.filter((l) => l.converted === "unknown").length,
   };
+}
+
+/* ----------------------------------------------- client revenue reports */
+
+/** The calendar month before the one containing `ymd`, as YYYY-MM. */
+export function previousMonthOf(ymd: string): string {
+  const [y, m] = ymd.split("-").map(Number);
+  return m <= 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
+
+export function getRevenueReport(
+  clientId: string,
+  month: string
+): SnapshotRevenueReport | null {
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM snapshot_revenue_reports WHERE client_id = ? AND month = ?`)
+      .get(clientId, month) as SnapshotRevenueReport | undefined) || null
+  );
+}
+
+export function listRevenueReports(clientId: string): SnapshotRevenueReport[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM snapshot_revenue_reports WHERE client_id = ?
+       ORDER BY month DESC`
+    )
+    .all(clientId) as SnapshotRevenueReport[];
+}
+
+// A client revising their own number is normal — they close the books a week
+// late, or they gave us a rough figure first. A revision reopens the report for
+// review rather than keeping the old acceptance.
+export function upsertRevenueReport(input: {
+  clientId: string;
+  month: string;
+  amount: number;
+  note?: string;
+}): SnapshotRevenueReport {
+  const db = getDb();
+  const ts = nowIso();
+  const existing = getRevenueReport(input.clientId, input.month);
+  if (existing) {
+    db.prepare(
+      `UPDATE snapshot_revenue_reports
+       SET amount = ?, note = ?, reported_at = ?, accepted_at = '', updated_at = ?
+       WHERE id = ?`
+    ).run(input.amount, (input.note ?? existing.note).trim(), ts, ts, existing.id);
+    return getRevenueReport(input.clientId, input.month)!;
+  }
+  db.prepare(
+    `INSERT INTO snapshot_revenue_reports
+      (id, client_id, month, amount, note, reported_at, accepted_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)`
+  ).run(
+    nanoid(12),
+    input.clientId,
+    input.month,
+    input.amount,
+    (input.note || "").trim(),
+    ts,
+    ts,
+    ts
+  );
+  return getRevenueReport(input.clientId, input.month)!;
+}
+
+export function markRevenueReportAccepted(id: string): SnapshotRevenueReport | null {
+  const ts = nowIso();
+  const changed = getDb()
+    .prepare(`UPDATE snapshot_revenue_reports SET accepted_at = ?, updated_at = ? WHERE id = ?`)
+    .run(ts, ts, id).changes;
+  if (!changed) return null;
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM snapshot_revenue_reports WHERE id = ?`)
+      .get(id) as SnapshotRevenueReport | undefined) || null
+  );
+}
+
+export function deleteRevenueReport(id: string): boolean {
+  return (
+    getDb().prepare(`DELETE FROM snapshot_revenue_reports WHERE id = ?`).run(id).changes > 0
+  );
+}
+
+export interface RevenueAsk {
+  month: string; // YYYY-MM being asked about
+  label: string; // "Jul 2026"
+  amount: number | null; // what they already told us, or null
+  reportedAt: string;
+}
+
+/**
+ * Whether to ask this client for last month's revenue, and what they've said.
+ *
+ * The ask opens on the 1st and stays up until they answer, rather than living
+ * only in the first week: a client who opens the link on the 14th is exactly
+ * the client we never hear a number from. It closes as soon as they answer, and
+ * never opens at all if we already have revenue for that month from our own
+ * side — no point asking for something we can already see.
+ *
+ * `today` is injectable so this is testable without waiting for a month to turn.
+ */
+export function revenueAsk(clientId: string, today?: string): RevenueAsk | null {
+  const month = previousMonthOf(today || todayYmd());
+  const reported = getRevenueReport(clientId, month);
+  if (reported) {
+    // Still returned once answered so the page can confirm what we received.
+    return {
+      month,
+      label: metricPeriodLabel(month),
+      amount: reported.amount,
+      reportedAt: reported.reported_at,
+    };
+  }
+  const known = getDb()
+    .prepare(`SELECT revenue FROM rev_metrics WHERE client_id = ? AND month = ?`)
+    .get(clientId, month) as { revenue: number } | undefined;
+  if (known && known.revenue > 0) return null;
+  return { month, label: metricPeriodLabel(month), amount: null, reportedAt: "" };
 }
 
 /* ------------------------------------------------------- performance */

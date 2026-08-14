@@ -2889,6 +2889,43 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .snap-panel.t-deliv { --tool: #3f5bd6; --tool-tint: #eceffb; }
 .snap-panel.t-perf { --tool: #1f9d63; --tool-tint: #e7f6ee; }
 .snap-panel.t-leads { --tool: #8a4fd4; --tool-tint: #f1eafc; }
+.snap-panel.t-revenue { --tool: #1f9d63; --tool-tint: #e7f6ee; }
+
+/* Asking the client for last month's revenue */
+.snap-rev-form {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.snap-rev-field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 180px; }
+.snap-rev-field span { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+.snap-rev-field input {
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 15px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  width: 100%;
+}
+.snap-rev-field input:focus { outline: 2px solid var(--tool); outline-offset: 1px; }
+.snap-rev-send {
+  flex: none;
+  background: var(--tool);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 22px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.snap-rev-send:hover { filter: brightness(1.05); }
+.snap-rev-send:disabled { opacity: 0.6; cursor: default; }
+.snap-rev-done { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.snap-rev-done p { margin: 0; font-size: 15px; color: var(--text); }
 .snap-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 
 /* Show/hide control that sits at the right edge of a panel heading */
@@ -2991,6 +3028,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   }
   .snap-lead-answer { width: 100%; }
   .snap-lead-btn { flex: 1; }
+  .snap-rev-send { width: 100%; }
 }
 
 /* ---------------------------------------------------- client scheduling page */
@@ -6068,6 +6106,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 :root[data-theme="dark"] .hq-card.t-todo,
 :root[data-theme="dark"] .snap-panel.t-wins { --tool: #d8a53a; --tool-tint: #2c2412; }
 :root[data-theme="dark"] .snap-panel.t-leads { --tool: #b18ae8; --tool-tint: #261b38; }
+:root[data-theme="dark"] .snap-panel.t-revenue { --tool: #48c98a; --tool-tint: #142e22; }
 :root[data-theme="dark"] .hq-card.t-senti { --tool: #dd88ab; --tool-tint: #33202a; }
 :root[data-theme="dark"] .hq-card.t-hr { --tool: #9aabbb; --tool-tint: #1d232b; }
 

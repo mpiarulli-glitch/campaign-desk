@@ -91,6 +91,12 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M17 11l2 2 4-4" />
     </>
   ),
+  revenue: (
+    <>
+      <path d="M12 1v22" />
+      <path d="M17 6.5A3.5 3.5 0 0 0 13.5 3h-3a3.5 3.5 0 0 0 0 7h3a3.5 3.5 0 0 1 0 7h-3.5A3.5 3.5 0 0 1 6.5 14" />
+    </>
+  ),
 };
 function Icon({ name }: { name: string }) {
   return (
@@ -109,6 +115,26 @@ function ymdLabel(ymd: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+type RevenueAsk = {
+  month: string;
+  label: string;
+  amount: number | null;
+  reportedAt: string;
+};
+
+// Strip everything but digits and one decimal point, so "$48,200" and "48200"
+// and "48,200.50" all submit the same number.
+function parseMoney(raw: string): number | null {
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+  if (!cleaned || (cleaned.match(/\./g) || []).length > 1) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function money(n: number): string {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
 function leadName(l: Lead): string {
@@ -153,6 +179,14 @@ export default function SnapshotClientPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
+  const [revAsk, setRevAsk] = useState<RevenueAsk | null>(null);
+  const [revInput, setRevInput] = useState("");
+  const [revNote, setRevNote] = useState("");
+  const [revSaving, setRevSaving] = useState(false);
+  const [revError, setRevError] = useState("");
+  // Set after they submit, so the panel can thank them without a reload, and so
+  // an already-answered month can still be reopened to correct the figure.
+  const [revEditing, setRevEditing] = useState(false);
   // Contracted deliverables is the longest section and the least urgent, so it
   // starts folded away and opens on request.
   const [showDeliverables, setShowDeliverables] = useState(false);
@@ -176,6 +210,7 @@ export default function SnapshotClientPage() {
           if (data.bounds) setBounds(data.bounds);
           setLeads(data.leads || []);
           setLeadWeeks(data.leadWeeks || []);
+          setRevAsk(data.revenueAsk || null);
         }
       } catch {
         setError("Network error. Check your connection and try again.");
@@ -187,6 +222,34 @@ export default function SnapshotClientPage() {
   );
 
   useEffect(() => { load(week, leadScope); }, [week, leadScope, load]);
+
+  async function submitRevenue(e: React.FormEvent) {
+    e.preventDefault();
+    if (!revAsk) return;
+    const amount = parseMoney(revInput);
+    if (amount === null) {
+      setRevError("Enter the total as a number, like 48200.");
+      return;
+    }
+    setRevSaving(true);
+    setRevError("");
+    try {
+      const res = await fetch(`/api/snapshot/shared/${token}/revenue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: revAsk.month, amount, note: revNote }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      const data = await res.json();
+      setRevAsk(data.ask || { ...revAsk, amount, reportedAt: new Date().toISOString() });
+      setRevEditing(false);
+      setRevNote("");
+    } catch {
+      setRevError("Could not send that. Try again.");
+    } finally {
+      setRevSaving(false);
+    }
+  }
 
   // Answer optimistically so the buttons feel instant, then reconcile with
   // whatever the server actually stored.
@@ -346,6 +409,64 @@ export default function SnapshotClientPage() {
                     </div>
                   ))}
                 </div>
+              </section>
+            ) : null}
+
+            {/* REVENUE ASK — first thing, while we have their attention */}
+            {revAsk ? (
+              <section className="snap-panel t-revenue">
+                <div className="snap-panel-head">
+                  <span className="hq-icon"><Icon name="revenue" /></span>
+                  <div>
+                    <h3 className="hq-card-title">How did {revAsk.label} go?</h3>
+                    <p className="hq-card-desc">
+                      Tell us your total revenue for the month and we can tie it back to the
+                      work we ran for you
+                    </p>
+                  </div>
+                </div>
+                <div className="hq-divider" />
+                {revAsk.amount !== null && !revEditing ? (
+                  <div className="snap-rev-done">
+                    <p>
+                      Thanks. You told us <b>{money(revAsk.amount)}</b> for {revAsk.label}.
+                    </p>
+                    <button
+                      className="snap-toggle"
+                      onClick={() => {
+                        setRevInput(String(revAsk.amount ?? ""));
+                        setRevEditing(true);
+                      }}
+                    >
+                      Change it
+                    </button>
+                  </div>
+                ) : (
+                  <form className="snap-rev-form" onSubmit={submitRevenue}>
+                    <label className="snap-rev-field">
+                      <span>Total revenue for {revAsk.label}</span>
+                      <input
+                        inputMode="decimal"
+                        value={revInput}
+                        onChange={(e) => setRevInput(e.target.value)}
+                        placeholder="48,200"
+                        aria-label={`Total revenue for ${revAsk.label}`}
+                      />
+                    </label>
+                    <label className="snap-rev-field">
+                      <span>Anything we should know? (optional)</span>
+                      <input
+                        value={revNote}
+                        onChange={(e) => setRevNote(e.target.value)}
+                        placeholder="Two big jobs closed late"
+                      />
+                    </label>
+                    <button className="snap-rev-send" type="submit" disabled={revSaving}>
+                      {revSaving ? "Sending..." : "Send"}
+                    </button>
+                  </form>
+                )}
+                {revError ? <p className="error" style={{ marginBottom: 0 }}>{revError}</p> : null}
               </section>
             ) : null}
 

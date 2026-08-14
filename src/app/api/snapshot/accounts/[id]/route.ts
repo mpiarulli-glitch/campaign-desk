@@ -7,6 +7,7 @@ import {
   getOrCreateToken,
   listDeliverables,
   listMetricsRaw,
+  listRevenueReports,
   listWins,
 } from "@/lib/snapshot";
 
@@ -30,5 +31,6 @@ export async function GET(_request: Request, { params }: Params) {
     metricsRaw: listMetricsRaw(id),
     contract: contractStatus(id),
     behind: behindDeliverablesForClient(id),
+    revenueReports: listRevenueReports(id),
   });
 }

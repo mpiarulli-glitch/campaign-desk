@@ -162,7 +162,10 @@ export interface CommentReply {
 }
 
 export type BusinessModel = "ecomm" | "b2b" | "home_service";
-export type MetricSource = "manual" | "ghl" | "klaviyo" | "mixed";
+// "client" is a figure the client themselves reported from their snapshot link
+// and someone on the team accepted. Worth keeping distinct from "manual": it is
+// their count of their revenue, not ours.
+export type MetricSource = "manual" | "ghl" | "klaviyo" | "mixed" | "client";
 
 export type ColorWeek = "purple" | "red" | "blue" | "green" | "";
 export type ProductionCadence = "monthly" | "bi_monthly" | "quarterly" | "";
@@ -392,6 +395,21 @@ export interface SnapshotMetric {
   value: number;
   unit: string; // e.g. "$", "%", ""
   sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// What the client told us they did in revenue for a month, typed into their own
+// snapshot page. Held apart from rev_metrics until someone accepts it, so a
+// client's number can't quietly move the figures our ROI reporting runs on.
+export interface SnapshotRevenueReport {
+  id: string;
+  client_id: string;
+  month: string; // YYYY-MM, the month being reported on
+  amount: number;
+  note: string;
+  reported_at: string;
+  accepted_at: string; // when a team member accepted it into rev_metrics, or ''
   created_at: string;
   updated_at: string;
 }
@@ -1370,6 +1388,22 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_snapwins_client ON snapshot_wins(client_id);
     CREATE INDEX IF NOT EXISTS idx_snapmetrics_client ON snapshot_metrics(client_id);
     CREATE INDEX IF NOT EXISTS idx_snapleads_client ON snapshot_leads(client_id, week_start);
+
+    CREATE TABLE IF NOT EXISTS snapshot_revenue_reports (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      reported_at TEXT NOT NULL,
+      accepted_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, month),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_snaprevrep_client ON snapshot_revenue_reports(client_id, month);
 
     CREATE TABLE IF NOT EXISTS forecast_tasks (
       id TEXT PRIMARY KEY,
