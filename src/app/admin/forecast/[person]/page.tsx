@@ -33,7 +33,7 @@ type Data = {
   note: string;
 };
 
-type ClientOption = { id: string; name: string };
+type ClientOption = { id: string; name: string; internal?: boolean };
 
 type BcTodo = {
   id: string;
@@ -152,7 +152,8 @@ const emptyDraft: Draft = {
  * Replaces a plain <select>, which meant scrolling ~60 accounts to find one.
  * Filtering ranks a leading match above a match anywhere in the name, so typing
  * "kr" puts Krak Boba above "Looda House Pawn (Krak)" rather than ordering
- * alphabetically and burying the obvious hit.
+ * alphabetically and burying the obvious hit. Internal MEG projects sit in the
+ * same list, tagged so they don't read as billing clients.
  */
 function ClientCombobox({
   clients,
@@ -253,19 +254,19 @@ function ClientCombobox({
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder={selected ? selected.name : "Type a client name"}
+        placeholder={selected ? selected.name : "Type a client or project"}
         autoFocus={autoFocus}
         role="combobox"
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
-        aria-label="Client"
+        aria-label="Client or project"
         autoComplete="off"
       />
       {open ? (
         <ul className="fc-combo-list" id={listId} role="listbox">
           {matches.length === 0 ? (
-            <li className="fc-combo-empty">No client matches that</li>
+            <li className="fc-combo-empty">No matches</li>
           ) : (
             matches.map((c, i) => (
               <li key={c.id}>
@@ -284,6 +285,7 @@ function ClientCombobox({
                   onMouseEnter={() => setActive(i)}
                 >
                   {c.name}
+                  {c.internal ? <span className="fc-combo-tag">internal</span> : null}
                 </button>
               </li>
             ))
@@ -525,7 +527,7 @@ function AddTaskForm({
       onChange={(e) => patch({ notes: e.target.value, todoId: "", projectId: "" })}
       placeholder={
         !draft.clientId
-          ? "Pick a client first"
+          ? "Pick a client or project first"
           : todoState?.loading
             ? "Loading todos..."
             : "Task notes"
@@ -636,7 +638,7 @@ export default function PersonForecastPage() {
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
-  // Internal MEG Basecamp projects (Empire Leadership HQ, etc.) that aren't
+  // Internal MEG Basecamp projects (HQs, team workspaces, etc.) that aren't
   // rev_clients but still have todos worth forecasting against. Merged into
   // the same picker with an "internal:" prefixed id so ensureTodos knows to
   // hit /api/forecast/todos?project= instead of ?client=.
@@ -649,6 +651,7 @@ export default function PersonForecastPage() {
   // stale, but a meeting added this morning would not show until then, and this
   // page is now the only place that cache is used.
   const [syncingEvents, setSyncingEvents] = useState(false);
+  const [syncingProjects, setSyncingProjects] = useState(false);
   // taskId -> hours typed into that task's "log time" box. Logging is explicit:
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
@@ -664,6 +667,28 @@ export default function PersonForecastPage() {
   }
   function setDraft(date: string, patch: Partial<Draft>) {
     setDrafts((d) => ({ ...d, [date]: { ...(d[date] || emptyDraft), ...patch } }));
+  }
+
+  function applyPicker(json: {
+    clients?: Array<{ id: string; name: string }>;
+    internals?: Array<{ id: string; name: string }>;
+  }) {
+    if (Array.isArray(json.clients)) {
+      setClients(
+        json.clients
+          .map((c) => ({ id: c.id, name: c.name }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+    }
+    if (Array.isArray(json.internals)) {
+      setInternalProjects(
+        json.internals.map((p) => ({
+          id: `internal:${p.id}`,
+          name: p.name,
+          internal: true,
+        }))
+      );
+    }
   }
 
   // silent = true skips the loading indicator so the whole task list doesn't
@@ -711,37 +736,18 @@ export default function PersonForecastPage() {
       .catch(() => {});
   }, []);
   useEffect(() => {
-    fetch("/api/revenue/clients")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (!Array.isArray(json?.clients)) return;
-        setClients(
-          json.clients
-            .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
-            .sort((a: ClientOption, b: ClientOption) => a.name.localeCompare(b.name))
-        );
-      })
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
     if (!person) return;
-    fetch(`/api/forecast/internal-projects?person=${person}`)
+    fetch(`/api/forecast/projects?person=${person}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
-        if (!Array.isArray(json?.projects)) return;
-        setInternalProjects(
-          json.projects.map((p: { id: string; name: string }) => ({
-            id: `internal:${p.id}`,
-            name: p.name,
-          }))
-        );
+        if (!json) return;
+        applyPicker(json);
       })
       .catch(() => {});
   }, [person]);
 
   // Client picker contents: revenue clients first, then internal Basecamp
-  // projects (Empire Leadership HQ, etc.) that have todos but aren't billing
-  // clients.
+  // projects (HQs, team workspaces) that have todos but aren't billing clients.
   const pickerClients = useMemo(
     () => [...clients, ...internalProjects],
     [clients, internalProjects]
@@ -808,14 +814,16 @@ export default function PersonForecastPage() {
   );
 
   function pickClient(date: string, clientId: string) {
-    const hit = clients.find((c) => c.id === clientId);
+    const hit = pickerClients.find((c) => c.id === clientId);
     // Changing client invalidates whatever task was picked for the old one.
     setDraft(date, {
       clientId,
       client: hit?.name || "",
       notes: "",
       todoId: "",
-      projectId: "",
+      projectId: clientId.startsWith("internal:")
+        ? clientId.slice("internal:".length)
+        : "",
       manual: false,
     });
     ensureTodos(clientId);
@@ -866,6 +874,20 @@ export default function PersonForecastPage() {
     }
     // Drop the cached picker contents so the next open re-reads the fresh table.
     setEventsByDate({});
+  }
+
+  async function syncProjects() {
+    setSyncingProjects(true);
+    setError("");
+    const res = await fetch(`/api/forecast/projects?person=${person}`, { method: "POST" });
+    setSyncingProjects(false);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not sync Basecamp projects.");
+      return;
+    }
+    const json = await res.json().catch(() => null);
+    if (json) applyPicker(json);
   }
 
   // Switching mode clears whatever was picked under the old one, so a half-filled
@@ -963,7 +985,7 @@ export default function PersonForecastPage() {
         // client resolved to a real Basecamp project: it's what lets "Log to
         // Basecamp" create a shadow todo for that task later instead of
         // having nothing to attach the hours to.
-        basecampProjectId: meeting ? "" : state?.projectId || "",
+        basecampProjectId: meeting ? "" : state?.projectId || draft.projectId || "",
         basecampEventId: meeting ? draft.eventId : "",
       }),
     });
@@ -1237,6 +1259,14 @@ export default function PersonForecastPage() {
                 </button>
               ) : null}
             </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={syncProjects}
+              disabled={syncingProjects}
+              title="Pull new Basecamp projects into the picker, including internal MEG workspaces."
+            >
+              {syncingProjects ? "Syncing…" : "Sync projects"}
+            </button>
             <button
               className="btn btn-ghost btn-sm"
               onClick={syncMeetings}

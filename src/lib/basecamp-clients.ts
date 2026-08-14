@@ -4,7 +4,7 @@
 // both take exactly the same code path and produce the same report.
 
 import { getDb, nowIso } from "./db";
-import { listProjects } from "./basecamp";
+import { asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
 
 // Client projects are named "<Client> Growth OS - Powered by the Empire
@@ -30,9 +30,10 @@ export function clientNameFor(projectName: string): string {
 // Basecamp projects that are internal MEG workspaces, not client accounts.
 // Curated rather than pattern-matched: a pattern like /HQ|Team|Internal/ would
 // eventually swallow a real client. Anything here is never imported as a
-// rev_client, but a subset is still readable via listInternalProjects() below
-// so things like the forecast todo picker can reach their todos without
-// turning them into billing clients.
+// rev_client. The forecast picker can reach their todos, but only for people
+// who are actually on that project in Basecamp — Leadership HQ stays hidden
+// from staff who are not members. Add a new internal workspace by its exact
+// Basecamp name.
 const INTERNAL_PROJECTS = new Set(
   [
     "Department To-Do's Library",
@@ -62,23 +63,71 @@ const INTERNAL_PROJECTS = new Set(
   ].map((n) => n.trim().toLowerCase())
 );
 
-// Internal projects whose todos are still worth reaching from the forecast
-// picker (leadership, ops work someone forecasts hours against), without
-// making them selectable anywhere revenue or production cares about. Add a
-// project here by its exact Basecamp name; it still has to appear in
-// INTERNAL_PROJECTS above to stay out of the rev_client import pass.
-const FORECAST_VISIBLE_INTERNAL_PROJECTS = new Set(
-  ["Empire Leadership HQ"].map((n) => n.trim().toLowerCase())
-);
+export function isInternalProject(name: string): boolean {
+  return INTERNAL_PROJECTS.has((name || "").trim().toLowerCase());
+}
 
 // Internal Basecamp projects exposed to the forecast todo picker, resolved by
 // name against the live project list rather than hardcoded ids so a project
 // getting recreated in Basecamp doesn't silently break the link.
-export async function listInternalProjects(): Promise<Array<{ id: string; name: string }>> {
-  const projects = await listProjects();
+export function filterInternalProjects(
+  projects: Array<{ id: number | string; name: string }>
+): Array<{ id: string; name: string }> {
   return projects
-    .filter((p) => FORECAST_VISIBLE_INTERNAL_PROJECTS.has(p.name.trim().toLowerCase()))
-    .map((p) => ({ id: String(p.id), name: p.name }));
+    .filter((p) => isInternalProject(p.name))
+    .map((p) => ({ id: String(p.id), name: p.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listInternalProjects(
+  identity: BcIdentity
+): Promise<Array<{ id: string; name: string }>> {
+  return filterInternalProjects(await listProjects(identity));
+}
+
+// Clients whose Basecamp project this person can actually open. Unlinked
+// clients (no project id) stay visible so a task can still be typed against
+// the name; a linked project they are not a member of does not.
+export function clientsOnAccessibleProjects(
+  clients: Array<{ id: string; name: string; basecamp_project_id: string }>,
+  accessibleProjectIds: Set<string>
+): Array<{ id: string; name: string }> {
+  return clients
+    .filter((c) => {
+      const pid = (c.basecamp_project_id || "").trim();
+      if (!pid) return true;
+      return accessibleProjectIds.has(pid);
+    })
+    .map((c) => ({ id: c.id, name: c.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Forecast add-task picker for one person: revenue clients they can open in
+// Basecamp, plus internal MEG workspaces they belong to. Listed as them, never
+// as the shared service account, so Leadership HQ and other private projects
+// cannot leak to staff who are not members.
+export async function forecastPickerForPerson(person: string): Promise<{
+  clients: Array<{ id: string; name: string }>;
+  internals: Array<{ id: string; name: string }>;
+}> {
+  const allClients = () =>
+    listRevClients(false)
+      .map((c) => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Without their own connection we cannot tell what they can see, so internals
+  // stay empty (the leak we are preventing) and the client list stays the
+  // registry they already had.
+  if (!hasConnection(person)) {
+    return { clients: allClients(), internals: [] };
+  }
+
+  const projects = await listProjects(asPerson(person));
+  const ids = new Set(projects.map((p) => String(p.id)));
+  return {
+    clients: clientsOnAccessibleProjects(listRevClients(false), ids),
+    internals: filterInternalProjects(projects),
+  };
 }
 
 // Clients whose app name and Basecamp project name differ too much for name
@@ -100,6 +149,7 @@ export interface ReconcileReport {
   ambiguous: Array<{ client: string; options: string[] }>;
   noProject: string[];
   skippedInternal: string[];
+  internals: Array<{ id: string; name: string }>;
 }
 
 /**
@@ -134,7 +184,17 @@ export async function reconcileClients(opts?: {
   const skippedInternal: string[] = [];
 
   if (!projects.length) {
-    return { dryRun, createMissing, projects: 0, linked, created, ambiguous, noProject, skippedInternal };
+    return {
+      dryRun,
+      createMissing,
+      projects: 0,
+      linked,
+      created,
+      ambiguous,
+      noProject,
+      skippedInternal,
+      internals: [],
+    };
   }
 
   // ---- link pass: fill blank project ids on existing clients
@@ -181,7 +241,7 @@ export async function reconcileClients(opts?: {
 
     for (const p of projects) {
       if (takenIds.has(p.id)) continue;
-      if (INTERNAL_PROJECTS.has(p.name.trim().toLowerCase())) {
+      if (isInternalProject(p.name)) {
         skippedInternal.push(p.name);
         continue;
       }
@@ -206,7 +266,17 @@ export async function reconcileClients(opts?: {
     }
   }
 
-  return { dryRun, createMissing, projects: projects.length, linked, created, ambiguous, noProject, skippedInternal };
+  return {
+    dryRun,
+    createMissing,
+    projects: projects.length,
+    linked,
+    created,
+    ambiguous,
+    noProject,
+    skippedInternal,
+    internals: filterInternalProjects(projects),
+  };
 }
 
 /* ------------------------------------------------- one-time startup backfill */
