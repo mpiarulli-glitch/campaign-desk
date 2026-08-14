@@ -465,6 +465,7 @@ export function updateCampaign(
     emailId?: string;
     approvedAt?: string | null;
     approvedBy?: string | null;
+    approvedChannel?: string | null;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
@@ -482,12 +483,16 @@ export function updateCampaign(
     updates.approvedAt !== undefined ? updates.approvedAt : existing.approved_at;
   const approvedBy =
     updates.approvedBy !== undefined ? updates.approvedBy : existing.approved_by;
+  const approvedChannel =
+    updates.approvedChannel !== undefined
+      ? updates.approvedChannel
+      : existing.approved_channel;
   const clientChanged =
     updates.clientId !== undefined && updates.clientId !== existing.client_id;
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?, approved_by = ?,
+     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?, approved_by = ?, approved_channel = ?,
          basecamp_card_id = CASE WHEN ? THEN NULL ELSE basecamp_card_id END,
          basecamp_card_url = CASE WHEN ? THEN NULL ELSE basecamp_card_url END,
          basecamp_approval_revision = CASE WHEN ? THEN NULL ELSE basecamp_approval_revision END,
@@ -503,6 +508,7 @@ export function updateCampaign(
     status,
     approvedAt,
     approvedBy,
+    approvedChannel,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
@@ -815,12 +821,14 @@ export function markRevisionDone(campaignId: string): Campaign | null {
   return updateCampaign(campaignId, { status: "in_review" });
 }
 
-// approvedBy is the full name the client typed to confirm approval. It is
-// null when an admin approves from the internal dashboard, since that action
-// is already tied to an authenticated session.
+// approvedBy is the name attached to the approval: the client's own typed
+// full name on a client approval, or the acting admin's label on an internal
+// one. approvedChannel records which of those it was, so the two can never
+// be confused with each other when read back later.
 export function markApproved(
   campaignId: string,
-  approvedBy?: string | null
+  approvedBy?: string | null,
+  approvedChannel: "client" | "internal" = "client"
 ): Campaign | null {
   const existing = getCampaignById(campaignId);
   if (!existing) return null;
@@ -831,13 +839,14 @@ export function markApproved(
   const ts = nowIso();
   getDb()
     .prepare(
-      `UPDATE campaign_emails SET approved_at = ?, approved_by = ? WHERE campaign_id = ? AND approved_at IS NULL`
+      `UPDATE campaign_emails SET approved_at = ?, approved_by = ?, approved_channel = ? WHERE campaign_id = ? AND approved_at IS NULL`
     )
-    .run(ts, approvedBy ?? null, campaignId);
+    .run(ts, approvedBy ?? null, approvedChannel, campaignId);
   return updateCampaign(campaignId, {
     status: "approved",
     approvedAt: ts,
     approvedBy: approvedBy ?? null,
+    approvedChannel,
   });
 }
 
@@ -849,23 +858,32 @@ export function unapproveCampaign(campaignId: string): Campaign | null {
     status: "in_review",
     approvedAt: null,
     approvedBy: null,
+    approvedChannel: null,
   });
 }
 
 // Approve (or un-approve) a single email. Returns whether every email in the
-// campaign is now approved. approvedBy is the client's typed full name (the
-// paper trail); left unset for internal admin approvals.
+// campaign is now approved. approvedBy/approvedChannel work as in
+// markApproved above.
 export function setEmailApproved(
   emailId: string,
   approved: boolean,
-  approvedBy?: string | null
+  approvedBy?: string | null,
+  approvedChannel: "client" | "internal" = "client"
 ): { email: CampaignEmail | null; allApproved: boolean; campaignId: string } {
   const email = getEmailById(emailId);
   if (!email) return { email: null, allApproved: false, campaignId: "" };
 
   getDb()
-    .prepare(`UPDATE campaign_emails SET approved_at = ?, approved_by = ? WHERE id = ?`)
-    .run(approved ? nowIso() : null, approved ? approvedBy ?? null : null, emailId);
+    .prepare(
+      `UPDATE campaign_emails SET approved_at = ?, approved_by = ?, approved_channel = ? WHERE id = ?`
+    )
+    .run(
+      approved ? nowIso() : null,
+      approved ? approvedBy ?? null : null,
+      approved ? approvedChannel : null,
+      emailId
+    );
 
   const rows = getDb()
     .prepare(

@@ -72,6 +72,7 @@ type EmailItem = {
   open_comments: number;
   approved_at?: string | null;
   approved_by?: string | null;
+  approved_channel?: string | null;
   chosen_subject_id?: string | null;
   subjects?: SubjectOption[];
 };
@@ -93,6 +94,7 @@ type Campaign = {
   archived_at?: string | null;
   approved_at?: string | null;
   approved_by?: string | null;
+  approved_channel?: string | null;
 };
 
 type BasecampPerson = {
@@ -1026,7 +1028,9 @@ export default function AdminCampaignPage() {
             <strong>This package is approved.</strong>
             <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
               {campaign.approved_by
-                ? `Approved by ${campaign.approved_by}. `
+                ? campaign.approved_channel === "internal"
+                  ? `Approved internally by ${campaign.approved_by}. `
+                  : `Approved by ${campaign.approved_by}. `
                 : ""}
               Feedback is closed. Change the status dropdown if you need to
               reopen it.
@@ -1493,7 +1497,9 @@ export default function AdminCampaignPage() {
                   <div className="row" style={{ gap: 8, alignItems: "center" }}>
                     {activeEmail.approved_by ? (
                       <span className="muted" style={{ fontSize: 13 }}>
-                        Approved by {activeEmail.approved_by}
+                        {activeEmail.approved_channel === "internal"
+                          ? `Approved internally by ${activeEmail.approved_by}`
+                          : `Approved by ${activeEmail.approved_by}`}
                       </span>
                     ) : null}
                     <button

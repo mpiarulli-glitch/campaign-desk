@@ -76,9 +76,13 @@ export interface Campaign {
   external_token: string;
   star_rating: number | null;
   approved_at: string | null;
-  // Full name the client typed to confirm approval, kept as a paper trail.
-  // Null for campaigns approved from the admin side.
+  // Full name the client typed to confirm approval, or the internal actor's
+  // label when an admin approved on the dashboard. Kept as a paper trail.
   approved_by: string | null;
+  // 'client' | 'internal' | null. Distinguishes a client's own typed
+  // approval from an agency team member approving on the admin dashboard,
+  // so the two never look the same in the paper trail.
+  approved_channel: string | null;
   archived_at: string | null;
   basecamp_card_id: string | null;
   basecamp_card_url: string | null;
@@ -106,6 +110,7 @@ export interface CampaignEmail {
   sort_order: number;
   approved_at: string | null;
   approved_by: string | null;
+  approved_channel: string | null;
   chosen_subject_id: string | null;
   created_at: string;
   updated_at: string;
@@ -2001,6 +2006,9 @@ function migrate(database: Database.Database) {
   if (!campaignCols.includes("approved_by")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN approved_by TEXT`);
   }
+  if (!campaignCols.includes("approved_channel")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN approved_channel TEXT`);
+  }
   if (!campaignCols.includes("external_token")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN external_token TEXT`);
   }
@@ -2072,6 +2080,9 @@ function migrate(database: Database.Database) {
   }
   if (!emailCols.includes("approved_by")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN approved_by TEXT`);
+  }
+  if (!emailCols.includes("approved_channel")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN approved_channel TEXT`);
   }
   if (!emailCols.includes("kind")) {
     database.exec(

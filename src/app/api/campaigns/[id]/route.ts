@@ -3,7 +3,9 @@ import {
   isAdminOrSyncAuthenticated,
   isCampaignsReadAuthenticated,
   reviewUrl,
+  sessionActor,
 } from "@/lib/auth";
+import { actorLabel } from "@/lib/people";
 import {
   deleteCampaign,
   getCampaignById,
@@ -33,6 +35,13 @@ const STATUSES: CampaignStatus[] = [
 ];
 
 type Params = { params: Promise<{ id: string }> };
+
+// Label for an admin-side approval, tagged "internal" so it can never be
+// mistaken for the client's own typed sign-off on the review link.
+async function internalApproverLabel(): Promise<string> {
+  const tag = await sessionActor();
+  return tag ? actorLabel(tag) : "Admin";
+}
 
 export async function GET(_request: Request, { params }: Params) {
   if (!(await isCampaignsReadAuthenticated()) && !(await isAdminOrSyncAuthenticated(_request))) {
@@ -93,9 +102,15 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!emailId) {
       return NextResponse.json({ error: "emailId required" }, { status: 400 });
     }
-    const { allApproved } = setEmailApproved(emailId, approved);
+    const approverLabel = approved ? await internalApproverLabel() : null;
+    const { allApproved } = setEmailApproved(
+      emailId,
+      approved,
+      approverLabel,
+      "internal"
+    );
     if (approved && allApproved && existing.status !== "approved") {
-      markApproved(id);
+      markApproved(id, approverLabel, "internal");
     }
     if (!approved && existing.status === "approved") {
       unapproveCampaign(id);
@@ -160,7 +175,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   if (body.markApproved === true) {
-    const campaign = markApproved(id);
+    const campaign = markApproved(id, await internalApproverLabel(), "internal");
     if (!campaign) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

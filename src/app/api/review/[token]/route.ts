@@ -60,6 +60,9 @@ function parseImages(raw: unknown): IncomingImage[] {
 
 type Params = { params: Promise<{ token: string }> };
 
+// Which admin approved internally is agency-internal information, not
+// something a client reading their own review link needs to see — so only a
+// client's own typed approval name ever crosses onto this link.
 function publicCampaign(campaign: Campaign) {
   return {
     id: campaign.id,
@@ -69,7 +72,7 @@ function publicCampaign(campaign: Campaign) {
     status: campaign.status,
     updated_at: campaign.updated_at,
     approved_at: campaign.approved_at,
-    approved_by: campaign.approved_by,
+    approved_by: campaign.approved_channel === "client" ? campaign.approved_by : null,
   };
 }
 
@@ -103,7 +106,7 @@ export async function GET(_request: Request, { params }: Params) {
     kind: e.kind,
     sort_order: e.sort_order,
     approved_at: e.approved_at,
-    approved_by: e.approved_by,
+    approved_by: e.approved_channel === "client" ? e.approved_by : null,
     chosen_subject_id: e.chosen_subject_id,
     subjects: e.subjects.map((s) => ({
       id: s.id,
