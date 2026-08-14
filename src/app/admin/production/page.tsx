@@ -1193,8 +1193,8 @@ export default function ProductionPage() {
                     />
                     <span className="muted" style={{ fontSize: 12, marginTop: 4, display: "block" }}>
                       {logSelectedWindow
-                        ? `Leave blank to work it out from the date. Their current window is ${fmtWindow(logSelectedWindow)}.`
-                        : "Leave blank to work it out from the production date."}
+                        ? `Leave blank to work it out from the date. Their current window is ${fmtWindow(logSelectedWindow)}. Any day inside a production week counts as that week.`
+                        : "Leave blank to work it out from the production date. Any day inside a production week counts as that week."}
                     </span>
                   </div>
                 )}

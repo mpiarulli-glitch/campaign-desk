@@ -670,8 +670,30 @@ export async function recordManualProduction(
       error: "cadenceWindowStart must be YYYY-MM-DD",
     };
   }
+  // An override has to name a window this client actually has, not just a real
+  // date. A window is identified by its start (a Monday), so anything else is
+  // resolved to the window containing it: picking the Wednesday of the right
+  // week means that week, and storing the Wednesday verbatim would file the
+  // production under a window nothing else refers to. That is not hypothetical.
+  // A shoot logged against 2026-08-12 instead of the window's 2026-08-10 start
+  // stayed invisible to the reminder sweep, which went on asking the client to
+  // book a production they had already booked.
+  let resolvedOverride = "";
+  if (override) {
+    const overrideWindow = productionWindowForDate(client.color_week, override);
+    if (!overrideWindow) {
+      return {
+        ok: false,
+        httpStatus: 400,
+        error:
+          `${override} isn't inside a ${client.color_week} production week, so it can't be the window this counts toward. ` +
+          "Leave it blank to work the window out from the production date.",
+      };
+    }
+    resolvedOverride = overrideWindow.start;
+  }
   const derived = productionWindowForDate(client.color_week, date);
-  const windowStart = override || derived?.start || "";
+  const windowStart = resolvedOverride || derived?.start || "";
   if (!windowStart) {
     return {
       ok: false,
