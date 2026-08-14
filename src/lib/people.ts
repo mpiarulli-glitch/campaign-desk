@@ -18,6 +18,7 @@ export const PEOPLE = [
   { slug: "randi", label: "Randi", productionAccess: true, entryLevel: true },
   { slug: "abel", label: "Abel", productionAccess: false, entryLevel: true },
   { slug: "mike_hines", label: "Mike Hines", productionAccess: false, entryLevel: false },
+  { slug: "lana", label: "Lana Verrecchio", productionAccess: true, entryLevel: true },
 ] as const;
 
 // The single owner account. Logging in as this slug issues the null-person
@@ -48,6 +49,7 @@ export const TEAM_FOCUS: Record<string, readonly AssetType[]> = {
   carlos: ["blog_post"],
   // Social: posts and the video/carousel work that feeds production.
   randi: ["social_post", "social_video_carousel"],
+  lana: ["social_post", "social_video_carousel"],
   // Web team, no campaign work for now.
   roy: [],
 };
@@ -112,10 +114,11 @@ export function teamLabelFor(slug: string): string {
  * its own work.
  */
 export const PERSON_TEAM: Record<string, Team> = {
-  // Stated: the SEO pair, social, and web.
+  // Stated: the SEO pair, the social pair, and web.
   abel: "seo",
   carlos: "seo",
   randi: "social",
+  lana: "social",
   roy: "web",
 };
 
@@ -175,6 +178,7 @@ export const PRODUCTION_ACCESS: readonly string[] = [
   "jack",
   "paula",
   "randi",
+  "lana",
   "cassidy",
   "sylvia",
   "luis_romero",

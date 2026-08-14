@@ -29,9 +29,10 @@ const EXPECTED_PRODUCTION = [
   "kyle_morris",
   "kyle_onstott",
   "randi",
+  "lana",
 ];
 
-test("production access is exactly the nine people named, no more", () => {
+test("production access is exactly the people named, no more", () => {
   assert.deepEqual([...PRODUCTION_ACCESS].sort(), [...EXPECTED_PRODUCTION].sort());
   for (const slug of EXPECTED_PRODUCTION) {
     assert.equal(hasProductionAccess(slug), true, `${slug} should have it`);
@@ -74,7 +75,7 @@ test("the SEO team is abel and carlos, and only them", () => {
 });
 
 test("nobody else is blog-scoped, including the owner and unknown slugs", () => {
-  for (const slug of [OWNER_SLUG, "jack", "cassidy", "sylvia", "nope"]) {
+  for (const slug of [OWNER_SLUG, "jack", "cassidy", "sylvia", "lana", "nope"]) {
     assert.equal(isSeoOnly(slug), false, `${slug} should not be blog-scoped`);
   }
   assert.equal(isSeoOnly(null), false);
@@ -100,11 +101,13 @@ test("the SEO pair's calendar is blog work only", () => {
   }
 });
 
-test("Randi's calendar is the social work, and is not treated as blog-scoped", () => {
-  assert.deepEqual(teamFocus("randi"), ["social_post", "social_video_carousel"]);
-  assert.equal(doesCampaignWork("randi"), true);
-  // Two asset types, so the campaigns list must not be narrowed to blogs.
-  assert.equal(campaignKindFor("randi"), null);
+test("the social pair's calendar is posts and video/carousel, not blog-scoped", () => {
+  for (const slug of ["randi", "lana"]) {
+    assert.deepEqual(teamFocus(slug), ["social_post", "social_video_carousel"]);
+    assert.equal(doesCampaignWork(slug), true);
+    // Two asset types, so the campaigns list must not be narrowed to blogs.
+    assert.equal(campaignKindFor(slug), null);
+  }
 });
 
 test("Roy is on the web team and does no campaign work", () => {
@@ -139,10 +142,12 @@ test("every focused slug is a real person", () => {
   }
 });
 
-test("Randi keeps production access alongside her narrowed calendar", () => {
-  // Her focus limits what she sees on the calendar, not whether she can reach
-  // upcoming productions.
-  assert.equal(hasProductionAccess("randi"), true);
+test("the social pair keep production access alongside their narrowed calendar", () => {
+  // Focus limits what they see on the calendar, not whether they can reach
+  // upcoming productions — social owns the video/carousel work that feeds it.
+  for (const slug of ["randi", "lana"]) {
+    assert.equal(hasProductionAccess(slug), true, `${slug} should keep production`);
+  }
 });
 
 test("isSeoOnly still agrees with the focus map", () => {
@@ -151,6 +156,7 @@ test("isSeoOnly still agrees with the focus map", () => {
     assert.equal(campaignKindFor(slug), "blog", `${slug} should be blog-scoped`);
   }
   assert.equal(isSeoOnly("randi"), false);
+  assert.equal(isSeoOnly("lana"), false);
 });
 
 /* -------------------------------------------------------------------- teams */
@@ -159,6 +165,7 @@ test("the stated team assignments are in place", () => {
   assert.equal(personTeam("abel"), "seo");
   assert.equal(personTeam("carlos"), "seo");
   assert.equal(personTeam("randi"), "social");
+  assert.equal(personTeam("lana"), "social");
   assert.equal(personTeam("roy"), "web");
 });
 
@@ -176,7 +183,7 @@ test("peopleWithoutTeam lists exactly the gaps still to be filled", () => {
   const gaps = peopleWithoutTeam().map((p) => p.slug).sort();
   const assigned = Object.keys(TEAM_FOCUS);
   // Nobody with a stated team should appear as a gap.
-  for (const slug of ["abel", "carlos", "randi", "roy"]) {
+  for (const slug of ["abel", "carlos", "randi", "lana", "roy"]) {
     assert.ok(!gaps.includes(slug), `${slug} has a team and should not be a gap`);
   }
   assert.ok(gaps.includes("jack"), "jack has no team yet");
