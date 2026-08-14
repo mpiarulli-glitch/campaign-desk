@@ -154,7 +154,7 @@ volume, which keeps the web service as the database's single owner.
 ## Local vs live
 
 - Local: `http://localhost:3040` (your machine only)
-- Live: Railway URL (works for anyone with the link)
+- Live: https://hub.marketingempiregroup.com (works for anyone with the link)
 - Edits to code: change files → commit → push → Railway redeploys
 - Live data (campaigns/comments) lives in the Railway volume, separate from local
 

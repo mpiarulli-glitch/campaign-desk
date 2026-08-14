@@ -15,7 +15,7 @@ const path = require("path");
 const Database = require("better-sqlite3");
 
 const URL = process.env.CAMPAIGN_DESK_URL ||
-  "https://campaign-desk-production.up.railway.app";
+  "https://hub.marketingempiregroup.com";
 const PASSWORD = process.env.CAMPAIGN_DESK_PASSWORD || "Marketingeg1!";
 const COMMIT = process.argv.includes("--commit");
 

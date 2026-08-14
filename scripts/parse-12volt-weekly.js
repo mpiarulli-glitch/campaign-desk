@@ -20,7 +20,7 @@ const os = require("os");
 const SRC =
   process.env.SHEET ||
   path.join(os.homedir(), "Downloads", "Weekly Client Snapshot", "12 Volt Power.html");
-const URL = process.env.CAMPAIGN_DESK_URL || "https://campaign-desk-production.up.railway.app";
+const URL = process.env.CAMPAIGN_DESK_URL || "https://hub.marketingempiregroup.com";
 const PASSWORD = process.env.CAMPAIGN_DESK_PASSWORD || "Marketingeg1!";
 const COMMIT = process.argv.includes("--commit");
 const MONTHS = ["May", "June", "July"]; // last 3 months
