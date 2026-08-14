@@ -76,6 +76,9 @@ export interface Campaign {
   external_token: string;
   star_rating: number | null;
   approved_at: string | null;
+  // Full name the client typed to confirm approval, kept as a paper trail.
+  // Null for campaigns approved from the admin side.
+  approved_by: string | null;
   archived_at: string | null;
   basecamp_card_id: string | null;
   basecamp_card_url: string | null;
@@ -102,6 +105,7 @@ export interface CampaignEmail {
   purpose: string;
   sort_order: number;
   approved_at: string | null;
+  approved_by: string | null;
   chosen_subject_id: string | null;
   created_at: string;
   updated_at: string;
@@ -1994,6 +1998,9 @@ function migrate(database: Database.Database) {
       `UPDATE campaigns SET approved_at = updated_at WHERE status = 'approved' AND approved_at IS NULL`
     );
   }
+  if (!campaignCols.includes("approved_by")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN approved_by TEXT`);
+  }
   if (!campaignCols.includes("external_token")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN external_token TEXT`);
   }
@@ -2062,6 +2069,9 @@ function migrate(database: Database.Database) {
   const emailCols = tableColumns(database, "campaign_emails");
   if (!emailCols.includes("approved_at")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN approved_at TEXT`);
+  }
+  if (!emailCols.includes("approved_by")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN approved_by TEXT`);
   }
   if (!emailCols.includes("kind")) {
     database.exec(

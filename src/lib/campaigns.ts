@@ -464,6 +464,7 @@ export function updateCampaign(
     versionNote?: string;
     emailId?: string;
     approvedAt?: string | null;
+    approvedBy?: string | null;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
@@ -479,12 +480,14 @@ export function updateCampaign(
   const status = updates.status ?? existing.status;
   const approvedAt =
     updates.approvedAt !== undefined ? updates.approvedAt : existing.approved_at;
+  const approvedBy =
+    updates.approvedBy !== undefined ? updates.approvedBy : existing.approved_by;
   const clientChanged =
     updates.clientId !== undefined && updates.clientId !== existing.client_id;
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?,
+     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?, approved_by = ?,
          basecamp_card_id = CASE WHEN ? THEN NULL ELSE basecamp_card_id END,
          basecamp_card_url = CASE WHEN ? THEN NULL ELSE basecamp_card_url END,
          basecamp_approval_revision = CASE WHEN ? THEN NULL ELSE basecamp_approval_revision END,
@@ -499,6 +502,7 @@ export function updateCampaign(
     audience,
     status,
     approvedAt,
+    approvedBy,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
@@ -811,7 +815,13 @@ export function markRevisionDone(campaignId: string): Campaign | null {
   return updateCampaign(campaignId, { status: "in_review" });
 }
 
-export function markApproved(campaignId: string): Campaign | null {
+// approvedBy is the full name the client typed to confirm approval. It is
+// null when an admin approves from the internal dashboard, since that action
+// is already tied to an authenticated session.
+export function markApproved(
+  campaignId: string,
+  approvedBy?: string | null
+): Campaign | null {
   const existing = getCampaignById(campaignId);
   if (!existing) return null;
 
@@ -821,10 +831,14 @@ export function markApproved(campaignId: string): Campaign | null {
   const ts = nowIso();
   getDb()
     .prepare(
-      `UPDATE campaign_emails SET approved_at = ? WHERE campaign_id = ? AND approved_at IS NULL`
+      `UPDATE campaign_emails SET approved_at = ?, approved_by = ? WHERE campaign_id = ? AND approved_at IS NULL`
     )
-    .run(ts, campaignId);
-  return updateCampaign(campaignId, { status: "approved", approvedAt: ts });
+    .run(ts, approvedBy ?? null, campaignId);
+  return updateCampaign(campaignId, {
+    status: "approved",
+    approvedAt: ts,
+    approvedBy: approvedBy ?? null,
+  });
 }
 
 // Move a campaign back out of "approved" (e.g. a single email got
@@ -834,21 +848,24 @@ export function unapproveCampaign(campaignId: string): Campaign | null {
   return updateCampaign(campaignId, {
     status: "in_review",
     approvedAt: null,
+    approvedBy: null,
   });
 }
 
 // Approve (or un-approve) a single email. Returns whether every email in the
-// campaign is now approved.
+// campaign is now approved. approvedBy is the client's typed full name (the
+// paper trail); left unset for internal admin approvals.
 export function setEmailApproved(
   emailId: string,
-  approved: boolean
+  approved: boolean,
+  approvedBy?: string | null
 ): { email: CampaignEmail | null; allApproved: boolean; campaignId: string } {
   const email = getEmailById(emailId);
   if (!email) return { email: null, allApproved: false, campaignId: "" };
 
   getDb()
-    .prepare(`UPDATE campaign_emails SET approved_at = ? WHERE id = ?`)
-    .run(approved ? nowIso() : null, emailId);
+    .prepare(`UPDATE campaign_emails SET approved_at = ?, approved_by = ? WHERE id = ?`)
+    .run(approved ? nowIso() : null, approved ? approvedBy ?? null : null, emailId);
 
   const rows = getDb()
     .prepare(

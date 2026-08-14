@@ -68,7 +68,15 @@ function publicCampaign(campaign: Campaign) {
     description: campaign.description,
     status: campaign.status,
     updated_at: campaign.updated_at,
+    approved_at: campaign.approved_at,
+    approved_by: campaign.approved_by,
   };
+}
+
+// A client must type a first and last name before an approval counts, so the
+// approval leaves a real paper trail instead of a click from an anonymous link.
+function isFullName(name: string): boolean {
+  return name.trim().split(/\s+/).filter(Boolean).length >= 2;
 }
 
 export async function GET(_request: Request, { params }: Params) {
@@ -95,6 +103,7 @@ export async function GET(_request: Request, { params }: Params) {
     kind: e.kind,
     sort_order: e.sort_order,
     approved_at: e.approved_at,
+    approved_by: e.approved_by,
     chosen_subject_id: e.chosen_subject_id,
     subjects: e.subjects.map((s) => ({
       id: s.id,
@@ -144,7 +153,16 @@ export async function POST(request: Request, { params }: Params) {
       });
     }
 
-    const approved = markApproved(campaign.id);
+    const approverName =
+      typeof body.approverName === "string" ? body.approverName.trim() : "";
+    if (!isFullName(approverName)) {
+      return NextResponse.json(
+        { error: "Enter your full name to approve." },
+        { status: 400 }
+      );
+    }
+
+    const approved = markApproved(campaign.id, approverName);
     return NextResponse.json({
       campaign: publicCampaign(approved!),
       message: "Campaign approved",
@@ -180,15 +198,23 @@ export async function POST(request: Request, { params }: Params) {
   // Approve a single email. When every email is approved, the whole campaign
   // flips to approved.
   if (typeof body.approveEmail === "string" && body.approveEmail.trim()) {
+    const approverName =
+      typeof body.approverName === "string" ? body.approverName.trim() : "";
+    if (!isFullName(approverName)) {
+      return NextResponse.json(
+        { error: "Enter your full name to approve." },
+        { status: 400 }
+      );
+    }
     const target = listEmails(campaign.id).find(
       (e) => e.id === body.approveEmail
     );
     if (!target) {
       return NextResponse.json({ error: "Email not found" }, { status: 404 });
     }
-    const { allApproved } = setEmailApproved(target.id, true);
+    const { allApproved } = setEmailApproved(target.id, true, approverName);
     if (allApproved && campaign.status !== "approved") {
-      markApproved(campaign.id);
+      markApproved(campaign.id, approverName);
     }
     const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({

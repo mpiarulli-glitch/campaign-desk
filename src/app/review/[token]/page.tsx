@@ -123,6 +123,7 @@ type EmailItem = {
   sort_order: number;
   open_comments: number;
   approved_at: string | null;
+  approved_by?: string | null;
   chosen_subject_id?: string | null;
   subjects?: SubjectOption[];
 };
@@ -134,7 +135,15 @@ type Campaign = {
   description: string;
   status: string;
   updated_at: string;
+  approved_at?: string | null;
+  approved_by?: string | null;
 };
+
+// A typed first + last name is what makes an approval a paper trail rather
+// than an anonymous click from the magic link.
+function isFullName(name: string): boolean {
+  return name.trim().split(/\s+/).filter(Boolean).length >= 2;
+}
 
 export default function ReviewPage() {
   const { token } = useParams<{ token: string }>();
@@ -315,6 +324,11 @@ export default function ReviewPage() {
   }
 
   async function approveOneEmail(emailId: string) {
+    const name = authorName.trim();
+    if (!isFullName(name)) {
+      setError("Enter your first and last name above to approve.");
+      return;
+    }
     const noun = kindNoun(emails.find((e) => e.id === emailId)?.kind ?? "email");
     if (
       !confirm(
@@ -326,10 +340,11 @@ export default function ReviewPage() {
     setApproving(true);
     setError("");
     setMessage("");
+    localStorage.setItem("cd_reviewer_name", name);
     const res = await fetch(`/api/review/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approveEmail: emailId }),
+      body: JSON.stringify({ approveEmail: emailId, approverName: name }),
     });
     setApproving(false);
     if (!res.ok) {
@@ -399,6 +414,11 @@ export default function ReviewPage() {
   }
 
   async function approveEmail() {
+    const name = authorName.trim();
+    if (!isFullName(name)) {
+      setError("Enter your first and last name above to approve.");
+      return;
+    }
     if (
       !confirm(
         "This will let the email team know this campaign is approved. Continue?"
@@ -409,10 +429,11 @@ export default function ReviewPage() {
     setApproving(true);
     setError("");
     setMessage("");
+    localStorage.setItem("cd_reviewer_name", name);
     const res = await fetch(`/api/review/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markApproved: true }),
+      body: JSON.stringify({ markApproved: true, approverName: name }),
     });
     setApproving(false);
     if (!res.ok) {
@@ -537,6 +558,9 @@ export default function ReviewPage() {
               <div className="rv-approve-copy">
                 <span className="rv-approve-title">This campaign is approved.</span>
                 <p className="rv-approve-sub">
+                  {campaign.approved_by
+                    ? `Approved by ${campaign.approved_by}. `
+                    : ""}
                   The email team has been notified and feedback is now closed.
                   You can still read every item and all prior comments.
                 </p>
@@ -548,16 +572,25 @@ export default function ReviewPage() {
             <div className="rv-approve-copy">
               <span className="rv-approve-title">Ready to approve?</span>
               <p className="rv-approve-sub">
-                This covers every item in the package.
+                This covers every item in the package. Type your full name to
+                confirm it&apos;s you.
               </p>
             </div>
-            <button
-              className="btn btn-approve"
-              onClick={approveEmail}
-              disabled={approving}
-            >
-              {approving ? "Sending..." : "Approve and notify email team"}
-            </button>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                className="plan-name-input"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value)}
+                placeholder="Your full name"
+              />
+              <button
+                className="btn btn-approve"
+                onClick={approveEmail}
+                disabled={approving || !isFullName(authorName)}
+              >
+                {approving ? "Sending..." : "Approve and notify email team"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -570,7 +603,11 @@ export default function ReviewPage() {
               <h2 className="h2">{activeEmail.title}</h2>
               {activeEmail.approved_at ? (
                 <div className="rv-asset-actions">
-                  <span className="badge badge-approved">Approved</span>
+                  <span className="badge badge-approved">
+                    {activeEmail.approved_by
+                      ? `Approved by ${activeEmail.approved_by}`
+                      : "Approved"}
+                  </span>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => unapproveOneEmail(activeEmail.id)}
@@ -584,7 +621,12 @@ export default function ReviewPage() {
                   <button
                     className="btn btn-approve btn-sm"
                     onClick={() => approveOneEmail(activeEmail.id)}
-                    disabled={approving}
+                    disabled={approving || !isFullName(authorName)}
+                    title={
+                      isFullName(authorName)
+                        ? undefined
+                        : "Type your full name in the approve box above first."
+                    }
                   >
                     Approve this {itemNoun}
                   </button>

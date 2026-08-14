@@ -71,6 +71,7 @@ type EmailItem = {
   sort_order: number;
   open_comments: number;
   approved_at?: string | null;
+  approved_by?: string | null;
   chosen_subject_id?: string | null;
   subjects?: SubjectOption[];
 };
@@ -90,6 +91,8 @@ type Campaign = {
   open_comments: number;
   email_count?: number;
   archived_at?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
 };
 
 type BasecampPerson = {
@@ -1022,6 +1025,9 @@ export default function AdminCampaignPage() {
           <div className="card card-pad approve-card is-approved">
             <strong>This package is approved.</strong>
             <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+              {campaign.approved_by
+                ? `Approved by ${campaign.approved_by}. `
+                : ""}
               Feedback is closed. Change the status dropdown if you need to
               reopen it.
             </p>
@@ -1484,13 +1490,20 @@ export default function AdminCampaignPage() {
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <h2 className="h2">{activeEmail.title}</h2>
                 {activeEmail.approved_at ? (
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => toggleEmailApproved(false)}
-                    disabled={saving}
-                  >
-                    Un-approve {kindNoun(activeEmail.kind ?? "email")}
-                  </button>
+                  <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                    {activeEmail.approved_by ? (
+                      <span className="muted" style={{ fontSize: 13 }}>
+                        Approved by {activeEmail.approved_by}
+                      </span>
+                    ) : null}
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => toggleEmailApproved(false)}
+                      disabled={saving}
+                    >
+                      Un-approve {kindNoun(activeEmail.kind ?? "email")}
+                    </button>
+                  </div>
                 ) : (
                   <button
                     className="btn btn-secondary btn-sm"
