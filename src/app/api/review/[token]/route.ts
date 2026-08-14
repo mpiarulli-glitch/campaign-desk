@@ -16,6 +16,7 @@ import {
   countOpenComments,
 } from "@/lib/campaigns";
 import type { Campaign } from "@/lib/db";
+import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
 import { notifyClientFeedback } from "@/lib/notify";
 
 const ALLOWED_IMAGE_MIME = new Set([
@@ -166,6 +167,7 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const approved = markApproved(campaign.id, approverName);
+    await syncCampaignDeliverablesCard(campaign.id, "approved");
     return NextResponse.json({
       campaign: publicCampaign(approved!),
       message: "Campaign approved",
@@ -218,6 +220,7 @@ export async function POST(request: Request, { params }: Params) {
     const { allApproved } = setEmailApproved(target.id, true, approverName);
     if (allApproved && campaign.status !== "approved") {
       markApproved(campaign.id, approverName);
+      await syncCampaignDeliverablesCard(campaign.id, "approved");
     }
     const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({

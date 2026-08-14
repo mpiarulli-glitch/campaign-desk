@@ -6,6 +6,7 @@ import { findDeliverablesTables,
   findClientContact,
   approvalDueFields,
   resolveApprovalAssignees,
+  findDeliverablesColumn,
 } from "../src/lib/basecamp";
 
 // Client approvals must always land on the Deliverables card table. Projects
@@ -242,4 +243,71 @@ test("a due date is only written when the form said something about it", () => {
 test("clearing the due date sends null rather than an empty string", () => {
   assert.deepEqual(approvalDueFields(""), { due_on: null });
   assert.deepEqual(approvalDueFields(null), { due_on: null });
+});
+
+/* --------------------------------------- deliverables column matching */
+
+const deliverablesColumns = [
+  { id: 1, title: "To Do" },
+  { id: 2, title: "Needs Approval" },
+  { id: 3, title: "Approved" },
+  { id: 4, title: "Scheduled/Published" },
+];
+
+test("Needs Approval is found without matching the Approved column", () => {
+  assert.equal(
+    findDeliverablesColumn(deliverablesColumns, "needs_approval")?.id,
+    2
+  );
+});
+
+test("Approved is the Approved column, not Needs Approval", () => {
+  assert.equal(
+    findDeliverablesColumn(deliverablesColumns, "approved")?.id,
+    3
+  );
+});
+
+test("Scheduled/Published is the scheduled column", () => {
+  assert.equal(
+    findDeliverablesColumn(deliverablesColumns, "scheduled")?.id,
+    4
+  );
+});
+
+test("Scheduled / Published with spaces still matches", () => {
+  assert.equal(
+    findDeliverablesColumn(
+      [
+        { id: 1, title: "Needs Approval" },
+        { id: 2, title: "Approved" },
+        { id: 3, title: "Scheduled / Published" },
+      ],
+      "scheduled"
+    )?.id,
+    3
+  );
+});
+
+test("a combined Scheduled/Published title beats a lone Published column", () => {
+  assert.equal(
+    findDeliverablesColumn(
+      [
+        { id: 1, title: "Published" },
+        { id: 2, title: "Scheduled/Published" },
+      ],
+      "scheduled"
+    )?.id,
+    2
+  );
+});
+
+test("Needs Approval is never treated as Approved", () => {
+  assert.equal(
+    findDeliverablesColumn(
+      [{ id: 1, title: "Needs Approval" }],
+      "approved"
+    ),
+    undefined
+  );
 });

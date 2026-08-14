@@ -1417,17 +1417,25 @@ button {
   overflow-y: auto;
 }
 
-.activity-sidebar-item {
+.activity-sidebar-row {
   display: flex;
-  gap: 10px;
-  padding: 10px 0;
+  align-items: flex-start;
+  gap: 2px;
   border-top: 1px solid #eef0f2;
-  text-decoration: none;
-  color: inherit;
 }
 
-.activity-sidebar-item:first-child {
+.activity-sidebar-row:first-child {
   border-top: none;
+}
+
+.activity-sidebar-item {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 10px 0;
+  text-decoration: none;
+  color: inherit;
 }
 
 .activity-sidebar-item:hover {
@@ -1440,6 +1448,33 @@ button {
 
 .activity-sidebar-item--read:hover {
   opacity: 0.65;
+}
+
+.activity-sidebar-dismiss {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 8px 4px 0;
+  margin-top: 2px;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 16px;
+  line-height: 1;
+  color: #8a9099;
+  cursor: pointer;
+  opacity: 0.45;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+.activity-sidebar-row:hover .activity-sidebar-dismiss,
+.activity-sidebar-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.activity-sidebar-dismiss:hover,
+.activity-sidebar-dismiss:focus-visible {
+  color: #b42318;
 }
 
 .activity-sidebar-toggle {
@@ -7952,6 +7987,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   /* Two more that sit outside the button classes above. */
   .app-search { min-height: 44px; }
   .activity-sidebar-toggle { min-height: 44px; }
+  .activity-sidebar-dismiss { min-width: 44px; min-height: 44px; }
   /* The priority dots are a deliberately compact three-up control, so they get
      a usable hit area via padding rather than growing the dot itself. */
   .priority-dot { min-width: 36px; min-height: 36px; }

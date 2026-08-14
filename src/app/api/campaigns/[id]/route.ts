@@ -4,6 +4,7 @@ import {
   isCampaignsReadAuthenticated,
   reviewUrl,
   sessionActor,
+  sessionUserSlug,
 } from "@/lib/auth";
 import { actorLabel } from "@/lib/people";
 import {
@@ -22,6 +23,10 @@ import {
   markRevisionDone,
   markApproved,
 } from "@/lib/campaigns";
+import {
+  actorBasecampIdentity,
+  syncCampaignDeliverablesCard,
+} from "@/lib/campaign-card-sync";
 import type { CampaignStatus } from "@/lib/db";
 import { notifyCampaignRemoved } from "@/lib/notify";
 
@@ -41,6 +46,14 @@ type Params = { params: Promise<{ id: string }> };
 async function internalApproverLabel(): Promise<string> {
   const tag = await sessionActor();
   return tag ? actorLabel(tag) : "Admin";
+}
+
+async function syncCard(id: string, column: "approved" | "scheduled") {
+  await syncCampaignDeliverablesCard(
+    id,
+    column,
+    actorBasecampIdentity(await sessionUserSlug())
+  );
 }
 
 export async function GET(_request: Request, { params }: Params) {
@@ -111,6 +124,7 @@ export async function PATCH(request: Request, { params }: Params) {
     );
     if (approved && allApproved && existing.status !== "approved") {
       markApproved(id, approverLabel, "internal");
+      await syncCard(id, "approved");
     }
     if (!approved && existing.status === "approved") {
       unapproveCampaign(id);
@@ -179,6 +193,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!campaign) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    await syncCard(id, "approved");
     return NextResponse.json({
       campaign: {
         ...campaign,
@@ -213,6 +228,12 @@ export async function PATCH(request: Request, { params }: Params) {
     versionNote:
       typeof body.versionNote === "string" ? body.versionNote : undefined,
   });
+
+  if (status === "approved" && existing.status !== "approved") {
+    await syncCard(id, "approved");
+  } else if (status === "scheduled" && existing.status !== "scheduled") {
+    await syncCard(id, "scheduled");
+  }
 
   return NextResponse.json({
     campaign: {

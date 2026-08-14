@@ -1085,16 +1085,202 @@ export function findDeliverablesTables(
     .map((entry) => entry.table);
 }
 
-function findNeedsApprovalColumn(
-  lists: Array<{ id: number; title: string }>
+export type DeliverablesColumnKind =
+  | "needs_approval"
+  | "approved"
+  | "scheduled";
+
+// Score a normalized column title for a workflow step. Lower is a better match;
+// -1 means it is not a candidate. "Needs Approval" must never win as Approved.
+export function scoreDeliverablesColumn(
+  title: string,
+  kind: DeliverablesColumnKind
+): number {
+  const label = normalizedLabel(title);
+  if (kind === "needs_approval") {
+    if (label === "needs approval") return 0;
+    if (label.includes("needs") && label.includes("approval")) return 1;
+    return -1;
+  }
+  if (kind === "approved") {
+    if (label.includes("need") && label.includes("approval")) return -1;
+    if (label === "approved") return 0;
+    if (/\bapproved\b/.test(label)) return 1;
+    return -1;
+  }
+  const hasScheduled = label.includes("scheduled");
+  const hasPublished =
+    label.includes("published") && !label.includes("unpublished");
+  if (hasScheduled && hasPublished) return 0;
+  if (hasScheduled) return 1;
+  if (hasPublished) return 2;
+  return -1;
+}
+
+export function findDeliverablesColumn(
+  lists: Array<{ id: number; title: string }>,
+  kind: DeliverablesColumnKind
 ): { id: number; title: string } | undefined {
-  return lists.find((list) => {
-    const label = normalizedLabel(list.title);
-    return (
-      label === "needs approval" ||
-      (label.includes("needs") && label.includes("approval"))
+  const scored = lists
+    .map((list) => ({
+      list,
+      score: scoreDeliverablesColumn(list.title, kind),
+    }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => a.score - b.score);
+  return scored[0]?.list;
+}
+
+interface DeliverablesBoard {
+  lists: Array<{ id: number; title: string }>;
+  tableColumnIds: number[];
+  needsApproval: { id: number; title: string };
+}
+
+async function loadDeliverablesBoard(
+  projectId: string,
+  identity: BcIdentity
+): Promise<{ ok: true; board: DeliverablesBoard } | { ok: false; error: string }> {
+  const projectRes = await bc(`/projects/${projectId}.json`, undefined, identity);
+  if (!projectRes.ok) {
+    return {
+      ok: false,
+      error: `Basecamp project lookup failed (${projectRes.status}).`,
+    };
+  }
+  const project = await projectRes.json();
+  const dock: Array<{
+    id: number;
+    name: string;
+    title?: string;
+    enabled?: boolean;
+  }> = project.dock || [];
+  const candidates = findDeliverablesTables(dock);
+  if (!candidates.length) {
+    return {
+      ok: false,
+      error:
+        "This Basecamp project has no Deliverables card table. Client approvals only post there.",
+    };
+  }
+
+  const checked: string[] = [];
+  let lastStatus = 0;
+  for (const candidate of candidates) {
+    const tableRes = await bc(
+      `/card_tables/${candidate.id}.json`,
+      undefined,
+      identity
     );
-  });
+    if (!tableRes.ok) {
+      lastStatus = tableRes.status;
+      continue;
+    }
+    const table = await tableRes.json();
+    const lists: Array<{ id: number; title: string }> = table.lists || [];
+    checked.push(candidate.title.trim() || `table ${candidate.id}`);
+    const needsApproval = findDeliverablesColumn(lists, "needs_approval");
+    if (needsApproval) {
+      return {
+        ok: true,
+        board: {
+          lists,
+          tableColumnIds: lists.map((list) => list.id),
+          needsApproval,
+        },
+      };
+    }
+  }
+
+  if (!checked.length) {
+    return {
+      ok: false,
+      error: `Deliverables card table lookup failed (${lastStatus || "not readable"}).`,
+    };
+  }
+  return {
+    ok: false,
+    error: `The ${checked.join(" and ")} card table has no Needs Approval column.`,
+  };
+}
+
+export interface CardMoveResult {
+  ok: boolean;
+  error?: string;
+  columnTitle?: string;
+}
+
+// Move an existing Deliverables card to Approved or Scheduled/Published. Used
+// when a campaign is approved in Campaign Desk, or when its status is marked
+// scheduled. Failures are returned to the caller so the campaign write itself
+// is never blocked on Basecamp.
+export async function moveDeliverablesCard(input: {
+  projectId: string;
+  cardId: string;
+  column: Exclude<DeliverablesColumnKind, "needs_approval">;
+  identity?: BcIdentity;
+}): Promise<CardMoveResult> {
+  const identity = input.identity || SERVICE;
+  if (!input.projectId) {
+    return { ok: false, error: "No Basecamp project set for this client." };
+  }
+  if (!input.cardId) {
+    return { ok: false, error: "No Deliverables card is linked to this campaign." };
+  }
+
+  try {
+    const loaded = await loadDeliverablesBoard(input.projectId, identity);
+    if (!loaded.ok) return loaded;
+
+    const target = findDeliverablesColumn(loaded.board.lists, input.column);
+    if (!target) {
+      const wanted =
+        input.column === "approved" ? "Approved" : "Scheduled/Published";
+      return {
+        ok: false,
+        error: `The Deliverables card table has no ${wanted} column.`,
+      };
+    }
+
+    const cardRes = await bc(
+      `/card_tables/cards/${input.cardId}.json`,
+      undefined,
+      identity
+    );
+    if (!cardRes.ok) {
+      return {
+        ok: false,
+        error: `Deliverables card lookup failed (${cardRes.status}).`,
+      };
+    }
+    const card = (await cardRes.json()) as BcCard;
+    const parentId = card.parent?.id;
+    if (parentId && !loaded.board.tableColumnIds.includes(parentId)) {
+      return {
+        ok: false,
+        error:
+          "The linked card is not on this project's Deliverables table, so it was left where it is.",
+      };
+    }
+    if (parentId === target.id) {
+      return { ok: true, columnTitle: target.title };
+    }
+
+    const moveRes = await bc(
+      `/card_tables/cards/${input.cardId}/moves.json`,
+      {
+        method: "POST",
+        body: JSON.stringify({ column_id: target.id, position: 1 }),
+      },
+      identity
+    );
+    if (!moveRes.ok) {
+      return { ok: false, error: `Could not move the card (${moveRes.status}).` };
+    }
+    return { ok: true, columnTitle: target.title };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 // Send the approved client-review message to the client's Deliverables card
@@ -1131,59 +1317,9 @@ export async function sendApprovalToDeliverables(input: {
   }
 
   try {
-    const projectRes = await bc(`/projects/${input.projectId}.json`, undefined, identity);
-    if (!projectRes.ok) {
-      return { ok: false, error: `Basecamp project lookup failed (${projectRes.status}).` };
-    }
-    const project = await projectRes.json();
-    const dock: Array<{
-      id: number;
-      name: string;
-      title?: string;
-      enabled?: boolean;
-    }> = project.dock || [];
-    const candidates = findDeliverablesTables(dock);
-    if (!candidates.length) {
-      return {
-        ok: false,
-        error:
-          "This Basecamp project has no Deliverables card table. Client approvals only post there.",
-      };
-    }
-
-    let needsApproval: { id: number; title: string } | undefined;
-    let tableColumnIds: number[] = [];
-    const checked: string[] = [];
-    let lastStatus = 0;
-    for (const candidate of candidates) {
-      const tableRes = await bc(`/card_tables/${candidate.id}.json`, undefined, identity);
-      if (!tableRes.ok) {
-        lastStatus = tableRes.status;
-        continue;
-      }
-      const table = await tableRes.json();
-      const lists: Array<{ id: number; title: string }> = table.lists || [];
-      const label = candidate.title.trim() || `table ${candidate.id}`;
-      checked.push(label);
-      needsApproval = findNeedsApprovalColumn(lists);
-      if (needsApproval) {
-        tableColumnIds = lists.map((list) => list.id);
-        break;
-      }
-    }
-
-    if (!needsApproval) {
-      if (!checked.length) {
-        return {
-          ok: false,
-          error: `Deliverables card table lookup failed (${lastStatus || "not readable"}).`,
-        };
-      }
-      return {
-        ok: false,
-        error: `The ${checked.join(" and ")} card table has no Needs Approval column.`,
-      };
-    }
+    const loaded = await loadDeliverablesBoard(input.projectId, identity);
+    if (!loaded.ok) return loaded;
+    const { needsApproval, tableColumnIds } = loaded.board;
 
     // The enriched roster: /projects/{id}/people.json returns no email_address
     // and no attachable_sgid, so matching a client by email could never succeed

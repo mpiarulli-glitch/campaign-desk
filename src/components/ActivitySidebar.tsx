@@ -32,21 +32,22 @@ function relativeTime(iso: string): string {
 }
 
 const READ_IDS_KEY = "cd_activity_read_ids";
+const HIDDEN_IDS_KEY = "cd_activity_hidden_ids";
 const COLLAPSED_KEY = "cd_activity_collapsed";
 
-function loadReadIds(): Set<string> {
+function loadIdSet(key: string): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = window.localStorage.getItem(READ_IDS_KEY);
+    const raw = window.localStorage.getItem(key);
     return new Set(raw ? (JSON.parse(raw) as string[]) : []);
   } catch {
     return new Set();
   }
 }
 
-function saveReadIds(ids: Set<string>) {
+function saveIdSet(key: string, ids: Set<string>) {
   try {
-    window.localStorage.setItem(READ_IDS_KEY, JSON.stringify([...ids]));
+    window.localStorage.setItem(key, JSON.stringify([...ids]));
   } catch {
     // ignore storage failures
   }
@@ -56,13 +57,15 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSED_KEY) === "1";
   });
 
   useEffect(() => {
-    setReadIds(loadReadIds());
+    setReadIds(loadIdSet(READ_IDS_KEY));
+    setHiddenIds(loadIdSet(HIDDEN_IDS_KEY));
   }, []);
 
   useEffect(() => {
@@ -70,7 +73,7 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
     fetch("/api/activity")
       .then((res) => (res.ok ? res.json() : { activity: [] }))
       .then((data) => {
-        if (active) setItems((data.activity || []).slice(0, limit));
+        if (active) setItems(data.activity || []);
       })
       .catch(() => {})
       .finally(() => {
@@ -98,10 +101,24 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
       if (prev.has(key)) return prev;
       const next = new Set(prev);
       next.add(key);
-      saveReadIds(next);
+      saveIdSet(READ_IDS_KEY, next);
       return next;
     });
   }
+
+  function hideItem(key: string) {
+    setHiddenIds((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      saveIdSet(HIDDEN_IDS_KEY, next);
+      return next;
+    });
+  }
+
+  const visible = items
+    .filter((item) => !hiddenIds.has(`${item.kind}-${item.id}`))
+    .slice(0, limit);
 
   return (
     <aside className="card card-pad stack activity-sidebar">
@@ -136,55 +153,69 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
         <p className="muted" style={{ margin: 0 }}>
           Loading...
         </p>
-      ) : items.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="empty">No client activity yet.</div>
       ) : (
         <div className="activity-sidebar-list">
-          {items.map((item) => {
+          {visible.map((item) => {
             const key = `${item.kind}-${item.id}`;
             const isRead = readIds.has(key);
             return (
-              <Link
-                key={key}
-                href={`/admin/campaigns/${item.campaign_id}`}
-                className={
-                  isRead
-                    ? "activity-sidebar-item activity-sidebar-item--read"
-                    : "activity-sidebar-item"
-                }
-                onClick={() => markRead(key)}
-              >
-                <span
-                  aria-hidden
-                  className="activity-dot"
-                  style={{
-                    background:
-                      item.kind === "approved" ? "#16a34a" : "#2563eb",
+              <div key={key} className="activity-sidebar-row">
+                <Link
+                  href={`/admin/campaigns/${item.campaign_id}`}
+                  className={
+                    isRead
+                      ? "activity-sidebar-item activity-sidebar-item--read"
+                      : "activity-sidebar-item"
+                  }
+                  onClick={() => markRead(key)}
+                >
+                  <span
+                    aria-hidden
+                    className="activity-dot"
+                    style={{
+                      background:
+                        item.kind === "approved" ? "#16a34a" : "#2563eb",
+                    }}
+                  />
+                  <span className="activity-sidebar-text">
+                    <span className="activity-sidebar-line">
+                      {item.kind === "approved" ? (
+                        <>
+                          <strong>{item.client_name || "Client"}</strong> approved{" "}
+                          {item.campaign_title}
+                          {item.star_rating ? ` (${item.star_rating}★)` : ""}
+                        </>
+                      ) : (
+                        <>
+                          <strong>{item.actor || "Reviewer"}</strong>
+                          {item.body ? `: ${item.body}` : " left feedback"}
+                          {item.attachment_count > 0
+                            ? ` 📎${item.attachment_count}`
+                            : ""}
+                        </>
+                      )}
+                    </span>
+                    <span className="activity-sidebar-meta">
+                      {item.campaign_title} · {relativeTime(item.at)}
+                    </span>
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  className="activity-sidebar-dismiss"
+                  aria-label="Hide this from the campaigns feed"
+                  title="Hide this from the campaigns feed"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    hideItem(key);
                   }}
-                />
-                <span className="activity-sidebar-text">
-                  <span className="activity-sidebar-line">
-                    {item.kind === "approved" ? (
-                      <>
-                        <strong>{item.client_name || "Client"}</strong> approved{" "}
-                        {item.campaign_title}
-                        {item.star_rating ? ` (${item.star_rating}★)` : ""}
-                      </>
-                    ) : (
-                      <>
-                        <strong>{item.actor || "Reviewer"}</strong>
-                        {item.body ? `: ${item.body}` : " left feedback"}
-                        {item.attachment_count > 0
-                          ? ` 📎${item.attachment_count}`
-                          : ""}
-                      </>
-                    )}
-                  </span>
-                  <span className="activity-sidebar-meta">
-                    {item.campaign_title} · {relativeTime(item.at)}
-                  </span>
-                </span>
-              </Link>
+                >
+                  ×
+                </button>
+              </div>
             );
           })}
         </div>

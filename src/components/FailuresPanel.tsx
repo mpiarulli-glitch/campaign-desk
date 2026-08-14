@@ -26,6 +26,7 @@ type Failure = {
 const KIND_LABEL: Record<string, string> = {
   email: "Email not sent",
   basecamp_card: "Card not created",
+  basecamp_card_move: "Card not moved",
   basecamp_comment: "Follow-up not posted",
   basecamp_campfire: "Chat message not posted",
   basecamp_approval: "Approval not posted",

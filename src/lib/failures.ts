@@ -16,6 +16,7 @@ import { nanoid } from "nanoid";
 export type FailureKind =
   | "email"
   | "basecamp_card"
+  | "basecamp_card_move"
   | "basecamp_campfire"
   | "basecamp_comment"
   | "basecamp_approval"
