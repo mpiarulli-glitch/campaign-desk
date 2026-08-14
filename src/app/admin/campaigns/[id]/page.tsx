@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { EmailPreview } from "@/components/EmailPreview";
+import { EmailPreview, type PendingEdit } from "@/components/EmailPreview";
+import { applyTextEdits } from "@/lib/inline-edit";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AssetContentFields } from "@/components/AssetContentFields";
@@ -129,6 +130,10 @@ export default function AdminCampaignPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
   const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [editingCopy, setEditingCopy] = useState(false);
+  const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
+  // Bumped to remount the preview and throw away edits on discard.
+  const [previewNonce, setPreviewNonce] = useState(0);
   const [htmlDraft, setHtmlDraft] = useState("");
   const [emailTitleDraft, setEmailTitleDraft] = useState("");
   const [versionNote, setVersionNote] = useState("");
@@ -499,6 +504,67 @@ export default function AdminCampaignPage() {
     setStatus(next);
     setMessage("Status updated.");
     load(activeEmailId);
+  }
+
+  // Copy edited straight in the preview. The edits name text runs rather than
+  // markup, and applyTextEdits splices them into the stored source, so the
+  // <head>, the media queries, and the Outlook conditionals come back
+  // untouched. It saves through the same endpoint as a pasted revision, so an
+  // inline edit lands in Versions and can be reverted like any other.
+  async function saveInlineEdits() {
+    if (!activeEmail || pendingEdits.length === 0) return;
+    setSaving(true);
+    setMessage("");
+    setError("");
+
+    const result = applyTextEdits(activeDoc.html, pendingEdits);
+    if (result.applied === 0) {
+      setSaving(false);
+      setError(
+        "Could not place those edits back in the HTML, so nothing was saved. Edit the HTML directly instead."
+      );
+      return;
+    }
+
+    const res = await fetch(`/api/campaigns/${id}/emails`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        emailId: activeEmail.id,
+        htmlContent: result.html,
+        versionNote: `Inline copy edit (${result.applied} change${
+          result.applied === 1 ? "" : "s"
+        })`,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not save the copy change.");
+      return;
+    }
+
+    const outlook = result.outlookCopiesUpdated
+      ? ` Outlook button copy updated too.`
+      : "";
+    const missed = result.skipped.length
+      ? ` ${result.skipped.length} change could not be placed and was left out.`
+      : "";
+    setPendingEdits([]);
+    setEditingCopy(false);
+    setMessage(
+      `Saved ${result.applied} copy change${
+        result.applied === 1 ? "" : "s"
+      }.${outlook}${missed}`
+    );
+    load(activeEmail.id);
+  }
+
+  function discardInlineEdits() {
+    setPendingEdits([]);
+    setEditingCopy(false);
+    // Remounting the preview throws away the edited DOM and re-renders from the
+    // saved HTML, which is what makes Discard actually discard.
+    setPreviewNonce((n) => n + 1);
   }
 
   async function saveHtml(e: FormEvent) {
@@ -1375,12 +1441,64 @@ export default function AdminCampaignPage() {
         {tab === "feedback" ? (
           <div className="split-review">
             <div className="stack">
+              {!activeDoc.interactive ? (
+                <div className="card card-pad row copy-edit-bar">
+                  {editingCopy ? (
+                    <>
+                      <span className="copy-edit-hint">
+                        {pendingEdits.length === 0
+                          ? "Click any text in the email and type over it."
+                          : `${pendingEdits.length} change${
+                              pendingEdits.length === 1 ? "" : "s"
+                            } ready to save.`}
+                      </span>
+                      <div className="row" style={{ gap: 8 }}>
+                        <button
+                          className="btn btn-sm"
+                          onClick={saveInlineEdits}
+                          disabled={saving || pendingEdits.length === 0}
+                        >
+                          {saving ? "Saving..." : "Save copy changes"}
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={discardInlineEdits}
+                          disabled={saving}
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="copy-edit-hint">
+                        Change wording without opening the HTML.
+                      </span>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setEditingCopy(true)}
+                        disabled={isApproved}
+                        title={
+                          isApproved
+                            ? "This package is approved. Reopen it to edit copy."
+                            : undefined
+                        }
+                      >
+                        Edit copy
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : null}
               <EmailPreview
+                key={`${activeDoc.html.length}-${previewNonce}`}
                 html={activeDoc.html}
                 pins={inlinePins}
                 activePinId={activePinId}
                 onSelectPin={setActivePinId}
                 interactive={activeDoc.interactive}
+                editing={editingCopy}
+                onEditsChange={setPendingEdits}
               />
               <EmailLinks html={activeDoc.html} />
 

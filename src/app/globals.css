@@ -9313,3 +9313,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-size: 14px;
   color: var(--text-muted);
 }
+
+/* Editing an email's copy in place, from the preview. */
+.copy-edit-bar {
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.copy-edit-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+}

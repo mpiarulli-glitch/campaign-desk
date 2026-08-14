@@ -20,7 +20,47 @@ type Props = {
   // When true the content is a form/quiz: its JS runs in a sandboxed iframe so
   // reviewers can click through it. Height is reported by the injected script.
   interactive?: boolean;
+  // Turns the copy in the preview into something you can click into and type
+  // over. Reports every run that now differs from the source, for
+  // applyTextEdits to splice back in.
+  editing?: boolean;
+  onEditsChange?: (edits: PendingEdit[]) => void;
 };
+
+// A single run of text the reviewer has changed. `ordinal` counts occurrences
+// of the original text across the document in reading order, which is what
+// tells two identical labels apart when the edit is spliced back into source.
+export type PendingEdit = {
+  oldText: string;
+  newText: string;
+  ordinal: number;
+};
+
+// Copy lives in text nodes, so those are what becomes editable, via their
+// parent element. Anything whose text is only whitespace is skipped: making it
+// editable would put a caret in the gaps between table cells.
+const NOT_EDITABLE = new Set([
+  "SCRIPT",
+  "STYLE",
+  "TITLE",
+  "HEAD",
+  "META",
+  "LINK",
+  "NOSCRIPT",
+]);
+
+function editableHosts(doc: Document): HTMLElement[] {
+  const hosts: HTMLElement[] = [];
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const text = n.nodeValue || "";
+    if (!text.trim()) continue;
+    const host = n.parentElement;
+    if (!host || NOT_EDITABLE.has(host.tagName)) continue;
+    if (!hosts.includes(host)) hosts.push(host);
+  }
+  return hosts;
+}
 
 // Injected into interactive previews. Reports the document height to the parent
 // via postMessage on load, resize, interaction, and DOM mutation, so the iframe
@@ -92,6 +132,8 @@ export function EmailPreview({
   onPlacePin,
   onSelectPin,
   interactive = false,
+  editing = false,
+  onEditsChange,
 }: Props) {
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -220,6 +262,107 @@ export function EmailPreview({
       }
     };
   }, [srcDoc, freezeHeight, interactive]);
+
+  // Copy editing. The preview is a same-origin srcDoc frame, so the text in it
+  // can be made editable in place and read back. What is read back is only the
+  // text: the source HTML is spliced by applyTextEdits rather than
+  // re-serialised from this DOM, because this DOM has already lost the parts of
+  // a full document that matter most (the <head> and its media queries).
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || interactive) return;
+
+    const doc = iframe.contentDocument;
+    if (!doc || !doc.body) return;
+
+    if (!editing) {
+      for (const host of editableHosts(doc)) {
+        host.removeAttribute("contenteditable");
+        host.removeAttribute("data-cd-editable");
+      }
+      return;
+    }
+
+    // The text every run started as, and how many identical runs came before
+    // it. Captured once on entering edit mode so the ordinals stay fixed even
+    // as the reviewer types one of them into a duplicate of another.
+    const baseline = new Map<HTMLElement, { text: string; ordinal: number }[]>();
+    const seen = new Map<string, number>();
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = n.nodeValue || "";
+      if (!text.trim()) continue;
+      const host = n.parentElement;
+      if (!host || NOT_EDITABLE.has(host.tagName)) continue;
+      const ordinal = seen.get(text) ?? 0;
+      seen.set(text, ordinal + 1);
+      const list = baseline.get(host) || [];
+      list.push({ text, ordinal });
+      baseline.set(host, list);
+    }
+
+    const hosts = [...baseline.keys()];
+    for (const host of hosts) {
+      // plaintext-only keeps the browser from dropping <span style> and <div>
+      // into table markup that has to survive Outlook. Where it is unsupported
+      // the attribute falls back to plain contentEditable.
+      host.setAttribute("contenteditable", "plaintext-only");
+      if (host.contentEditable !== "plaintext-only") {
+        host.setAttribute("contenteditable", "true");
+      }
+      host.setAttribute("data-cd-editable", "");
+    }
+
+    const style = doc.createElement("style");
+    style.id = "cd-edit-style";
+    style.textContent = `
+      [data-cd-editable]{outline:1px dashed rgba(37,99,235,.45);outline-offset:2px;cursor:text;}
+      [data-cd-editable]:hover{outline-color:rgba(37,99,235,.9);background:rgba(37,99,235,.06);}
+      [data-cd-editable]:focus{outline:2px solid #2563eb;outline-offset:2px;background:rgba(37,99,235,.08);}
+    `;
+    doc.head?.appendChild(style);
+
+    const collect = () => {
+      const edits: PendingEdit[] = [];
+      for (const [host, runs] of baseline) {
+        const current: string[] = [];
+        const w = doc.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        for (let n = w.nextNode(); n; n = w.nextNode()) {
+          const t = n.nodeValue || "";
+          if (t.trim()) current.push(t);
+        }
+        // A run count that no longer matches means typing merged or split the
+        // text nodes, and pairing them off by position would put copy in the
+        // wrong place. Those are left out rather than guessed at.
+        if (current.length !== runs.length) continue;
+        runs.forEach((run, i) => {
+          if (current[i] !== run.text) {
+            edits.push({
+              oldText: run.text,
+              newText: current[i],
+              ordinal: run.ordinal,
+            });
+          }
+        });
+      }
+      onEditsChange?.(edits);
+    };
+
+    doc.addEventListener("input", collect);
+    // Typing changes how tall the email is, so the frame has to follow.
+    const onInput = () => setHeight(measureDocHeight(doc));
+    doc.addEventListener("input", onInput);
+
+    return () => {
+      doc.removeEventListener("input", collect);
+      doc.removeEventListener("input", onInput);
+      doc.getElementById("cd-edit-style")?.remove();
+      for (const host of hosts) {
+        host.removeAttribute("contenteditable");
+        host.removeAttribute("data-cd-editable");
+      }
+    };
+  }, [editing, srcDoc, ready, interactive, onEditsChange]);
 
   // Interactive frames report their own height via postMessage. Match the
   // message to this instance's iframe so multiple previews on one page (e.g.
