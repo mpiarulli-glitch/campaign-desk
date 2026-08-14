@@ -8553,7 +8553,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   color: var(--text-muted);
   opacity: 0.45;
 }
-.pcon-cell.is-on { color: #ffffff; border-color: transparent; }
+/* The white text needs a background of its own, not one inherited from a
+   colour-week rule below. The Confirmed tab renders this cell in a band with no
+   data-week attribute, and an absent attribute matches no selector at all, not
+   even [data-week=""] — which left the date white on white. */
+.pcon-cell.is-on {
+  color: #ffffff;
+  background: var(--text-muted);
+  border-color: transparent;
+}
 .pcon-band[data-week="purple"] .pcon-cell.is-on { background: #8b5cf6; }
 .pcon-band[data-week="red"] .pcon-cell.is-on { background: #ef4444; }
 .pcon-band[data-week="blue"] .pcon-cell.is-on { background: #3b82f6; }
