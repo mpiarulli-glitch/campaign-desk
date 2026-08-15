@@ -387,18 +387,45 @@ function AddTaskForm({
   const todos = useMemo(() => todoState?.todos || [], [todoState]);
   const meeting = draft.mode === "meeting";
 
-  // Grouped by todo list, the way Basecamp reads, with anything assigned to this
-  // person lifted into a group of its own at the top so their own work is one
-  // glance away without the rest being hidden.
+  // Grouped by todo list, with anything assigned to this person lifted into a
+  // group of its own at the top. Inside every group the order is due date,
+  // earliest first, so a shoot tomorrow sits above one next month. Todos with
+  // no due date go last. Lists themselves are ordered by their soonest due
+  // date for the same reason.
   const groups = useMemo(() => {
-    const assigned = todos.filter((t) => t.assigned);
+    const byDue = (a: BcTodo, b: BcTodo) => {
+      if (a.dueOn && b.dueOn) {
+        const byDate = a.dueOn.localeCompare(b.dueOn);
+        return byDate || a.title.localeCompare(b.title);
+      }
+      if (a.dueOn) return -1;
+      if (b.dueOn) return 1;
+      return a.title.localeCompare(b.title);
+    };
+    const soonest = (items: BcTodo[]) =>
+      items.reduce<string | null>((best, t) => {
+        if (!t.dueOn) return best;
+        if (!best || t.dueOn < best) return t.dueOn;
+        return best;
+      }, null);
+
+    const assigned = todos.filter((t) => t.assigned).sort(byDue);
     const map = new Map<string, BcTodo[]>();
     for (const t of todos) {
       const list = map.get(t.list) || [];
       list.push(t);
       map.set(t.list, list);
     }
-    const byList: Array<[string, BcTodo[]]> = [...map.entries()];
+    const byList: Array<[string, BcTodo[]]> = [...map.entries()]
+      .map(([list, items]) => [list, [...items].sort(byDue)] as [string, BcTodo[]])
+      .sort((a, b) => {
+        const aDue = soonest(a[1]);
+        const bDue = soonest(b[1]);
+        if (aDue && bDue) return aDue.localeCompare(bDue) || a[0].localeCompare(b[0]);
+        if (aDue) return -1;
+        if (bDue) return 1;
+        return a[0].localeCompare(b[0]);
+      });
     return assigned.length ? [["Assigned to you", assigned] as [string, BcTodo[]], ...byList] : byList;
   }, [todos]);
 
@@ -641,6 +668,7 @@ export default function PersonForecastPage() {
   // the same picker with an "internal:" prefixed id so ensureTodos knows to
   // hit /api/forecast/todos?project= instead of ?client=.
   const [internalProjects, setInternalProjects] = useState<ClientOption[]>([]);
+  const [syncingProjects, setSyncingProjects] = useState(false);
   const [todosByClient, setTodosByClient] = useState<Record<string, TodoState>>({});
   // Meeting picker contents, keyed by the day being added to rather than by
   // client, because a meeting is scoped to a date and often has no client.
@@ -710,34 +738,34 @@ export default function PersonForecastPage() {
       })
       .catch(() => {});
   }, []);
-  useEffect(() => {
-    fetch("/api/revenue/clients")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (!Array.isArray(json?.clients)) return;
-        setClients(
-          json.clients
-            .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
-            .sort((a: ClientOption, b: ClientOption) => a.name.localeCompare(b.name))
-        );
-      })
-      .catch(() => {});
+  const loadClients = useCallback(async () => {
+    const res = await fetch("/api/revenue/clients");
+    const json = res.ok ? await res.json() : null;
+    if (!Array.isArray(json?.clients)) return;
+    setClients(
+      json.clients
+        .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
+        .sort((a: ClientOption, b: ClientOption) => a.name.localeCompare(b.name))
+    );
   }, []);
-  useEffect(() => {
+  const loadInternalProjects = useCallback(async () => {
     if (!person) return;
-    fetch(`/api/forecast/internal-projects?person=${person}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (!Array.isArray(json?.projects)) return;
-        setInternalProjects(
-          json.projects.map((p: { id: string; name: string }) => ({
-            id: `internal:${p.id}`,
-            name: p.name,
-          }))
-        );
-      })
-      .catch(() => {});
+    const res = await fetch(`/api/forecast/internal-projects?person=${person}`);
+    const json = res.ok ? await res.json() : null;
+    if (!Array.isArray(json?.projects)) return;
+    setInternalProjects(
+      json.projects.map((p: { id: string; name: string }) => ({
+        id: `internal:${p.id}`,
+        name: p.name,
+      }))
+    );
   }, [person]);
+  useEffect(() => {
+    loadClients().catch(() => {});
+  }, [loadClients]);
+  useEffect(() => {
+    loadInternalProjects().catch(() => {});
+  }, [loadInternalProjects]);
 
   // Client picker contents: revenue clients first, then internal Basecamp
   // projects (Empire Leadership HQ, etc.) that have todos but aren't billing
@@ -808,7 +836,9 @@ export default function PersonForecastPage() {
   );
 
   function pickClient(date: string, clientId: string) {
-    const hit = clients.find((c) => c.id === clientId);
+    const hit =
+      clients.find((c) => c.id === clientId) ||
+      internalProjects.find((c) => c.id === clientId);
     // Changing client invalidates whatever task was picked for the old one.
     setDraft(date, {
       clientId,
@@ -866,6 +896,19 @@ export default function PersonForecastPage() {
     }
     // Drop the cached picker contents so the next open re-reads the fresh table.
     setEventsByDate({});
+  }
+
+  async function syncProjects() {
+    setSyncingProjects(true);
+    setError("");
+    requestedTodos.current.clear();
+    setTodosByClient({});
+    try {
+      await Promise.all([loadClients(), loadInternalProjects()]);
+    } catch {
+      setError("Could not refresh Basecamp projects.");
+    }
+    setSyncingProjects(false);
   }
 
   // Switching mode clears whatever was picked under the old one, so a half-filled
@@ -1237,6 +1280,14 @@ export default function PersonForecastPage() {
                 </button>
               ) : null}
             </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={syncProjects}
+              disabled={syncingProjects}
+              title="Re-read client accounts and internal MEG projects from Basecamp, so they show up in the picker."
+            >
+              {syncingProjects ? "Syncing…" : "Sync projects"}
+            </button>
             <button
               className="btn btn-ghost btn-sm"
               onClick={syncMeetings}

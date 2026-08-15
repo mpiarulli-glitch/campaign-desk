@@ -4,7 +4,7 @@
 // both take exactly the same code path and produce the same report.
 
 import { getDb, nowIso } from "./db";
-import { listProjects } from "./basecamp";
+import { listProjects, type BcIdentity } from "./basecamp";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
 
 // Client projects are named "<Client> Growth OS - Powered by the Empire
@@ -68,14 +68,25 @@ const INTERNAL_PROJECTS = new Set(
 // project here by its exact Basecamp name; it still has to appear in
 // INTERNAL_PROJECTS above to stay out of the rev_client import pass.
 const FORECAST_VISIBLE_INTERNAL_PROJECTS = new Set(
-  ["Empire Leadership HQ"].map((n) => n.trim().toLowerCase())
+  [
+    "Empire Leadership HQ",
+    "Video Editing Team",
+    "Social Media and Graphic Design Team",
+    "Email/SMS + Automation + Linkedin Department",
+    "MEG Web HQ",
+    "SEO HQ",
+    "MEG HQ Social",
+    "Empire Ads Team",
+  ].map((n) => n.trim().toLowerCase())
 );
 
 // Internal Basecamp projects exposed to the forecast todo picker, resolved by
 // name against the live project list rather than hardcoded ids so a project
 // getting recreated in Basecamp doesn't silently break the link.
-export async function listInternalProjects(): Promise<Array<{ id: string; name: string }>> {
-  const projects = await listProjects();
+export async function listInternalProjects(
+  identity?: BcIdentity
+): Promise<Array<{ id: string; name: string }>> {
+  const projects = await listProjects(identity);
   return projects
     .filter((p) => FORECAST_VISIBLE_INTERNAL_PROJECTS.has(p.name.trim().toLowerCase()))
     .map((p) => ({ id: String(p.id), name: p.name }));
