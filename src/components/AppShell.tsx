@@ -280,16 +280,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Two marks, one shown at a time: the full wordmark needs the expanded
             sidebar's width, and the square mark carries the brand when it's
             collapsed to 56px, where a 4:1 wordmark would be illegible. */}
-        <Link href="/admin" className="side-brand" title="Campaign Desk">
+        <Link href="/admin" className="side-brand" title="BUILD YOUR EMPIRE">
           <span className="side-mark" aria-hidden="true">M</span>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/meg-logo.png"
-            alt="Marketing Empire Group"
-            className="side-logo"
-            width={180}
-            height={45}
-          />
+          <span className="side-brand-copy">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/meg-logo.png"
+              alt="Marketing Empire Group"
+              className="side-logo"
+              width={180}
+              height={45}
+            />
+            <span className="side-tagline empire-mark nav-label">BUILD YOUR EMPIRE</span>
+          </span>
         </Link>
         <nav className="side-nav">
           {items.map((it) => (

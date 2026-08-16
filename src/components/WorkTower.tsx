@@ -208,6 +208,22 @@ export function WorkTower({
               ))}
             </g>
           ))}
+          {/* King Kong on the Empire. A silhouette on the left skyline tower. */}
+          <g className="bld-kong" aria-label="King Kong">
+            <title>King Kong</title>
+            <g transform="translate(78, 418)" fill="#0a0d18">
+              <ellipse cx="28" cy="18" rx="16" ry="14" />
+              <circle cx="20" cy="12" r="3.2" fill="#1a2038" />
+              <circle cx="32" cy="12" r="3.2" fill="#1a2038" />
+              <ellipse cx="28" cy="48" rx="13" ry="20" />
+              <path d="M8 38c-8 10-10 28-6 44 6-8 12-10 18-8" />
+              <path d="M48 36c10 8 16 26 14 46-8-6-14-8-20-4" />
+              <path d="M18 64c-2 18-8 32-4 48h10c-4-14-2-30 2-44" />
+              <path d="M34 64c4 16 6 32 2 48h10c6-18 0-34-4-48" />
+              <ellipse cx="14" cy="88" rx="8" ry="5" />
+              <ellipse cx="42" cy="86" rx="8" ry="5" />
+            </g>
+          </g>
         </svg>
 
         {floors.length === 0 ? (
@@ -267,7 +283,7 @@ export function WorkTower({
 
               <div className="bld-lobby">
                 <span className="bld-door" aria-hidden="true" />
-                <span className="bld-marquee">NOW BUILDING · {clientName.toUpperCase()}</span>
+                <span className="bld-marquee">BUILD YOUR EMPIRE · {clientName.toUpperCase()}</span>
                 <span className="bld-door" aria-hidden="true" />
               </div>
             </div>
