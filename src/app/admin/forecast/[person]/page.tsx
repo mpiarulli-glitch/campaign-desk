@@ -677,6 +677,8 @@ export default function PersonForecastPage() {
   // stale, but a meeting added this morning would not show until then, and this
   // page is now the only place that cache is used.
   const [syncingEvents, setSyncingEvents] = useState(false);
+  const [filling, setFilling] = useState(false);
+  const [fillNote, setFillNote] = useState("");
   // taskId -> hours typed into that task's "log time" box. Logging is explicit:
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
@@ -909,6 +911,50 @@ export default function PersonForecastPage() {
       setError("Could not refresh Basecamp projects.");
     }
     setSyncingProjects(false);
+  }
+
+  async function fillFromTodos() {
+    setFilling(true);
+    setError("");
+    setFillNote("");
+    const res = await fetch(`/api/forecast/${person}/autofill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week }),
+    });
+    const json = res.ok ? await res.json().catch(() => null) : null;
+    setFilling(false);
+    if (!res.ok || !json) {
+      setError("Could not build a forecast from your Basecamp todos.");
+      return;
+    }
+    if (json.reason === "not-connected") {
+      setError("Connect Basecamp before filling a forecast from todos.");
+      return;
+    }
+    if (json.reason === "person-not-connected") {
+      setError("Connect this person's Basecamp account so we can see their todos.");
+      return;
+    }
+    const added = Number(json.added) || 0;
+    if (added === 0) {
+      if (json.reason === "no-assigned-due") {
+        setFillNote("No assigned Basecamp todos with a due date were found.");
+      } else if (json.skippedExisting && !json.skippedOtherWeek) {
+        setFillNote("Those todos are already on this forecast.");
+      } else {
+        setFillNote("Nothing due this week that is not already on the list.");
+      }
+    } else {
+      const extra = json.skippedExisting
+        ? ` Skipped ${json.skippedExisting} already listed.`
+        : "";
+      setFillNote(
+        `Added ${added} task${added === 1 ? "" : "s"}, each on the workday before it is due.${extra}`
+      );
+    }
+    if (view === "today") setView("list");
+    load(week, { silent: true });
   }
 
   // Switching mode clears whatever was picked under the old one, so a half-filled
@@ -1281,6 +1327,14 @@ export default function PersonForecastPage() {
               ) : null}
             </div>
             <button
+              className="btn btn-sm"
+              onClick={fillFromTodos}
+              disabled={filling}
+              title="Add your assigned Basecamp todos to this week, each on the workday before it is due. Hours default to 1 so you can edit them."
+            >
+              {filling ? "Building…" : "Create forecast for me"}
+            </button>
+            <button
               className="btn btn-ghost btn-sm"
               onClick={syncProjects}
               disabled={syncingProjects}
@@ -1300,6 +1354,7 @@ export default function PersonForecastPage() {
         </div>
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
+        {fillNote ? <p className="muted" style={{ margin: "0 0 16px" }}>{fillNote}</p> : null}
 
         {!loading && progress.total > 0 ? (
           <div

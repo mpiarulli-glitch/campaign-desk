@@ -688,6 +688,48 @@ export async function listPersonProjectTodos(
   return { todos: flagged, assignedCount };
 }
 
+export interface AssignedDueTodo {
+  id: string;
+  title: string;
+  dueOn: string;
+  projectId: string;
+  projectName: string;
+}
+
+// Open todos assigned to this person that have a due date, across projects.
+// Uses the account-wide recordings feed rather than walking every project's
+// lists, so a "create forecast for me" click stays on one request path.
+export async function listAssignedDueTodos(
+  bcPersonId: number,
+  identity: BcIdentity,
+  maxPages = 20
+): Promise<AssignedDueTodo[]> {
+  const raw = await bcCollection<{
+    id: number;
+    title?: string;
+    content?: string;
+    due_on?: string | null;
+    completed?: boolean;
+    assignees?: Array<{ id: number }>;
+    bucket?: { id: number; name?: string };
+  }>(`/projects/recordings.json?type=Todo&status=active`, maxPages, identity);
+
+  return raw
+    .filter((t) => {
+      if (t.completed) return false;
+      if (!t.due_on) return false;
+      if (!(t.assignees || []).some((a) => a.id === bcPersonId)) return false;
+      return Boolean((t.content || t.title || "").trim());
+    })
+    .map((t) => ({
+      id: String(t.id),
+      title: (t.content || t.title || "").trim(),
+      dueOn: t.due_on as string,
+      projectId: String(t.bucket?.id || ""),
+      projectName: t.bucket?.name || "",
+    }));
+}
+
 /* ------------------------------------------------------------ schedule feed */
 
 export interface BcScheduleEntry {

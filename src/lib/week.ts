@@ -31,6 +31,19 @@ export function addWeeks(weekStart: string, n: number): string {
   return toYmd(d);
 }
 
+// The workday to plan a todo so it is done before it is due. One calendar day
+// earlier, then if that lands on a weekend, the Friday before. Monday-due work
+// is therefore planned on Friday, not on Sunday, which the week grid does not
+// show.
+export function dayBeforeDue(dueOn: string): string {
+  const d = parseYmd(dueOn);
+  d.setDate(d.getDate() - 1);
+  const day = d.getDay();
+  if (day === 6) d.setDate(d.getDate() - 1);
+  if (day === 0) d.setDate(d.getDate() - 2);
+  return toYmd(d);
+}
+
 // "Jul 14 – 20, 2026" (or spanning months / years when needed)
 export function weekLabel(weekStart: string): string {
   const start = parseYmd(weekStart);

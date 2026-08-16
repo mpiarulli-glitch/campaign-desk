@@ -37,6 +37,16 @@ export function listTasksForPersonWeek(person: string, weekStart: string): Forec
     .all(person, weekStart, end) as ForecastTask[];
 }
 
+export function linkedTodoIdsForPerson(person: string): Set<string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT basecamp_todo_id AS id FROM forecast_tasks
+       WHERE person = ? AND basecamp_todo_id != ''`
+    )
+    .all(person) as Array<{ id: string }>;
+  return new Set(rows.map((r) => r.id));
+}
+
 export function getTask(id: string): ForecastTask | null {
   return (
     (getDb().prepare(`SELECT * FROM forecast_tasks WHERE id = ?`).get(id) as
