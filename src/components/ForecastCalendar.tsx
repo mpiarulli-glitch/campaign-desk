@@ -124,7 +124,7 @@ export function ForecastCalendar({
               ))}
               {blocks.map((b) => {
                 const top = ((b.startMin - CAL_START_HOUR * 60) / 60) * CAL_PX_PER_HOUR;
-                const height = Math.max(22, ((b.endMin - b.startMin) / 60) * CAL_PX_PER_HOUR);
+                const height = Math.max(76, ((b.endMin - b.startMin) / 60) * CAL_PX_PER_HOUR);
                 const width = `calc(${100 / b.cols}% - 4px)`;
                 const left = `calc(${(100 / b.cols) * b.col}% + 2px)`;
                 const end = addHoursToTime(b.item.start_time, b.item.hours);
@@ -135,7 +135,7 @@ export function ForecastCalendar({
                       dragId === b.item.id ? "is-dragging" : ""
                     }`}
                     style={{ top: Math.max(0, top), height, left, width }}
-                    title="Drag to another time or day"
+                    title={[b.item.client, b.item.notes].filter(Boolean).join(" — ") || "Drag to another time or day"}
                     {...dragProps(b.item)}
                   >
                     <div className="fc-cal-block-top">
@@ -150,19 +150,21 @@ export function ForecastCalendar({
                         {formatTimeLabel(b.item.start_time)}
                         {end ? `–${formatTimeLabel(end)}` : ""}
                       </span>
+                      <button
+                        type="button"
+                        className="remove"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemove(b.item.id);
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
-                    <strong>{b.item.client || "Task"}</strong>
-                    {b.item.notes ? <span className="fc-cal-block-notes">{b.item.notes}</span> : null}
-                    <button
-                      type="button"
-                      className="remove"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRemove(b.item.id);
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div className="fc-cal-block-body">
+                      <strong>{b.item.client || "Task"}</strong>
+                      {b.item.notes ? <div className="fc-cal-block-notes">{b.item.notes}</div> : null}
+                    </div>
                   </div>
                 );
               })}
@@ -186,7 +188,7 @@ export function ForecastCalendar({
                     className={`ops-task-chip pri-${t.priority} ${t.completed ? "is-done" : ""} ${
                       dragId === t.id ? "is-dragging" : ""
                     }`}
-                    title="Drag onto the calendar to give this a start time"
+                    title={[t.client, t.notes].filter(Boolean).join(" — ") || "Drag onto the calendar to give this a start time"}
                     {...dragProps(t)}
                   >
                     <div className="chip-top">
@@ -200,7 +202,11 @@ export function ForecastCalendar({
                       <span className="client">{t.client || "Task"}</span>
                       <span className="hrs">{t.hours}h</span>
                     </div>
-                    {t.notes ? <div className="notes">{t.notes}</div> : null}
+                    {t.notes ? (
+                      <div className="fc-cal-chip-copy">
+                        <div className="notes">{t.notes}</div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

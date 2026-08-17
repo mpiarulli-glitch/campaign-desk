@@ -3,7 +3,7 @@
 
 export const CAL_START_HOUR = 7;
 export const CAL_END_HOUR = 19;
-export const CAL_PX_PER_HOUR = 52;
+export const CAL_PX_PER_HOUR = 64;
 // Used when Basecamp has no clock time (all-day meetings) or someone adds
 // from the leftover tray instead of clicking an hour.
 export const DEFAULT_START_TIME = "09:00";
