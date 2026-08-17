@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -111,6 +112,13 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Keep bulk-add order as the picker lists them, not the order they were ticked,
+// so four assigned todos still land in the same order as Basecamp.
+function todosInOrder(todos: BcTodo[], ids: string[]): BcTodo[] {
+  const want = new Set(ids);
+  return todos.filter((t) => want.has(t.id));
+}
+
 // "work" is the original flow: pick a client, then one of its Basecamp todos.
 // "meeting" books a Basecamp schedule entry instead, so a meeting can take up
 // hours without a todo being invented to hold it.
@@ -123,12 +131,13 @@ type Draft = {
   client: string;
   notes: string;
   hours: string;
-  // Set when the task text was picked from a Basecamp todo. Kept so completing
-  // the task can close that todo.
-  todoId: string;
+  // Basecamp todos picked for this add. One row is created per id, so completing
+  // or logging time still attaches to that specific todo. Empty when typing by
+  // hand or booking a meeting.
+  todoIds: string[];
   projectId: string;
   // Set instead when the row came from the meeting picker. Never set alongside
-  // todoId: a meeting has nothing to close.
+  // todoIds: a meeting has nothing to close.
   eventId: string;
   // True once someone chooses to type the task rather than pick one.
   manual: boolean;
@@ -140,7 +149,7 @@ const emptyDraft: Draft = {
   client: "",
   notes: "",
   hours: "",
-  todoId: "",
+  todoIds: [],
   projectId: "",
   eventId: "",
   manual: false,
@@ -296,6 +305,198 @@ function ClientCombobox({
   );
 }
 
+/**
+ * Type-to-filter Basecamp todo picker, multi-select.
+ *
+ * A native <select> could only take one todo and could not be searched. This
+ * keeps the list open while ticking, so four todos on the same client become
+ * four forecast rows in one add. Typing ranks a leading title match above a
+ * match anywhere in the title, then a match in the list name.
+ */
+function TodoPicker({
+  todos,
+  selectedIds,
+  onChange,
+  autoFocus,
+  style,
+}: {
+  todos: BcTodo[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  autoFocus?: boolean;
+  style?: React.CSSProperties;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return todos;
+    const starts: BcTodo[] = [];
+    const contains: BcTodo[] = [];
+    const inList: BcTodo[] = [];
+    for (const t of todos) {
+      const title = t.title.toLowerCase();
+      const list = t.list.toLowerCase();
+      if (title.startsWith(q)) starts.push(t);
+      else if (title.includes(q)) contains.push(t);
+      else if (list.includes(q)) inList.push(t);
+    }
+    return [...starts, ...contains, ...inList];
+  }, [todos, query]);
+
+  // Empty query: assigned work first, then each Basecamp list. A search flattens
+  // that so the ranking above is what you actually see.
+  const groups = useMemo(() => {
+    const q = query.trim();
+    if (q) {
+      return filtered.length ? [["Matching", filtered] as [string, BcTodo[]]] : [];
+    }
+    const assigned = todos.filter((t) => t.assigned);
+    const map = new Map<string, BcTodo[]>();
+    for (const t of todos) {
+      const list = map.get(t.list) || [];
+      list.push(t);
+      map.set(t.list, list);
+    }
+    const byList: Array<[string, BcTodo[]]> = [...map.entries()];
+    return assigned.length ? [["Assigned to you", assigned] as [string, BcTodo[]], ...byList] : byList;
+  }, [todos, filtered, query]);
+
+  const flat = useMemo(() => groups.flatMap(([, items]) => items), [groups]);
+
+  useEffect(() => {
+    setActive((a) => (a >= flat.length ? 0 : a));
+  }, [flat.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  function toggle(id: string) {
+    onChange(selected.has(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) setOpen(true);
+      else setActive((a) => Math.min(flat.length - 1, a + 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => Math.max(0, a - 1));
+      return;
+    }
+    if (e.key === "Enter") {
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      const hit = flat[active];
+      if (!hit) return;
+      e.preventDefault();
+      toggle(hit.id);
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!open) return;
+      e.stopPropagation();
+      setOpen(false);
+      setQuery("");
+    }
+  }
+
+  const closedLabel =
+    selectedIds.length === 0
+      ? ""
+      : selectedIds.length === 1
+        ? todos.find((t) => t.id === selectedIds[0])?.title || "1 todo selected"
+        : `${selectedIds.length} todos selected`;
+
+  return (
+    <div className="fc-combo fc-combo-todos" ref={wrapRef} style={style}>
+      <input
+        value={open ? query : closedLabel}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+        placeholder={closedLabel || "Type to find a todo"}
+        autoFocus={autoFocus}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-label="Basecamp todos"
+        autoComplete="off"
+      />
+      {open ? (
+        <ul className="fc-combo-list" id={listId} role="listbox" aria-multiselectable="true">
+          {groups.length === 0 ? (
+            <li className="fc-combo-empty">No matches</li>
+          ) : (
+            groups.map(([label, items], gi) => {
+              const offset = groups.slice(0, gi).reduce((n, [, g]) => n + g.length, 0);
+              return (
+              <li key={label} className="fc-combo-group">
+                {query.trim() ? null : (
+                  <div className="fc-combo-group-label">{label}</div>
+                )}
+                {items.map((t, itemIndex) => {
+                  const i = offset + itemIndex;
+                  const picked = selected.has(t.id);
+                  return (
+                    <button
+                      key={`${label}:${t.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={picked}
+                      className={`fc-combo-item ${i === active ? "is-active" : ""} ${
+                        picked ? "is-picked" : ""
+                      }`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        toggle(t.id);
+                      }}
+                      onMouseEnter={() => setActive(i)}
+                    >
+                      <span className={`fc-combo-check ${picked ? "is-on" : ""}`} aria-hidden="true" />
+                      <span className="fc-combo-todo">
+                        {t.title}
+                        {t.dueOn ? <span className="fc-combo-tag">due {t.dueOn}</span> : null}
+                        {query.trim() && t.list ? (
+                          <span className="fc-combo-tag">{t.list}</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </li>
+              );
+            })
+          )}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function PriorityPicker({
   value,
   onChange,
@@ -325,6 +526,19 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
   if (!draft.clientId) return "";
   if (!state || state.loading) return "";
   if (draft.manual) return "Typing this one by hand, so it won't be linked to Basecamp.";
+  if (draft.todoIds.length > 1) {
+    const hours = Number(draft.hours);
+    if (Number.isFinite(hours) && hours > 0) {
+      const slices = splitHours(hours, draft.todoIds.length);
+      if (slices.every((h) => h > 0)) {
+        const same = slices.every((h) => h === slices[0]);
+        return same
+          ? `${draft.todoIds.length} selected. ${slices[0]}h each.`
+          : `${draft.todoIds.length} selected. Split ${slices.join(" / ")}h.`;
+      }
+    }
+    return `${draft.todoIds.length} selected. Hours split across them.`;
+  }
   if (!state.todos.length) {
     if (state.reason === "no-project") {
       return "This client has no Basecamp project set, so type the task instead.";
@@ -372,6 +586,7 @@ function AddTaskForm({
   onCancel,
   layout,
   autoFocus,
+  busy,
 }: {
   draft: Draft;
   patch: (p: Partial<Draft>) => void;
@@ -384,25 +599,12 @@ function AddTaskForm({
   onCancel?: () => void;
   layout: "row" | "stack";
   autoFocus?: boolean;
+  busy?: boolean;
 }) {
   const stack = layout === "stack";
   const todos = useMemo(() => todoState?.todos || [], [todoState]);
   const meeting = draft.mode === "meeting";
-
-  // Grouped by todo list, the way Basecamp reads, with anything assigned to this
-  // person lifted into a group of its own at the top so their own work is one
-  // glance away without the rest being hidden.
-  const groups = useMemo(() => {
-    const assigned = todos.filter((t) => t.assigned);
-    const map = new Map<string, BcTodo[]>();
-    for (const t of todos) {
-      const list = map.get(t.list) || [];
-      list.push(t);
-      map.set(t.list, list);
-    }
-    const byList: Array<[string, BcTodo[]]> = [...map.entries()];
-    return assigned.length ? [["Assigned to you", assigned] as [string, BcTodo[]], ...byList] : byList;
-  }, [todos]);
+  const selectedCount = draft.todoIds.length;
 
   const usePicker = Boolean(draft.clientId) && !draft.manual && todos.length > 0;
   const hint = meeting ? eventHint(eventState) : todoHint(draft, todoState);
@@ -457,7 +659,7 @@ function AddTaskForm({
           hours: hit && hit.hours > 0 ? String(hit.hours) : "",
           clientId: hit?.clientId || "",
           client: hit?.clientName || "",
-          todoId: "",
+          todoIds: [],
           projectId: "",
         });
       }}
@@ -498,33 +700,16 @@ function AddTaskForm({
   );
 
   const taskField = usePicker ? (
-    <select
-      value={draft.todoId}
-      onChange={(e) => {
-        const hit = todos.find((t) => t.id === e.target.value);
-        patch({ todoId: hit?.id || "", notes: hit?.title || "" });
-      }}
-      aria-label="Basecamp todo"
-      style={stack ? undefined : { flex: "2 1 240px" }}
-    >
-      <option value="">Pick a todo</option>
-      {groups.map(([list, items]) => (
-        <optgroup key={list} label={list}>
-          {items.map((t) => (
-            // Assigned todos appear both in their own group and under their
-            // list, so the key has to include the group to stay unique.
-            <option key={`${list}:${t.id}`} value={t.id}>
-              {t.title}
-              {t.dueOn ? ` (due ${t.dueOn})` : ""}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
+    <TodoPicker
+      todos={todos}
+      selectedIds={draft.todoIds}
+      onChange={(todoIds) => patch({ todoIds })}
+      style={stack ? undefined : { flex: "2 1 260px" }}
+    />
   ) : (
     <input
       value={draft.notes}
-      onChange={(e) => patch({ notes: e.target.value, todoId: "", projectId: "" })}
+      onChange={(e) => patch({ notes: e.target.value, todoIds: [], projectId: "" })}
       placeholder={
         !draft.clientId
           ? "Pick a client or project first"
@@ -541,11 +726,11 @@ function AddTaskForm({
     <input
       value={draft.hours}
       onChange={(e) => patch({ hours: e.target.value })}
-      placeholder="Hours"
+      placeholder={selectedCount > 1 ? "Hours (split)" : "Hours"}
       type="number"
       min="0"
       step="0.5"
-      aria-label="Hours"
+      aria-label={selectedCount > 1 ? "Hours, split across selected todos" : "Hours"}
       style={stack ? { flex: 1 } : { width: 90 }}
     />
   );
@@ -559,12 +744,18 @@ function AddTaskForm({
         className="linklike"
         style={{ fontSize: 12 }}
         onClick={() =>
-          patch({ manual: !draft.manual, notes: "", todoId: "", projectId: "" })
+          patch({ manual: !draft.manual, notes: "", todoIds: [], projectId: "" })
         }
       >
         {draft.manual ? "Pick a todo instead" : "Type it instead"}
       </button>
     ) : null;
+
+  const addLabel = meeting
+    ? "Add meeting"
+    : selectedCount > 1
+      ? `Add ${selectedCount} tasks`
+      : "Add task";
 
   if (stack) {
     return (
@@ -576,8 +767,8 @@ function AddTaskForm({
         {meeting ? null : taskField}
         <div className="row" style={{ gap: 6 }}>
           {hoursInput}
-          <button className="btn btn-sm" onClick={onAdd}>
-            Add
+          <button className="btn btn-sm" onClick={onAdd} disabled={busy}>
+            {busy ? "Adding…" : addLabel}
           </button>
         </div>
         {manualToggle}
@@ -602,8 +793,8 @@ function AddTaskForm({
         {meeting ? meetingField : clientSelect}
         {meeting ? null : taskField}
         {hoursInput}
-        <button className="btn btn-sm" onClick={onAdd}>
-          {meeting ? "Add meeting" : "Add task"}
+        <button className="btn btn-sm" onClick={onAdd} disabled={busy}>
+          {busy ? "Adding…" : addLabel}
         </button>
       </div>
       {manualToggle || hint ? (
@@ -657,6 +848,7 @@ export default function PersonForecastPage() {
   // so ticking a task never posts on its own.
   const [logDrafts, setLogDrafts] = useState<Record<string, string>>({});
   const [logging, setLogging] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   // Task currently being dragged, and the day it's hovering over. Both are
   // needed: the card dims itself, and only the hovered day highlights.
   const [dragId, setDragId] = useState<string | null>(null);
@@ -820,7 +1012,7 @@ export default function PersonForecastPage() {
       clientId,
       client: hit?.name || "",
       notes: "",
-      todoId: "",
+      todoIds: [],
       projectId: clientId.startsWith("internal:")
         ? clientId.slice("internal:".length)
         : "",
@@ -897,7 +1089,7 @@ export default function PersonForecastPage() {
       mode,
       notes: "",
       hours: "",
-      todoId: "",
+      todoIds: [],
       projectId: "",
       eventId: "",
       clientId: "",
@@ -950,9 +1142,11 @@ export default function PersonForecastPage() {
     const draft = draftFor(date);
     const hours = Number(draft.hours);
     const meeting = draft.mode === "meeting";
+    const state = todosByClient[draft.clientId];
+    const selected = meeting
+      ? []
+      : todosInOrder(state?.todos || [], draft.todoIds);
 
-    // A meeting needs no client: most of them are internal and have none. It
-    // does need a name, which the picker fills in and free text supplies.
     if (meeting) {
       if (!draft.notes.trim()) {
         setError("Pick a meeting, or type what it is.");
@@ -961,36 +1155,77 @@ export default function PersonForecastPage() {
     } else if (!draft.client.trim()) {
       setError("Pick a client for that task.");
       return;
+    } else if (!draft.manual && (state?.todos.length || 0) > 0 && selected.length === 0) {
+      setError("Pick at least one todo, or type it instead.");
+      return;
     }
     if (!Number.isFinite(hours) || hours <= 0) {
       setError(
         meeting
           ? "Enter how long that meeting runs."
-          : "Enter how many hours that task should take."
+          : selected.length > 1
+            ? "Enter how many hours to split across those todos."
+            : "Enter how many hours that task should take."
       );
       return;
     }
-    setError("");
-    const state = todosByClient[draft.clientId];
-    const res = await fetch(`/api/forecast/${person}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        taskDate: date,
-        client: draft.client,
+
+    const rows: Array<{ notes: string; hours: number; todoId: string; eventId: string }> = [];
+    if (meeting || draft.manual || selected.length === 0) {
+      rows.push({
         notes: draft.notes,
         hours,
-        basecampTodoId: meeting ? "" : draft.todoId,
-        // Carried even for a manually-typed task (no todoId), as long as the
-        // client resolved to a real Basecamp project: it's what lets "Log to
-        // Basecamp" create a shadow todo for that task later instead of
-        // having nothing to attach the hours to.
-        basecampProjectId: meeting ? "" : state?.projectId || draft.projectId || "",
-        basecampEventId: meeting ? draft.eventId : "",
-      }),
-    });
-    if (!res.ok) {
-      setError(meeting ? "Could not add that meeting." : "Could not add that task.");
+        todoId: "",
+        eventId: meeting ? draft.eventId : "",
+      });
+    } else {
+      const slices = splitHours(hours, selected.length);
+      if (slices.some((h) => h <= 0)) {
+        setError(
+          `Enter at least ${minHoursForTodos(selected.length)} hours to split across ${selected.length} todos.`
+        );
+        return;
+      }
+      for (let i = 0; i < selected.length; i++) {
+        rows.push({
+          notes: selected[i].title,
+          hours: slices[i],
+          todoId: selected[i].id,
+          eventId: "",
+        });
+      }
+    }
+
+    setError("");
+    setSaving(true);
+    const projectId = meeting ? "" : state?.projectId || draft.projectId || "";
+    const results = await Promise.all(
+      rows.map((row) =>
+        fetch(`/api/forecast/${person}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            taskDate: date,
+            client: draft.client,
+            notes: row.notes,
+            hours: row.hours,
+            basecampTodoId: row.todoId,
+            basecampProjectId: projectId,
+            basecampEventId: row.eventId,
+          }),
+        })
+      )
+    );
+    setSaving(false);
+    if (results.some((res) => !res.ok)) {
+      setError(
+        rows.length > 1
+          ? "Could not add some of those tasks. Refresh and try the ones that are missing."
+          : meeting
+            ? "Could not add that meeting."
+            : "Could not add that task."
+      );
+      load(week, { silent: true });
       return;
     }
     setDrafts((d) => ({ ...d, [date]: emptyDraft }));
@@ -1414,6 +1649,7 @@ export default function PersonForecastPage() {
                   onPickMode={(m) => pickMode(today, m)}
                   onAdd={() => addTask(today)}
                   layout="row"
+                  busy={saving}
                 />
               </div>
             );
@@ -1509,6 +1745,7 @@ export default function PersonForecastPage() {
                         onCancel={() => setAddingFor(null)}
                         layout="stack"
                         autoFocus
+                        busy={saving}
                       />
                     ) : (
                       <button className="ops-add-trigger" onClick={() => setAddingFor(date)}>
@@ -1613,6 +1850,7 @@ export default function PersonForecastPage() {
                     onPickMode={(m) => pickMode(date, m)}
                     onAdd={() => addTask(date)}
                     layout="row"
+                    busy={saving}
                   />
                 </div>
               );
