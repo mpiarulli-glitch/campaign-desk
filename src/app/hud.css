@@ -457,7 +457,30 @@
   padding: 13px 4px;
   border-bottom: 1px solid var(--seam);
 }
-.hud-q:last-child { border-bottom: 0; }
+.hud-q-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--seam);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border-radius: 0;
+}
+.hud-q-btn:hover { background: color-mix(in srgb, var(--arc) 6%, transparent); }
+.hud-q-btn:last-child { border-bottom: 0; }
+
+.hud-linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.hud-linklike:hover { color: var(--arc-deep); text-decoration: underline; text-underline-offset: 3px; }
 
 .hud-q-rank {
   font-family: var(--readout);
@@ -636,7 +659,7 @@
 .hud-row {
   display: flex;
   gap: 14px;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   padding: 10px 0;
   border-bottom: 1px solid var(--seam);
@@ -1200,10 +1223,16 @@
 }
 .hud-board-card-edit .hud-link { font-size: 10px; align-self: flex-start; }
 
-.hud-board-chip-row {
+.hud-board-camp-wrap {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 4px;
+}
+.hud-board-camp-wrap .hud-btn {
+  font-size: 10px;
+  padding: 3px 8px;
+  letter-spacing: 0.08em;
 }
 
 .hud-board-camp-chip {

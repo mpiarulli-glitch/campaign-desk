@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 // The month in the header and the server's idea of "this month" have to be the
 // same month, so the period helpers are shared rather than written twice.
 import { currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
+import { FollowUpButton } from "./FollowUpButton";
 import type { BoardCard, BoardColumn, ClientRef } from "./types";
 
 /** Where cards wait before anyone picks them up. Not part of the pipeline. */
@@ -19,6 +20,8 @@ interface CardHandlers {
   onMove: (id: string, columnKey: string) => void;
   onQuota: (id: string, quota: number) => void;
   onRemove: (card: BoardCard) => void;
+  onFollowedUp: (cardId: string) => void;
+  onFollowError: (error: string) => void;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }
@@ -87,8 +90,8 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
               camp.smsCount > 0 ? `${camp.smsCount} SMS` : "",
             ].filter(Boolean);
             return (
+              <span key={camp.id} className="hud-board-camp-wrap">
               <Link
-                key={camp.id}
                 href={`/admin/campaigns/${camp.id}`}
                 className="hud-board-camp-chip"
                 title={`${camp.title} — ${parts.join(" + ")}`}
@@ -102,6 +105,17 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                   <em className="hud-board-camp-n">×{camp.emailCount}</em>
                 ) : null}
               </Link>
+              {(card.columnKey === "sent_for_approval" ||
+                card.columnKey === "follow_up_sent") &&
+              camp.hasCard ? (
+                <FollowUpButton
+                  campaignId={camp.id}
+                  className="hud-btn hud-btn-quiet"
+                  onDone={() => h.onFollowedUp(card.id)}
+                  onError={h.onFollowError}
+                />
+              ) : null}
+              </span>
             );
           })}
         </div>
@@ -308,6 +322,17 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
       onMove: (id, key) => void moveCard(id, key),
       onQuota: (id, q) => void saveQuota(id, q),
       onRemove: (c) => void removeCard(c),
+      onFollowedUp: (cardId) => {
+        setError("");
+        setCards((prev) =>
+          prev.map((c) =>
+            c.id === cardId && c.columnKey === "sent_for_approval"
+              ? { ...c, columnKey: "follow_up_sent" }
+              : c
+          )
+        );
+      },
+      onFollowError: (msg) => setError(msg),
       onDragStart: setDraggingId,
       onDragEnd: () => setDraggingId(null),
     };

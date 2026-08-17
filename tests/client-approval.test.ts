@@ -4,6 +4,8 @@ import {
   campaignApprovalRevisionKey,
   clientApprovalMessageHtml,
   clientApprovalMessageText,
+  clientReviewFollowupHtml,
+  clientReviewFollowupText,
 } from "../src/lib/client-approval";
 
 const input = {
@@ -55,4 +57,18 @@ test("approval revision key changes only when campaign content changes", () => {
 
   assert.equal(first, same);
   assert.notEqual(first, changed);
+});
+
+test("review follow-up asks the client to look, and mentions them when it can", () => {
+  const text = clientReviewFollowupText(input);
+  assert.match(text, /^Hi Katie,/);
+  assert.match(text, /still waiting on review/);
+  assert.match(text, /reply with "Approved"/);
+  assert.match(text, /Review the Vitatherapy Welcome Series:/);
+  assert.doesNotMatch(text, /still hasn't/);
+
+  const html = clientReviewFollowupHtml(input, '<bc-attachment sgid="abc"></bc-attachment>');
+  assert.match(html, /Hi <bc-attachment sgid="abc"><\/bc-attachment>,/);
+  assert.doesNotMatch(html, /Hi Katie,/);
+  assert.match(html, /href="https:\/\/campaign-desk\.example\/review\/client-token"/);
 });

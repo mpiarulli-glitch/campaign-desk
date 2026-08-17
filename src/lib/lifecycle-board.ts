@@ -118,6 +118,8 @@ export interface BoardCampaignItem {
   smsCount: number;
   /** Whether this campaign's emails count toward the month's quota yet. */
   delivered: boolean;
+  /** True once an approval card exists to comment a follow-up onto. */
+  hasCard: boolean;
 }
 
 export interface BoardCard {
@@ -223,6 +225,7 @@ export function listBoardCards(period: string): BoardCard[] {
   const campaignRows = db
     .prepare(
       `SELECT c.id, c.title, c.client_id, c.status, c.updated_at, c.magic_token,
+              c.basecamp_card_id,
               SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
               SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
          FROM campaigns c
@@ -241,6 +244,7 @@ export function listBoardCards(period: string): BoardCard[] {
     status: CampaignStatus;
     updated_at: string;
     magic_token: string;
+    basecamp_card_id: string | null;
     email_count: number;
     sms_count: number;
   }>;
@@ -256,6 +260,7 @@ export function listBoardCards(period: string): BoardCard[] {
       emailCount: r.email_count,
       smsCount: r.sms_count,
       delivered: true,
+      hasCard: Boolean(r.basecamp_card_id),
     });
     campaignsByClient.set(r.client_id, list);
   }
@@ -366,6 +371,23 @@ export function moveBoardCard(
     )
     .run(columnKey, sortOrder, nowIso(), id);
   return true;
+}
+
+/**
+ * After a Basecamp review nudge, slide this month's card from Sent for Approval
+ * to Follow-Up Sent. Other columns are left alone — a follow-up should not yank
+ * work out of QA or revisions.
+ */
+export function markClientFollowUpSent(clientId: string, period = currentPeriod()): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT id, column_key FROM lifecycle_board_cards
+        WHERE client_id = ? AND period = ? AND dismissed = 0`
+    )
+    .get(clientId, period) as { id: string; column_key: string } | undefined;
+  if (!row) return false;
+  if (row.column_key !== "sent_for_approval") return true;
+  return moveBoardCard(row.id, { columnKey: "follow_up_sent" });
 }
 
 /**

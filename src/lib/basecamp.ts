@@ -1058,16 +1058,18 @@ export async function createScheduleCard(
 export async function commentOnCard(
   projectId: string,
   cardId: string,
-  contentHtml: string
+  contentHtml: string,
+  identity: BcIdentity = SERVICE
 ): Promise<CampfireResult> {
   if (!projectId || !cardId) {
     return { ok: false, error: "No Basecamp card to follow up on" };
   }
   try {
-    const res = await bc(`/buckets/${projectId}/recordings/${cardId}/comments.json`, {
-      method: "POST",
-      body: JSON.stringify({ content: contentHtml }),
-    });
+    const res = await bc(
+      `/buckets/${projectId}/recordings/${cardId}/comments.json`,
+      { method: "POST", body: JSON.stringify({ content: contentHtml }) },
+      identity
+    );
     if (!res.ok) return { ok: false, error: `comment ${res.status}` };
     const comment = await res.json();
     return { ok: true, url: comment.app_url || comment.url };

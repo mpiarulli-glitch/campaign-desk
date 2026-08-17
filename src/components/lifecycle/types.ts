@@ -195,6 +195,18 @@ export interface GhlSection {
   failures: Array<{ name: string; error: string }>;
 }
 
+export interface BriefingItem {
+  clientId: string;
+  clientName: string;
+  columnKey: string;
+  columnLabel: string;
+  why: string;
+  quota: number;
+  delivered: number;
+  remaining: number;
+  campaigns: Array<{ id: string; title: string; hasCard: boolean }>;
+}
+
 export interface LifecycleDashboard {
   approvals: ApprovalRow[];
   linkedIn: LinkedInSection;
@@ -206,6 +218,16 @@ export interface LifecycleDashboard {
   links: SavedLink[];
   clients: ClientRef[];
   refreshSettings: RefreshSettings;
+  briefing: {
+    period: string;
+    periodLabel: string;
+    myQueue: BriefingItem[];
+    waitingOnClient: BriefingItem[];
+    behindQuota: BriefingItem[];
+    notStarted: number;
+    met: number;
+    inPipeline: number;
+  };
   counts: {
     pendingApprovals: number;
     waitingOnClient: number;
@@ -215,6 +237,9 @@ export interface LifecycleDashboard {
     campaignsNeedingRefresh: number;
     brokenSeats: number;
     ghlLive: number;
+    myQueue: number;
+    behindQuota: number;
+    waitingOnClientBoard: number;
   };
 }
 
@@ -318,6 +343,7 @@ export interface BoardCampaignItem {
   emailCount: number;
   smsCount: number;
   delivered: boolean;
+  hasCard: boolean;
 }
 
 export interface BoardCard {

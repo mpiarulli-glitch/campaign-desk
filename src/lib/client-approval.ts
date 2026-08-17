@@ -81,6 +81,29 @@ export function clientApprovalMessageHtml(
   ].join("");
 }
 
+export function clientReviewFollowupText(input: ClientApprovalMessageInput): string {
+  const name = firstName(input.clientContactName);
+  return `Hi ${name},
+
+Just a friendly follow-up — your ${input.campaignTitle} is still waiting on review. When you have a moment, please take a look and reply with "Approved" or your feedback so we can keep things moving.
+
+Review the ${input.campaignTitle}: ${input.previewUrl}`;
+}
+
+export function clientReviewFollowupHtml(
+  input: ClientApprovalMessageInput,
+  contactMention?: string
+): string {
+  const name = contactMention || escapeHtml(firstName(input.clientContactName));
+  const title = escapeHtml(input.campaignTitle);
+  const url = escapeHtml(input.previewUrl);
+  return [
+    `<p>Hi ${name},</p>`,
+    `<p>Just a friendly follow-up — your ${title} is still waiting on review. When you have a moment, please take a look and reply with <strong>"Approved"</strong> or your feedback so we can keep things moving.</p>`,
+    `<p><a href="${url}">Review the ${title}</a></p>`,
+  ].join("");
+}
+
 export function campaignApprovalRevisionKey(
   campaign: Pick<Campaign, "title" | "client_id" | "external_token">,
   emails: Array<Pick<CampaignEmail, "id" | "title" | "updated_at">>

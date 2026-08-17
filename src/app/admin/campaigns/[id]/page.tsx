@@ -7,6 +7,7 @@ import { EmailPreview, type PendingEdit } from "@/components/EmailPreview";
 import { applyTextEdits } from "@/lib/inline-edit";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
+import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
 import {
   ASSET_KINDS,
@@ -1187,21 +1188,35 @@ export default function AdminCampaignPage() {
                   </button>
                 </div>
               ) : (
-                <button
-                  className={`btn btn-sm ${
-                    basecampApproval?.alreadySent ? "btn-secondary" : ""
-                  }`}
-                  onClick={() => setConfirmingBasecampApproval(true)}
-                  disabled={
-                    !basecampApproval?.ready || sendingBasecampApproval
-                  }
-                >
-                  {sendingBasecampApproval
-                    ? "Sending..."
-                    : basecampApproval?.alreadySent
-                      ? "Resend approval"
-                      : "Send approval"}
-                </button>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  {basecampApproval?.alreadySent && basecampApproval.cardUrl ? (
+                    <FollowUpButton
+                      campaignId={id}
+                      className="btn btn-secondary btn-sm"
+                      onDone={(recipient) =>
+                        setMessage(
+                          `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
+                        )
+                      }
+                      onError={(err) => setError(err)}
+                    />
+                  ) : null}
+                  <button
+                    className={`btn btn-sm ${
+                      basecampApproval?.alreadySent ? "btn-secondary" : ""
+                    }`}
+                    onClick={() => setConfirmingBasecampApproval(true)}
+                    disabled={
+                      !basecampApproval?.ready || sendingBasecampApproval
+                    }
+                  >
+                    {sendingBasecampApproval
+                      ? "Sending..."
+                      : basecampApproval?.alreadySent
+                        ? "Resend approval"
+                        : "Send approval"}
+                  </button>
+                </div>
               )}
             </div>
 

@@ -27,6 +27,9 @@ import {
   type SkyleadSeat,
 } from "./skylead";
 import { isGhlConfigured, sweepWorkflows } from "./ghl";
+import { listBoardCards, currentPeriod } from "./lifecycle-board";
+import { buildMonthBriefing, type MonthBriefing } from "./lifecycle-briefing";
+import { periodLabel } from "./period";
 import type { LifecycleAutomation, LifecycleLink, LifecycleNote } from "./db";
 
 /* ------------------------------------------------------------- approvals */
@@ -389,6 +392,7 @@ export interface LifecycleDashboard {
   notes: LifecycleNote[];
   links: LifecycleLink[];
   clients: Array<{ id: string; name: string }>;
+  briefing: MonthBriefing & { period: string; periodLabel: string };
   counts: {
     pendingApprovals: number;
     waitingOnClient: number;
@@ -398,6 +402,9 @@ export interface LifecycleDashboard {
     campaignsNeedingRefresh: number;
     brokenSeats: number;
     ghlLive: number;
+    myQueue: number;
+    behindQuota: number;
+    waitingOnClientBoard: number;
   };
 }
 
@@ -410,6 +417,12 @@ export async function buildLifecycleDashboard(force = false): Promise<LifecycleD
     buildGhlSection(force),
   ]);
   const automations = listAutomations();
+  const period = currentPeriod();
+  const briefing = {
+    ...buildMonthBriefing(listBoardCards(period)),
+    period,
+    periodLabel: periodLabel(period),
+  };
 
   const byPlatform = new Map<string, { live: number; total: number }>();
   for (const a of automations) {
@@ -431,6 +444,7 @@ export async function buildLifecycleDashboard(force = false): Promise<LifecycleD
     notes: listNotes(),
     links: listLinks(),
     clients: listRevClients(true).map((c) => ({ id: c.id, name: c.name })),
+    briefing,
     counts: {
       pendingApprovals: approvals.length,
       waitingOnClient: approvals.filter((a) => a.status === "in_review").length,
@@ -440,6 +454,9 @@ export async function buildLifecycleDashboard(force = false): Promise<LifecycleD
       campaignsNeedingRefresh: linkedIn.needsRefresh.length,
       brokenSeats: linkedIn.brokenSeats,
       ghlLive: ghl.totals.live,
+      myQueue: briefing.myQueue.length,
+      behindQuota: briefing.behindQuota.length,
+      waitingOnClientBoard: briefing.waitingOnClient.length,
     },
   };
 }

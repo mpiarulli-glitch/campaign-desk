@@ -10,7 +10,8 @@ import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
 import { LinkedInHub } from "@/components/lifecycle/LinkedInHub";
 import { NotesPanel } from "@/components/lifecycle/NotesPanel";
 import { ReportPanel } from "@/components/lifecycle/ReportPanel";
-import { PLATFORM_LABELS, type LifecycleDashboard } from "@/components/lifecycle/types";
+import { StatusBriefing } from "@/components/lifecycle/StatusBriefing";
+import type { LifecycleDashboard } from "@/components/lifecycle/types";
 
 type Channel =
   | "status"
@@ -127,9 +128,11 @@ export default function LifecyclePage() {
         <nav className="hud-channels hud-in hud-in-1">
           {CHANNELS.map((ch) => {
             const badge =
-              ch.id === "linkedin" && c.campaignsNeedingRefresh > 0
-                ? { n: c.campaignsNeedingRefresh, alert: true }
-                : null;
+              ch.id === "board" && (data.counts.myQueue > 0 || data.counts.behindQuota > 0)
+                ? { n: data.counts.myQueue || data.counts.behindQuota, alert: data.counts.myQueue > 0 }
+                : ch.id === "linkedin" && c.campaignsNeedingRefresh > 0
+                  ? { n: c.campaignsNeedingRefresh, alert: true }
+                  : null;
             return (
               <button
                 key={ch.id}
@@ -148,56 +151,12 @@ export default function LifecyclePage() {
         </nav>
 
         {channel === "status" ? (
-          <div className="hud-stack">
-            <div className="hud-readouts hud-in hud-in-2">
-              <div className={`hud-readout ${c.pendingApprovals > 0 ? "warn" : ""}`}>
-                <b>{String(c.pendingApprovals).padStart(2, "0")}</b>
-                <span>Approvals open</span>
-              </div>
-              <div className="hud-readout">
-                <b>{String(c.waitingOnUs).padStart(2, "0")}</b>
-                <span>On us</span>
-              </div>
-              <div className="hud-readout">
-                <b>{String(c.ghlLive).padStart(2, "0")}</b>
-                <span>GHL workflows</span>
-              </div>
-            </div>
-
-            {data.approvals.length > 0 ? (
-              <div className="hud-panel hud-in hud-in-3">
-                <div className="hud-panel-head">
-                  <h2 className="hud-panel-title">Awaiting a decision</h2>
-                  <span className="hud-eyebrow">Longest wait first</span>
-                </div>
-                {data.approvals.slice(0, 6).map((a) => (
-                  <div key={a.id} className="hud-row">
-                    <Link href={`/admin/campaigns/${a.id}`}>{a.title}</Link>
-                    <span className="hud-row-meta">
-                      {a.clientName} · {a.waitingDays}d ·{" "}
-                      {a.status === "in_review" ? "client" : "us"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            {data.liveAutomationsByPlatform.length > 0 ? (
-              <div className="hud-panel hud-in hud-in-3">
-                <div className="hud-panel-head">
-                  <h2 className="hud-panel-title">Automations by platform</h2>
-                </div>
-                {data.liveAutomationsByPlatform.map((p) => (
-                  <div key={p.platform} className="hud-row">
-                    <span>{PLATFORM_LABELS[p.platform] ?? p.platform}</span>
-                    <span className="hud-row-meta">
-                      {p.live} live / {p.total}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <StatusBriefing
+            data={data}
+            onOpenBoard={() => setChannel("board")}
+            onOpenLinkedIn={() => setChannel("linkedin")}
+            onChanged={refresh}
+          />
         ) : null}
 
         {channel === "board" ? <BoardPanel clients={data.clients} /> : null}
