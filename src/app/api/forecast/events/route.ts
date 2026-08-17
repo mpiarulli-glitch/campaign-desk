@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
 import { eventHours, lastEventSyncAt, listEventsForDay } from "@/lib/basecamp-events";
 import { isValidPerson, personLabel } from "@/lib/forecast";
+import { isoToStartTime } from "@/lib/forecast-time";
 import { APP_TIME_ZONE } from "@/lib/cadence";
 import type { BasecampEvent } from "@/lib/db";
 
@@ -36,6 +37,7 @@ function shape(event: BasecampEvent) {
     projectId: event.project_id,
     allDay: Boolean(event.all_day),
     time: timeLabel(event),
+    startTime: event.all_day ? "" : isoToStartTime(event.starts_at, APP_TIME_ZONE),
     hours: eventHours(event),
     participants: event.participants,
     appUrl: event.app_url,

@@ -10,6 +10,7 @@ import {
   uncompleteTodo,
 } from "@/lib/basecamp";
 import { deleteTask, getTask, updateTask, personLabel, type ForecastPriority } from "@/lib/forecast";
+import { parseTimeInput } from "@/lib/forecast-time";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
@@ -142,6 +143,9 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: "hours must be a positive number" }, { status: 400 });
     }
   }
+  if (typeof body.startTime === "string" && !parseTimeInput(body.startTime)) {
+    return NextResponse.json({ error: "startTime is required" }, { status: 400 });
+  }
   const task = updateTask(id, {
     taskDate: typeof body.taskDate === "string" ? body.taskDate : undefined,
     client: typeof body.client === "string" ? body.client : undefined,
@@ -149,6 +153,7 @@ export async function PATCH(request: Request, { params }: Params) {
     hours: body.hours !== undefined ? Number(body.hours) : undefined,
     completed: typeof body.completed === "boolean" ? body.completed : undefined,
     priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
+    startTime: typeof body.startTime === "string" ? body.startTime : undefined,
   });
 
   // Mirror a completion flip onto the linked Basecamp todo. The forecast row is

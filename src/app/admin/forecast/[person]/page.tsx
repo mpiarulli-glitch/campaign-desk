@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ForecastCalendar } from "@/components/ForecastCalendar";
 import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
+import { formatTimeLabel, parseTimeInput, staggerStartTimes, DEFAULT_START_TIME } from "@/lib/forecast-time";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -17,6 +19,7 @@ type Task = {
   hours: number;
   completed: number;
   priority: Priority;
+  start_time: string;
   basecamp_todo_id: string;
   basecamp_project_id: string;
   basecamp_event_id: string;
@@ -42,6 +45,9 @@ type BcTodo = {
   list: string;
   dueOn: string | null;
   assigned?: boolean;
+  kind?: "todo" | "step";
+  parentId?: string;
+  parentTitle?: string;
 };
 
 // Per-client cache of the Basecamp todo picker's contents. `reason` explains an
@@ -66,6 +72,7 @@ type BcEvent = {
   projectName: string;
   allDay: boolean;
   time: string;
+  startTime: string;
   hours: number;
   participants: string;
 };
@@ -131,6 +138,7 @@ type Draft = {
   client: string;
   notes: string;
   hours: string;
+  startTime: string;
   // Basecamp todos picked for this add. One row is created per id, so completing
   // or logging time still attaches to that specific todo. Empty when typing by
   // hand or booking a meeting.
@@ -149,6 +157,7 @@ const emptyDraft: Draft = {
   client: "",
   notes: "",
   hours: "",
+  startTime: "",
   todoIds: [],
   projectId: "",
   eventId: "",
@@ -342,9 +351,10 @@ function TodoPicker({
     for (const t of todos) {
       const title = t.title.toLowerCase();
       const list = t.list.toLowerCase();
+      const parent = (t.parentTitle || "").toLowerCase();
       if (title.startsWith(q)) starts.push(t);
       else if (title.includes(q)) contains.push(t);
-      else if (list.includes(q)) inList.push(t);
+      else if (list.includes(q) || parent.includes(q)) inList.push(t);
     }
     return [...starts, ...contains, ...inList];
   }, [todos, query]);
@@ -469,7 +479,7 @@ function TodoPicker({
                       aria-selected={picked}
                       className={`fc-combo-item ${i === active ? "is-active" : ""} ${
                         picked ? "is-picked" : ""
-                      }`}
+                      } ${t.kind === "step" ? "is-step" : ""}`}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         toggle(t.id);
@@ -479,6 +489,10 @@ function TodoPicker({
                       <span className={`fc-combo-check ${picked ? "is-on" : ""}`} aria-hidden="true" />
                       <span className="fc-combo-todo">
                         {t.title}
+                        {t.kind === "step" ? <span className="fc-combo-tag">subtask</span> : null}
+                        {t.kind === "step" && t.parentTitle ? (
+                          <span className="fc-combo-tag">{t.parentTitle}</span>
+                        ) : null}
                         {t.dueOn ? <span className="fc-combo-tag">due {t.dueOn}</span> : null}
                         {query.trim() && t.list ? (
                           <span className="fc-combo-tag">{t.list}</span>
@@ -574,6 +588,28 @@ function eventHint(state: EventState | undefined): string {
   }.`;
 }
 
+function StartTimeField({
+  task,
+  onSave,
+}: {
+  task: Task;
+  onSave: (task: Task, value: string) => void;
+}) {
+  return (
+    <input
+      type="time"
+      key={`${task.id}-start-${task.start_time || ""}`}
+      defaultValue={task.start_time || ""}
+      onBlur={(e) => onSave(task, e.target.value)}
+      onMouseDown={(e) => e.stopPropagation()}
+      aria-label="Start time"
+      title="Start time"
+      required
+      className="ops-time"
+    />
+  );
+}
+
 function AddTaskForm({
   draft,
   patch,
@@ -657,6 +693,11 @@ function AddTaskForm({
           eventId: hit?.id || "",
           notes: hit?.title || "",
           hours: hit && hit.hours > 0 ? String(hit.hours) : "",
+          startTime: hit
+            ? hit.allDay
+              ? DEFAULT_START_TIME
+              : hit.startTime || DEFAULT_START_TIME
+            : "",
           clientId: hit?.clientId || "",
           client: hit?.clientName || "",
           todoIds: [],
@@ -735,6 +776,19 @@ function AddTaskForm({
     />
   );
 
+  const startInput = (
+    <input
+      type="time"
+      value={draft.startTime}
+      onChange={(e) => patch({ startTime: e.target.value })}
+      aria-label="Start time"
+      title="When this will be worked"
+      required
+      className="ops-time"
+      style={stack ? { flex: 1 } : undefined}
+    />
+  );
+
   // Only worth offering once there are todos to switch away from, and never for
   // meetings, which have their own free-text fallback built in.
   const manualToggle =
@@ -766,6 +820,7 @@ function AddTaskForm({
         {meeting ? meetingField : clientSelect}
         {meeting ? null : taskField}
         <div className="row" style={{ gap: 6 }}>
+          {startInput}
           {hoursInput}
           <button className="btn btn-sm" onClick={onAdd} disabled={busy}>
             {busy ? "Adding…" : addLabel}
@@ -792,10 +847,16 @@ function AddTaskForm({
         {modeToggle}
         {meeting ? meetingField : clientSelect}
         {meeting ? null : taskField}
+        {startInput}
         {hoursInput}
         <button className="btn btn-sm" onClick={onAdd} disabled={busy}>
           {busy ? "Adding…" : addLabel}
         </button>
+        {onCancel ? (
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+            Cancel
+          </button>
+        ) : null}
       </div>
       {manualToggle || hint ? (
         <div className="row" style={{ gap: 10, marginTop: 6, flexWrap: "wrap" }}>
@@ -811,7 +872,7 @@ function AddTaskForm({
   );
 }
 
-type View = "today" | "list" | "week";
+type View = "today" | "list" | "week" | "calendar";
 
 export default function PersonForecastPage() {
   const router = useRouter();
@@ -1169,14 +1230,20 @@ export default function PersonForecastPage() {
       );
       return;
     }
+    const startTime = parseTimeInput(draft.startTime);
+    if (!startTime) {
+      setError("Enter a start time so it's clear when this is being worked.");
+      return;
+    }
 
-    const rows: Array<{ notes: string; hours: number; todoId: string; eventId: string }> = [];
+    const rows: Array<{ notes: string; hours: number; todoId: string; eventId: string; startTime: string }> = [];
     if (meeting || draft.manual || selected.length === 0) {
       rows.push({
         notes: draft.notes,
         hours,
         todoId: "",
         eventId: meeting ? draft.eventId : "",
+        startTime,
       });
     } else {
       const slices = splitHours(hours, selected.length);
@@ -1186,12 +1253,17 @@ export default function PersonForecastPage() {
         );
         return;
       }
+      const starts = staggerStartTimes(startTime, slices);
       for (let i = 0; i < selected.length; i++) {
         rows.push({
-          notes: selected[i].title,
+          notes:
+            selected[i].kind === "step" && selected[i].parentTitle
+              ? `${selected[i].parentTitle} › ${selected[i].title}`
+              : selected[i].title,
           hours: slices[i],
           todoId: selected[i].id,
           eventId: "",
+          startTime: starts[i],
         });
       }
     }
@@ -1212,6 +1284,7 @@ export default function PersonForecastPage() {
             basecampTodoId: row.todoId,
             basecampProjectId: projectId,
             basecampEventId: row.eventId,
+            startTime: row.startTime,
           }),
         })
       )
@@ -1244,9 +1317,27 @@ export default function PersonForecastPage() {
 
   async function saveField(
     task: Task,
-    field: "client" | "notes" | "hours",
+    field: "client" | "notes" | "hours" | "start_time",
     rawValue: string
   ) {
+    if (field === "start_time") {
+      const next = parseTimeInput(rawValue);
+      if (!next) {
+        setError("A task needs a start time.");
+        load(week, { silent: true });
+        return;
+      }
+      if (next === (task.start_time || "")) return;
+      setError("");
+      const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startTime: next }),
+      });
+      if (!res.ok) setError("Could not save that start time.");
+      load(week, { silent: true });
+      return;
+    }
     if (field === "hours") {
       const hours = Number(rawValue);
       if (!Number.isFinite(hours) || hours <= 0) {
@@ -1308,7 +1399,7 @@ export default function PersonForecastPage() {
 
   /* ------------------------------------------------------ drag to reschedule */
 
-  function onDragStart(e: React.DragEvent, task: Task) {
+  function onDragStart(e: React.DragEvent, task: { id: string }) {
     setDragId(task.id);
     e.dataTransfer.effectAllowed = "move";
     // Firefox won't start a drag without data set.
@@ -1328,24 +1419,29 @@ export default function PersonForecastPage() {
     if (dropDay !== date) setDropDay(date);
   }
 
-  async function onDayDrop(e: React.DragEvent, date: string) {
-    e.preventDefault();
-    const id = dragId || e.dataTransfer.getData("text/plain");
-    setDragId(null);
-    setDropDay(null);
-    if (!id) return;
+  async function moveTask(id: string, date: string, startTime?: string | null) {
     const task = (data?.tasks || []).find((t) => t.id === id);
-    if (!task || task.task_date === date) return;
+    if (!task) return;
+    const nextTime =
+      startTime === undefined ? task.start_time || "" : parseTimeInput(startTime ?? "");
+    if (task.task_date === date && nextTime === (task.start_time || "")) return;
 
-    // Move it locally first so the card lands where it was dropped instead of
-    // snapping back until the request returns.
     setData((d) =>
-      d ? { ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, task_date: date } : t)) } : d
+      d
+        ? {
+            ...d,
+            tasks: d.tasks.map((t) =>
+              t.id === id ? { ...t, task_date: date, start_time: nextTime } : t
+            ),
+          }
+        : d
     );
+    const body: { taskDate: string; startTime?: string } = { taskDate: date };
+    if (startTime !== undefined) body.startTime = nextTime;
     const res = await fetch(`/api/forecast/${person}/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskDate: date }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       setError("Could not move that task.");
@@ -1354,6 +1450,15 @@ export default function PersonForecastPage() {
     }
     setError("");
     load(week, { silent: true });
+  }
+
+  async function onDayDrop(e: React.DragEvent, date: string) {
+    e.preventDefault();
+    const id = dragId || e.dataTransfer.getData("text/plain");
+    setDragId(null);
+    setDropDay(null);
+    if (!id) return;
+    await moveTask(id, date);
   }
 
   // Spread across the day containers in every view that accepts a drop.
@@ -1369,7 +1474,7 @@ export default function PersonForecastPage() {
     };
   }
 
-  function dragProps(task: Task) {
+  function dragProps(task: { id: string }) {
     return {
       draggable: true,
       onDragStart: (e: React.DragEvent) => onDragStart(e, task),
@@ -1479,6 +1584,9 @@ export default function PersonForecastPage() {
               </button>
               <button className={`view-toggle-btn ${view === "week" ? "is-on" : ""}`} onClick={() => setView("week")}>
                 Week
+              </button>
+              <button className={`view-toggle-btn ${view === "calendar" ? "is-on" : ""}`} onClick={() => setView("calendar")}>
+                Calendar
               </button>
             </div>
             <div className="ops-weeknav">
@@ -1618,6 +1726,7 @@ export default function PersonForecastPage() {
                         title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                         style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
                       />
+                      <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
                       <div className="row" style={{ gap: 2 }}>
                         <input
                           key={`${t.id}-hours`}
@@ -1702,6 +1811,7 @@ export default function PersonForecastPage() {
                             placeholder="Client"
                             className="client"
                           />
+                          <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
                           <input
                             key={`${t.id}-hours`}
                             defaultValue={t.hours}
@@ -1756,6 +1866,72 @@ export default function PersonForecastPage() {
                 </div>
               );
             })}
+          </div>
+        ) : view === "calendar" ? (
+          <div>
+            <ForecastCalendar
+              days={days}
+              today={today}
+              tasksByDay={tasksByDay}
+              dayName={dayName}
+              dayShortDate={dayShortDate}
+              dragId={dragId}
+              dropDay={dropDay}
+              onToggle={(t) => {
+                const task = (data?.tasks || []).find((x) => x.id === t.id);
+                if (task) void toggleCompleted(task);
+              }}
+              onRemove={removeTask}
+              onSlotClick={(date, startTime) => {
+                setAddingFor(date);
+                setDraft(date, { startTime });
+              }}
+              onDrop={(date, startTime, droppedId) => {
+                const id = dragId || droppedId;
+                setDragId(null);
+                setDropDay(null);
+                if (!id || !startTime) return;
+                void moveTask(id, date, startTime);
+              }}
+              onDragOver={onDayDragOver}
+              onDragLeave={(e, date) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setDropDay((d) => (d === date ? null : d));
+              }}
+              dragProps={dragProps}
+            />
+            {addingFor ? (
+              <div className="ops-list-day" style={{ marginTop: 16 }}>
+                <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+                  <strong>
+                    Add · {dayName(addingFor)}{" "}
+                    <span className="muted" style={{ fontWeight: 400 }}>
+                      {draftFor(addingFor).startTime
+                        ? formatTimeLabel(draftFor(addingFor).startTime)
+                        : "pick a start time"}
+                    </span>
+                  </strong>
+                </div>
+                <AddTaskForm
+                  draft={draftFor(addingFor)}
+                  patch={(p) => setDraft(addingFor, p)}
+                  clients={pickerClients}
+                  todoState={todosByClient[draftFor(addingFor).clientId]}
+                  eventState={eventsByDate[addingFor]}
+                  onPickClient={(id) => pickClient(addingFor, id)}
+                  onPickMode={(m) => pickMode(addingFor, m)}
+                  onAdd={() => addTask(addingFor)}
+                  onCancel={() => setAddingFor(null)}
+                  layout="row"
+                  autoFocus
+                  busy={saving}
+                />
+              </div>
+            ) : (
+              <p className="muted" style={{ margin: "12px 0 0", fontSize: 13 }}>
+                Click an hour to add a task there. Every task needs a start time.
+              </p>
+            )}
           </div>
         ) : (
           <div>
@@ -1817,6 +1993,7 @@ export default function PersonForecastPage() {
                             opacity: t.completed ? 0.6 : 1,
                           }}
                         />
+                        <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
                         <div className="row" style={{ gap: 2 }}>
                           <input
                             key={`${t.id}-hours`}

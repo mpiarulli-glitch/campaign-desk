@@ -335,6 +335,9 @@ export interface ForecastTask {
   // Basecamp Timesheet::Entry id, set once time has been logged. Its presence
   // is what stops the same task logging twice.
   basecamp_time_entry_id: string;
+  // Clock time on task_date, 24-hour "HH:MM". Required on new tasks. Empty
+  // only remains on rows created before start time was required.
+  start_time: string;
   created_at: string;
   updated_at: string;
 }
@@ -1427,6 +1430,7 @@ export function getDb(): Database.Database {
       basecamp_event_id TEXT NOT NULL DEFAULT '',
       actual_hours REAL NOT NULL DEFAULT 0,
       basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
+      start_time TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2448,6 +2452,11 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("basecamp_time_entry_id")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN basecamp_time_entry_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("start_time")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN start_time TEXT NOT NULL DEFAULT ''`
     );
   }
 

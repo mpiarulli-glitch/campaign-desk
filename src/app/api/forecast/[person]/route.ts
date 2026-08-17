@@ -10,6 +10,7 @@ import {
   upsertWeekNote,
   type ForecastPriority,
 } from "@/lib/forecast";
+import { parseTimeInput } from "@/lib/forecast-time";
 import { currentWeek } from "@/lib/week";
 
 type Params = { params: Promise<{ person: string }> };
@@ -75,6 +76,10 @@ export async function POST(request: Request, { params }: Params) {
   if (!Number.isFinite(hours) || hours <= 0) {
     return NextResponse.json({ error: "hours must be a positive number" }, { status: 400 });
   }
+  const startTime = typeof body.startTime === "string" ? parseTimeInput(body.startTime) : "";
+  if (!startTime) {
+    return NextResponse.json({ error: "startTime is required" }, { status: 400 });
+  }
   const task = createTask({
     person,
     taskDate,
@@ -90,6 +95,7 @@ export async function POST(request: Request, { params }: Params) {
     // todo link if both arrive.
     basecampEventId:
       typeof body.basecampEventId === "string" ? body.basecampEventId : "",
+    startTime,
   });
   return NextResponse.json({ task }, { status: 201 });
 }

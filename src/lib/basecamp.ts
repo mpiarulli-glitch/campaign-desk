@@ -17,6 +17,7 @@ import {
   type BcIdentity,
 } from "./basecamp-identity";
 import { whoAmI } from "./basecamp-oauth";
+import { attachTodoSteps, type OpenTodoStep } from "./todo-steps";
 
 // Re-exported so callers get the identity vocabulary from the same module they
 // already import the API functions from.
@@ -525,6 +526,11 @@ export interface BcTodo {
   // Whether this todo is assigned to the person viewing the picker. Set by
   // listPersonProjectTodos, which knows who's asking.
   assigned?: boolean;
+  // "step" is a checklist subtask under a parent todo. Completing it uses the
+  // step endpoint, not the parent todo's.
+  kind?: "todo" | "step";
+  parentId?: string;
+  parentTitle?: string;
 }
 
 interface BcTodoRaw {
@@ -561,6 +567,10 @@ export async function listProjectTodos(
     // onboarding work and silently hid everything else.
     const todosets = dock.filter((d) => d.name === "todoset" && d.enabled !== false);
     if (!todosets.length) return [];
+
+    // Subtasks are a separate recording type (Kanban::Step). Fetch them while
+    // walking lists so the picker isn't another round trip later.
+    const stepsPromise = listOpenTodoSteps(projectId, identity);
 
     const listsPerSet = await Promise.all(
       todosets.map(async (set) => {
@@ -617,7 +627,9 @@ export async function listProjectTodos(
         }));
       })
     );
-    return perList.flat().filter((t) => t.title);
+    const todos = perList.flat().filter((t) => t.title);
+    const steps = await stepsPromise;
+    return attachTodoSteps(todos, steps);
   } catch {
     return [];
   }
@@ -686,6 +698,43 @@ export async function listPersonProjectTodos(
     return { ...t, assigned };
   });
   return { todos: flagged, assignedCount };
+}
+
+interface StepRecordingRaw {
+  id: number;
+  title?: string;
+  content?: string;
+  completed?: boolean;
+  due_on?: string | null;
+  parent?: { id: number; type?: string; title?: string; name?: string };
+  assignees?: Array<{ id: number }>;
+}
+
+// Open checklist subtasks in a project. These are Kanban::Step recordings
+// parented to a Todo — the regular todolist walk does not include them.
+async function listOpenTodoSteps(
+  projectId: string,
+  identity: BcIdentity
+): Promise<OpenTodoStep[]> {
+  try {
+    const raw = await bcCollection<StepRecordingRaw>(
+      `/projects/recordings.json?type=${encodeURIComponent("Kanban::Step")}&bucket=${encodeURIComponent(projectId)}&status=active`,
+      10,
+      identity
+    );
+    return raw.map((s) => ({
+      id: String(s.id),
+      title: (s.title || s.content || "").trim(),
+      parentId: String(s.parent?.id || ""),
+      parentType: s.parent?.type || "",
+      parentTitle: (s.parent?.title || s.parent?.name || "").trim(),
+      completed: Boolean(s.completed),
+      assigneeIds: (s.assignees || []).map((a) => a.id),
+      dueOn: s.due_on || null,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /* ------------------------------------------------------------ schedule feed */
@@ -802,7 +851,13 @@ export async function completeTodo(
     const res = await bc(`/buckets/${projectId}/todos/${todoId}/completion.json`, {
       method: "POST",
     }, identity);
-    if (res.ok || res.status === 404) return { ok: true };
+    if (res.ok) return { ok: true };
+    // Subtasks are steps, not todos. A 404 here is either "already done" or
+    // "this id is a checklist step" — try the step endpoint before treating
+    // the miss as success.
+    const step = await completeTodoStep(projectId, todoId, "on", identity);
+    if (step.ok) return { ok: true };
+    if (res.status === 404) return { ok: true };
     return { ok: false, error: `completion ${res.status}` };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
@@ -820,10 +875,31 @@ export async function uncompleteTodo(
     const res = await bc(`/buckets/${projectId}/todos/${todoId}/completion.json`, {
       method: "DELETE",
     }, identity);
-    if (res.ok || res.status === 404) return { ok: true };
+    if (res.ok) return { ok: true };
+    const step = await completeTodoStep(projectId, todoId, "off", identity);
+    if (step.ok) return { ok: true };
+    if (res.status === 404) return { ok: true };
     return { ok: false, error: `completion ${res.status}` };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
+  }
+}
+
+async function completeTodoStep(
+  projectId: string,
+  stepId: string,
+  completion: "on" | "off",
+  identity: BcIdentity
+): Promise<{ ok: boolean }> {
+  try {
+    const res = await bc(
+      `/buckets/${projectId}/card_tables/steps/${stepId}/completions.json`,
+      { method: "PUT", body: JSON.stringify({ completion }) },
+      identity
+    );
+    return { ok: res.ok || res.status === 404 };
+  } catch {
+    return { ok: false };
   }
 }
 

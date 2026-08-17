@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { getDb, nowIso, type ForecastNote, type ForecastPriority, type ForecastTask } from "./db";
 import { PEOPLE, isValidPerson, personLabel } from "./people";
+import { parseTimeInput } from "./forecast-time";
 import { addWeeks } from "./week";
 
 export type { ForecastTask, ForecastPriority };
@@ -32,7 +33,10 @@ export function listTasksForPersonWeek(person: string, weekStart: string): Forec
     .prepare(
       `SELECT * FROM forecast_tasks
        WHERE person = ? AND task_date >= ? AND task_date < ?
-       ORDER BY task_date ASC, created_at ASC`
+       ORDER BY task_date ASC,
+         CASE WHEN start_time = '' THEN 1 ELSE 0 END,
+         start_time ASC,
+         created_at ASC`
     )
     .all(person, weekStart, end) as ForecastTask[];
 }
@@ -55,7 +59,12 @@ export function createTask(input: {
   basecampTodoId?: string;
   basecampProjectId?: string;
   basecampEventId?: string;
+  startTime: string;
 }): ForecastTask {
+  const startTime = parseTimeInput(input.startTime);
+  if (!startTime) {
+    throw new Error("startTime is required");
+  }
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
@@ -65,8 +74,8 @@ export function createTask(input: {
   const eventId = (input.basecampEventId || "").trim();
   const todoId = eventId ? "" : (input.basecampTodoId || "").trim();
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, basecamp_todo_id, basecamp_project_id, basecamp_event_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, basecamp_todo_id, basecamp_project_id, basecamp_event_id, start_time, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -78,6 +87,7 @@ export function createTask(input: {
     todoId,
     (input.basecampProjectId || "").trim(),
     eventId,
+    startTime,
     ts,
     ts
   );
@@ -99,13 +109,14 @@ export function updateTask(
     // it on first time-log, so a retry after a failed timesheet write reuses
     // that todo instead of creating another one.
     basecampTodoId: string;
+    startTime: string;
   }>
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, start_time = ?, updated_at = ? WHERE id = ?`
     )
     .run(
       updates.taskDate ?? existing.task_date,
@@ -117,6 +128,9 @@ export function updateTask(
       updates.actualHours ?? existing.actual_hours,
       updates.basecampTimeEntryId ?? existing.basecamp_time_entry_id,
       updates.basecampTodoId ?? existing.basecamp_todo_id,
+      updates.startTime !== undefined
+        ? parseTimeInput(updates.startTime) || existing.start_time
+        : existing.start_time,
       nowIso(),
       id
     );

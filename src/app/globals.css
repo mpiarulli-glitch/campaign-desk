@@ -4979,6 +4979,164 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   box-shadow: inset 0 0 0 2px var(--bg-elevated);
 }
 .fc-combo-todo { min-width: 0; }
+.fc-combo-todos .fc-combo-item.is-step {
+  padding-left: 26px;
+}
+
+.fc-cal { margin-top: 8px; overflow-x: auto; }
+.fc-cal-grid,
+.fc-cal-unscheduled-days {
+  min-width: 720px;
+}
+.fc-cal-grid {
+  display: grid;
+  border: 1px solid var(--ops-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ops-border);
+  gap: 1px;
+}
+.fc-cal-gutter-head,
+.fc-cal-day-head {
+  background: var(--bg-elevated);
+  padding: 10px 8px 8px;
+}
+.fc-cal-day-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fc-cal-day-head.is-today { background: var(--accent-wash); }
+.fc-cal-gutter {
+  background: var(--bg-elevated);
+  position: relative;
+}
+.fc-cal-hour-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 6px 0 0;
+  text-align: right;
+  box-sizing: border-box;
+  border-top: 1px solid var(--ops-border);
+}
+.fc-cal-hour-label:first-child { border-top: none; }
+.fc-cal-day {
+  position: relative;
+  background: var(--bg);
+  min-width: 0;
+}
+.fc-cal-day.is-today { background: color-mix(in srgb, var(--accent-wash) 55%, var(--bg)); }
+.fc-cal-day.is-drop-target { background: var(--accent-wash); }
+.fc-cal-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: none;
+  border-top: 1px solid var(--ops-border);
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.fc-cal-slot:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.fc-cal-block {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 4px 6px 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fc-cal-block.pri-urgent { border-left: 3px solid var(--danger); }
+.fc-cal-block.pri-important { border-left: 3px solid var(--warning); }
+.fc-cal-block.pri-flexible { border-left: 3px solid var(--text-muted); }
+.fc-cal-block.is-done { opacity: 0.55; }
+.fc-cal-block.is-dragging { opacity: 0.4; }
+.fc-cal-block-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fc-cal-block-time {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.fc-cal-block strong {
+  font-size: 11.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-cal-block-notes {
+  color: var(--text-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.fc-cal-block .remove {
+  align-self: flex-start;
+  margin-top: auto;
+  font-size: 10px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fc-cal-unscheduled { margin-top: 16px; }
+.fc-cal-unscheduled-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.fc-cal-unscheduled-days {
+  display: grid;
+  gap: 8px;
+  align-items: start;
+}
+.fc-cal-unscheduled-col {
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+}
+.fc-cal-unscheduled-col.is-drop-target {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.ops-time {
+  width: 92px;
+  font-variant-numeric: tabular-nums;
+}
+.ops-list-row input.ops-time,
+.ops-task-chip input.ops-time {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-family: inherit;
+  color: var(--text-muted);
+  color-scheme: inherit;
+}
+.ops-task-chip input.ops-time {
+  width: 78px;
+  font-size: 11px;
+}
 
 .ops-day-add { padding: 8px 10px 10px; }
 .ops-day-add-form { display: flex; flex-direction: column; gap: 6px; }
@@ -8041,7 +8199,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   /* Inputs that sit inside a row of their own, where 44px would look bloated,
      still need to be tappable — the compromise is a slightly smaller floor. */
   .hrs,
-  input.hrs {
+  input.hrs,
+  .ops-time,
+  input.ops-time {
     min-height: 38px;
   }
 

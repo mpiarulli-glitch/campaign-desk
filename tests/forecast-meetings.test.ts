@@ -84,10 +84,12 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
       taskDate: "2026-08-03",
       notes: "Monday standup",
       hours: 0.5,
+      startTime: "09:00",
       basecampEventId: "e1",
     });
     assert.equal(task.basecamp_event_id, "e1");
     assert.equal(task.basecamp_todo_id, "");
+    assert.equal(task.start_time, "09:00");
     // No client is required for an internal meeting.
     assert.equal(task.client, "");
   });
@@ -99,6 +101,7 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
       taskDate: "2026-08-03",
       notes: "Ambiguous row",
       hours: 1,
+      startTime: "10:00",
       basecampEventId: "e1",
       basecampTodoId: "should-be-ignored",
     });
@@ -113,10 +116,26 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
       client: "Humble Somm",
       notes: "Build the August email",
       hours: 3,
+      startTime: "13:00",
       basecampTodoId: "todo_9",
       basecampProjectId: "222",
     });
     assert.equal(task.basecamp_todo_id, "todo_9");
     assert.equal(task.basecamp_event_id, "");
+  });
+
+  await t.test("a task cannot be created without a start time", () => {
+    assert.throws(
+      () =>
+        forecast.createTask({
+          person: "michael",
+          taskDate: "2026-08-03",
+          client: "Humble Somm",
+          notes: "Missing a clock time",
+          hours: 1,
+          startTime: "",
+        }),
+      /startTime is required/
+    );
   });
 });
