@@ -10,6 +10,7 @@ import {
   hasProductionAccess,
   isSeoOnly,
   isTeam,
+  isValidPerson,
   peopleWithoutTeam,
   personTeam,
   teamFocus,
@@ -126,11 +127,17 @@ test("an empty focus is distinct from no focus at all", () => {
 });
 
 test("anyone without a focus entry owns everything", () => {
-  for (const slug of ["jack", "paula", "cassidy", "sylvia", OWNER_SLUG]) {
+  for (const slug of ["jack", "paula", "cassidy", "kyle_morris", "sylvia", OWNER_SLUG]) {
     assert.equal(teamFocus(slug), null, `${slug} should be unrestricted`);
     assert.equal(doesCampaignWork(slug), true);
     assert.equal(campaignKindFor(slug), null);
   }
+});
+
+test("Kyle Morris is on the forecast roster", () => {
+  assert.equal(isValidPerson("kyle_morris"), true);
+  assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.label, "Kyle Morris");
+  assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.entryLevel, false);
 });
 
 test("every focused slug is a real person", () => {

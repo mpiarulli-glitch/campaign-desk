@@ -59,12 +59,9 @@ export function createTask(input: {
   basecampTodoId?: string;
   basecampProjectId?: string;
   basecampEventId?: string;
-  startTime: string;
+  startTime?: string;
 }): ForecastTask {
-  const startTime = parseTimeInput(input.startTime);
-  if (!startTime) {
-    throw new Error("startTime is required");
-  }
+  const startTime = parseTimeInput(input.startTime || "");
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
@@ -129,7 +126,7 @@ export function updateTask(
       updates.basecampTimeEntryId ?? existing.basecamp_time_entry_id,
       updates.basecampTodoId ?? existing.basecamp_todo_id,
       updates.startTime !== undefined
-        ? parseTimeInput(updates.startTime) || existing.start_time
+        ? parseTimeInput(updates.startTime)
         : existing.start_time,
       nowIso(),
       id

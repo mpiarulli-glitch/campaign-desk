@@ -76,9 +76,10 @@ export async function POST(request: Request, { params }: Params) {
   if (!Number.isFinite(hours) || hours <= 0) {
     return NextResponse.json({ error: "hours must be a positive number" }, { status: 400 });
   }
-  const startTime = typeof body.startTime === "string" ? parseTimeInput(body.startTime) : "";
-  if (!startTime) {
-    return NextResponse.json({ error: "startTime is required" }, { status: 400 });
+  const startRaw = typeof body.startTime === "string" ? body.startTime : "";
+  const startTime = parseTimeInput(startRaw);
+  if (startRaw.trim() && !startTime) {
+    return NextResponse.json({ error: "startTime must be a time" }, { status: 400 });
   }
   const task = createTask({
     person,

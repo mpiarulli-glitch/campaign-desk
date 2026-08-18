@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
 import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
-import { formatTimeLabel, parseTimeInput, staggerStartTimes, DEFAULT_START_TIME } from "@/lib/forecast-time";
+import { formatTimeLabel, parseTimeInput, staggerStartTimes } from "@/lib/forecast-time";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -603,8 +603,7 @@ function StartTimeField({
       onBlur={(e) => onSave(task, e.target.value)}
       onMouseDown={(e) => e.stopPropagation()}
       aria-label="Start time"
-      title="Start time"
-      required
+      title="Start time (optional)"
       className="ops-time"
     />
   );
@@ -693,11 +692,7 @@ function AddTaskForm({
           eventId: hit?.id || "",
           notes: hit?.title || "",
           hours: hit && hit.hours > 0 ? String(hit.hours) : "",
-          startTime: hit
-            ? hit.allDay
-              ? DEFAULT_START_TIME
-              : hit.startTime || DEFAULT_START_TIME
-            : "",
+          startTime: hit && !hit.allDay ? hit.startTime || "" : "",
           clientId: hit?.clientId || "",
           client: hit?.clientName || "",
           todoIds: [],
@@ -782,8 +777,7 @@ function AddTaskForm({
       value={draft.startTime}
       onChange={(e) => patch({ startTime: e.target.value })}
       aria-label="Start time"
-      title="When this will be worked"
-      required
+      title="Start time (optional)"
       className="ops-time"
       style={stack ? { flex: 1 } : undefined}
     />
@@ -1231,10 +1225,6 @@ export default function PersonForecastPage() {
       return;
     }
     const startTime = parseTimeInput(draft.startTime);
-    if (!startTime) {
-      setError("Enter a start time so it's clear when this is being worked.");
-      return;
-    }
 
     const rows: Array<{ notes: string; hours: number; todoId: string; eventId: string; startTime: string }> = [];
     if (meeting || draft.manual || selected.length === 0) {
@@ -1322,8 +1312,8 @@ export default function PersonForecastPage() {
   ) {
     if (field === "start_time") {
       const next = parseTimeInput(rawValue);
-      if (!next) {
-        setError("A task needs a start time.");
+      if (rawValue.trim() && !next) {
+        setError("Start time must be a time.");
         load(week, { silent: true });
         return;
       }
@@ -1890,7 +1880,7 @@ export default function PersonForecastPage() {
                 const id = dragId || droppedId;
                 setDragId(null);
                 setDropDay(null);
-                if (!id || !startTime) return;
+                if (!id) return;
                 void moveTask(id, date, startTime);
               }}
               onDragOver={onDayDragOver}
@@ -1908,7 +1898,7 @@ export default function PersonForecastPage() {
                     <span className="muted" style={{ fontWeight: 400 }}>
                       {draftFor(addingFor).startTime
                         ? formatTimeLabel(draftFor(addingFor).startTime)
-                        : "pick a start time"}
+                        : "no start time"}
                     </span>
                   </strong>
                 </div>
@@ -1929,7 +1919,7 @@ export default function PersonForecastPage() {
               </div>
             ) : (
               <p className="muted" style={{ margin: "12px 0 0", fontSize: 13 }}>
-                Click an hour to add a task there. Every task needs a start time.
+                Click an hour to add a task there, or leave the start time blank and it stays unscheduled.
               </p>
             )}
           </div>

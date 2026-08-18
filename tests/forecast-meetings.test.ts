@@ -124,18 +124,28 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     assert.equal(task.basecamp_event_id, "");
   });
 
-  await t.test("a task cannot be created without a start time", () => {
-    assert.throws(
-      () =>
-        forecast.createTask({
-          person: "michael",
-          taskDate: "2026-08-03",
-          client: "Humble Somm",
-          notes: "Missing a clock time",
-          hours: 1,
-          startTime: "",
-        }),
-      /startTime is required/
-    );
+  await t.test("a task can be created without a start time", () => {
+    const task = forecast.createTask({
+      person: "michael",
+      taskDate: "2026-08-03",
+      client: "Humble Somm",
+      notes: "No clock time yet",
+      hours: 1,
+      startTime: "",
+    });
+    assert.equal(task.start_time, "");
+  });
+
+  await t.test("clearing a start time unschedules the task", () => {
+    const task = forecast.createTask({
+      person: "michael",
+      taskDate: "2026-08-03",
+      client: "Humble Somm",
+      notes: "Later",
+      hours: 1,
+      startTime: "09:00",
+    });
+    const updated = forecast.updateTask(task.id, { startTime: "" });
+    assert.equal(updated?.start_time, "");
   });
 });

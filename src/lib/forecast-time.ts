@@ -1,12 +1,9 @@
-// Clock times on forecast tasks, stored as 24-hour "HH:MM". New tasks always
-// have one so the week calendar shows when the work is happening.
+// Clock times on forecast tasks, stored as 24-hour "HH:MM". Optional: a blank
+// start leaves the row in the unscheduled tray instead of on the hour grid.
 
 export const CAL_START_HOUR = 7;
 export const CAL_END_HOUR = 19;
 export const CAL_PX_PER_HOUR = 64;
-// Used when Basecamp has no clock time (all-day meetings) or someone adds
-// from the leftover tray instead of clicking an hour.
-export const DEFAULT_START_TIME = "09:00";
 
 export function padTime(hour: number, minute: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;

@@ -143,8 +143,11 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: "hours must be a positive number" }, { status: 400 });
     }
   }
-  if (typeof body.startTime === "string" && !parseTimeInput(body.startTime)) {
-    return NextResponse.json({ error: "startTime is required" }, { status: 400 });
+  if (typeof body.startTime === "string") {
+    const startTime = parseTimeInput(body.startTime);
+    if (body.startTime.trim() && !startTime) {
+      return NextResponse.json({ error: "startTime must be a time" }, { status: 400 });
+    }
   }
   const task = updateTask(id, {
     taskDate: typeof body.taskDate === "string" ? body.taskDate : undefined,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   CAL_END_HOUR,
   CAL_PX_PER_HOUR,
@@ -60,9 +61,11 @@ export function ForecastCalendar({
   const hours: number[] = [];
   for (let h = CAL_START_HOUR; h < CAL_END_HOUR; h++) hours.push(h);
   const gridHeight = (CAL_END_HOUR - CAL_START_HOUR) * CAL_PX_PER_HOUR;
+  const [trayDrop, setTrayDrop] = useState<string | null>(null);
   const hasUnscheduled = days.some((date) =>
     (tasksByDay.get(date) || []).some((t) => !t.start_time)
   );
+  const showUnscheduled = hasUnscheduled || Boolean(dragId);
 
   return (
     <div className="fc-cal">
@@ -173,15 +176,32 @@ export function ForecastCalendar({
         })}
       </div>
 
-      {hasUnscheduled ? (
+      {showUnscheduled ? (
       <div className="fc-cal-unscheduled">
-        <p className="fc-cal-unscheduled-label">Needs a start time — drop onto an hour so the calendar can show when it is being worked</p>
+        <p className="fc-cal-unscheduled-label">No start time — drop onto an hour to place it, or drop a timed task here to unschedule it</p>
         <div className="fc-cal-unscheduled-days" style={{ gridTemplateColumns: `52px repeat(${days.length}, 1fr)` }}>
           <div />
           {days.map((date) => {
             const loose = (tasksByDay.get(date) || []).filter((t) => !t.start_time);
             return (
-              <div key={`u-${date}`} className="fc-cal-unscheduled-col">
+              <div
+                key={`u-${date}`}
+                className={`fc-cal-unscheduled-col ${trayDrop === date ? "is-drop-target" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (trayDrop !== date) setTrayDrop(date);
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                  setTrayDrop((d) => (d === date ? null : d));
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setTrayDrop(null);
+                  onDrop(date, null, e.dataTransfer.getData("text/plain"));
+                }}
+              >
                 {loose.map((t) => (
                   <div
                     key={t.id}

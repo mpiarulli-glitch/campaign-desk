@@ -6,10 +6,11 @@ import { ADMIN_PEOPLE } from "./admin-people";
 // non-admins) production scheduling tab.
 // entryLevel: actually-active restricted forecast-role logins, i.e. the
 // people who should show up in the owner's "view as team member" picker.
-// cassidy/carlos/michael are legacy entries already covered by full
-// ADMIN_ACCOUNTS logins, so they're excluded from that list.
+// cassidy/carlos/michael/kyle_morris are already covered by full admin
+// logins, so they're excluded from that list.
 export const PEOPLE = [
   { slug: "cassidy", label: "Cassidy", productionAccess: false, entryLevel: false },
+  { slug: "kyle_morris", label: "Kyle Morris", productionAccess: false, entryLevel: false },
   { slug: "carlos", label: "Carlos", productionAccess: false, entryLevel: false },
   { slug: "roy", label: "Roy", productionAccess: false, entryLevel: true },
   { slug: "michael", label: "Michael", productionAccess: false, entryLevel: false },
@@ -143,9 +144,9 @@ export function personLabel(slug: string): string {
 /**
  * Display name for a stored actor tag, as written by sessionActor in ./auth.
  *
- * Consults both rosters because the two do not overlap: several admin logins
- * (sylvia, kyle_onstott) are not in PEOPLE at all, and personLabel alone would
- * render them as their raw slug.
+ * Consults both rosters because they do not fully overlap: several admin logins
+ * (sylvia, kyle_onstott, luis_romero) are not in PEOPLE at all, and personLabel
+ * alone would render them as their raw slug.
  *
  * A tag can carry an `:impersonated` marker. That is kept visible on purpose. The
  * session cookie does not record which admin was acting, so the only honest

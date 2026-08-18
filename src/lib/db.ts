@@ -2550,8 +2550,9 @@ function migrate(database: Database.Database) {
 
 // Insert a login row for every person in the code roster who does not have one
 // yet. Never touches an existing row, so it cannot clobber a password someone
-// has already set. Overlapping slugs (cassidy, carlos appear in both arrays)
-// get the admin role, matching the "admin label wins" rule in team.ts.
+// has already set. Overlapping slugs (cassidy, carlos, kyle_morris appear in
+// both arrays) get the admin role, matching the "admin label wins" rule in
+// team.ts.
 function seedUsers(database: Database.Database) {
   const now = nowIso();
   const insert = database.prepare(
