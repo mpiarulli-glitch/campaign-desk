@@ -3,7 +3,15 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarImportModal } from "@/components/CalendarImportModal";
-import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
+import {
+  CalendarStatusFilter,
+  CalendarTypeFilter,
+  CalendarViewToggle,
+} from "@/components/CalendarTypeFilter";
+import {
+  sendMatchesStatusFilter,
+  type CalendarStatusKey,
+} from "@/lib/calendar-status-filter";
 import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
 import { isProductionBrief, parseProductionBrief } from "@/lib/production-brief";
 
@@ -166,6 +174,8 @@ export default function CalendarPage() {
   const [clientQuery, setClientQuery] = useState("All clients");
   const [view, setView] = useState<"calendar" | "list">("list");
   const [typeFilter, setTypeFilter] = useState<CalendarTypeKey[]>([]);
+  const [statusFilter, setStatusFilter] = useState<CalendarStatusKey[]>([]);
+  const [notesOnly, setNotesOnly] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<typeof EMPTY | null>(null);
   const [saving, setSaving] = useState(false);
@@ -289,12 +299,14 @@ export default function CalendarPage() {
     for (const s of sends) {
       if (filter !== "all" && s.client_id !== filter) continue;
       if (!sendMatchesTypeFilter(s.asset_type, typeFilter)) continue;
+      if (!sendMatchesStatusFilter(s.status, statusFilter)) continue;
+      if (notesOnly && !feedbackBySend.get(s.id)?.trim()) continue;
       const arr = map.get(s.send_date) || [];
       arr.push(s);
       map.set(s.send_date, arr);
     }
     return map;
-  }, [sends, filter, typeFilter]);
+  }, [sends, filter, typeFilter, statusFilter, notesOnly, feedbackBySend]);
 
   const hasVisibleSends = useMemo(
     () => [...byDay.values()].some((items) => items.length > 0),
@@ -309,6 +321,7 @@ export default function CalendarPage() {
   useEffect(() => {
     if (filter === "all") {
       setClientQuery("All clients");
+      setNotesOnly(false);
       return;
     }
     const selected = clients.find((c) => c.id === filter);
@@ -567,16 +580,34 @@ export default function CalendarPage() {
         </div>
 
         <div className="cal-toolbar">
-          <div className="cal-toolbar-filters">
-            <span className="cal-toolbar-label">Show</span>
-            <CalendarTypeFilter selected={typeFilter} onChange={setTypeFilter} />
+          <div className="cal-toolbar-rows">
+            <div className="cal-toolbar-filters">
+              <span className="cal-toolbar-label">Type</span>
+              <CalendarTypeFilter selected={typeFilter} onChange={setTypeFilter} />
+            </div>
+            <div className="cal-toolbar-filters">
+              <span className="cal-toolbar-label">Status</span>
+              <CalendarStatusFilter selected={statusFilter} onChange={setStatusFilter} />
+              {isAdmin && filter !== "all" ? (
+                <button
+                  type="button"
+                  className={`view-toggle-btn cal-notes-toggle ${notesOnly ? "is-on" : ""}`}
+                  onClick={() => setNotesOnly((v) => !v)}
+                  aria-pressed={notesOnly}
+                >
+                  Client notes
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <div className="cal-toolbar-actions">
             {hasVisibleSends ? (
               <span className="cal-toolbar-count">
                 {listGroups.reduce((n, [, items]) => n + items.length, 0)}
               </span>
             ) : null}
+            <CalendarViewToggle view={view} onChange={setView} />
           </div>
-          <CalendarViewToggle view={view} onChange={setView} />
         </div>
 
         {error ? <p className="error">{error}</p> : null}
@@ -644,6 +675,21 @@ export default function CalendarPage() {
               Nothing of those types in {MONTHS[month]} {year}. Try All, or pick a
               different combination.
             </span>
+          </div>
+        ) : null}
+
+        {statusFilter.length > 0 && !hasNoCalendar && !monthIsEmpty && !hasVisibleSends ? (
+          <div className="card card-pad cal-month-empty">
+            <span>
+              Nothing with those statuses in {MONTHS[month]} {year}. Try All, or pick
+              different statuses.
+            </span>
+          </div>
+        ) : null}
+
+        {notesOnly && !hasNoCalendar && !monthIsEmpty && !hasVisibleSends ? (
+          <div className="card card-pad cal-month-empty">
+            <span>No client notes on sends in {MONTHS[month]} {year}.</span>
           </div>
         ) : null}
 

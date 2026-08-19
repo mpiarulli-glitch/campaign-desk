@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  CALENDAR_STATUS_KEYS,
+  CALENDAR_STATUS_LABEL,
+  type CalendarStatusKey,
+} from "@/lib/calendar-status-filter";
+import {
   CALENDAR_TYPE_KEYS,
   CALENDAR_TYPE_LABEL,
   type CalendarTypeKey,
@@ -42,6 +47,49 @@ export function CalendarTypeFilter({
             aria-pressed={on}
           >
             {CALENDAR_TYPE_LABEL[key]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function CalendarStatusFilter({
+  selected,
+  onChange,
+}: {
+  selected: CalendarStatusKey[];
+  onChange: (next: CalendarStatusKey[]) => void;
+}) {
+  function toggle(key: CalendarStatusKey) {
+    onChange(
+      selected.includes(key)
+        ? selected.filter((k) => k !== key)
+        : [...selected, key]
+    );
+  }
+
+  return (
+    <div className="view-toggle" role="group" aria-label="Filter by status">
+      <button
+        type="button"
+        className={`view-toggle-btn ${selected.length === 0 ? "is-on" : ""}`}
+        onClick={() => onChange([])}
+        aria-pressed={selected.length === 0}
+      >
+        All
+      </button>
+      {CALENDAR_STATUS_KEYS.map((key) => {
+        const on = selected.includes(key);
+        return (
+          <button
+            key={key}
+            type="button"
+            className={`view-toggle-btn ${on ? "is-on" : ""}`}
+            onClick={() => toggle(key)}
+            aria-pressed={on}
+          >
+            {CALENDAR_STATUS_LABEL[key]}
           </button>
         );
       })}

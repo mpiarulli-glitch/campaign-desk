@@ -2,19 +2,34 @@
 // than how people actually look at a month ("just the emails", "emails and
 // SMS"), so these keys group the stored types into those buckets.
 
-export const CALENDAR_TYPE_KEYS = ["video", "email", "sms"] as const;
+export const CALENDAR_TYPE_KEYS = [
+  "video",
+  "social",
+  "email",
+  "sms",
+  "blog",
+  "untyped",
+] as const;
 export type CalendarTypeKey = (typeof CALENDAR_TYPE_KEYS)[number];
 
 export const CALENDAR_TYPE_LABEL: Record<CalendarTypeKey, string> = {
   video: "Video",
-  email: "Email",
+  social: "Social Posts",
+  email: "Emails",
   sms: "SMS",
+  blog: "Blogs",
+  untyped: "Untyped",
 };
 
-export const CALENDAR_TYPE_ASSETS: Record<CalendarTypeKey, readonly string[]> = {
+export const CALENDAR_TYPE_ASSETS: Record<
+  Exclude<CalendarTypeKey, "untyped">,
+  readonly string[]
+> = {
   video: ["social_video_carousel"],
+  social: ["social_post"],
   email: ["email_campaign"],
   sms: ["crm_automation"],
+  blog: ["blog_post"],
 };
 
 export function isCalendarTypeKey(value: string): value is CalendarTypeKey {
@@ -32,5 +47,8 @@ export function sendMatchesTypeFilter(
 ): boolean {
   if (selected.length === 0) return true;
   const type = assetType || "";
-  return selected.some((key) => CALENDAR_TYPE_ASSETS[key].includes(type));
+  return selected.some((key) => {
+    if (key === "untyped") return !type;
+    return CALENDAR_TYPE_ASSETS[key].includes(type);
+  });
 }

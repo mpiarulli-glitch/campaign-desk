@@ -2095,7 +2095,7 @@ button {
 
 .cal-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
@@ -2103,6 +2103,19 @@ button {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+.cal-toolbar-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.cal-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 .cal-toolbar-filters {
   display: flex;
@@ -2122,6 +2135,20 @@ button {
   font-weight: 600;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+.cal-notes-toggle {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+.cal-notes-toggle.is-on {
+  background: var(--pill-bg);
+  color: var(--pill-text);
 }
 
 .cal-nav {
