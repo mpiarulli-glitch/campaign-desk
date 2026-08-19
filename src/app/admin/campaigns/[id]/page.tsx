@@ -266,22 +266,95 @@ export default function AdminCampaignPage() {
   }
 
   const [revClients, setRevClients] = useState<{ id: string; name: string }[]>([]);
+  const [clientQuery, setClientQuery] = useState("");
+  const [savingClient, setSavingClient] = useState(false);
   useEffect(() => {
-    fetch("/api/revenue/clients")
+    fetch("/api/revenue/clients?all=1")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setRevClients(d.clients));
   }, []);
 
-  async function changeClient(clientId: string) {
+  useEffect(() => {
+    if (!campaign) return;
+    if (campaign.client_id) {
+      const linked = revClients.find((c) => c.id === campaign.client_id);
+      setClientQuery(linked?.name || campaign.client_name || "");
+    } else {
+      setClientQuery(campaign.client_name || "");
+    }
+  }, [campaign?.client_id, campaign?.client_name, revClients]);
+
+  const clientQueryMatch = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return null;
+    return revClients.find((c) => c.name.toLowerCase() === q) ?? null;
+  }, [clientQuery, revClients]);
+
+  async function changeClient(clientId: string | null, clientName: string) {
+    setSavingClient(true);
+    setError("");
     const res = await fetch(`/api/campaigns/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        clientId: clientId || null,
-        clientName: revClients.find((c) => c.id === clientId)?.name || "",
+        clientId,
+        clientName: clientName.trim(),
       }),
     });
-    if (res.ok) load();
+    setSavingClient(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not update client.");
+      return;
+    }
+    setMessage(clientId ? `Client set to ${clientName.trim()}.` : "Client unlinked.");
+    load();
+  }
+
+  async function applyCampaignClientQuery(raw: string) {
+    const q = raw.trim();
+    if (!q) {
+      if (campaign?.client_id || campaign?.client_name) {
+        await changeClient(null, "");
+      }
+      setClientQuery("");
+      return;
+    }
+    const exact =
+      revClients.find((c) => c.name.toLowerCase() === q.toLowerCase()) ?? null;
+    if (exact) {
+      setClientQuery(exact.name);
+      if (exact.id !== campaign?.client_id) {
+        await changeClient(exact.id, exact.name);
+      }
+    }
+  }
+
+  async function createAndAssignClient() {
+    const name = clientQuery.trim();
+    if (!name) return;
+    setSavingClient(true);
+    setError("");
+    const res = await fetch("/api/revenue/clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, businessModel: "home_service" }),
+    });
+    setSavingClient(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not create client.");
+      return;
+    }
+    const data = await res.json();
+    const created = { id: data.client.id as string, name: data.client.name as string };
+    setRevClients((prev) =>
+      [...prev, created].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      )
+    );
+    setClientQuery(created.name);
+    await changeClient(created.id, created.name);
   }
 
   const activeEmail = useMemo(
@@ -933,21 +1006,45 @@ export default function AdminCampaignPage() {
               {emails.length} email{emails.length === 1 ? "" : "s"} · Updated{" "}
               {new Date(campaign.updated_at).toLocaleString()}
             </p>
-            <div className="row" style={{ gap: 8, alignItems: "center", marginTop: 6 }}>
+            <div
+              className="row"
+              style={{ gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}
+            >
               <label className="muted" style={{ fontSize: 13 }} htmlFor="campaign-client">
                 Client
               </label>
-              <select
+              <input
                 id="campaign-client"
-                className="select-clean badge-select"
-                value={campaign.client_id || ""}
-                onChange={(e) => changeClient(e.target.value)}
-              >
-                <option value="">{campaign.client_name || "Unlinked"}</option>
+                className="select-clean cal-client-search"
+                list="campaign-rev-clients"
+                value={clientQuery}
+                onChange={(e) => setClientQuery(e.target.value)}
+                onBlur={() => applyCampaignClientQuery(clientQuery)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyCampaignClientQuery(clientQuery);
+                  }
+                }}
+                placeholder="Type a client name"
+                disabled={savingClient}
+                aria-label="Search clients"
+              />
+              <datalist id="campaign-rev-clients">
                 {revClients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.name} />
                 ))}
-              </select>
+              </datalist>
+              {clientQuery.trim() && !clientQueryMatch ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={createAndAssignClient}
+                  disabled={savingClient}
+                >
+                  {savingClient ? "Saving..." : `Add "${clientQuery.trim()}"`}
+                </button>
+              ) : null}
             </div>
             {campaign.description ? (
               <p className="body-text" style={{ marginTop: 10, lineHeight: 1.6 }}>
