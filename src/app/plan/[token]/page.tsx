@@ -3,6 +3,8 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
+import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
 import { isProductionBrief } from "@/lib/production-brief";
 
 type Send = {
@@ -89,6 +91,7 @@ export default function PlanClientPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [detail, setDetail] = useState<Send | null>(null);
+  const [typeFilter, setTypeFilter] = useState<CalendarTypeKey[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,23 +119,28 @@ export default function PlanClientPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const visibleSends = useMemo(
+    () => sends.filter((s) => sendMatchesTypeFilter(s.asset_type, typeFilter)),
+    [sends, typeFilter]
+  );
+
   const groups = useMemo(() => {
     const map = new Map<string, Send[]>();
-    for (const s of sends) {
+    for (const s of visibleSends) {
       const key = monthKey(s.send_date);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(s);
     }
     return Array.from(map.entries());
-  }, [sends]);
+  }, [visibleSends]);
 
   // Distinct year/month pairs that actually have sends, in date order, so the
   // calendar view can be paged across only the months there's data for.
   const monthsPresent = useMemo(() => {
     const set = new Set<string>();
-    for (const s of sends) set.add(s.send_date.slice(0, 7));
+    for (const s of visibleSends) set.add(s.send_date.slice(0, 7));
     return Array.from(set).sort();
-  }, [sends]);
+  }, [visibleSends]);
 
   const [calMonth, setCalMonth] = useState<string>("");
   useEffect(() => {
@@ -148,13 +156,13 @@ export default function PlanClientPage() {
 
   const byDay = useMemo(() => {
     const map = new Map<string, Send[]>();
-    for (const s of sends) {
+    for (const s of visibleSends) {
       const arr = map.get(s.send_date) || [];
       arr.push(s);
       map.set(s.send_date, arr);
     }
     return map;
-  }, [sends]);
+  }, [visibleSends]);
 
   const cells = useMemo(() => {
     if (!calMonth) return [];
@@ -254,23 +262,15 @@ export default function PlanClientPage() {
             </div>
 
             <div className="row" style={{ justifyContent: "flex-end" }}>
-              <div className="view-toggle">
-                <button
-                  className={`view-toggle-btn ${view === "calendar" ? "is-on" : ""}`}
-                  onClick={() => setView("calendar")}
-                >
-                  Calendar
-                </button>
-                <button
-                  className={`view-toggle-btn ${view === "list" ? "is-on" : ""}`}
-                  onClick={() => setView("list")}
-                >
-                  List
-                </button>
-              </div>
+              <CalendarTypeFilter selected={typeFilter} onChange={setTypeFilter} />
+              <CalendarViewToggle view={view} onChange={setView} />
             </div>
 
-            {view === "calendar" ? (
+            {visibleSends.length === 0 ? (
+              <div className="empty">
+                <p>Nothing of those types in this window. Try All, or pick a different combination.</p>
+              </div>
+            ) : view === "calendar" ? (
               <div className="stack" style={{ gap: 12 }}>
                 <div className="row" style={{ justifyContent: "center" }}>
                   <div className="cal-nav">

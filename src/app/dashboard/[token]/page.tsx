@@ -3,7 +3,9 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
+import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
 import { type Workboard } from "@/components/WorkTower";
 
 type CycleStatus =
@@ -30,6 +32,7 @@ type Send = {
   send_date: string;
   send_time: string;
   status: string;
+  asset_type: string;
 };
 
 type ActivityItem = {
@@ -87,6 +90,32 @@ function fmtDate(ymdStr: string): string {
   });
 }
 
+function fmtTime(hhmm: string): string {
+  if (!hhmm) return "";
+  const h = Number(hhmm.split(":")[0]);
+  if (Number.isNaN(h)) return "";
+  const period = h >= 12 ? "PM" : "AM";
+  return `${h % 12 === 0 ? 12 : h % 12} ${period}`;
+}
+
+function fmtListDay(ymdStr: string): string {
+  const [y, m, d] = ymdStr.split("-").map(Number);
+  if (!y || !m || !d) return ymdStr;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+const ASSET_TYPE_LABEL: Record<string, string> = {
+  social_post: "Social post",
+  social_video_carousel: "Video",
+  email_campaign: "Email",
+  crm_automation: "SMS",
+  blog_post: "Blog",
+};
+
 // Trimmed 2026-07-31 to four things and nothing else: the campaign calendar,
 // approvals waiting on the client, the weekly snapshot, and a way to request a
 // production. Overview carries the approvals and the snapshot.
@@ -108,6 +137,8 @@ export default function ClientDashboardPage() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
+  const [typeFilter, setTypeFilter] = useState<CalendarTypeKey[]>([]);
+  const [view, setView] = useState<"calendar" | "list">("calendar");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,21 +162,26 @@ export default function ClientDashboardPage() {
     load();
   }, [load]);
 
+  const visibleSends = useMemo(
+    () => (data?.calendar || []).filter((s) => sendMatchesTypeFilter(s.asset_type, typeFilter)),
+    [data, typeFilter]
+  );
+
   const byDay = useMemo(() => {
     const map = new Map<string, Send[]>();
-    for (const s of data?.calendar || []) {
+    for (const s of visibleSends) {
       const arr = map.get(s.send_date) || [];
       arr.push(s);
       map.set(s.send_date, arr);
     }
     return map;
-  }, [data]);
+  }, [visibleSends]);
 
   const monthsPresent = useMemo(() => {
     const set = new Set<string>();
-    for (const s of data?.calendar || []) set.add(s.send_date.slice(0, 7));
+    for (const s of visibleSends) set.add(s.send_date.slice(0, 7));
     return Array.from(set).sort();
-  }, [data]);
+  }, [visibleSends]);
 
   const [calMonth, setCalMonth] = useState<string>("");
   useEffect(() => {
@@ -168,6 +204,13 @@ export default function ClientDashboardPage() {
     for (let d = 1; d <= daysInMonth; d++) arr.push(d);
     return arr;
   }, [calMonth, calYear, calMonthNum]);
+
+  const listGroups = useMemo(() => {
+    if (!calMonth) return [];
+    return [...byDay.entries()]
+      .filter(([date]) => date.startsWith(calMonth))
+      .sort(([a], [b]) => a.localeCompare(b));
+  }, [byDay, calMonth]);
 
   const today = new Date();
   const todayYmdStr = ymd(today.getFullYear(), today.getMonth(), today.getDate());
@@ -334,8 +377,20 @@ export default function ClientDashboardPage() {
 
               {tab === "calendar" ? (
                 <div className="stack" style={{ gap: 12 }}>
+                  {(data?.calendar || []).length > 0 ? (
+                    <div className="row" style={{ justifyContent: "center" }}>
+                      <CalendarTypeFilter selected={typeFilter} onChange={setTypeFilter} />
+                      <CalendarViewToggle view={view} onChange={setView} />
+                    </div>
+                  ) : null}
                   {monthsPresent.length === 0 ? (
-                    <div className="empty"><p>Nothing on the calendar right now.</p></div>
+                    <div className="empty">
+                      <p>
+                        {typeFilter.length
+                          ? "Nothing of those types on the calendar. Try All, or pick a different combination."
+                          : "Nothing on the calendar right now."}
+                      </p>
+                    </div>
                   ) : (
                     <>
                       <div className="row" style={{ justifyContent: "center" }}>
@@ -362,6 +417,32 @@ export default function ClientDashboardPage() {
                         </div>
                       </div>
 
+                      {view === "list" ? (
+                        <div className="cal-list is-plain">
+                          <div className="cal-list-head" aria-hidden="true">
+                            <span>Date</span>
+                            <span>Time</span>
+                            <span>Type</span>
+                            <span>Title</span>
+                          </div>
+                          {listGroups.flatMap(([date, items]) =>
+                            items.map((s) => (
+                              <div key={s.id} className="cal-list-row is-static">
+                                <span className="cal-list-date">{fmtListDay(date)}</span>
+                                <span className="cal-list-time">
+                                  {s.send_time ? fmtTime(s.send_time) : "—"}
+                                </span>
+                                <span className="cal-list-type">
+                                  {s.asset_type
+                                    ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type
+                                    : "—"}
+                                </span>
+                                <span className="cal-list-title">{s.title}</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      ) : (
                       <div className="cal-grid-wrap">
                         <div className="cal-grid">
                           {DOW.map((d) => (
@@ -390,6 +471,7 @@ export default function ClientDashboardPage() {
                           })}
                         </div>
                       </div>
+                      )}
                     </>
                   )}
                 </div>

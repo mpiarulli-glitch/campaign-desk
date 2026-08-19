@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarImportModal } from "@/components/CalendarImportModal";
+import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
+import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
 import { isProductionBrief, parseProductionBrief } from "@/lib/production-brief";
 
 type Status = "requested" | "planned" | "scheduled" | "sent";
@@ -82,6 +84,16 @@ function fmtDate(ymdStr: string): string {
   });
 }
 
+function fmtListDay(ymdStr: string): string {
+  const [y, m, d] = ymdStr.split("-").map(Number);
+  if (!y || !m || !d) return ymdStr;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 // 24h HH:MM -> "10 AM"; blank stays blank.
 function fmtTime(hhmm: string): string {
   if (!hhmm) return "";
@@ -151,6 +163,9 @@ export default function CalendarPage() {
   const [showAll, setShowAll] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [filter, setFilter] = useState<string>("all");
+  const [clientQuery, setClientQuery] = useState("All clients");
+  const [view, setView] = useState<"calendar" | "list">("list");
+  const [typeFilter, setTypeFilter] = useState<CalendarTypeKey[]>([]);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<typeof EMPTY | null>(null);
   const [saving, setSaving] = useState(false);
@@ -273,12 +288,32 @@ export default function CalendarPage() {
     const map = new Map<string, Send[]>();
     for (const s of sends) {
       if (filter !== "all" && s.client_id !== filter) continue;
+      if (!sendMatchesTypeFilter(s.asset_type, typeFilter)) continue;
       const arr = map.get(s.send_date) || [];
       arr.push(s);
       map.set(s.send_date, arr);
     }
     return map;
-  }, [sends, filter]);
+  }, [sends, filter, typeFilter]);
+
+  const hasVisibleSends = useMemo(
+    () => [...byDay.values()].some((items) => items.length > 0),
+    [byDay]
+  );
+
+  const listGroups = useMemo(
+    () => [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    [byDay]
+  );
+
+  useEffect(() => {
+    if (filter === "all") {
+      setClientQuery("All clients");
+      return;
+    }
+    const selected = clients.find((c) => c.id === filter);
+    if (selected) setClientQuery(selected.name);
+  }, [filter, clients]);
 
   const viewedMonth = `${year}-${pad(month + 1)}`;
   const clientName = clients.find((c) => c.id === filter)?.name || "this client";
@@ -324,6 +359,20 @@ export default function CalendarPage() {
   function goToday() {
     setYear(now.getFullYear());
     setMonth(now.getMonth());
+  }
+
+  function applyClientQuery(raw: string) {
+    const q = raw.trim();
+    if (!q || q.toLowerCase() === "all clients") {
+      setFilter("all");
+      setClientQuery("All clients");
+      return;
+    }
+    const exact = clients.find((c) => c.name.toLowerCase() === q.toLowerCase());
+    if (exact) {
+      setFilter(exact.id);
+      setClientQuery(exact.name);
+    }
   }
 
   // Filtering to a client and then clicking a day means that client, so the
@@ -468,12 +517,31 @@ export default function CalendarPage() {
             <h1 className="h1">Campaign calendar</h1>
           </div>
           <div className="row">
-            <select className="select-clean" value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">All clients</option>
+            <input
+              className="select-clean cal-client-search"
+              list="calendar-client-options"
+              value={clientQuery}
+              onChange={(e) => {
+                const v = e.target.value;
+                setClientQuery(v);
+                if (!v.trim()) setFilter("all");
+              }}
+              onBlur={() => applyClientQuery(clientQuery)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  applyClientQuery(clientQuery);
+                }
+              }}
+              placeholder="Type a client name"
+              aria-label="Search clients"
+            />
+            <datalist id="calendar-client-options">
+              <option value="All clients" />
               {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.name} />
               ))}
-            </select>
+            </datalist>
             <div className="cal-nav">
               <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>
               <span className="cal-month">{MONTHS[month]} {year}</span>
@@ -496,6 +564,19 @@ export default function CalendarPage() {
               </button>
             ) : null}
           </div>
+        </div>
+
+        <div className="cal-toolbar">
+          <div className="cal-toolbar-filters">
+            <span className="cal-toolbar-label">Show</span>
+            <CalendarTypeFilter selected={typeFilter} onChange={setTypeFilter} />
+            {hasVisibleSends ? (
+              <span className="cal-toolbar-count">
+                {listGroups.reduce((n, [, items]) => n + items.length, 0)}
+              </span>
+            ) : null}
+          </div>
+          <CalendarViewToggle view={view} onChange={setView} />
         </div>
 
         {error ? <p className="error">{error}</p> : null}
@@ -557,6 +638,15 @@ export default function CalendarPage() {
 
         {/* A calendar exists, just not in this month. Said out loud, with a way
             back, because an unexplained empty grid reads like lost data. */}
+        {typeFilter.length > 0 && !hasNoCalendar && !monthIsEmpty && !hasVisibleSends ? (
+          <div className="card card-pad cal-month-empty">
+            <span>
+              Nothing of those types in {MONTHS[month]} {year}. Try All, or pick a
+              different combination.
+            </span>
+          </div>
+        ) : null}
+
         {monthIsEmpty && summary ? (
           <div className="card card-pad cal-month-empty">
             <span>
@@ -618,6 +708,53 @@ export default function CalendarPage() {
           </div>
         ) : null}
 
+        {view === "list" ? (
+          hasVisibleSends ? (
+            <div className="cal-list">
+              <div className="cal-list-head" aria-hidden="true">
+                <span>Date</span>
+                <span>Time</span>
+                <span>Client</span>
+                <span>Type</span>
+                <span>Title</span>
+                <span>Status</span>
+              </div>
+              {listGroups.flatMap(([, items]) => items).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`cal-list-row ${isProduction(s) ? "is-production" : ""} ${feedbackBySend.has(s.id) ? "has-note" : ""}`}
+                  onClick={() => {
+                    if (isAdmin) openEdit(s);
+                  }}
+                  onMouseEnter={(e) => showHover(e, s)}
+                  onMouseLeave={hideHover}
+                >
+                  <span className="cal-list-date">{fmtListDay(s.send_date)}</span>
+                  <span className="cal-list-time">{s.send_time ? fmtTime(s.send_time) : "—"}</span>
+                  <span className="cal-list-client">{s.client_name || "—"}</span>
+                  <span className="cal-list-type">
+                    {s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : "—"}
+                  </span>
+                  <span className="cal-list-title">
+                    {isProduction(s) ? "🎥 " : ""}
+                    {s.title}
+                    {feedbackBySend.has(s.id) ? (
+                      <span className="cal-chip-note" title="Client left a note">💬</span>
+                    ) : null}
+                  </span>
+                  <span className={`cal-pop-status chip-${s.status}`}>{STATUS_LABEL[s.status]}</span>
+                </button>
+              ))}
+            </div>
+          ) : !hasNoCalendar && !monthIsEmpty && typeFilter.length === 0 ? (
+            <div className="card card-pad">
+              <p className="muted" style={{ margin: 0 }}>
+                Nothing to list in {MONTHS[month]} {year}.
+              </p>
+            </div>
+          ) : null
+        ) : (
         <div className="cal-grid-wrap">
         <div className="cal-grid">
           {DOW.map((d) => (
@@ -670,6 +807,7 @@ export default function CalendarPage() {
           })}
         </div>
         </div>
+        )}
       </main>
 
       {hover ? (
