@@ -323,6 +323,32 @@ export interface BcPerson {
   attachable_sgid?: string;
 }
 
+// Basecamp paginates people at 15 per page. One page is not enough: Hendo's
+// Barrel House has 18 members, and the first page is all MEG staff, which is
+// why Brandon never appeared in the approval picker. Pingable people for the
+// whole account is larger still (~250), so that walk is allowed more pages.
+const PROJECT_PEOPLE_MAX_PAGES = 8;
+const PINGABLE_PEOPLE_MAX_PAGES = 30;
+
+function asBcPerson(p: {
+  id?: number;
+  name?: string;
+  email_address?: string;
+  client?: boolean;
+  employee?: boolean;
+  attachable_sgid?: string;
+}): BcPerson | null {
+  if (!p?.id) return null;
+  return {
+    id: p.id,
+    name: p.name || "",
+    email_address: p.email_address || "",
+    client: Boolean(p.client),
+    employee: Boolean(p.employee),
+    attachable_sgid: p.attachable_sgid || undefined,
+  };
+}
+
 // People with access to a project. Used to resolve a contact / account manager
 // (given as an email or name) to the Basecamp person id we tag on a card.
 export async function getProjectPeople(
@@ -331,21 +357,61 @@ export async function getProjectPeople(
 ): Promise<BcPerson[]> {
   if (!projectId) return [];
   try {
-    const res = await bc(`/projects/${projectId}/people.json`, undefined, identity);
-    if (!res.ok) return [];
-    const arr = await res.json();
-    if (!Array.isArray(arr)) return [];
-    return arr.map((p) => ({
-      id: p.id,
-      name: p.name || "",
-      email_address: p.email_address || "",
-      client: Boolean(p.client),
-      employee: Boolean(p.employee),
-      attachable_sgid: p.attachable_sgid || undefined,
-    }));
+    const arr = await bcCollection<{
+      id?: number;
+      name?: string;
+      email_address?: string;
+      client?: boolean;
+      employee?: boolean;
+      attachable_sgid?: string;
+    }>(`/projects/${projectId}/people.json`, PROJECT_PEOPLE_MAX_PAGES, identity);
+    return arr.map(asBcPerson).filter((person): person is BcPerson => person !== null);
   } catch {
     return [];
   }
+}
+
+async function getPingablePeople(
+  identity: BcIdentity = SERVICE
+): Promise<BcPerson[]> {
+  try {
+    const arr = await bcCollection<{
+      id?: number;
+      name?: string;
+      email_address?: string;
+      client?: boolean;
+      employee?: boolean;
+      attachable_sgid?: string;
+    }>(`/circles/people.json`, PINGABLE_PEOPLE_MAX_PAGES, identity);
+    return arr.map(asBcPerson).filter((person): person is BcPerson => person !== null);
+  } catch {
+    return [];
+  }
+}
+
+// Copy email, mention token, and client/employee flags from the account-wide
+// pingable list onto a project's members. /projects/{id}/people.json omits
+// those fields, so without this merge the approval picker cannot tell a client
+// contact from MEG staff and mentions silently degrade to plain text.
+export function mergePingableDetails(
+  members: BcPerson[],
+  pingable: BcPerson[]
+): BcPerson[] {
+  const byId = new Map<number, BcPerson>();
+  for (const person of pingable) {
+    if (person?.id) byId.set(person.id, person);
+  }
+  return members.map((member) => {
+    const extra = byId.get(member.id);
+    if (!extra) return member;
+    return {
+      ...member,
+      email_address: member.email_address || extra.email_address || "",
+      attachable_sgid: member.attachable_sgid || extra.attachable_sgid,
+      client: member.client || extra.client,
+      employee: member.employee || extra.employee,
+    };
+  });
 }
 
 // Project members, enriched with the email address and mention token that the
@@ -363,29 +429,9 @@ export async function getProjectPeopleForMention(
   const members = await getProjectPeople(projectId, identity);
   if (!members.length) return members;
   try {
-    const res = await bc(`/circles/people.json`, undefined, identity);
-    if (!res.ok) return members;
-    const all = await res.json();
-    if (!Array.isArray(all)) return members;
-    const byId = new Map<number, { email_address?: string; attachable_sgid?: string }>();
-    for (const person of all) {
-      if (person?.id) {
-        byId.set(person.id, {
-          email_address: person.email_address || "",
-          attachable_sgid: person.attachable_sgid || undefined,
-        });
-      }
-    }
-    return members.map((member) => {
-      const extra = byId.get(member.id);
-      return extra
-        ? {
-            ...member,
-            email_address: member.email_address || extra.email_address || "",
-            attachable_sgid: member.attachable_sgid || extra.attachable_sgid,
-          }
-        : member;
-    });
+    const pingable = await getPingablePeople(identity);
+    if (!pingable.length) return members;
+    return mergePingableDetails(members, pingable);
   } catch {
     // Enrichment is best effort. Falling back to the plain roster keeps the card
     // going out, just without an email match or a real mention.
@@ -1746,15 +1792,13 @@ export async function findPersonByEmail(
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson | null> {
   if (!email.trim()) return null;
-  const res = await bc(`/circles/people.json`, undefined, identity);
-  if (!res.ok) return null;
-  const all = await res.json();
-  if (!Array.isArray(all)) return null;
+  const all = await getPingablePeople(identity);
+  if (!all.length) return null;
   const want = email.trim().toLowerCase();
-  const match = all.find(
-    (p: BcPerson) => (p.email_address || "").toLowerCase() === want
+  return (
+    all.find((person) => (person.email_address || "").toLowerCase() === want) ||
+    null
   );
-  return match || null;
 }
 
 export interface GrantAccessResult {
