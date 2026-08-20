@@ -122,6 +122,22 @@ type BasecampApprovalState = {
   dueOn: string;
 };
 
+function firstNameOf(name: string): string {
+  const cleaned = (name || "").trim();
+  if (!cleaned) return "there";
+  return cleaned.split(/\s+/)[0];
+}
+
+function withApprovalGreeting(text: string, fullName: string): string {
+  if (!text || !fullName.trim()) return text;
+  if (!/^Hi\s+[^,\n]+,/.test(text)) return text;
+  return text.replace(/^Hi\s+[^,\n]+,/, `Hi ${firstNameOf(fullName)},`);
+}
+
+function withoutApprovalGreeting(text: string): string {
+  return text.replace(/^Hi\s+[^,\n]+,\s*/, "");
+}
+
 export default function AdminCampaignPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -186,6 +202,7 @@ export default function AdminCampaignPage() {
   const [approvalRecipientId, setApprovalRecipientId] = useState<number | "">("");
   const [approvalAssigneeIds, setApprovalAssigneeIds] = useState<number[]>([]);
   const [approvalDueOn, setApprovalDueOn] = useState("");
+  const [approvalMessage, setApprovalMessage] = useState("");
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -263,7 +280,16 @@ export default function AdminCampaignPage() {
       current === "" ? (data.defaultRecipientId ?? "") : current
     );
     setApprovalDueOn((current) => current || data.dueOn || "");
+    setApprovalMessage((current) => (current ? current : data.message || ""));
   }
+
+  useEffect(() => {
+    const name =
+      basecampApproval?.people.find((person) => person.id === approvalRecipientId)
+        ?.name || "";
+    if (!name) return;
+    setApprovalMessage((current) => withApprovalGreeting(current, name));
+  }, [approvalRecipientId, basecampApproval?.people]);
 
   const [revClients, setRevClients] = useState<{ id: string; name: string }[]>([]);
   const [clientQuery, setClientQuery] = useState("");
@@ -539,6 +565,7 @@ export default function AdminCampaignPage() {
         recipientId: approvalRecipientId || undefined,
         assigneeIds: approvalAssigneeIds,
         dueOn: approvalDueOn,
+        message: approvalMessage,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -1355,6 +1382,53 @@ export default function AdminCampaignPage() {
                   />
                 </label>
 
+                <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: "space-between", gap: 8 }}
+                  >
+                    <span className="muted">Approval message</span>
+                    {basecampApproval.message &&
+                    withoutApprovalGreeting(approvalMessage) !==
+                      withoutApprovalGreeting(basecampApproval.message) ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          const name =
+                            basecampApproval.people.find(
+                              (person) => person.id === approvalRecipientId
+                            )?.name || "";
+                          setApprovalMessage(
+                            withApprovalGreeting(
+                              basecampApproval.message,
+                              name
+                            )
+                          );
+                        }}
+                      >
+                        Restore template
+                      </button>
+                    ) : null}
+                  </div>
+                  <textarea
+                    value={approvalMessage}
+                    onChange={(e) => setApprovalMessage(e.target.value)}
+                    rows={16}
+                    style={{
+                      minHeight: 220,
+                      resize: "vertical",
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                    }}
+                  />
+                  <span className="muted">
+                    Starts from the usual template. Add a note, change a line,
+                    or leave it as-is.
+                  </span>
+                </div>
+
                 {basecampApproval.people.length > 1 ? (
                   <details>
                     <summary
@@ -1432,23 +1506,6 @@ export default function AdminCampaignPage() {
                     </a>
                   </p>
                 ) : null}
-                <details style={{ marginTop: 10 }}>
-                  <summary className="muted" style={{ cursor: "pointer" }}>
-                    Preview approval message
-                  </summary>
-                  <pre
-                    className="copy-box"
-                    style={{
-                      marginTop: 8,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "inherit",
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    {basecampApproval.message}
-                  </pre>
-                </details>
               </>
             ) : (
               <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>

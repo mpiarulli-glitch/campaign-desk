@@ -18,7 +18,9 @@ import {
 } from "@/lib/campaigns";
 import {
   campaignApprovalRevisionKey,
+  APPROVAL_MESSAGE_MAX_CHARS,
   clientApprovalMessageHtml,
+  clientApprovalMessageHtmlFromText,
   clientApprovalMessageText,
 } from "@/lib/client-approval";
 import { getRevClient, listRevClients } from "@/lib/revenue";
@@ -53,6 +55,7 @@ function approvalState(id: string) {
     clientContactName: contactName,
     campaignTitle: campaign.title,
     previewUrl,
+    isAutomation: campaign.presentation === "automation",
   };
 
   // A missing contact is deliberately not listed. The send form picks the
@@ -201,6 +204,18 @@ export async function POST(request: Request, { params }: Params) {
     dueOn = trimmed;
   }
 
+  let customMessage = "";
+  if (typeof body.message === "string") {
+    const trimmed = body.message.replace(/\r\n/g, "\n").trim();
+    if (trimmed.length > APPROVAL_MESSAGE_MAX_CHARS) {
+      return NextResponse.json(
+        { error: "That approval message is too long to send." },
+        { status: 400 }
+      );
+    }
+    customMessage = trimmed;
+  }
+
   const client = state.client!;
   if (
     !recipientId &&
@@ -235,8 +250,11 @@ export async function POST(request: Request, { params }: Params) {
     projectId: client.basecamp_project_id,
     campaignTitle: state.campaign.title,
     // Built after the recipient resolves, so the greeting is a real mention.
+    // An edited draft is what the sender saw; otherwise the usual template.
     buildContent: (contactMention?: string) =>
-      clientApprovalMessageHtml(state.messageInput, contactMention),
+      customMessage
+        ? clientApprovalMessageHtmlFromText(customMessage, contactMention)
+        : clientApprovalMessageHtml(state.messageInput, contactMention),
     recipientIdentifiers: [
       client.contact_email,
       client.contact_name,

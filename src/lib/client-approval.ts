@@ -20,16 +20,20 @@ export interface ClientApprovalMessageInput {
   clientContactName: string;
   campaignTitle: string;
   previewUrl: string;
+  isAutomation?: boolean;
 }
 
 export function clientApprovalMessageText(
   input: ClientApprovalMessageInput
 ): string {
   const name = firstName(input.clientContactName);
+  const flowNote = input.isAutomation
+    ? `\nYou'll see the full automation on a map: what starts it, the wait times, and each email. Click an email to preview it.\n`
+    : "";
   return `Hi ${name},
 
 I hope you're doing well. Your ${input.campaignTitle} is ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.
-
+${flowNote}
 Here's what to check:
 
 • Copy: does the messaging reflect your brand and what you want to communicate?
@@ -48,6 +52,60 @@ To move forward, just reply with "Approved" or send over your feedback. Let us k
 Looking forward to hearing from you!`;
 }
 
+export const APPROVAL_MESSAGE_MAX_CHARS = 12_000;
+
+const GREETING_RE = /^Hi\s+([^,\n]+),/;
+
+function linkifyEscaped(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<]+/g, (url) => {
+    const trail = url.match(/[),.;!?]+$/);
+    const href = trail ? url.slice(0, -trail[0].length) : url;
+    const after = trail ? trail[0] : "";
+    return `<a href="${href}">${href}</a>${after}`;
+  });
+}
+
+function blocksToHtml(text: string): string {
+  const blocks = text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const lines = block
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const allBullets =
+        lines.length > 0 && lines.every((line) => /^[•\-*]\s+/.test(line));
+      if (allBullets) {
+        const items = lines
+          .map((line) => line.replace(/^[•\-*]\s+/, ""))
+          .map((line) => `<li>${linkifyEscaped(escapeHtml(line))}</li>`)
+          .join("");
+        return `<ul>${items}</ul>`;
+      }
+      return `<p>${linkifyEscaped(escapeHtml(block.trim())).replace(/\n/g, "<br>")}</p>`;
+    })
+    .join("");
+}
+
+// Turns the editable plaintext (template plus whatever the sender added) into
+// Basecamp HTML. The greeting becomes a real mention when we have one, even if
+// they rewrote or deleted "Hi Name," — assigning the card does not notify them.
+export function clientApprovalMessageHtmlFromText(
+  text: string,
+  contactMention?: string
+): string {
+  const trimmed = (text || "").replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return "";
+
+  const match = trimmed.match(GREETING_RE);
+  const rest = match ? trimmed.slice(match[0].length).replace(/^\s+/, "") : trimmed;
+  const greetingName = contactMention
+    ? contactMention
+    : escapeHtml((match?.[1] || "there").trim());
+  const greeting = `<p>Hi ${greetingName},</p>`;
+  return greeting + (rest ? blocksToHtml(rest) : "");
+}
+
 export function clientApprovalMessageHtml(
   input: ClientApprovalMessageInput,
   // A real Basecamp mention for the client contact, when they resolve to a
@@ -60,9 +118,14 @@ export function clientApprovalMessageHtml(
   const title = escapeHtml(input.campaignTitle);
   const url = escapeHtml(input.previewUrl);
 
+  const flowNote = input.isAutomation
+    ? "<p>You'll see the full automation on a map: what starts it, the wait times, and each email. Click an email to preview it.</p>"
+    : "";
+
   return [
     `<p>Hi ${name},</p>`,
     `<p>I hope you're doing well. Your ${title} is ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.</p>`,
+    flowNote,
     "<hr>",
     "<p><strong>Here's what to check:</strong></p>",
     "<ul>",
@@ -90,6 +153,21 @@ Just a friendly follow-up — your ${input.campaignTitle} is still waiting on re
 Review the ${input.campaignTitle}: ${input.previewUrl}`;
 }
 
+export function clientApprovalThankYouText(
+  input: Pick<ClientApprovalMessageInput, "clientContactName">
+): string {
+  const name = firstName(input.clientContactName);
+  return `Hi ${name}, thank you for approval!`;
+}
+
+export function clientApprovalThankYouHtml(
+  input: Pick<ClientApprovalMessageInput, "clientContactName">,
+  contactMention?: string
+): string {
+  const name = contactMention || escapeHtml(firstName(input.clientContactName));
+  return `<p>Hi ${name}, thank you for approval!</p>`;
+}
+
 export function clientReviewFollowupHtml(
   input: ClientApprovalMessageInput,
   contactMention?: string
@@ -105,17 +183,29 @@ export function clientReviewFollowupHtml(
 }
 
 export function campaignApprovalRevisionKey(
-  campaign: Pick<Campaign, "title" | "client_id" | "external_token">,
-  emails: Array<Pick<CampaignEmail, "id" | "title" | "updated_at">>
+  campaign: Pick<Campaign, "title" | "client_id" | "external_token"> & {
+    presentation?: string | null;
+    trigger_label?: string | null;
+    trigger_kind?: string | null;
+  },
+  emails: Array<
+    Pick<CampaignEmail, "id" | "title" | "updated_at"> & {
+      delay_ms?: number | null;
+    }
+  >
 ): string {
   const source = JSON.stringify({
     title: campaign.title,
     clientId: campaign.client_id,
     externalToken: campaign.external_token,
+    presentation: campaign.presentation || "package",
+    triggerLabel: campaign.trigger_label || "",
+    triggerKind: campaign.trigger_kind || "custom",
     emails: emails.map((email) => ({
       id: email.id,
       title: email.title,
       updatedAt: email.updated_at,
+      delayMs: email.delay_ms ?? 0,
     })),
   });
   return createHash("sha256").update(source).digest("hex");
