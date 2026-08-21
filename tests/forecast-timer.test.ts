@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   blockHours,
   formatTracked,
+  hoursToOffer,
   isRunning,
   runningSeconds,
   trackedHours,
@@ -56,4 +57,63 @@ test("the clock reads with seconds while running and without once stopped", () =
   assert.equal(formatTracked(3600, false), "1h");
   assert.equal(formatTracked(249, false), "4m");
   assert.equal(formatTracked(-5, false), "0m");
+});
+
+/* ------------------------------- what to offer when logging / when to ask */
+
+const untimed = { tracked_seconds: 0, timer_started_at: "" };
+
+test("an untimed task offers its estimate the first time", () => {
+  assert.equal(
+    hoursToOffer({ ...untimed, hours: 2, actual_hours: 0, basecamp_time_entry_id: "" }, startMs),
+    "2"
+  );
+});
+
+test("measured time beats the estimate once the timer has run", () => {
+  // 45 minutes on the clock against a two-hour estimate: offer what it took.
+  assert.equal(
+    hoursToOffer(
+      { tracked_seconds: 2700, timer_started_at: "", hours: 2, actual_hours: 0, basecamp_time_entry_id: "" },
+      startMs
+    ),
+    "0.75"
+  );
+});
+
+test("a running timer's live segment counts toward the offer", () => {
+  assert.equal(
+    hoursToOffer(
+      { tracked_seconds: 0, timer_started_at: START, hours: 2, actual_hours: 0, basecamp_time_entry_id: "" },
+      startMs + 30 * 60_000
+    ),
+    "0.5"
+  );
+});
+
+test("hours already sent are subtracted, so a second log can't double-count", () => {
+  // Two hours measured, half an hour already on the timesheet.
+  assert.equal(
+    hoursToOffer(
+      { tracked_seconds: 7200, timer_started_at: "", hours: 3, actual_hours: 0.5, basecamp_time_entry_id: "te_1" },
+      startMs
+    ),
+    "1.5"
+  );
+});
+
+test("nothing outstanding offers nothing, which is also the signal not to ask", () => {
+  // Everything measured has been sent.
+  assert.equal(
+    hoursToOffer(
+      { tracked_seconds: 3600, timer_started_at: "", hours: 1, actual_hours: 1, basecamp_time_entry_id: "te_1" },
+      startMs
+    ),
+    ""
+  );
+  // Never timed, but hours were logged by hand — asking again would be a nag.
+  assert.equal(
+    hoursToOffer({ ...untimed, hours: 2, actual_hours: 2, basecamp_time_entry_id: "te_1" }, startMs),
+    ""
+  );
 });

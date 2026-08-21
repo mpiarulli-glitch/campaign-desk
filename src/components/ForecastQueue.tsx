@@ -6,6 +6,7 @@ import {
   sortQueueTodos,
   type ForecastDrag,
   type QueueTodo,
+  type QueueTodoKind,
 } from "@/lib/forecast-queue";
 import { isOnGrid, type CalendarTask } from "./ForecastCalendar";
 import { formatTracked, isRunning, trackedSeconds } from "@/lib/forecast-timer";
@@ -22,7 +23,7 @@ export type QueueTodoSource = {
     list: string;
     dueOn: string | null;
     assigned?: boolean;
-    kind?: "todo" | "step";
+    kind?: QueueTodoKind;
     parentId?: string;
     parentTitle?: string;
   }>;
@@ -31,7 +32,63 @@ export type QueueTodoSource = {
   reason: string | null;
 };
 
+// Everything Basecamp says is assigned to this person, across every project.
+export type AssignedSource = {
+  loading: boolean;
+  assignments: QueueTodo[];
+  reason: string | null;
+};
+
 type Tab = "queue" | "basecamp";
+
+// Why the Basecamp tab has nothing to show. Split out because the honest answer
+// depends on the scope, the filter, the search box, and three separate Basecamp
+// failure modes, and inlining all of that made the JSX unreadable.
+function emptyReason({
+  scoped,
+  query,
+  assignedOnly,
+  source,
+  assigned,
+  onSyncProjects,
+  syncing,
+}: {
+  scoped: boolean;
+  query: string;
+  assignedOnly: boolean;
+  source: QueueTodoSource | undefined;
+  assigned: AssignedSource;
+  onSyncProjects: () => void;
+  syncing: boolean;
+}): React.ReactNode {
+  const reason = scoped ? source?.reason : assigned.reason;
+  if (reason === "person-not-connected") {
+    return "Connect your own Basecamp account to see your work here.";
+  }
+  if (reason === "not-connected") return "Basecamp isn't connected.";
+  if (query.trim()) return `Nothing matching “${query.trim()}”.`;
+
+  if (!scoped) {
+    if (reason === "none-assigned") {
+      return "Nothing is assigned to you in Basecamp right now.";
+    }
+    return "Everything assigned to you is already on this week's forecast.";
+  }
+  if (reason === "no-project") {
+    return (
+      <>
+        This client has no Basecamp project set.{" "}
+        <button type="button" className="linklike" onClick={onSyncProjects} disabled={syncing}>
+          {syncing ? "Syncing projects…" : "Sync projects."}
+        </button>
+      </>
+    );
+  }
+  if (assignedOnly && (source?.assignedCount || 0) > 0) {
+    return "Nothing assigned to you is left here. Untick the filter to see the rest.";
+  }
+  return "Nothing open left here that isn't already on the forecast.";
+}
 
 function dueLabel(dueOn: string | null, today: string): string {
   if (!dueOn) return "";
@@ -54,6 +111,7 @@ export function ForecastQueue({
   clients,
   clientId,
   source,
+  assigned,
   hoursDraft,
   onPickClient,
   onHoursDraft,
@@ -80,6 +138,7 @@ export function ForecastQueue({
   clients: QueueClient[];
   clientId: string;
   source: QueueTodoSource | undefined;
+  assigned: AssignedSource;
   hoursDraft: string;
   onPickClient: (clientId: string) => void;
   onHoursDraft: (value: string) => void;
@@ -127,7 +186,25 @@ export function ForecastQueue({
   // Basecamp items, minus anything already booked this week, then filtered and
   // sorted for picking. Subtasks keep their parent's name beside them so a
   // one-word subtask still says what it belongs to.
+  // No client picked means "show me my own work, wherever it lives". Picking one
+  // narrows to that project, where the assigned-only filter is worth having
+  // because the list is everything open in the project, not just yours.
+  const scoped = Boolean(clientId);
+
   const candidates = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const matches = (t: QueueTodo) =>
+      !q ||
+      t.title.toLowerCase().includes(q) ||
+      (t.parentTitle || "").toLowerCase().includes(q) ||
+      t.list.toLowerCase().includes(q) ||
+      t.clientName.toLowerCase().includes(q);
+
+    if (!scoped) {
+      return sortQueueTodos(
+        assigned.assignments.filter((t) => !booked.has(t.id) && matches(t))
+      );
+    }
     if (!source || !client) return [];
     const projectId = source.projectId;
     const mapped: QueueTodo[] = source.todos
@@ -138,18 +215,12 @@ export function ForecastQueue({
         clientId: client.id,
         clientName: client.name,
       }));
-    const q = query.trim().toLowerCase();
     const filtered = mapped.filter((t) => {
       if (assignedOnly && source.assignedCount > 0 && !t.assigned) return false;
-      if (!q) return true;
-      return (
-        t.title.toLowerCase().includes(q) ||
-        (t.parentTitle || "").toLowerCase().includes(q) ||
-        t.list.toLowerCase().includes(q)
-      );
+      return matches(t);
     });
     return sortQueueTodos(filtered);
-  }, [source, client, booked, query, assignedOnly]);
+  }, [scoped, assigned, source, client, booked, query, assignedOnly]);
 
   const queueCount = unplaced.length;
 
@@ -256,7 +327,7 @@ export function ForecastQueue({
             onChange={(e) => onPickClient(e.target.value)}
             aria-label="Client or internal project"
           >
-            <option value="">Pick a client or project</option>
+            <option value="">Everything assigned to me</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -265,15 +336,10 @@ export function ForecastQueue({
             ))}
           </select>
 
-          {!clientId ? (
-            <p className="fc-queue-empty">
-              Pick a client to see its open Basecamp to-dos and subtasks.{" "}
-              <button type="button" className="linklike" onClick={onSyncProjects} disabled={syncing}>
-                {syncing ? "Syncing projects…" : "Missing one? Sync projects."}
-              </button>
-            </p>
-          ) : source?.loading ? (
+          {scoped && source?.loading ? (
             <p className="fc-queue-empty">Loading to-dos…</p>
+          ) : !scoped && assigned.loading ? (
+            <p className="fc-queue-empty">Loading your work…</p>
           ) : (
             <>
               <div className="fc-queue-controls">
@@ -295,7 +361,7 @@ export function ForecastQueue({
                   />
                 </label>
               </div>
-              {source && source.assignedCount > 0 ? (
+              {scoped && source && source.assignedCount > 0 ? (
                 <label className="fc-queue-check">
                   <input
                     type="checkbox"
@@ -308,15 +374,15 @@ export function ForecastQueue({
 
               {candidates.length === 0 ? (
                 <p className="fc-queue-empty">
-                  {source?.reason === "person-not-connected"
-                    ? "Connect your own Basecamp account to pick from your to-dos."
-                    : source?.reason === "no-project"
-                      ? "This client has no Basecamp project set."
-                      : source?.reason === "not-connected"
-                        ? "Basecamp isn't connected."
-                        : assignedOnly && (source?.assignedCount || 0) > 0
-                          ? "Nothing assigned to you is left here. Untick the filter to see the rest."
-                          : "Nothing open left here that isn't already on the forecast."}
+                  {emptyReason({
+                    scoped,
+                    query,
+                    assignedOnly,
+                    source,
+                    assigned,
+                    onSyncProjects,
+                    syncing,
+                  })}
                 </p>
               ) : (
                 <>
@@ -337,12 +403,18 @@ export function ForecastQueue({
                       <div className="fc-queue-card-meta">
                         {t.kind === "step" ? (
                           <span className="fc-queue-tag">subtask</span>
+                        ) : t.kind === "card" ? (
+                          <span className="fc-queue-tag">card</span>
                         ) : null}
-                        {t.kind === "step" && t.parentTitle ? (
-                          <span>{t.parentTitle}</span>
-                        ) : (
-                          <span>{t.list}</span>
-                        )}
+                        {/* Account-wide, which project it belongs to matters more
+                            than which list inside that project. */}
+                        <span>
+                          {scoped
+                            ? t.kind === "step" && t.parentTitle
+                              ? t.parentTitle
+                              : t.list
+                            : t.clientName}
+                        </span>
                         {t.dueOn ? (
                           <span className={t.dueOn < today ? "fc-queue-late" : ""}>
                             {dueLabel(t.dueOn, today)}

@@ -90,15 +90,15 @@
    OS preference, in both directions.
    ------------------------------------------------------------------------- */
 :root[data-theme="dark"] {
-  --bg: #0f1319;
-  --bg-elevated: #171d26;
-  --bg-soft: #1e242f;
+  --bg: #0a0a0b;
+  --bg-elevated: #141416;
+  --bg-soft: #1c1c1f;
   --bg-tint: #10262b;
-  --border: #262e3a;
-  --border-strong: #3a4453;
-  --text: #e7ecf3;
-  --text-muted: #8b95a5;
-  --text-body: #b6bfcc;
+  --border: #26262a;
+  --border-strong: #3c3c41;
+  --text: #ededee;
+  --text-muted: #94949b;
+  --text-body: #bcbcc2;
   /* Slightly brighter than the light-mode accent: the same cyan reads dimmer
      against a dark ground. */
   --accent: #1cdcef;
@@ -106,23 +106,23 @@
   /* Accent used AS text needs to be light here, where in light mode it was the
      dark teal. */
   --accent-ink: #6fe4f2;
-  --ink: #e7ecf3;
+  --ink: #ededee;
   --success: #3ecf8e;
   --warning: #e0a83a;
   --danger: #f0736f;
   --pin: #1cdcef;
 
-  --on-ink: #0f1319;
+  --on-ink: #0a0a0b;
   --on-accent: #04333a;
 
-  --surface-veil: rgba(23, 29, 38, 0.82);
+  --surface-veil: rgba(20, 20, 22, 0.82);
 
   /* A near-white slab would glare here, so the chosen segment takes the accent. */
   --pill-bg: var(--accent);
   --pill-text: var(--on-accent);
 
   /* The tool colours are lifted in dark mode, so their labels go dark. */
-  --tool-ink: #0f1319;
+  --tool-ink: #0a0a0b;
 
   --success-wash: #10291f;
   --success-ink: #6ee7a8;
@@ -4875,7 +4875,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --fc-fill-important: #c17817;
   --fc-fill-flexible: #2f6f9f;
   --fc-fill-meeting: #5b5bd6;
-  --fc-fill-done: #6b7280;
+  --fc-fill-done: #7a7a82;
   --fc-grid-line: #ececef;
   min-height: 100vh;
   background: var(--ops-bg);
@@ -4886,16 +4886,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    it and it has to be restated. --ops-bg sits level with the page here so the
    panels on top of it still read as raised. */
 :root[data-theme="dark"] .ops-scope {
-  --ops-bg: #0f1319;
-  --ops-border: #2a323e;
-  --ops-border-soft: #212833;
+  --ops-bg: #0a0a0b;
+  --ops-border: #2b2b30;
+  --ops-border-soft: #212124;
   /* Brighter and more saturated on dark, where a mid-tone fill goes muddy. */
   --fc-fill-urgent: #e05263;
   --fc-fill-important: #d69128;
   --fc-fill-flexible: #3b82c4;
   --fc-fill-meeting: #6d6df0;
-  --fc-fill-done: #4b5563;
-  --fc-grid-line: #212833;
+  --fc-fill-done: #6b6b72;
+  --fc-grid-line: #212124;
 }
 
 .ops-nav {
@@ -6203,6 +6203,89 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .fc-queue-foot button:hover { border-color: var(--border-strong); color: var(--text); }
 .fc-queue-foot button:disabled { opacity: 0.6; cursor: default; }
+
+/* ----------------------------------------- "you finished it, log the time?" */
+/* Sits above the timer pill in the same corner, so the two things that talk
+   about time share one place on screen and never overlap. */
+.fc-log-ask {
+  position: fixed;
+  z-index: 61;
+  right: 18px;
+  bottom: 18px;
+  width: min(330px, calc(100vw - 36px));
+  padding: 11px 13px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+  animation: fc-dock-in 0.18s ease-out;
+}
+/* Both docked bottom-right, so the timer steps aside while the ask is up. */
+.fc-log-ask ~ .fc-timer-dock { bottom: 132px; }
+@media (prefers-reduced-motion: reduce) {
+  .fc-log-ask { animation: none; }
+}
+.fc-log-ask-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fc-log-ask-head strong { font-size: 12.5px; }
+.fc-log-ask-head button {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fc-log-ask-head button:hover { color: var(--danger); }
+.fc-log-ask-what {
+  margin: 2px 0 9px;
+  font-size: 11.5px;
+  color: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-log-ask-what span { color: var(--text-muted); }
+.fc-log-ask-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fc-log-ask-row input {
+  width: 66px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  font-size: 12.5px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.fc-log-ask-row .muted { font-size: 11px; }
+.fc-log-ask-go {
+  margin-left: auto;
+  padding: 6px 11px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.fc-log-ask-go:disabled { opacity: 0.6; cursor: default; }
+.fc-log-ask-note {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
 
 /* ------------------------------------------------- log hours, inline in a row */
 /* A pill the width of a word, not a form. It opens on click, because logging
@@ -8030,7 +8113,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .rmap-empty h3 { font-family: var(--font-head); font-size: 20px; font-weight: 600; margin: 0 0 6px; }
 .rmap-empty p { color: var(--text-muted); margin: 0 auto 16px; max-width: 46ch; font-size: 14px; }
 .rmap-empty-city { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 60px; margin-bottom: 18px; opacity: 0.5; }
-.rmap-empty-city span { width: 16px; background: linear-gradient(180deg, #26304d, #0b1120); border-radius: 2px 2px 0 0; }
+.rmap-empty-city span { width: 16px; background: linear-gradient(180deg, #2a2a33, #0c0c10); border-radius: 2px 2px 0 0; }
 .rmap-empty-city span:nth-child(1){height:30%} .rmap-empty-city span:nth-child(2){height:64%} .rmap-empty-city span:nth-child(3){height:46%}
 .rmap-empty-city span:nth-child(4){height:88%} .rmap-empty-city span:nth-child(5){height:54%} .rmap-empty-city span:nth-child(6){height:38%}
 
@@ -8049,7 +8132,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .cd-shell { display: flex; height: 100vh; overflow: hidden; }
 .side {
   width: 208px; flex: none; height: 100vh;
-  background: #0e1420; color: #aeb7c6; display: flex; flex-direction: column; z-index: 30;
+  background: #0c0c0e; color: #b2b2b8; display: flex; flex-direction: column; z-index: 30;
   transition: width .16s ease;
 }
 .side.is-collapsed { width: 56px; }
@@ -8062,15 +8145,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .side-brand .side-mark { display: none; }
 .side-brand b { color: #fff; font-family: var(--font-head); font-size: 15px; font-weight: 600; white-space: nowrap; }
 .side-nav { padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; overflow-x: hidden; }
-.nav-i { display: flex; align-items: center; gap: 11px; padding: 8px 9px; border-radius: 9px; color: #aeb7c6; text-decoration: none; font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.nav-i { display: flex; align-items: center; gap: 11px; padding: 8px 9px; border-radius: 9px; color: #b2b2b8; text-decoration: none; font-size: 13.5px; font-weight: 500; white-space: nowrap; }
 .nav-i svg { width: 18px; height: 18px; flex: none; opacity: .8; }
-.nav-i:hover { background: #161d2b; color: #e7ecf3; }
+.nav-i:hover { background: #1b1b1f; color: #ededee; }
 .nav-i.on { background: linear-gradient(90deg, rgba(0,212,232,.18), rgba(0,212,232,.04)); color: #fff; box-shadow: inset 2px 0 0 #00d4e8; }
 .nav-i.on svg { opacity: 1; color: #00d4e8; }
 .side-foot { margin-top: auto; padding: 10px; border-top: 1px solid rgba(255,255,255,.06); }
-.side-viewas { font-size: 12px; color: #6b7688; padding: 4px 10px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.side-toggle { display: flex; align-items: center; gap: 11px; width: 100%; border: none; background: none; color: #6b7688; padding: 8px 9px; border-radius: 9px; cursor: pointer; font-family: var(--font); font-size: 13px; font-weight: 500; white-space: nowrap; }
-.side-toggle:hover { background: #161d2b; color: #e7ecf3; }
+.side-viewas { font-size: 12px; color: #71717a; padding: 4px 10px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-toggle { display: flex; align-items: center; gap: 11px; width: 100%; border: none; background: none; color: #71717a; padding: 8px 9px; border-radius: 9px; cursor: pointer; font-family: var(--font); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.side-toggle:hover { background: #1b1b1f; color: #ededee; }
 .side-toggle-icon { width: 18px; text-align: center; flex: none; font-size: 15px; }
 
 /* collapsed: icon-only rail */
@@ -8512,13 +8595,13 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    so in dark mode it has to cancel back to the dark default rather than to the
    warm dark above. Same values as :root[data-theme="dark"]. */
 :root[data-theme="dark"] .acct-hub {
-  --bg: #0f1319;
-  --bg-elevated: #171d26;
-  --bg-soft: #1e242f;
-  --border: #262e3a;
-  --text: #e7ecf3;
-  --text-muted: #8b95a5;
-  --text-body: #b6bfcc;
+  --bg: #0a0a0b;
+  --bg-elevated: #141416;
+  --bg-soft: #1c1c1f;
+  --border: #26262a;
+  --text: #ededee;
+  --text-muted: #94949b;
+  --text-body: #bcbcc2;
 }
 .acct-hub .snap-hero {
   background: var(--bg);

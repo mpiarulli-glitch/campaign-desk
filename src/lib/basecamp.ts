@@ -22,6 +22,7 @@ import {
   flagAssignedWithSteps,
   type OpenTodoStep,
 } from "./todo-steps";
+import { shapeAssignments, type BcAssignment } from "./assignments";
 
 // Re-exported so callers get the identity vocabulary from the same module they
 // already import the API functions from.
@@ -775,6 +776,28 @@ async function listOpenTodoSteps(
       assigneeIds: (s.assignees || []).map((a) => a.id),
       dueOn: s.due_on || null,
     }));
+  } catch {
+    return [];
+  }
+}
+
+/* ------------------------------------------------------- my assignments */
+
+/**
+ * Everything assigned to the caller, across every project.
+ *
+ * /my/assignments.json is scoped to whoever's token makes the request, so this
+ * MUST run on a person's own connection — called with the service identity it
+ * would answer with the mascot account's work. That also means no name matching
+ * is involved: Basecamp itself decides what "mine" is.
+ *
+ * The shaping lives in ./assignments so it can be tested without an account.
+ */
+export async function listMyAssignments(identity: BcIdentity): Promise<BcAssignment[]> {
+  try {
+    const res = await bc(`/my/assignments.json`, undefined, identity);
+    if (!res.ok) return [];
+    return shapeAssignments(await res.json());
   } catch {
     return [];
   }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
-import { ForecastQueue } from "@/components/ForecastQueue";
+import { ForecastQueue, type AssignedSource } from "@/components/ForecastQueue";
 import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
 import {
   queueTodoLinkage,
@@ -20,8 +20,8 @@ import {
 } from "@/lib/forecast-time";
 import {
   formatTracked,
+  hoursToOffer,
   isRunning,
-  trackedHours,
   trackedSeconds,
 } from "@/lib/forecast-timer";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
@@ -1011,6 +1011,10 @@ export default function PersonForecastPage() {
   // then collapses to a "Log more time" link so a finished row reads as finished.
   const [logExpanded, setLogExpanded] = useState<Record<string, boolean>>({});
   const [logging, setLogging] = useState<string | null>(null);
+  // Task that was just ticked off and hasn't been answered about yet. Ticking a
+  // task is the moment you know what it took, so that is when to ask — the pill
+  // in the row is for every other moment.
+  const [logAsk, setLogAsk] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Ticks once a second, but only while something is being timed, so a page left
   // open on a quiet week re-renders no more than it used to.
@@ -1032,6 +1036,14 @@ export default function PersonForecastPage() {
   // hours a dragged-in to-do should book.
   const [queueClientId, setQueueClientId] = useState("");
   const [queueHours, setQueueHours] = useState("1");
+  // Everything Basecamp says is assigned to this person, across every project.
+  // Fetched once per visit: it is one request and it backs the queue's default
+  // view, so nobody has to pick a client to find their own work.
+  const [assigned, setAssigned] = useState<AssignedSource>({
+    loading: true,
+    assignments: [],
+    reason: null,
+  });
 
   function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
@@ -1106,6 +1118,26 @@ export default function PersonForecastPage() {
       })
       .catch(() => {});
   }, []);
+  const loadAssigned = useCallback(async () => {
+    setAssigned((a) => ({ ...a, loading: true }));
+    try {
+      const res = await fetch(`/api/forecast/assignments?person=${person}`);
+      const json = res.ok ? await res.json() : null;
+      setAssigned({
+        loading: false,
+        assignments: Array.isArray(json?.assignments) ? json.assignments : [],
+        reason: json?.reason ?? (res.ok ? null : "failed"),
+      });
+    } catch {
+      setAssigned({ loading: false, assignments: [], reason: "failed" });
+    }
+  }, [person]);
+
+  useEffect(() => {
+    if (!person) return;
+    void loadAssigned();
+  }, [person, loadAssigned]);
+
   useEffect(() => {
     if (!person) return;
     fetch(`/api/forecast/projects?person=${person}`)
@@ -1512,15 +1544,29 @@ export default function PersonForecastPage() {
   }
 
   async function toggleCompleted(task: Task) {
+    const finishing = !task.completed;
+
+    // Finishing a task it was timing means the timer's job is done. Banked first
+    // so the hours it measured are on the row before anyone is asked about them.
+    if (finishing && isRunning(task)) {
+      await fetch(`/api/forecast/${person}/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timer: "stop" }),
+      });
+    }
+
     const res = await fetch(`/api/forecast/${person}/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed: !task.completed }),
+      body: JSON.stringify({ completed: finishing }),
     });
     if (!res.ok) {
       setError("Could not update that task.");
       return;
     }
+    // Unticking is a correction, not a finish, so it never asks.
+    setLogAsk(finishing ? task.id : null);
     // The forecast row saved either way, so a Basecamp sync failure is a notice
     // rather than an error that implies nothing happened.
     const json = await res.json().catch(() => null);
@@ -1649,6 +1695,9 @@ export default function PersonForecastPage() {
     }
     setError("");
     load(week, { silent: true });
+    // Booked work should leave the assigned list rather than sit there inviting a
+    // second booking.
+    void loadAssigned();
   }
 
   // One drop handler for the whole grid: move the row that was dragged, or book
@@ -1679,6 +1728,25 @@ export default function PersonForecastPage() {
     });
     if (!res.ok) setError("Could not change that task's length.");
     load(week, { silent: true });
+  }
+
+  // Looked up from the current data rather than captured at tick time, so the
+  // figure offered reflects any timer that was just banked.
+  const logAskTask = useMemo(() => {
+    if (!logAsk) return null;
+    const task = (data?.tasks || []).find((t) => t.id === logAsk);
+    if (!task || !task.completed) return null;
+    // Nothing to log against means nothing to ask about.
+    if (!(task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id)) {
+      return null;
+    }
+    return task;
+  }, [logAsk, data]);
+
+  async function logTimeAndClose(task: Task) {
+    // Left open on failure: the error explains itself above, and dismissing the
+    // ask would quietly lose the hours somebody just typed.
+    if (await logTime(task)) setLogAsk(null);
   }
 
   function closeAdd() {
@@ -1729,20 +1797,9 @@ export default function PersonForecastPage() {
     };
   }
 
-  /**
-   * What the log box starts out reading.
-   *
-   * Measured time wins when the timer has run — that is the whole point of having
-   * timed it, and it's already net of whatever was sent before. Otherwise it's
-   * the forecast estimate first time round, and blank once hours are on the row,
-   * so a second log is always a number somebody typed on purpose.
-   */
+  // Shared by the log pill and the finished-a-task prompt. See hoursToOffer.
   function logDefault(task: Task): string {
-    const outstanding =
-      Math.round((trackedHours(task, nowMs) - task.actual_hours) * 100) / 100;
-    if (outstanding > 0) return String(outstanding);
-    if (task.basecamp_time_entry_id) return "";
-    return String(task.hours);
+    return hoursToOffer(task, nowMs);
   }
 
   async function logTime(task: Task) {
@@ -1750,7 +1807,7 @@ export default function PersonForecastPage() {
     const hours = Number(raw);
     if (!Number.isFinite(hours) || hours <= 0) {
       setError("Enter how many hours to log to Basecamp.");
-      return;
+      return false;
     }
     setLogging(task.id);
     const res = await fetch(`/api/forecast/${person}/${task.id}`, {
@@ -1762,7 +1819,7 @@ export default function PersonForecastPage() {
     if (!res.ok) {
       const json = await res.json().catch(() => null);
       setError(json?.error || "Could not log that time to Basecamp.");
-      return;
+      return false;
     }
     setError("");
     setLogDrafts((d) => {
@@ -1772,6 +1829,7 @@ export default function PersonForecastPage() {
     });
     setLogExpanded((d) => ({ ...d, [task.id]: false }));
     load(week, { silent: true });
+    return true;
   }
 
   /**
@@ -2281,6 +2339,7 @@ export default function PersonForecastPage() {
               clients={pickerClients}
               clientId={queueClientId}
               source={todosByClient[queueClientId]}
+              assigned={assigned}
               hoursDraft={queueHours}
               onPickClient={pickQueueClient}
               onHoursDraft={setQueueHours}
@@ -2498,6 +2557,68 @@ export default function PersonForecastPage() {
 
         {/* Week total lives in the capacity gauge at the top of the page now. */}
       </div>
+
+      {/* Asked at the moment a task is ticked off, because that is when you know
+          what it took. Decided against re-rendering it inline per view: ticking
+          happens in four of them, one of which is a 32px calendar block with no
+          room for an input, so this is one card that behaves the same
+          everywhere. Rendered only while there is something worth logging —
+          logDefault answers "" once nothing is outstanding. */}
+      {logAskTask && logDefault(logAskTask) !== "" ? (
+        <div className="fc-log-ask" role="dialog" aria-label="Log time for this task">
+          <div className="fc-log-ask-head">
+            <strong>Finished — log the time?</strong>
+            <button
+              type="button"
+              aria-label="Not now"
+              title="Not now"
+              onClick={() => setLogAsk(null)}
+            >
+              ×
+            </button>
+          </div>
+          <p className="fc-log-ask-what">
+            {logAskTask.notes || logAskTask.client || "Task"}
+            {logAskTask.notes && logAskTask.client ? (
+              <span> · {logAskTask.client}</span>
+            ) : null}
+          </p>
+          <div className="fc-log-ask-row">
+            <input
+              value={logDrafts[logAskTask.id] ?? logDefault(logAskTask)}
+              onChange={(e) =>
+                setLogDrafts((d) => ({ ...d, [logAskTask.id]: e.target.value }))
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void logTimeAndClose(logAskTask);
+                if (e.key === "Escape") setLogAsk(null);
+              }}
+              type="number"
+              min="0"
+              step="0.25"
+              aria-label="Hours to log to Basecamp"
+              autoFocus
+            />
+            <span className="muted">hrs</span>
+            <button
+              type="button"
+              className="fc-log-ask-go"
+              disabled={logging === logAskTask.id}
+              onClick={() => void logTimeAndClose(logAskTask)}
+            >
+              {logging === logAskTask.id ? "Logging…" : "Log to Basecamp"}
+            </button>
+            <button type="button" className="linklike" onClick={() => setLogAsk(null)}>
+              Skip
+            </button>
+          </div>
+          {logAskTask.actual_hours > 0 ? (
+            <p className="fc-log-ask-note">
+              {logAskTask.actual_hours}h already on the timesheet. This adds to it.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Docked in the corner rather than banded across the top: a running timer
           has to stay visible while you scroll a long week, and it should not push

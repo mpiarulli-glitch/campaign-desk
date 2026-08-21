@@ -2,7 +2,9 @@
 // booked, and forecast rows that exist but have no time slot yet. Shared between
 // the queue sidebar, the calendar grid, and the page that owns the drag state.
 
-export type QueueTodoKind = "todo" | "step";
+// "card" is a card-table card. It behaves like a to-do for everything the
+// forecast does with it: same completion path, and it takes timesheet entries.
+export type QueueTodoKind = "todo" | "step" | "card";
 
 // One pickable Basecamp item, carrying enough context to become a forecast row
 // without another lookup: which project it belongs to, and which client that

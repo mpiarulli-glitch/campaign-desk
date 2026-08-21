@@ -65,3 +65,26 @@ export function blockHours(
 ): number {
   return Math.max(task.hours || 0, trackedHours(task, nowMs));
 }
+
+/**
+ * Hours to offer when logging time on a task, as a string for an input.
+ *
+ * Measured time wins whenever the timer has run and some of it is unsent — that
+ * is the whole point of having timed it, and subtracting what has already gone
+ * keeps a second log from double-counting. Otherwise it is the forecast estimate
+ * the first time, and blank once hours are on the row, so a repeat log is always
+ * a number somebody typed on purpose.
+ *
+ * "" therefore means "nothing outstanding", which is also the signal not to ask
+ * about a task being ticked off: it has already been accounted for.
+ */
+export function hoursToOffer(
+  task: TimedTask & { hours: number; actual_hours: number; basecamp_time_entry_id: string },
+  nowMs: number
+): string {
+  const outstanding =
+    Math.round((trackedHours(task, nowMs) - task.actual_hours) * 100) / 100;
+  if (outstanding > 0) return String(outstanding);
+  if (task.basecamp_time_entry_id) return "";
+  return String(task.hours);
+}
