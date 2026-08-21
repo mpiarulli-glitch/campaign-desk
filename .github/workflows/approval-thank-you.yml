@@ -1,0 +1,21 @@
+name: Approval thank-you comments
+
+# Posts Michael's delayed thank-you on Basecamp approval cards a few minutes
+# after a client approves on the review link.
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub may delay slightly; the message is scheduled
+    # three minutes after approval, so it lands roughly 3–8 minutes later.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  approval-thank-you:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger approval thank-you sweep
+        run: |
+          curl -fsS --show-error -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://hub.marketingempiregroup.com/api/cron/approval-thank-you

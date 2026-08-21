@@ -14,23 +14,9 @@ import { getCampaignById, recordBasecampFollowUp } from "@/lib/campaigns";
 import { clientReviewFollowupHtml } from "@/lib/client-approval";
 import { recordFailure, clearFailure } from "@/lib/failures";
 import { markClientFollowUpSent } from "@/lib/lifecycle-board";
-import { getRevClient, listRevClients } from "@/lib/revenue";
+import { resolveCampaignClient } from "@/lib/campaign-card-sync";
 
 type Params = { params: Promise<{ id: string }> };
-
-function resolveClient(campaign: NonNullable<ReturnType<typeof getCampaignById>>) {
-  if (campaign.client_id) {
-    const linked = getRevClient(campaign.client_id);
-    if (linked) return linked;
-  }
-  return (
-    listRevClients(true).find(
-      (client) =>
-        client.name.trim().toLowerCase() ===
-        campaign.client_name.trim().toLowerCase()
-    ) || null
-  );
-}
 
 /**
  * Comment on the campaign's existing Basecamp approval card asking the client
@@ -55,7 +41,7 @@ export async function POST(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Basecamp isn't connected." }, { status: 400 });
   }
 
-  const client = resolveClient(campaign);
+  const client = resolveCampaignClient(campaign);
   if (!client?.basecamp_project_id) {
     return NextResponse.json(
       { error: "This campaign's client has no Basecamp project." },

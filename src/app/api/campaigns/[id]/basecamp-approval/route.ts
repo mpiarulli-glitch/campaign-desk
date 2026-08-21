@@ -24,29 +24,15 @@ import {
   clientApprovalMessageHtmlFromText,
   clientApprovalMessageText,
 } from "@/lib/client-approval";
-import { getRevClient, listRevClients } from "@/lib/revenue";
+import { resolveCampaignClient } from "@/lib/campaign-card-sync";
+import { reconcileClients } from "@/lib/basecamp-clients";
 
 type Params = { params: Promise<{ id: string }> };
-
-function resolveClient(campaign: ReturnType<typeof getCampaignById>) {
-  if (!campaign) return null;
-  if (campaign.client_id) {
-    const linked = getRevClient(campaign.client_id);
-    if (linked) return linked;
-  }
-  return (
-    listRevClients(true).find(
-      (client) =>
-        client.name.trim().toLowerCase() ===
-        campaign.client_name.trim().toLowerCase()
-    ) || null
-  );
-}
 
 function approvalState(id: string) {
   const campaign = getCampaignById(id);
   if (!campaign) return null;
-  const client = resolveClient(campaign);
+  const client = resolveCampaignClient(campaign);
   const emails = listEmails(id);
   const revision = campaignApprovalRevisionKey(
     campaign,
@@ -91,9 +77,25 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const state = approvalState(id);
+  let state = approvalState(id);
   if (!state) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Campaign linked to a stub client (or never matched) while Basecamp already
+  // has the Growth OS project — fill blank project ids so "Setup needed:
+  // Basecamp project" clears without a trip to Production → Match.
+  if (
+    state.client &&
+    !state.client.basecamp_project_id &&
+    basecampConnected()
+  ) {
+    try {
+      await reconcileClients({ createMissing: false });
+      state = approvalState(id)!;
+    } catch {
+      // Leave missing as-is; the panel still explains setup.
+    }
   }
 
   // The roster powers the send form's recipient and assignee pickers. It is a
@@ -150,6 +152,8 @@ export async function GET(_request: Request, { params }: Params) {
   return NextResponse.json({
     ready: state.missing.length === 0,
     missing: state.missing,
+    clientId: state.client?.id || null,
+    clientName: state.client?.name || state.campaign.client_name || "",
     recipient:
       state.client?.contact_name ||
       state.client?.contact_email ||
@@ -173,9 +177,21 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const state = approvalState(id);
+  let state = approvalState(id);
   if (!state) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (
+    state.client &&
+    !state.client.basecamp_project_id &&
+    basecampConnected()
+  ) {
+    try {
+      await reconcileClients({ createMissing: false });
+      state = approvalState(id)!;
+    } catch {
+      // Fall through to the missing check below.
+    }
   }
   if (state.missing.length) {
     return NextResponse.json(
