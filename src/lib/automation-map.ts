@@ -54,6 +54,20 @@ export function splitDelay(ms: number): { amount: number; unit: DelayUnit } {
   return { amount: Math.max(1, Math.round(n / MINUTE_MS)), unit: "minutes" };
 }
 
+/**
+ * One-tap wait times. These are the pauses that actually get typed, so the
+ * editor offers them as chips and keeps the number box for anything else.
+ */
+export const WAIT_PRESETS: { label: string; ms: number }[] = [
+  { label: "1 hour", ms: HOUR_MS },
+  { label: "4 hours", ms: 4 * HOUR_MS },
+  { label: "1 day", ms: DAY_MS },
+  { label: "2 days", ms: 2 * DAY_MS },
+  { label: "3 days", ms: 3 * DAY_MS },
+  { label: "1 week", ms: 7 * DAY_MS },
+  { label: "2 weeks", ms: 14 * DAY_MS },
+];
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -70,6 +84,25 @@ export function delayLabel(ms: number): string {
   if (hours) parts.push(plural(hours, "hour", "hours"));
   if (minutes && parts.length < 2) parts.push(plural(minutes, "minute", "minutes"));
   return parts.join(" ");
+}
+
+/**
+ * Where a step sits on the calendar, counted from the trigger. The map shows
+ * this next to every email so you can read the whole schedule without adding
+ * the waits up in your head.
+ */
+export function atLabel(ms: number): string {
+  const n = Math.max(0, Math.round(Number(ms) || 0));
+  if (n <= 0) return "Day 0";
+  const days = Math.floor(n / DAY_MS);
+  const hours = Math.floor((n % DAY_MS) / HOUR_MS);
+  const minutes = Math.round((n % HOUR_MS) / MINUTE_MS);
+  if (!days) {
+    if (hours) return hours === 1 ? "1 hr in" : `${hours} hrs in`;
+    return minutes === 1 ? "1 min in" : `${minutes} mins in`;
+  }
+  if (hours) return `Day ${days} · ${hours}h`;
+  return `Day ${days}`;
 }
 
 export type FlowStepType = "wait" | "email" | "condition";
@@ -153,18 +186,25 @@ export type FlowStepRecord = {
   condition_label: string;
 };
 
+/**
+ * Every node carries atMs: the total wait between the trigger and that point
+ * on the path. A wait's atMs is where it lands once the pause is over, so the
+ * email right after it reads the same number.
+ */
 export type FlowTreeNode =
   | {
       type: "wait";
       id: string;
       delayMs: number;
       label: string;
+      atMs: number;
     }
   | {
       type: "email";
       id: string;
       emailId: string;
       email: AutomationEmail | null;
+      atMs: number;
     }
   | {
       type: "condition";
@@ -173,6 +213,7 @@ export type FlowTreeNode =
       label: string;
       yes: FlowTreeNode[];
       no: FlowTreeNode[];
+      atMs: number;
     };
 
 export function defaultTriggerLabel(kind: TriggerKind): string {
@@ -198,7 +239,8 @@ function childrenOf(
 function nodeFromStep(
   step: FlowStepRecord,
   steps: FlowStepRecord[],
-  emailsById: Map<string, AutomationEmail>
+  emailsById: Map<string, AutomationEmail>,
+  startMs: number
 ): FlowTreeNode | null {
   const type = coerceFlowStepType(step.step_type);
   if (type === "wait") {
@@ -208,6 +250,7 @@ function nodeFromStep(
       id: step.id,
       delayMs,
       label: delayLabel(delayMs),
+      atMs: startMs + delayMs,
     };
   }
   if (type === "email") {
@@ -217,6 +260,7 @@ function nodeFromStep(
       id: step.id,
       emailId,
       email: (emailId && emailsById.get(emailId)) || null,
+      atMs: startMs,
     };
   }
   if (type === "condition") {
@@ -228,8 +272,9 @@ function nodeFromStep(
       id: step.id,
       kind,
       label,
-      yes: buildFlowBranch(steps, emailsById, step.id, "yes"),
-      no: buildFlowBranch(steps, emailsById, step.id, "no"),
+      yes: buildFlowBranch(steps, emailsById, step.id, "yes", startMs),
+      no: buildFlowBranch(steps, emailsById, step.id, "no", startMs),
+      atMs: startMs,
     };
   }
   return null;
@@ -239,12 +284,16 @@ export function buildFlowBranch(
   steps: FlowStepRecord[],
   emailsById: Map<string, AutomationEmail>,
   parentId: string | null,
-  branch: FlowBranch
+  branch: FlowBranch,
+  startMs = 0
 ): FlowTreeNode[] {
   const nodes: FlowTreeNode[] = [];
+  let atMs = startMs;
   for (const step of childrenOf(steps, parentId, branch)) {
-    const node = nodeFromStep(step, steps, emailsById);
-    if (node) nodes.push(node);
+    const node = nodeFromStep(step, steps, emailsById, atMs);
+    if (!node) continue;
+    atMs = node.atMs;
+    nodes.push(node);
   }
   return nodes;
 }
@@ -260,14 +309,17 @@ function emailsByIdMap(emails: AutomationEmail[]): Map<string, AutomationEmail> 
  */
 export function fallbackFlowFromEmails(emails: AutomationEmail[]): FlowTreeNode[] {
   const nodes: FlowTreeNode[] = [];
+  let atMs = 0;
   for (const email of emails) {
     const delayMs = Math.max(0, Math.round(Number(email.delay_ms) || 0));
     if (delayMs > 0) {
+      atMs += delayMs;
       nodes.push({
         type: "wait",
         id: `legacy-wait-${email.id}`,
         delayMs,
         label: delayLabel(delayMs),
+        atMs,
       });
     }
     nodes.push({
@@ -275,6 +327,7 @@ export function fallbackFlowFromEmails(emails: AutomationEmail[]): FlowTreeNode[
       id: `legacy-email-${email.id}`,
       emailId: email.id,
       email,
+      atMs,
     });
   }
   return nodes;
@@ -300,6 +353,30 @@ export function buildAutomationTree(input: {
       ? buildFlowBranch(steps, emailsByIdMap(input.emails), null, "")
       : fallbackFlowFromEmails(input.emails);
   return { trigger, nodes };
+}
+
+/**
+ * How many emails the map holds and how far out the longest path runs. Shown as
+ * one chip on the editor so you can sanity-check the schedule at a glance.
+ */
+export function summarizeFlow(nodes: FlowTreeNode[]): {
+  emails: number;
+  spanMs: number;
+} {
+  let emails = 0;
+  let spanMs = 0;
+  const walk = (list: FlowTreeNode[]) => {
+    for (const node of list) {
+      if (node.atMs > spanMs) spanMs = node.atMs;
+      if (node.type === "email") emails += 1;
+      if (node.type === "condition") {
+        walk(node.yes);
+        walk(node.no);
+      }
+    }
+  };
+  walk(nodes);
+  return { emails, spanMs };
 }
 
 /** @deprecated Use buildAutomationTree. Kept for older linear maps. */

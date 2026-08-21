@@ -1670,13 +1670,13 @@ button {
   display: flex;
   gap: 8px;
   align-items: center;
-  background: var(--bg-tint);
-  border: 1px solid #c8edf2;
-  border-left: 4px solid var(--accent);
-  border-radius: 4px;
-  padding: 12px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
   font-family: var(--mono);
   font-size: 12px;
+  line-height: 1.5;
   word-break: break-all;
   color: var(--text-body);
 }
@@ -1822,29 +1822,289 @@ button {
   gap: 8px;
 }
 
-/* Both review links share one card, split into stacked rows. */
+/* ==========================================================================
+   Review links card
+   One card, three things: the two links side by side, then the Basecamp
+   approval panel as its own inset block. The links are read-and-copy so they
+   sit in a grid; the panel is a form so it gets the full width below them.
+   ========================================================================== */
 .review-links-card {
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.review-links-head {
+  padding: 20px 24px 0;
+}
+
+.review-links-head .muted {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.review-link-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px 24px 20px;
+}
+
+@media (max-width: 820px) {
+  .review-link-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .review-link-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
-.review-link-row + .review-link-row {
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-  padding-top: 14px;
+.review-link-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .review-link-label {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 650;
+  font-size: 13px;
 }
 
 .review-link-label .muted {
   font-weight: 400;
+}
+
+/* The Basecamp panel is a distinct surface so the form reads as one job
+   rather than three more rows of the links list. */
+.bc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 24px 22px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.bc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bc-head-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bc-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bc-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.bc-state.is-ready {
+  border-color: rgba(31, 157, 99, 0.4);
+  background: var(--success-wash);
+  color: var(--success-ink);
+}
+
+.bc-state.is-blocked {
+  border-color: rgba(196, 137, 0, 0.4);
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+
+/* Capped to a readable measure. At full container width the message box became
+   a slab wider than any sentence anyone types into it. */
+.bc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 860px;
+}
+
+.bc-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .bc-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The label and its Restore button share a line, so the label keeps the same
+   uppercase treatment as every other field on the page. The button sits next to
+   the label rather than across the field: at this width the far edge is a long
+   way from the thing it acts on. */
+.bc-label-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+}
+
+/* Without a border this button is pixel-for-pixel the same treatment as the
+   label beside it, and reads as a second label rather than something to press. */
+.bc-label-row .btn-ghost {
+  border-color: var(--border-strong);
+  color: var(--text-body);
+  padding: 4px 10px;
+  font-size: 10px;
+}
+
+.bc-label-row .btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: transparent;
+}
+
+.bc-label-row label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bc-message {
+  width: 100%;
+  min-height: 180px;
+  max-height: 380px;
+  resize: vertical;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.bc-message:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.bc-assign > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.bc-assign > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bc-assign > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 14px;
+  font-weight: 800;
+  color: var(--accent-ink);
+}
+
+.bc-assign[open] > summary::before {
+  content: "–";
+}
+
+.bc-assign > summary:hover {
+  color: var(--text);
+}
+
+.bc-assign-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 16px;
+  margin-top: 10px;
+}
+
+.bc-assign-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.bc-assign-item input {
+  accent-color: var(--accent);
+}
+
+.bc-confirm {
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(196, 137, 0, 0.35);
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Everything the panel knows, stacked as one quiet block instead of four
+   loose paragraphs at four different colours. */
+.bc-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.bc-fact {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.bc-fact-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 5px;
 }
 
 .approve-card {
@@ -9786,12 +10046,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    Automation map
    A vertical path: trigger, then wait → email for every step. Shared by the
    admin editor and the client review page so the two never drift.
+
+   In the editor every node is its own editor: click a wait and the number box
+   opens in place, so setting a delay never means scrolling to a panel and
+   losing your place on the path.
    ========================================================================== */
 
 .am-map {
   list-style: none;
   margin: 0;
-  padding: 8px 0 4px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -9805,7 +10069,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .am-rail {
   width: 2px;
-  height: 22px;
+  height: 20px;
   background: linear-gradient(180deg, var(--accent), rgba(0, 212, 232, 0.15));
   border-radius: 2px;
 }
@@ -9816,8 +10080,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   align-items: flex-start;
   gap: 14px;
   text-align: left;
-  padding: 16px 18px;
-  border-radius: 16px;
+  padding: 15px 16px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   box-shadow: var(--shadow);
@@ -9845,6 +10109,12 @@ button.am-node:hover {
   border-color: var(--success);
 }
 
+/* An open editor widens: two form controls plus preset chips need the room. */
+.am-node.is-editing {
+  width: min(680px, 100%);
+  align-items: flex-start;
+}
+
 .am-trigger {
   background:
     linear-gradient(180deg, var(--accent-wash), var(--bg-elevated));
@@ -9853,9 +10123,9 @@ button.am-node:hover {
 
 .am-glyph {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
   display: grid;
   place-items: center;
   background: var(--ink);
@@ -9863,8 +10133,8 @@ button.am-node:hover {
 }
 
 .am-glyph svg {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
 }
 
 .am-trigger .am-glyph {
@@ -9878,6 +10148,7 @@ button.am-node:hover {
 }
 
 .am-node-copy {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -9885,7 +10156,7 @@ button.am-node:hover {
 }
 
 .am-kicker {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -9893,9 +10164,10 @@ button.am-node:hover {
 }
 
 .am-node-copy strong {
-  font-size: 16px;
+  font-size: 15.5px;
   letter-spacing: -0.02em;
   color: var(--text);
+  line-height: 1.35;
 }
 
 .am-sub {
@@ -9910,26 +10182,106 @@ button.am-node:hover {
   color: var(--accent-ink);
 }
 
-.am-step-wait {
-  width: min(560px, 100%);
-}
-
-.am-wait {
+/* Right rail of a node: the Day-N chip, plus the pencil that says a click
+   opens an editor rather than a preview. */
+.am-node-side {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 4px;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 650;
+  gap: 8px;
+  align-self: center;
 }
 
-.am-wait-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.am-at {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.am-email .am-at {
+  border-color: rgba(0, 212, 232, 0.35);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.am-edit-cue {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.am-edit-cue svg {
+  width: 15px;
+  height: 15px;
+}
+
+button.am-node:hover .am-edit-cue,
+.am-node.is-selected .am-edit-cue {
+  opacity: 1;
+}
+
+/* ------------------------------------------------- inline node editors */
+.am-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.am-inline-fields {
+  display: grid;
+  grid-template-columns: minmax(130px, 180px) minmax(0, 1fr);
+  gap: 8px;
+  margin: 2px 0 2px;
+}
+
+.am-inline-fields input,
+.am-inline-fields select,
+.am-delay-picker input,
+.am-delay-picker select {
   background: var(--bg-elevated);
-  box-shadow: 0 0 0 3px var(--accent-wash), 0 0 0 5px rgba(0, 212, 232, 0.35);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.am-inline-fields input:focus,
+.am-inline-fields select:focus,
+.am-delay-picker input:focus,
+.am-delay-picker select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
+}
+
+@media (max-width: 640px) {
+  .am-inline-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.am-wait-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 4px 0 2px;
 }
 
 .am-delay-picker {
@@ -9946,6 +10298,55 @@ button.am-node:hover {
   min-width: 120px;
 }
 
+/* One tap for the delays that actually get used. The number box stays for
+   everything else. */
+.am-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.am-preset {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-body);
+  cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+
+.am-preset:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.am-preset.is-on {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.am-preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.am-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.am-edit-remove {
+  margin-left: auto;
+}
+
 .am-preview-modal {
   width: min(1120px, 100%);
   max-height: 92vh;
@@ -9960,24 +10361,80 @@ button.am-node:hover {
   margin-bottom: 14px;
 }
 
+/* ------------------------------------------------- the card around the map */
 .am-map-card {
-  padding: 18px 18px 12px;
+  overflow: hidden;
 }
 
-.am-map-card .h2 {
-  margin: 0 0 4px;
+.am-map-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
 }
 
-.am-trigger-fields {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(140px, 200px) 1fr;
+.am-map-head-copy .h2 {
+  margin: 0 0 3px;
 }
 
-@media (max-width: 640px) {
-  .am-trigger-fields {
-    grid-template-columns: 1fr;
-  }
+.am-map-head-copy .muted {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 62ch;
+}
+
+.am-map-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.am-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 232, 0.35);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.am-map-body {
+  padding: 24px 22px 28px;
+  background:
+    radial-gradient(900px 200px at 50% -60px, var(--accent-wash), transparent 70%),
+    var(--bg-soft);
+}
+
+/* Package mode: one compact row, not a card-sized hole in the page. */
+.am-switch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 14px 18px;
+}
+
+.am-switch-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+}
+
+.am-switch-copy .muted {
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .review-page .am-map-card {
@@ -10001,12 +10458,29 @@ button.am-node:hover {
   width: min(560px, 100%);
 }
 
+.am-root > .am-node.is-editing {
+  width: min(680px, 100%);
+}
+
 .am-root > .am-map {
   width: min(920px, 100%);
 }
 
 .am-wait-node {
+  background: var(--bg-elevated);
+  border-style: dashed;
+}
+
+.am-wait-node .am-glyph {
   background: var(--bg-soft);
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+}
+
+.am-wait-node.is-selected .am-glyph {
+  background: var(--ink);
+  color: var(--on-ink);
+  border-color: transparent;
 }
 
 .am-condition {
@@ -10023,6 +10497,7 @@ button.am-node:hover {
 .am-fork {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 12px;
   width: min(920px, 100%);
   margin-top: 8px;
@@ -10032,12 +10507,16 @@ button.am-node:hover {
   min-width: 0;
   border: 1px dashed var(--border-strong);
   border-radius: 16px;
-  padding: 10px 8px 8px;
-  background: var(--bg-soft);
+  padding: 12px 12px 8px;
+  background: var(--bg-elevated);
 }
 
-.am-fork-col.is-else {
-  background: var(--bg);
+.am-fork-col.is-else .am-fork-label {
+  color: var(--warning-ink);
+}
+
+.am-fork-col .am-fork-label {
+  color: var(--success-ink);
 }
 
 .am-fork-label {
@@ -10055,47 +10534,135 @@ button.am-node:hover {
   width: 100%;
 }
 
-.am-fork .am-node {
+.am-fork .am-node,
+.am-fork .am-node.is-editing {
   width: 100%;
 }
 
+.am-empty-path {
+  list-style: none;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 0 6px;
+}
+
+/* ------------------------------------------------- the insert rail
+   A quiet 2px line until you point at it. Hover or keyboard focus swaps the +
+   for the three things you can add, so a long map stays a path instead of a
+   ladder of buttons. */
 .am-insert {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  padding: 2px 0 6px;
 }
 
 .am-insert-line {
   width: 2px;
-  height: 10px;
-  background: var(--border-strong);
+  height: 13px;
+  background: linear-gradient(180deg, var(--accent), rgba(0, 212, 232, 0.15));
   border-radius: 2px;
 }
 
+.am-insert-hit {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 26px;
+  padding: 0 4px;
+}
+
+.am-insert-plus {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  transition: border-color 0.14s ease, color 0.14s ease;
+}
+
+.am-insert-hit:hover .am-insert-plus {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
 .am-insert-btns {
+  position: absolute;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lift);
+  opacity: 0;
+  transform: scale(0.94);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.am-insert-hit:hover .am-insert-btns,
+.am-insert-hit:focus-within .am-insert-btns {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.am-insert-hit:hover .am-insert-plus,
+.am-insert-hit:focus-within .am-insert-plus {
+  opacity: 0;
 }
 
 .am-insert-btns button {
   font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  padding: 5px 11px;
   border-radius: 999px;
-  border: 1px dashed var(--border-strong);
-  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  background: var(--bg-soft);
   color: var(--text-body);
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
 .am-insert-btns button:hover {
   border-color: var(--accent);
+  background: var(--accent-wash);
   color: var(--accent-ink);
+}
+
+.am-insert-btns button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Touch and keyboard-only devices never get the hover, so the buttons stay
+   put and the + gets out of the way. */
+@media (hover: none) {
+  .am-insert-plus {
+    display: none;
+  }
+
+  .am-insert-btns {
+    position: static;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    box-shadow: none;
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 720px) {
@@ -10103,5 +10670,3 @@ button.am-node:hover {
     grid-template-columns: 1fr;
   }
 }
-
-

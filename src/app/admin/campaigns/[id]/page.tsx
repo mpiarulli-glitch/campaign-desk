@@ -23,19 +23,20 @@ import {
   DelayPicker,
 } from "@/components/AutomationMap";
 import {
-  TRIGGER_KINDS,
-  CONDITION_KINDS,
-  coerceTriggerKind,
-  coerceConditionKind,
+  buildAutomationTree,
+  delayLabel,
   delayToMs,
-  splitDelay,
+  summarizeFlow,
   type DelayUnit,
   type Presentation,
-  type TriggerKind,
-  type ConditionKind,
   type FlowStepType,
 } from "@/lib/automation-map";
-import type { FlowInsertAt } from "@/components/AutomationMap";
+import type {
+  ConditionDraft,
+  FlowInsertAt,
+  TriggerDraft,
+  WaitDraft,
+} from "@/components/AutomationMap";
 
 type Attachment = {
   id: string;
@@ -144,6 +145,8 @@ type BasecampPerson = {
 type BasecampApprovalState = {
   ready: boolean;
   missing: string[];
+  clientId: string | null;
+  clientName: string;
   recipient: string;
   projectConfigured: boolean;
   message: string;
@@ -224,18 +227,11 @@ export default function AdminCampaignPage() {
   const [savingSubjects, setSavingSubjects] = useState(false);
   const [purposeDraft, setPurposeDraft] = useState("");
   const [savingPurpose, setSavingPurpose] = useState(false);
-  const [triggerLabelDraft, setTriggerLabelDraft] = useState("");
-  const [triggerKindDraft, setTriggerKindDraft] = useState<TriggerKind>("custom");
-  const [delayAmount, setDelayAmount] = useState(1);
-  const [delayUnit, setDelayUnit] = useState<DelayUnit>("days");
   const [savingTrigger, setSavingTrigger] = useState(false);
   const [newEmailDelayAmount, setNewEmailDelayAmount] = useState(1);
   const [newEmailDelayUnit, setNewEmailDelayUnit] = useState<DelayUnit>("days");
   const [flow, setFlow] = useState<FlowStep[]>([]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
-  const [conditionKindDraft, setConditionKindDraft] =
-    useState<ConditionKind>("opened");
-  const [conditionLabelDraft, setConditionLabelDraft] = useState("");
   const [savingStep, setSavingStep] = useState(false);
   const [basecampApproval, setBasecampApproval] =
     useState<BasecampApprovalState | null>(null);
@@ -245,6 +241,7 @@ export default function AdminCampaignPage() {
   // confirm() instantly, which made this button look dead with no error.
   const [confirmingBasecampApproval, setConfirmingBasecampApproval] =
     useState(false);
+  const [matchingBasecamp, setMatchingBasecamp] = useState(false);
   // The send form's own choices. They start from what the server suggests and
   // are only sent when the sender has actually seen the form, so a send from a
   // stale tab cannot silently reassign a card.
@@ -289,8 +286,6 @@ export default function AdminCampaignPage() {
       setComments(data.comments || []);
       setVersions(data.versions || []);
       setStatus(data.campaign.status);
-      setTriggerLabelDraft(data.campaign.trigger_label || "");
-      setTriggerKindDraft(coerceTriggerKind(data.campaign.trigger_kind));
       setFlow(data.flow || []);
       loadBasecampApproval();
 
@@ -333,6 +328,31 @@ export default function AdminCampaignPage() {
     );
     setApprovalDueOn((current) => current || data.dueOn || "");
     setApprovalMessage((current) => (current ? current : data.message || ""));
+  }
+
+  async function matchBasecampProject() {
+    if (matchingBasecamp) return;
+    setMatchingBasecamp(true);
+    setError("");
+    const res = await fetch("/api/basecamp/automatch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    setMatchingBasecamp(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not match Basecamp projects.");
+      return;
+    }
+    const data = await res.json();
+    const linked = Array.isArray(data.linked) ? data.linked.length : 0;
+    setMessage(
+      linked
+        ? `Linked ${linked} client${linked === 1 ? "" : "s"} to Basecamp.`
+        : "No new Basecamp matches. Check the client name matches the Growth OS project."
+    );
+    await loadBasecampApproval();
   }
 
   useEffect(() => {
@@ -473,19 +493,6 @@ export default function AdminCampaignPage() {
     setPurposeDraft(activeEmail?.purpose || "");
   }, [activeEmail?.id, activeEmail?.purpose]);
 
-  useEffect(() => {
-    const step = flow.find((s) => s.id === selectedStepId);
-    if (step?.step_type === "wait") {
-      const next = splitDelay(step.delay_ms || 0);
-      setDelayAmount(next.amount);
-      setDelayUnit(next.unit);
-    }
-    if (step?.step_type === "condition") {
-      setConditionKindDraft(coerceConditionKind(step.condition_kind));
-      setConditionLabelDraft(step.condition_label || "");
-    }
-  }, [selectedStepId, flow]);
-
   async function toggleEmailApproved(approved: boolean) {
     if (!activeEmail) return;
     setSaving(true);
@@ -550,15 +557,15 @@ export default function AdminCampaignPage() {
     setMessage("Purpose saved.");
   }
 
-  async function saveTrigger() {
+  async function saveTrigger(draft: TriggerDraft) {
     setSavingTrigger(true);
     setError("");
     const res = await fetch(`/api/campaigns/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        triggerLabel: triggerLabelDraft,
-        triggerKind: triggerKindDraft,
+        triggerLabel: draft.label,
+        triggerKind: draft.kind,
       }),
     });
     setSavingTrigger(false);
@@ -603,23 +610,19 @@ export default function AdminCampaignPage() {
     await load(data.email?.id || activeEmailId);
   }
 
-  async function saveSelectedStep() {
-    const step = flow.find((s) => s.id === selectedStepId);
-    if (!step) return;
+  // Both step editors live on the node itself now, so they hand back the id and
+  // the values rather than reading a copy of them out of page state.
+  async function patchStep(
+    stepId: string,
+    body: Record<string, unknown>,
+    okMessage: string
+  ) {
     setSavingStep(true);
     setError("");
     const res = await fetch(`/api/campaigns/${id}/flow`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        stepId: step.id,
-        delayMs:
-          step.step_type === "wait" ? delayToMs(delayAmount, delayUnit) : undefined,
-        conditionKind:
-          step.step_type === "condition" ? conditionKindDraft : undefined,
-        conditionLabel:
-          step.step_type === "condition" ? conditionLabelDraft : undefined,
-      }),
+      body: JSON.stringify({ stepId, ...body }),
     });
     setSavingStep(false);
     if (!res.ok) {
@@ -627,12 +630,24 @@ export default function AdminCampaignPage() {
       setError(data.error || "Could not save that step.");
       return;
     }
-    setMessage(step.step_type === "wait" ? "Wait time saved." : "If / else saved.");
+    setMessage(okMessage);
     load(activeEmailId);
   }
 
-  async function deleteSelectedStep() {
-    const step = flow.find((s) => s.id === selectedStepId);
+  async function saveWaitStep(stepId: string, draft: WaitDraft) {
+    await patchStep(stepId, { delayMs: draft.delayMs }, "Wait time saved.");
+  }
+
+  async function saveConditionStep(stepId: string, draft: ConditionDraft) {
+    await patchStep(
+      stepId,
+      { conditionKind: draft.kind, conditionLabel: draft.label },
+      "If / else saved."
+    );
+  }
+
+  async function deleteStep(stepId: string) {
+    const step = flow.find((s) => s.id === stepId);
     if (!step) return;
     if (step.step_type === "email") {
       setError("Remove an email from the package list below, not from the map.");
@@ -643,7 +658,7 @@ export default function AdminCampaignPage() {
     const res = await fetch(`/api/campaigns/${id}/flow`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stepId: step.id }),
+      body: JSON.stringify({ stepId }),
     });
     setSavingStep(false);
     if (!res.ok) {
@@ -1209,7 +1224,23 @@ export default function AdminCampaignPage() {
     basecampApproval?.recipient ||
     "";
   const isAutomation = campaign.presentation === "automation";
-  const selectedStep = flow.find((s) => s.id === selectedStepId) || null;
+  const flowSummary = (() => {
+    if (!isAutomation) return "";
+    const tree = buildAutomationTree({
+      triggerLabel: campaign.trigger_label,
+      triggerKind: campaign.trigger_kind,
+      emails: emails.map((email) => ({
+        id: email.id,
+        title: email.title,
+        delay_ms: email.delay_ms,
+      })),
+      steps: flow,
+    });
+    const { emails: count, spanMs } = summarizeFlow(tree.nodes);
+    if (!count) return "No emails on the path yet";
+    const noun = `${count} email${count === 1 ? "" : "s"}`;
+    return spanMs > 0 ? `${noun} over ${delayLabel(spanMs)}` : `${noun} · same day`;
+  })();
 
   return (
     <div className="app-shell">
@@ -1314,68 +1345,35 @@ export default function AdminCampaignPage() {
           </div>
         </div>
 
-        <div className="card card-pad stack am-map-card">
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <h2 className="h2">
-                {isAutomation ? "Automation map" : "Review as an automation"}
-              </h2>
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                {isAutomation
-                  ? "Add waits and if/else anywhere on the path. Click an email to edit it."
-                  : "Turn this package into a map: trigger, wait times, then each email."}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => setPresentation(isAutomation ? "package" : "automation")}
-              disabled={saving}
-            >
-              {isAutomation ? "Show as package" : "Show as automation map"}
-            </button>
-          </div>
-
-          {isAutomation ? (
-            <>
-              <div className="am-trigger-fields">
-                <div className="field">
-                  <label htmlFor="trigger-kind">What starts it</label>
-                  <select
-                    id="trigger-kind"
-                    value={triggerKindDraft}
-                    onChange={(e) => setTriggerKindDraft(coerceTriggerKind(e.target.value))}
-                  >
-                    {TRIGGER_KINDS.map((k) => (
-                      <option key={k.value} value={k.value}>
-                        {k.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="trigger-label">Trigger</label>
-                  <input
-                    id="trigger-label"
-                    value={triggerLabelDraft}
-                    onChange={(e) => setTriggerLabelDraft(e.target.value)}
-                    placeholder="Tag added: New patient"
-                  />
-                </div>
+        {isAutomation ? (
+          <div className="card am-map-card">
+            <div className="am-map-head">
+              <div className="am-map-head-copy">
+                <h2 className="h2">Automation map</h2>
+                <p className="muted">
+                  Click the trigger or any wait to change it right on the map.
+                  Hover a rail to drop in a wait, an email, or a split.
+                </p>
               </div>
-              <div className="row">
+              <div className="am-map-head-meta">
+                {flowSummary ? (
+                  <span className="am-summary-chip">{flowSummary}</span>
+                ) : null}
                 <button
                   type="button"
-                  className="btn btn-sm"
-                  onClick={saveTrigger}
-                  disabled={savingTrigger}
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setPresentation("package")}
+                  disabled={saving}
                 >
-                  {savingTrigger ? "Saving..." : "Save trigger"}
+                  Show as package
                 </button>
               </div>
+            </div>
+
+            <div className="am-map-body">
               <AutomationMap
-                triggerLabel={triggerLabelDraft || campaign.trigger_label}
-                triggerKind={triggerKindDraft}
+                triggerLabel={campaign.trigger_label}
+                triggerKind={campaign.trigger_kind}
                 emails={emails.map((email) => ({
                   id: email.id,
                   title: email.title,
@@ -1389,99 +1387,38 @@ export default function AdminCampaignPage() {
                 steps={flow}
                 selectedId={selectedStepId || activeEmail.id}
                 editable
+                busy={savingStep || savingTrigger}
                 onSelectStep={(stepId, emailId) => {
-                  setSelectedStepId(stepId);
+                  // The map sends "" back when you close an open editor.
+                  setSelectedStepId(stepId || null);
                   if (emailId) selectEmail(emailId);
                 }}
                 onAddStep={addFlowStepAt}
+                onSaveTrigger={saveTrigger}
+                onSaveWait={saveWaitStep}
+                onSaveCondition={saveConditionStep}
+                onDeleteStep={deleteStep}
               />
-              {selectedStep?.step_type === "wait" ? (
-                <div className="card card-pad stack">
-                  <h2 className="h2" style={{ margin: 0 }}>
-                    Wait time
-                  </h2>
-                  <DelayPicker
-                    amount={delayAmount}
-                    unit={delayUnit}
-                    onAmount={setDelayAmount}
-                    onUnit={setDelayUnit}
-                    disabled={savingStep}
-                  />
-                  <div className="row">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={saveSelectedStep}
-                      disabled={savingStep}
-                    >
-                      {savingStep ? "Saving..." : "Save wait"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={deleteSelectedStep}
-                      disabled={savingStep}
-                    >
-                      Remove wait
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              {selectedStep?.step_type === "condition" ? (
-                <div className="card card-pad stack">
-                  <h2 className="h2" style={{ margin: 0 }}>
-                    If / else
-                  </h2>
-                  <div className="am-trigger-fields">
-                    <div className="field">
-                      <label htmlFor="condition-kind">Question type</label>
-                      <select
-                        id="condition-kind"
-                        value={conditionKindDraft}
-                        onChange={(e) =>
-                          setConditionKindDraft(coerceConditionKind(e.target.value))
-                        }
-                      >
-                        {CONDITION_KINDS.map((k) => (
-                          <option key={k.value} value={k.value}>
-                            {k.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="condition-label">Question</label>
-                      <input
-                        id="condition-label"
-                        value={conditionLabelDraft}
-                        onChange={(e) => setConditionLabelDraft(e.target.value)}
-                        placeholder="Opened the last email?"
-                      />
-                    </div>
-                  </div>
-                  <div className="row">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={saveSelectedStep}
-                      disabled={savingStep}
-                    >
-                      {savingStep ? "Saving..." : "Save if / else"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={deleteSelectedStep}
-                      disabled={savingStep}
-                    >
-                      Remove if / else
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+            </div>
+          </div>
+        ) : (
+          <div className="card am-switch-bar">
+            <div className="am-switch-copy">
+              <strong>Review as an automation</strong>
+              <span className="muted">
+                Turn this package into a map: trigger, wait times, then each email.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setPresentation("automation")}
+              disabled={saving}
+            >
+              Show as automation map
+            </button>
+          </div>
+        )}
 
         <div className="card card-pad stack">
           <div className="row" style={{ justifyContent: "space-between" }}>
@@ -1632,162 +1569,179 @@ export default function AdminCampaignPage() {
           </div>
         ) : null}
 
-        <div className="card card-pad stack review-links-card">
-          <strong>Review links</strong>
+        <div className="card review-links-card">
+          <div className="review-links-head">
+            <h2 className="h2">Review links</h2>
+            <p className="muted">
+              Send the link yourself, or push it to Basecamp for sign-off.
+            </p>
+          </div>
 
-          <div className="review-link-row">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <span className="review-link-label">
-                Internal <span className="muted">· boss / team</span>
-              </span>
-              <button className="btn btn-secondary btn-sm" onClick={copyLink}>
-                {copied ? "Copied" : "Copy"}
-              </button>
+          <div className="review-link-grid">
+            <div className="review-link-row">
+              <div className="review-link-top">
+                <span className="review-link-label">
+                  Internal <span className="muted">· boss / team</span>
+                </span>
+                <button className="btn btn-secondary btn-sm" onClick={copyLink}>
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="copy-box">
+                <code>{campaign.review_url}</code>
+              </div>
             </div>
-            <div className="copy-box">
-              <code>{campaign.review_url}</code>
+
+            <div className="review-link-row">
+              <div className="review-link-top">
+                <span className="review-link-label">
+                  External <span className="muted">· client</span>
+                </span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={copyExternalLink}
+                >
+                  {copiedExternal ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="copy-box">
+                <code>{campaign.external_review_url}</code>
+              </div>
             </div>
           </div>
 
-          <div className="review-link-row">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <span className="review-link-label">
-                External <span className="muted">· client</span>
-              </span>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={copyExternalLink}
-              >
-                {copiedExternal ? "Copied" : "Copy"}
-              </button>
-            </div>
-            <div className="copy-box">
-              <code>{campaign.external_review_url}</code>
-            </div>
-          </div>
-
-          <div className="review-link-row">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <span className="review-link-label">
-                Basecamp{" "}
-                <span className="muted">· client approval workflow</span>
-              </span>
-              {confirmingBasecampApproval && !sendingBasecampApproval ? (
-                <div className="row" style={{ gap: 8 }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setConfirmingBasecampApproval(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button className="btn btn-sm" onClick={sendBasecampApproval}>
-                    {basecampApproval?.cardUrl
-                      ? "Yes, resend it"
-                      : "Yes, send it"}
-                  </button>
-                </div>
-              ) : (
-                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  {basecampApproval?.cardUrl ? (
-                    <FollowUpButton
-                      campaignId={id}
-                      className="btn btn-secondary btn-sm"
-                      followupCount={basecampApproval.followupCount || 0}
-                      onDone={(recipient, nextCount) => {
-                        setMessage(
-                          `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
-                        );
-                        setBasecampApproval((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                followupCount:
-                                  typeof nextCount === "number"
-                                    ? nextCount
-                                    : (prev.followupCount || 0) + 1,
-                                followupLastAt: new Date().toISOString(),
-                              }
-                            : prev
-                        );
-                        void loadBasecampApproval();
-                      }}
-                      onError={(err) => setError(err)}
-                    />
-                  ) : null}
-                  <button
-                    className={`btn btn-sm ${
-                      basecampApproval?.cardUrl ? "btn-secondary" : ""
+          <div className="bc-panel">
+            <div className="bc-head">
+              <div className="bc-head-copy">
+                <span className="review-link-label">
+                  Basecamp{" "}
+                  <span className="muted">· client approval workflow</span>
+                </span>
+                {basecampApproval ? (
+                  <span
+                    className={`bc-state ${
+                      basecampApproval.ready ? "is-ready" : "is-blocked"
                     }`}
-                    onClick={() => setConfirmingBasecampApproval(true)}
-                    disabled={
-                      !basecampApproval?.ready || sendingBasecampApproval
-                    }
                   >
-                    {sendingBasecampApproval
-                      ? "Sending..."
-                      : basecampApproval?.cardUrl
-                        ? basecampApproval.alreadySent
-                          ? "Resend approval"
-                          : "Send updated approval"
-                        : "Send approval"}
-                  </button>
-                </div>
-              )}
+                    {basecampApproval.ready
+                      ? basecampApproval.cardUrl
+                        ? "Sent"
+                        : "Ready to send"
+                      : "Setup needed"}
+                  </span>
+                ) : (
+                  <span className="bc-state">Checking...</span>
+                )}
+              </div>
+              <div className="bc-head-actions">
+                {confirmingBasecampApproval && !sendingBasecampApproval ? (
+                  <>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setConfirmingBasecampApproval(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button className="btn btn-sm" onClick={sendBasecampApproval}>
+                      {basecampApproval?.cardUrl
+                        ? "Yes, resend it"
+                        : "Yes, send it"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {basecampApproval?.cardUrl ? (
+                      <FollowUpButton
+                        campaignId={id}
+                        className="btn btn-secondary btn-sm"
+                        followupCount={basecampApproval.followupCount || 0}
+                        onDone={(recipient, nextCount) => {
+                          setMessage(
+                            `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
+                          );
+                          setBasecampApproval((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  followupCount:
+                                    typeof nextCount === "number"
+                                      ? nextCount
+                                      : (prev.followupCount || 0) + 1,
+                                  followupLastAt: new Date().toISOString(),
+                                }
+                              : prev
+                          );
+                          void loadBasecampApproval();
+                        }}
+                        onError={(err) => setError(err)}
+                      />
+                    ) : null}
+                    <button
+                      className={`btn btn-sm ${
+                        basecampApproval?.cardUrl ? "btn-secondary" : ""
+                      }`}
+                      onClick={() => setConfirmingBasecampApproval(true)}
+                      disabled={
+                        !basecampApproval?.ready || sendingBasecampApproval
+                      }
+                    >
+                      {sendingBasecampApproval
+                        ? "Sending..."
+                        : basecampApproval?.cardUrl
+                          ? basecampApproval.alreadySent
+                            ? "Resend approval"
+                            : "Send updated approval"
+                          : "Send approval"}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             {basecampApproval?.ready && !sendingBasecampApproval ? (
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
-                  <span className="muted">Send to</span>
-                  <select
-                    value={approvalRecipientId}
-                    onChange={(e) =>
-                      setApprovalRecipientId(
-                        e.target.value ? Number(e.target.value) : ""
-                      )
-                    }
-                    disabled={!basecampApproval.people.length}
-                  >
-                    <option value="">
-                      {basecampApproval.people.length
-                        ? "Pick a person..."
-                        : basecampApproval.peopleReason ||
-                          "No project roster available"}
-                    </option>
-                    {basecampApproval.people.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.name}
-                        {person.isClient ? "" : " (our team)"}
-                        {person.mentionable ? "" : " — cannot be mentioned"}
+              <div className="bc-form">
+                <div className="bc-form-row">
+                  <div className="field">
+                    <label htmlFor="bc-recipient">Send to</label>
+                    <select
+                      id="bc-recipient"
+                      value={approvalRecipientId}
+                      onChange={(e) =>
+                        setApprovalRecipientId(
+                          e.target.value ? Number(e.target.value) : ""
+                        )
+                      }
+                      disabled={!basecampApproval.people.length}
+                    >
+                      <option value="">
+                        {basecampApproval.people.length
+                          ? "Pick a person..."
+                          : basecampApproval.peopleReason ||
+                            "No project roster available"}
                       </option>
-                    ))}
-                  </select>
-                </label>
+                      {basecampApproval.people.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.name}
+                          {person.isClient ? "" : " (our team)"}
+                          {person.mentionable ? "" : " (cannot be mentioned)"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="bc-due">Due date</label>
+                    <input
+                      id="bc-due"
+                      type="date"
+                      value={approvalDueOn}
+                      onChange={(e) => setApprovalDueOn(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-                <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
-                  <span className="muted">Due date</span>
-                  <input
-                    type="date"
-                    value={approvalDueOn}
-                    onChange={(e) => setApprovalDueOn(e.target.value)}
-                  />
-                </label>
-
-                <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
-                  <div
-                    className="row"
-                    style={{ justifyContent: "space-between", gap: 8 }}
-                  >
-                    <span className="muted">Approval message</span>
+                <div className="field">
+                  <div className="bc-label-row">
+                    <label htmlFor="bc-message">Approval message</label>
                     {basecampApproval.message &&
                     withoutApprovalGreeting(approvalMessage) !==
                       withoutApprovalGreeting(basecampApproval.message) ? (
@@ -1812,43 +1766,31 @@ export default function AdminCampaignPage() {
                     ) : null}
                   </div>
                   <textarea
+                    id="bc-message"
+                    className="bc-message"
                     value={approvalMessage}
                     onChange={(e) => setApprovalMessage(e.target.value)}
-                    rows={16}
-                    style={{
-                      minHeight: 220,
-                      resize: "vertical",
-                      fontFamily: "inherit",
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                    }}
+                    rows={12}
                   />
-                  <span className="muted">
-                    Starts from the usual template. Add a note, change a line,
-                    or leave it as-is.
+                  <span className="field-hint">
+                    Starts from the usual template. Add a note, change a line, or
+                    leave it as-is.
                   </span>
                 </div>
 
                 {basecampApproval.people.length > 1 ? (
-                  <details>
-                    <summary
-                      className="muted"
-                      style={{ cursor: "pointer", fontSize: 13 }}
-                    >
+                  <details className="bc-assign">
+                    <summary>
                       Also assign
                       {approvalAssigneeIds.length
                         ? ` (${approvalAssigneeIds.length})`
                         : ""}
                     </summary>
-                    <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
+                    <div className="bc-assign-list">
                       {basecampApproval.people
                         .filter((person) => person.id !== approvalRecipientId)
                         .map((person) => (
-                          <label
-                            key={person.id}
-                            className="row"
-                            style={{ gap: 6, fontSize: 13 }}
-                          >
+                          <label key={person.id} className="bc-assign-item">
                             <input
                               type="checkbox"
                               checked={approvalAssigneeIds.includes(person.id)}
@@ -1873,9 +1815,8 @@ export default function AdminCampaignPage() {
             ) : null}
 
             {confirmingBasecampApproval && !sendingBasecampApproval ? (
-              <p style={{ margin: "8px 0 0", fontSize: 13 }}>
-                {basecampApproval?.cardUrl ? "Resend" : "Send"} this
-                approval
+              <p className="bc-confirm">
+                {basecampApproval?.cardUrl ? "Resend" : "Send"} this approval
                 {approvalRecipientName ? ` to ${approvalRecipientName}` : ""}
                 {approvalAssigneeIds.length
                   ? `, assign ${approvalAssigneeIds.length} more`
@@ -1886,20 +1827,24 @@ export default function AdminCampaignPage() {
             ) : null}
 
             {basecampApproval ? (
-              <>
-                <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              <div className="bc-facts">
+                <p className="bc-fact">
                   {basecampApproval.ready
                     ? `Sends to ${approvalRecipientName || "whoever you pick above"} and moves the Deliverables card to Needs Approval.`
-                    : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
-                  {basecampApproval.lastSentAt
-                    ? ` Last sent ${new Date(basecampApproval.lastSentAt).toLocaleString()}.`
-                    : ""}
+                    : basecampApproval.missing.includes("Basecamp project")
+                      ? `No Basecamp project on ${
+                          basecampApproval.clientName || "this client"
+                        } yet. Even if you have sent approvals for them before, this campaign’s account record needs the Growth OS project linked.`
+                      : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
                 </p>
+                {basecampApproval.lastSentAt ? (
+                  <p className="bc-fact">
+                    Last sent{" "}
+                    {new Date(basecampApproval.lastSentAt).toLocaleString()}.
+                  </p>
+                ) : null}
                 {basecampApproval.followupCount > 0 ? (
-                  <p
-                    className="am-followup-status"
-                    style={{ margin: "6px 0 0", fontSize: 13 }}
-                  >
+                  <p className="bc-fact am-followup-status">
                     Followed up {basecampApproval.followupCount}×
                     {basecampApproval.followupLastAt
                       ? ` · last ${new Date(
@@ -1908,12 +1853,29 @@ export default function AdminCampaignPage() {
                       : ""}
                   </p>
                 ) : basecampApproval.cardUrl ? (
-                  <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-                    No follow-ups sent yet.
-                  </p>
+                  <p className="bc-fact">No follow-ups sent yet.</p>
+                ) : null}
+                {!basecampApproval.ready &&
+                basecampApproval.missing.includes("Basecamp project") ? (
+                  <div className="bc-fact-actions">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void matchBasecampProject()}
+                      disabled={matchingBasecamp}
+                    >
+                      {matchingBasecamp
+                        ? "Matching..."
+                        : "Match Basecamp project"}
+                    </button>
+                    {basecampApproval.clientId ? (
+                      <Link className="btn btn-secondary btn-sm" href="/admin/production">
+                        Open production clients
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
                 {basecampApproval.cardUrl ? (
-                  <p style={{ margin: "6px 0 0", fontSize: 13 }}>
+                  <p className="bc-fact">
                     <a
                       href={basecampApproval.cardUrl}
                       target="_blank"
@@ -1923,11 +1885,11 @@ export default function AdminCampaignPage() {
                     </a>
                   </p>
                 ) : null}
-              </>
+              </div>
             ) : (
-              <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
-                Checking Basecamp setup...
-              </p>
+              <div className="bc-facts">
+                <p className="bc-fact">Checking Basecamp setup...</p>
+              </div>
             )}
           </div>
         </div>
