@@ -10,7 +10,7 @@ import {
   hasConnection,
   mentionHtml,
 } from "@/lib/basecamp";
-import { getCampaignById } from "@/lib/campaigns";
+import { getCampaignById, recordBasecampFollowUp } from "@/lib/campaigns";
 import { clientReviewFollowupHtml } from "@/lib/client-approval";
 import { recordFailure, clearFailure } from "@/lib/failures";
 import { markClientFollowUpSent } from "@/lib/lifecycle-board";
@@ -113,10 +113,13 @@ export async function POST(_request: Request, { params }: Params) {
 
   clearFailure("basecamp_comment", client.name);
   if (campaign.client_id) markClientFollowUpSent(campaign.client_id);
+  const updated = recordBasecampFollowUp(campaign.id);
 
   return NextResponse.json({
     ok: true,
     recipient: recipient.name,
     cardUrl: result.url || campaign.basecamp_card_url,
+    followupCount: updated?.basecamp_followup_count ?? 0,
+    followupLastAt: updated?.basecamp_followup_last_at ?? null,
   });
 }

@@ -562,6 +562,8 @@ export function updateCampaign(
          basecamp_approval_sent_at = CASE WHEN ? THEN NULL ELSE basecamp_approval_sent_at END,
          approval_thank_you_due_at = CASE WHEN ? THEN NULL ELSE approval_thank_you_due_at END,
          approval_thank_you_sent_at = CASE WHEN ? THEN NULL ELSE approval_thank_you_sent_at END,
+         basecamp_followup_count = CASE WHEN ? THEN 0 ELSE basecamp_followup_count END,
+         basecamp_followup_last_at = CASE WHEN ? THEN NULL ELSE basecamp_followup_last_at END,
          updated_at = ?
      WHERE id = ?`
   ).run(
@@ -577,6 +579,8 @@ export function updateCampaign(
     approvedAt,
     approvedBy,
     approvedChannel,
+    clientChanged ? 1 : 0,
+    clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
@@ -931,6 +935,22 @@ export function rememberBasecampApprovalCard(
        WHERE id = ?`
     )
     .run(cardId, cardUrl, id);
+  return getCampaignById(id);
+}
+
+export function recordBasecampFollowUp(id: string): Campaign | null {
+  const existing = getCampaignById(id);
+  if (!existing) return null;
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+       SET basecamp_followup_count = COALESCE(basecamp_followup_count, 0) + 1,
+           basecamp_followup_last_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .run(ts, ts, id);
   return getCampaignById(id);
 }
 

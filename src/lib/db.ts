@@ -94,6 +94,9 @@ export interface Campaign {
   // client approval. Cleared if the approval is undone before it sends.
   approval_thank_you_due_at: string | null;
   approval_thank_you_sent_at: string | null;
+  // How many times we've posted a client follow-up on the approval card.
+  basecamp_followup_count: number;
+  basecamp_followup_last_at: string | null;
   // "automation" review packages render as a trigger → wait → email map.
   presentation: "package" | "automation";
   trigger_label: string;
@@ -2086,6 +2089,16 @@ function migrate(database: Database.Database) {
   }
   if (!campaignCols.includes("approval_thank_you_sent_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN approval_thank_you_sent_at TEXT`);
+  }
+  if (!campaignCols.includes("basecamp_followup_count")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN basecamp_followup_count INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (!campaignCols.includes("basecamp_followup_last_at")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN basecamp_followup_last_at TEXT`
+    );
   }
   if (!campaignCols.includes("presentation")) {
     database.exec(

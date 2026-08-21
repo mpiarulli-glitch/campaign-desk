@@ -19,6 +19,7 @@ type CampaignRow = {
   magic_token: string;
   archived_at?: string | null;
   presentation?: string;
+  basecamp_followup_count?: number;
 };
 
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
@@ -180,6 +181,9 @@ function CampaignCard({
             ? ` · ${c.open_comments} open comment${
                 c.open_comments === 1 ? "" : "s"
               }`
+            : ""}
+          {(c.basecamp_followup_count || 0) > 0
+            ? ` · Followed up ${c.basecamp_followup_count}×`
             : ""}
         </div>
       </div>

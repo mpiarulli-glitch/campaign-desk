@@ -6,12 +6,14 @@ import { postCampaignFollowup } from "./followup";
 export function FollowUpButton({
   campaignId,
   className = "hud-btn",
+  followupCount = 0,
   onDone,
   onError,
 }: {
   campaignId: string;
   className?: string;
-  onDone?: (recipient?: string) => void;
+  followupCount?: number;
+  onDone?: (recipient?: string, nextCount?: number) => void;
   onError?: (error: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -29,12 +31,17 @@ export function FollowUpButton({
       return;
     }
     setDone(true);
-    onDone?.(result.recipient);
+    onDone?.(result.recipient, result.followupCount);
   }
+
+  const label =
+    followupCount > 0
+      ? `Follow up again (${followupCount} sent)`
+      : "Follow-up with client";
 
   return (
     <button type="button" className={className} onClick={send} disabled={busy || done}>
-      {busy ? "Sending…" : done ? "Follow-up sent" : "Follow-up with client"}
+      {busy ? "Sending…" : done ? "Follow-up sent" : label}
     </button>
   );
 }

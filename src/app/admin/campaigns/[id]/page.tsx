@@ -150,6 +150,8 @@ type BasecampApprovalState = {
   alreadySent: boolean;
   lastSentAt: string | null;
   cardUrl: string | null;
+  followupCount: number;
+  followupLastAt: string | null;
   people: BasecampPerson[];
   peopleReason: string;
   defaultRecipientId: number | null;
@@ -1699,11 +1701,25 @@ export default function AdminCampaignPage() {
                     <FollowUpButton
                       campaignId={id}
                       className="btn btn-secondary btn-sm"
-                      onDone={(recipient) =>
+                      followupCount={basecampApproval.followupCount || 0}
+                      onDone={(recipient, nextCount) => {
                         setMessage(
                           `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
-                        )
-                      }
+                        );
+                        setBasecampApproval((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                followupCount:
+                                  typeof nextCount === "number"
+                                    ? nextCount
+                                    : (prev.followupCount || 0) + 1,
+                                followupLastAt: new Date().toISOString(),
+                              }
+                            : prev
+                        );
+                        void loadBasecampApproval();
+                      }}
                       onError={(err) => setError(err)}
                     />
                   ) : null}
@@ -1879,6 +1895,23 @@ export default function AdminCampaignPage() {
                     ? ` Last sent ${new Date(basecampApproval.lastSentAt).toLocaleString()}.`
                     : ""}
                 </p>
+                {basecampApproval.followupCount > 0 ? (
+                  <p
+                    className="am-followup-status"
+                    style={{ margin: "6px 0 0", fontSize: 13 }}
+                  >
+                    Followed up {basecampApproval.followupCount}×
+                    {basecampApproval.followupLastAt
+                      ? ` · last ${new Date(
+                          basecampApproval.followupLastAt
+                        ).toLocaleString()}`
+                      : ""}
+                  </p>
+                ) : basecampApproval.cardUrl ? (
+                  <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+                    No follow-ups sent yet.
+                  </p>
+                ) : null}
                 {basecampApproval.cardUrl ? (
                   <p style={{ margin: "6px 0 0", fontSize: 13 }}>
                     <a

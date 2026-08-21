@@ -159,6 +159,8 @@ export async function GET(_request: Request, { params }: Params) {
     alreadySent: state.alreadySent,
     lastSentAt: state.campaign.basecamp_approval_sent_at,
     cardUrl: state.campaign.basecamp_card_url,
+    followupCount: state.campaign.basecamp_followup_count || 0,
+    followupLastAt: state.campaign.basecamp_followup_last_at,
     people,
     peopleReason,
     defaultRecipientId,

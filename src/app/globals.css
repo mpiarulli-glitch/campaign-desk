@@ -9986,6 +9986,11 @@ button.am-node:hover {
     var(--bg-elevated);
 }
 
+.am-followup-status {
+  color: var(--accent-ink);
+  font-weight: 650;
+}
+
 .am-root {
   display: flex;
   flex-direction: column;
