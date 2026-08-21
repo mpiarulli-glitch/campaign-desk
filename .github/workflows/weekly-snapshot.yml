@@ -1,0 +1,37 @@
+name: Weekly snapshot ask
+
+# Asks every active client about their leads and last month's revenue, from
+# their account manager, by email and on their Basecamp project.
+#
+# NOT SCHEDULED YET. The weekly trigger is deliberately commented out so this
+# cannot fire on its own, and the server has its own switch
+# (CLIENT_SERVICES_SENDING) which is off, so even a manual run here sends
+# nothing until both are turned on.
+#
+# To go live:
+#   1. Set CLIENT_SERVICES_SENDING=on on the Railway service.
+#   2. Uncomment the schedule block below.
+# Do them in that order. Uncommenting the schedule alone does nothing, but
+# arming the server while this is still commented out is the safer half to
+# have on first, because it lets you test one client by hand.
+
+on:
+  # schedule:
+  #   # Fridays at 15:00 UTC — 8am Pacific, 11am Eastern.
+  #   - cron: "0 15 * * 5"
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: "Report who would be asked without sending"
+        type: boolean
+        default: true
+
+jobs:
+  weekly-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly snapshot sweep
+        run: |
+          curl -fsS --show-error -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://hub.marketingempiregroup.com/api/cron/weekly-snapshot${{ inputs.dryRun && '?dryRun=1' || '' }}"

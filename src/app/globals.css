@@ -10670,3 +10670,234 @@ button.am-node:hover .am-edit-cue,
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   Client Services Hub
+   One row per client for the week: what we asked for, how far the ask got, and
+   whether the numbers came back. Mirrors the production console's tab + table
+   shape so the two consoles read as the same tool.
+   ========================================================================== */
+
+.cs-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.cs-of {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Stated on the page, not buried in a tooltip: an open is a loaded image, and
+   a number people act on should say when it cannot be trusted. */
+.cs-caveat {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-width: 88ch;
+}
+
+.cs-filters {
+  margin: 0;
+}
+
+.cs-table-wrap {
+  overflow-x: auto;
+}
+
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.cs-table th,
+.cs-table td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.cs-table th {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.cs-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* A paused client stays legible but visibly stood down, so nobody reads the
+   empty Sent column as a job somebody forgot. The actions keep full contrast:
+   Resume is the one thing you are most likely to want on this row, and dimming
+   a control you can still press only makes it harder to hit. */
+.cs-table tr.is-paused td {
+  opacity: 0.55;
+}
+
+.cs-table tr.is-paused td:last-child {
+  opacity: 1;
+}
+
+.cs-client {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.cs-client:hover {
+  color: var(--accent-ink);
+}
+
+.cs-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Something missing that would stop the ask working. Reads as a gap to fill
+   rather than as an error, because none of these block the whole send. */
+.cs-gap {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.cs-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cs-pill.is-good {
+  border-color: rgba(31, 157, 99, 0.4);
+  background: var(--success-wash);
+  color: var(--success-ink);
+}
+
+.cs-pill.is-info {
+  border-color: rgba(0, 212, 232, 0.35);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.cs-pill.is-warn {
+  border-color: rgba(196, 137, 0, 0.4);
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+
+.cs-pill.is-bad {
+  border-color: rgba(214, 69, 69, 0.4);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+
+.cs-asked,
+.cs-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* Still owed by the client vs already in. Two colours because this column is
+   the one that decides whether anybody needs to chase. */
+.cs-open {
+  color: var(--warning-ink);
+  font-weight: 650;
+}
+
+.cs-done {
+  color: var(--text-muted);
+}
+
+.cs-channels span {
+  color: var(--text-body);
+}
+
+.cs-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cs-history-row td {
+  background: var(--bg-soft);
+  padding: 0 14px 14px;
+}
+
+.cs-history {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.cs-history th,
+.cs-history td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.cs-history th {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.cs-history tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cs-history-empty {
+  margin: 0;
+  padding: 12px 0 4px;
+  font-size: 13px;
+}
+
+/* Shipped-dark banner. Loud on purpose: an empty Sent column has two very
+   different causes, and "nobody ran it" and "it cannot run" should never look
+   the same. */
+.cs-disarmed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(196, 137, 0, 0.45);
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.cs-disarmed code {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.08);
+}

@@ -48,7 +48,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/onboarding", label: "Onboarding", icon: "check" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
-  { href: "/admin/snapshot", label: "Snapshots", icon: "doc" },
+  { href: "/admin/client-services", label: "Client Services", icon: "doc" },
   // Aggregates across every client and person, so admin nav only.
   { href: "/admin/reports", label: "Reports", icon: "note" },
   { href: "/admin/activity", label: "Activity", icon: "activity" },
@@ -62,7 +62,7 @@ const FORECAST_NAV: NavItem[] = [
   { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
-  { href: "/admin/snapshot", label: "Snapshot", icon: "doc" },
+  { href: "/admin/client-services", label: "Client Services", icon: "doc" },
 ];
 
 const ICONS = {

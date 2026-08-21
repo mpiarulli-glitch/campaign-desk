@@ -451,7 +451,7 @@ function TeamMemberHome() {
                 <span className="n">{sends.length}</span>
                 <span className="l">Sends in 14 days</span>
               </Link>
-              <Link className="ops-stat" href="/admin/snapshot">
+              <Link className="ops-stat" href="/admin/client-services">
                 <span className="n">{behindCount}</span>
                 <span className="l">Accounts behind</span>
               </Link>
@@ -546,7 +546,7 @@ function TeamMemberHome() {
               <div className="ops-panel">
                 <div className="ops-panel-head">
                   <h2>Accounts behind</h2>
-                  <Link href="/admin/snapshot">Snapshots →</Link>
+                  <Link href="/admin/client-services">Client Services →</Link>
                 </div>
                 <div className="ops-panel-body">
                   {behind.length === 0 ? (

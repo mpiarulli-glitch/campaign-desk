@@ -599,6 +599,27 @@ export interface Reachout {
   created_at: string;
 }
 
+export type SnapshotOutreachChannel = "email" | "basecamp";
+
+export interface SnapshotOutreach {
+  id: string;
+  client_id: string;
+  client_name: string;
+  week_start: string;
+  month: string;
+  channel: SnapshotOutreachChannel;
+  am_slug: string;
+  am_label: string;
+  sent_to: string;
+  provider_message_id: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  bounced_at: string | null;
+  detail: string | null;
+  created_at: string;
+}
+
 // An admin-defined invitation to book a production outside the client's
 // regular cadence: "here's a window, pick a day in it." Reaches the client
 // the same way a cadence reminder does (Basecamp card + email), but the
@@ -1284,6 +1305,42 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_reachouts_client ON reachouts(client_id);
     CREATE INDEX IF NOT EXISTS idx_reachouts_ymd ON reachouts(ymd);
+
+    -- One weekly snapshot ask, per client per channel per week.
+    --
+    -- Separate from reachouts (which stays the flat cross-console log of every
+    -- outbound contact) because this row has a lifecycle: it is sent, then
+    -- delivered, then maybe opened, and the client either answers or does not.
+    -- The Client Services dashboard reads that lifecycle straight off this row.
+    --
+    -- provider_message_id is Resend's id for the send. It is how the webhook
+    -- finds the row again when a delivery or open event arrives, so it is
+    -- indexed and unique-ish in practice (Basecamp rows leave it null).
+    CREATE TABLE IF NOT EXISTS snapshot_outreach (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      client_name TEXT NOT NULL,
+      week_start TEXT NOT NULL,      -- Monday of the week the ask went out
+      month TEXT NOT NULL,           -- metric period the ask is about (YYYY-MM)
+      channel TEXT NOT NULL,         -- 'email' | 'basecamp'
+      am_slug TEXT NOT NULL DEFAULT '',
+      am_label TEXT NOT NULL DEFAULT '',
+      sent_to TEXT NOT NULL DEFAULT '',
+      provider_message_id TEXT,
+      sent_at TEXT,
+      delivered_at TEXT,
+      opened_at TEXT,
+      bounced_at TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_snap_outreach_client
+      ON snapshot_outreach(client_id, week_start);
+    CREATE INDEX IF NOT EXISTS idx_snap_outreach_msg
+      ON snapshot_outreach(provider_message_id);
+    CREATE INDEX IF NOT EXISTS idx_snap_outreach_week
+      ON snapshot_outreach(week_start);
 
     CREATE TABLE IF NOT EXISTS extra_production_requests (
       id TEXT PRIMARY KEY,

@@ -92,6 +92,57 @@ so check it against the contract first.
 A scanned or photographed contract has no text layer to read. The app says so and
 offers a box to paste the scope of work into, which is parsed exactly the same way.
 
+## Client Services Hub (`/admin/client-services`)
+
+The console for the weekly client ask. Two tabs: a dashboard of every active
+client, and the account snapshots that used to live at `/admin/snapshot` (that
+path now redirects here).
+
+**The weekly ask.** Every Friday at 8am Pacific, each active client gets one ask
+from their account manager, by email and as a card on their Basecamp project.
+Both point at the client's existing snapshot share link, so this is a prompt
+rather than a second thing to fill in. The ask names only what is actually
+outstanding: a client who already gave us the revenue is asked about leads
+alone, and a client who owes nothing is not contacted at all.
+
+**Who it comes from.** `rev_clients.account_manager` is free text, resolved to a
+team member with the same matcher the rest of the app uses. The manager's name
+goes in From and their address in Reply-To, because Resend will only send from
+the verified domain: the inbox shows the manager, and hitting reply reaches
+them. A manager with no email on their account still sends, just without the
+Reply-To, and the dashboard flags it as "No reply-to".
+
+**The pipeline column** shows the furthest point a client reached this week:
+Not sent → Sent → Delivered → Opened → Submitted, with Bounced and Paused off to
+the side. Submitted outranks Opened deliberately, because a client who answered
+without the tracking pixel ever firing has plainly engaged.
+
+**Submitted is derived, not tracked.** It reads off the answers themselves: this
+month's revenue report exists and no lead is left unanswered. That keeps it true
+when a client phones the numbers in and somebody keys them by hand.
+
+**Opens are approximate and the page says so.** Apple Mail Privacy Protection
+pre-fetches images, which registers an open nobody made, and an image-blocking
+client can read the whole thing and register none. Delivered and Bounced come
+from the same webhook and are reliable.
+
+**Setup.** Open tracking has to be switched on for the sending domain in Resend,
+and a webhook endpoint pointed at `/api/webhooks/resend` subscribed to
+`email.delivered`, `email.opened`, `email.bounced` and `email.complained`. Put
+its signing secret in `RESEND_WEBHOOK_SECRET`. Without that secret the route
+rejects everything, so that nobody can forge an open.
+
+**Re-running is safe.** The sweep skips anyone paused, anyone with nothing
+outstanding, and anyone already asked this week, so a repeat run on the same
+Friday sends nothing twice. Targeting one client by hand (`?only=`, or **Send
+now** on the row) lifts those gates, which is what makes a test send work.
+
+Dry run without sending anything:
+
+```bash
+npm run cron:weekly-snapshot -- --dry-run
+```
+
 ## Reading the weekly snapshot
 
 **Who logged what.** Each deliverable card names the person who last wrote it and
