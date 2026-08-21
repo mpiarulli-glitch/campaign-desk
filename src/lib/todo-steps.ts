@@ -1,6 +1,16 @@
 // Basecamp to-do subtasks are Kanban::Step recordings parented to a Todo.
 // The forecast picker lists them under their parent so you can book a subtask
 // without taking the whole to-do.
+//
+// Two things about steps drive the shape of everything here:
+//
+//   1. A step never carries assignees. Basecamp has no UI for assigning one, and
+//      the API returns `assignees: []` on every step in the account. So "is this
+//      mine?" has to come from the parent to-do, or subtasks would never appear
+//      under "Assigned to you" — which is the only list most people pick from.
+//   2. A step is not timesheetable. POST /recordings/{stepId}/timesheet/entries
+//      404s. Hours for a subtask therefore belong on the parent to-do, which is
+//      why a picked step carries its parent's id alongside its own.
 
 export type TodoStepKind = "todo" | "step";
 
@@ -63,7 +73,10 @@ export function attachTodoSteps(
         title: step.title,
         list: todo.list,
         assigneeIds: step.assigneeIds,
-        dueOn: step.dueOn,
+        // A step has no due date of its own in practice, so it falls due when
+        // its parent does. The parent title is shown right beside it, so this
+        // reads as inherited rather than as a date somebody set on the subtask.
+        dueOn: step.dueOn || todo.dueOn,
         kind: "step",
         parentId: todo.id,
         parentTitle: todo.title,
@@ -83,4 +96,35 @@ export function attachTodoSteps(
     });
   }
   return out;
+}
+
+/**
+ * Mark which picker items belong to the person browsing, and count them.
+ *
+ * `isAssigned` answers that for a real to-do. Subtasks are handled here instead:
+ * a step with no assignees of its own inherits its parent to-do's answer, so the
+ * subtasks of your work show up as yours. A step that somehow does carry
+ * assignees is judged on its own like any to-do.
+ */
+export function flagAssignedWithSteps(
+  items: TodoPickerItem[],
+  isAssigned: (item: TodoPickerItem) => boolean
+): { todos: TodoPickerItem[]; assignedCount: number } {
+  const direct = items.map((item) => ({ item, own: isAssigned(item) }));
+  const parentAssigned = new Map<string, boolean>();
+  for (const { item, own } of direct) {
+    if (item.kind !== "step") parentAssigned.set(item.id, own);
+  }
+
+  let assignedCount = 0;
+  const todos = direct.map(({ item, own }) => {
+    const inherited =
+      item.kind === "step" && item.assigneeIds.length === 0
+        ? Boolean(parentAssigned.get(item.parentId || ""))
+        : false;
+    const assigned = own || inherited;
+    if (assigned) assignedCount++;
+    return { ...item, assigned };
+  });
+  return { todos, assignedCount };
 }

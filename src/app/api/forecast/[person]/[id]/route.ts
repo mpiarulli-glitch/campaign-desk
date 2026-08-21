@@ -7,9 +7,19 @@ import {
   createTimeEntry,
   ensureForecastTodo,
   hasConnection,
+  setForecastStepCompletion,
   uncompleteTodo,
 } from "@/lib/basecamp";
-import { deleteTask, getTask, updateTask, personLabel, type ForecastPriority } from "@/lib/forecast";
+import {
+  deleteTask,
+  getTask,
+  personLabel,
+  recordTimeEntry,
+  startTimer,
+  stopTimer,
+  updateTask,
+  type ForecastPriority,
+} from "@/lib/forecast";
 import { parseTimeInput } from "@/lib/forecast-time";
 
 type Params = { params: Promise<{ person: string; id: string }> };
@@ -24,13 +34,18 @@ const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
  *
  * A task typed by hand instead of picked from the todo list has no recording
  * of its own yet — it only carries the project it belongs to. In that case a
- * shadow todo is created (and immediately completed) in that project's
- * "Forecast" list so there's something real to attach the hours to, same as
- * picking an existing todo would have given us.
+ * shadow todo is created in that project's "Forecast" list so there's something
+ * real to attach the hours to, same as picking an existing todo would have given
+ * us. It is only ticked off if the forecast row itself is done.
  *
- * Separate from the PATCH body's other fields because it writes to Basecamp and
- * must not happen implicitly: hours land on a client-visible timesheet, and a
- * duplicate entry can't be un-sent. Refuses if time was already logged.
+ * A subtask row logs against its parent to-do: a Kanban::Step takes no timesheet
+ * entries of its own, so basecamp_todo_id already holds the parent and this needs
+ * no special case.
+ *
+ * Time can be logged before the work is finished, and more than once — an hour
+ * this morning and two this afternoon are two entries that add up on the row.
+ * Each call still has to be asked for explicitly, because hours land on a
+ * client-visible timesheet and can't be un-sent.
  */
 async function logTime(
   taskId: string,
@@ -39,12 +54,6 @@ async function logTime(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   let task = getTask(taskId);
   if (!task) return { status: 404, body: { error: "Not found" } };
-  if (task.basecamp_time_entry_id) {
-    return {
-      status: 409,
-      body: { error: "Time is already logged for that task.", entryId: task.basecamp_time_entry_id },
-    };
-  }
   if (!(hours > 0)) {
     return { status: 400, body: { error: "hours must be a positive number" } };
   }
@@ -83,9 +92,12 @@ async function logTime(
     // fail — so a retry reuses this todo instead of creating a duplicate.
     task = updateTask(taskId, { basecampTodoId: created.id }) || task;
     recordingId = created.id;
-    // Best-effort: the task is already done locally, so the shadow todo
-    // should read done too. Not fatal if Basecamp doesn't cooperate.
-    await completeTodo(task.basecamp_project_id, created.id, asPerson(person));
+    // Best-effort mirror of the local state. Only closed when the row is
+    // actually done — logging time partway through leaves the shadow todo open
+    // so Basecamp doesn't show finished work that isn't.
+    if (task.completed) {
+      await completeTodo(task.basecamp_project_id, created.id, asPerson(person));
+    }
   }
   if (!recordingId) {
     return {
@@ -109,11 +121,8 @@ async function logTime(
     return { status: 502, body: { error: result.error || "Could not log time to Basecamp." } };
   }
   // Recorded only after Basecamp accepts, so a failed write leaves the task
-  // loggable rather than looking done.
-  const updated = updateTask(taskId, {
-    actualHours: hours,
-    basecampTimeEntryId: result.entryId || "",
-  });
+  // loggable rather than looking done. Adds to whatever was logged before.
+  const updated = recordTimeEntry(taskId, hours, result.entryId || "");
   return { status: 200, body: { task: updated, entryId: result.entryId, appUrl: result.appUrl } };
 }
 
@@ -132,6 +141,25 @@ export async function PATCH(request: Request, { params }: Params) {
   if (body.logTimeHours !== undefined) {
     const { status, body: out } = await logTime(id, person, Number(body.logTimeHours));
     return NextResponse.json(out, { status });
+  }
+
+  // { timer: "start" | "stop" } is its own action too. Purely local: the timer
+  // measures time, and sending those hours to Basecamp stays a separate,
+  // deliberate step via logTimeHours.
+  if (body.timer === "start" || body.timer === "stop") {
+    if (body.timer === "stop") {
+      return NextResponse.json({ task: stopTimer(id) });
+    }
+    const { task: started, stopped } = startTimer(person, id);
+    if (!started) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    // Names whatever timer had to give way, so the page can say so rather than
+    // leaving someone to notice their last task quietly stopped.
+    return NextResponse.json({
+      task: started,
+      stopped: stopped ? { id: stopped.id, notes: stopped.notes, client: stopped.client } : null,
+    });
   }
 
   if (body.taskDate !== undefined && !DATE_RE.test(body.taskDate)) {
@@ -169,7 +197,8 @@ export async function PATCH(request: Request, { params }: Params) {
   const flipped =
     typeof body.completed === "boolean" &&
     Boolean(existing.completed) !== body.completed;
-  if (flipped && existing.basecamp_todo_id && existing.basecamp_project_id) {
+  const linkedRecording = existing.basecamp_step_id || existing.basecamp_todo_id;
+  if (flipped && linkedRecording && existing.basecamp_project_id) {
     if (!basecampConnected()) {
       basecamp = { synced: false, error: "Basecamp isn't connected" };
     } else if (!hasConnection(person)) {
@@ -181,17 +210,26 @@ export async function PATCH(request: Request, { params }: Params) {
         needsBasecamp: true,
       };
     } else {
-      const result = body.completed
-        ? await completeTodo(
+      // A subtask row ticks the subtask. Closing its parent to-do instead would
+      // close every sibling subtask along with it.
+      const result = existing.basecamp_step_id
+        ? await setForecastStepCompletion(
             existing.basecamp_project_id,
-            existing.basecamp_todo_id,
+            existing.basecamp_step_id,
+            body.completed,
             asPerson(person)
           )
-        : await uncompleteTodo(
-            existing.basecamp_project_id,
-            existing.basecamp_todo_id,
-            asPerson(person)
-          );
+        : body.completed
+          ? await completeTodo(
+              existing.basecamp_project_id,
+              existing.basecamp_todo_id,
+              asPerson(person)
+            )
+          : await uncompleteTodo(
+              existing.basecamp_project_id,
+              existing.basecamp_todo_id,
+              asPerson(person)
+            );
       basecamp = { synced: result.ok, error: result.error };
     }
   }

@@ -4,6 +4,10 @@
 export const CAL_START_HOUR = 7;
 export const CAL_END_HOUR = 19;
 export const CAL_PX_PER_HOUR = 64;
+// Everything the calendar places lands on a quarter hour. Fine enough that a
+// 45-minute block can start at 9:15, coarse enough that a dropped block never
+// ends up at 10:07 because of where a cursor happened to be.
+export const CAL_SNAP_MINUTES = 15;
 
 export function padTime(hour: number, minute: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
@@ -122,4 +126,52 @@ export function staggerStartTimes(start: string, hourSlices: number[]): string[]
     cursor = addHoursToTime(cursor, hours) || cursor;
   }
   return out;
+}
+
+/* ------------------------------------------------- calendar grid geometry */
+
+export function minutesToTime(minutes: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, Math.round(minutes)));
+  return padTime(Math.floor(clamped / 60), clamped % 60);
+}
+
+export function snapMinutes(minutes: number, snap = CAL_SNAP_MINUTES): number {
+  return Math.round(minutes / snap) * snap;
+}
+
+/**
+ * Where a pointer at `y` pixels down the day column lands, as "HH:MM".
+ *
+ * `grabOffsetMin` is how far into a dragged block the pointer had hold of it, so
+ * grabbing a block by its middle and dropping puts its START where the middle
+ * was picked up from, not where the cursor ended. Without that, every drag
+ * quietly pushed a block later by however far down it was grabbed.
+ *
+ * `durationMin` keeps a block from being dropped so late that it runs off the
+ * bottom of the grid, where it would be laid out but not visible.
+ */
+export function timeAtOffset(
+  y: number,
+  opts?: { grabOffsetMin?: number; durationMin?: number }
+): string {
+  const dayStart = CAL_START_HOUR * 60;
+  const dayEnd = CAL_END_HOUR * 60;
+  const duration = Math.max(0, Math.min(dayEnd - dayStart, opts?.durationMin || 0));
+  const raw = dayStart + (y / CAL_PX_PER_HOUR) * 60 - (opts?.grabOffsetMin || 0);
+  const snapped = snapMinutes(raw);
+  return minutesToTime(Math.max(dayStart, Math.min(dayEnd - duration, snapped)));
+}
+
+// Hours a block covers if its bottom edge is dragged to `y`. Never returns less
+// than one snap step, so a block can't be resized out of existence.
+export function hoursFromResize(y: number, startTime: string): number {
+  const start = minutesFromMidnight(startTime);
+  if (start == null) return 0;
+  const dayEnd = CAL_END_HOUR * 60;
+  const end = CAL_START_HOUR * 60 + (y / CAL_PX_PER_HOUR) * 60;
+  const minutes = Math.max(
+    CAL_SNAP_MINUTES,
+    Math.min(dayEnd - start, snapMinutes(end - start))
+  );
+  return Math.round((minutes / 60) * 100) / 100;
 }

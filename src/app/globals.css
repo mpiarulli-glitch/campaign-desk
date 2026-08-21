@@ -5394,10 +5394,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 
 .fc-cal { margin-top: 8px; overflow-x: auto; }
-.fc-cal-grid,
-.fc-cal-unscheduled-days {
-  min-width: 720px;
-}
+/* Five readable day columns need room. Narrower than this the grid scrolls
+   sideways inside .fc-cal rather than squeezing every block to a sliver. */
+.fc-cal-grid { min-width: 640px; }
 .fc-cal-grid {
   display: grid;
   border: 1px solid var(--ops-border);
@@ -5418,6 +5417,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   min-width: 0;
 }
 .fc-cal-day-head.is-today { background: var(--accent-wash); }
+.fc-cal-day-head.is-over .ops-day-hours { color: var(--danger); }
+.fc-cal-day-head .ops-day-hours em {
+  font-style: normal;
+  color: var(--text-muted);
+  font-weight: 400;
+}
 .fc-cal-gutter {
   background: var(--bg-elevated);
   position: relative;
@@ -5438,6 +5443,28 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .fc-cal-day.is-today { background: color-mix(in srgb, var(--accent-wash) 55%, var(--bg)); }
 .fc-cal-day.is-drop-target { background: var(--accent-wash); }
+/* While something is in flight the hour buttons must not eat the drop, and the
+   grid lines want to read as a target rather than as clickable slots. */
+.fc-cal-day.is-dragging-over-cal .fc-cal-slot { pointer-events: none; }
+.fc-cal-now {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--danger);
+  pointer-events: none;
+}
+.fc-cal-now::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
 .fc-cal-slot {
   position: absolute;
   z-index: 0;
@@ -5474,6 +5501,57 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-cal-block.pri-flexible { border-left: 3px solid var(--text-muted); }
 .fc-cal-block.is-done { opacity: 0.7; }
 .fc-cal-block.is-dragging { opacity: 0.4; }
+.fc-cal-block.is-resizing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: ns-resize;
+}
+.fc-cal-block.is-meeting { border-style: dashed; }
+/* A block being timed is growing under you, so it says so rather than looking
+   like somebody quietly resized it. */
+.fc-cal-block.is-timing {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
+}
+/* Anything under about three quarters of an hour has no room for a second line,
+   so it keeps the time and title only. */
+.fc-cal-block.is-compact {
+  padding: 2px 6px 3px;
+  gap: 0;
+}
+.fc-cal-block.is-compact .fc-cal-block-body { flex-direction: row; gap: 4px; }
+.fc-cal-block.is-compact .fc-cal-block-notes { display: none; }
+.fc-cal-block.is-compact strong { max-height: 1.3em; }
+.fc-cal-block-logged {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--success);
+}
+/* Grab strip along the bottom edge for changing a block's length. Kept thin and
+   invisible until hover so it never competes with dragging the block itself. */
+.fc-cal-block-grip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 7px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.fc-cal-block-grip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: var(--border-strong);
+  opacity: 0;
+}
+.fc-cal-block:hover .fc-cal-block-grip::after { opacity: 1; }
 .fc-cal-block-top {
   display: flex;
   align-items: center;
@@ -5527,7 +5605,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-cal-block .remove {
   flex: none;
   margin-left: auto;
-  font-size: 10px;
+  font-size: 13px;
+  line-height: 1;
   padding: 0;
   background: none;
   border: none;
@@ -5538,63 +5617,306 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-cal-block:hover .remove,
 .fc-cal-block:focus-within .remove { opacity: 1; }
 .fc-cal-block .remove:hover { color: var(--danger); }
-.fc-cal-unscheduled { margin-top: 16px; }
-.fc-cal-unscheduled-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0 0 8px;
-}
-.fc-cal-unscheduled-days {
+/* ------------------------------------------------- forecast planner layout */
+/* Calendar plus the queue of work waiting for a slot. The queue is a real
+   column rather than a tray under the grid: what to do next is a list, and a
+   list read top to bottom beats cards spread across five day-shaped buckets. */
+.fc-planner {
   display: grid;
-  gap: 8px;
+  grid-template-columns: 288px minmax(0, 1fr);
+  gap: 14px;
   align-items: start;
 }
-.fc-cal-unscheduled-col {
-  min-height: 48px;
+.fc-planner-main { min-width: 0; }
+@media (max-width: 980px) {
+  .fc-planner { grid-template-columns: minmax(0, 1fr); }
+  .fc-queue { position: static; max-height: none; }
+}
+
+.fc-queue {
+  position: sticky;
+  top: 12px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-height: calc(100vh - 40px);
+  border: 1px solid var(--ops-border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.fc-queue.is-dragging { border-color: var(--accent); }
+.fc-queue-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--ops-border);
+  flex: none;
+}
+.fc-queue-tab {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px dashed var(--border);
-  min-width: 0;
+  padding: 7px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.fc-cal-unscheduled .ops-task-chip {
+.fc-queue-tab.is-on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.fc-queue-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-size: 10px;
+  line-height: 16px;
+}
+.fc-queue-body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  gap: 7px;
+  padding: 10px;
+  overflow-y: auto;
+  min-height: 0;
 }
-.fc-cal-unscheduled .ops-task-chip .chip-top {
-  flex-shrink: 0;
-  min-width: 0;
-}
-.fc-cal-unscheduled .ops-task-chip .client {
-  display: block;
-  min-width: 0;
-  max-height: 2.6em;
-  line-height: 1.3;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-.fc-cal-unscheduled .ops-task-chip .fc-cal-chip-copy {
-  min-width: 0;
-}
-.fc-cal-unscheduled .ops-task-chip .notes {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+.fc-queue-hint,
+.fc-queue-empty {
   margin: 0;
-  padding: 0;
-  line-height: 1.35;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
-.fc-cal-unscheduled-col.is-drop-target {
-  border-color: var(--accent);
-  background: var(--accent-wash);
+.fc-queue-select,
+.fc-queue-controls input {
+  width: 100%;
+  min-width: 0;
+}
+.fc-queue-controls {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+.fc-queue-controls > input { flex: 1 1 auto; }
+.fc-queue-hours {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fc-queue-hours span {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.fc-queue-hours input { width: 62px; }
+.fc-queue-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-body);
+}
+.fc-queue-check input { flex: none; }
+
+.fc-queue-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-muted);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 7px 8px;
+  cursor: grab;
+  min-width: 0;
+}
+.fc-queue-card:hover { border-color: var(--border-strong); }
+.fc-queue-card.pri-urgent { border-left-color: var(--danger); }
+.fc-queue-card.pri-important { border-left-color: var(--warning); }
+.fc-queue-card.pri-flexible { border-left-color: var(--text-muted); }
+.fc-queue-card.is-todo { border-left-color: var(--accent); }
+.fc-queue-card.is-step { margin-left: 12px; }
+.fc-queue-card.is-done { opacity: 0.55; }
+.fc-queue-card.is-dragging { opacity: 0.4; }
+.fc-queue-card.is-timing { border-color: var(--danger); border-left-color: var(--danger); }
+.fc-queue-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.fc-queue-card-top input { flex: none; margin-top: 2px; }
+.fc-queue-card-top strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.fc-queue-card.is-done .fc-queue-card-top strong { text-decoration: line-through; }
+.fc-queue-hrs {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.fc-queue-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.fc-queue-card-meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.fc-queue-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-soft);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.fc-queue-late { color: var(--danger); font-weight: 600; }
+.fc-queue-remove,
+.fc-queue-add {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.fc-queue-remove { font-size: 14px; line-height: 1; }
+.fc-queue-remove:hover { color: var(--danger); }
+.fc-queue-add {
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+.fc-queue-add:hover { text-decoration: underline; }
+.fc-queue-add:disabled { opacity: 0.5; cursor: default; }
+
+/* ------------------------------------------------------- start/stop timer */
+/* Deliberately quiet until it's running, then it's the loudest thing on the
+   row: a timer nobody notices is still going is a timer that lies. */
+.fc-timer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-body);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fc-timer-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.fc-timer-btn:disabled { opacity: 0.5; cursor: default; }
+.fc-timer-btn.is-compact { padding: 1px 6px; font-size: 10px; gap: 4px; }
+.fc-timer-icon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: none;
+}
+.fc-timer-btn:hover .fc-timer-icon { background: var(--success); }
+.fc-timer-btn.is-running {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-elevated));
+}
+.fc-timer-btn.is-running .fc-timer-icon {
+  border-radius: 1px;
+  background: var(--danger);
+}
+
+/* Banner pinned above the week while something is being timed. */
+.fc-running {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-elevated));
+}
+.fc-running-pulse {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: fc-pulse 1.6s ease-in-out infinite;
+}
+@keyframes fc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-running-pulse { animation: none; }
+}
+.fc-running-what {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fc-running-what strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-running-what span { font-size: 11px; color: var(--text-muted); }
+.fc-running-clock {
+  flex: none;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------ log time row */
+.fc-log-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 26px;
+  margin-top: 4px;
+}
+.fc-log-total {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success);
 }
 
 .ops-time {

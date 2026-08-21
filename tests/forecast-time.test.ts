@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CAL_END_HOUR,
+  CAL_PX_PER_HOUR,
+  CAL_START_HOUR,
   addHoursToTime,
   formatTimeLabel,
+  hoursFromResize,
   layoutTimedBlocks,
   minutesFromMidnight,
   parseTimeInput,
+  timeAtOffset,
   staggerStartTimes,
 } from "../src/lib/forecast-time";
 
@@ -50,4 +55,46 @@ test("layoutTimedBlocks stacks overlaps into columns", () => {
   assert.equal(b.cols, 2);
   assert.equal(c.col, 0);
   assert.equal(c.cols, 1);
+});
+
+/* ----------------------------------------------------- calendar drop targets */
+
+// Pixels down the day column for a given clock time, so the cases below read as
+// times rather than as arithmetic.
+function yFor(hour: number, minute = 0): number {
+  return ((hour * 60 + minute - CAL_START_HOUR * 60) / 60) * CAL_PX_PER_HOUR;
+}
+
+test("a drop lands on the nearest quarter hour", () => {
+  assert.equal(timeAtOffset(yFor(9, 0)), "09:00");
+  assert.equal(timeAtOffset(yFor(9, 7)), "09:00");
+  assert.equal(timeAtOffset(yFor(9, 8)), "09:15");
+  assert.equal(timeAtOffset(yFor(9, 22)), "09:15");
+  assert.equal(timeAtOffset(yFor(9, 23)), "09:30");
+});
+
+test("a block dropped where it was grabbed keeps its start", () => {
+  // Picked up 30 minutes into a block and dropped with the cursor at 11:30: the
+  // block starts at 11:00, where its top edge actually is.
+  assert.equal(timeAtOffset(yFor(11, 30), { grabOffsetMin: 30, durationMin: 60 }), "11:00");
+});
+
+test("a block can't be dropped off the bottom of the grid", () => {
+  // A two-hour block dropped at the last hour is pulled back so it still ends
+  // inside the hours the calendar draws.
+  assert.equal(
+    timeAtOffset(yFor(CAL_END_HOUR - 1), { durationMin: 120 }),
+    `${CAL_END_HOUR - 2}:00`
+  );
+  assert.equal(timeAtOffset(yFor(CAL_START_HOUR - 2)), `0${CAL_START_HOUR}:00`);
+});
+
+test("resizing snaps to quarter hours and never reaches zero", () => {
+  assert.equal(hoursFromResize(yFor(10, 30), "09:00"), 1.5);
+  assert.equal(hoursFromResize(yFor(9, 5), "09:00"), 0.25);
+  // Dragged above the block's own start, which would otherwise be a negative
+  // length.
+  assert.equal(hoursFromResize(yFor(8, 0), "09:00"), 0.25);
+  // Dragged past the end of the day.
+  assert.equal(hoursFromResize(yFor(CAL_END_HOUR + 3), "18:00"), 1);
 });

@@ -17,7 +17,11 @@ import {
   type BcIdentity,
 } from "./basecamp-identity";
 import { whoAmI } from "./basecamp-oauth";
-import { attachTodoSteps, type OpenTodoStep } from "./todo-steps";
+import {
+  attachTodoSteps,
+  flagAssignedWithSteps,
+  type OpenTodoStep,
+} from "./todo-steps";
 
 // Re-exported so callers get the identity vocabulary from the same module they
 // already import the API functions from.
@@ -720,13 +724,9 @@ export async function listPersonProjectTodos(
   if (opts?.bcPersonId) {
     const todos = await listProjectTodos(projectId, identity);
     if (!todos.length) return { todos, assignedCount: 0 };
-    let assignedCount = 0;
-    const flagged = todos.map((t) => {
-      const assigned = t.assigneeIds.includes(opts.bcPersonId!);
-      if (assigned) assignedCount++;
-      return { ...t, assigned };
-    });
-    return { todos: flagged, assignedCount };
+    // Subtasks never carry assignees, so flagAssignedWithSteps hands them their
+    // parent to-do's answer rather than leaving every subtask unassigned.
+    return flagAssignedWithSteps(todos, (t) => t.assigneeIds.includes(opts.bcPersonId!));
   }
 
   // Neither call depends on the other's result, so run them together instead
@@ -737,13 +737,10 @@ export async function listPersonProjectTodos(
   ]);
   if (!todos.length) return { todos, assignedCount: 0 };
   const ids = matchPeople(people, identifiers);
-  let assignedCount = 0;
-  const flagged = todos.map((t) => {
-    const assigned = ids.length > 0 && t.assigneeIds.some((id) => ids.includes(id));
-    if (assigned) assignedCount++;
-    return { ...t, assigned };
-  });
-  return { todos: flagged, assignedCount };
+  return flagAssignedWithSteps(
+    todos,
+    (t) => ids.length > 0 && t.assigneeIds.some((id) => ids.includes(id))
+  );
 }
 
 interface StepRecordingRaw {
@@ -931,22 +928,71 @@ export async function uncompleteTodo(
   }
 }
 
-async function completeTodoStep(
+/**
+ * Tick a subtask (Kanban::Step) on or off.
+ *
+ * The recording's own `completion_url` is /buckets/{project}/steps/{id}/
+ * completions.json — note the missing `card_tables` segment that the rest of the
+ * step API uses. Card-table steps answer on the `card_tables` path, and in
+ * practice both routes accept a to-do subtask, so this tries the one Basecamp
+ * hands back first and falls back to the other.
+ *
+ * `ok` is a real 2xx and nothing else, so callers using this as a fallback for a
+ * to-do id can tell "that id was a step and it flipped" from "that id is not a
+ * step either". `status` carries the last response code for that decision.
+ */
+export async function completeTodoStep(
   projectId: string,
   stepId: string,
   completion: "on" | "off",
-  identity: BcIdentity
-): Promise<{ ok: boolean }> {
-  try {
-    const res = await bc(
-      `/buckets/${projectId}/card_tables/steps/${stepId}/completions.json`,
-      { method: "PUT", body: JSON.stringify({ completion }) },
-      identity
-    );
-    return { ok: res.ok || res.status === 404 };
-  } catch {
-    return { ok: false };
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (!projectId || !stepId) {
+    return { ok: false, status: 0, error: "missing project or step id" };
   }
+  const paths = [
+    `/buckets/${projectId}/steps/${stepId}/completions.json`,
+    `/buckets/${projectId}/card_tables/steps/${stepId}/completions.json`,
+  ];
+  let lastStatus = 0;
+  for (const path of paths) {
+    try {
+      const res = await bc(
+        path,
+        { method: "PUT", body: JSON.stringify({ completion }) },
+        identity
+      );
+      if (res.ok) return { ok: true, status: res.status };
+      lastStatus = res.status;
+    } catch (err) {
+      return { ok: false, status: 0, error: (err as Error).message };
+    }
+  }
+  return { ok: false, status: lastStatus, error: `step completion ${lastStatus}` };
+}
+
+/**
+ * Tick a subtask, treating "it isn't there any more" as done.
+ *
+ * A forecast row linked to a subtask outlives the subtask: someone can delete it
+ * in Basecamp, or tick it off there first. Both answer 404, and in both cases the
+ * local tick has nothing left to mirror, so reporting a failure would only ask
+ * the person to fix something that is already the way they wanted it.
+ */
+export async function setForecastStepCompletion(
+  projectId: string,
+  stepId: string,
+  completed: boolean,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: boolean; error?: string }> {
+  const result = await completeTodoStep(
+    projectId,
+    stepId,
+    completed ? "on" : "off",
+    identity
+  );
+  if (result.ok || result.status === 404) return { ok: true };
+  return { ok: false, error: result.error };
 }
 
 // Name of the todo list Forecast creates its own shadow todos in, for tasks

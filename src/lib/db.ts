@@ -354,6 +354,11 @@ export interface ForecastTask {
   // Kept as hidden linkage so completing the task can close the Basecamp todo —
   // the visible task text stays the plain copied title in `notes`.
   basecamp_todo_id: string;
+  // Set alongside basecamp_todo_id when the row came from a Basecamp subtask
+  // (a Kanban::Step under a to-do). The step is what gets ticked off, but a
+  // step is not timesheetable — a POST to its recording 404s — so
+  // basecamp_todo_id still holds the PARENT to-do and time lands there.
+  basecamp_step_id: string;
   basecamp_project_id: string;
   // Set instead of basecamp_todo_id when the row came from a Basecamp schedule
   // entry, i.e. a meeting. Meetings take up real hours but are not work items,
@@ -370,6 +375,15 @@ export interface ForecastTask {
   // Clock time on task_date, 24-hour "HH:MM". Required on new tasks. Empty
   // only remains on rows created before start time was required.
   start_time: string;
+  // Seconds banked by the start/stop timer, separate from actual_hours: this is
+  // measured time sitting on this machine, actual_hours is what has been sent to
+  // a Basecamp timesheet. Keeping them apart is what lets someone track work all
+  // week and still choose when the hours go to the client.
+  tracked_seconds: number;
+  // ISO timestamp the running timer started at, or empty when nothing is
+  // running. Stored rather than held in the page so a reload, a second tab, or a
+  // different machine all see the same timer still going.
+  timer_started_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -1515,11 +1529,14 @@ export function getDb(): Database.Database {
       hours REAL NOT NULL DEFAULT 0,
       completed INTEGER NOT NULL DEFAULT 0,
       basecamp_todo_id TEXT NOT NULL DEFAULT '',
+      basecamp_step_id TEXT NOT NULL DEFAULT '',
       basecamp_project_id TEXT NOT NULL DEFAULT '',
       basecamp_event_id TEXT NOT NULL DEFAULT '',
       actual_hours REAL NOT NULL DEFAULT 0,
       basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
       start_time TEXT NOT NULL DEFAULT '',
+      tracked_seconds INTEGER NOT NULL DEFAULT 0,
+      timer_started_at TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2604,6 +2621,21 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("start_time")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN start_time TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("basecamp_step_id")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN basecamp_step_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("tracked_seconds")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN tracked_seconds INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("timer_started_at")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN timer_started_at TEXT NOT NULL DEFAULT ''`
     );
   }
 

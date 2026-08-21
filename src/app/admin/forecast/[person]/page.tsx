@@ -4,8 +4,26 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
+import { ForecastQueue } from "@/components/ForecastQueue";
 import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
-import { formatTimeLabel, parseTimeInput, staggerStartTimes } from "@/lib/forecast-time";
+import {
+  queueTodoLinkage,
+  queueTodoNotes,
+  type ForecastDrag,
+  type QueueTodo,
+} from "@/lib/forecast-queue";
+import {
+  formatTimeLabel,
+  padTime,
+  parseTimeInput,
+  staggerStartTimes,
+} from "@/lib/forecast-time";
+import {
+  formatTracked,
+  isRunning,
+  trackedHours,
+  trackedSeconds,
+} from "@/lib/forecast-timer";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Priority = "urgent" | "important" | "flexible";
@@ -21,10 +39,13 @@ type Task = {
   priority: Priority;
   start_time: string;
   basecamp_todo_id: string;
+  basecamp_step_id: string;
   basecamp_project_id: string;
   basecamp_event_id: string;
   actual_hours: number;
   basecamp_time_entry_id: string;
+  tracked_seconds: number;
+  timer_started_at: string;
 };
 
 type Data = {
@@ -902,12 +923,28 @@ export default function PersonForecastPage() {
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
   const [logDrafts, setLogDrafts] = useState<Record<string, string>>({});
+  // Rows whose log box is open. Defaults to open until something has been logged,
+  // then collapses to a "Log more time" link so a finished row reads as finished.
+  const [logExpanded, setLogExpanded] = useState<Record<string, boolean>>({});
   const [logging, setLogging] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Ticks once a second, but only while something is being timed, so a page left
+  // open on a quiet week re-renders no more than it used to.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [timerBusy, setTimerBusy] = useState<string | null>(null);
   // Task currently being dragged, and the day it's hovering over. Both are
   // needed: the card dims itself, and only the hovered day highlights.
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
+  // What the calendar is currently receiving: an existing row being moved, or a
+  // Basecamp to-do being booked for the first time. Held here rather than on the
+  // drag event because dragover can't read dataTransfer, and the grid needs to
+  // know mid-drag how long the thing it's about to place is.
+  const [drag, setDrag] = useState<ForecastDrag | null>(null);
+  // Which client the queue sidebar is showing Basecamp to-dos for, and how many
+  // hours a dragged-in to-do should book.
+  const [queueClientId, setQueueClientId] = useState("");
+  const [queueHours, setQueueHours] = useState("1");
 
   function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
@@ -1154,8 +1191,22 @@ export default function PersonForecastPage() {
     if (mode === "meeting") ensureEvents(date);
   }
 
+  const running = useMemo(
+    () => (data?.tasks || []).find((t) => isRunning(t)) || null,
+    [data]
+  );
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
   const days = useMemo(() => weekdays(week), [week]);
   const today = todayYmd();
+  // Which day a queued item lands on when nobody picked an hour for it: today
+  // while you're looking at this week, otherwise the Monday of the week on
+  // screen, so a to-do queued for next week doesn't quietly land in this one.
+  const queueDay = days.includes(today) ? today : days[0];
   const progress = useMemo(() => {
     const all = data?.tasks || [];
     const done = all.filter((t) => t.completed).length;
@@ -1226,12 +1277,20 @@ export default function PersonForecastPage() {
     }
     const startTime = parseTimeInput(draft.startTime);
 
-    const rows: Array<{ notes: string; hours: number; todoId: string; eventId: string; startTime: string }> = [];
+    const rows: Array<{
+      notes: string;
+      hours: number;
+      todoId: string;
+      stepId: string;
+      eventId: string;
+      startTime: string;
+    }> = [];
     if (meeting || draft.manual || selected.length === 0) {
       rows.push({
         notes: draft.notes,
         hours,
         todoId: "",
+        stepId: "",
         eventId: meeting ? draft.eventId : "",
         startTime,
       });
@@ -1245,13 +1304,14 @@ export default function PersonForecastPage() {
       }
       const starts = staggerStartTimes(startTime, slices);
       for (let i = 0; i < selected.length; i++) {
+        // A subtask sends both ids: the step is what gets ticked off, its parent
+        // to-do is what hours can be logged against.
+        const link = queueTodoLinkage(selected[i]);
         rows.push({
-          notes:
-            selected[i].kind === "step" && selected[i].parentTitle
-              ? `${selected[i].parentTitle} › ${selected[i].title}`
-              : selected[i].title,
+          notes: queueTodoNotes(selected[i]),
           hours: slices[i],
-          todoId: selected[i].id,
+          todoId: link.basecampTodoId,
+          stepId: link.basecampStepId,
           eventId: "",
           startTime: starts[i],
         });
@@ -1272,6 +1332,7 @@ export default function PersonForecastPage() {
             notes: row.notes,
             hours: row.hours,
             basecampTodoId: row.todoId,
+            basecampStepId: row.stepId,
             basecampProjectId: projectId,
             basecampEventId: row.eventId,
             startTime: row.startTime,
@@ -1396,16 +1457,48 @@ export default function PersonForecastPage() {
     e.dataTransfer.setData("text/plain", task.id);
   }
 
+  // Dragging an existing row. grabOffsetMin is how far into the block the pointer
+  // took hold of it, so dropping puts the block's start where it was picked up
+  // from instead of shunting it later by however far down it was grabbed. It's 0
+  // for a queue card, which has no position on the grid to grab by.
+  function onTaskDragStart(
+    e: React.DragEvent,
+    task: { id: string; hours: number },
+    grabOffsetMin = 0
+  ) {
+    onDragStart(e, task);
+    setDrag({
+      kind: "task",
+      id: task.id,
+      grabOffsetMin,
+      durationMin: Math.round((task.hours || 0) * 60),
+    });
+  }
+
+  // Dragging a Basecamp to-do that isn't on the forecast yet. It becomes a row
+  // when it lands, taking the hours typed in the queue.
+  function onTodoDragStart(e: React.DragEvent, todo: QueueTodo) {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("text/plain", todo.id);
+    const hours = Number(queueHours);
+    setDrag({
+      kind: "todo",
+      todo,
+      durationMin: Math.round((Number.isFinite(hours) && hours > 0 ? hours : 1) * 60),
+    });
+  }
+
   function onDragEnd() {
     setDragId(null);
     setDropDay(null);
+    setDrag(null);
   }
 
   function onDayDragOver(e: React.DragEvent, date: string) {
-    if (!dragId) return;
+    if (!dragId && !drag) return;
     // Only preventDefault marks this as a valid drop target.
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    e.dataTransfer.dropEffect = drag?.kind === "todo" ? "copy" : "move";
     if (dropDay !== date) setDropDay(date);
   }
 
@@ -1442,11 +1535,82 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  // Turn a Basecamp to-do into a forecast row. `startTime` is empty when it was
+  // queued rather than dropped on an hour, which leaves it in the sidebar.
+  async function bookTodo(todo: QueueTodo, date: string, startTime: string) {
+    const raw = Number(queueHours);
+    const hours = Number.isFinite(raw) && raw > 0 ? raw : 1;
+    setSaving(true);
+    const res = await fetch(`/api/forecast/${person}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskDate: date,
+        client: todo.clientName,
+        notes: queueTodoNotes(todo),
+        hours,
+        ...queueTodoLinkage(todo),
+        basecampProjectId: todo.projectId,
+        startTime,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError("Could not add that Basecamp to-do.");
+      return;
+    }
+    setError("");
+    load(week, { silent: true });
+  }
+
+  // One drop handler for the whole grid: move the row that was dragged, or book
+  // the Basecamp to-do that was, depending on what's in flight.
+  async function placeDrag(date: string, startTime: string) {
+    const held = drag;
+    setDrag(null);
+    setDragId(null);
+    setDropDay(null);
+    if (!held) return;
+    if (held.kind === "task") {
+      await moveTask(held.id, date, startTime);
+      return;
+    }
+    await bookTodo(held.todo, date, startTime);
+  }
+
+  // Dragging a block's bottom edge changes how long it runs for.
+  async function resizeTask(task: { id: string; hours: number }, hours: number) {
+    if (hours === task.hours) return;
+    setData((d) =>
+      d ? { ...d, tasks: d.tasks.map((t) => (t.id === task.id ? { ...t, hours } : t)) } : d
+    );
+    const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hours }),
+    });
+    if (!res.ok) setError("Could not change that task's length.");
+    load(week, { silent: true });
+  }
+
+  function pickQueueClient(clientId: string) {
+    setQueueClientId(clientId);
+    if (clientId) ensureTodos(clientId);
+  }
+
   async function onDayDrop(e: React.DragEvent, date: string) {
     e.preventDefault();
+    const held = drag;
     const id = dragId || e.dataTransfer.getData("text/plain");
     setDragId(null);
     setDropDay(null);
+    setDrag(null);
+    // A day column has no hour under the cursor, so a to-do dropped here is
+    // booked to that day and stays in the queue until it's given a time.
+    if (held?.kind === "todo") {
+      await bookTodo(held.todo, date, "");
+      return;
+    }
     if (!id) return;
     await moveTask(id, date);
   }
@@ -1472,11 +1636,27 @@ export default function PersonForecastPage() {
     };
   }
 
+  /**
+   * What the log box starts out reading.
+   *
+   * Measured time wins when the timer has run — that is the whole point of having
+   * timed it, and it's already net of whatever was sent before. Otherwise it's
+   * the forecast estimate first time round, and blank once hours are on the row,
+   * so a second log is always a number somebody typed on purpose.
+   */
+  function logDefault(task: Task): string {
+    const outstanding =
+      Math.round((trackedHours(task, nowMs) - task.actual_hours) * 100) / 100;
+    if (outstanding > 0) return String(outstanding);
+    if (task.basecamp_time_entry_id) return "";
+    return String(task.hours);
+  }
+
   async function logTime(task: Task) {
-    const raw = logDrafts[task.id] ?? String(task.hours);
+    const raw = logDrafts[task.id] ?? logDefault(task);
     const hours = Number(raw);
     if (!Number.isFinite(hours) || hours <= 0) {
-      setError("Enter the hours actually spent before logging to Basecamp.");
+      setError("Enter how many hours to log to Basecamp.");
       return;
     }
     setLogging(task.id);
@@ -1497,43 +1677,141 @@ export default function PersonForecastPage() {
       delete next[task.id];
       return next;
     });
+    setLogExpanded((d) => ({ ...d, [task.id]: false }));
     load(week, { silent: true });
   }
 
-  // Only for completed rows linked to something in Basecamp, whether that's a
-  // todo, a meeting, or (for a task typed by hand) just the project it
-  // belongs to — logTime() creates a shadow todo in that project the first
-  // time someone logs against a row like that. There's nowhere to log
-  // against otherwise, and logging before the work is done is a guess.
+  /**
+   * Start or stop timing a task.
+   *
+   * One timer runs at a time, so starting a second task banks the first one's
+   * time and says which task stopped. A task with no slot on the calendar is
+   * placed at the current hour when its timer starts, so the block that grows as
+   * you work is somewhere you can see it.
+   */
+  async function toggleTimer(task: Task) {
+    const stopping = isRunning(task);
+    setTimerBusy(task.id);
+
+    if (!stopping && !task.start_time && task.task_date === today) {
+      const now = new Date();
+      await fetch(`/api/forecast/${person}/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startTime: padTime(now.getHours(), Math.floor(now.getMinutes() / 15) * 15),
+        }),
+      });
+    }
+
+    const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timer: stopping ? "stop" : "start" }),
+    });
+    setTimerBusy(null);
+    if (!res.ok) {
+      setError(stopping ? "Could not stop that timer." : "Could not start that timer.");
+      return;
+    }
+    const json = await res.json().catch(() => null);
+    if (json?.stopped) {
+      const what = json.stopped.notes || json.stopped.client || "the last task";
+      setError(`Timer moved. ${what} stopped and kept its time.`);
+    } else {
+      setError("");
+    }
+    setNowMs(Date.now());
+    load(week, { silent: true });
+  }
+
+  function TimerButton({ task, compact }: { task: Task; compact?: boolean }) {
+    const live = isRunning(task);
+    const seconds = trackedSeconds(task, nowMs);
+    return (
+      <button
+        type="button"
+        className={`fc-timer-btn ${live ? "is-running" : ""} ${compact ? "is-compact" : ""}`}
+        disabled={timerBusy === task.id}
+        onClick={(e) => {
+          e.stopPropagation();
+          void toggleTimer(task);
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        title={
+          live
+            ? "Stop the timer and keep the time"
+            : seconds
+              ? `${formatTracked(seconds, false)} tracked so far. Start again to add to it.`
+              : "Start timing this task"
+        }
+      >
+        <span className="fc-timer-icon" aria-hidden="true" />
+        {live
+          ? formatTracked(seconds, true)
+          : seconds
+            ? formatTracked(seconds, false)
+            : compact
+              ? "Start"
+              : "Start task"}
+      </button>
+    );
+  }
+
+  // Shown for any row linked to something in Basecamp, whether that's a todo, a
+  // subtask, a meeting, or (for a task typed by hand) just the project it
+  // belongs to — logTime() creates a shadow todo in that project the first time
+  // someone logs against a row like that. Only a row linked to nothing at all
+  // has nowhere for hours to land.
+  //
+  // Deliberately not gated on the task being finished. Work spans days, and time
+  // has to go in while it's still fresh, so each log adds to the row's total
+  // rather than replacing it and nothing here waits for a tick.
   function LogTimeRow({ task }: { task: Task }) {
     const linked = task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id;
-    if (!linked || !task.completed) return null;
-    if (task.basecamp_time_entry_id) {
-      return (
-        <div className="muted" style={{ fontSize: 12, paddingLeft: 26, marginTop: 2 }}>
-          {task.actual_hours}h logged to Basecamp
-        </div>
-      );
-    }
+    if (!linked) return null;
+    const logged = Boolean(task.basecamp_time_entry_id);
+    const [expanded, setExpanded] = [
+      logExpanded[task.id] ?? !logged,
+      (on: boolean) => setLogExpanded((d) => ({ ...d, [task.id]: on })),
+    ];
     return (
-      <div className="row" style={{ gap: 6, paddingLeft: 26, marginTop: 4, flexWrap: "wrap" }}>
-        <span className="muted" style={{ fontSize: 12 }}>Actual hours</span>
-        <input
-          value={logDrafts[task.id] ?? String(task.hours)}
-          onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
-          type="number"
-          min="0"
-          step="0.25"
-          aria-label="Actual hours spent"
-          style={{ width: 70 }}
-        />
-        <button
-          className="btn btn-sm"
-          disabled={logging === task.id}
-          onClick={() => logTime(task)}
-        >
-          {logging === task.id ? "Logging..." : "Log to Basecamp"}
-        </button>
+      <div className="fc-log-row">
+        {logged ? (
+          <span className="fc-log-total">{task.actual_hours}h logged</span>
+        ) : null}
+        {expanded ? (
+          <>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {logged ? "Add hours" : "Hours spent so far"}
+            </span>
+            <input
+              value={logDrafts[task.id] ?? logDefault(task)}
+              onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
+              type="number"
+              min="0"
+              step="0.25"
+              aria-label="Hours to log to Basecamp"
+              style={{ width: 70 }}
+            />
+            <button
+              className="btn btn-sm"
+              disabled={logging === task.id}
+              onClick={() => logTime(task)}
+            >
+              {logging === task.id ? "Logging..." : "Log to Basecamp"}
+            </button>
+            {logged ? (
+              <button type="button" className="linklike" onClick={() => setExpanded(false)}>
+                Cancel
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <button type="button" className="linklike" onClick={() => setExpanded(true)}>
+            Log more time
+          </button>
+        )}
       </div>
     );
   }
@@ -1612,6 +1890,28 @@ export default function PersonForecastPage() {
         </div>
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
+
+        {/* Always on screen while a timer runs, whichever view you're in, so time
+            can't quietly keep accruing on something you finished an hour ago. */}
+        {running ? (
+          <div className="fc-running">
+            <span className="fc-running-pulse" aria-hidden="true" />
+            <div className="fc-running-what">
+              <strong>{running.notes || running.client || "Task"}</strong>
+              {running.client && running.notes ? <span>{running.client}</span> : null}
+            </div>
+            <span className="fc-running-clock">
+              {formatTracked(trackedSeconds(running, nowMs), true)}
+            </span>
+            <button
+              className="btn btn-sm"
+              disabled={timerBusy === running.id}
+              onClick={() => void toggleTimer(running)}
+            >
+              Stop
+            </button>
+          </div>
+        ) : null}
 
         {!loading && progress.total > 0 ? (
           <div
@@ -1730,6 +2030,7 @@ export default function PersonForecastPage() {
                         <span className="muted">h</span>
                       </div>
                       <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                      <TimerButton task={t} />
                       <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>Remove</button>
                     </div>
                     <LogTimeRow task={t} />
@@ -1823,6 +2124,7 @@ export default function PersonForecastPage() {
                         />
                         <div className="chip-foot">
                           <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                          <TimerButton task={t} compact />
                           <button className="remove" onClick={() => removeTask(t.id)}>Remove</button>
                         </div>
                         <LogTimeRow task={t} />
@@ -1858,14 +2160,46 @@ export default function PersonForecastPage() {
             })}
           </div>
         ) : view === "calendar" ? (
-          <div>
+          <div className="fc-planner">
+            <ForecastQueue
+              tasks={data?.tasks || []}
+              today={today}
+              clients={pickerClients}
+              clientId={queueClientId}
+              source={todosByClient[queueClientId]}
+              hoursDraft={queueHours}
+              onPickClient={pickQueueClient}
+              onHoursDraft={setQueueHours}
+              onSyncProjects={syncProjects}
+              syncing={syncingProjects}
+              drag={drag}
+              onTaskDragStart={(e, t) => onTaskDragStart(e, t)}
+              onTodoDragStart={onTodoDragStart}
+              onDragEnd={onDragEnd}
+              onToggle={(t) => {
+                const task = (data?.tasks || []).find((x) => x.id === t.id);
+                if (task) void toggleCompleted(task);
+              }}
+              onRemove={removeTask}
+              onQueueTodo={(todo) => void bookTodo(todo, queueDay, "")}
+              onToggleTimer={(t) => {
+                const task = (data?.tasks || []).find((x) => x.id === t.id);
+                if (task) void toggleTimer(task);
+              }}
+              timerBusyId={timerBusy}
+              nowMs={nowMs}
+              dayLabel={(ymd) => `${dayName(ymd).slice(0, 3)} ${dayShortDate(ymd)}`}
+              busy={saving}
+            />
+            <div className="fc-planner-main">
             <ForecastCalendar
               days={days}
               today={today}
               tasksByDay={tasksByDay}
+              capacityPerDay={Math.round(((data?.capacity || 40) / days.length) * 10) / 10}
               dayName={dayName}
               dayShortDate={dayShortDate}
-              dragId={dragId}
+              drag={drag}
               dropDay={dropDay}
               onToggle={(t) => {
                 const task = (data?.tasks || []).find((x) => x.id === t.id);
@@ -1876,19 +2210,21 @@ export default function PersonForecastPage() {
                 setAddingFor(date);
                 setDraft(date, { startTime });
               }}
-              onDrop={(date, startTime, droppedId) => {
-                const id = dragId || droppedId;
-                setDragId(null);
-                setDropDay(null);
-                if (!id) return;
-                void moveTask(id, date, startTime);
-              }}
-              onDragOver={onDayDragOver}
-              onDragLeave={(e, date) => {
+              onDropAt={(date, startTime) => void placeDrag(date, startTime)}
+              onDragOverDay={onDayDragOver}
+              onDragLeaveDay={(e, date) => {
                 if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                 setDropDay((d) => (d === date ? null : d));
               }}
-              dragProps={dragProps}
+              onTaskDragStart={onTaskDragStart}
+              onDragEnd={onDragEnd}
+              onResize={(t, hours) => void resizeTask(t, hours)}
+              onToggleTimer={(t) => {
+                const task = (data?.tasks || []).find((x) => x.id === t.id);
+                if (task) void toggleTimer(task);
+              }}
+              timerBusyId={timerBusy}
+              nowMs={nowMs}
             />
             {addingFor ? (
               <div className="ops-list-day" style={{ marginTop: 16 }}>
@@ -1919,9 +2255,11 @@ export default function PersonForecastPage() {
               </div>
             ) : (
               <p className="muted" style={{ margin: "12px 0 0", fontSize: 13 }}>
-                Click an hour to add a task there, or leave the start time blank and it stays unscheduled.
+                Click an hour to add a task there, or drag one in from the list on the left.
+                Drag a block&apos;s bottom edge to change how long it runs.
               </p>
             )}
+            </div>
           </div>
         ) : (
           <div>
@@ -1997,6 +2335,7 @@ export default function PersonForecastPage() {
                           <span className="muted">h</span>
                         </div>
                         <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                        <TimerButton task={t} />
                         <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>
                           Remove
                         </button>

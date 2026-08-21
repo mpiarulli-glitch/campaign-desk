@@ -90,6 +90,9 @@ export async function POST(request: Request, { params }: Params) {
     priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
     // Present only when the task text came from the Basecamp todo picker.
     basecampTodoId: typeof body.basecampTodoId === "string" ? body.basecampTodoId : "",
+    // Present as well when the picked item was a subtask, in which case
+    // basecampTodoId is its parent to-do — see createTask.
+    basecampStepId: typeof body.basecampStepId === "string" ? body.basecampStepId : "",
     basecampProjectId:
       typeof body.basecampProjectId === "string" ? body.basecampProjectId : "",
     // Present instead when it came from the meeting picker. createTask drops the
