@@ -2159,6 +2159,84 @@ export default function PersonForecastPage() {
   }
 
   /**
+   * "Move" beside the log-time pill: where should this task go instead?
+   *
+   * A popup rather than a single fixed action, because a button that just says
+   * Move has to say where — and the useful answers are more than one. Every
+   * option keeps the task's start time; only its date changes.
+   */
+  function MoveMenu({ task }: { task: Task }) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (!open) return;
+      function onDown(e: MouseEvent) {
+        if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      }
+      function onKey(e: KeyboardEvent) {
+        if (e.key === "Escape") setOpen(false);
+      }
+      document.addEventListener("mousedown", onDown);
+      document.addEventListener("keydown", onKey);
+      return () => {
+        document.removeEventListener("mousedown", onDown);
+        document.removeEventListener("keydown", onKey);
+      };
+    }, [open]);
+
+    const options: Array<[string, number]> = [
+      ["Next week", 1],
+      ["In 2 weeks", 2],
+      ["Back a week", -1],
+    ];
+
+    return (
+      <div className="fc-move" ref={wrapRef}>
+        <button
+          type="button"
+          className="fc-move-btn"
+          aria-expanded={open}
+          title="Move this task to another day"
+          onClick={() => setOpen((v) => !v)}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          Move
+        </button>
+        {open ? (
+          <div className="fc-move-menu" role="group" aria-label="Move this task">
+            {options.map(([label, weeks]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  void rescheduleTask(task, weeks);
+                }}
+              >
+                {label}
+                <em>{addWeeks(task.task_date, weeks)}</em>
+              </button>
+            ))}
+            <label className="fc-move-date">
+              <span>Or a date</span>
+              <input
+                type="date"
+                defaultValue={task.task_date}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setOpen(false);
+                  void moveTaskToDate(task, e.target.value);
+                }}
+              />
+            </label>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  /**
    * Push a task out by a week, keeping its weekday and start time — a Tuesday
    * 10am task becomes next Tuesday at 10am.
    *
@@ -2175,6 +2253,28 @@ export default function PersonForecastPage() {
     });
     if (!res.ok) {
       setError("Could not reschedule that task.");
+      return;
+    }
+    setError("");
+    setMoved({
+      id: task.id,
+      label: task.notes || task.client || "Task",
+      from: task.task_date,
+    });
+    load(week, { silent: true });
+  }
+
+  // Same as rescheduleTask but to a date somebody picked, so it also leaves the
+  // undo behind — an arbitrary date is even easier to lose a task to.
+  async function moveTaskToDate(task: Task, taskDate: string) {
+    if (taskDate === task.task_date) return;
+    const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskDate }),
+    });
+    if (!res.ok) {
+      setError("Could not move that task.");
       return;
     }
     setError("");
@@ -2303,7 +2403,7 @@ export default function PersonForecastPage() {
         {moved ? (
           <p className="fc-moved">
             <span>
-              Moved <strong>{moved.label}</strong> to next week.
+              Moved <strong>{moved.label}</strong>.
             </span>
             <button type="button" className="linklike" onClick={() => void undoMove()}>
               Undo
@@ -2438,14 +2538,7 @@ export default function PersonForecastPage() {
                       <span className="ops-row-actions">
                         <TimerButton task={t} />
                         <LogTime task={t} />
-                        <button
-                          type="button"
-                          className="ops-row-push"
-                          title="Move to next week, same day and time"
-                          onClick={() => void rescheduleTask(t, 1)}
-                        >
-                          Next wk
-                        </button>
+                        <MoveMenu task={t} />
                         <button
                           className="ops-row-remove"
                           aria-label="Remove task"
@@ -2841,14 +2934,7 @@ export default function PersonForecastPage() {
                         <span className="ops-row-actions">
                           <TimerButton task={t} />
                           <LogTime task={t} />
-                          <button
-                            type="button"
-                            className="ops-row-push"
-                            title="Move to next week, same day and time"
-                            onClick={() => void rescheduleTask(t, 1)}
-                          >
-                            Next wk
-                          </button>
+                          <MoveMenu task={t} />
                           <button
                             className="ops-row-remove"
                             aria-label="Remove task"
