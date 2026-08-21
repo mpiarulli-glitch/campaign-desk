@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
 import { ForecastQueue } from "@/components/ForecastQueue";
 import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
@@ -887,6 +887,90 @@ function AddTaskForm({
   );
 }
 
+/**
+ * Small floating panel anchored to a calendar cell.
+ *
+ * Clicking 2pm on Thursday used to open a full-width form underneath a grid
+ * twelve hours tall, which put it off the bottom of the screen and nowhere near
+ * the hour that was clicked. This opens where the click landed, and flips above
+ * or left when it would otherwise run off the viewport.
+ *
+ * Closes on Escape or a click outside, which is what a popover has to do to be
+ * dismissible without hunting for a Cancel button.
+ */
+function SlotPopover({
+  anchor,
+  title,
+  onClose,
+  children,
+}: {
+  anchor: { x: number; y: number };
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [placed, setPlaced] = useState<{ left: number; top: number } | null>(null);
+
+  // Measured after mount, because how far it can drop or how far right it can sit
+  // depends on how tall and wide the form turned out to be.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const margin = 12;
+    const width = rect.width || 320;
+    const height = rect.height || 260;
+    let left = anchor.x - width / 2;
+    left = Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+    let top = anchor.y + 6;
+    if (top + height > window.innerHeight - margin) {
+      top = Math.max(margin, anchor.y - height - 30);
+    }
+    setPlaced({ left, top });
+  }, [anchor.x, anchor.y]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    // Deferred a tick: the click that opened this is still travelling, and
+    // without the delay it closes the popover the instant it appears.
+    const timer = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="fc-slot-pop"
+      role="dialog"
+      aria-label={`Add a task on ${title}`}
+      style={
+        placed
+          ? { left: placed.left, top: placed.top }
+          : { left: anchor.x, top: anchor.y + 6, visibility: "hidden" }
+      }
+    >
+      <div className="fc-slot-pop-head">
+        <strong>{title}</strong>
+        <button type="button" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 type View = "today" | "list" | "week" | "calendar";
 
 export default function PersonForecastPage() {
@@ -941,6 +1025,9 @@ export default function PersonForecastPage() {
   // drag event because dragover can't read dataTransfer, and the grid needs to
   // know mid-drag how long the thing it's about to place is.
   const [drag, setDrag] = useState<ForecastDrag | null>(null);
+  // Viewport position of the calendar cell that was clicked, so the add form can
+  // open as a popover there. Null in every other view, which uses inline forms.
+  const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   // Which client the queue sidebar is showing Basecamp to-dos for, and how many
   // hours a dragged-in to-do should book.
   const [queueClientId, setQueueClientId] = useState("");
@@ -1354,6 +1441,7 @@ export default function PersonForecastPage() {
     }
     setDrafts((d) => ({ ...d, [date]: emptyDraft }));
     setAddingFor(null);
+    setAddAnchor(null);
     load(week, { silent: true });
   }
 
@@ -1593,6 +1681,11 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  function closeAdd() {
+    setAddingFor(null);
+    setAddAnchor(null);
+  }
+
   function pickQueueClient(clientId: string) {
     setQueueClientId(clientId);
     if (clientId) ensureTodos(clientId);
@@ -1758,61 +1851,74 @@ export default function PersonForecastPage() {
     );
   }
 
-  // Shown for any row linked to something in Basecamp, whether that's a todo, a
-  // subtask, a meeting, or (for a task typed by hand) just the project it
-  // belongs to — logTime() creates a shadow todo in that project the first time
-  // someone logs against a row like that. Only a row linked to nothing at all
-  // has nowhere for hours to land.
-  //
-  // Deliberately not gated on the task being finished. Work spans days, and time
-  // has to go in while it's still fresh, so each log adds to the row's total
-  // rather than replacing it and nothing here waits for a tick.
-  function LogTimeRow({ task }: { task: Task }) {
+  /**
+   * Inline "log some hours to Basecamp" control, sized to sit in a task row.
+   *
+   * Collapsed by default, always. It used to open expanded on anything with
+   * nothing logged yet, which meant every unlogged task carried a full-width
+   * input and a bright Log to Basecamp button — three lines of row for a thing
+   * you do once. Now it's a pill the width of a word until you ask for it.
+   *
+   * Hidden entirely only for a row linked to nothing in Basecamp, where there is
+   * genuinely nowhere for hours to land. Never gated on the task being finished:
+   * work spans days and time has to go in while it's fresh.
+   */
+  function LogTime({ task }: { task: Task }) {
     const linked = task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id;
     if (!linked) return null;
     const logged = Boolean(task.basecamp_time_entry_id);
-    const [expanded, setExpanded] = [
-      logExpanded[task.id] ?? !logged,
-      (on: boolean) => setLogExpanded((d) => ({ ...d, [task.id]: on })),
-    ];
+    const open = Boolean(logExpanded[task.id]);
+
+    if (!open) {
+      return (
+        <button
+          type="button"
+          className={`fc-log-pill ${logged ? "is-logged" : ""}`}
+          onClick={() => setLogExpanded((d) => ({ ...d, [task.id]: true }))}
+          onMouseDown={(e) => e.stopPropagation()}
+          title={
+            logged
+              ? `${task.actual_hours}h on the Basecamp timesheet. Click to add more.`
+              : "Log hours to the Basecamp timesheet"
+          }
+        >
+          {logged ? `${task.actual_hours}h logged` : "Log time"}
+        </button>
+      );
+    }
+
     return (
-      <div className="fc-log-row">
-        {logged ? (
-          <span className="fc-log-total">{task.actual_hours}h logged</span>
-        ) : null}
-        {expanded ? (
-          <>
-            <span className="muted" style={{ fontSize: 12 }}>
-              {logged ? "Add hours" : "Hours spent so far"}
-            </span>
-            <input
-              value={logDrafts[task.id] ?? logDefault(task)}
-              onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
-              type="number"
-              min="0"
-              step="0.25"
-              aria-label="Hours to log to Basecamp"
-              style={{ width: 70 }}
-            />
-            <button
-              className="btn btn-sm"
-              disabled={logging === task.id}
-              onClick={() => logTime(task)}
-            >
-              {logging === task.id ? "Logging..." : "Log to Basecamp"}
-            </button>
-            {logged ? (
-              <button type="button" className="linklike" onClick={() => setExpanded(false)}>
-                Cancel
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <button type="button" className="linklike" onClick={() => setExpanded(true)}>
-            Log more time
-          </button>
-        )}
-      </div>
+      <span className="fc-log-open" onMouseDown={(e) => e.stopPropagation()}>
+        <input
+          value={logDrafts[task.id] ?? logDefault(task)}
+          onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void logTime(task);
+            if (e.key === "Escape") setLogExpanded((d) => ({ ...d, [task.id]: false }));
+          }}
+          type="number"
+          min="0"
+          step="0.25"
+          aria-label="Hours to log to Basecamp"
+          autoFocus
+        />
+        <button
+          type="button"
+          className="fc-log-go"
+          disabled={logging === task.id}
+          onClick={() => void logTime(task)}
+        >
+          {logging === task.id ? "…" : "Log"}
+        </button>
+        <button
+          type="button"
+          className="fc-log-cancel"
+          aria-label="Cancel"
+          onClick={() => setLogExpanded((d) => ({ ...d, [task.id]: false }))}
+        >
+          ×
+        </button>
+      </span>
     );
   }
 
@@ -1840,7 +1946,11 @@ export default function PersonForecastPage() {
           <div>
             <p className="ops-eyebrow">Weekly forecast</p>
             <h1 className="ops-title">{data?.label || person}</h1>
-            <p className="ops-sub">Add what you expect to work on each day this week.</p>
+            {/* The calendar explains itself — a grid of hours with a queue beside
+                it does not need a sentence telling you to add work to it. */}
+            {view === "calendar" ? null : (
+              <p className="ops-sub">Add what you expect to work on each day this week.</p>
+            )}
           </div>
           <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
             <div className="view-toggle">
@@ -1857,6 +1967,19 @@ export default function PersonForecastPage() {
                 Calendar
               </button>
             </div>
+            {view === "calendar" && !loading && progress.total > 0 ? (
+              <span className={`fc-mini-gauge ${gauge.over ? "is-over" : ""}`}>
+                <b>{Math.round(gauge.totalHours * 10) / 10}</b>
+                <span>/ {gauge.capacity}h</span>
+                <i>
+                  <em style={{ width: `${gauge.donePct}%` }} />
+                  <u style={{ width: `${gauge.openPct}%` }} />
+                </i>
+                <span>
+                  {progress.done}/{progress.total}
+                </span>
+              </span>
+            ) : null}
             <div className="ops-weeknav">
               <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
               <strong>{weekLabel(week)}</strong>
@@ -1870,50 +1993,34 @@ export default function PersonForecastPage() {
                 </button>
               ) : null}
             </div>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={syncProjects}
-              disabled={syncingProjects}
-              title="Pull new Basecamp projects into the picker, including internal MEG workspaces."
-            >
-              {syncingProjects ? "Syncing…" : "Sync projects"}
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={syncMeetings}
-              disabled={syncingEvents}
-              title="Re-read every project's schedule from Basecamp, so today's meetings show up in the picker."
-            >
-              {syncingEvents ? "Syncing…" : "Sync meetings"}
-            </button>
+            {/* Both syncs live in the queue sidebar on the calendar, next to the
+                pickers they actually feed, rather than up here in the chrome. */}
+            {view === "calendar" ? null : (
+              <>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={syncProjects}
+                  disabled={syncingProjects}
+                  title="Pull new Basecamp projects into the picker, including internal MEG workspaces."
+                >
+                  {syncingProjects ? "Syncing…" : "Sync projects"}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={syncMeetings}
+                  disabled={syncingEvents}
+                  title="Re-read every project's schedule from Basecamp, so today's meetings show up in the picker."
+                >
+                  {syncingEvents ? "Syncing…" : "Sync meetings"}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
 
-        {/* Always on screen while a timer runs, whichever view you're in, so time
-            can't quietly keep accruing on something you finished an hour ago. */}
-        {running ? (
-          <div className="fc-running">
-            <span className="fc-running-pulse" aria-hidden="true" />
-            <div className="fc-running-what">
-              <strong>{running.notes || running.client || "Task"}</strong>
-              {running.client && running.notes ? <span>{running.client}</span> : null}
-            </div>
-            <span className="fc-running-clock">
-              {formatTracked(trackedSeconds(running, nowMs), true)}
-            </span>
-            <button
-              className="btn btn-sm"
-              disabled={timerBusy === running.id}
-              onClick={() => void toggleTimer(running)}
-            >
-              Stop
-            </button>
-          </div>
-        ) : null}
-
-        {!loading && progress.total > 0 ? (
+        {!loading && progress.total > 0 && view !== "calendar" ? (
           <div
             className={`fc-gauge ${gauge.over ? "is-over" : ""} ${gauge.clear ? "is-clear" : ""}`}
           >
@@ -1991,8 +2098,7 @@ export default function PersonForecastPage() {
                   <p className="muted" style={{ margin: "4px 0 14px" }}>Nothing planned for today yet. Add your first task below.</p>
                 ) : (
                   tasks.map((t) => (
-                    <Fragment key={t.id}>
-                    <div className={`ops-list-row pri-${t.priority}`}>
+                    <div key={t.id} className={`ops-list-row pri-${t.priority}`}>
                       <input
                         type="checkbox"
                         checked={!!t.completed}
@@ -2030,11 +2136,19 @@ export default function PersonForecastPage() {
                         <span className="muted">h</span>
                       </div>
                       <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
-                      <TimerButton task={t} />
-                      <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>Remove</button>
+                      <span className="ops-row-actions">
+                        <TimerButton task={t} />
+                        <LogTime task={t} />
+                        <button
+                          className="ops-row-remove"
+                          aria-label="Remove task"
+                          title="Remove task"
+                          onClick={() => removeTask(t.id)}
+                        >
+                          ×
+                        </button>
+                      </span>
                     </div>
-                    <LogTimeRow task={t} />
-                    </Fragment>
                   ))
                 )}
 
@@ -2125,9 +2239,9 @@ export default function PersonForecastPage() {
                         <div className="chip-foot">
                           <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
                           <TimerButton task={t} compact />
-                          <button className="remove" onClick={() => removeTask(t.id)}>Remove</button>
+                          <LogTime task={t} />
+                          <button className="remove" onClick={() => removeTask(t.id)}>×</button>
                         </div>
-                        <LogTimeRow task={t} />
                       </div>
                     ))}
                   </div>
@@ -2171,7 +2285,9 @@ export default function PersonForecastPage() {
               onPickClient={pickQueueClient}
               onHoursDraft={setQueueHours}
               onSyncProjects={syncProjects}
+              onSyncMeetings={syncMeetings}
               syncing={syncingProjects}
+              syncingMeetings={syncingEvents}
               drag={drag}
               onTaskDragStart={(e, t) => onTaskDragStart(e, t)}
               onTodoDragStart={onTodoDragStart}
@@ -2206,9 +2322,10 @@ export default function PersonForecastPage() {
                 if (task) void toggleCompleted(task);
               }}
               onRemove={removeTask}
-              onSlotClick={(date, startTime) => {
+              onSlotClick={(date, startTime, at) => {
                 setAddingFor(date);
                 setDraft(date, { startTime });
+                setAddAnchor(at);
               }}
               onDropAt={(date, startTime) => void placeDrag(date, startTime)}
               onDragOverDay={onDayDragOver}
@@ -2226,18 +2343,16 @@ export default function PersonForecastPage() {
               timerBusyId={timerBusy}
               nowMs={nowMs}
             />
-            {addingFor ? (
-              <div className="ops-list-day" style={{ marginTop: 16 }}>
-                <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-                  <strong>
-                    Add · {dayName(addingFor)}{" "}
-                    <span className="muted" style={{ fontWeight: 400 }}>
-                      {draftFor(addingFor).startTime
-                        ? formatTimeLabel(draftFor(addingFor).startTime)
-                        : "no start time"}
-                    </span>
-                  </strong>
-                </div>
+            {addingFor && addAnchor ? (
+              <SlotPopover
+                anchor={addAnchor}
+                onClose={closeAdd}
+                title={`${dayName(addingFor)} · ${
+                  draftFor(addingFor).startTime
+                    ? formatTimeLabel(draftFor(addingFor).startTime)
+                    : "no start time"
+                }`}
+              >
                 <AddTaskForm
                   draft={draftFor(addingFor)}
                   patch={(p) => setDraft(addingFor, p)}
@@ -2247,18 +2362,13 @@ export default function PersonForecastPage() {
                   onPickClient={(id) => pickClient(addingFor, id)}
                   onPickMode={(m) => pickMode(addingFor, m)}
                   onAdd={() => addTask(addingFor)}
-                  onCancel={() => setAddingFor(null)}
-                  layout="row"
+                  onCancel={closeAdd}
+                  layout="stack"
                   autoFocus
                   busy={saving}
                 />
-              </div>
-            ) : (
-              <p className="muted" style={{ margin: "12px 0 0", fontSize: 13 }}>
-                Click an hour to add a task there, or drag one in from the list on the left.
-                Drag a block&apos;s bottom edge to change how long it runs.
-              </p>
-            )}
+              </SlotPopover>
+            ) : null}
             </div>
           </div>
         ) : (
@@ -2286,8 +2396,8 @@ export default function PersonForecastPage() {
                     </p>
                   ) : (
                     tasks.map((t) => (
-                      <Fragment key={t.id}>
                       <div
+                        key={t.id}
                         className={`ops-list-row pri-${t.priority} ${dragId === t.id ? "is-dragging" : ""}`}
                         title="Drag to another day to reschedule"
                         {...dragProps(t)}
@@ -2335,13 +2445,19 @@ export default function PersonForecastPage() {
                           <span className="muted">h</span>
                         </div>
                         <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
-                        <TimerButton task={t} />
-                        <button className="btn btn-ghost btn-sm" onClick={() => removeTask(t.id)}>
-                          Remove
-                        </button>
+                        <span className="ops-row-actions">
+                          <TimerButton task={t} />
+                          <LogTime task={t} />
+                          <button
+                            className="ops-row-remove"
+                            aria-label="Remove task"
+                            title="Remove task"
+                            onClick={() => removeTask(t.id)}
+                          >
+                            ×
+                          </button>
+                        </span>
                       </div>
-                      <LogTimeRow task={t} />
-                      </Fragment>
                     ))
                   )}
 
@@ -2382,6 +2498,36 @@ export default function PersonForecastPage() {
 
         {/* Week total lives in the capacity gauge at the top of the page now. */}
       </div>
+
+      {/* Docked in the corner rather than banded across the top: a running timer
+          has to stay visible while you scroll a long week, and it should not push
+          the whole page down to do it. Last in the DOM so it reads last to a
+          screen reader too. */}
+      {running ? (
+        <div
+          className="fc-timer-dock"
+          role="status"
+          aria-live="off"
+          title={`Timing: ${running.notes || running.client || "Task"}`}
+        >
+          <span className="fc-timer-dock-pulse" aria-hidden="true" />
+          <div className="fc-timer-dock-what">
+            <strong>{running.notes || running.client || "Task"}</strong>
+            {running.client && running.notes ? <span>{running.client}</span> : null}
+          </div>
+          <span className="fc-timer-dock-clock">
+            {formatTracked(trackedSeconds(running, nowMs), true)}
+          </span>
+          <button
+            type="button"
+            className="fc-timer-dock-stop"
+            disabled={timerBusy === running.id}
+            aria-label="Stop the timer"
+            title="Stop the timer"
+            onClick={() => void toggleTimer(running)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

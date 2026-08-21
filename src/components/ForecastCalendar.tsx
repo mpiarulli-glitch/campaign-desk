@@ -40,9 +40,13 @@ export type CalendarTask = {
   timer_started_at: string;
 };
 
-// Blocks shorter than this can't hold their own text, so they collapse to a
-// single line of title and lose the checkbox row.
+// Three densities, because a block's height is set by how long the task runs and
+// nothing else. Under COMPACT it holds one line total, so the title rides beside
+// the time. Between the two it holds the title alone. Only at ROOMY is there room
+// for the client underneath as well — at 64px (a one-hour task) that second line
+// was rendering half-clipped by the block's own bottom edge.
 const COMPACT_BLOCK_PX = 44;
+const ROOMY_BLOCK_PX = 78;
 
 // Where "now" sits on the grid, or null when the current time is outside the
 // hours the calendar shows. Recomputed on a timer rather than per render so the
@@ -99,7 +103,9 @@ export function ForecastCalendar({
   dropDay: string | null;
   onToggle: (task: CalendarTask) => void;
   onRemove: (id: string) => void;
-  onSlotClick: (date: string, startTime: string) => void;
+  // Reports the clicked cell's position as well as its time, so the add form can
+  // open where the click landed instead of at the bottom of a 768px grid.
+  onSlotClick: (date: string, startTime: string, at: { x: number; y: number }) => void;
   onDropAt: (date: string, startTime: string) => void;
   onDragOverDay: (e: React.DragEvent, date: string) => void;
   onDragLeaveDay: (e: React.DragEvent, date: string) => void;
@@ -166,11 +172,11 @@ export function ForecastCalendar({
                 dayHours > capacityPerDay ? "is-over" : ""
               }`}
             >
-              <div className="ops-day-name">{dayName(date)}</div>
-              <div className="ops-day-date">{dayShortDate(date)}</div>
+              <div className="fc-cal-dow">{dayName(date).slice(0, 3)}</div>
+              <div className="fc-cal-dom">{dayShortDate(date).split(" ")[1]}</div>
               <span className="ops-day-hours">
-                {dayHours ? `${Math.round(dayHours * 10) / 10}h` : "—"}
-                {unplaced ? <em> · {unplaced} in queue</em> : null}
+                {dayHours ? `${Math.round(dayHours * 10) / 10}h` : ""}
+                {unplaced ? <em> · {unplaced} queued</em> : null}
               </span>
             </div>
           );
@@ -179,7 +185,7 @@ export function ForecastCalendar({
         <div className="fc-cal-gutter" style={{ height: gridHeight }}>
           {hours.map((h) => (
             <div key={h} className="fc-cal-hour-label" style={{ height: CAL_PX_PER_HOUR }}>
-              {formatTimeLabel(padTime(h, 0))}
+              {formatTimeLabel(padTime(h, 0)).toLowerCase()}
             </div>
           ))}
         </div>
@@ -222,7 +228,10 @@ export function ForecastCalendar({
                   className="fc-cal-slot"
                   style={{ top: (h - CAL_START_HOUR) * CAL_PX_PER_HOUR, height: CAL_PX_PER_HOUR }}
                   aria-label={`Add at ${formatTimeLabel(padTime(h, 0))} on ${dayName(date)}`}
-                  onClick={() => onSlotClick(date, padTime(h, 0))}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    onSlotClick(date, padTime(h, 0), { x: r.left + r.width / 2, y: r.bottom });
+                  }}
                 />
               ))}
               {date === today && nowOffset != null ? (
@@ -239,10 +248,18 @@ export function ForecastCalendar({
                 const timing = isRunning(b.item);
                 const top = ((b.startMin - CAL_START_HOUR * 60) / 60) * CAL_PX_PER_HOUR;
                 const height = Math.max(28, live * CAL_PX_PER_HOUR);
-                const width = `calc(${100 / b.cols}% - 4px)`;
-                const left = `calc(${(100 / b.cols) * b.col}% + 2px)`;
+                // Overlapping blocks cascade rather than share the column
+                // equally. Two 50% columns left titles like "Department
+                // Internal Check In" breaking mid-word; letting the earlier
+                // block keep most of the width and the later one sit on top of
+                // it is what a calendar normally does, and both stay readable.
+                const slot = 100 / b.cols;
+                const widthPct = Math.min(slot * 1.8, 100 - slot * b.col);
+                const width = `calc(${widthPct}% - 4px)`;
+                const left = `calc(${slot * b.col}% + 2px)`;
                 const end = addHoursToTime(b.item.start_time, live);
                 const compact = height < COMPACT_BLOCK_PX;
+                const roomy = height >= ROOMY_BLOCK_PX;
                 const logged = Boolean(b.item.basecamp_time_entry_id);
                 return (
                   <div
@@ -253,11 +270,26 @@ export function ForecastCalendar({
                       resizing?.id === b.item.id ? "is-resizing" : ""
                     } ${compact ? "is-compact" : ""} ${
                       b.item.basecamp_event_id ? "is-meeting" : ""
-                    } ${timing ? "is-timing" : ""}`}
-                    style={{ top: Math.max(0, top), height, left, width }}
+                    } ${timing ? "is-timing" : ""} ${
+                      timing || logged ? "has-stamp" : ""
+                    }`}
+                    style={{
+                      top: Math.max(0, top),
+                      height,
+                      left,
+                      width,
+                      zIndex: 2 + b.col,
+                    }}
                     title={
-                      [b.item.client, b.item.notes].filter(Boolean).join(" — ") ||
-                      "Drag to another time or day"
+                      [
+                        `${formatTimeLabel(b.item.start_time)}${
+                          end ? `–${formatTimeLabel(end)}` : ""
+                        }`,
+                        b.item.notes,
+                        b.item.client,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
                     }
                     draggable
                     onDragStart={(e) => {
@@ -271,7 +303,40 @@ export function ForecastCalendar({
                     }}
                     onDragEnd={onDragEnd}
                   >
-                    <div className="fc-cal-block-top">
+                    {/* Content first. Every control here is hover-only: a
+                        calendar is read far more often than it is edited, and a
+                        checkbox plus a timer plus a remove on the face of every
+                        block is most of what made this look busy. */}
+                    <div className="fc-cal-block-main">
+                      <strong className="fc-cal-block-title">
+                        {b.item.notes || b.item.client || "Task"}
+                      </strong>
+                      {compact ? null : (
+                        <span className="fc-cal-block-when">
+                          {formatTimeLabel(b.item.start_time)}
+                          {end ? ` – ${formatTimeLabel(end)}` : ""}
+                        </span>
+                      )}
+                      {roomy && b.item.notes && b.item.client ? (
+                        <span className="fc-cal-block-client">{b.item.client}</span>
+                      ) : null}
+                    </div>
+
+                    <div className="fc-cal-block-foot">
+                      {timing ? (
+                        <span className="fc-cal-block-stamp is-running">
+                          <em>Running</em>
+                          {formatTracked(trackedSeconds(b.item, nowMs), true)}
+                        </span>
+                      ) : logged ? (
+                        <span
+                          className="fc-cal-block-stamp"
+                          title={`${b.item.actual_hours}h logged to Basecamp`}
+                        >
+                          {b.item.actual_hours}h logged
+                        </span>
+                      ) : null}
+                      <div className="fc-cal-block-tools">
                       <input
                         type="checkbox"
                         checked={!!b.item.completed}
@@ -280,20 +345,12 @@ export function ForecastCalendar({
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                       />
-                      <span className="fc-cal-block-time">
-                        {formatTimeLabel(b.item.start_time)}
-                        {end ? `–${formatTimeLabel(end)}` : ""}
-                      </span>
                       <button
                         type="button"
-                        className={`fc-timer-btn is-compact ${timing ? "is-running" : ""}`}
+                        className={`fc-cal-block-timer ${timing ? "is-running" : ""}`}
                         disabled={timerBusyId === b.item.id}
                         aria-label={timing ? "Stop the timer" : "Start timing this task"}
-                        title={
-                          timing
-                            ? "Stop the timer and keep the time"
-                            : "Start timing this task"
-                        }
+                        title={timing ? "Stop the timer" : "Start timing this task"}
                         onClick={(e) => {
                           e.stopPropagation();
                           onToggleTimer(b.item);
@@ -301,38 +358,22 @@ export function ForecastCalendar({
                         onMouseDown={(e) => e.stopPropagation()}
                         draggable={false}
                         onDragStart={(e) => e.preventDefault()}
-                      >
-                        <span className="fc-timer-icon" aria-hidden="true" />
-                        {timing || b.item.tracked_seconds
-                          ? formatTracked(trackedSeconds(b.item, nowMs), timing)
-                          : ""}
-                      </button>
-                      {logged ? (
-                        <span
-                          className="fc-cal-block-logged"
-                          title={`${b.item.actual_hours}h logged to Basecamp`}
-                        >
-                          {b.item.actual_hours}h
-                        </span>
-                      ) : null}
+                      />
                       <button
                         type="button"
-                        className="remove"
+                        className="fc-cal-block-x"
                         aria-label="Remove task"
                         onClick={(e) => {
                           e.stopPropagation();
                           onRemove(b.item.id);
                         }}
+                        onMouseDown={(e) => e.stopPropagation()}
                       >
                         ×
                       </button>
+                      </div>
                     </div>
-                    <div className="fc-cal-block-body">
-                      <strong>{b.item.notes || b.item.client || "Task"}</strong>
-                      {b.item.notes && b.item.client ? (
-                        <div className="fc-cal-block-notes">{b.item.client}</div>
-                      ) : null}
-                    </div>
+
                     <span
                       className="fc-cal-block-grip"
                       role="presentation"

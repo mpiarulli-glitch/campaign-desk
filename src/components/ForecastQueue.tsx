@@ -58,7 +58,9 @@ export function ForecastQueue({
   onPickClient,
   onHoursDraft,
   onSyncProjects,
+  onSyncMeetings,
   syncing,
+  syncingMeetings,
   drag,
   onTaskDragStart,
   onTodoDragStart,
@@ -82,7 +84,9 @@ export function ForecastQueue({
   onPickClient: (clientId: string) => void;
   onHoursDraft: (value: string) => void;
   onSyncProjects: () => void;
+  onSyncMeetings: () => void;
   syncing: boolean;
+  syncingMeetings: boolean;
   drag: ForecastDrag | null;
   onTaskDragStart: (e: React.DragEvent, task: CalendarTask) => void;
   onTodoDragStart: (e: React.DragEvent, todo: QueueTodo) => void;
@@ -182,7 +186,6 @@ export function ForecastQueue({
             </p>
           ) : (
             <>
-              <p className="fc-queue-hint">Drag one onto an hour to give it a time.</p>
               {unplaced.map((t) => (
                 <div
                   key={t.id}
@@ -204,6 +207,14 @@ export function ForecastQueue({
                     />
                     <strong>{t.notes || t.client || "Task"}</strong>
                     <span className="fc-queue-hrs">{t.hours}h</span>
+                    <button
+                      type="button"
+                      className="fc-queue-remove"
+                      onClick={() => onRemove(t.id)}
+                      aria-label="Remove task"
+                    >
+                      ×
+                    </button>
                   </div>
                   <div className="fc-queue-card-meta">
                     <span>{dayLabel(t.task_date)}</span>
@@ -230,14 +241,6 @@ export function ForecastQueue({
                       {isRunning(t) || t.tracked_seconds
                         ? formatTracked(trackedSeconds(t, nowMs), isRunning(t))
                         : "Start"}
-                    </button>
-                    <button
-                      type="button"
-                      className="fc-queue-remove"
-                      onClick={() => onRemove(t.id)}
-                      aria-label="Remove task"
-                    >
-                      ×
                     </button>
                   </div>
                 </div>
@@ -317,9 +320,6 @@ export function ForecastQueue({
                 </p>
               ) : (
                 <>
-                  <p className="fc-queue-hint">
-                    Drag one onto an hour to book it, or queue it for later.
-                  </p>
                   {candidates.map((t) => (
                     <div
                       key={t.id}
@@ -365,6 +365,18 @@ export function ForecastQueue({
           )}
         </div>
       )}
+
+      {/* Both refreshes sit here rather than in the page header: they exist to
+          fill the pickers directly above them, and that is the only place anyone
+          notices something missing. */}
+      <div className="fc-queue-foot">
+        <button type="button" onClick={onSyncProjects} disabled={syncing}>
+          {syncing ? "Syncing…" : "Sync projects"}
+        </button>
+        <button type="button" onClick={onSyncMeetings} disabled={syncingMeetings}>
+          {syncingMeetings ? "Syncing…" : "Sync meetings"}
+        </button>
+      </div>
     </aside>
   );
 }
