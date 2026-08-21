@@ -6331,6 +6331,59 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .ops-list-row:focus-within .ops-row-remove { opacity: 1; }
 .ops-row-remove:hover { background: var(--bg-soft); color: var(--danger); }
 
+/* Push a task out a week. Hover-only like remove — it is an action on the row,
+   not information about it. */
+.ops-row-push {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ops-list-row:hover .ops-row-push,
+.ops-list-row:focus-within .ops-row-push { opacity: 1; }
+.ops-row-push:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+/* Undo strip for a task that has just left the week on screen. */
+.fc-moved {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  font-size: 12.5px;
+}
+.fc-moved > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-moved .linklike { flex: none; font-weight: 700; }
+.fc-moved-x {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fc-moved-x:hover { color: var(--danger); }
+
 .fc-log-pill {
   flex: none;
   padding: 3px 9px;
@@ -6710,6 +6763,30 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   transform: scale(1.15);
   border-color: var(--border-strong);
 }
+
+/* One dot on the row, palette on click. */
+.fc-colordot { position: relative; display: inline-flex; flex: none; }
+.fc-colordot > .fc-swatch { transform: none; }
+.fc-colordot > .fc-swatch:hover { transform: scale(1.15); }
+.fc-colordot-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+/* Inside the block editor there is no row to crowd, so the swatches sit at their
+   resting opacity rather than dimmed until hovered. */
+.fc-colordot-menu .fc-swatch { opacity: 0.85; }
+.fc-colordot-menu .fc-swatch:hover,
+.fc-colordot-menu .fc-swatch.is-on { opacity: 1; }
 
 /* ------------------------------- "assigned to me" drawer above List view */
 .fc-assigned {

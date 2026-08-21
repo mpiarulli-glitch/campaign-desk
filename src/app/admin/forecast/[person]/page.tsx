@@ -537,6 +537,74 @@ function TodoPicker({
  * as the block's colour, so colour-coding a week by client or by kind of work
  * meant lying about urgency. Colour is now just colour.
  */
+/**
+ * One dot showing a task's colour, which opens the palette when clicked.
+ *
+ * The palette used to sit inline on every row — eight circles per task, which
+ * crowded the row for something you set once and then just read. The dot is the
+ * reading state; the popup is the editing state.
+ */
+function ColorDot({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (color: TaskColor) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const current = normalizeTaskColor(value);
+  const label = TASK_COLORS.find((c) => c.id === current)?.label || current;
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="fc-colordot" ref={wrapRef}>
+      <button
+        type="button"
+        className={`fc-swatch col-${current} is-on`}
+        aria-label={`Colour: ${label}. Change it`}
+        aria-expanded={open}
+        title={`${label} — click to change`}
+        onClick={() => setOpen((v) => !v)}
+        onMouseDown={(e) => e.stopPropagation()}
+      />
+      {open ? (
+        <div className="fc-colordot-menu" role="group" aria-label="Pick a colour">
+          {TASK_COLORS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`fc-swatch col-${c.id} ${current === c.id ? "is-on" : ""}`}
+              title={c.label}
+              aria-label={c.label}
+              aria-pressed={current === c.id}
+              onClick={() => {
+                onChange(c.id);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ColorPicker({
   value,
   onChange,
@@ -1048,6 +1116,11 @@ export default function PersonForecastPage() {
   // List view's assigned strip starts collapsed: it is a drawer above the week,
   // not a permanent panel like the calendar's sidebar.
   const [assignedOpen, setAssignedOpen] = useState(false);
+  // A rescheduled task leaves the week you are looking at, so it would otherwise
+  // just vanish. This names what moved and offers it back.
+  const [moved, setMoved] = useState<
+    { id: string; label: string; from: string } | null
+  >(null);
   // Everything Basecamp says is assigned to this person, across every project.
   // Fetched once per visit: it is one request and it backs the queue's default
   // view, so nobody has to pick a client to find their own work.
@@ -2085,6 +2158,47 @@ export default function PersonForecastPage() {
     );
   }
 
+  /**
+   * Push a task out by a week, keeping its weekday and start time — a Tuesday
+   * 10am task becomes next Tuesday at 10am.
+   *
+   * The row disappears from the week on screen the moment it saves, so this
+   * always leaves an undo behind rather than trusting anyone to remember which
+   * task they just moved.
+   */
+  async function rescheduleTask(task: Task, weeks: number) {
+    const taskDate = addWeeks(task.task_date, weeks);
+    const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskDate }),
+    });
+    if (!res.ok) {
+      setError("Could not reschedule that task.");
+      return;
+    }
+    setError("");
+    setMoved({
+      id: task.id,
+      label: task.notes || task.client || "Task",
+      from: task.task_date,
+    });
+    load(week, { silent: true });
+  }
+
+  async function undoMove() {
+    if (!moved) return;
+    const { id, from } = moved;
+    setMoved(null);
+    const res = await fetch(`/api/forecast/${person}/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskDate: from }),
+    });
+    if (!res.ok) setError("Could not move that task back.");
+    load(week, { silent: true });
+  }
+
   async function setColor(task: Task, color: TaskColor) {
     if (normalizeTaskColor(task.color) === color) return;
     setData((d) =>
@@ -2185,6 +2299,25 @@ export default function PersonForecastPage() {
         </div>
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
+
+        {moved ? (
+          <p className="fc-moved">
+            <span>
+              Moved <strong>{moved.label}</strong> to next week.
+            </span>
+            <button type="button" className="linklike" onClick={() => void undoMove()}>
+              Undo
+            </button>
+            <button
+              type="button"
+              className="fc-moved-x"
+              aria-label="Dismiss"
+              onClick={() => setMoved(null)}
+            >
+              ×
+            </button>
+          </p>
+        ) : null}
 
         {!loading && progress.total > 0 && view !== "calendar" ? (
           <div
@@ -2301,10 +2434,18 @@ export default function PersonForecastPage() {
                         />
                         <span className="muted">h</span>
                       </div>
-                      <ColorPicker value={t.color} onChange={(c) => setColor(t, c)} />
+                      <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
                       <span className="ops-row-actions">
                         <TimerButton task={t} />
                         <LogTime task={t} />
+                        <button
+                          type="button"
+                          className="ops-row-push"
+                          title="Move to next week, same day and time"
+                          onClick={() => void rescheduleTask(t, 1)}
+                        >
+                          Next wk
+                        </button>
                         <button
                           className="ops-row-remove"
                           aria-label="Remove task"
@@ -2403,7 +2544,7 @@ export default function PersonForecastPage() {
                           title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                         />
                         <div className="chip-foot">
-                          <ColorPicker value={t.color} onChange={(c) => setColor(t, c)} />
+                          <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
                           <TimerButton task={t} compact />
                           <LogTime task={t} />
                           <button className="remove" onClick={() => removeTask(t.id)}>×</button>
@@ -2696,10 +2837,18 @@ export default function PersonForecastPage() {
                           />
                           <span className="muted">h</span>
                         </div>
-                        <ColorPicker value={t.color} onChange={(c) => setColor(t, c)} />
+                        <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
                         <span className="ops-row-actions">
                           <TimerButton task={t} />
                           <LogTime task={t} />
+                          <button
+                            type="button"
+                            className="ops-row-push"
+                            title="Move to next week, same day and time"
+                            onClick={() => void rescheduleTask(t, 1)}
+                          >
+                            Next wk
+                          </button>
                           <button
                             className="ops-row-remove"
                             aria-label="Remove task"
