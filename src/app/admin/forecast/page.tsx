@@ -12,9 +12,11 @@ type PersonSummary = {
   hours: number;
   capacity: number;
   allocationPct: number;
-  urgentPct: number;
-  importantPct: number;
-  flexiblePct: number;
+  // Priority is gone from Forecast, so the second bar reports progress instead:
+  // how much of the planned week is already ticked off.
+  donePct: number;
+  taskCount: number;
+  doneCount: number;
 };
 
 function allocationColor(pct: number): string {
@@ -167,15 +169,12 @@ export default function ForecastDashboardPage() {
             </span>
           </div>
           <div className="color-legend-group">
-            <span className="color-legend-group-label">Task priority mix</span>
+            <span className="color-legend-group-label">Progress</span>
             <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> Urgent
+              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> Hours done
             </span>
             <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> Important
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> Flexible
+              <i className="color-legend-dot" style={{ background: "var(--border-strong)" }} /> Still to do
             </span>
           </div>
         </div>
@@ -221,14 +220,19 @@ export default function ForecastDashboardPage() {
                     {p.hours > 0 ? (
                       <div className="mood-card-priority">
                         <div className="mood-card-priority-bar">
-                          <span style={{ width: `${p.urgentPct}%`, background: "var(--danger)" }} />
-                          <span style={{ width: `${p.importantPct}%`, background: "var(--warning)" }} />
-                          <span style={{ width: `${p.flexiblePct}%`, background: "var(--success)" }} />
+                          <span style={{ width: `${p.donePct}%`, background: "var(--success)" }} />
+                          <span
+                            style={{
+                              width: `${100 - p.donePct}%`,
+                              background: "var(--border-strong)",
+                            }}
+                          />
                         </div>
                         <div className="mood-card-priority-legend">
-                          <span style={{ color: "var(--danger)" }}>{p.urgentPct}%</span>
-                          <span style={{ color: "var(--warning)" }}>{p.importantPct}%</span>
-                          <span style={{ color: "var(--success)" }}>{p.flexiblePct}%</span>
+                          <span style={{ color: "var(--success)" }}>{p.donePct}% done</span>
+                          <span className="muted">
+                            {p.doneCount}/{p.taskCount} tasks
+                          </span>
                         </div>
                       </div>
                     ) : null}

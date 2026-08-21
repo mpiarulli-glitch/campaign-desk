@@ -10,6 +10,7 @@ import {
 } from "@/lib/forecast-queue";
 import { isOnGrid, type CalendarTask } from "./ForecastCalendar";
 import { formatTracked, isRunning, trackedSeconds } from "@/lib/forecast-timer";
+import { normalizeTaskColor } from "@/lib/forecast-colors";
 
 export type QueueClient = { id: string; name: string; internal?: boolean };
 
@@ -260,7 +261,9 @@ export function ForecastQueue({
               {unplaced.map((t) => (
                 <div
                   key={t.id}
-                  className={`fc-queue-card pri-${t.priority} ${t.completed ? "is-done" : ""} ${
+                  className={`fc-queue-card col-${normalizeTaskColor(t.color)} ${
+                    t.completed ? "is-done" : ""
+                  } ${
                     drag?.kind === "task" && drag.id === t.id ? "is-dragging" : ""
                   } ${isRunning(t) ? "is-timing" : ""}`}
                   draggable

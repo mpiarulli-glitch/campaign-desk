@@ -8,7 +8,6 @@ import {
   listTasksForPersonWeek,
   personLabel,
   upsertWeekNote,
-  type ForecastPriority,
 } from "@/lib/forecast";
 import { parseTimeInput } from "@/lib/forecast-time";
 import { currentWeek } from "@/lib/week";
@@ -16,7 +15,6 @@ import { currentWeek } from "@/lib/week";
 type Params = { params: Promise<{ person: string }> };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
 
 export async function GET(request: Request, { params }: Params) {
   const { person } = await params;
@@ -87,7 +85,7 @@ export async function POST(request: Request, { params }: Params) {
     client: typeof body.client === "string" ? body.client : "",
     notes: typeof body.notes === "string" ? body.notes : "",
     hours,
-    priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
+    color: typeof body.color === "string" ? body.color : undefined,
     // Present only when the task text came from the Basecamp todo picker.
     basecampTodoId: typeof body.basecampTodoId === "string" ? body.basecampTodoId : "",
     // Present as well when the picked item was a subtask, in which case

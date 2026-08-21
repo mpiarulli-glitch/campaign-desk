@@ -18,14 +18,12 @@ import {
   startTimer,
   stopTimer,
   updateTask,
-  type ForecastPriority,
 } from "@/lib/forecast";
 import { parseTimeInput } from "@/lib/forecast-time";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
 
 /**
  * Log time against whatever Basecamp recording the row is linked to: a todo for
@@ -183,7 +181,7 @@ export async function PATCH(request: Request, { params }: Params) {
     notes: typeof body.notes === "string" ? body.notes : undefined,
     hours: body.hours !== undefined ? Number(body.hours) : undefined,
     completed: typeof body.completed === "boolean" ? body.completed : undefined,
-    priority: PRIORITIES.includes(body.priority) ? body.priority : undefined,
+    color: typeof body.color === "string" ? body.color : undefined,
     startTime: typeof body.startTime === "string" ? body.startTime : undefined,
   });
 

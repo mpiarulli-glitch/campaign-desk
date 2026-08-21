@@ -970,14 +970,6 @@ function approvalsAgeing(start: string, end: string): ReportSection[] {
 
 /* ----------------------------------------------------------------- capacity */
 
-// Priority doubles as a traffic light everywhere in the UI: urgent is red,
-// important is amber, flexible is green (see .pri-* in globals.css).
-const LIGHTS = [
-  { priority: "urgent", light: "Red", meaning: "urgent" },
-  { priority: "important", light: "Yellow", meaning: "important" },
-  { priority: "flexible", light: "Green", meaning: "flexible" },
-] as const;
-
 // A person owes WEEKLY_CAPACITY_HOURS over five weekdays, so a range's capacity
 // is its workday count times the daily share. Counting calendar days instead
 // would credit people with weekend hours they never had.
@@ -1008,16 +1000,17 @@ function workdaysBetween(start: string, end: string): number {
 }
 
 /**
- * Team capacity over a range: how much of the load is red, yellow or green, and
- * how many hours could be moved onto a project.
+ * Team capacity over a range: how much is booked, and how much is not.
  *
- * Reallocatable is unbooked capacity plus hours already marked flexible —
- * flexible is the priority that says this can wait, so it is the honest pool to
- * pull from. Two things are deliberately never counted as available:
+ * This used to report a red/yellow/green traffic light, and to count hours
+ * marked "flexible" as available on top of the unbooked time. Both came from the
+ * forecast's priority field, which no longer exists — a task's colour is now its
+ * own thing and says nothing about how movable the work is. So "reallocatable"
+ * is unbooked capacity and nothing else. That is a smaller and more honest
+ * number: it no longer assumes a label nobody was obliged to keep accurate.
  *
- *   - urgent and important hours, which are committed work
- *   - meetings (rows carrying a basecamp_event_id), because createTask defaults
- *     an unset priority to flexible, and a booked meeting is not free time
+ * Meetings are still counted separately. They consume capacity but are not
+ * tasks, so they belong in what is booked and nowhere else.
  *
  * People with nothing forecast are listed apart rather than folded into the
  * totals: a blank range is not the same as a free one, and counting it as
@@ -1026,15 +1019,15 @@ function workdaysBetween(start: string, end: string): number {
 function capacity(start: string, end: string): ReportSection[] {
   const rows = getDb()
     .prepare(
-      `SELECT person, task_date, priority, hours, basecamp_event_id
+      `SELECT person, task_date, hours, completed, basecamp_event_id
          FROM forecast_tasks
         WHERE task_date >= ? AND task_date <= ?`
     )
     .all(start, end) as Array<{
     person: string;
     task_date: string;
-    priority: string;
     hours: number;
+    completed: number;
     basecamp_event_id: string;
   }>;
 
@@ -1047,10 +1040,10 @@ function capacity(start: string, end: string): ReportSection[] {
   const rangeCeiling = workdaysBetween(start, end) * (WEEKLY_CAPACITY_HOURS / 5);
 
   type Entry = {
-    tasks: Record<string, number>;
-    hours: Record<string, number>;
+    taskCount: number;
+    taskHours: number;
+    doneHours: number;
     booked: number;
-    movable: number;
     meetingHours: number;
     weeks: Set<string>;
   };
@@ -1058,25 +1051,23 @@ function capacity(start: string, end: string): ReportSection[] {
   for (const r of rows) {
     const e =
       byPerson.get(r.person) || {
-        tasks: { urgent: 0, important: 0, flexible: 0 },
-        hours: { urgent: 0, important: 0, flexible: 0 },
+        taskCount: 0,
+        taskHours: 0,
+        doneHours: 0,
         booked: 0,
-        movable: 0,
         meetingHours: 0,
         weeks: new Set<string>(),
       };
     e.weeks.add(mondayOf(r.task_date));
     // A meeting consumes capacity but is not a task, so it counts towards what
-    // is booked and nothing else. Leaving it out of the traffic light matters:
-    // createTask defaults an unset priority to flexible, which would otherwise
-    // file every booked meeting under "green, and therefore movable".
+    // is booked and nowhere else.
     e.booked += r.hours;
     if (r.basecamp_event_id) {
       e.meetingHours += r.hours;
     } else {
-      e.tasks[r.priority] = (e.tasks[r.priority] || 0) + 1;
-      e.hours[r.priority] = (e.hours[r.priority] || 0) + r.hours;
-      if (r.priority === "flexible") e.movable += r.hours;
+      e.taskCount += 1;
+      e.taskHours += r.hours;
+      if (r.completed) e.doneHours += r.hours;
     }
     byPerson.set(r.person, e);
   }
@@ -1092,7 +1083,7 @@ function capacity(start: string, end: string): ReportSection[] {
       ...e,
       capacity: personCapacity,
       free,
-      reallocatable: free + e.movable,
+      reallocatable: free,
       overbooked: e.booked > personCapacity,
     };
   });
@@ -1103,17 +1094,21 @@ function capacity(start: string, end: string): ReportSection[] {
   const totalCapacity = sum((p) => p.capacity);
   const booked = sum((p) => p.booked);
   const free = sum((p) => p.free);
-  const movable = sum((p) => p.movable);
 
   return [
     {
-      title: "Traffic light",
+      title: "What the week is made of",
       stats: [
-        ...LIGHTS.map((l) => ({
-          label: `${l.light} · ${l.meaning}`,
-          value: String(sum((p) => p.tasks[l.priority] || 0)),
-          hint: `${hrs(sum((p) => p.hours[l.priority] || 0))} forecast`,
-        })),
+        {
+          label: "Tasks forecast",
+          value: String(sum((p) => p.taskCount)),
+          hint: `${hrs(sum((p) => p.taskHours))} of work`,
+        },
+        {
+          label: "Already done",
+          value: hrs(sum((p) => p.doneHours)),
+          hint: "ticked off",
+        },
         {
           label: "In meetings",
           value: hrs(sum((p) => p.meetingHours)),
@@ -1126,15 +1121,14 @@ function capacity(start: string, end: string): ReportSection[] {
       stats: [
         {
           label: "Reallocatable",
-          value: hrs(free + movable),
-          hint: "unbooked plus flexible",
+          value: hrs(free),
+          hint: "unbooked capacity",
         },
         {
           label: "Unbooked",
           value: hrs(free),
           hint: `of ${hrs(totalCapacity)} in the weeks ${people.length} of ${PEOPLE.length} people planned`,
         },
-        { label: "On flexible work", value: hrs(movable), hint: "meetings excluded" },
         {
           label: "Booked",
           value: hrs(booked),
@@ -1144,19 +1138,18 @@ function capacity(start: string, end: string): ReportSection[] {
     },
     {
       title: "By person",
-      columns: ["Person", "Red", "Yellow", "Green", "Booked", "Free", "Reallocatable"],
-      numeric: [1, 2, 3, 4, 5, 6],
+      columns: ["Person", "Tasks", "Done", "Meetings", "Booked", "Free"],
+      numeric: [1, 2, 3, 4, 5],
       empty: "Nobody forecast anything in this range.",
       rows: people
-        .sort((a, b) => b.reallocatable - a.reallocatable)
+        .sort((a, b) => b.free - a.free)
         .map((p) => [
           p.label,
-          String(p.tasks.urgent || 0),
-          String(p.tasks.important || 0),
-          String(p.tasks.flexible || 0),
+          String(p.taskCount),
+          hrs(p.doneHours),
+          hrs(p.meetingHours),
           p.overbooked ? `${hrs(p.booked)} (over)` : hrs(p.booked),
           hrs(p.free),
-          hrs(p.reallocatable),
         ]),
     },
     {

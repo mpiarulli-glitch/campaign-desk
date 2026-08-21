@@ -198,26 +198,27 @@ test("reports", async (t) => {
     assert.ok(csv.includes("Measure,Value,Detail"));
   });
 
-  await t.test("capacity counts tasks by traffic light", () => {
-    // Michael: one flexible task (t1) and one flexible meeting (t2).
-    // Jack: one flexible task (t3). The January row is out of range.
+  await t.test("capacity splits the week into tasks, done and meetings", () => {
+    // Michael: one task (t1, 4h, done) and one meeting (t2, 1h).
+    // Jack: one task (t3, 6h, open). The January row is out of range.
     const r = reports.buildReport("capacity", "2026-07-01", "2026-07-31");
-    const light = r.sections.find((s) => s.title === "Traffic light")!.stats!;
-    assert.equal(light.find((s) => s.label === "Red · urgent")?.value, "0");
-    assert.equal(light.find((s) => s.label === "Yellow · important")?.value, "0");
-    // Two flexible tasks (t1, t3). The meeting (t2) is counted as a meeting,
-    // not as green work, so it can't be read as movable.
-    assert.equal(light.find((s) => s.label === "Green · flexible")?.value, "2");
-    assert.equal(light.find((s) => s.label === "In meetings")?.value, "1h");
+    const made = r.sections.find((s) => s.title === "What the week is made of")!.stats!;
+    // Two tasks, t1 and t3. The meeting is counted as a meeting, not a task.
+    assert.equal(made.find((s) => s.label === "Tasks forecast")?.value, "2");
+    assert.equal(made.find((s) => s.label === "Already done")?.value, "4h");
+    assert.equal(made.find((s) => s.label === "In meetings")?.value, "1h");
   });
 
-  await t.test("a booked meeting is never offered as reallocatable", () => {
+  await t.test("a booked meeting counts as booked, never as free", () => {
     const r = reports.buildReport("capacity", "2026-07-01", "2026-07-31");
     const moveable = r.sections.find((s) => s.title.startsWith("Hours you could move"))!.stats!;
-    // Flexible hours are t1 (4h) + t3 (6h) = 10h. The 1h meeting (t2) carries a
-    // basecamp_event_id and defaults to flexible, but cannot be moved.
-    assert.equal(moveable.find((s) => s.label === "On flexible work")?.value, "10h");
+    // t1 4h + t2 1h + t3 6h = 11h booked. Reallocatable is unbooked capacity
+    // only now that priority is gone: nothing claims a task is movable.
     assert.equal(moveable.find((s) => s.label === "Booked")?.value, "11h");
+    assert.equal(
+      moveable.find((s) => s.label === "Reallocatable")?.value,
+      moveable.find((s) => s.label === "Unbooked")?.value
+    );
   });
 
   await t.test("only people who forecast are counted, the rest are listed apart", () => {
@@ -239,11 +240,10 @@ test("reports", async (t) => {
     const r = reports.buildReport("capacity", "2026-05-01", "2026-08-01");
     const byPerson = r.sections.find((s) => s.title === "By person")!;
     const jack = byPerson.rows!.find((row) => row[0] === "Jack")!;
-    // Jack has one row (t3, 6h flexible) in one week: 40h capacity, 34h free,
-    // and the 6h is itself movable, so 40h reallocatable — not 527h.
+    // Jack has one row (t3, 6h) in one week: 40h capacity, 6h booked, 34h free
+    // — not 527h. Columns are Person, Tasks, Done, Meetings, Booked, Free.
     assert.equal(jack[4], "6h");
     assert.equal(jack[5], "34h");
-    assert.equal(jack[6], "40h");
 
     for (const row of byPerson.rows!) {
       assert.ok(

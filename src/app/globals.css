@@ -4871,11 +4871,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
      a coloured edge. At a glance the week then reads as shapes and colour, which
      is the whole job of a calendar, and the text on top stays legible without
      depending on the page's own foreground colour. */
-  --fc-fill-urgent: #d1495b;
-  --fc-fill-important: #c17817;
-  --fc-fill-flexible: #2f6f9f;
-  --fc-fill-meeting: #5b5bd6;
-  --fc-fill-done: #7a7a82;
+  --fc-col-blue: #2f6f9f;
+  --fc-col-indigo: #4f5bc4;
+  --fc-col-violet: #7a4fb5;
+  --fc-col-teal: #17808a;
+  --fc-col-green: #2b7a52;
+  --fc-col-amber: #c17817;
+  --fc-col-red: #d1495b;
+  --fc-col-slate: #5f6672;
+  --fc-col-done: #7a7a82;
   --fc-grid-line: #ececef;
   min-height: 100vh;
   background: var(--ops-bg);
@@ -4890,11 +4894,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --ops-border: #2b2b30;
   --ops-border-soft: #212124;
   /* Brighter and more saturated on dark, where a mid-tone fill goes muddy. */
-  --fc-fill-urgent: #e05263;
-  --fc-fill-important: #d69128;
-  --fc-fill-flexible: #3b82c4;
-  --fc-fill-meeting: #6d6df0;
-  --fc-fill-done: #6b6b72;
+  --fc-col-blue: #3b82c4;
+  --fc-col-indigo: #6d6df0;
+  --fc-col-violet: #9a6ae0;
+  --fc-col-teal: #2aa3af;
+  --fc-col-green: #34996a;
+  --fc-col-amber: #d69128;
+  --fc-col-red: #e05263;
+  --fc-col-slate: #767e8c;
+  --fc-col-done: #6b6b72;
   --fc-grid-line: #212124;
 }
 
@@ -5547,7 +5555,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 4px 8px 5px;
   line-height: 1.25;
   color: #fff;
-  background: var(--fc-fill-flexible);
+  /* Slightly translucent, so the hour lines and the now-line read through a
+     block instead of being hidden by it. Applied to the background rather than
+     via opacity, which would fade the text along with it. */
+  background: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 88%, transparent);
   border: none;
   cursor: grab;
   display: flex;
@@ -5556,14 +5567,18 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   gap: 1px;
   min-width: 0;
 }
-.fc-cal-block.pri-urgent { background: var(--fc-fill-urgent); }
-.fc-cal-block.pri-important { background: var(--fc-fill-important); }
-.fc-cal-block.pri-flexible { background: var(--fc-fill-flexible); }
-/* A meeting is somebody else's block on your day, so it reads as its own thing
-   rather than as a priority you chose. */
-.fc-cal-block.is-meeting { background: var(--fc-fill-meeting); }
+/* Colour is set once, as a variable, so the block rule above stays the only
+   place that decides how a fill is composited. */
+.col-blue { --fc-block: var(--fc-col-blue); }
+.col-indigo { --fc-block: var(--fc-col-indigo); }
+.col-violet { --fc-block: var(--fc-col-violet); }
+.col-teal { --fc-block: var(--fc-col-teal); }
+.col-green { --fc-block: var(--fc-col-green); }
+.col-amber { --fc-block: var(--fc-col-amber); }
+.col-red { --fc-block: var(--fc-col-red); }
+.col-slate { --fc-block: var(--fc-col-slate); }
 .fc-cal-block.is-done {
-  background: var(--fc-fill-done);
+  --fc-block: var(--fc-col-done);
   opacity: 0.72;
 }
 .fc-cal-block.is-done .fc-cal-block-title { text-decoration: line-through; }
@@ -5884,9 +5899,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   min-width: 0;
 }
 .fc-queue-card:hover { border-color: var(--border-strong); }
-.fc-queue-card.pri-urgent { border-left-color: var(--danger); }
-.fc-queue-card.pri-important { border-left-color: var(--warning); }
-.fc-queue-card.pri-flexible { border-left-color: var(--text-muted); }
+.fc-queue-card[class*="col-"] { border-left-color: var(--fc-block); }
 .fc-queue-card.is-todo { border-left-color: var(--accent); }
 .fc-queue-card.is-step { margin-left: 12px; }
 .fc-queue-card.is-done { opacity: 0.55; }
@@ -6673,33 +6686,163 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .mood-grid { grid-template-columns: 1fr; }
 }
 
-/* Forecast task priority: urgent (can't move) / important (move if truly
-   needed) / flexible (reschedulable, still has to happen).
-   Carried by the card's leading rail only. Tinting the whole row turned a
-   normal week into a wall of colour and drowned out everything else. */
-.ops-task-chip.pri-urgent,
-.ops-list-row.pri-urgent { border-left-color: var(--danger); }
-.ops-task-chip.pri-important,
-.ops-list-row.pri-important { border-left-color: var(--warning); }
-.ops-task-chip.pri-flexible,
-.ops-list-row.pri-flexible { border-left-color: var(--success); }
+/* A task's colour, carried by the card's leading rail only. Tinting the whole
+   row turned a normal week into a wall of colour and drowned out everything
+   else — the calendar is where a colour gets to be the whole block. */
+.ops-task-chip[class*="col-"],
+.ops-list-row[class*="col-"] { border-left-color: var(--fc-block); }
 
-.priority-picker { display: inline-flex; gap: 4px; align-items: center; }
-.priority-dot {
-  width: 14px;
-  height: 14px;
+.fc-swatches { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.fc-swatch {
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   border: 2px solid transparent;
+  background: var(--fc-block);
   cursor: pointer;
   padding: 0;
-  opacity: 0.35;
+  opacity: 0.4;
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
-.priority-dot:hover { opacity: 0.7; }
-.priority-dot.is-on { opacity: 1; transform: scale(1.15); }
-.priority-dot.urgent { background: var(--danger); }
-.priority-dot.important { background: var(--warning); }
-.priority-dot.flexible { background: var(--success); }
+.fc-swatch:hover { opacity: 0.75; }
+.fc-swatch.is-on {
+  opacity: 1;
+  transform: scale(1.15);
+  border-color: var(--border-strong);
+}
+
+/* ------------------------------- "assigned to me" drawer above List view */
+.fc-assigned {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.fc-assigned.is-open { border-color: var(--border-strong); }
+.fc-assigned-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.fc-assigned-head strong { font-size: 13px; }
+.fc-assigned-head .muted { font-size: 11.5px; }
+.fc-assigned-caret { color: var(--text-muted); font-size: 10px; width: 9px; }
+.fc-assigned-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.fc-assigned-hint { margin-left: auto; }
+.fc-assigned-empty {
+  margin: 0;
+  padding: 0 14px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.fc-assigned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 10px;
+  max-height: 264px;
+  overflow-y: auto;
+}
+.fc-assigned-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: grab;
+  font-size: 12px;
+}
+.fc-assigned-item:hover { border-color: var(--border-strong); }
+.fc-assigned-item:active { cursor: grabbing; }
+.fc-assigned-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-assigned-where,
+.fc-assigned-item .muted,
+.fc-assigned-item .fc-queue-late {
+  flex: none;
+  font-size: 10.5px;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-assigned-where { color: var(--text-muted); }
+.fc-assigned-add {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-body);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fc-assigned-add:hover { border-color: var(--accent); color: var(--accent-ink); }
+.fc-assigned-add:disabled { opacity: 0.5; cursor: default; }
+
+/* -------------------------------------------------- edit a calendar block */
+.fc-edit { display: flex; flex-direction: column; gap: 9px; }
+.fc-edit-row { display: flex; gap: 9px; }
+.fc-edit-row .fc-edit-field { flex: 1 1 0; min-width: 0; }
+.fc-edit-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fc-edit-field > span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fc-edit-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.fc-edit-hours { display: flex; align-items: center; gap: 5px; }
+.fc-edit-hours input { width: 68px; font-variant-numeric: tabular-nums; }
+.fc-edit-hours em { font-style: normal; font-size: 11px; color: var(--text-muted); }
+.fc-edit-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+.fc-edit-remove { font-size: 11.5px; color: var(--danger); }
 
 /* List view (stacked day cards, full-width task rows) */
 .ops-list-day {
@@ -9446,7 +9589,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .activity-sidebar-dismiss { min-width: 44px; min-height: 44px; }
   /* The priority dots are a deliberately compact three-up control, so they get
      a usable hit area via padding rather than growing the dot itself. */
-  .priority-dot { min-width: 36px; min-height: 36px; }
+  .fc-swatch { min-width: 32px; min-height: 32px; }
   /* Week and month steppers. Targeted through their container because the
      buttons carry no class of their own. */
   .ops-weeknav > button { min-width: 44px; min-height: 44px; }

@@ -21,6 +21,7 @@ import {
   isRunning,
   trackedSeconds,
 } from "@/lib/forecast-timer";
+import { normalizeTaskColor } from "@/lib/forecast-colors";
 
 export type CalendarTask = {
   id: string;
@@ -29,7 +30,7 @@ export type CalendarTask = {
   notes: string;
   hours: number;
   completed: number;
-  priority: string;
+  color: string;
   start_time: string;
   basecamp_event_id: string;
   basecamp_todo_id: string;
@@ -88,6 +89,7 @@ export function ForecastCalendar({
   onTaskDragStart,
   onDragEnd,
   onResize,
+  onOpenEditor,
   onToggleTimer,
   timerBusyId,
   nowMs,
@@ -112,6 +114,9 @@ export function ForecastCalendar({
   onTaskDragStart: (e: React.DragEvent, task: CalendarTask, grabOffsetMin: number) => void;
   onDragEnd: () => void;
   onResize: (task: CalendarTask, hours: number) => void;
+  // Clicking a block opens its editor. A click never fires after a drag, so this
+  // does not fight dragging the block to a new time.
+  onOpenEditor: (task: CalendarTask, at: { x: number; y: number }) => void;
   onToggleTimer: (task: CalendarTask) => void;
   timerBusyId: string | null;
   // Ticking clock, owned by the page so one timer drives every view at once.
@@ -264,7 +269,7 @@ export function ForecastCalendar({
                 return (
                   <div
                     key={b.item.id}
-                    className={`fc-cal-block pri-${b.item.priority} ${
+                    className={`fc-cal-block col-${normalizeTaskColor(b.item.color)} ${
                       b.item.completed ? "is-done" : ""
                     } ${dragId === b.item.id ? "is-dragging" : ""} ${
                       resizing?.id === b.item.id ? "is-resizing" : ""
@@ -292,6 +297,13 @@ export function ForecastCalendar({
                         .join(" · ")
                     }
                     draggable
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      onOpenEditor(b.item, {
+                        x: r.left + r.width / 2,
+                        y: r.bottom,
+                      });
+                    }}
                     onDragStart={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const grabbedPx = e.clientY - rect.top;

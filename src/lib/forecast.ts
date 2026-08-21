@@ -1,16 +1,12 @@
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type ForecastNote, type ForecastPriority, type ForecastTask } from "./db";
+import { getDb, nowIso, type ForecastNote, type ForecastTask } from "./db";
 import { PEOPLE, isValidPerson, personLabel } from "./people";
+import { normalizeTaskColor } from "./forecast-colors";
 import { parseTimeInput } from "./forecast-time";
 import { runningSeconds } from "./forecast-timer";
 import { addWeeks } from "./week";
 
-export type { ForecastTask, ForecastPriority };
-
-const PRIORITIES: ForecastPriority[] = ["urgent", "important", "flexible"];
-function normPriority(v: unknown): ForecastPriority {
-  return PRIORITIES.includes(v as ForecastPriority) ? (v as ForecastPriority) : "flexible";
-}
+export type { ForecastTask };
 export { PEOPLE, isValidPerson, personLabel };
 
 export const WEEKLY_CAPACITY_HOURS = 40;
@@ -56,7 +52,7 @@ export function createTask(input: {
   client?: string;
   notes?: string;
   hours: number;
-  priority?: ForecastPriority;
+  color?: string;
   basecampTodoId?: string;
   // Set when the picked item was a Basecamp subtask. basecampTodoId then carries
   // the PARENT to-do, because a step takes no timesheet entries of its own.
@@ -79,7 +75,7 @@ export function createTask(input: {
   // kept when both arrived together.
   const stepId = todoId ? (input.basecampStepId || "").trim() : "";
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, priority, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, start_time, created_at, updated_at)
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, start_time, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
@@ -88,7 +84,7 @@ export function createTask(input: {
     (input.client || "").trim(),
     (input.notes || "").trim(),
     input.hours,
-    normPriority(input.priority),
+    normalizeTaskColor(input.color),
     todoId,
     stepId,
     (input.basecampProjectId || "").trim(),
@@ -108,7 +104,7 @@ export function updateTask(
     notes: string;
     hours: number;
     completed: boolean;
-    priority: ForecastPriority;
+    color: string;
     actualHours: number;
     basecampTimeEntryId: string;
     // Set when a manually-typed task gets a shadow Basecamp todo created for
@@ -122,7 +118,7 @@ export function updateTask(
   if (!existing) return null;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, priority = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, start_time = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, color = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, start_time = ?, updated_at = ? WHERE id = ?`
     )
     .run(
       updates.taskDate ?? existing.task_date,
@@ -130,7 +126,7 @@ export function updateTask(
       updates.notes !== undefined ? updates.notes.trim() : existing.notes,
       updates.hours ?? existing.hours,
       updates.completed !== undefined ? (updates.completed ? 1 : 0) : existing.completed,
-      updates.priority ? normPriority(updates.priority) : existing.priority,
+      updates.color !== undefined ? normalizeTaskColor(updates.color) : existing.color,
       updates.actualHours ?? existing.actual_hours,
       updates.basecampTimeEntryId ?? existing.basecamp_time_entry_id,
       updates.basecampTodoId ?? existing.basecamp_todo_id,
@@ -275,9 +271,12 @@ export interface PersonWeekSummary {
   hours: number;
   capacity: number;
   allocationPct: number;
-  urgentPct: number;
-  importantPct: number;
-  flexiblePct: number;
+  // How much of the week is already finished, which is the useful split now that
+  // priority is gone: what someone has left to do says more about their week
+  // than how they had labelled it.
+  donePct: number;
+  taskCount: number;
+  doneCount: number;
 }
 
 // Total forecasted hours per person for a week, against the flat weekly
@@ -293,33 +292,36 @@ export function weekSummaryForAllPeople(weekStart: string): PersonWeekSummary[] 
     .all(weekStart, end) as Array<{ person: string; hours: number }>;
   const byPerson = new Map(rows.map((r) => [r.person, r.hours]));
 
-  const priorityRows = getDb()
+  const progressRows = getDb()
     .prepare(
-      `SELECT person, priority, SUM(hours) AS hours FROM forecast_tasks
-       WHERE task_date >= ? AND task_date < ?
-       GROUP BY person, priority`
+      `SELECT person,
+              COUNT(*) AS tasks,
+              SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS done,
+              SUM(CASE WHEN completed = 1 THEN hours ELSE 0 END) AS done_hours
+         FROM forecast_tasks
+        WHERE task_date >= ? AND task_date < ?
+        GROUP BY person`
     )
-    .all(weekStart, end) as Array<{ person: string; priority: ForecastPriority; hours: number }>;
-  const priorityByPerson = new Map<string, Record<ForecastPriority, number>>();
-  for (const row of priorityRows) {
-    const entry = priorityByPerson.get(row.person) || { urgent: 0, important: 0, flexible: 0 };
-    entry[row.priority] = row.hours;
-    priorityByPerson.set(row.person, entry);
-  }
+    .all(weekStart, end) as Array<{
+    person: string;
+    tasks: number;
+    done: number;
+    done_hours: number;
+  }>;
+  const progressByPerson = new Map(progressRows.map((r) => [r.person, r]));
 
   return PEOPLE.map((p) => {
     const hours = byPerson.get(p.slug) || 0;
-    const priorityHours = priorityByPerson.get(p.slug) || { urgent: 0, important: 0, flexible: 0 };
-    const priorityTotal = priorityHours.urgent + priorityHours.important + priorityHours.flexible;
+    const progress = progressByPerson.get(p.slug);
     return {
       person: p.slug,
       label: p.label,
       hours,
       capacity: WEEKLY_CAPACITY_HOURS,
       allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
-      urgentPct: priorityTotal ? Math.round((priorityHours.urgent / priorityTotal) * 100) : 0,
-      importantPct: priorityTotal ? Math.round((priorityHours.important / priorityTotal) * 100) : 0,
-      flexiblePct: priorityTotal ? Math.round((priorityHours.flexible / priorityTotal) * 100) : 0,
+      donePct: hours ? Math.round(((progress?.done_hours || 0) / hours) * 100) : 0,
+      taskCount: progress?.tasks || 0,
+      doneCount: progress?.done || 0,
     };
   });
 }

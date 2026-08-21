@@ -5,10 +5,17 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
 import { ForecastQueue, type AssignedSource } from "@/components/ForecastQueue";
+import {
+  TASK_COLORS,
+  normalizeTaskColor,
+  type TaskColor,
+} from "@/lib/forecast-colors";
 import { minHoursForTodos, splitHours } from "@/lib/forecast-hours";
 import {
+  bookedRecordingIds,
   queueTodoLinkage,
   queueTodoNotes,
+  sortQueueTodos,
   type ForecastDrag,
   type QueueTodo,
 } from "@/lib/forecast-queue";
@@ -26,8 +33,6 @@ import {
 } from "@/lib/forecast-timer";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
-type Priority = "urgent" | "important" | "flexible";
-
 type Task = {
   id: string;
   person: string;
@@ -36,7 +41,7 @@ type Task = {
   notes: string;
   hours: number;
   completed: number;
-  priority: Priority;
+  color: string;
   start_time: string;
   basecamp_todo_id: string;
   basecamp_step_id: string;
@@ -104,13 +109,6 @@ type EventState = {
   mine: BcEvent[];
   others: BcEvent[];
   reason: string | null;
-};
-
-const PRIORITIES: Priority[] = ["urgent", "important", "flexible"];
-const PRIORITY_LABEL: Record<Priority, string> = {
-  urgent: "Urgent — can't be moved",
-  important: "Important — move only if truly needed",
-  flexible: "Flexible — reschedulable, still needs doing",
 };
 
 // Same Mon-Fri math as lib/week.ts's weekdays(), duplicated client-side so
@@ -532,31 +530,38 @@ function TodoPicker({
   );
 }
 
-function PriorityPicker({
+/**
+ * Colour swatches for a task.
+ *
+ * This replaced the priority picker. Priority was three fixed dots that doubled
+ * as the block's colour, so colour-coding a week by client or by kind of work
+ * meant lying about urgency. Colour is now just colour.
+ */
+function ColorPicker({
   value,
   onChange,
 }: {
-  value: Priority;
-  onChange: (p: Priority) => void;
+  value: string;
+  onChange: (color: TaskColor) => void;
 }) {
+  const current = normalizeTaskColor(value);
   return (
-    <div className="priority-picker">
-      {PRIORITIES.map((p) => (
+    <div className="fc-swatches" role="group" aria-label="Task colour">
+      {TASK_COLORS.map((c) => (
         <button
-          key={p}
+          key={c.id}
           type="button"
-          className={`priority-dot ${p} ${value === p ? "is-on" : ""}`}
-          title={PRIORITY_LABEL[p]}
-          aria-label={PRIORITY_LABEL[p]}
-          onClick={() => onChange(p)}
+          className={`fc-swatch col-${c.id} ${current === c.id ? "is-on" : ""}`}
+          title={c.label}
+          aria-label={c.label}
+          aria-pressed={current === c.id}
+          onClick={() => onChange(c.id)}
         />
       ))}
     </div>
   );
 }
 
-// Why the task field is a text box instead of a picker, in the reader's terms.
-// Empty string means the picker is working normally and needs no explanation.
 function todoHint(draft: Draft, state: TodoState | undefined): string {
   if (!draft.clientId) return "";
   if (!state || state.loading) return "";
@@ -1032,10 +1037,17 @@ export default function PersonForecastPage() {
   // Viewport position of the calendar cell that was clicked, so the add form can
   // open as a popover there. Null in every other view, which uses inline forms.
   const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
+  // Calendar block being edited, and where on screen it was clicked.
+  const [editing, setEditing] = useState<
+    { id: string; at: { x: number; y: number } } | null
+  >(null);
   // Which client the queue sidebar is showing Basecamp to-dos for, and how many
   // hours a dragged-in to-do should book.
   const [queueClientId, setQueueClientId] = useState("");
   const [queueHours, setQueueHours] = useState("1");
+  // List view's assigned strip starts collapsed: it is a drawer above the week,
+  // not a permanent panel like the calendar's sidebar.
+  const [assignedOpen, setAssignedOpen] = useState(false);
   // Everything Basecamp says is assigned to this person, across every project.
   // Fetched once per visit: it is one request and it backs the queue's default
   // view, so nobody has to pick a client to find their own work.
@@ -1730,6 +1742,13 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  // Resolved from live data so the panel reflects an edit the moment it saves,
+  // and closes itself if the task goes away underneath it.
+  const editingTask = useMemo(() => {
+    if (!editing) return null;
+    return (data?.tasks || []).find((t) => t.id === editing.id) || null;
+  }, [editing, data]);
+
   // Looked up from the current data rather than captured at tick time, so the
   // figure offered reflects any timer that was just banked.
   const logAskTask = useMemo(() => {
@@ -1980,14 +1999,103 @@ export default function PersonForecastPage() {
     );
   }
 
-  async function setPriority(task: Task, priority: Priority) {
-    if (priority === task.priority) return;
+  /**
+   * "Everything assigned to me" for the List view.
+   *
+   * The calendar has this in its sidebar, where there is room for a standing
+   * panel. List view has no sidebar, so it gets a collapsed strip at the top
+   * that opens on demand. Items drag onto any day below — the day cards are
+   * already drop targets and onDayDrop already knows how to book a to-do — or
+   * take the button, which books to today.
+   */
+  function AssignedStrip() {
+    const booked = bookedRecordingIds(data?.tasks || []);
+    const open = assigned.assignments.filter((a) => !booked.has(a.id));
+    const shown = assignedOpen ? open : open.slice(0, 0);
+
+    return (
+      <div className={`fc-assigned ${assignedOpen ? "is-open" : ""}`}>
+        <button
+          type="button"
+          className="fc-assigned-head"
+          aria-expanded={assignedOpen}
+          onClick={() => setAssignedOpen((v) => !v)}
+        >
+          <span className="fc-assigned-caret" aria-hidden="true">
+            {assignedOpen ? "▾" : "▸"}
+          </span>
+          <strong>Assigned to me</strong>
+          {assigned.loading ? (
+            <span className="muted">loading…</span>
+          ) : (
+            <span className="fc-assigned-count">{open.length}</span>
+          )}
+          <span className="muted fc-assigned-hint">
+            {assignedOpen ? "Drag one onto a day, or add it to today" : "from Basecamp"}
+          </span>
+        </button>
+        {assignedOpen ? (
+          open.length === 0 ? (
+            <p className="fc-assigned-empty">
+              {assigned.reason === "person-not-connected"
+                ? "Connect your own Basecamp account to see your work here."
+                : assigned.reason === "not-connected"
+                  ? "Basecamp isn't connected."
+                  : assigned.reason === "none-assigned"
+                    ? "Nothing is assigned to you in Basecamp right now."
+                    : "Everything assigned to you is already on this week's forecast."}
+            </p>
+          ) : (
+            <div className="fc-assigned-list">
+              {sortQueueTodos(shown).map((a) => (
+                <div
+                  key={a.id}
+                  className="fc-assigned-item"
+                  draggable
+                  onDragStart={(e) => onTodoDragStart(e, a)}
+                  onDragEnd={onDragEnd}
+                  title="Drag onto a day below, or use Add"
+                >
+                  <span className="fc-assigned-title">{a.title}</span>
+                  {a.kind === "step" ? (
+                    <span className="fc-queue-tag">subtask</span>
+                  ) : a.kind === "card" ? (
+                    <span className="fc-queue-tag">card</span>
+                  ) : null}
+                  <span className="fc-assigned-where">{a.clientName}</span>
+                  {a.dueOn ? (
+                    <span className={a.dueOn < today ? "fc-queue-late" : "muted"}>
+                      {a.dueOn < today ? "overdue" : `due ${a.dueOn.slice(5)}`}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="fc-assigned-add"
+                    disabled={saving}
+                    onClick={() => void bookTodo(a, queueDay, "")}
+                  >
+                    Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+        ) : null}
+      </div>
+    );
+  }
+
+  async function setColor(task: Task, color: TaskColor) {
+    if (normalizeTaskColor(task.color) === color) return;
+    setData((d) =>
+      d ? { ...d, tasks: d.tasks.map((t) => (t.id === task.id ? { ...t, color } : t)) } : d
+    );
     const res = await fetch(`/api/forecast/${person}/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ priority }),
+      body: JSON.stringify({ color }),
     });
-    if (!res.ok) setError("Could not update priority.");
+    if (!res.ok) setError("Could not change that task's colour.");
     load(week, { silent: true });
   }
 
@@ -2156,7 +2264,7 @@ export default function PersonForecastPage() {
                   <p className="muted" style={{ margin: "4px 0 14px" }}>Nothing planned for today yet. Add your first task below.</p>
                 ) : (
                   tasks.map((t) => (
-                    <div key={t.id} className={`ops-list-row pri-${t.priority}`}>
+                    <div key={t.id} className={`ops-list-row col-${normalizeTaskColor(t.color)}`}>
                       <input
                         type="checkbox"
                         checked={!!t.completed}
@@ -2193,7 +2301,7 @@ export default function PersonForecastPage() {
                         />
                         <span className="muted">h</span>
                       </div>
-                      <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                      <ColorPicker value={t.color} onChange={(c) => setColor(t, c)} />
                       <span className="ops-row-actions">
                         <TimerButton task={t} />
                         <LogTime task={t} />
@@ -2253,7 +2361,7 @@ export default function PersonForecastPage() {
                     {tasks.map((t) => (
                       <div
                         key={t.id}
-                        className={`ops-task-chip pri-${t.priority} ${t.completed ? "is-done" : ""} ${
+                        className={`ops-task-chip col-${normalizeTaskColor(t.color)} ${t.completed ? "is-done" : ""} ${
                           dragId === t.id ? "is-dragging" : ""
                         }`}
                         title="Drag to another day to reschedule"
@@ -2295,7 +2403,7 @@ export default function PersonForecastPage() {
                           title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                         />
                         <div className="chip-foot">
-                          <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                          <ColorPicker value={t.color} onChange={(c) => setColor(t, c)} />
                           <TimerButton task={t} compact />
                           <LogTime task={t} />
                           <button className="remove" onClick={() => removeTask(t.id)}>×</button>
@@ -2382,6 +2490,7 @@ export default function PersonForecastPage() {
               }}
               onRemove={removeTask}
               onSlotClick={(date, startTime, at) => {
+                setEditing(null);
                 setAddingFor(date);
                 setDraft(date, { startTime });
                 setAddAnchor(at);
@@ -2395,6 +2504,10 @@ export default function PersonForecastPage() {
               onTaskDragStart={onTaskDragStart}
               onDragEnd={onDragEnd}
               onResize={(t, hours) => void resizeTask(t, hours)}
+              onOpenEditor={(t, at) => {
+                closeAdd();
+                setEditing({ id: t.id, at });
+              }}
               onToggleTimer={(t) => {
                 const task = (data?.tasks || []).find((x) => x.id === t.id);
                 if (task) void toggleTimer(task);
@@ -2402,6 +2515,85 @@ export default function PersonForecastPage() {
               timerBusyId={timerBusy}
               nowMs={nowMs}
             />
+            {editingTask ? (
+              <SlotPopover
+                anchor={editing!.at}
+                onClose={() => setEditing(null)}
+                title={editingTask.client || "Task"}
+              >
+                <div className="fc-edit">
+                  <label className="fc-edit-field">
+                    <span>Title</span>
+                    <input
+                      key={`${editingTask.id}-title`}
+                      defaultValue={editingTask.notes}
+                      onBlur={(e) => saveField(editingTask, "notes", e.target.value)}
+                      placeholder="What is this task"
+                      autoFocus
+                    />
+                  </label>
+                  <label className="fc-edit-field">
+                    <span>Client</span>
+                    <input
+                      key={`${editingTask.id}-client`}
+                      defaultValue={editingTask.client}
+                      onBlur={(e) => saveField(editingTask, "client", e.target.value)}
+                    />
+                  </label>
+                  <div className="fc-edit-row">
+                    <label className="fc-edit-field">
+                      <span>Starts</span>
+                      <input
+                        type="time"
+                        key={`${editingTask.id}-start-${editingTask.start_time}`}
+                        defaultValue={editingTask.start_time || ""}
+                        onBlur={(e) => saveField(editingTask, "start_time", e.target.value)}
+                      />
+                    </label>
+                    <label className="fc-edit-field">
+                      <span>Length</span>
+                      <span className="fc-edit-hours">
+                        <input
+                          type="number"
+                          min="0.25"
+                          step="0.25"
+                          key={`${editingTask.id}-hours-${editingTask.hours}`}
+                          defaultValue={editingTask.hours}
+                          onBlur={(e) => saveField(editingTask, "hours", e.target.value)}
+                        />
+                        <em>hrs</em>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="fc-edit-field">
+                    <span>Colour</span>
+                    <ColorPicker
+                      value={editingTask.color}
+                      onChange={(c) => void setColor(editingTask, c)}
+                    />
+                  </div>
+                  <div className="fc-edit-foot">
+                    <button
+                      type="button"
+                      className="linklike fc-edit-remove"
+                      onClick={() => {
+                        setEditing(null);
+                        void removeTask(editingTask.id);
+                      }}
+                    >
+                      Remove task
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => setEditing(null)}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              </SlotPopover>
+            ) : null}
             {addingFor && addAnchor ? (
               <SlotPopover
                 anchor={addAnchor}
@@ -2432,6 +2624,7 @@ export default function PersonForecastPage() {
           </div>
         ) : (
           <div>
+            <AssignedStrip />
             {days.map((date) => {
               const tasks = tasksByDay.get(date) || [];
               const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
@@ -2457,7 +2650,7 @@ export default function PersonForecastPage() {
                     tasks.map((t) => (
                       <div
                         key={t.id}
-                        className={`ops-list-row pri-${t.priority} ${dragId === t.id ? "is-dragging" : ""}`}
+                        className={`ops-list-row col-${normalizeTaskColor(t.color)} ${dragId === t.id ? "is-dragging" : ""}`}
                         title="Drag to another day to reschedule"
                         {...dragProps(t)}
                       >
@@ -2503,7 +2696,7 @@ export default function PersonForecastPage() {
                           />
                           <span className="muted">h</span>
                         </div>
-                        <PriorityPicker value={t.priority} onChange={(p) => setPriority(t, p)} />
+                        <ColorPicker value={t.color} onChange={(c) => setColor(t, c)} />
                         <span className="ops-row-actions">
                           <TimerButton task={t} />
                           <LogTime task={t} />

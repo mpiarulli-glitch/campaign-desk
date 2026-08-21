@@ -349,7 +349,15 @@ export interface ForecastTask {
   notes: string;
   hours: number;
   completed: number;
+  /** @deprecated Priority was removed from Forecast in favour of an explicit
+   *  colour per task. The column stays because SQLite makes dropping one
+   *  awkward and the value is harmless, but nothing reads or writes it any
+   *  more — see forecast-colors.ts and lib/reports capacity(). */
   priority: ForecastPriority;
+  // Explicit block colour, empty for the default. A task's colour used to be
+  // derived from its priority, which meant you could not colour-code work
+  // without also claiming something about how urgent it was.
+  color: string;
   // Set when the task text was picked from a Basecamp todo rather than typed.
   // Kept as hidden linkage so completing the task can close the Basecamp todo —
   // the visible task text stays the plain copied title in `notes`.
@@ -1537,6 +1545,7 @@ export function getDb(): Database.Database {
       start_time TEXT NOT NULL DEFAULT '',
       tracked_seconds INTEGER NOT NULL DEFAULT 0,
       timer_started_at TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2637,6 +2646,9 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN timer_started_at TEXT NOT NULL DEFAULT ''`
     );
+  }
+  if (forecastCols.length && !forecastCols.includes("color")) {
+    database.exec(`ALTER TABLE forecast_tasks ADD COLUMN color TEXT NOT NULL DEFAULT ''`);
   }
 
   // Two-factor and the onboarding gate. Existing rows land with 2FA off and
