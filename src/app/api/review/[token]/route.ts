@@ -8,6 +8,8 @@ import {
   listCommentsWithAttachments,
   listEmails,
   listEmailsWithSubjects,
+  listFlowSteps,
+  ensureAutomationFlow,
   setChosenSubject,
   updateCampaign,
   markApproved,
@@ -74,6 +76,9 @@ function publicCampaign(campaign: Campaign) {
     updated_at: campaign.updated_at,
     approved_at: campaign.approved_at,
     approved_by: campaign.approved_channel === "client" ? campaign.approved_by : null,
+    presentation: campaign.presentation,
+    trigger_label: campaign.trigger_label,
+    trigger_kind: campaign.trigger_kind,
   };
 }
 
@@ -105,6 +110,10 @@ export async function GET(_request: Request, { params }: Params) {
     title: e.title,
     html_content: e.html_content,
     kind: e.kind,
+    body_format: e.body_format,
+    media_url: e.media_url,
+    purpose: e.purpose,
+    delay_ms: e.delay_ms ?? 0,
     sort_order: e.sort_order,
     approved_at: e.approved_at,
     approved_by: e.approved_channel === "client" ? e.approved_by : null,
@@ -116,10 +125,14 @@ export async function GET(_request: Request, { params }: Params) {
     })),
     open_comments: countOpenComments(fresh.id, e.id, countChannel),
   }));
+  if (fresh.presentation === "automation") {
+    ensureAutomationFlow(fresh.id);
+  }
 
   return NextResponse.json({
     campaign: publicCampaign(fresh),
     emails,
+    flow: listFlowSteps(fresh.id),
     comments: listCommentsWithAttachments(fresh.id, undefined, countChannel).map(
       (c) => ({
         id: c.id,

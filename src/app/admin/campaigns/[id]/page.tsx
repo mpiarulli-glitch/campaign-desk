@@ -18,6 +18,24 @@ import {
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
+import {
+  AutomationMap,
+  DelayPicker,
+} from "@/components/AutomationMap";
+import {
+  TRIGGER_KINDS,
+  CONDITION_KINDS,
+  coerceTriggerKind,
+  coerceConditionKind,
+  delayToMs,
+  splitDelay,
+  type DelayUnit,
+  type Presentation,
+  type TriggerKind,
+  type ConditionKind,
+  type FlowStepType,
+} from "@/lib/automation-map";
+import type { FlowInsertAt } from "@/components/AutomationMap";
 
 type Attachment = {
   id: string;
@@ -62,6 +80,18 @@ type SubjectOption = {
   preview_text: string;
 };
 
+type FlowStep = {
+  id: string;
+  parent_id: string | null;
+  branch: string;
+  sort_order: number;
+  step_type: string;
+  delay_ms: number;
+  email_id: string | null;
+  condition_kind: string;
+  condition_label: string;
+};
+
 type EmailItem = {
   id: string;
   title: string;
@@ -77,6 +107,7 @@ type EmailItem = {
   approved_channel?: string | null;
   chosen_subject_id?: string | null;
   subjects?: SubjectOption[];
+  delay_ms?: number;
 };
 
 type Campaign = {
@@ -97,6 +128,9 @@ type Campaign = {
   approved_at?: string | null;
   approved_by?: string | null;
   approved_channel?: string | null;
+  presentation?: Presentation;
+  trigger_label?: string;
+  trigger_kind?: string;
 };
 
 type BasecampPerson = {
@@ -188,6 +222,19 @@ export default function AdminCampaignPage() {
   const [savingSubjects, setSavingSubjects] = useState(false);
   const [purposeDraft, setPurposeDraft] = useState("");
   const [savingPurpose, setSavingPurpose] = useState(false);
+  const [triggerLabelDraft, setTriggerLabelDraft] = useState("");
+  const [triggerKindDraft, setTriggerKindDraft] = useState<TriggerKind>("custom");
+  const [delayAmount, setDelayAmount] = useState(1);
+  const [delayUnit, setDelayUnit] = useState<DelayUnit>("days");
+  const [savingTrigger, setSavingTrigger] = useState(false);
+  const [newEmailDelayAmount, setNewEmailDelayAmount] = useState(1);
+  const [newEmailDelayUnit, setNewEmailDelayUnit] = useState<DelayUnit>("days");
+  const [flow, setFlow] = useState<FlowStep[]>([]);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [conditionKindDraft, setConditionKindDraft] =
+    useState<ConditionKind>("opened");
+  const [conditionLabelDraft, setConditionLabelDraft] = useState("");
+  const [savingStep, setSavingStep] = useState(false);
   const [basecampApproval, setBasecampApproval] =
     useState<BasecampApprovalState | null>(null);
   const [sendingBasecampApproval, setSendingBasecampApproval] = useState(false);
@@ -240,6 +287,9 @@ export default function AdminCampaignPage() {
       setComments(data.comments || []);
       setVersions(data.versions || []);
       setStatus(data.campaign.status);
+      setTriggerLabelDraft(data.campaign.trigger_label || "");
+      setTriggerKindDraft(coerceTriggerKind(data.campaign.trigger_kind));
+      setFlow(data.flow || []);
       loadBasecampApproval();
 
       const nextId =
@@ -421,6 +471,19 @@ export default function AdminCampaignPage() {
     setPurposeDraft(activeEmail?.purpose || "");
   }, [activeEmail?.id, activeEmail?.purpose]);
 
+  useEffect(() => {
+    const step = flow.find((s) => s.id === selectedStepId);
+    if (step?.step_type === "wait") {
+      const next = splitDelay(step.delay_ms || 0);
+      setDelayAmount(next.amount);
+      setDelayUnit(next.unit);
+    }
+    if (step?.step_type === "condition") {
+      setConditionKindDraft(coerceConditionKind(step.condition_kind));
+      setConditionLabelDraft(step.condition_label || "");
+    }
+  }, [selectedStepId, flow]);
+
   async function toggleEmailApproved(approved: boolean) {
     if (!activeEmail) return;
     setSaving(true);
@@ -483,6 +546,134 @@ export default function AdminCampaignPage() {
     }
     load(activeEmail.id);
     setMessage("Purpose saved.");
+  }
+
+  async function saveTrigger() {
+    setSavingTrigger(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        triggerLabel: triggerLabelDraft,
+        triggerKind: triggerKindDraft,
+      }),
+    });
+    setSavingTrigger(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save the trigger.");
+      return;
+    }
+    setMessage("Trigger saved.");
+    load(activeEmailId);
+  }
+
+  async function addFlowStepAt(stepType: FlowStepType, at: FlowInsertAt) {
+    setSaving(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}/flow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stepType,
+        parentId: at.parentId,
+        branch: at.branch,
+        afterStepId: at.afterStepId || null,
+        prepend: at.prepend === true,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not add that step.");
+      return;
+    }
+    const data = await res.json();
+    setMessage(
+      stepType === "wait"
+        ? "Wait added. Set how long it should pause."
+        : stepType === "condition"
+          ? "If / else added. Write the question the path splits on."
+          : "Email added. Write it below."
+    );
+    setSelectedStepId(data.step?.id || null);
+    await load(data.email?.id || activeEmailId);
+  }
+
+  async function saveSelectedStep() {
+    const step = flow.find((s) => s.id === selectedStepId);
+    if (!step) return;
+    setSavingStep(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}/flow`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stepId: step.id,
+        delayMs:
+          step.step_type === "wait" ? delayToMs(delayAmount, delayUnit) : undefined,
+        conditionKind:
+          step.step_type === "condition" ? conditionKindDraft : undefined,
+        conditionLabel:
+          step.step_type === "condition" ? conditionLabelDraft : undefined,
+      }),
+    });
+    setSavingStep(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save that step.");
+      return;
+    }
+    setMessage(step.step_type === "wait" ? "Wait time saved." : "If / else saved.");
+    load(activeEmailId);
+  }
+
+  async function deleteSelectedStep() {
+    const step = flow.find((s) => s.id === selectedStepId);
+    if (!step) return;
+    if (step.step_type === "email") {
+      setError("Remove an email from the package list below, not from the map.");
+      return;
+    }
+    if (!confirm("Remove this step from the automation?")) return;
+    setSavingStep(true);
+    const res = await fetch(`/api/campaigns/${id}/flow`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stepId: step.id }),
+    });
+    setSavingStep(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not remove that step.");
+      return;
+    }
+    setSelectedStepId(null);
+    setMessage("Step removed.");
+    load(activeEmailId);
+  }
+
+  async function setPresentation(next: Presentation) {
+    setSaving(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ presentation: next }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not change how this is reviewed.");
+      return;
+    }
+    setMessage(
+      next === "automation"
+        ? "This will show as an automation map on the review link."
+        : "This will show as a regular review package."
+    );
+    load(activeEmailId);
   }
 
   function effectiveSubject(email: EmailItem): SubjectOption | null {
@@ -915,6 +1106,10 @@ export default function AdminCampaignPage() {
         kind: newEmailKind,
         bodyFormat: newEmailFormat,
         mediaUrl: newEmailMedia,
+        delayMs:
+          campaign?.presentation === "automation"
+            ? delayToMs(newEmailDelayAmount, newEmailDelayUnit)
+            : undefined,
       }),
     });
     setSaving(false);
@@ -930,6 +1125,8 @@ export default function AdminCampaignPage() {
     setNewEmailKind("email");
     setNewEmailFormat("html");
     setNewEmailMedia("");
+    setNewEmailDelayAmount(1);
+    setNewEmailDelayUnit("days");
     setMessage("Added to this review package.");
     await load(data.email?.id);
     setTab("feedback");
@@ -1009,6 +1206,8 @@ export default function AdminCampaignPage() {
     )?.name ||
     basecampApproval?.recipient ||
     "";
+  const isAutomation = campaign.presentation === "automation";
+  const selectedStep = flow.find((s) => s.id === selectedStepId) || null;
 
   return (
     <div className="app-shell">
@@ -1026,11 +1225,13 @@ export default function AdminCampaignPage() {
         >
           <div>
             <p className="eyebrow">
-              Review package{campaign.archived_at ? " · Archived" : ""}
+              {isAutomation ? "Automation" : "Review package"}
+              {campaign.archived_at ? " · Archived" : ""}
             </p>
             <h1 className="h1">{campaign.title}</h1>
             <p className="muted" style={{ margin: "8px 0 0" }}>
-              {emails.length} email{emails.length === 1 ? "" : "s"} · Updated{" "}
+              {emails.length} {isAutomation ? "step" : "email"}
+              {emails.length === 1 ? "" : isAutomation ? "s" : "s"} · Updated{" "}
               {new Date(campaign.updated_at).toLocaleString()}
             </p>
             <div
@@ -1111,9 +1312,178 @@ export default function AdminCampaignPage() {
           </div>
         </div>
 
+        <div className="card card-pad stack am-map-card">
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <h2 className="h2">
+                {isAutomation ? "Automation map" : "Review as an automation"}
+              </h2>
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                {isAutomation
+                  ? "Add waits and if/else anywhere on the path. Click an email to edit it."
+                  : "Turn this package into a map: trigger, wait times, then each email."}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setPresentation(isAutomation ? "package" : "automation")}
+              disabled={saving}
+            >
+              {isAutomation ? "Show as package" : "Show as automation map"}
+            </button>
+          </div>
+
+          {isAutomation ? (
+            <>
+              <div className="am-trigger-fields">
+                <div className="field">
+                  <label htmlFor="trigger-kind">What starts it</label>
+                  <select
+                    id="trigger-kind"
+                    value={triggerKindDraft}
+                    onChange={(e) => setTriggerKindDraft(coerceTriggerKind(e.target.value))}
+                  >
+                    {TRIGGER_KINDS.map((k) => (
+                      <option key={k.value} value={k.value}>
+                        {k.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="trigger-label">Trigger</label>
+                  <input
+                    id="trigger-label"
+                    value={triggerLabelDraft}
+                    onChange={(e) => setTriggerLabelDraft(e.target.value)}
+                    placeholder="Tag added: New patient"
+                  />
+                </div>
+              </div>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={saveTrigger}
+                  disabled={savingTrigger}
+                >
+                  {savingTrigger ? "Saving..." : "Save trigger"}
+                </button>
+              </div>
+              <AutomationMap
+                triggerLabel={triggerLabelDraft || campaign.trigger_label}
+                triggerKind={triggerKindDraft}
+                emails={emails.map((email) => ({
+                  id: email.id,
+                  title: email.title,
+                  kind: email.kind,
+                  delay_ms: email.delay_ms,
+                  approved_at: email.approved_at,
+                  open_comments: email.open_comments,
+                  purpose: email.purpose,
+                  subject: effectiveSubject(email)?.subject || null,
+                }))}
+                steps={flow}
+                selectedId={selectedStepId || activeEmail.id}
+                editable
+                onSelectStep={(stepId, emailId) => {
+                  setSelectedStepId(stepId);
+                  if (emailId) selectEmail(emailId);
+                }}
+                onAddStep={addFlowStepAt}
+              />
+              {selectedStep?.step_type === "wait" ? (
+                <div className="card card-pad stack">
+                  <h2 className="h2" style={{ margin: 0 }}>
+                    Wait time
+                  </h2>
+                  <DelayPicker
+                    amount={delayAmount}
+                    unit={delayUnit}
+                    onAmount={setDelayAmount}
+                    onUnit={setDelayUnit}
+                    disabled={savingStep}
+                  />
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={saveSelectedStep}
+                      disabled={savingStep}
+                    >
+                      {savingStep ? "Saving..." : "Save wait"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={deleteSelectedStep}
+                      disabled={savingStep}
+                    >
+                      Remove wait
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {selectedStep?.step_type === "condition" ? (
+                <div className="card card-pad stack">
+                  <h2 className="h2" style={{ margin: 0 }}>
+                    If / else
+                  </h2>
+                  <div className="am-trigger-fields">
+                    <div className="field">
+                      <label htmlFor="condition-kind">Question type</label>
+                      <select
+                        id="condition-kind"
+                        value={conditionKindDraft}
+                        onChange={(e) =>
+                          setConditionKindDraft(coerceConditionKind(e.target.value))
+                        }
+                      >
+                        {CONDITION_KINDS.map((k) => (
+                          <option key={k.value} value={k.value}>
+                            {k.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="condition-label">Question</label>
+                      <input
+                        id="condition-label"
+                        value={conditionLabelDraft}
+                        onChange={(e) => setConditionLabelDraft(e.target.value)}
+                        placeholder="Opened the last email?"
+                      />
+                    </div>
+                  </div>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={saveSelectedStep}
+                      disabled={savingStep}
+                    >
+                      {savingStep ? "Saving..." : "Save if / else"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={deleteSelectedStep}
+                      disabled={savingStep}
+                    >
+                      Remove if / else
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
         <div className="card card-pad stack">
           <div className="row" style={{ justifyContent: "space-between" }}>
-            <strong>Items in this package</strong>
+            <strong>{isAutomation ? "Emails in this automation" : "Items in this package"}</strong>
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setAddingEmail((v) => !v)}
@@ -1198,6 +1568,18 @@ export default function AdminCampaignPage() {
                   placeholder={`Item ${emails.length + 1}`}
                 />
               </div>
+              {isAutomation ? (
+                <div className="field">
+                  <label htmlFor="newEmailDelay">Wait before this email</label>
+                  <DelayPicker
+                    id="newEmailDelay"
+                    amount={newEmailDelayAmount}
+                    unit={newEmailDelayUnit}
+                    onAmount={setNewEmailDelayAmount}
+                    onUnit={setNewEmailDelayUnit}
+                  />
+                </div>
+              ) : null}
               <AssetContentFields
                 kind={newEmailKind}
                 format={newEmailFormat}
@@ -1208,7 +1590,7 @@ export default function AdminCampaignPage() {
                 setMedia={setNewEmailMedia}
               />
               <button className="btn" type="submit" disabled={saving}>
-                {saving ? "Adding..." : "Add to package"}
+                {saving ? "Adding..." : isAutomation ? "Add to automation" : "Add to package"}
               </button>
             </form>
           ) : null}
@@ -1306,14 +1688,14 @@ export default function AdminCampaignPage() {
                     Cancel
                   </button>
                   <button className="btn btn-sm" onClick={sendBasecampApproval}>
-                    {basecampApproval?.alreadySent
+                    {basecampApproval?.cardUrl
                       ? "Yes, resend it"
                       : "Yes, send it"}
                   </button>
                 </div>
               ) : (
                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  {basecampApproval?.alreadySent && basecampApproval.cardUrl ? (
+                  {basecampApproval?.cardUrl ? (
                     <FollowUpButton
                       campaignId={id}
                       className="btn btn-secondary btn-sm"
@@ -1327,7 +1709,7 @@ export default function AdminCampaignPage() {
                   ) : null}
                   <button
                     className={`btn btn-sm ${
-                      basecampApproval?.alreadySent ? "btn-secondary" : ""
+                      basecampApproval?.cardUrl ? "btn-secondary" : ""
                     }`}
                     onClick={() => setConfirmingBasecampApproval(true)}
                     disabled={
@@ -1336,8 +1718,10 @@ export default function AdminCampaignPage() {
                   >
                     {sendingBasecampApproval
                       ? "Sending..."
-                      : basecampApproval?.alreadySent
-                        ? "Resend approval"
+                      : basecampApproval?.cardUrl
+                        ? basecampApproval.alreadySent
+                          ? "Resend approval"
+                          : "Send updated approval"
                         : "Send approval"}
                   </button>
                 </div>
@@ -1474,7 +1858,7 @@ export default function AdminCampaignPage() {
 
             {confirmingBasecampApproval && !sendingBasecampApproval ? (
               <p style={{ margin: "8px 0 0", fontSize: 13 }}>
-                {basecampApproval?.alreadySent ? "Resend" : "Send"} this
+                {basecampApproval?.cardUrl ? "Resend" : "Send"} this
                 approval
                 {approvalRecipientName ? ` to ${approvalRecipientName}` : ""}
                 {approvalAssigneeIds.length

@@ -66,6 +66,11 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
+  const delayMs =
+    typeof body.delayMs === "number" && Number.isFinite(body.delayMs)
+      ? body.delayMs
+      : undefined;
+
   const email = addEmail({
     campaignId: id,
     title,
@@ -73,6 +78,7 @@ export async function POST(request: Request, { params }: Params) {
     kind,
     bodyFormat,
     mediaUrl,
+    delayMs,
   });
 
   return NextResponse.json({ email }, { status: 201 });
@@ -108,6 +114,10 @@ export async function PATCH(request: Request, { params }: Params) {
       typeof body.versionNote === "string" ? body.versionNote : undefined,
     bodyFormat: isBodyFormat(body.bodyFormat) ? body.bodyFormat : undefined,
     mediaUrl: typeof body.mediaUrl === "string" ? body.mediaUrl : undefined,
+    delayMs:
+      typeof body.delayMs === "number" && Number.isFinite(body.delayMs)
+        ? body.delayMs
+        : undefined,
   });
 
   return NextResponse.json({ email });

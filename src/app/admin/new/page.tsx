@@ -10,6 +10,12 @@ import {
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
+import {
+  TRIGGER_KINDS,
+  coerceTriggerKind,
+  type Presentation,
+  type TriggerKind,
+} from "@/lib/automation-map";
 
 type RevClientOption = { id: string; name: string };
 
@@ -28,6 +34,9 @@ export default function NewCampaignPage() {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [presentation, setPresentation] = useState<Presentation>("package");
+  const [triggerKind, setTriggerKind] = useState<TriggerKind>("tag");
+  const [triggerLabel, setTriggerLabel] = useState("");
 
   useEffect(() => {
     fetch("/api/revenue/clients")
@@ -62,6 +71,9 @@ export default function NewCampaignPage() {
         kind,
         bodyFormat: format,
         mediaUrl,
+        presentation,
+        triggerKind,
+        triggerLabel,
       }),
     });
 
@@ -98,6 +110,59 @@ export default function NewCampaignPage() {
           <div>
             <h1 className="h1">New campaign</h1>
           </div>
+
+          <div className="field">
+            <label>How should the client review this?</label>
+            <div className="tabs" style={{ marginTop: 4, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={`tab ${presentation === "package" ? "active" : ""}`}
+                onClick={() => setPresentation("package")}
+              >
+                Package
+              </button>
+              <button
+                type="button"
+                className={`tab ${presentation === "automation" ? "active" : ""}`}
+                onClick={() => setPresentation("automation")}
+              >
+                Automation
+              </button>
+            </div>
+            <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              {presentation === "automation"
+                ? "The review link shows a map: trigger, wait times, then each email. Clicking an email opens the preview."
+                : "The usual review package — tabs of emails, SMS, blogs, and the rest."}
+            </p>
+          </div>
+
+          {presentation === "automation" ? (
+            <div className="am-trigger-fields">
+              <div className="field">
+                <label htmlFor="triggerKind">What starts it</label>
+                <select
+                  id="triggerKind"
+                  value={triggerKind}
+                  onChange={(e) => setTriggerKind(coerceTriggerKind(e.target.value))}
+                >
+                  {TRIGGER_KINDS.map((k) => (
+                    <option key={k.value} value={k.value}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="triggerLabel">Trigger</label>
+                <input
+                  id="triggerLabel"
+                  value={triggerLabel}
+                  onChange={(e) => setTriggerLabel(e.target.value)}
+                  placeholder="Tag added: New patient"
+                />
+              </div>
+            </div>
+          ) : null}
 
           <div className="field">
             <label>What is this?</label>
@@ -217,7 +282,11 @@ export default function NewCampaignPage() {
 
           <div className="row">
             <button className="btn" type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Create campaign"}
+              {loading
+                ? "Creating..."
+                : presentation === "automation"
+                  ? "Create automation"
+                  : "Create campaign"}
             </button>
             <Link className="btn btn-secondary" href="/admin/campaigns">
               Cancel

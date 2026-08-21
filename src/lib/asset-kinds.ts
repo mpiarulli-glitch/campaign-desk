@@ -143,14 +143,17 @@ export function kindDeliverableLabel(kind: AssetKind): string {
  */
 export function deliverableCardTitle(
   campaignTitle: string,
-  kinds: Array<AssetKind | null | undefined>
+  kinds: Array<AssetKind | null | undefined>,
+  presentation?: string | null
 ): string {
   const title = (campaignTitle || "").trim();
   const distinct = Array.from(new Set(kinds.map(coerceKind)));
   const prefix =
-    distinct.length > 1
-      ? "Creative Package"
-      : kindDeliverableLabel(distinct[0] ?? "email");
+    presentation === "automation"
+      ? "CRM Automation"
+      : distinct.length > 1
+        ? "Creative Package"
+        : kindDeliverableLabel(distinct[0] ?? "email");
   if (!title) return prefix;
   // Already prefixed (a resend of a card we titled earlier) — leave it alone.
   if (title.toLowerCase().startsWith(`${prefix.toLowerCase()} - `)) return title;

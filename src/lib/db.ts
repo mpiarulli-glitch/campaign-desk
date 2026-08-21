@@ -90,6 +90,14 @@ export interface Campaign {
   basecamp_approval_sent_at: string | null;
   // YYYY-MM-DD last sent to the Deliverables card, or null when none was set.
   basecamp_due_on: string | null;
+  // When to post Michael's thank-you comment on the approval card after a
+  // client approval. Cleared if the approval is undone before it sends.
+  approval_thank_you_due_at: string | null;
+  approval_thank_you_sent_at: string | null;
+  // "automation" review packages render as a trigger → wait → email map.
+  presentation: "package" | "automation";
+  trigger_label: string;
+  trigger_kind: string;
   created_at: string;
   updated_at: string;
 }
@@ -112,6 +120,27 @@ export interface CampaignEmail {
   approved_by: string | null;
   approved_channel: string | null;
   chosen_subject_id: string | null;
+  // Wait after the previous step (or after the trigger for the first email).
+  // Only meaningful when the parent campaign is an automation.
+  delay_ms: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type FlowStepType = "wait" | "email" | "condition";
+export type FlowBranch = "" | "yes" | "no";
+
+export interface CampaignFlowStep {
+  id: string;
+  campaign_id: string;
+  parent_id: string | null;
+  branch: string;
+  sort_order: number;
+  step_type: string;
+  delay_ms: number;
+  email_id: string | null;
+  condition_kind: string;
+  condition_label: string;
   created_at: string;
   updated_at: string;
 }
@@ -2052,6 +2081,27 @@ function migrate(database: Database.Database) {
   if (!campaignCols.includes("basecamp_due_on")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN basecamp_due_on TEXT`);
   }
+  if (!campaignCols.includes("approval_thank_you_due_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN approval_thank_you_due_at TEXT`);
+  }
+  if (!campaignCols.includes("approval_thank_you_sent_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN approval_thank_you_sent_at TEXT`);
+  }
+  if (!campaignCols.includes("presentation")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN presentation TEXT NOT NULL DEFAULT 'package'`
+    );
+  }
+  if (!campaignCols.includes("trigger_label")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN trigger_label TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (!campaignCols.includes("trigger_kind")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN trigger_kind TEXT NOT NULL DEFAULT 'custom'`
+    );
+  }
   // Best-effort backfill by exact name match — only fills rows still unset,
   // so it's safe to run on every boot and never clobbers a manually-set link.
   database.exec(
@@ -2109,6 +2159,33 @@ function migrate(database: Database.Database) {
   if (!emailCols.includes("media_url")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN media_url TEXT`);
   }
+  if (!emailCols.includes("delay_ms")) {
+    database.exec(
+      `ALTER TABLE campaign_emails ADD COLUMN delay_ms INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS campaign_flow_steps (
+      id TEXT PRIMARY KEY,
+      campaign_id TEXT NOT NULL,
+      parent_id TEXT,
+      branch TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      step_type TEXT NOT NULL,
+      delay_ms INTEGER NOT NULL DEFAULT 0,
+      email_id TEXT,
+      condition_kind TEXT NOT NULL DEFAULT 'custom',
+      condition_label TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES campaign_flow_steps(id) ON DELETE CASCADE,
+      FOREIGN KEY (email_id) REFERENCES campaign_emails(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_flow_campaign ON campaign_flow_steps(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_flow_parent ON campaign_flow_steps(parent_id);
+  `);
 
   const revClientCols = tableColumns(database, "rev_clients");
   if (revClientCols.length && !revClientCols.includes("snapshot_token")) {

@@ -192,7 +192,18 @@ export function campaignApprovalRevisionKey(
     Pick<CampaignEmail, "id" | "title" | "updated_at"> & {
       delay_ms?: number | null;
     }
-  >
+  >,
+  steps?: Array<{
+    id: string;
+    parent_id: string | null;
+    branch: string;
+    sort_order?: number;
+    step_type: string;
+    delay_ms?: number | null;
+    email_id?: string | null;
+    condition_kind?: string;
+    condition_label?: string;
+  }>
 ): string {
   const source = JSON.stringify({
     title: campaign.title,
@@ -206,6 +217,17 @@ export function campaignApprovalRevisionKey(
       title: email.title,
       updatedAt: email.updated_at,
       delayMs: email.delay_ms ?? 0,
+    })),
+    steps: (steps || []).map((step) => ({
+      id: step.id,
+      parentId: step.parent_id,
+      branch: step.branch,
+      sortOrder: step.sort_order ?? 0,
+      type: step.step_type,
+      delayMs: step.delay_ms ?? 0,
+      emailId: step.email_id || null,
+      conditionKind: step.condition_kind || "",
+      conditionLabel: step.condition_label || "",
     })),
   });
   return createHash("sha256").update(source).digest("hex");

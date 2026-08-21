@@ -9781,3 +9781,322 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   Automation map
+   A vertical path: trigger, then wait → email for every step. Shared by the
+   admin editor and the client review page so the two never drift.
+   ========================================================================== */
+
+.am-map {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.am-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.am-rail {
+  width: 2px;
+  height: 22px;
+  background: linear-gradient(180deg, var(--accent), rgba(0, 212, 232, 0.15));
+  border-radius: 2px;
+}
+
+.am-node {
+  width: min(560px, 100%);
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  text-align: left;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  color: inherit;
+  font: inherit;
+}
+
+button.am-node {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+button.am-node:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--accent);
+}
+
+.am-node.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18), var(--shadow);
+}
+
+.am-node.is-approved {
+  border-color: var(--success);
+}
+
+.am-trigger {
+  background:
+    linear-gradient(180deg, var(--accent-wash), var(--bg-elevated));
+  border-color: rgba(0, 212, 232, 0.45);
+}
+
+.am-glyph {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.am-glyph svg {
+  width: 20px;
+  height: 20px;
+}
+
+.am-trigger .am-glyph {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.am-email.is-approved .am-glyph {
+  background: var(--success);
+  color: #fff;
+}
+
+.am-node-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.am-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.am-node-copy strong {
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.am-sub {
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.am-preview-cue {
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--accent-ink);
+}
+
+.am-step-wait {
+  width: min(560px, 100%);
+}
+
+.am-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.am-wait-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px var(--accent-wash), 0 0 0 5px rgba(0, 212, 232, 0.35);
+}
+
+.am-delay-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.am-delay-picker input {
+  width: 88px;
+}
+
+.am-delay-picker select {
+  min-width: 120px;
+}
+
+.am-preview-modal {
+  width: min(1120px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+}
+
+.am-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.am-map-card {
+  padding: 18px 18px 12px;
+}
+
+.am-map-card .h2 {
+  margin: 0 0 4px;
+}
+
+.am-trigger-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(140px, 200px) 1fr;
+}
+
+@media (max-width: 640px) {
+  .am-trigger-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.review-page .am-map-card {
+  background:
+    radial-gradient(1200px 240px at 50% -40px, var(--accent-wash), transparent 70%),
+    var(--bg-elevated);
+}
+
+.am-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.am-root > .am-node {
+  width: min(560px, 100%);
+}
+
+.am-root > .am-map {
+  width: min(920px, 100%);
+}
+
+.am-wait-node {
+  background: var(--bg-soft);
+}
+
+.am-condition {
+  background:
+    linear-gradient(180deg, var(--warning-wash), var(--bg-elevated));
+  border-color: rgba(196, 137, 0, 0.35);
+}
+
+.am-condition .am-glyph {
+  background: var(--warning);
+  color: #fff;
+}
+
+.am-fork {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: min(920px, 100%);
+  margin-top: 8px;
+}
+
+.am-fork-col {
+  min-width: 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
+  padding: 10px 8px 8px;
+  background: var(--bg-soft);
+}
+
+.am-fork-col.is-else {
+  background: var(--bg);
+}
+
+.am-fork-label {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.am-fork .am-map {
+  width: 100%;
+}
+
+.am-fork .am-node {
+  width: 100%;
+}
+
+.am-insert {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 2px 0 6px;
+}
+
+.am-insert-line {
+  width: 2px;
+  height: 10px;
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+.am-insert-btns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.am-insert-btns button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-body);
+  cursor: pointer;
+}
+
+.am-insert-btns button:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+@media (max-width: 720px) {
+  .am-fork {
+    grid-template-columns: 1fr;
+  }
+}
+
+

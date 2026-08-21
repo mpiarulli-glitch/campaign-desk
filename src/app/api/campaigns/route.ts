@@ -13,6 +13,10 @@ import {
   countEmails,
 } from "@/lib/campaigns";
 import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
+import {
+  coercePresentation,
+  coerceTriggerKind,
+} from "@/lib/automation-map";
 
 export async function GET(request: Request) {
   // Read is open to admins and to the SEO-side people; the list they get back is
@@ -60,6 +64,10 @@ export async function POST(request: Request) {
   const audience = typeof body.audience === "string" ? body.audience : "";
   const emailTitle =
     typeof body.emailTitle === "string" ? body.emailTitle : "Item 1";
+  const presentation = coercePresentation(body.presentation);
+  const triggerLabel =
+    typeof body.triggerLabel === "string" ? body.triggerLabel : "";
+  const triggerKind = coerceTriggerKind(body.triggerKind);
   const kind = coerceKind(body.kind);
   const bodyFormat = coerceFormat(kind, body.bodyFormat);
   const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : "";
@@ -68,7 +76,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
   // Image/Figma mock-ups carry their artwork in mediaUrl, so HTML is optional.
-  // Everything else needs body content.
+  // Everything else needs body content, except an automation which can start
+  // with a blank first email and be filled in on the editor.
   const needsMedia = bodyFormat === "image" || bodyFormat === "figma";
   if (needsMedia && !mediaUrl.trim()) {
     return NextResponse.json(
@@ -76,7 +85,7 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (!needsMedia && !htmlContent.trim()) {
+  if (!needsMedia && !htmlContent.trim() && presentation !== "automation") {
     return NextResponse.json(
       { error: "Content is required" },
       { status: 400 }
@@ -89,11 +98,14 @@ export async function POST(request: Request) {
     clientId,
     description,
     audience,
-    htmlContent,
-    emailTitle,
+    htmlContent: htmlContent.trim() ? htmlContent : "<p></p>",
+    emailTitle: presentation === "automation" ? "Email 1" : emailTitle,
     kind,
     bodyFormat,
     mediaUrl,
+    presentation,
+    triggerLabel,
+    triggerKind,
   });
 
   return NextResponse.json({ campaign }, { status: 201 });

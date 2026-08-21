@@ -14,6 +14,8 @@ import {
   listVersions,
   listEmails,
   listEmailsWithSubjects,
+  listFlowSteps,
+  ensureAutomationFlow,
   setEmailSubjects,
   setEmailApproved,
   setCampaignArchived,
@@ -29,6 +31,10 @@ import {
 } from "@/lib/campaign-card-sync";
 import type { CampaignStatus } from "@/lib/db";
 import { notifyCampaignRemoved } from "@/lib/notify";
+import {
+  coercePresentation,
+  coerceTriggerKind,
+} from "@/lib/automation-map";
 
 const STATUSES: CampaignStatus[] = [
   "draft",
@@ -77,6 +83,10 @@ export async function GET(_request: Request, { params }: Params) {
     ...e,
     open_comments: countOpenComments(id, e.id),
   }));
+  if (campaign.presentation === "automation") {
+    ensureAutomationFlow(id);
+  }
+  const flow = listFlowSteps(id);
 
   return NextResponse.json({
     campaign: {
@@ -87,6 +97,7 @@ export async function GET(_request: Request, { params }: Params) {
       email_count: emails.length,
     },
     emails,
+    flow,
     comments: listCommentsWithAttachments(campaign.id),
     versions: listVersions(campaign.id),
   });
@@ -227,6 +238,16 @@ export async function PATCH(request: Request, { params }: Params) {
     status,
     versionNote:
       typeof body.versionNote === "string" ? body.versionNote : undefined,
+    presentation:
+      body.presentation !== undefined
+        ? coercePresentation(body.presentation)
+        : undefined,
+    triggerLabel:
+      typeof body.triggerLabel === "string" ? body.triggerLabel : undefined,
+    triggerKind:
+      body.triggerKind !== undefined
+        ? coerceTriggerKind(body.triggerKind)
+        : undefined,
   });
 
   if (status === "approved" && existing.status !== "approved") {

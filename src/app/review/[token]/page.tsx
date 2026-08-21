@@ -6,12 +6,14 @@ import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
+import { AutomationMap } from "@/components/AutomationMap";
 import {
   renderAssetDoc,
   kindNoun,
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
+import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
 
 type Attachment = {
   id: string;
@@ -126,6 +128,8 @@ type EmailItem = {
   approved_by?: string | null;
   chosen_subject_id?: string | null;
   subjects?: SubjectOption[];
+  delay_ms?: number;
+  purpose?: string;
 };
 
 type Campaign = {
@@ -137,6 +141,9 @@ type Campaign = {
   updated_at: string;
   approved_at?: string | null;
   approved_by?: string | null;
+  presentation?: string;
+  trigger_label?: string;
+  trigger_kind?: string;
 };
 
 // A typed first + last name is what makes an approval a paper trail rather
@@ -149,6 +156,7 @@ export default function ReviewPage() {
   const { token } = useParams<{ token: string }>();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [emails, setEmails] = useState<EmailItem[]>([]);
+  const [flow, setFlow] = useState<FlowStepRecord[]>([]);
   const [activeEmailId, setActiveEmailId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [authorName, setAuthorName] = useState("");
@@ -172,6 +180,7 @@ export default function ReviewPage() {
   const [imgBusy, setImgBusy] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -244,6 +253,7 @@ export default function ReviewPage() {
       const data = await res.json();
       setCampaign(data.campaign);
       setEmails(data.emails || []);
+      setFlow(data.flow || []);
       setComments(data.comments || []);
 
       const nextId =
@@ -265,6 +275,15 @@ export default function ReviewPage() {
   useEffect(() => {
     load();
   }, [token]);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPreviewOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewOpen]);
 
   const activeEmail = useMemo(
     () => emails.find((e) => e.id === activeEmailId) || emails[0] || null,
@@ -471,6 +490,7 @@ export default function ReviewPage() {
   // Copy adapts per item so a blog/deck/mock-up isn't called an "email".
   const activeDoc = renderAssetDoc(activeEmail);
   const itemNoun = kindNoun(activeEmail.kind ?? "email");
+  const isAutomation = coercePresentation(campaign.presentation) === "automation";
 
   return (
     <div className="app-shell review-page">
@@ -482,7 +502,7 @@ export default function ReviewPage() {
       <main className="container container-wide stack">
         <div className="rv-hero">
           <div>
-            <p className="eyebrow">Review</p>
+            <p className="eyebrow">{isAutomation ? "Automation review" : "Review"}</p>
             <h1 className="h1">{campaign.title}</h1>
           </div>
           <p className="rv-meta">
@@ -493,7 +513,9 @@ export default function ReviewPage() {
               </>
             ) : null}
             <span>
-              {emails.length} item{emails.length === 1 ? "" : "s"}
+              {emails.length} {isAutomation ? "email" : "item"}
+              {emails.length === 1 ? "" : "s"}
+              {isAutomation ? " in this automation" : ""}
             </span>
             <span className="rv-meta-dot" aria-hidden />
             <span>
@@ -502,10 +524,44 @@ export default function ReviewPage() {
           </p>
           {campaign.description ? (
             <p className="rv-hero-desc">{campaign.description}</p>
+          ) : isAutomation ? (
+            <p className="rv-hero-desc">
+              Follow the path from the trigger through each wait and email.
+              Click an email to preview it.
+            </p>
           ) : null}
         </div>
 
-        {emails.length > 1 ? (
+        {isAutomation ? (
+          <div className="card card-pad am-map-card">
+            <AutomationMap
+              triggerLabel={campaign.trigger_label}
+              triggerKind={campaign.trigger_kind}
+              emails={emails.map((email) => ({
+                id: email.id,
+                title: email.title,
+                kind: email.kind,
+                delay_ms: email.delay_ms,
+                approved_at: email.approved_at,
+                open_comments: email.open_comments,
+                purpose: email.purpose,
+                subject:
+                  email.subjects?.find((s) => s.id === email.chosen_subject_id)
+                    ?.subject ||
+                  email.subjects?.[0]?.subject ||
+                  null,
+              }))}
+              steps={flow}
+              selectedId={previewOpen ? activeEmail.id : null}
+              previewHint
+              onSelectStep={(_stepId, emailId) => {
+                if (!emailId) return;
+                selectEmail(emailId);
+                setPreviewOpen(true);
+              }}
+            />
+          </div>
+        ) : emails.length > 1 ? (
           <div className="card rv-switch">
             <span className="rv-switch-count">
               {itemNoun.charAt(0).toUpperCase() + itemNoun.slice(1)}{" "}
@@ -572,7 +628,7 @@ export default function ReviewPage() {
             <div className="rv-approve-copy">
               <span className="rv-approve-title">Ready to approve?</span>
               <p className="rv-approve-sub">
-                This covers every item in the package. Type your full name to
+                This covers every {isAutomation ? "email in the automation" : "item in the package"}. Type your full name to
                 confirm it&apos;s you.
               </p>
             </div>
@@ -596,6 +652,38 @@ export default function ReviewPage() {
 
         {message ? <p className="rv-notice rv-notice-ok">{message}</p> : null}
         {error ? <p className="rv-notice rv-notice-bad">{error}</p> : null}
+
+        {isAutomation && !previewOpen ? null : (
+        <div
+          className={isAutomation ? "modal-backdrop" : undefined}
+          role={isAutomation ? "dialog" : undefined}
+          aria-modal={isAutomation ? true : undefined}
+          aria-label={isAutomation ? "Email preview" : undefined}
+          onClick={isAutomation ? () => setPreviewOpen(false) : undefined}
+        >
+          <div
+            className={isAutomation ? "card card-pad am-preview-modal" : undefined}
+            onClick={isAutomation ? (e) => e.stopPropagation() : undefined}
+          >
+            {isAutomation ? (
+              <div className="am-preview-head">
+                <div>
+                  <p className="eyebrow" style={{ margin: 0 }}>
+                    Email preview
+                  </p>
+                  <h2 className="h2" style={{ margin: "4px 0 0" }}>
+                    {activeEmail.title}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setPreviewOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            ) : null}
 
         <div className="split-review">
           <div className="stack">
@@ -960,6 +1048,9 @@ export default function ReviewPage() {
             </div>
           </div>
         </div>
+          </div>
+        </div>
+        )}
       </main>
     </div>
   );

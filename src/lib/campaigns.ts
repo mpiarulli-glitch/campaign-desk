@@ -13,6 +13,7 @@ import {
   type EmailSubject,
   type EmailKind,
   type ReviewChannel,
+  type CampaignFlowStep,
 } from "./db";
 import {
   coerceKind,
@@ -21,6 +22,18 @@ import {
   type AssetKind,
   type BodyFormat,
 } from "./asset-kinds";
+import {
+  coercePresentation,
+  coerceTriggerKind,
+  coerceFlowStepType,
+  coerceFlowBranch,
+  coerceConditionKind,
+  type Presentation,
+  type TriggerKind,
+  type FlowStepType,
+  type FlowBranch,
+  type ConditionKind,
+} from "./automation-map";
 
 // The campaigns.html_content column is only a convenience thumbnail for list
 // views. Keep it in sync with the first asset, rendered the same way the
@@ -61,6 +74,9 @@ export function createCampaign(input: {
   kind?: EmailKind;
   bodyFormat?: BodyFormat;
   mediaUrl?: string | null;
+  presentation?: Presentation;
+  triggerLabel?: string;
+  triggerKind?: TriggerKind;
 }): Campaign {
   const db = getDb();
   const id = nanoid(12);
@@ -71,11 +87,14 @@ export function createCampaign(input: {
   const kind = coerceKind(input.kind);
   const bodyFormat = coerceFormat(kind, input.bodyFormat);
   const mediaUrl = (input.mediaUrl || "").trim() || null;
+  const presentation = coercePresentation(input.presentation);
+  const triggerKind = coerceTriggerKind(input.triggerKind);
+  const triggerLabel = (input.triggerLabel || "").trim();
 
   db.prepare(
     `INSERT INTO campaigns
-      (id, title, client_name, client_id, description, audience, html_content, status, magic_token, external_token, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
+      (id, title, client_name, client_id, description, audience, html_content, status, magic_token, external_token, presentation, trigger_label, trigger_kind, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.title.trim(),
@@ -86,14 +105,17 @@ export function createCampaign(input: {
     input.htmlContent,
     magicToken,
     externalToken,
+    presentation,
+    triggerLabel,
+    triggerKind,
     ts,
     ts
   );
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, kind, body_format, media_url, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      (id, campaign_id, title, html_content, kind, body_format, media_url, delay_ms, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`
   ).run(
     emailId,
     id,
@@ -113,6 +135,13 @@ export function createCampaign(input: {
   ).run(nanoid(12), id, emailId, input.htmlContent, "Initial upload", ts);
 
   syncCampaignPreview(id);
+  if (presentation === "automation") {
+    insertFlowStepRow({
+      campaignId: id,
+      stepType: "email",
+      emailId,
+    });
+  }
   return getCampaignById(id)!;
 }
 
@@ -341,6 +370,10 @@ export function addEmail(input: {
   kind?: EmailKind;
   bodyFormat?: BodyFormat;
   mediaUrl?: string | null;
+  delayMs?: number;
+  skipFlow?: boolean;
+  flowParentId?: string | null;
+  flowBranch?: FlowBranch;
 }): CampaignEmail | null {
   const campaign = getCampaignById(input.campaignId);
   if (!campaign) return null;
@@ -351,6 +384,10 @@ export function addEmail(input: {
   const kind = coerceKind(input.kind);
   const bodyFormat = coerceFormat(kind, input.bodyFormat);
   const mediaUrl = (input.mediaUrl || "").trim() || null;
+  const delayMs =
+    input.delayMs !== undefined
+      ? Math.max(0, Math.round(input.delayMs))
+      : 0;
   const maxRow = db
     .prepare(
       `SELECT COALESCE(MAX(sort_order), -1) as max_order
@@ -360,8 +397,8 @@ export function addEmail(input: {
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, kind, body_format, media_url, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, campaign_id, title, html_content, kind, body_format, media_url, delay_ms, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.campaignId,
@@ -370,6 +407,7 @@ export function addEmail(input: {
     kind,
     bodyFormat,
     mediaUrl,
+    delayMs,
     maxRow.max_order + 1,
     ts,
     ts
@@ -382,6 +420,13 @@ export function addEmail(input: {
   ).run(nanoid(12), input.campaignId, id, input.htmlContent, "Email added", ts);
 
   syncCampaignPreview(input.campaignId);
+  if (!input.skipFlow && campaign.presentation === "automation") {
+    attachEmailToFlow(input.campaignId, id, {
+      parentId: input.flowParentId ?? null,
+      branch: coerceFlowBranch(input.flowBranch),
+      delayMs,
+    });
+  }
   return getEmailById(id);
 }
 
@@ -394,6 +439,7 @@ export function updateEmail(
     versionNote?: string;
     bodyFormat?: BodyFormat;
     mediaUrl?: string | null;
+    delayMs?: number;
   }
 ): CampaignEmail | null {
   const existing = getEmailById(emailId);
@@ -411,12 +457,16 @@ export function updateEmail(
     updates.mediaUrl !== undefined
       ? (updates.mediaUrl || "").trim() || null
       : existing.media_url;
+  const delayMs =
+    updates.delayMs !== undefined
+      ? Math.max(0, Math.round(updates.delayMs))
+      : existing.delay_ms ?? 0;
 
   db.prepare(
     `UPDATE campaign_emails
-     SET title = ?, html_content = ?, purpose = ?, body_format = ?, media_url = ?, updated_at = ?
+     SET title = ?, html_content = ?, purpose = ?, body_format = ?, media_url = ?, delay_ms = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, htmlContent, purpose, bodyFormat, mediaUrl, ts, emailId);
+  ).run(title, htmlContent, purpose, bodyFormat, mediaUrl, delayMs, ts, emailId);
 
   if (updates.htmlContent && updates.htmlContent !== existing.html_content) {
     db.prepare(
@@ -466,6 +516,9 @@ export function updateCampaign(
     approvedAt?: string | null;
     approvedBy?: string | null;
     approvedChannel?: string | null;
+    presentation?: Presentation;
+    triggerLabel?: string;
+    triggerKind?: TriggerKind;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
@@ -478,6 +531,16 @@ export function updateCampaign(
   const clientId = updates.clientId !== undefined ? updates.clientId : existing.client_id;
   const description = updates.description?.trim() ?? existing.description;
   const audience = updates.audience?.trim() ?? existing.audience;
+  const presentation = coercePresentation(
+    updates.presentation ?? existing.presentation
+  );
+  const triggerLabel =
+    updates.triggerLabel !== undefined
+      ? updates.triggerLabel.trim()
+      : existing.trigger_label || "";
+  const triggerKind = coerceTriggerKind(
+    updates.triggerKind ?? existing.trigger_kind
+  );
   const status = updates.status ?? existing.status;
   const approvedAt =
     updates.approvedAt !== undefined ? updates.approvedAt : existing.approved_at;
@@ -492,11 +555,13 @@ export function updateCampaign(
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, status = ?, approved_at = ?, approved_by = ?, approved_channel = ?,
+     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, presentation = ?, trigger_label = ?, trigger_kind = ?, status = ?, approved_at = ?, approved_by = ?, approved_channel = ?,
          basecamp_card_id = CASE WHEN ? THEN NULL ELSE basecamp_card_id END,
          basecamp_card_url = CASE WHEN ? THEN NULL ELSE basecamp_card_url END,
          basecamp_approval_revision = CASE WHEN ? THEN NULL ELSE basecamp_approval_revision END,
          basecamp_approval_sent_at = CASE WHEN ? THEN NULL ELSE basecamp_approval_sent_at END,
+         approval_thank_you_due_at = CASE WHEN ? THEN NULL ELSE approval_thank_you_due_at END,
+         approval_thank_you_sent_at = CASE WHEN ? THEN NULL ELSE approval_thank_you_sent_at END,
          updated_at = ?
      WHERE id = ?`
   ).run(
@@ -505,10 +570,15 @@ export function updateCampaign(
     clientId,
     description,
     audience,
+    presentation,
+    triggerLabel,
+    triggerKind,
     status,
     approvedAt,
     approvedBy,
     approvedChannel,
+    clientChanged ? 1 : 0,
+    clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
@@ -531,7 +601,288 @@ export function updateCampaign(
     }
   }
 
+  if (
+    updates.presentation &&
+    coercePresentation(updates.presentation) === "automation"
+  ) {
+    ensureAutomationFlow(id);
+  }
+
   return getCampaignById(id);
+}
+
+function touchCampaign(id: string) {
+  getDb()
+    .prepare(`UPDATE campaigns SET updated_at = ? WHERE id = ?`)
+    .run(nowIso(), id);
+}
+
+export function listFlowSteps(campaignId: string): CampaignFlowStep[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM campaign_flow_steps
+       WHERE campaign_id = ?
+       ORDER BY parent_id IS NOT NULL, branch ASC, sort_order ASC, created_at ASC`
+    )
+    .all(campaignId) as CampaignFlowStep[];
+}
+
+export function getFlowStep(id: string): CampaignFlowStep | null {
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM campaign_flow_steps WHERE id = ?`)
+      .get(id) as CampaignFlowStep | undefined) || null
+  );
+}
+
+function flowChildren(
+  campaignId: string,
+  parentId: string | null,
+  branch: FlowBranch
+): CampaignFlowStep[] {
+  if (parentId) {
+    return getDb()
+      .prepare(
+        `SELECT * FROM campaign_flow_steps
+         WHERE campaign_id = ? AND parent_id = ? AND branch = ?
+         ORDER BY sort_order ASC, created_at ASC`
+      )
+      .all(campaignId, parentId, branch) as CampaignFlowStep[];
+  }
+  return getDb()
+    .prepare(
+      `SELECT * FROM campaign_flow_steps
+       WHERE campaign_id = ? AND parent_id IS NULL AND branch = ?
+       ORDER BY sort_order ASC, created_at ASC`
+    )
+    .all(campaignId, branch) as CampaignFlowStep[];
+}
+
+function insertFlowStepRow(input: {
+  campaignId: string;
+  stepType: FlowStepType;
+  parentId?: string | null;
+  branch?: FlowBranch;
+  delayMs?: number;
+  emailId?: string | null;
+  conditionKind?: ConditionKind;
+  conditionLabel?: string;
+  afterStepId?: string | null;
+  prepend?: boolean;
+}): CampaignFlowStep {
+  const db = getDb();
+  const ts = nowIso();
+  const id = nanoid(12);
+  const parentId = input.parentId || null;
+  const branch = coerceFlowBranch(input.branch);
+  const siblings = flowChildren(input.campaignId, parentId, branch);
+  let sortOrder = siblings.length;
+  if (input.prepend) {
+    sortOrder = 0;
+  } else if (input.afterStepId) {
+    const after = siblings.find((step) => step.id === input.afterStepId);
+    sortOrder = after ? after.sort_order + 1 : siblings.length;
+  }
+  if (sortOrder < siblings.length) {
+    db.prepare(
+      `UPDATE campaign_flow_steps
+       SET sort_order = sort_order + 1
+       WHERE campaign_id = ?
+         AND ${parentId ? "parent_id = ?" : "parent_id IS NULL"}
+         AND branch = ?
+         AND sort_order >= ?`
+    ).run(
+      ...(parentId
+        ? [input.campaignId, parentId, branch, sortOrder]
+        : [input.campaignId, branch, sortOrder])
+    );
+  }
+  db.prepare(
+    `INSERT INTO campaign_flow_steps
+      (id, campaign_id, parent_id, branch, sort_order, step_type, delay_ms, email_id, condition_kind, condition_label, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    input.campaignId,
+    parentId,
+    branch,
+    sortOrder,
+    input.stepType,
+    Math.max(0, Math.round(input.delayMs || 0)),
+    input.emailId || null,
+    coerceConditionKind(input.conditionKind),
+    (input.conditionLabel || "").trim(),
+    ts,
+    ts
+  );
+  touchCampaign(input.campaignId);
+  return getFlowStep(id)!;
+}
+
+function attachEmailToFlow(
+  campaignId: string,
+  emailId: string,
+  input: { parentId: string | null; branch: FlowBranch; delayMs: number }
+) {
+  const existing = listFlowSteps(campaignId);
+  if (existing.length === 0) {
+    ensureAutomationFlow(campaignId);
+    return;
+  }
+  if (existing.some((step) => step.email_id === emailId)) return;
+  if (input.delayMs > 0) {
+    insertFlowStepRow({
+      campaignId,
+      stepType: "wait",
+      parentId: input.parentId,
+      branch: input.branch,
+      delayMs: input.delayMs,
+    });
+  }
+  insertFlowStepRow({
+    campaignId,
+    stepType: "email",
+    parentId: input.parentId,
+    branch: input.branch,
+    emailId,
+  });
+}
+
+export function ensureAutomationFlow(campaignId: string): CampaignFlowStep[] {
+  const existing = listFlowSteps(campaignId);
+  if (existing.length > 0) return existing;
+  const emails = listEmails(campaignId);
+  for (const email of emails) {
+    if ((email.delay_ms || 0) > 0) {
+      insertFlowStepRow({
+        campaignId,
+        stepType: "wait",
+        delayMs: email.delay_ms,
+      });
+    }
+    insertFlowStepRow({
+      campaignId,
+      stepType: "email",
+      emailId: email.id,
+    });
+  }
+  return listFlowSteps(campaignId);
+}
+
+export function addFlowStep(input: {
+  campaignId: string;
+  stepType: FlowStepType;
+  parentId?: string | null;
+  branch?: FlowBranch;
+  delayMs?: number;
+  conditionKind?: ConditionKind;
+  conditionLabel?: string;
+  emailTitle?: string;
+  afterStepId?: string | null;
+  prepend?: boolean;
+}): { step: CampaignFlowStep; email?: CampaignEmail } | null {
+  const campaign = getCampaignById(input.campaignId);
+  if (!campaign) return null;
+  ensureAutomationFlow(input.campaignId);
+
+  if (input.stepType === "email") {
+    const email = addEmail({
+      campaignId: input.campaignId,
+      title: input.emailTitle || `Email ${listEmails(input.campaignId).length + 1}`,
+      htmlContent: "<p></p>",
+      skipFlow: true,
+    });
+    if (!email) return null;
+    const step = insertFlowStepRow({
+      campaignId: input.campaignId,
+      stepType: "email",
+      parentId: input.parentId,
+      branch: input.branch,
+      emailId: email.id,
+      afterStepId: input.afterStepId,
+      prepend: input.prepend,
+    });
+    return { step, email };
+  }
+
+  const step = insertFlowStepRow({
+    campaignId: input.campaignId,
+    stepType: input.stepType,
+    parentId: input.parentId,
+    branch: input.branch,
+    delayMs: input.delayMs ?? (input.stepType === "wait" ? 86_400_000 : 0),
+    conditionKind: input.conditionKind,
+    conditionLabel: input.conditionLabel,
+    afterStepId: input.afterStepId,
+    prepend: input.prepend,
+  });
+  return { step };
+}
+
+export function updateFlowStep(
+  id: string,
+  updates: {
+    delayMs?: number;
+    conditionKind?: ConditionKind;
+    conditionLabel?: string;
+  }
+): CampaignFlowStep | null {
+  const existing = getFlowStep(id);
+  if (!existing) return null;
+  const delayMs =
+    updates.delayMs !== undefined
+      ? Math.max(0, Math.round(updates.delayMs))
+      : existing.delay_ms;
+  const conditionKind = updates.conditionKind
+    ? coerceConditionKind(updates.conditionKind)
+    : coerceConditionKind(existing.condition_kind);
+  const conditionLabel =
+    updates.conditionLabel !== undefined
+      ? updates.conditionLabel.trim()
+      : existing.condition_label;
+  getDb()
+    .prepare(
+      `UPDATE campaign_flow_steps
+       SET delay_ms = ?, condition_kind = ?, condition_label = ?, updated_at = ?
+       WHERE id = ?`
+    )
+    .run(delayMs, conditionKind, conditionLabel, nowIso(), id);
+  touchCampaign(existing.campaign_id);
+  return getFlowStep(id);
+}
+
+export function deleteFlowStep(id: string): boolean {
+  const existing = getFlowStep(id);
+  if (!existing) return false;
+  const type = coerceFlowStepType(existing.step_type);
+  const parentId = existing.parent_id;
+  const branch = coerceFlowBranch(existing.branch);
+
+  if (type === "condition") {
+    const yes = flowChildren(existing.campaign_id, existing.id, "yes");
+    const no = flowChildren(existing.campaign_id, existing.id, "no");
+    const siblings = flowChildren(existing.campaign_id, parentId, branch).filter(
+      (step) => step.id !== existing.id
+    );
+    const insertAt = siblings.filter((step) => step.sort_order < existing.sort_order)
+      .length;
+    const next = [...siblings];
+    next.splice(insertAt, 0, ...yes, ...no);
+    const db = getDb();
+    const stamp = nowIso();
+    const stmt = db.prepare(
+      `UPDATE campaign_flow_steps
+       SET parent_id = ?, branch = ?, sort_order = ?, updated_at = ?
+       WHERE id = ?`
+    );
+    next.forEach((step, index) => {
+      stmt.run(parentId, branch, index, stamp, step.id);
+    });
+  }
+
+  getDb().prepare(`DELETE FROM campaign_flow_steps WHERE id = ?`).run(id);
+  touchCampaign(existing.campaign_id);
+  return true;
 }
 
 export function recordBasecampApproval(
@@ -821,6 +1172,72 @@ export function markRevisionDone(campaignId: string): Campaign | null {
   return updateCampaign(campaignId, { status: "in_review" });
 }
 
+/** Default delay before Michael's thank-you posts on the approval card. */
+export const APPROVAL_THANK_YOU_DELAY_MS = 3 * 60 * 1000;
+
+export function scheduleApprovalThankYou(campaignId: string): void {
+  const campaign = getCampaignById(campaignId);
+  if (!campaign) return;
+  if (campaign.approved_channel !== "client") return;
+  if (!campaign.basecamp_card_id) return;
+  if (campaign.approval_thank_you_sent_at) return;
+
+  const dueAt = new Date(Date.now() + APPROVAL_THANK_YOU_DELAY_MS).toISOString();
+  getDb()
+    .prepare(
+      `UPDATE campaigns SET approval_thank_you_due_at = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(dueAt, nowIso(), campaignId);
+}
+
+export function cancelPendingApprovalThankYou(campaignId: string): void {
+  getDb()
+    .prepare(
+      `UPDATE campaigns SET approval_thank_you_due_at = NULL, updated_at = ? WHERE id = ?`
+    )
+    .run(nowIso(), campaignId);
+}
+
+export function clearApprovalThankYou(campaignId: string): void {
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+       SET approval_thank_you_due_at = NULL,
+           approval_thank_you_sent_at = NULL,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .run(nowIso(), campaignId);
+}
+
+export function markApprovalThankYouSent(campaignId: string): void {
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+       SET approval_thank_you_sent_at = ?,
+           approval_thank_you_due_at = NULL,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .run(ts, ts, campaignId);
+}
+
+export function listDueApprovalThankYous(asOfIso?: string): Campaign[] {
+  const asOf = asOfIso || nowIso();
+  return getDb()
+    .prepare(
+      `SELECT * FROM campaigns
+       WHERE status = 'approved'
+         AND approved_channel = 'client'
+         AND approval_thank_you_due_at IS NOT NULL
+         AND approval_thank_you_due_at <= ?
+         AND approval_thank_you_sent_at IS NULL
+         AND basecamp_card_id IS NOT NULL`
+    )
+    .all(asOf) as Campaign[];
+}
+
 // approvedBy is the name attached to the approval: the client's own typed
 // full name on a client approval, or the acting admin's label on an internal
 // one. approvedChannel records which of those it was, so the two can never
@@ -842,18 +1259,23 @@ export function markApproved(
       `UPDATE campaign_emails SET approved_at = ?, approved_by = ?, approved_channel = ? WHERE campaign_id = ? AND approved_at IS NULL`
     )
     .run(ts, approvedBy ?? null, approvedChannel, campaignId);
-  return updateCampaign(campaignId, {
+  const updated = updateCampaign(campaignId, {
     status: "approved",
     approvedAt: ts,
     approvedBy: approvedBy ?? null,
     approvedChannel,
   });
+  if (updated && approvedChannel === "client") {
+    scheduleApprovalThankYou(campaignId);
+  }
+  return updated;
 }
 
 // Move a campaign back out of "approved" (e.g. a single email got
 // un-approved). Clears approved_at so it drops out of the approvals
 // folders until it's approved again.
 export function unapproveCampaign(campaignId: string): Campaign | null {
+  clearApprovalThankYou(campaignId);
   return updateCampaign(campaignId, {
     status: "in_review",
     approvedAt: null,

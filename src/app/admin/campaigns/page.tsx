@@ -18,6 +18,7 @@ type CampaignRow = {
   email_count?: number;
   magic_token: string;
   archived_at?: string | null;
+  presentation?: string;
 };
 
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
@@ -161,9 +162,18 @@ function CampaignCard({
           <h3>{c.title}</h3>
         )}
         <div className="meta">
+          {c.presentation === "automation" ? "Automation · " : ""}
           {c.client_name ? `${c.client_name} · ` : ""}
           {c.email_count
-            ? `${c.email_count} email${c.email_count === 1 ? "" : "s"} · `
+            ? `${c.email_count} ${
+                c.presentation === "automation"
+                  ? c.email_count === 1
+                    ? "step"
+                    : "steps"
+                  : c.email_count === 1
+                    ? "email"
+                    : "emails"
+              } · `
             : ""}
           Updated {new Date(c.updated_at).toLocaleString()}
           {c.open_comments > 0

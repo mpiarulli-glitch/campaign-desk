@@ -13,6 +13,7 @@ import { clearFailure, recordFailure } from "@/lib/failures";
 import {
   getCampaignById,
   listEmails,
+  listFlowSteps,
   recordBasecampApproval,
   rememberBasecampApprovalCard,
 } from "@/lib/campaigns";
@@ -47,7 +48,11 @@ function approvalState(id: string) {
   if (!campaign) return null;
   const client = resolveClient(campaign);
   const emails = listEmails(id);
-  const revision = campaignApprovalRevisionKey(campaign, emails);
+  const revision = campaignApprovalRevisionKey(
+    campaign,
+    emails,
+    listFlowSteps(id)
+  );
   const previewUrl = reviewUrl(campaign.external_token);
   const contactName =
     client?.contact_name || client?.name || campaign.client_name;
