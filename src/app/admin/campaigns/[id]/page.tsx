@@ -75,6 +75,42 @@ type Version = {
   created_at: string;
 };
 
+/**
+ * Copy an email's HTML to the clipboard.
+ *
+ * Confirms in the button itself and settles back after a moment: a copy with no
+ * feedback leaves you pressing it twice to be sure. Falls back to saying so when
+ * the clipboard is unavailable — it needs a secure context, so plain http would
+ * otherwise fail silently.
+ */
+function CopyHtmlButton({ html }: { html: string }) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = setTimeout(() => setState("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [state]);
+
+  return (
+    <button
+      type="button"
+      className="btn btn-secondary btn-sm"
+      title="Copy this email's full HTML to the clipboard"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(html);
+          setState("done");
+        } catch {
+          setState("failed");
+        }
+      }}
+    >
+      {state === "done" ? "Copied" : state === "failed" ? "Couldn't copy" : "Copy HTML"}
+    </button>
+  );
+}
+
 type SubjectOption = {
   id: string;
   subject: string;
@@ -1989,89 +2025,10 @@ export default function AdminCampaignPage() {
         {tab === "feedback" ? (
           <div className="split-review">
             <div className="stack">
-              {!activeDoc.interactive ? (
-                <div className="card card-pad row copy-edit-bar">
-                  {editingCopy ? (
-                    <>
-                      <span className="copy-edit-hint">
-                        {pendingEdits.length === 0
-                          ? "Click any text in the email and type over it."
-                          : `${pendingEdits.length} change${
-                              pendingEdits.length === 1 ? "" : "s"
-                            } ready to save.`}
-                      </span>
-                      <div className="row" style={{ gap: 8 }}>
-                        <button
-                          className="btn btn-sm"
-                          onClick={saveInlineEdits}
-                          disabled={saving || pendingEdits.length === 0}
-                        >
-                          {saving ? "Saving..." : "Save copy changes"}
-                        </button>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={discardInlineEdits}
-                          disabled={saving}
-                        >
-                          Discard
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="copy-edit-hint">
-                        Change wording without opening the HTML.
-                      </span>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setEditingCopy(true)}
-                        disabled={isApproved}
-                        title={
-                          isApproved
-                            ? "This package is approved. Reopen it to edit copy."
-                            : undefined
-                        }
-                      >
-                        Edit copy
-                      </button>
-                    </>
-                  )}
-                </div>
-              ) : null}
-              <EmailPreview
-                key={`${activeDoc.html.length}-${previewNonce}`}
-                html={activeDoc.html}
-                pins={inlinePins}
-                activePinId={activePinId}
-                onSelectPin={setActivePinId}
-                interactive={activeDoc.interactive}
-                editing={editingCopy}
-                onEditsChange={setPendingEdits}
-              />
-              <EmailLinks html={activeDoc.html} />
-
-              <div className="card card-pad stack">
-                <h2 className="h2" style={{ margin: 0 }}>
-                  Purpose of this {kindNoun(activeEmail.kind ?? "email")}
-                </h2>
-                <textarea
-                  value={purposeDraft}
-                  onChange={(e) => setPurposeDraft(e.target.value)}
-                  placeholder="What is this specific email trying to do?"
-                  style={{ minHeight: 70 }}
-                />
-                <div className="row">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={savePurpose}
-                    disabled={savingPurpose}
-                  >
-                    {savingPurpose ? "Saving..." : "Save purpose"}
-                  </button>
-                </div>
-              </div>
-
+              {/* Above the email, not below it. Subject and preview text are the
+                  first thing a client judges and the first thing they pick, and
+                  they were sitting under a full email render that can be several
+                  screens tall. */}
               <div className="card card-pad stack">
                 <h2 className="h2" style={{ margin: 0 }}>
                   Subject lines & preview text
@@ -2155,6 +2112,92 @@ export default function AdminCampaignPage() {
                   </button>
                 </div>
               </div>
+              <div className="card card-pad row copy-edit-bar">
+                {activeDoc.interactive ? (
+                  <span className="copy-edit-hint">
+                    This one is interactive, so copy changes go through the HTML.
+                  </span>
+                ) : editingCopy ? (
+                    <>
+                      <span className="copy-edit-hint">
+                        {pendingEdits.length === 0
+                          ? "Click any text in the email and type over it."
+                          : `${pendingEdits.length} change${
+                              pendingEdits.length === 1 ? "" : "s"
+                            } ready to save.`}
+                      </span>
+                      <div className="row" style={{ gap: 8 }}>
+                        <button
+                          className="btn btn-sm"
+                          onClick={saveInlineEdits}
+                          disabled={saving || pendingEdits.length === 0}
+                        >
+                          {saving ? "Saving..." : "Save copy changes"}
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={discardInlineEdits}
+                          disabled={saving}
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="copy-edit-hint">
+                        Change wording without opening the HTML.
+                      </span>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setEditingCopy(true)}
+                        disabled={isApproved}
+                        title={
+                          isApproved
+                            ? "This package is approved. Reopen it to edit copy."
+                            : undefined
+                        }
+                      >
+                        Edit copy
+                      </button>
+                    </>
+                  )}
+                <CopyHtmlButton html={activeDoc.html} />
+              </div>
+              <EmailPreview
+                key={`${activeDoc.html.length}-${previewNonce}`}
+                html={activeDoc.html}
+                pins={inlinePins}
+                activePinId={activePinId}
+                onSelectPin={setActivePinId}
+                interactive={activeDoc.interactive}
+                editing={editingCopy}
+                onEditsChange={setPendingEdits}
+              />
+              <EmailLinks html={activeDoc.html} />
+
+              <div className="card card-pad stack">
+                <h2 className="h2" style={{ margin: 0 }}>
+                  Purpose of this {kindNoun(activeEmail.kind ?? "email")}
+                </h2>
+                <textarea
+                  value={purposeDraft}
+                  onChange={(e) => setPurposeDraft(e.target.value)}
+                  placeholder="What is this specific email trying to do?"
+                  style={{ minHeight: 70 }}
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={savePurpose}
+                    disabled={savingPurpose}
+                  >
+                    {savingPurpose ? "Saving..." : "Save purpose"}
+                  </button>
+                </div>
+              </div>
+
             </div>
             <div className="card card-pad stack">
               <div className="row" style={{ justifyContent: "space-between" }}>
