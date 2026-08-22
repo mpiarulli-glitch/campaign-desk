@@ -7838,7 +7838,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .hq-pulse-item .n { font-family: var(--font-head); font-weight: 600; font-size: 17px; color: var(--text); }
 .hq-pulse-item .l { color: var(--text-muted); font-size: 12.5px; }
 
-.hq-bento { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.hq-bento { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .hq-card {
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 20px;
   padding: 20px; box-shadow: var(--shadow); position: relative; overflow: hidden;
@@ -7855,7 +7855,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .hq-card.span2 { grid-column: span 2; }
 .hq-card.tall { grid-row: span 2; }
 
-.hq-card.t-chat { --tool: #04808d; --tool-tint: #e6f6f8; }
 .hq-card.t-res { --tool: #3f5bd6; --tool-tint: #eceffb; }
 .hq-card.t-sop { --tool: #1f9d63; --tool-tint: #e7f6ee; }
 .hq-card.t-train { --tool: #7a5cc4; --tool-tint: #f0ebf9; }
@@ -7871,10 +7870,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    dark mode. The tool colours are also lifted, because a mid-dark teal that
    reads as confident on white goes muddy on a dark ground.
 
-   Specificity note: these are (0,3,0) against the (0,2,0) of `.hq-card.t-chat`,
-   so they win without !important.
+   Specificity note: these are (0,3,0) against the (0,2,0) of the plain
+   `.hq-card.t-*` pairs above, so they win without !important.
    ------------------------------------------------------------------------- */
-:root[data-theme="dark"] .hq-card.t-chat,
 :root[data-theme="dark"] .snap-panel.t-work { --tool: #35c3d1; --tool-tint: #123034; }
 :root[data-theme="dark"] .hq-card.t-res,
 :root[data-theme="dark"] .snap-panel.t-deliv { --tool: #7d92e8; --tool-tint: #1a2039; }
@@ -7902,13 +7900,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .hq-card:hover .hq-arrow { transform: translateX(3px); color: var(--tool); }
 .hq-divider { height: 1px; background: var(--border); margin: 4px 0 14px; }
 
-.hq-msg { display: flex; gap: 10px; padding: 8px 0; }
-.hq-msg + .hq-msg { border-top: 1px solid var(--border); }
-.hq-msg .who { font-size: 13px; font-weight: 600; color: var(--text); }
-.hq-msg .txt { font-size: 13px; color: var(--text-body); line-height: 1.45; margin-top: 1px; }
-.hq-msg .txt .men { color: var(--accent-ink); font-weight: 600; background: var(--bg-tint); border-radius: 4px; padding: 0 3px; }
-.hq-msg .t { font-size: 11px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
-.hq-chat-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--bg-soft); border-radius: 11px; padding: 10px 13px; color: var(--text-muted); font-size: 13px; }
 
 .hq-todo-people { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
 .hq-tp-wrap { padding: 5px 0; }
@@ -9762,7 +9753,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .client-table th,
   .rev-table th,
   .hq-tag,
-  .hq-msg .t,
   .hq-pulse-item .l {
     font-size: 12px;
   }
@@ -11743,28 +11733,288 @@ button.am-node:hover .am-edit-cue,
    shape so the two consoles read as the same tool.
    ========================================================================== */
 
-.cs-kpis {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+/* ---- the week header: one sentence, one bar, four figures ---------------
+   Replaces five flat tiles. The sentence says where the week stands, the bar
+   shows it, and the figures are there when somebody wants the raw counts. */
+
+.cs-week {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.cs-week-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.cs-week-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.cs-week-date {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.cs-week-line {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-body);
+}
+
+.cs-week-line strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* Two fills on one track: asked underneath, answered on top, so the gap
+   between them is the chase still outstanding. */
+.cs-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.cs-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  transition: width 240ms ease;
+}
+
+.cs-bar-fill.is-asked {
+  background: var(--accent);
+  opacity: 0.45;
+}
+
+.cs-bar-fill.is-answered {
+  background: var(--success);
+}
+
+.cs-week-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px 20px;
+}
+
+.cs-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cs-stat-n {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-stat.is-good .cs-stat-n {
+  color: var(--success-ink);
+}
+
+.cs-stat.is-warn .cs-stat-n {
+  color: var(--warning-ink);
+}
+
+.cs-stat-l {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 
 .cs-of {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-muted);
 }
 
-/* Stated on the page, not buried in a tooltip: an open is a loaded image, and
-   a number people act on should say when it cannot be trusted. */
-.cs-caveat {
-  margin: 0;
-  padding: 11px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+/* The opens caveat used to be a paragraph in the best space on the page. It is
+   the same words, parked where somebody asks the question. */
+.cs-hint {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
   background: var(--bg-soft);
   color: var(--text-muted);
-  font-size: 12.5px;
-  line-height: 1.55;
-  max-width: 88ch;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.cs-hint:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* ---- triage: what needs a person, before the 64 rows ------------------- */
+
+.cs-triage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cs-triage-head {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.cs-triage-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.cs-triage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.cs-triage-card:hover {
+  border-color: var(--border-strong);
+}
+
+.cs-triage-card.active {
+  border-color: var(--warning-ink);
+  background: var(--warning-wash);
+}
+
+.cs-triage-card.is-bad .cs-triage-n {
+  color: var(--danger-ink);
+}
+
+.cs-triage-card.is-bad.active {
+  border-color: var(--danger-ink);
+  background: var(--danger-wash);
+}
+
+.cs-triage-n {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--warning-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-triage-t {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.cs-triage-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ---- toolbar: whose clients, and find one ------------------------------ */
+
+.cs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.cs-scope {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.cs-scope-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cs-scope-b.active {
+  background: var(--pill-bg);
+  color: var(--pill-text);
+}
+
+.cs-search {
+  flex: 1;
+  min-width: 220px;
+  max-width: 340px;
+}
+
+/* Matches .field input, because there is no global input skin and a bare
+   search box otherwise falls back to the browser default, which shows up as a
+   white field on the dark theme. */
+.cs-search input {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.cs-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.cs-search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
 
 .cs-filters {
@@ -11814,13 +12064,24 @@ button.am-node:hover .am-edit-cue,
   opacity: 1;
 }
 
+/* Now a button that opens the client panel rather than a link that navigates
+   away, so it needs the button chrome stripped back to looking like text. */
 .cs-client {
   font-weight: 650;
   color: var(--text);
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .cs-client:hover {
   color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .cs-sub {
@@ -11902,8 +12163,88 @@ button.am-node:hover .am-edit-cue,
 .cs-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  white-space: nowrap;
+}
+
+/* ---- the progress cell -------------------------------------------------
+   Sent and Opened used to be two columns describing one pipeline. Three steps
+   read left to right instead: asked, landed, answered. */
+
+.cs-rail {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+.cs-step {
+  width: 22px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+
+.cs-step.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cs-step.good {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.cs-step.bad {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.cs-when {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+
+.cs-when-bad {
+  color: var(--danger-ink);
+  font-weight: 650;
+}
+
+/* A missing route is not the same as a missing nicety, so it gets a label
+   rather than another line of grey italics. */
+.cs-flag {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.cs-flag.is-bad {
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+
+.cs-flag.is-warn {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+
+/* A row nothing can be sent to, and a row whose address rejected the email.
+   Both are setup problems, and both are easy to miss in a list of 64. */
+.cs-table tr.is-bounced td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.cs-table tr.is-blocked td:first-child {
+  box-shadow: inset 3px 0 0 var(--warning);
 }
 
 .cs-history-row td {
@@ -11941,6 +12282,210 @@ button.am-node:hover .am-edit-cue,
   margin: 0;
   padding: 12px 0 4px;
   font-size: 13px;
+}
+
+/* ---- the per-client panel ----------------------------------------------
+   Queue the leads to confirm, log the wins, send the ask that carries both.
+   Three stacked sections rather than tabs, because it is one pass of work and
+   hiding two thirds of it behind tabs only adds clicks. */
+
+.csp {
+  width: min(760px, 100%);
+  gap: 18px;
+}
+
+.csp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.csp-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.csp-meta {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.csp-head-side {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.csp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.csp-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.csp-sec-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.csp-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* What the client still owes, in the same two-line shape the table uses. */
+.csp-ask {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13.5px;
+}
+
+.csp-ask .is-open {
+  color: var(--warning-ink);
+  font-weight: 650;
+}
+
+.csp-ask .is-done {
+  color: var(--text-muted);
+}
+
+.csp-send {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.csp-send-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 200px;
+}
+
+.csp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.csp-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.csp-list li:last-child {
+  border-bottom: none;
+}
+
+.csp-list-main {
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.csp-list-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.csp-empty {
+  margin: 0;
+  font-size: 13px;
+}
+
+.csp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+}
+
+/* `.field label` styles the label text, but these fields use a span, which no
+   rule covers. Scoped to the panel rather than adding `.field > span` globally,
+   because that would restyle six other pages nobody asked about. */
+.csp .field > span {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.csp .field input,
+.csp .field select {
+  padding: 9px 11px;
+  font-size: 13px;
+}
+
+.csp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 12px;
+}
+
+.csp-form-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.csp-date {
+  max-width: 170px;
+}
+
+@media (max-width: 560px) {
+  .csp-head-side {
+    width: 100%;
+  }
+  .csp-form-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .csp-date {
+    max-width: none;
+  }
 }
 
 /* Shipped-dark banner. Loud on purpose: an empty Sent column has two very

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { teamLabel } from "@/lib/team";
+import { ClientServicePanel } from "@/components/ClientServicePanel";
 
 type AskStatus =
   | "paused"
@@ -64,6 +66,18 @@ type HistoryRow = {
 
 type Tab = "dashboard" | "accounts";
 
+// Every way the list can be narrowed. The first three are always offered; the
+// rest only appear once something actually falls into them, so the row of
+// filters stays short on a healthy week.
+type Filter =
+  | "all"
+  | "waiting"
+  | "submitted"
+  | "blocked"
+  | "bounced"
+  | "unassigned"
+  | "paused";
+
 const STATUS_LABEL: Record<AskStatus, string> = {
   paused: "Paused",
   nothing_to_ask: "Nothing to ask",
@@ -72,10 +86,10 @@ const STATUS_LABEL: Record<AskStatus, string> = {
   delivered: "Delivered",
   opened: "Opened",
   bounced: "Bounced",
-  submitted: "Submitted",
+  submitted: "Answered",
 };
 
-// Which tint a status gets. Submitted is the only green: everything else is
+// Which tint a status gets. Answered is the only green: everything else is
 // either in flight or needs a human.
 const STATUS_TONE: Record<AskStatus, string> = {
   paused: "is-muted",
@@ -103,6 +117,47 @@ function fmtMoney(n: number | null): string {
   });
 }
 
+function fmtWeek(ymd: string): string {
+  if (!ymd) return "";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * A send can email the contact, post a Basecamp card, or both. Missing an
+ * email address only loses the email, so the row that genuinely cannot be
+ * reached is the one missing both routes. Keyed off contact_email rather than
+ * contact_name, because the name is not what the send reads.
+ */
+function noRoute(row: Row): boolean {
+  return !row.contactEmail.trim() && !row.hasBasecamp;
+}
+
+/** Emailing is off the table but a card can still land. */
+function cardOnly(row: Row): boolean {
+  return !row.contactEmail.trim() && row.hasBasecamp;
+}
+
+/**
+ * Sort order is the order somebody should work the list: things that are
+ * broken, then work we owe, then work the client owes, then everything already
+ * settled. Inside a rank it falls back to the client name so the list never
+ * reshuffles between loads.
+ */
+function urgency(row: Row): number {
+  if (row.paused) return 6;
+  if (row.emailBouncedAt) return 0;
+  if (noRoute(row)) return 1;
+  if (row.submitted) return 5;
+  if (row.status === "nothing_to_ask") return 4;
+  if (row.status === "not_sent") return 2;
+  return 3;
+}
+
 export default function ClientServicesPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -114,9 +169,14 @@ export default function ClientServicesPage() {
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [panelId, setPanelId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
-  const [filter, setFilter] = useState<"all" | "waiting" | "submitted">("all");
+  const [person, setPerson] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [scope, setScope] = useState<"mine" | "all">("all");
+  const [scopeTouched, setScopeTouched] = useState(false);
+  const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -157,10 +217,34 @@ export default function ClientServicesPage() {
     fetch("/api/auth")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.authenticated) setRole(data.role);
+        if (data?.authenticated) {
+          setRole(data.role);
+          setPerson(data.person || null);
+        }
       })
       .catch(() => {});
   }, []);
+
+  // The label the rows carry is the account manager's display name, so the
+  // signed-in person is matched by label rather than by slug.
+  const myLabel = person ? teamLabel(person) : "";
+  const mineCount = useMemo(
+    () => (myLabel ? rows.filter((r) => r.accountManager === myLabel).length : 0),
+    [rows, myLabel]
+  );
+
+  // Somebody who owns clients lands on their own list. The owner carries a null
+  // person and everybody else with nothing assigned falls through to All, and
+  // an explicit click always wins from then on.
+  useEffect(() => {
+    if (scopeTouched) return;
+    setScope(mineCount > 0 ? "mine" : "all");
+  }, [mineCount, scopeTouched]);
+
+  function chooseScope(next: "mine" | "all") {
+    setScopeTouched(true);
+    setScope(next);
+  }
 
   async function act(clientId: string, action: "send" | "pause" | "resume") {
     if (action === "send") {
@@ -239,13 +323,117 @@ export default function ClientServicesPage() {
     router.push(`/admin/snapshot/${data.client.id}`);
   }
 
-  const visible = useMemo(() => {
-    if (filter === "waiting") return rows.filter((r) => !r.submitted && !r.paused);
-    if (filter === "submitted") return rows.filter((r) => r.submitted);
-    return rows;
-  }, [rows, filter]);
+  // Everything below is derived from this one scoped list, so the counts on the
+  // filters and the triage cards always agree with the rows on screen.
+  const scoped = useMemo(
+    () =>
+      scope === "mine" && myLabel
+        ? rows.filter((r) => r.accountManager === myLabel)
+        : rows,
+    [rows, scope, myLabel]
+  );
 
-  const waitingCount = rows.filter((r) => !r.submitted && !r.paused).length;
+  const counts = useMemo(
+    () => ({
+      all: scoped.length,
+      waiting: scoped.filter((r) => !r.submitted && !r.paused).length,
+      submitted: scoped.filter((r) => r.submitted).length,
+      blocked: scoped.filter((r) => !r.paused && noRoute(r)).length,
+      bounced: scoped.filter((r) => Boolean(r.emailBouncedAt)).length,
+      unassigned: scoped.filter((r) => !r.accountManager).length,
+      paused: scoped.filter((r) => r.paused).length,
+      cardOnly: scoped.filter((r) => !r.paused && cardOnly(r)).length,
+      noReplyTo: scoped.filter((r) => r.accountManager && !r.accountManagerEmail)
+        .length,
+    }),
+    [scoped]
+  );
+
+  const visible = useMemo(() => {
+    const byFilter = scoped.filter((r) => {
+      if (filter === "waiting") return !r.submitted && !r.paused;
+      if (filter === "submitted") return r.submitted;
+      if (filter === "blocked") return !r.paused && noRoute(r);
+      if (filter === "bounced") return Boolean(r.emailBouncedAt);
+      if (filter === "unassigned") return !r.accountManager;
+      if (filter === "paused") return r.paused;
+      return true;
+    });
+    const q = query.trim().toLowerCase();
+    const searched = q
+      ? byFilter.filter((r) =>
+          [r.name, r.contactName, r.contactEmail, r.accountManager]
+            .join(" ")
+            .toLowerCase()
+            .includes(q)
+        )
+      : byFilter;
+    return [...searched].sort(
+      (a, b) => urgency(a) - urgency(b) || a.name.localeCompare(b.name)
+    );
+  }, [scoped, filter, query]);
+
+  // Only the filters that have something in them, so a clean week does not show
+  // a row of zeroes.
+  const filterTabs: { key: Filter; label: string; count: number }[] = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "waiting", label: "Still waiting", count: counts.waiting },
+    { key: "submitted", label: "Answered", count: counts.submitted },
+    ...(counts.blocked
+      ? [{ key: "blocked" as Filter, label: "Cannot reach", count: counts.blocked }]
+      : []),
+    ...(counts.bounced
+      ? [{ key: "bounced" as Filter, label: "Bounced", count: counts.bounced }]
+      : []),
+    ...(counts.unassigned
+      ? [
+          {
+            key: "unassigned" as Filter,
+            label: "Unassigned",
+            count: counts.unassigned,
+          },
+        ]
+      : []),
+    ...(counts.paused
+      ? [{ key: "paused" as Filter, label: "Paused", count: counts.paused }]
+      : []),
+  ];
+
+  // The triage strip. Each card is a real problem with a filter behind it, so
+  // reading the page starts with what needs a person rather than with 64 rows.
+  const triage: {
+    key: Filter;
+    n: number;
+    title: string;
+    note: string;
+    tone?: string;
+  }[] = [
+    {
+      key: "bounced" as Filter,
+      n: counts.bounced,
+      title: "bounced",
+      note: "The address rejected the email. Fix it before the next sweep.",
+      tone: "is-bad",
+    },
+    {
+      key: "blocked" as Filter,
+      n: counts.blocked,
+      title: "cannot be reached",
+      note: "No contact email and no Basecamp project, so a send does nothing.",
+    },
+    {
+      key: "unassigned" as Filter,
+      n: counts.unassigned,
+      title: "unassigned",
+      note: "No account manager, so replies land on the agency address.",
+    },
+  ].filter((t) => t.n > 0);
+
+  const panel = panelId ? rows.find((r) => r.clientId === panelId) || null : null;
+
+  const askedPct = summary && summary.clients ? (summary.sent / summary.clients) * 100 : 0;
+  const answeredPct =
+    summary && summary.clients ? (summary.submitted / summary.clients) * 100 : 0;
 
   return (
     <div className="app-shell">
@@ -278,7 +466,7 @@ export default function ClientServicesPage() {
             className={`tab ${tab === "dashboard" ? "active" : ""}`}
             onClick={() => setTab("dashboard")}
           >
-            Client dashboard
+            This week
             <span className="tab-count">{rows.length}</span>
           </button>
           <button
@@ -288,7 +476,7 @@ export default function ClientServicesPage() {
             className={`tab ${tab === "accounts" ? "active" : ""}`}
             onClick={() => setTab("accounts")}
           >
-            Account snapshots
+            Deliverable setup
             <span className="tab-count">{accounts.length}</span>
           </button>
         </div>
@@ -297,11 +485,11 @@ export default function ClientServicesPage() {
           <div className="cs-disarmed">
             <strong>Sending is switched off.</strong>
             <span>
-              The dashboard is live and the Friday sweep is not scheduled. Nothing
-              is emailed to a client and no Basecamp card is posted, including
-              from <em>Send now</em>, which reports what it would have done
-              instead. Set <code>CLIENT_SERVICES_SENDING=on</code> on the service
-              to arm it.
+              The dashboard is live and the Friday sweep is not scheduled.
+              Nothing is emailed to a client and no Basecamp card is posted,
+              including from <em>Send now</em>, which reports what it would have
+              done instead. Set <code>CLIENT_SERVICES_SENDING=on</code> on the
+              service to arm it.
             </span>
           </div>
         ) : null}
@@ -315,78 +503,147 @@ export default function ClientServicesPage() {
           ) : (
             <>
               {summary ? (
-                <div className="kpi-grid cs-kpis">
-                  <div className="kpi-tile">
-                    <span className="kpi-label">Week of</span>
-                    <span className="kpi-value">{summary.weekStart}</span>
+                <div className="card cs-week">
+                  <div className="cs-week-head">
+                    <div>
+                      <p className="cs-week-eyebrow">Week of</p>
+                      <h2 className="cs-week-date">{fmtWeek(summary.weekStart)}</h2>
+                    </div>
+                    <p className="cs-week-line">
+                      <strong>{summary.submitted}</strong> of{" "}
+                      <strong>{summary.clients}</strong> clients have come back
+                      with their numbers. <strong>{summary.waiting}</strong> are
+                      still outstanding.
+                    </p>
                   </div>
-                  <div className="kpi-tile">
-                    <span className="kpi-label">Asked this week</span>
-                    <span className="kpi-value">
-                      {summary.sent}
-                      <span className="cs-of"> / {summary.clients}</span>
-                    </span>
+
+                  <div
+                    className="cs-bar"
+                    role="img"
+                    aria-label={`${summary.sent} asked, ${summary.submitted} answered, out of ${summary.clients} clients`}
+                  >
+                    <span
+                      className="cs-bar-fill is-asked"
+                      style={{ width: `${askedPct}%` }}
+                    />
+                    <span
+                      className="cs-bar-fill is-answered"
+                      style={{ width: `${answeredPct}%` }}
+                    />
                   </div>
-                  <div className="kpi-tile">
-                    <span className="kpi-label">Opened</span>
-                    <span className="kpi-value">{summary.opened}</span>
-                  </div>
-                  <div className="kpi-tile">
-                    <span className="kpi-label">Submitted</span>
-                    <span className="kpi-value">{summary.submitted}</span>
-                  </div>
-                  <div className="kpi-tile">
-                    <span className="kpi-label">Still waiting</span>
-                    <span className="kpi-value">{summary.waiting}</span>
+
+                  <div className="cs-week-stats">
+                    <div className="cs-stat">
+                      <span className="cs-stat-n">
+                        {summary.sent}
+                        <span className="cs-of"> / {summary.clients}</span>
+                      </span>
+                      <span className="cs-stat-l">Asked</span>
+                    </div>
+                    <div className="cs-stat">
+                      <span className="cs-stat-n">{summary.opened}</span>
+                      <span className="cs-stat-l">
+                        Opened
+                        <button
+                          type="button"
+                          className="cs-hint"
+                          title="Opens are approximate. Apple Mail loads images before anyone reads, which counts as an open, and a client who blocks images can read the whole thing and never register one. Answered is the number to trust."
+                          aria-label="Why opens are approximate"
+                        >
+                          ?
+                        </button>
+                      </span>
+                    </div>
+                    <div className="cs-stat is-good">
+                      <span className="cs-stat-n">{summary.submitted}</span>
+                      <span className="cs-stat-l">Answered</span>
+                    </div>
+                    <div className="cs-stat is-warn">
+                      <span className="cs-stat-n">{summary.waiting}</span>
+                      <span className="cs-stat-l">Still waiting</span>
+                    </div>
                   </div>
                 </div>
               ) : null}
 
-              <p className="cs-caveat">
-                Opens are approximate. Apple Mail loads images for people before
-                they read anything, which counts as an open, and a client who
-                blocks images can read the whole thing and never register one.
-                Submitted is the number to trust.
-              </p>
+              {triage.length ? (
+                <div className="cs-triage">
+                  <p className="cs-triage-head">Needs a person</p>
+                  <div className="cs-triage-cards">
+                    {triage.map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        className={`cs-triage-card ${t.tone || ""} ${
+                          filter === t.key ? "active" : ""
+                        }`}
+                        onClick={() => setFilter(filter === t.key ? "all" : t.key)}
+                      >
+                        <span className="cs-triage-n">{t.n}</span>
+                        <span className="cs-triage-t">{t.title}</span>
+                        <span className="cs-triage-note">{t.note}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="cs-toolbar">
+                {mineCount > 0 ? (
+                  <div className="cs-scope" role="group" aria-label="Whose clients">
+                    <button
+                      type="button"
+                      className={`cs-scope-b ${scope === "mine" ? "active" : ""}`}
+                      onClick={() => chooseScope("mine")}
+                    >
+                      My clients
+                      <span className="tab-count">{mineCount}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`cs-scope-b ${scope === "all" ? "active" : ""}`}
+                      onClick={() => chooseScope("all")}
+                    >
+                      Everyone
+                      <span className="tab-count">{rows.length}</span>
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="cs-search">
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search client, contact or manager"
+                    aria-label="Search clients"
+                  />
+                </div>
+              </div>
 
               <div className="tabs cs-filters" role="tablist" aria-label="Filter">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === "all"}
-                  className={`tab ${filter === "all" ? "active" : ""}`}
-                  onClick={() => setFilter("all")}
-                >
-                  All
-                  <span className="tab-count">{rows.length}</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === "waiting"}
-                  className={`tab ${filter === "waiting" ? "active" : ""}`}
-                  onClick={() => setFilter("waiting")}
-                >
-                  Still waiting
-                  <span className="tab-count">{waitingCount}</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === "submitted"}
-                  className={`tab ${filter === "submitted" ? "active" : ""}`}
-                  onClick={() => setFilter("submitted")}
-                >
-                  Submitted
-                  <span className="tab-count">
-                    {rows.filter((r) => r.submitted).length}
-                  </span>
-                </button>
+                {filterTabs.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={filter === f.key}
+                    className={`tab ${filter === f.key ? "active" : ""}`}
+                    onClick={() => setFilter(f.key)}
+                  >
+                    {f.label}
+                    <span className="tab-count">{f.count}</span>
+                  </button>
+                ))}
               </div>
 
               {visible.length === 0 ? (
                 <div className="empty">
-                  <p>Nothing here for this filter.</p>
+                  <p>
+                    {query.trim()
+                      ? `Nothing matches "${query.trim()}".`
+                      : "Nothing here for this filter."}
+                  </p>
                 </div>
               ) : (
                 <div className="card cs-table-wrap">
@@ -396,187 +653,220 @@ export default function ClientServicesPage() {
                         <th>Client</th>
                         <th>Account manager</th>
                         <th>This week</th>
-                        <th>Asked for</th>
-                        <th>Sent</th>
-                        <th>Opened</th>
+                        <th>Outstanding</th>
+                        <th>Progress</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.map((row) => (
-                        <Fragment key={row.clientId}>
-                          <tr className={row.paused ? "is-paused" : ""}>
-                            <td>
-                              <Link
-                                className="cs-client"
-                                href={`/admin/snapshot/${row.clientId}`}
-                              >
-                                {row.name}
-                              </Link>
-                              {row.contactName ? (
-                                <div className="cs-sub">{row.contactName}</div>
-                              ) : (
-                                <div className="cs-sub cs-gap">No contact set</div>
-                              )}
-                            </td>
-                            <td>
-                              {row.accountManager ? (
-                                <span>{row.accountManager}</span>
-                              ) : (
-                                <span className="cs-gap">Unassigned</span>
-                              )}
-                              {row.accountManager && !row.accountManagerEmail ? (
-                                <div
-                                  className="cs-sub cs-gap"
-                                  title="Replies will go to the agency address until this manager has an email on their account."
-                                >
-                                  No reply-to
-                                </div>
-                              ) : null}
-                            </td>
-                            <td>
-                              <span
-                                className={`cs-pill ${STATUS_TONE[row.status]}`}
-                              >
-                                {STATUS_LABEL[row.status]}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="cs-asked">
-                                <span
-                                  className={
-                                    row.leadsWaiting > 0 ? "cs-open" : "cs-done"
-                                  }
-                                >
-                                  {row.leadsWaiting > 0
-                                    ? `${row.leadsWaiting} lead${row.leadsWaiting === 1 ? "" : "s"}`
-                                    : "Leads in"}
-                                </span>
-                                <span
-                                  className={row.revenueIn ? "cs-done" : "cs-open"}
-                                >
-                                  {row.revenueIn
-                                    ? row.revenueAmount !== null
-                                      ? `${fmtMoney(row.revenueAmount)} in`
-                                      : "Revenue in"
-                                    : `${row.monthLabel} revenue`}
-                                </span>
-                              </div>
-                            </td>
-                            <td>
-                              {row.emailSentAt || row.basecampSentAt ? (
-                                <div className="cs-channels">
-                                  {row.emailSentAt ? (
-                                    <span title={`Email sent ${row.emailSentAt}`}>
-                                      Email {fmtWhen(row.emailSentAt)}
-                                    </span>
-                                  ) : null}
-                                  {row.basecampSentAt ? (
-                                    <span title={`Card posted ${row.basecampSentAt}`}>
-                                      Basecamp {fmtWhen(row.basecampSentAt)}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <span className="cs-gap">Not yet</span>
-                              )}
-                            </td>
-                            <td>
-                              {row.emailBouncedAt ? (
-                                <span className="cs-pill is-bad">Bounced</span>
-                              ) : row.emailOpenedAt ? (
-                                <span title={row.emailOpenedAt}>
-                                  {fmtWhen(row.emailOpenedAt)}
-                                </span>
-                              ) : row.emailDeliveredAt ? (
-                                <span className="cs-gap">Delivered</span>
-                              ) : (
-                                <span className="cs-gap">—</span>
-                              )}
-                            </td>
-                            <td>
-                              <div className="cs-actions">
-                                {isAdmin ? (
-                                  <button
-                                    className="btn btn-secondary btn-sm"
-                                    disabled={busyId === row.clientId}
-                                    onClick={() => act(row.clientId, "send")}
-                                  >
-                                    {busyId === row.clientId
-                                      ? "Sending..."
-                                      : row.emailSentAt || row.basecampSentAt
-                                        ? "Send again"
-                                        : "Send now"}
-                                  </button>
-                                ) : null}
+                      {visible.map((row) => {
+                        const dead = noRoute(row);
+                        const asked = Boolean(row.emailSentAt || row.basecampSentAt);
+                        const landed = Boolean(
+                          row.emailDeliveredAt || row.emailOpenedAt
+                        );
+                        return (
+                          <Fragment key={row.clientId}>
+                            <tr
+                              className={[
+                                row.paused ? "is-paused" : "",
+                                dead && !row.paused ? "is-blocked" : "",
+                                row.emailBouncedAt ? "is-bounced" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            >
+                              <td>
                                 <button
-                                  className="btn btn-ghost btn-sm"
-                                  onClick={() => toggleHistory(row.clientId)}
+                                  type="button"
+                                  className="cs-client"
+                                  onClick={() => setPanelId(row.clientId)}
                                 >
-                                  {openId === row.clientId ? "Hide" : "History"}
+                                  {row.name}
                                 </button>
-                                {isAdmin ? (
-                                  <button
-                                    className="btn btn-ghost btn-sm"
-                                    disabled={busyId === row.clientId}
-                                    onClick={() =>
-                                      act(row.clientId, row.paused ? "resume" : "pause")
+                                {row.contactName ? (
+                                  <div className="cs-sub">{row.contactName}</div>
+                                ) : null}
+                                {dead ? (
+                                  <div className="cs-flag is-bad">
+                                    No email, no Basecamp
+                                  </div>
+                                ) : cardOnly(row) ? (
+                                  <div className="cs-flag is-warn">
+                                    Basecamp card only
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td>
+                                {row.accountManager ? (
+                                  <span>{row.accountManager}</span>
+                                ) : (
+                                  <span className="cs-gap">Unassigned</span>
+                                )}
+                                {row.accountManager && !row.accountManagerEmail ? (
+                                  <div
+                                    className="cs-sub cs-gap"
+                                    title="Replies will go to the agency address until this manager has an email on their account."
+                                  >
+                                    No reply-to
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td>
+                                <span className={`cs-pill ${STATUS_TONE[row.status]}`}>
+                                  {STATUS_LABEL[row.status]}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="cs-asked">
+                                  <span
+                                    className={
+                                      row.leadsWaiting > 0 ? "cs-open" : "cs-done"
                                     }
                                   >
-                                    {row.paused ? "Resume" : "Pause"}
+                                    {row.leadsWaiting > 0
+                                      ? `${row.leadsWaiting} lead${row.leadsWaiting === 1 ? "" : "s"} to confirm`
+                                      : "Leads confirmed"}
+                                  </span>
+                                  <span
+                                    className={row.revenueIn ? "cs-done" : "cs-open"}
+                                  >
+                                    {row.revenueIn
+                                      ? row.revenueAmount !== null
+                                        ? `${fmtMoney(row.revenueAmount)} in`
+                                        : "Revenue in"
+                                      : `${row.monthLabel} revenue owed`}
+                                  </span>
+                                </div>
+                              </td>
+                              <td>
+                                <div className="cs-rail" aria-hidden="true">
+                                  <span className={`cs-step ${asked ? "on" : ""}`} />
+                                  <span
+                                    className={`cs-step ${
+                                      row.emailBouncedAt ? "bad" : landed ? "on" : ""
+                                    }`}
+                                  />
+                                  <span
+                                    className={`cs-step ${row.submitted ? "good" : ""}`}
+                                  />
+                                </div>
+                                <div className="cs-when">
+                                  {row.emailBouncedAt ? (
+                                    <span className="cs-when-bad">
+                                      Bounced {fmtWhen(row.emailBouncedAt)}
+                                    </span>
+                                  ) : asked ? (
+                                    <>
+                                      <span>
+                                        Asked{" "}
+                                        {fmtWhen(
+                                          row.emailSentAt || row.basecampSentAt
+                                        )}
+                                      </span>
+                                      {row.emailOpenedAt ? (
+                                        <span>
+                                          Opened {fmtWhen(row.emailOpenedAt)}
+                                        </span>
+                                      ) : null}
+                                    </>
+                                  ) : (
+                                    <span className="cs-gap">Not asked yet</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                <div className="cs-actions">
+                                  {isAdmin ? (
+                                    <button
+                                      className="btn btn-secondary btn-sm"
+                                      disabled={busyId === row.clientId || dead}
+                                      title={
+                                        dead
+                                          ? "This client has no contact email and no Basecamp project, so there is nowhere for the ask to go. Add one on their account first."
+                                          : undefined
+                                      }
+                                      onClick={() => act(row.clientId, "send")}
+                                    >
+                                      {busyId === row.clientId
+                                        ? "Sending..."
+                                        : row.emailSentAt || row.basecampSentAt
+                                          ? "Send again"
+                                          : "Send now"}
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => toggleHistory(row.clientId)}
+                                  >
+                                    {openId === row.clientId ? "Hide" : "History"}
                                   </button>
-                                ) : null}
-                              </div>
-                            </td>
-                          </tr>
-                          {openId === row.clientId ? (
-                            <tr className="cs-history-row">
-                              <td colSpan={7}>
-                                {history.length === 0 ? (
-                                  <p className="muted cs-history-empty">
-                                    Nothing sent to this client yet.
-                                  </p>
-                                ) : (
-                                  <table className="table cs-history">
-                                    <thead>
-                                      <tr>
-                                        <th>Week</th>
-                                        <th>Channel</th>
-                                        <th>From</th>
-                                        <th>Sent to</th>
-                                        <th>Sent</th>
-                                        <th>Delivered</th>
-                                        <th>Opened</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {history.map((h) => (
-                                        <tr key={h.id}>
-                                          <td>{h.week_start}</td>
-                                          <td>
-                                            {h.channel === "email"
-                                              ? "Email"
-                                              : "Basecamp"}
-                                          </td>
-                                          <td>{h.am_label || "—"}</td>
-                                          <td>{h.sent_to || "—"}</td>
-                                          <td>{fmtWhen(h.sent_at) || "—"}</td>
-                                          <td>
-                                            {h.bounced_at
-                                              ? "Bounced"
-                                              : fmtWhen(h.delivered_at) || "—"}
-                                          </td>
-                                          <td>{fmtWhen(h.opened_at) || "—"}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                )}
+                                  {isAdmin ? (
+                                    <button
+                                      className="btn btn-ghost btn-sm"
+                                      disabled={busyId === row.clientId}
+                                      onClick={() =>
+                                        act(
+                                          row.clientId,
+                                          row.paused ? "resume" : "pause"
+                                        )
+                                      }
+                                    >
+                                      {row.paused ? "Resume" : "Pause"}
+                                    </button>
+                                  ) : null}
+                                </div>
                               </td>
                             </tr>
-                          ) : null}
-                        </Fragment>
-                      ))}
+                            {openId === row.clientId ? (
+                              <tr className="cs-history-row">
+                                <td colSpan={6}>
+                                  {history.length === 0 ? (
+                                    <p className="muted cs-history-empty">
+                                      Nothing sent to this client yet.
+                                    </p>
+                                  ) : (
+                                    <table className="table cs-history">
+                                      <thead>
+                                        <tr>
+                                          <th>Week</th>
+                                          <th>Channel</th>
+                                          <th>From</th>
+                                          <th>Sent to</th>
+                                          <th>Sent</th>
+                                          <th>Delivered</th>
+                                          <th>Opened</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {history.map((h) => (
+                                          <tr key={h.id}>
+                                            <td>{h.week_start}</td>
+                                            <td>
+                                              {h.channel === "email"
+                                                ? "Email"
+                                                : "Basecamp"}
+                                            </td>
+                                            <td>{h.am_label || "—"}</td>
+                                            <td>{h.sent_to || "—"}</td>
+                                            <td>{fmtWhen(h.sent_at) || "—"}</td>
+                                            <td>
+                                              {h.bounced_at
+                                                ? "Bounced"
+                                                : fmtWhen(h.delivered_at) || "—"}
+                                            </td>
+                                            <td>{fmtWhen(h.opened_at) || "—"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -627,6 +917,18 @@ export default function ClientServicesPage() {
           </>
         )}
       </main>
+
+      {panel ? (
+        <ClientServicePanel
+          client={panel}
+          isAdmin={isAdmin}
+          sendingOn={sendingOn}
+          sending={busyId === panel.clientId}
+          onClose={() => setPanelId(null)}
+          onSend={() => act(panel.clientId, "send")}
+          onChanged={load}
+        />
+      ) : null}
     </div>
   );
 }

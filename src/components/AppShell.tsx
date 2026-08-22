@@ -41,14 +41,14 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/clients", label: "Clients", icon: "clients" },
   { href: "/admin/campaigns", label: "Campaigns", icon: "mail" },
   // Admin-only: aggregates every client's approvals, outreach and economics.
-  { href: "/admin/lifecycle", label: "Lifecycle", icon: "chart" },
+  { href: "/admin/lifecycle", label: "Lifecycle", icon: "funnel" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   // Production is spliced in below for the people on PRODUCTION_ACCESS only, so
   // it is deliberately absent here.
-  { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
+  { href: "/admin/hub", label: "MEG Team Hub", icon: "users" },
   { href: "/admin/onboarding", label: "Onboarding", icon: "check" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
-  { href: "/admin/client-services", label: "Client Services", icon: "doc" },
+  { href: "/admin/client-services", label: "Client Services", icon: "ring" },
   // Aggregates across every client and person, so admin nav only.
   { href: "/admin/reports", label: "Reports", icon: "note" },
   { href: "/admin/activity", label: "Activity", icon: "activity" },
@@ -59,10 +59,10 @@ const ADMIN_NAV: NavItem[] = [
 // so only the sidebar link was missing.
 const FORECAST_NAV: NavItem[] = [
   { href: "/admin", label: "Home", icon: "home" },
-  { href: "/admin/hub", label: "MEG Team Hub", icon: "chat" },
+  { href: "/admin/hub", label: "MEG Team Hub", icon: "users" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
-  { href: "/admin/client-services", label: "Client Services", icon: "doc" },
+  { href: "/admin/client-services", label: "Client Services", icon: "ring" },
 ];
 
 const ICONS = {
@@ -71,18 +71,19 @@ const ICONS = {
   mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></>,
   calendar: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   video: <><path d="m23 7-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></>,
-  board: <><rect x="3" y="3" width="18" height="14" rx="2" /><path d="M8 21h8M12 17v4" /><path d="M7 8l3 3 4-5 3 4" /></>,
+  board: <><rect x="3" y="3" width="18" height="14" rx="2" /><path d="M8 21h8M12 17v4" /><path d="M7.5 11c1.6-2.2 3.2-2.2 4.8 0s3.2 2.2 4.8 0" /></>,
   check: <><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>,
   chat: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   doc: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>,
-  chart: <><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></>,
   activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  funnel: <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />,
+  users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  ring: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="m5.6 5.6 3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9" /></>,
   forecast: <><path d="M3 3v18h18" /><path d="m7 14 4-4 3 3 5-6" /></>,
   note: <><path d="M12 20h9M4 20V4h11l5 5" /><path d="M14 4v6h6" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>,
   bell2: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3" /></>,
   gear: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9 2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5 2 2 0 1 1 4 0 1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1 2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.5 1z" /></>,
-  send: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>,
   logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></>,
   menu: <><path d="M3 6h18M3 12h18M3 18h18" /></>,

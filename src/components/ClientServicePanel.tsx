@@ -1,0 +1,459 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+
+// The per-client panel behind a client name in the Client Services Hub.
+//
+// Three jobs in the order the week runs: queue the leads we want the client to
+// confirm, log the wins worth telling them about, then send the ask that
+// carries both. Everything here reuses endpoints that already existed, so the
+// panel adds no new way to reach a client.
+
+type Lead = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  source: string;
+  received_on: string;
+  notes: string;
+  converted: "unknown" | "yes" | "no";
+  client_note: string;
+};
+
+type Win = {
+  id: string;
+  body: string;
+  happened_on: string;
+};
+
+export type PanelClient = {
+  clientId: string;
+  name: string;
+  contactName: string;
+  contactEmail: string;
+  accountManager: string;
+  hasBasecamp: boolean;
+  paused: boolean;
+  monthLabel: string;
+  leadsWaiting: number;
+  revenueIn: boolean;
+  emailSentAt: string | null;
+  basecampSentAt: string | null;
+};
+
+// Mirrors LEAD_SOURCE_OPTIONS in lib/snapshot.ts. Kept local because that
+// module imports the database, and the snapshot page keeps its own copy for the
+// same reason.
+const LEAD_SOURCES: { value: string; label: string }[] = [
+  { value: "form", label: "Filled a form" },
+  { value: "call", label: "Called in" },
+  { value: "other", label: "Other" },
+];
+
+const CONVERTED_LABEL: Record<Lead["converted"], string> = {
+  unknown: "Waiting on them",
+  yes: "Converted",
+  no: "Did not convert",
+};
+
+const CONVERTED_TONE: Record<Lead["converted"], string> = {
+  unknown: "is-warn",
+  yes: "is-good",
+  no: "is-muted",
+};
+
+function todayYmd(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function fmtDay(ymd: string): string {
+  if (!ymd) return "";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function ClientServicePanel({
+  client,
+  isAdmin,
+  sendingOn,
+  onClose,
+  onSend,
+  onChanged,
+  sending,
+}: {
+  client: PanelClient;
+  isAdmin: boolean;
+  sendingOn: boolean;
+  onClose: () => void;
+  onSend: () => void;
+  /** Adding a lead changes the client's outstanding count, so the hub's row and
+   *  week totals have to be re-read rather than left showing stale numbers. */
+  onChanged: () => void;
+  sending: boolean;
+}) {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [wins, setWins] = useState<Win[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [lead, setLead] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    source: "form",
+    receivedOn: todayYmd(),
+    notes: "",
+  });
+  const [win, setWin] = useState({ body: "", happenedOn: todayYmd() });
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/client-services?clientId=${client.clientId}`);
+      if (!res.ok) {
+        setError("Could not load this client.");
+        return;
+      }
+      const data = await res.json();
+      setLeads(data.leads || []);
+      setWins(data.wins || []);
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [client.clientId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Escape closes, which the app's other modals do not do yet and which is the
+  // cheapest way to make a panel feel like a panel.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function addLead(e: FormEvent) {
+    e.preventDefault();
+    if (!lead.firstName.trim()) return;
+    setSaving(true);
+    setError("");
+    const res = await fetch(
+      `/api/snapshot/accounts/${client.clientId}/leads`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(lead),
+      }
+    );
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not add that lead.");
+      return;
+    }
+    const data = await res.json();
+    setLeads((prev) => [data.lead, ...prev]);
+    onChanged();
+    setLead({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      source: "form",
+      receivedOn: todayYmd(),
+      notes: "",
+    });
+  }
+
+  async function addWin(e: FormEvent) {
+    e.preventDefault();
+    if (!win.body.trim()) return;
+    setSaving(true);
+    setError("");
+    const res = await fetch("/api/snapshot/win", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: client.clientId,
+        body: win.body,
+        happenedOn: win.happenedOn,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not add that win.");
+      return;
+    }
+    const data = await res.json();
+    setWins((prev) => [data.win, ...prev]);
+    setWin({ body: "", happenedOn: todayYmd() });
+  }
+
+  const unanswered = leads.filter((l) => l.converted === "unknown");
+  const asked = Boolean(client.emailSentAt || client.basecampSentAt);
+  const dead = !client.contactEmail.trim() && !client.hasBasecamp;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal modal-wide card card-pad stack csp"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${client.name} client services`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="csp-head">
+          <div>
+            <h2 className="csp-name">{client.name}</h2>
+            <p className="csp-meta">
+              {client.contactName || "No contact set"}
+              {client.contactEmail ? ` · ${client.contactEmail}` : ""}
+              {client.accountManager ? ` · ${client.accountManager}` : " · Unassigned"}
+            </p>
+          </div>
+          <div className="csp-head-side">
+            <Link
+              className="btn btn-ghost btn-sm"
+              href={`/admin/snapshot/${client.clientId}`}
+            >
+              Full account
+            </Link>
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+
+        {error ? <p className="error">{error}</p> : null}
+
+        {/* ---- 1. the ask itself */}
+        <section className="csp-sec">
+          <div className="csp-sec-head">
+            <h3>This week&apos;s ask</h3>
+            {client.paused ? <span className="cs-pill">Paused</span> : null}
+          </div>
+          <ul className="csp-ask">
+            <li className={unanswered.length ? "is-open" : "is-done"}>
+              {unanswered.length
+                ? `${unanswered.length} lead${unanswered.length === 1 ? "" : "s"} for them to confirm`
+                : "No leads waiting on them"}
+            </li>
+            <li className={client.revenueIn ? "is-done" : "is-open"}>
+              {client.revenueIn
+                ? "Revenue is in"
+                : `${client.monthLabel} revenue still owed`}
+            </li>
+          </ul>
+
+          {isAdmin ? (
+            <div className="csp-send">
+              <button
+                className="btn btn-sm"
+                onClick={onSend}
+                disabled={sending || dead}
+                title={
+                  dead
+                    ? "No contact email and no Basecamp project, so there is nowhere for the ask to go."
+                    : undefined
+                }
+              >
+                {sending
+                  ? "Sending..."
+                  : asked
+                    ? "Send the snapshot again"
+                    : "Send weekly snapshot"}
+              </button>
+              <span className="csp-send-note">
+                {dead
+                  ? "Add a contact email or a Basecamp project first."
+                  : !sendingOn
+                    ? "Sending is switched off, so this reports what it would have done."
+                    : asked
+                      ? "Already asked this week. Sending again re-sends the same ask."
+                      : "Emails the contact and posts a Basecamp card where both are set."}
+              </span>
+            </div>
+          ) : null}
+        </section>
+
+        {/* ---- 2. leads we want confirmed */}
+        <section className="csp-sec">
+          <div className="csp-sec-head">
+            <h3>Leads to confirm</h3>
+            <span className="csp-count">{unanswered.length} waiting</span>
+          </div>
+
+          {loading ? (
+            <p className="muted">Loading...</p>
+          ) : leads.length === 0 ? (
+            <p className="muted csp-empty">
+              No leads logged yet. Add the ones you want this client to confirm.
+            </p>
+          ) : (
+            <ul className="csp-list">
+              {leads.slice(0, 8).map((l) => (
+                <li key={l.id}>
+                  <span className="csp-list-main">
+                    {l.first_name} {l.last_name}
+                    {l.received_on ? (
+                      <span className="csp-list-sub">{fmtDay(l.received_on)}</span>
+                    ) : null}
+                  </span>
+                  <span className={`cs-pill ${CONVERTED_TONE[l.converted]}`}>
+                    {CONVERTED_LABEL[l.converted]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form className="csp-form" onSubmit={addLead}>
+            <div className="csp-grid">
+              <label className="field">
+                <span>First name</span>
+                <input
+                  value={lead.firstName}
+                  onChange={(e) => setLead({ ...lead, firstName: e.target.value })}
+                  placeholder="Required"
+                />
+              </label>
+              <label className="field">
+                <span>Last name</span>
+                <input
+                  value={lead.lastName}
+                  onChange={(e) => setLead({ ...lead, lastName: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={lead.email}
+                  onChange={(e) => setLead({ ...lead, email: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Phone</span>
+                <input
+                  value={lead.phone}
+                  onChange={(e) => setLead({ ...lead, phone: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>How they came in</span>
+                <select
+                  className="select-clean"
+                  value={lead.source}
+                  onChange={(e) => setLead({ ...lead, source: e.target.value })}
+                >
+                  {LEAD_SOURCES.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Came in on</span>
+                <input
+                  type="date"
+                  value={lead.receivedOn}
+                  onChange={(e) => setLead({ ...lead, receivedOn: e.target.value })}
+                />
+              </label>
+            </div>
+            <label className="field">
+              <span>Note for the team, not the client</span>
+              <input
+                value={lead.notes}
+                onChange={(e) => setLead({ ...lead, notes: e.target.value })}
+                placeholder="Optional"
+              />
+            </label>
+            <div className="csp-form-foot">
+              <button
+                className="btn btn-secondary btn-sm"
+                type="submit"
+                disabled={saving || !lead.firstName.trim()}
+              >
+                {saving ? "Adding..." : "Add lead"}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {/* ---- 3. wins worth telling them about */}
+        <section className="csp-sec">
+          <div className="csp-sec-head">
+            <h3>Wins</h3>
+            <span className="csp-count">{wins.length} logged</span>
+          </div>
+
+          {loading ? (
+            <p className="muted">Loading...</p>
+          ) : wins.length === 0 ? (
+            <p className="muted csp-empty">
+              Nothing logged yet. Wins show up on the client&apos;s snapshot.
+            </p>
+          ) : (
+            <ul className="csp-list">
+              {wins.slice(0, 5).map((w) => (
+                <li key={w.id}>
+                  <span className="csp-list-main">{w.body}</span>
+                  {w.happened_on ? (
+                    <span className="csp-list-sub">{fmtDay(w.happened_on)}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form className="csp-form" onSubmit={addWin}>
+            <label className="field">
+              <span>What went well</span>
+              <input
+                value={win.body}
+                onChange={(e) => setWin({ ...win, body: e.target.value })}
+                placeholder="Booked 14 jobs off the spring campaign"
+              />
+            </label>
+            <div className="csp-form-foot">
+              <label className="field csp-date">
+                <span>Happened on</span>
+                <input
+                  type="date"
+                  value={win.happenedOn}
+                  onChange={(e) => setWin({ ...win, happenedOn: e.target.value })}
+                />
+              </label>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="submit"
+                disabled={saving || !win.body.trim()}
+              >
+                {saving ? "Adding..." : "Add win"}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  );
+}

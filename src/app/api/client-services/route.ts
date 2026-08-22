@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated, isWorkflowAuthenticated } from "@/lib/auth";
 import { getRevClient, updateRevClient } from "@/lib/revenue";
+import { listLeads, listWins } from "@/lib/snapshot";
 import {
   clientServiceRows,
   clientServiceSummary,
@@ -18,9 +19,16 @@ export async function GET(request: Request) {
   }
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId");
-  // A single client's outreach history, for the row's expanded view.
+  // A single client: the outreach history behind the row's expanded view, plus
+  // the leads and wins the hub's client panel works with. One response rather
+  // than three calls, and deliberately not the whole account payload, which
+  // carries deliverables, metrics and contract state the panel never reads.
   if (clientId) {
-    return NextResponse.json({ history: outreachForClient(clientId) });
+    return NextResponse.json({
+      history: outreachForClient(clientId),
+      leads: listLeads(clientId),
+      wins: listWins(clientId),
+    });
   }
   const rows = clientServiceRows();
   return NextResponse.json({
