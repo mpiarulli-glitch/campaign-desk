@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { cell, mapColumns, parseCsv } from "@/lib/csv";
 
 // The per-client panel behind a client name in the Client Services Hub.
 //
@@ -52,6 +53,69 @@ const LEAD_SOURCES: { value: string; label: string }[] = [
   { value: "call", label: "Called in" },
   { value: "other", label: "Other" },
 ];
+
+/**
+ * Headers we accept for a lead CSV, in priority order per field.
+ *
+ * Deliberately generous, because these files come from whatever the client
+ * happened to export: a CRM, a form tool, or a sheet somebody typed by hand.
+ * "First name", "first_name" and "fname" all normalise to the same key.
+ */
+const LEAD_COLUMNS = {
+  firstName: ["firstname", "first", "fname", "givenname", "name"],
+  lastName: ["lastname", "last", "lname", "surname", "familyname"],
+  email: ["email", "emailaddress", "mail"],
+  phone: ["phone", "phonenumber", "mobile", "cell", "telephone", "tel"],
+  source: ["source", "how", "howtheycamein", "leadsource", "channel"],
+  receivedOn: ["receivedon", "date", "datereceived", "camein", "createdat", "submitted"],
+  notes: ["notes", "note", "comment", "comments", "detail", "details"],
+} as const;
+
+type CsvRow = {
+  row: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  source: string;
+  receivedOn: string;
+  notes: string;
+  problem: string;
+};
+
+type CsvPreview = {
+  fileName: string;
+  rows: CsvRow[];
+  unmatched: string[];
+  missingFirstName: boolean;
+};
+
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Coerce the date formats a spreadsheet actually produces into YYYY-MM-DD.
+ * Anything unrecognised is returned untouched so the row can be flagged rather
+ * than silently rewritten to the wrong day.
+ */
+function toYmd(raw: string): string {
+  const v = raw.trim();
+  if (!v || YMD.test(v)) return v;
+  const us = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (us) {
+    const [, a, b, c] = us;
+    const year = c.length === 2 ? `20${c}` : c;
+    return `${year}-${a.padStart(2, "0")}-${b.padStart(2, "0")}`;
+  }
+  return v;
+}
+
+function normSource(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (!v) return "form";
+  if (v.startsWith("call") || v.includes("phone")) return "call";
+  if (v.startsWith("form") || v.includes("web")) return "form";
+  return "other";
+}
 
 const CONVERTED_LABEL: Record<Lead["converted"], string> = {
   unknown: "Waiting on them",
@@ -116,6 +180,9 @@ export function ClientServicePanel({
     notes: "",
   });
   const [win, setWin] = useState({ body: "", happenedOn: todayYmd() });
+  const [csv, setCsv] = useState<CsvPreview | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -179,6 +246,101 @@ export function ClientServicePanel({
       receivedOn: todayYmd(),
       notes: "",
     });
+  }
+
+  // Parse locally and show what will land before anything is written. lib/csv
+  // is pure, so this needs no round trip and nothing reaches the server until
+  // the person presses Import.
+  function readFile(file: File) {
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const table = parseCsv(String(reader.result || ""));
+      if (table.length < 2) {
+        setError("That file has a header but no rows.");
+        setCsv(null);
+        return;
+      }
+      const [header, ...body] = table;
+      const cols = mapColumns(header, LEAD_COLUMNS);
+      const used = new Set(Object.values(cols).filter((i) => i >= 0));
+      // A single "Name" column holding "Dana Ruiz" is common in exports. Split it
+      // only when there is no separate last-name column to take the second half,
+      // so a real first-name column containing a space is left alone.
+      const splitFullName =
+        cols.lastName < 0 &&
+        cols.firstName >= 0 &&
+        ["name", "fullname"].includes(
+          (header[cols.firstName] || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+        );
+
+      const rows: CsvRow[] = body.map((r, i) => {
+        let firstName = cell(r, cols.firstName);
+        let splitLast = "";
+        if (splitFullName && firstName.includes(" ")) {
+          const parts = firstName.split(/\s+/);
+          firstName = parts.shift() || "";
+          splitLast = parts.join(" ");
+        }
+        const receivedOn = toYmd(cell(r, cols.receivedOn));
+        let problem = "";
+        if (!firstName) problem = "No first name, will be skipped";
+        else if (receivedOn && !YMD.test(receivedOn)) problem = `Date "${receivedOn}" is not a date I can read`;
+        return {
+          row: i + 1,
+          firstName,
+          lastName: splitLast || cell(r, cols.lastName),
+          email: cell(r, cols.email),
+          phone: cell(r, cols.phone),
+          source: normSource(cell(r, cols.source)),
+          receivedOn,
+          notes: cell(r, cols.notes),
+          problem,
+        };
+      });
+      setCsv({
+        fileName: file.name,
+        rows,
+        unmatched: header.filter((h, i) => h.trim() && !used.has(i)),
+        missingFirstName: cols.firstName < 0,
+      });
+    };
+    reader.onerror = () => setError("Could not read that file.");
+    reader.readAsText(file);
+  }
+
+  async function commitCsv() {
+    if (!csv) return;
+    const good = csv.rows.filter((r) => !r.problem);
+    if (good.length === 0) return;
+    setImporting(true);
+    setError("");
+    const res = await fetch(`/api/snapshot/accounts/${client.clientId}/leads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leads: good.map((r) => ({
+          firstName: r.firstName,
+          lastName: r.lastName,
+          email: r.email,
+          phone: r.phone,
+          source: r.source,
+          receivedOn: r.receivedOn,
+          notes: r.notes,
+        })),
+      }),
+    });
+    setImporting(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "That import did not work.");
+      return;
+    }
+    const d = await res.json();
+    setLeads((prev) => [...(d.leads || []), ...prev]);
+    onChanged();
+    setCsv(null);
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   async function addWin(e: FormEvent) {
@@ -323,6 +485,111 @@ export function ClientServicePanel({
               ))}
             </ul>
           )}
+
+          {/* CSV upload. Sits above the manual form because a file is the fast
+              path when a client sends a week's leads in one go. */}
+          <div className="csp-csv">
+            <div className="csp-csv-head">
+              <div>
+                <strong>Upload a CSV</strong>
+                <p className="csp-csv-sub">
+                  Any column order. First name is the only column that has to be
+                  there. Nothing is saved until you have seen what will land.
+                </p>
+              </div>
+              <label className="btn btn-secondary btn-sm csp-csv-pick">
+                Choose file
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) readFile(f);
+                  }}
+                />
+              </label>
+            </div>
+
+            {csv ? (
+              <div className="csp-csv-preview">
+                <div className="csp-csv-stat">
+                  <span>{csv.fileName}</span>
+                  <span>
+                    <strong>{csv.rows.filter((r) => !r.problem).length}</strong> will import
+                    {csv.rows.some((r) => r.problem)
+                      ? `, ${csv.rows.filter((r) => r.problem).length} skipped`
+                      : ""}
+                  </span>
+                </div>
+
+                {csv.missingFirstName ? (
+                  <p className="csp-csv-warn">
+                    No first name column found. Name one of the columns
+                    &quot;First name&quot; and upload again.
+                  </p>
+                ) : null}
+
+                {csv.unmatched.length ? (
+                  <p className="csp-csv-note">
+                    Ignored columns: {csv.unmatched.join(", ")}
+                  </p>
+                ) : null}
+
+                <div className="csp-csv-rows">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Came in</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csv.rows.slice(0, 8).map((r) => (
+                        <tr key={r.row} className={r.problem ? "is-bad" : ""}>
+                          <td>{r.row}</td>
+                          <td>
+                            {`${r.firstName} ${r.lastName}`.trim() || "-"}
+                            {r.problem ? (
+                              <span className="csp-csv-prob">{r.problem}</span>
+                            ) : null}
+                          </td>
+                          <td>{r.email || "-"}</td>
+                          <td>{r.phone || "-"}</td>
+                          <td>{r.receivedOn || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {csv.rows.length > 8 ? (
+                    <p className="csp-csv-note">
+                      Showing the first 8 of {csv.rows.length} rows.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="csp-form-foot">
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setCsv(null);
+                      if (fileRef.current) fileRef.current.value = "";
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    onClick={commitCsv}
+                    disabled={importing || csv.rows.every((r) => r.problem)}
+                  >
+                    {importing
+                      ? "Importing..."
+                      : `Import ${csv.rows.filter((r) => !r.problem).length} leads`}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <form className="csp-form" onSubmit={addLead}>
             <div className="csp-grid">

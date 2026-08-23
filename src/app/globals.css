@@ -12609,6 +12609,138 @@ button.am-node:hover .am-edit-cue,
   font-size: 13px;
 }
 
+/* ---- CSV upload inside the panel ------------------------------------- */
+
+.csp-csv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.csp-csv-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.csp-csv-head strong {
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.csp-csv-sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+
+/* The real input is hidden behind the label, because a bare file input cannot
+   be styled to match the app's buttons in any browser. */
+.csp-csv-pick {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.csp-csv-pick input[type="file"] {
+  display: none;
+}
+
+.csp-csv-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.csp-csv-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.csp-csv-stat strong {
+  color: var(--text);
+}
+
+.csp-csv-warn {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.csp-csv-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.csp-csv-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.csp-csv-rows table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.csp-csv-rows th {
+  text-align: left;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.csp-csv-rows td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-body);
+  vertical-align: top;
+}
+
+.csp-csv-rows tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* A row that will be skipped stays visible rather than being filtered out, so
+   nobody has to work out why 40 rows became 38. */
+.csp-csv-rows tr.is-bad td {
+  color: var(--text-muted);
+  background: var(--danger-wash);
+}
+
+.csp-csv-prob {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--danger-ink);
+}
+
 .csp-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
