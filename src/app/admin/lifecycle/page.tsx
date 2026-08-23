@@ -10,11 +10,13 @@ import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
 import { LinkedInHub } from "@/components/lifecycle/LinkedInHub";
 import { NotesPanel } from "@/components/lifecycle/NotesPanel";
 import { ReportPanel } from "@/components/lifecycle/ReportPanel";
+import { ToolsPanel } from "@/components/lifecycle/ToolsPanel";
 import { StatusBriefing } from "@/components/lifecycle/StatusBriefing";
 import type { LifecycleDashboard } from "@/components/lifecycle/types";
 
 type Channel =
   | "status"
+  | "tools"
   | "board"
   | "subjects"
   | "linkedin"
@@ -37,6 +39,7 @@ const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
   { id: "report", label: "Account report" },
+  { id: "tools", label: "GHL tools" },
   { id: "sops", label: "Playbooks" },
   { id: "knowledge", label: "Knowledge" },
   { id: "notes", label: "Notes" },
@@ -221,6 +224,8 @@ export default function LifecyclePage() {
         {channel === "subjects" ? <SubjectBankPanel /> : null}
 
         {channel === "report" ? <ReportPanel clients={data.clients} /> : null}
+
+        {channel === "tools" ? <ToolsPanel /> : null}
       </div>
     </div>
   );

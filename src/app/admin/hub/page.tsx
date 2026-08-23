@@ -6,19 +6,16 @@ import { useRouter } from "next/navigation";
 import { SopsSection } from "@/components/hub/SopsSection";
 import { TrainingSection } from "@/components/hub/TrainingSection";
 import { SentimentSection } from "@/components/hub/SentimentSection";
-import { HrSection } from "@/components/hub/HrSection";
 import { HubHome } from "@/components/hub/HubHome";
-import { teamLabel } from "@/lib/team";
 
 // Team to-dos were removed (2026-08-01): to-dos live in Basecamp, and Forecast
 // is where they get picked up. The in-app list was a second place to look.
-type Section = "home" | "resources" | "sops" | "training" | "sentiment" | "hr";
+type Section = "home" | "resources" | "sops" | "training" | "sentiment";
 const SECTION_TITLE: Record<Exclude<Section, "home">, string> = {
   resources: "Forecasts, docs & files",
   sops: "SOPs",
   training: "Marketing & AI training",
   sentiment: "Sentiment check-in",
-  hr: "HR",
 };
 
 function ResourcesSection({ isAdmin }: { isAdmin: boolean }) {
@@ -128,8 +125,6 @@ export default function TeamHubPage() {
           <TrainingSection isAdmin={isAdmin} />
         ) : section === "sentiment" ? (
           <SentimentSection isAdmin={isAdmin} person={person} />
-        ) : section === "hr" ? (
-          <HrSection isAdmin={isAdmin} personLabel={teamLabel} />
         ) : null}
       </div>
     </div>

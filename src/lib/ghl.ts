@@ -307,6 +307,8 @@ interface RequestOptions {
   locationId?: string;
   params?: Record<string, string | number | boolean>;
   agencyLevel?: boolean;
+  /** JSON request body. Needed by POST /contacts/search and the tag writes. */
+  body?: unknown;
 }
 
 export async function ghlRequest<T = unknown>(
@@ -314,7 +316,7 @@ export async function ghlRequest<T = unknown>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { locationId, params, agencyLevel = false } = options;
+  const { locationId, params, agencyLevel = false, body } = options;
 
   let token: string;
   if (agencyLevel) token = await getAgencyToken();
@@ -336,7 +338,14 @@ export async function ghlRequest<T = unknown>(
   };
   if (locationId && !agencyLevel) headers["location_id"] = locationId;
 
-  const send = (h: Record<string, string>) => fetchWithRetry(url, { method, headers: h });
+  let payload: string | undefined;
+  if (body !== undefined) {
+    payload = JSON.stringify(body);
+    headers["Content-Type"] = "application/json";
+  }
+
+  const send = (h: Record<string, string>) =>
+    fetchWithRetry(url, { method, headers: h, body: payload });
 
   let res = await send(headers);
 

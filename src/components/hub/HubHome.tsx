@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-type Section = "resources" | "sops" | "training" | "sentiment" | "hr";
+type Section = "resources" | "sops" | "training" | "sentiment";
 type Sop = { id: string; title: string; category: string };
 type Post = { id: string; title: string; kind: string; created_at: string };
 type Course = { id: string; slug: string; title: string; kind: string; lesson_count: number };
@@ -21,7 +21,6 @@ const ICONS: Record<string, React.ReactNode> = {
   sop: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M9 13h6M9 17h6" /></>,
   train: <><path d="M12 2L2 7l10 5 10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></>,
   senti: <><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" /></>,
-  hr: <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>,
 };
 function Icon({ name }: { name: string }) {
   return (
@@ -45,7 +44,6 @@ export function HubHome({
   const [courses, setCourses] = useState<Course[]>([]);
   const [checkins, setCheckins] = useState<Checkin[] | null>(null);
   const [myScore, setMyScore] = useState<number | null>(null);
-  const [hrOpen, setHrOpen] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/hub/sops").then((r) => (r.ok ? r.json() : { sops: [] })).then((d) => setSops(d.sops || []));
@@ -57,11 +55,6 @@ export function HubHome({
         setCheckins(d.all ?? null);
         setMyScore(d.mine?.score ?? null);
       });
-    if (isAdmin) {
-      fetch("/api/hub/hr").then((r) => (r.ok ? r.json() : { issues: [] })).then((d) =>
-        setHrOpen((d.issues || []).filter((i: { status: string }) => i.status === "open").length)
-      );
-    }
   }, [isAdmin]);
 
   const pulseAvg = checkins && checkins.length ? checkins.reduce((s, c) => s + c.score, 0) / checkins.length : null;
@@ -84,7 +77,6 @@ export function HubHome({
 
       <div className="hq-pulse">
         <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#c25d8a" }} /><span className="n">{pulseAvg != null ? pulseAvg.toFixed(1) : myScore != null ? myScore : "—"}</span><span className="l">team pulse</span></div>
-        {isAdmin ? <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#5a6b7b" }} /><span className="n">{hrOpen ?? 0}</span><span className="l">HR open</span></div> : null}
       </div>
 
       <div className="hq-bento">
@@ -177,20 +169,6 @@ export function HubHome({
           )}
         </button>
 
-        {/* HR */}
-        <button className="hq-card t-hr span2" onClick={() => onOpen("hr")}>
-          <div className="hq-card-head">
-            <span className="hq-icon"><Icon name="hr" /></span>
-            <div><h3 className="hq-card-title">HR</h3><p className="hq-card-desc">Raise something, privately</p></div>
-          </div>
-          <div className="hq-divider" />
-          <p className="muted" style={{ margin: "0 0 14px" }}>
-            {isAdmin && hrOpen != null && hrOpen > 0
-              ? `${hrOpen} open issue${hrOpen === 1 ? "" : "s"} to review.`
-              : "Escalate a concern or question. Anonymous if you want."}
-          </p>
-          <span className="hq-cta">{isAdmin ? "Review issues" : "Raise an issue"}</span>
-        </button>
       </div>
     </div>
   );
