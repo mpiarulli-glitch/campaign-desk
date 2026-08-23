@@ -7946,6 +7946,157 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .hq-todo-people { grid-template-columns: 1fr; }
 }
 
+/* ==========================================================================
+   Forecast day planner on a phone
+   --------------------------------------------------------------------------
+   The Today and List views are what this page opens on: `view` starts at
+   "today" for the current week and "list" for any other, so the calendar grid
+   is a deliberate detour and is left alone here.
+
+   Two separate problems. The row is a seven-control flex line built for a
+   desktop width, and it wraps into an unreadable stack of half-width inputs
+   well before a phone. And several controls are revealed on :hover, which on a
+   touch screen means never.
+   ========================================================================== */
+
+/* Controls that only appear on hover are unreachable without a pointer. Keyed
+   off hover, not width, because a tablet is wide and still has no cursor. */
+@media (hover: none) {
+  .ops-row-remove,
+  .ops-list-row .btn-ghost,
+  .ops-task-chip .remove,
+  .fc-queue-remove {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  /* The view switcher is four buttons that no longer fit. It scrolls sideways
+     rather than wrapping mid-control, and keeps its rounded ends. */
+  .view-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .view-toggle-btn {
+    padding: 9px 14px;
+    white-space: nowrap;
+  }
+
+  .fc-today {
+    padding: 15px 14px;
+    border-radius: 13px;
+  }
+
+  /* The date and the done-count sat on one line and collided. */
+  .fc-today-head {
+    align-items: flex-start;
+    gap: 4px;
+    flex-direction: column;
+  }
+  .fc-today-day {
+    font-size: 19px;
+  }
+
+  .ops-list-day {
+    padding: 13px 13px 15px;
+  }
+
+  /* The row becomes four bands: the task, its note, when it runs, then what to
+     do with it. Ordered flex rather than named grid areas, because siblings
+     sharing one grid area stack on top of each other instead of sitting side
+     by side. */
+  .ops-list-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px 9px;
+    padding: 11px 12px;
+  }
+  .ops-list-row > input[type="checkbox"] {
+    order: 1;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    /* The UA margin on a checkbox is what made the sum below overflow by 2px
+       and bounce the client name onto its own line. */
+    margin: 0;
+  }
+  /* Takes the rest of the first line, beside the checkbox: 20px control plus
+     the 9px column gap, with a little slack. */
+  .ops-list-row input.client {
+    order: 2;
+    flex: 1 1 calc(100% - 36px);
+    min-width: 0;
+    font-size: 14px;
+  }
+  /* A 150px flex basis on a 390px screen left the note unreadable, so it gets
+     its own line. */
+  .ops-list-row input.notes {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+    font-size: 13.5px;
+  }
+  .ops-list-row > .ops-time {
+    order: 4;
+    flex: none;
+  }
+  .ops-list-row > .row {
+    order: 5;
+    flex: none;
+  }
+  .ops-list-row > .fc-colordot {
+    order: 6;
+    flex: none;
+    margin-left: auto;
+  }
+  .ops-list-row > .ops-row-actions {
+    order: 7;
+    flex: 1 1 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    margin-top: 2px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Finger-sized. 20px was a mouse target. */
+  .ops-row-remove {
+    width: 32px;
+    height: 32px;
+    font-size: 19px;
+  }
+  .fc-move-btn {
+    padding: 7px 13px;
+    font-size: 12.5px;
+  }
+
+  /* The move menu is anchored to the right of a button that now sits near the
+     screen edge, so it was running off it. */
+  .fc-move-menu {
+    right: 0;
+    min-width: 0;
+    width: max-content;
+    max-width: min(84vw, 260px);
+  }
+  .fc-move-menu > button {
+    padding: 9px 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Spread the actions instead of crowding them at the right edge. */
+  .ops-list-row > .ops-row-actions {
+    justify-content: space-between;
+  }
+  .fc-today {
+    padding: 13px 11px;
+  }
+}
+
 /* ============================================ client flags */
 .flag-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
 .flag-dot.lg { width: 12px; height: 12px; margin-top: 4px; }
