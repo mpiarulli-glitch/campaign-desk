@@ -1,0 +1,29 @@
+name: Weekly forecast plan
+
+# Fills Michael's forecast calendar from his Basecamp to-dos every Monday:
+# work a day before each due date, leadership meetings Mon/Wed/Fri at 10am,
+# 3 hours of MEG outreach, and a daily hour held for campaign audits.
+#
+# Requires a repository secret named CRON_SECRET whose value matches the
+# CRON_SECRET environment variable set on the Railway service.
+
+on:
+  schedule:
+    # 16:00 UTC Mondays (~9am Pacific).
+    - cron: "0 16 * * 1"
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: "Report the plan without writing forecast rows"
+        type: boolean
+        default: false
+
+jobs:
+  plan-forecast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger forecast plan
+        run: |
+          curl -fsS --show-error -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://hub.marketingempiregroup.com/api/cron/forecast-plan${{ inputs.dryRun && '?dryRun=1' || '' }}"
