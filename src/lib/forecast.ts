@@ -193,6 +193,23 @@ export function linkSubtaskBasecamp(
   return getSubtask(id);
 }
 
+export function linkTaskBasecamp(
+  id: string,
+  basecampTodoId: string,
+  basecampProjectId: string
+): ForecastTask | null {
+  if (!getTask(id)) return null;
+  const todoId = basecampTodoId.trim();
+  const projectId = basecampProjectId.trim();
+  if (!todoId || !projectId) return null;
+  getDb()
+    .prepare(
+      `UPDATE forecast_tasks SET basecamp_todo_id = ?, basecamp_project_id = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(todoId, projectId, nowIso(), id);
+  return getTask(id);
+}
+
 export function updateSubtask(
   id: string,
   updates: Partial<{ notes: string; completed: boolean }>

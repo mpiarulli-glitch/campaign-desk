@@ -17,7 +17,10 @@ function noticeFromBasecamp(json: {
   };
 } | null): string {
   const bc = json?.basecamp;
-  if (!bc || bc.synced || bc.skipped) return "";
+  if (!bc || bc.synced) return "";
+  if (bc.skipped) {
+    return "Saved here, but this row isn't linked to a Basecamp to-do, so nothing was added there.";
+  }
   if (bc.needsBasecamp) {
     return "Saved here, but connect your Basecamp account so this shows as a subtask on the todo.";
   }

@@ -118,4 +118,30 @@ test("forecast subtasks", async (t) => {
     assert.equal(result.synced, false);
     assert.equal(forecast.getSubtask(step!.id)!.basecamp_step_id, "");
   });
+
+  await t.test("a later Basecamp link can be saved on the parent row", () => {
+    const parent = forecast.createTask({
+      person: "michael",
+      taskDate: "2026-08-24",
+      client: "ALL-IN-1 Construction",
+      notes: "First Batch of Emails",
+      hours: 1,
+    });
+    const linked = forecast.linkTaskBasecamp(parent.id, "10152277900", "48158835");
+    assert.equal(linked!.basecamp_todo_id, "10152277900");
+    assert.equal(linked!.basecamp_project_id, "48158835");
+  });
+
+  await t.test("todo titles match ignoring suffixes and nested labels", async () => {
+    const sync = await import("../src/lib/forecast-subtask-sync");
+    assert.equal(sync.todoMatchTitle("First Batch of Emails"), "first batch of emails");
+    assert.equal(
+      sync.todoMatchTitle("Set Up AI Chatbot › Embed script for it"),
+      "set up ai chatbot"
+    );
+    assert.equal(
+      sync.todoMatchTitle("Authenticate Domain · Due today · ~10 min"),
+      "authenticate domain"
+    );
+  });
 });

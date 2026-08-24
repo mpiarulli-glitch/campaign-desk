@@ -3,11 +3,13 @@ import {
   basecampConnected,
   createTodoStep,
   hasConnection,
+  listMyAssignments,
   setForecastStepCompletion,
   trashRecording,
   updateTodoStep,
 } from "./basecamp";
-import { linkSubtaskBasecamp } from "./forecast";
+import { linkSubtaskBasecamp, linkTaskBasecamp } from "./forecast";
+import { listRevClients } from "./revenue";
 import type { ForecastSubtask, ForecastTask } from "./db";
 
 export type SubtaskBasecampResult = {
@@ -22,6 +24,38 @@ function parentTodo(task: ForecastTask): { projectId: string; todoId: string } |
   const todoId = (task.basecamp_todo_id || "").trim();
   if (!projectId || !todoId) return null;
   return { projectId, todoId };
+}
+
+export function todoMatchTitle(notes: string): string {
+  return (notes || "")
+    .split("·")[0]
+    .split("›")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+async function attachParentIfMissing(
+  person: string,
+  task: ForecastTask
+): Promise<ForecastTask> {
+  if (parentTodo(task)) return task;
+  const clientName = (task.client || "").trim().toLowerCase();
+  const want = todoMatchTitle(task.notes);
+  if (!clientName || !want) return task;
+  const client = listRevClients(true).find(
+    (c) =>
+      c.name.trim().toLowerCase() === clientName &&
+      (c.basecamp_project_id || "").trim()
+  );
+  if (!client) return task;
+  const projectId = client.basecamp_project_id.trim();
+  const assigned = await listMyAssignments(asPerson(person));
+  const hit = assigned.find(
+    (a) => a.projectId === projectId && todoMatchTitle(a.title) === want
+  );
+  if (!hit) return task;
+  return linkTaskBasecamp(task.id, hit.id, hit.projectId) || task;
 }
 
 function skipOrConnect(person: string, task: ForecastTask): SubtaskBasecampResult | null {
@@ -57,6 +91,7 @@ export async function mirrorCreatedSubtask(
   subtask: ForecastSubtask
 ): Promise<SubtaskBasecampResult> {
   try {
+    task = await attachParentIfMissing(person, task);
     const blocked = skipOrConnect(person, task);
     if (blocked) return blocked;
     const parent = parentTodo(task)!;
