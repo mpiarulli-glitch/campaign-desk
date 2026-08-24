@@ -1419,11 +1419,14 @@ export default function PersonForecastPage() {
   }
 
   const running = useMemo(
-    () => (data?.tasks || []).find((t) => isRunning(t)) || null,
+    () =>
+      (data?.tasks || [])
+        .filter((t) => isRunning(t))
+        .sort((a, b) => a.timer_started_at.localeCompare(b.timer_started_at)),
     [data]
   );
   useEffect(() => {
-    if (!running) return;
+    if (!running.length) return;
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [running]);
@@ -2151,10 +2154,10 @@ export default function PersonForecastPage() {
   /**
    * Start or stop timing a task.
    *
-   * One timer runs at a time, so starting a second task banks the first one's
-   * time and says which task stopped. A task with no slot on the calendar is
-   * placed at the current hour when its timer starts, so the block that grows as
-   * you work is somewhere you can see it.
+   * Two timers can run at once. Starting a third banks the oldest one's time
+   * and says which task stopped. A task with no slot on the calendar is placed
+   * at the current hour when its timer starts, so the block that grows as you
+   * work is somewhere you can see it.
    */
   async function toggleTimer(task: Task) {
     const stopping = isRunning(task);
@@ -2183,8 +2186,8 @@ export default function PersonForecastPage() {
     }
     const json = await res.json().catch(() => null);
     if (json?.stopped) {
-      const what = json.stopped.notes || json.stopped.client || "the last task";
-      setError(`Timer moved. ${what} stopped and kept its time.`);
+      const what = json.stopped.notes || json.stopped.client || "the oldest task";
+      setError(`Two timers already running. ${what} stopped and kept its time.`);
     } else {
       setError("");
     }
@@ -3425,33 +3428,36 @@ export default function PersonForecastPage() {
         </div>
       ) : null}
 
-      {/* Docked in the corner rather than banded across the top: a running timer
-          has to stay visible while you scroll a long week, and it should not push
-          the whole page down to do it. Last in the DOM so it reads last to a
-          screen reader too. */}
-      {running ? (
-        <div
-          className="fc-timer-dock"
-          role="status"
-          aria-live="off"
-          title={`Timing: ${running.notes || running.client || "Task"}`}
-        >
-          <span className="fc-timer-dock-pulse" aria-hidden="true" />
-          <div className="fc-timer-dock-what">
-            <strong>{running.notes || running.client || "Task"}</strong>
-            {running.client && running.notes ? <span>{running.client}</span> : null}
-          </div>
-          <span className="fc-timer-dock-clock">
-            {formatTracked(trackedSeconds(running, nowMs), true)}
-          </span>
-          <button
-            type="button"
-            className="fc-timer-dock-stop"
-            disabled={timerBusy === running.id}
-            aria-label="Stop the timer"
-            title="Stop the timer"
-            onClick={() => void toggleTimer(running)}
-          />
+      {/* Docked in the corner rather than banded across the top: running timers
+          have to stay visible while you scroll a long week, and they should not
+          push the whole page down to do it. Last in the DOM so they read last
+          to a screen reader too. Two pills when two tasks are timed at once. */}
+      {running.length > 0 ? (
+        <div className="fc-timer-docks" role="status" aria-live="off">
+          {running.map((task) => (
+            <div
+              key={task.id}
+              className="fc-timer-dock"
+              title={`Timing: ${task.notes || task.client || "Task"}`}
+            >
+              <span className="fc-timer-dock-pulse" aria-hidden="true" />
+              <div className="fc-timer-dock-what">
+                <strong>{task.notes || task.client || "Task"}</strong>
+                {task.client && task.notes ? <span>{task.client}</span> : null}
+              </div>
+              <span className="fc-timer-dock-clock">
+                {formatTracked(trackedSeconds(task, nowMs), true)}
+              </span>
+              <button
+                type="button"
+                className="fc-timer-dock-stop"
+                disabled={timerBusy === task.id}
+                aria-label={`Stop the timer on ${task.notes || task.client || "this task"}`}
+                title="Stop the timer"
+                onClick={() => void toggleTimer(task)}
+              />
+            </div>
+          ))}
         </div>
       ) : null}
     </div>

@@ -117,3 +117,84 @@ test("nothing outstanding offers nothing, which is also the signal not to ask", 
     ""
   );
 });
+
+/* -------------------------------- two timers at once, not unlimited */
+
+test("up to two timers can run at once for the same person", async (t) => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-forecast-timer-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const forecast = await import("../src/lib/forecast");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  function task(person: string, notes: string) {
+    return forecast.createTask({
+      person,
+      taskDate: "2026-08-24",
+      notes,
+      hours: 1,
+    });
+  }
+
+  const t0 = Date.parse("2026-08-24T17:00:00.000Z");
+
+  await t.test("starting a second timer leaves the first running", () => {
+    const a = task("michael", "First");
+    const b = task("michael", "Second");
+    const first = forecast.startTimer("michael", a.id, t0);
+    const second = forecast.startTimer("michael", b.id, t0 + 60_000);
+
+    assert.equal(second.stopped, null);
+    const running = forecast.runningTasksForPerson("michael");
+    assert.equal(running.length, 2);
+    assert.ok(running.some((row) => row.id === a.id && row.timer_started_at));
+    assert.ok(running.some((row) => row.id === b.id && row.timer_started_at));
+    assert.equal(forecast.getTask(a.id)?.tracked_seconds, 0);
+    assert.ok(first.task?.timer_started_at);
+  });
+
+  await t.test("starting a third banks the oldest and starts the new one", () => {
+    const c = task("michael", "Third");
+    const third = forecast.startTimer("michael", c.id, t0 + 5 * 60_000);
+
+    assert.equal(third.stopped?.notes, "First");
+    assert.equal(third.stopped?.timer_started_at, "");
+    // Five minutes on the first timer, then it was banked.
+    assert.equal(third.stopped?.tracked_seconds, 300);
+
+    const running = forecast.runningTasksForPerson("michael");
+    assert.equal(running.length, 2);
+    assert.deepEqual(
+      running.map((row) => row.notes).sort(),
+      ["Second", "Third"]
+    );
+    assert.equal(forecast.getTask(c.id)?.timer_started_at, new Date(t0 + 5 * 60_000).toISOString());
+  });
+
+  await t.test("another person's timers are a separate pair", () => {
+    const other = task("paula", "Paula's task");
+    const started = forecast.startTimer("paula", other.id, t0);
+    assert.equal(started.stopped, null);
+    assert.equal(forecast.runningTasksForPerson("paula").length, 1);
+    assert.equal(forecast.runningTasksForPerson("michael").length, 2);
+  });
+
+  await t.test("stopping one of two leaves the other running", () => {
+    const before = forecast.runningTasksForPerson("michael");
+    const keep = before.find((row) => row.notes === "Third");
+    const stop = before.find((row) => row.notes === "Second");
+    assert.ok(keep && stop);
+    forecast.stopTimer(stop.id, t0 + 6 * 60_000);
+    const running = forecast.runningTasksForPerson("michael");
+    assert.equal(running.length, 1);
+    assert.equal(running[0].id, keep.id);
+  });
+});

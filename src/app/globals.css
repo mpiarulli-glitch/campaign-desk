@@ -5553,10 +5553,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 4px 8px 5px;
   line-height: 1.25;
   color: #fff;
-  /* Slightly translucent, so the hour lines and the now-line read through a
-     block instead of being hidden by it. Applied to the background rather than
-     via opacity, which would fade the text along with it. */
-  background: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 88%, transparent);
+  /* Translucent fill only: hour lines and the now-line read through the card,
+     while the title stays solid white. 75% is enough to see the grid without
+     washing the colour out. */
+  background: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 75%, transparent);
   border: none;
   cursor: grab;
   display: flex;
@@ -6029,15 +6029,22 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background: var(--danger);
 }
 
-/* Timer pill docked in the corner while something is running. Deliberately
-   small: a dot, the clock, a stop square. The task's name is on the tooltip
-   rather than in the pill, and the pill widens to show it on hover, so a timer
-   left running is visible without a card parked over the page. */
-.fc-timer-dock {
+/* Timer pills docked in the corner while something is running. Two can sit
+   stacked here. Deliberately small: a dot, the clock, a stop square. The
+   task's name is on the tooltip rather than in the pill, and the pill widens
+   to show it on hover, so a timer left running is visible without a card
+   parked over the page. */
+.fc-timer-docks {
   position: fixed;
   z-index: 60;
   right: 18px;
   bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.fc-timer-dock {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -6231,8 +6238,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
   animation: fc-dock-in 0.18s ease-out;
 }
-/* Both docked bottom-right, so the timer steps aside while the ask is up. */
-.fc-log-ask ~ .fc-timer-dock { bottom: 132px; }
+/* Both docked bottom-right, so the timers step aside while the ask is up. */
+.fc-log-ask ~ .fc-timer-docks { bottom: 132px; }
 @media (prefers-reduced-motion: reduce) {
   .fc-log-ask { animation: none; }
 }

@@ -152,8 +152,8 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!started) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    // Names whatever timer had to give way, so the page can say so rather than
-    // leaving someone to notice their last task quietly stopped.
+    // Names whichever timer had to give way when a third one started, so the
+    // page can say so rather than leaving someone to notice it quietly stopped.
     return NextResponse.json({
       task: started,
       stopped: stopped ? { id: stopped.id, notes: stopped.notes, client: stopped.client } : null,

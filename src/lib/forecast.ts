@@ -376,15 +376,17 @@ export function recordTimeEntry(
 
 /* ------------------------------------------------------ start / stop timer */
 
-// The task this person currently has a timer running on, if any.
-export function runningTaskForPerson(person: string): ForecastTask | null {
-  return (
-    (getDb()
-      .prepare(
-        `SELECT * FROM forecast_tasks WHERE person = ? AND timer_started_at != '' ORDER BY timer_started_at DESC LIMIT 1`
-      )
-      .get(person) as ForecastTask | undefined) || null
-  );
+// Two at once is enough to split attention without leaving a night of timers
+// running on every task you touched. Oldest first, so a third start knows which
+// one to bank.
+export const MAX_RUNNING_TIMERS = 2;
+
+export function runningTasksForPerson(person: string): ForecastTask[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM forecast_tasks WHERE person = ? AND timer_started_at != '' ORDER BY timer_started_at ASC`
+    )
+    .all(person) as ForecastTask[];
 }
 
 // Bank whatever a running timer has measured and stop it. A no-op on a task with
@@ -405,10 +407,10 @@ export function stopTimer(id: string, now = Date.now()): ForecastTask | null {
 /**
  * Start timing a task.
  *
- * Only one timer runs per person: you can only be doing one thing, and two
- * timers left running overnight would both bank a full night. Whatever else was
- * running is stopped first and keeps the time it measured, and it comes back in
- * `stopped` so the page can say which task that was.
+ * Up to MAX_RUNNING_TIMERS can run at once for the same person. Starting a
+ * second does not touch the first. Starting past that limit banks the oldest
+ * running timer (it keeps the time it measured) and returns it in `stopped` so
+ * the page can say which task gave way.
  */
 export function startTimer(
   person: string,
@@ -419,8 +421,9 @@ export function startTimer(
   if (!task || task.person !== person) return { task: null, stopped: null };
   if (task.timer_started_at) return { task, stopped: null };
 
-  const running = runningTaskForPerson(person);
-  const stopped = running && running.id !== id ? stopTimer(running.id, now) : null;
+  const running = runningTasksForPerson(person).filter((t) => t.id !== id);
+  const stopped =
+    running.length >= MAX_RUNNING_TIMERS ? stopTimer(running[0].id, now) : null;
 
   getDb()
     .prepare(
