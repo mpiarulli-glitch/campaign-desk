@@ -3278,7 +3278,7 @@ export default function PersonForecastPage() {
                     />
                   </div>
                   <div className="fc-edit-field">
-                    <span>Steps</span>
+                    <span>Subtasks</span>
                     <ForecastSubtasks
                       person={person}
                       taskId={editingTask.id}

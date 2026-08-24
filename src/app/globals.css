@@ -6199,6 +6199,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-mini-gauge u { background: var(--accent); }
 .fc-mini-gauge.is-over u { background: var(--danger); }
 .fc-mini-gauge.is-over b { color: var(--danger); }
+.fc-mini-gauges {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.fc-mini-gauge.is-short b { color: var(--warning); }
+.fc-mini-gauge.is-short em { background: var(--warning); }
+.fc-mini-gauge.is-caught b { color: var(--success); }
+.fc-mini-gauge.is-caught em { background: var(--success); }
 
 /* ------------------------------------------- add-a-task popover on the grid */
 .fc-slot-pop {
@@ -7015,7 +7025,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   text-transform: uppercase;
   color: var(--text-muted);
 }
-.fc-edit-field input {
+.fc-edit-field > input {
   width: 100%;
   min-width: 0;
   padding: 6px 8px;
@@ -7096,6 +7106,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .ops-subtask {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 7px;
   min-width: 0;
 }
@@ -7164,6 +7175,36 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .ops-subtask-trigger:hover { color: var(--accent); }
 .ops-subtask.is-add .ops-subtask-notes { font-size: 12px; }
 .fc-edit .ops-subtasks { margin-left: 0; }
+.fc-edit .ops-subtask,
+.fc-edit .ops-subtask.is-add {
+  flex-wrap: nowrap;
+  width: 100%;
+}
+.fc-edit .ops-subtask input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  flex: none;
+}
+.fc-edit .ops-subtask-notes {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.fc-edit .ops-subtask.is-add .ops-subtask-notes {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+}
+.fc-edit .ops-subtask-add-go {
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
 .ops-row-handle {
   flex: none;
   width: 14px;
@@ -7465,6 +7506,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .fc-gauge.is-over .fc-gauge-note { background: rgba(214, 69, 69, 0.1); color: var(--danger); }
 .fc-gauge.is-clear .fc-gauge-note { background: rgba(31, 157, 99, 0.1); color: var(--success); }
+.fc-gauge-figure.fc-gauge-logged b { font-size: 22px; }
+.fc-gauge-figure.fc-gauge-logged.is-short b { color: var(--warning); }
+.fc-gauge-figure.fc-gauge-logged.is-caught b { color: var(--success); }
+.fc-gauge-legend span.is-short { color: var(--warning); }
 
 .fc-today {
   background: var(--bg-elevated);
@@ -7504,6 +7549,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-size: 19px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+.fc-logged-short {
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.fc-logged-ok {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 /* ---------------------------------------------- to-do list */
