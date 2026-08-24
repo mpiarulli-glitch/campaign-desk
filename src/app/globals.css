@@ -13047,3 +13047,142 @@ button.am-node:hover .am-edit-cue,
   text-transform: uppercase;
   color: var(--danger-ink);
 }
+
+/* ---- push a campaign's emails to GoHighLevel --------------------------- */
+
+.pgh {
+  width: min(620px, 100%);
+  gap: 14px;
+}
+
+.pgh-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pgh-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pgh-sub {
+  margin: 4px 0 0;
+  max-width: 52ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.pgh-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.pgh-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pgh-list li:last-child {
+  border-bottom: none;
+}
+
+.pgh-list label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.pgh-list input[type="checkbox"] {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+/* The name shown is the template name that will exist in GoHighLevel, not the
+   email's title, so there is no surprise in the template list later. */
+.pgh-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.pgh-subject {
+  padding-left: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pgh-subject.is-fallback {
+  color: var(--warning-ink);
+  font-style: italic;
+}
+
+.pgh-warn {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.pgh-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pgh-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pgh-result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+
+.pgh-result.is-ok {
+  background: var(--success-wash);
+  color: var(--success-ink);
+}
+
+.pgh-result.is-bad {
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+
+.pgh-result-name {
+  font-weight: 650;
+}
+
+.pgh-result-err {
+  max-width: 34ch;
+  text-align: right;
+}

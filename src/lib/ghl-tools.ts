@@ -510,3 +510,46 @@ export async function tagContacts(
   }
   return { tagged, failures };
 }
+
+/* --------------------------------------------- push an email into GHL */
+
+export interface TemplatePush {
+  emailId: string;
+  title: string;
+  ok: boolean;
+  templateId?: string;
+  previewUrl?: string;
+  error?: string;
+}
+
+/**
+ * Create an email template in a GoHighLevel subaccount.
+ *
+ * Endpoint and payload match what `code/ghl-mcp/ghl-cli.js upload-template`
+ * has been using in production, rather than a fresh read of the docs: this is
+ * the one shape known to work against these accounts. `editorType: "html"` is
+ * what keeps the template editable as raw HTML on the GoHighLevel side instead
+ * of being rewritten by the drag-and-drop builder.
+ */
+export async function pushEmailTemplate(args: {
+  locationId: string;
+  name: string;
+  subject: string;
+  html: string;
+}): Promise<{ id: string; previewUrl: string }> {
+  const res = await ghlRequest<{ id?: string; previewUrl?: string }>(
+    "POST",
+    `/emails/public/v2/locations/${args.locationId}/templates`,
+    {
+      locationId: args.locationId,
+      body: {
+        name: args.name,
+        subject: args.subject,
+        editorContent: args.html,
+        type: "email",
+        editorType: "html",
+      },
+    }
+  );
+  return { id: String(res.id || ""), previewUrl: String(res.previewUrl || "") };
+}

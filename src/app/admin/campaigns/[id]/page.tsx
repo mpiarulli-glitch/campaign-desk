@@ -1,5 +1,6 @@
 "use client";
 
+import { PushToGhl } from "@/components/PushToGhl";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -1282,6 +1283,7 @@ export default function AdminCampaignPage() {
     <div className="app-shell">
       <div className="page-actions">
         <StatusBadge status={status} />
+        <PushToGhl campaignId={campaign.id} campaignTitle={campaign.title} />
         <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
           All campaigns
         </Link>
