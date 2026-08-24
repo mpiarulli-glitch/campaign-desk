@@ -26,11 +26,38 @@ function noticeFromBasecamp(json: {
   }`;
 }
 
+export function ForecastSubtaskButton({
+  open,
+  onClick,
+}: {
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`fc-subtask-btn ${open ? "is-open" : ""}`}
+      aria-expanded={open}
+      title="Add a subtask"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      Subtask
+    </button>
+  );
+}
+
 export function ForecastSubtasks({
   person,
   taskId,
   subtasks,
   compact,
+  adding,
+  onAddingChange,
+  hideTrigger,
   onChanged,
   onNotice,
 }: {
@@ -38,12 +65,22 @@ export function ForecastSubtasks({
   taskId: string;
   subtasks: ForecastSubtaskRow[];
   compact?: boolean;
+  adding?: boolean;
+  onAddingChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
   onChanged: () => void;
   onNotice?: (message: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(!compact);
+  const [openUncontrolled, setOpenUncontrolled] = useState(!compact);
+
+  const open = adding ?? openUncontrolled;
+
+  function setOpen(next: boolean) {
+    onAddingChange?.(next);
+    if (adding === undefined) setOpenUncontrolled(next);
+  }
 
   function report(json: Parameters<typeof noticeFromBasecamp>[0]) {
     onNotice?.(noticeFromBasecamp(json));
@@ -56,7 +93,7 @@ export function ForecastSubtasks({
     const res = await fetch(`/api/forecast/${person}/${taskId}/subtasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes, completed: true }),
+      body: JSON.stringify({ notes, completed: false }),
     });
     setBusy(false);
     if (!res.ok) return;
@@ -85,7 +122,8 @@ export function ForecastSubtasks({
     onChanged();
   }
 
-  const showForm = open || subtasks.length > 0;
+  const showForm = open;
+  if (subtasks.length === 0 && !showForm && hideTrigger) return null;
 
   return (
     <div
@@ -99,7 +137,7 @@ export function ForecastSubtasks({
             type="checkbox"
             checked={!!s.completed}
             onChange={() => void patch(s.id, { completed: !s.completed })}
-            aria-label={s.completed ? "Mark step incomplete" : "Mark step complete"}
+            aria-label={s.completed ? "Mark subtask incomplete" : "Mark subtask complete"}
           />
           <input
             key={`${s.id}-notes`}
@@ -117,8 +155,8 @@ export function ForecastSubtasks({
           <button
             type="button"
             className="ops-subtask-remove"
-            aria-label="Remove step"
-            title="Remove step"
+            aria-label="Remove subtask"
+            title="Remove subtask"
             onClick={() => void remove(s.id)}
           >
             ×
@@ -128,10 +166,8 @@ export function ForecastSubtasks({
 
       {showForm ? (
         <div className="ops-subtask is-add">
-          <span className="ops-subtask-mark" aria-hidden>
-            ✓
-          </span>
           <input
+            autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -141,12 +177,13 @@ export function ForecastSubtasks({
               }
               if (e.key === "Escape") {
                 setDraft("");
-                if (compact && subtasks.length === 0) setOpen(false);
+                setOpen(false);
               }
             }}
-            placeholder="What did you finish? e.g. Built the welcome-series popup"
+            placeholder="New subtask"
             className="ops-subtask-notes"
             disabled={busy}
+            aria-label="New subtask"
           />
           <button
             type="button"
@@ -157,13 +194,13 @@ export function ForecastSubtasks({
             Add
           </button>
         </div>
-      ) : (
+      ) : hideTrigger ? null : (
         <button
           type="button"
           className="ops-subtask-trigger"
           onClick={() => setOpen(true)}
         >
-          + Step
+          + Subtask
         </button>
       )}
     </div>

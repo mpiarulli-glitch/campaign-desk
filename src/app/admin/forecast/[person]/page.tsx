@@ -5,7 +5,10 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
 import { ForecastQueue, type AssignedSource } from "@/components/ForecastQueue";
-import { ForecastSubtasks } from "@/components/ForecastSubtasks";
+import {
+  ForecastSubtaskButton,
+  ForecastSubtasks,
+} from "@/components/ForecastSubtasks";
 import {
   TASK_COLORS,
   normalizeTaskColor,
@@ -1086,6 +1089,9 @@ export default function PersonForecastPage() {
   // Rows whose log box is open. Defaults to open until something has been logged,
   // then collapses to a "Log more time" link so a finished row reads as finished.
   const [logExpanded, setLogExpanded] = useState<Record<string, boolean>>({});
+  const [addingSubtask, setAddingSubtask] = useState<Record<string, boolean>>(
+    {}
+  );
   const [logging, setLogging] = useState<string | null>(null);
   // Task that was just ticked off and hasn't been answered about yet. Ticking a
   // task is the moment you know what it took, so that is when to ask — the pill
@@ -2844,6 +2850,15 @@ export default function PersonForecastPage() {
                         <span className="ops-row-actions">
                           <TimerButton task={t} />
                           <LogTime task={t} />
+                          <ForecastSubtaskButton
+                            open={Boolean(addingSubtask[t.id])}
+                            onClick={() =>
+                              setAddingSubtask((d) => ({
+                                ...d,
+                                [t.id]: !d[t.id],
+                              }))
+                            }
+                          />
                           <MoveMenu task={t} />
                           <button
                             className="ops-row-remove"
@@ -2858,6 +2873,11 @@ export default function PersonForecastPage() {
                           person={person}
                           taskId={t.id}
                           subtasks={t.subtasks || []}
+                          adding={Boolean(addingSubtask[t.id])}
+                          onAddingChange={(open) =>
+                            setAddingSubtask((d) => ({ ...d, [t.id]: open }))
+                          }
+                          hideTrigger
                           onChanged={() => load(week, { silent: true })}
                           onNotice={setError}
                         />
@@ -3269,6 +3289,15 @@ export default function PersonForecastPage() {
                           <span className="ops-row-actions">
                             <TimerButton task={t} />
                             <LogTime task={t} />
+                            <ForecastSubtaskButton
+                              open={Boolean(addingSubtask[t.id])}
+                              onClick={() =>
+                                setAddingSubtask((d) => ({
+                                  ...d,
+                                  [t.id]: !d[t.id],
+                                }))
+                              }
+                            />
                             <MoveMenu task={t} />
                             <button
                               className="ops-row-remove"
@@ -3283,6 +3312,11 @@ export default function PersonForecastPage() {
                             person={person}
                             taskId={t.id}
                             subtasks={t.subtasks || []}
+                            adding={Boolean(addingSubtask[t.id])}
+                            onAddingChange={(open) =>
+                              setAddingSubtask((d) => ({ ...d, [t.id]: open }))
+                            }
+                            hideTrigger
                             onChanged={() => load(week, { silent: true })}
                             onNotice={setError}
                           />
