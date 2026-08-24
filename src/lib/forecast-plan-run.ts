@@ -17,6 +17,7 @@ import {
   createTask,
   getWeekNote,
   listTasksForPersonWeek,
+  savePlanUndo,
   updateTask,
   upsertWeekNote,
 } from "./forecast";
@@ -111,6 +112,7 @@ export interface RunForecastPlanResult extends PlanWeekResult {
   created: number;
   moved: number;
   skipped: number;
+  canUndo: boolean;
   assignmentsReason: string | null;
   dryRun: boolean;
 }
@@ -138,9 +140,23 @@ export async function runForecastPlan(
   const diff = diffPlannedBlocks(planned.blocks, existing);
   let created = 0;
   let moved = 0;
+  let canUndo = false;
   if (!input.dryRun) {
+    const noteBefore = getWeekNote(input.person, week);
+    const undoMoved = diff.move
+      .map((block) => {
+        const before = existingTasks.find((t) => t.id === block.existingId);
+        if (!before) return null;
+        return {
+          id: before.id,
+          taskDate: before.task_date,
+          startTime: before.start_time || "",
+        };
+      })
+      .filter((row): row is { id: string; taskDate: string; startTime: string } => Boolean(row));
+    const createdIds: string[] = [];
     for (const block of diff.create) {
-      createTask({
+      const row = createTask({
         person: input.person,
         taskDate: block.taskDate,
         client: block.client,
@@ -152,6 +168,7 @@ export async function runForecastPlan(
         basecampStepId: block.basecampStepId,
         basecampProjectId: block.basecampProjectId,
       });
+      createdIds.push(row.id);
       created += 1;
     }
     for (const block of diff.move) {
@@ -163,10 +180,15 @@ export async function runForecastPlan(
       moved += 1;
     }
 
-    const currentNote = getWeekNote(input.person, week);
-    if (!currentNote.trim() || isPlannerNote(currentNote)) {
+    if (!noteBefore.trim() || isPlannerNote(noteBefore)) {
       upsertWeekNote(input.person, week, planned.note);
     }
+    savePlanUndo(input.person, week, {
+      createdIds,
+      moved: undoMoved,
+      note: noteBefore,
+    });
+    canUndo = createdIds.length > 0 || undoMoved.length > 0;
   }
 
   return {
@@ -177,6 +199,7 @@ export async function runForecastPlan(
     created: input.dryRun ? 0 : created,
     moved: input.dryRun ? 0 : moved,
     skipped: diff.unchanged,
+    canUndo: input.dryRun ? false : canUndo,
     assignmentsReason: reason,
     dryRun: Boolean(input.dryRun),
   };

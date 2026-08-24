@@ -4,6 +4,7 @@ import {
   WEEKLY_CAPACITY_HOURS,
   createTask,
   getWeekNote,
+  hasPlanUndo,
   isValidPerson,
   listTasksForPersonWeek,
   personLabel,
@@ -38,6 +39,7 @@ export async function GET(request: Request, { params }: Params) {
     capacity: WEEKLY_CAPACITY_HOURS,
     allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
     note: getWeekNote(person, week),
+    canUndoPlan: hasPlanUndo(person, week),
   });
 }
 

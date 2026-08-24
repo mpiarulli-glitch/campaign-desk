@@ -437,7 +437,85 @@ export function deleteTask(id: string): boolean {
   return getDb().prepare(`DELETE FROM forecast_tasks WHERE id = ?`).run(id).changes > 0;
 }
 
-/* --------------------------------------------------------- week notes */
+/* --------------------------------------------------------- plan undo */
+
+export type PlanUndoMoved = { id: string; taskDate: string; startTime: string };
+
+export type PlanUndoSnapshot = {
+  createdIds: string[];
+  moved: PlanUndoMoved[];
+  note: string;
+};
+
+export function hasPlanUndo(person: string, weekStart: string): boolean {
+  const row = getDb()
+    .prepare(`SELECT id FROM forecast_plan_undos WHERE person = ? AND week_start = ?`)
+    .get(person, weekStart) as { id: string } | undefined;
+  return Boolean(row);
+}
+
+export function savePlanUndo(
+  person: string,
+  weekStart: string,
+  snapshot: PlanUndoSnapshot
+): void {
+  if (!snapshot.createdIds.length && !snapshot.moved.length) return;
+  const db = getDb();
+  const ts = nowIso();
+  const existing = db
+    .prepare(`SELECT id FROM forecast_plan_undos WHERE person = ? AND week_start = ?`)
+    .get(person, weekStart) as { id: string } | undefined;
+  const createdIds = JSON.stringify(snapshot.createdIds);
+  const moved = JSON.stringify(snapshot.moved);
+  if (existing) {
+    db.prepare(
+      `UPDATE forecast_plan_undos SET created_ids = ?, moved = ?, note_before = ?, created_at = ? WHERE id = ?`
+    ).run(createdIds, moved, snapshot.note, ts, existing.id);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO forecast_plan_undos (id, person, week_start, created_ids, moved, note_before, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(nanoid(12), person, weekStart, createdIds, moved, snapshot.note, ts);
+}
+
+export function applyPlanUndo(
+  person: string,
+  weekStart: string
+): { deleted: number; restored: number } | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, created_ids, moved, note_before FROM forecast_plan_undos
+       WHERE person = ? AND week_start = ?`
+    )
+    .get(person, weekStart) as
+    | { id: string; created_ids: string; moved: string; note_before: string }
+    | undefined;
+  if (!row) return null;
+  let createdIds: string[] = [];
+  let moved: PlanUndoMoved[] = [];
+  try {
+    createdIds = JSON.parse(row.created_ids) as string[];
+    moved = JSON.parse(row.moved) as PlanUndoMoved[];
+  } catch {
+    createdIds = [];
+    moved = [];
+  }
+  let deleted = 0;
+  for (const id of createdIds) {
+    if (deleteTask(id)) deleted += 1;
+  }
+  let restored = 0;
+  for (const item of moved) {
+    const existing = getTask(item.id);
+    if (!existing || existing.person !== person) continue;
+    updateTask(item.id, { taskDate: item.taskDate, startTime: item.startTime });
+    restored += 1;
+  }
+  upsertWeekNote(person, weekStart, row.note_before);
+  getDb().prepare(`DELETE FROM forecast_plan_undos WHERE id = ?`).run(row.id);
+  return { deleted, restored };
+}
 
 export function getWeekNote(person: string, weekStart: string): string {
   const row = getDb()

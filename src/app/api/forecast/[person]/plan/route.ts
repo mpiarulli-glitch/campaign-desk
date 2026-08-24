@@ -42,6 +42,7 @@ export async function POST(request: Request, { params }: Params) {
     created: result.created,
     moved: result.moved,
     skipped: result.skipped,
+    canUndo: result.canUndo,
     unplaced: result.unplaced,
     note: result.note,
     assignmentsReason: result.assignmentsReason,

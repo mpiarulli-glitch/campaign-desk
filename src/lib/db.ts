@@ -1646,6 +1646,19 @@ export function getDb(): Database.Database {
       UNIQUE (person, week_start)
     );
 
+    /* One pending undo per person+week after "Plan this week". Replaced on
+       the next plan, cleared when it is applied. */
+    CREATE TABLE IF NOT EXISTS forecast_plan_undos (
+      id TEXT PRIMARY KEY,
+      person TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      created_ids TEXT NOT NULL DEFAULT '[]',
+      moved TEXT NOT NULL DEFAULT '[]',
+      note_before TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      UNIQUE (person, week_start)
+    );
+
     CREATE TABLE IF NOT EXISTS client_okrs (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,

@@ -67,6 +67,7 @@ type Data = {
   capacity: number;
   allocationPct: number;
   note: string;
+  canUndoPlan?: boolean;
 };
 
 type ClientOption = { id: string; name: string; internal?: boolean };
@@ -1143,6 +1144,7 @@ export default function PersonForecastPage() {
     { id: string; label: string; from: string } | null
   >(null);
   const [planning, setPlanning] = useState(false);
+  const [undoingPlan, setUndoingPlan] = useState(false);
   const [planNotice, setPlanNotice] = useState("");
   // Everything Basecamp says is assigned to this person, across every project.
   // Fetched once per visit: it is one request and it backs the queue's default
@@ -1444,11 +1446,16 @@ export default function PersonForecastPage() {
   }, [data]);
   // Hours split into done vs still planned, both as a share of the weekly
   // capacity, so one track shows progress and load at once.
+  //
+  // `loggedHours` is Basecamp timesheet time: each successful Log time write
+  // adds to that task's actual_hours, so summing the week is the hours that
+  // actually landed. The local timer is tracked_seconds and is ignored here.
   const gauge = useMemo(() => {
     const all = data?.tasks || [];
     const capacity = data?.capacity || 40;
     const doneHours = all.filter((t) => t.completed).reduce((s, t) => s + t.hours, 0);
     const totalHours = all.reduce((s, t) => s + t.hours, 0);
+    const loggedHours = all.reduce((s, t) => s + t.actual_hours, 0);
     const openHours = totalHours - doneHours;
     const pct = capacity ? Math.round((totalHours / capacity) * 100) : 0;
     return {
@@ -1456,11 +1463,17 @@ export default function PersonForecastPage() {
       doneHours,
       openHours,
       totalHours,
+      loggedHours,
       pct,
       // Bars are capped at the track width; the percentage still reads over 100.
       donePct: capacity ? Math.min(100, (doneHours / capacity) * 100) : 0,
       openPct: capacity ? Math.min(100 - Math.min(100, (doneHours / capacity) * 100), (openHours / capacity) * 100) : 0,
+      loggedPct: totalHours > 0 ? Math.min(100, (loggedHours / totalHours) * 100) : 0,
       over: totalHours > capacity,
+      // Short of this week's planned hours — not of the 40h capacity, which is
+      // a load target, not a timesheet quota.
+      loggedShort: totalHours > 0 && loggedHours < totalHours,
+      loggedCaught: totalHours > 0 && loggedHours >= totalHours,
       clear: all.length > 0 && doneHours === totalHours,
     };
   }, [data]);
@@ -2563,6 +2576,36 @@ export default function PersonForecastPage() {
     }
   }
 
+  async function undoPlanThisWeek() {
+    setUndoingPlan(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/forecast/${person}/plan/undo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Could not undo that plan.");
+        return;
+      }
+      const deleted = Number(json.deleted) || 0;
+      const restored = Number(json.restored) || 0;
+      const bits = [
+        deleted ? `removed ${deleted}` : "",
+        restored ? `put ${restored} back` : "",
+      ].filter(Boolean);
+      setPlanNotice(bits.length ? `Undid the plan: ${bits.join(", ")}.` : "Undid the plan.");
+      await load(week, { silent: true });
+      await loadAssigned();
+    } catch {
+      setError("Could not undo that plan.");
+    } finally {
+      setUndoingPlan(false);
+    }
+  }
+
   async function undoMove() {
     if (!moved) return;
     const { id, from } = moved;
@@ -2625,15 +2668,35 @@ export default function PersonForecastPage() {
               </button>
             </div>
             {view === "calendar" && !loading && progress.total > 0 ? (
-              <span className={`fc-mini-gauge ${gauge.over ? "is-over" : ""}`}>
-                <b>{Math.round(gauge.totalHours * 10) / 10}</b>
-                <span>/ {gauge.capacity}h</span>
-                <i>
-                  <em style={{ width: `${gauge.donePct}%` }} />
-                  <u style={{ width: `${gauge.openPct}%` }} />
-                </i>
-                <span>
-                  {progress.done}/{progress.total}
+              <span className="fc-mini-gauges">
+                <span className={`fc-mini-gauge ${gauge.over ? "is-over" : ""}`}>
+                  <b>{Math.round(gauge.totalHours * 10) / 10}</b>
+                  <span>/ {gauge.capacity}h</span>
+                  <i>
+                    <em style={{ width: `${gauge.donePct}%` }} />
+                    <u style={{ width: `${gauge.openPct}%` }} />
+                  </i>
+                  <span>
+                    {progress.done}/{progress.total}
+                  </span>
+                </span>
+                <span
+                  className={`fc-mini-gauge ${
+                    gauge.loggedShort ? "is-short" : gauge.loggedCaught ? "is-caught" : ""
+                  }`}
+                  title={
+                    gauge.loggedShort
+                      ? `${Math.round(gauge.loggedHours * 10) / 10}h on the Basecamp timesheet this week, ${Math.round((gauge.totalHours - gauge.loggedHours) * 10) / 10}h short of planned`
+                      : `${Math.round(gauge.loggedHours * 10) / 10}h logged to Basecamp this week`
+                  }
+                  aria-label={`${Math.round(gauge.loggedHours * 10) / 10} of ${Math.round(gauge.totalHours * 10) / 10} hours logged to Basecamp`}
+                >
+                  <b>{Math.round(gauge.loggedHours * 10) / 10}</b>
+                  <span>logged</span>
+                  <i>
+                    <em style={{ width: `${gauge.loggedPct}%` }} />
+                  </i>
+                  <span>/ {Math.round(gauge.totalHours * 10) / 10}h</span>
                 </span>
               </span>
             ) : null}
@@ -2654,11 +2717,22 @@ export default function PersonForecastPage() {
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={() => void planThisWeek()}
-              disabled={planning || loading}
+              disabled={planning || undoingPlan || loading}
               title="Fill this week from Basecamp. Incomplete work may move so leadership stays at 10:00 Mon/Wed/Fri and to-dos land a day before they are due."
             >
               {planning ? "Planning…" : "Plan this week"}
             </button>
+            {data?.canUndoPlan ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void undoPlanThisWeek()}
+                disabled={planning || undoingPlan || loading}
+                title="Remove what Plan this week just added and put moved tasks back."
+              >
+                {undoingPlan ? "Undoing…" : "Undo plan"}
+              </button>
+            ) : null}
             {/* Both syncs live in the queue sidebar on the calendar, next to the
                 pickers they actually feed, rather than up here in the chrome. */}
             {view === "calendar" ? null : (
@@ -2689,6 +2763,11 @@ export default function PersonForecastPage() {
         {planNotice ? (
           <p className="fc-moved">
             <span>{planNotice}</span>
+            {data?.canUndoPlan ? (
+              <button type="button" className="linklike" onClick={() => void undoPlanThisWeek()}>
+                Undo
+              </button>
+            ) : null}
             <button
               type="button"
               className="fc-moved-x"
@@ -2727,11 +2806,28 @@ export default function PersonForecastPage() {
               <b>{Math.round(gauge.totalHours * 10) / 10}</b>
               <span>/ {gauge.capacity} hrs</span>
             </div>
+            <div
+              className={`fc-gauge-figure fc-gauge-logged ${
+                gauge.loggedShort ? "is-short" : gauge.loggedCaught ? "is-caught" : ""
+              }`}
+              title={
+                gauge.loggedShort
+                  ? `${Math.round(gauge.loggedHours * 10) / 10}h on the Basecamp timesheet this week, ${Math.round((gauge.totalHours - gauge.loggedHours) * 10) / 10}h short of planned`
+                  : `${Math.round(gauge.loggedHours * 10) / 10}h logged to Basecamp this week`
+              }
+            >
+              <b>{Math.round(gauge.loggedHours * 10) / 10}</b>
+              <span>
+                {gauge.loggedShort
+                  ? `logged / ${Math.round(gauge.totalHours * 10) / 10}h`
+                  : "logged"}
+              </span>
+            </div>
             <div className="fc-gauge-main">
               <div
                 className="fc-gauge-track"
                 role="img"
-                aria-label={`${gauge.totalHours} of ${gauge.capacity} hours planned, ${gauge.doneHours} done`}
+                aria-label={`${gauge.totalHours} of ${gauge.capacity} hours planned, ${gauge.doneHours} done, ${gauge.loggedHours} logged to Basecamp`}
               >
                 <div className="fc-gauge-done" style={{ width: `${gauge.donePct}%` }} />
                 <div className="fc-gauge-planned" style={{ width: `${gauge.openPct}%` }} />
@@ -2744,6 +2840,18 @@ export default function PersonForecastPage() {
                 <span>
                   <i style={{ background: gauge.over ? "var(--danger)" : "var(--accent)" }} />
                   {Math.round(gauge.openHours * 10) / 10}h to go
+                </span>
+                <span className={gauge.loggedShort ? "is-short" : ""}>
+                  <i
+                    style={{
+                      background: gauge.loggedShort
+                        ? "var(--warning)"
+                        : gauge.loggedCaught
+                          ? "var(--success)"
+                          : "var(--text-muted)",
+                    }}
+                  />
+                  {Math.round(gauge.loggedHours * 10) / 10}h logged
                 </span>
                 <span>
                   {progress.done} of {progress.total} tasks
@@ -2767,6 +2875,8 @@ export default function PersonForecastPage() {
             const tasks = tasksByDay.get(today) || [];
             const inWeek = days.includes(today);
             const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
+            const dayLogged = tasks.reduce((sum, t) => sum + t.actual_hours, 0);
+            const dayLoggedShort = dayHours > 0 && dayLogged < dayHours;
             const doneToday = tasks.filter((t) => t.completed).length;
             const draft = draftFor(today);
             if (!inWeek) {
@@ -2793,6 +2903,22 @@ export default function PersonForecastPage() {
                   <div className="fc-today-stat">
                     <strong>{doneToday}/{tasks.length}</strong>
                     <span className="muted">done · {dayHours || 0}h</span>
+                    <span
+                      className={
+                        dayLoggedShort
+                          ? "fc-logged-short"
+                          : dayLogged > 0
+                            ? "fc-logged-ok"
+                            : "muted"
+                      }
+                      title={
+                        dayLoggedShort
+                          ? `${Math.round(dayLogged * 10) / 10}h on the Basecamp timesheet today, ${Math.round((dayHours - dayLogged) * 10) / 10}h short of today's plan`
+                          : `${Math.round(dayLogged * 10) / 10}h logged to Basecamp today`
+                      }
+                    >
+                      {Math.round(dayLogged * 10) / 10}h logged
+                    </span>
                   </div>
                 </div>
 
