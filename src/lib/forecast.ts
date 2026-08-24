@@ -31,11 +31,72 @@ export function listTasksForPersonWeek(person: string, weekStart: string): Forec
       `SELECT * FROM forecast_tasks
        WHERE person = ? AND task_date >= ? AND task_date < ?
        ORDER BY task_date ASC,
+         sort_order ASC,
          CASE WHEN start_time = '' THEN 1 ELSE 0 END,
          start_time ASC,
          created_at ASC`
     )
     .all(person, weekStart, end) as ForecastTask[];
+}
+
+function nextSortOrder(person: string, date: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) AS m
+         FROM forecast_tasks
+        WHERE person = ? AND task_date = ?`
+    )
+    .get(person, date) as { m: number };
+  return row.m + 1;
+}
+
+/**
+ * Put these tasks on `date` in the given order, so a drag-and-drop can both
+ * reschedule and rearrange in one move. Anything already on that day that
+ * wasn't named is pushed after the named ones, rather than left interleaved
+ * with colliding sort_order values.
+ */
+export function reorderDayTasks(
+  person: string,
+  date: string,
+  orderedIds: string[]
+): boolean {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const id of orderedIds) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    unique.push(id);
+  }
+  if (unique.length === 0) return false;
+
+  const db = getDb();
+  const tasks = unique.map((id) => getTask(id));
+  if (tasks.some((t) => !t || t.person !== person)) return false;
+
+  const named = new Set(unique);
+  const leftovers = (
+    db
+      .prepare(
+        `SELECT id FROM forecast_tasks
+          WHERE person = ? AND task_date = ?
+          ORDER BY sort_order ASC, created_at ASC`
+      )
+      .all(person, date) as Array<{ id: string }>
+  )
+    .map((row) => row.id)
+    .filter((id) => !named.has(id));
+
+  const ts = nowIso();
+  const run = db.transaction(() => {
+    const update = db.prepare(
+      `UPDATE forecast_tasks SET task_date = ?, sort_order = ?, updated_at = ? WHERE id = ?`
+    );
+    unique.forEach((id, i) => update.run(date, i, ts, id));
+    leftovers.forEach((id, i) => update.run(date, unique.length + i, ts, id));
+  });
+  run();
+  return true;
 }
 
 export function getTask(id: string): ForecastTask | null {
@@ -75,8 +136,8 @@ export function createTask(input: {
   // kept when both arrived together.
   const stepId = todoId ? (input.basecampStepId || "").trim() : "";
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, start_time, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, start_time, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -90,6 +151,7 @@ export function createTask(input: {
     (input.basecampProjectId || "").trim(),
     eventId,
     startTime,
+    nextSortOrder(input.person, input.taskDate),
     ts,
     ts
   );
@@ -116,12 +178,17 @@ export function updateTask(
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
+  const nextDate = updates.taskDate ?? existing.task_date;
+  const sortOrder =
+    nextDate !== existing.task_date
+      ? nextSortOrder(existing.person, nextDate)
+      : existing.sort_order;
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, color = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, start_time = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET task_date = ?, client = ?, notes = ?, hours = ?, completed = ?, color = ?, actual_hours = ?, basecamp_time_entry_id = ?, basecamp_todo_id = ?, start_time = ?, sort_order = ?, updated_at = ? WHERE id = ?`
     )
     .run(
-      updates.taskDate ?? existing.task_date,
+      nextDate,
       updates.client !== undefined ? updates.client.trim() : existing.client,
       updates.notes !== undefined ? updates.notes.trim() : existing.notes,
       updates.hours ?? existing.hours,
@@ -133,6 +200,7 @@ export function updateTask(
       updates.startTime !== undefined
         ? parseTimeInput(updates.startTime)
         : existing.start_time,
+      sortOrder,
       nowIso(),
       id
     );

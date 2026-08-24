@@ -176,6 +176,7 @@ export function ForecastQueue({
         .sort(
           (a, b) =>
             a.task_date.localeCompare(b.task_date) ||
+            (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
             a.start_time.localeCompare(b.start_time)
         ),
     [tasks]

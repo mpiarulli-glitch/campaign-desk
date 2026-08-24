@@ -7,6 +7,7 @@ import {
   isValidPerson,
   listTasksForPersonWeek,
   personLabel,
+  reorderDayTasks,
   upsertWeekNote,
 } from "@/lib/forecast";
 import { parseTimeInput } from "@/lib/forecast-time";
@@ -49,6 +50,25 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unknown person" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
+
+  // { taskDate, order: [id, ...] } rearranges that day's list, and will move a
+  // named task onto this date if it currently lives on another.
+  if (Array.isArray(body.order)) {
+    const taskDate = typeof body.taskDate === "string" ? body.taskDate : "";
+    if (!DATE_RE.test(taskDate)) {
+      return NextResponse.json({ error: "taskDate must be YYYY-MM-DD" }, { status: 400 });
+    }
+    const order = body.order.filter((id: unknown): id is string => typeof id === "string");
+    if (order.length === 0) {
+      return NextResponse.json({ error: "order must list at least one task" }, { status: 400 });
+    }
+    const ok = reorderDayTasks(person, taskDate, order);
+    if (!ok) {
+      return NextResponse.json({ error: "Could not reorder those tasks" }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const week = typeof body.week === "string" ? body.week : "";
   if (!DATE_RE.test(week)) {
     return NextResponse.json({ error: "week must be YYYY-MM-DD" }, { status: 400 });

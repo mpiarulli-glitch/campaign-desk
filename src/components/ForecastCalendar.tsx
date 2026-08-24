@@ -39,6 +39,7 @@ export type CalendarTask = {
   basecamp_time_entry_id: string;
   tracked_seconds: number;
   timer_started_at: string;
+  sort_order?: number;
 };
 
 // Three densities, because a block's height is set by how long the task runs and

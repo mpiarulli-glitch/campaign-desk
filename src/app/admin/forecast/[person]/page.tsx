@@ -51,6 +51,7 @@ type Task = {
   basecamp_time_entry_id: string;
   tracked_seconds: number;
   timer_started_at: string;
+  sort_order: number;
 };
 
 type Data = {
@@ -1097,6 +1098,9 @@ export default function PersonForecastPage() {
   // needed: the card dims itself, and only the hovered day highlights.
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
+  // Row a dragged task is hovering over, so a drop inserts before it instead of
+  // only moving the task to that day.
+  const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
   // What the calendar is currently receiving: an existing row being moved, or a
   // Basecamp to-do being booked for the first time. Held here rather than on the
   // drag event because dragover can't read dataTransfer, and the grid needs to
@@ -1710,6 +1714,7 @@ export default function PersonForecastPage() {
   function onDragEnd() {
     setDragId(null);
     setDropDay(null);
+    setDropBeforeId(null);
     setDrag(null);
   }
 
@@ -1719,6 +1724,8 @@ export default function PersonForecastPage() {
     e.preventDefault();
     e.dataTransfer.dropEffect = drag?.kind === "todo" ? "copy" : "move";
     if (dropDay !== date) setDropDay(date);
+    // Hovering the day itself (not a row) means "put it at the end".
+    if (dropBeforeId) setDropBeforeId(null);
   }
 
   async function moveTask(id: string, date: string, startTime?: string | null) {
@@ -1747,6 +1754,66 @@ export default function PersonForecastPage() {
     });
     if (!res.ok) {
       setError("Could not move that task.");
+      load(week, { silent: true });
+      return;
+    }
+    setError("");
+    load(week, { silent: true });
+  }
+
+  /**
+   * Put `id` on `date`, either before `beforeId` or at the end of that day's
+   * list. Same-day drops rearrange; a drop on another day also reschedules.
+   */
+  async function placeTask(id: string, date: string, beforeId: string | null) {
+    const all = data?.tasks || [];
+    const moving = all.find((t) => t.id === id);
+    if (!moving) return;
+    const destIds = all.filter((t) => t.task_date === date && t.id !== id).map((t) => t.id);
+    let order: string[];
+    if (beforeId && destIds.includes(beforeId)) {
+      const i = destIds.indexOf(beforeId);
+      order = [...destIds.slice(0, i), id, ...destIds.slice(i)];
+    } else {
+      order = [...destIds, id];
+    }
+    const sameDay = moving.task_date === date;
+    const sameOrder =
+      sameDay &&
+      all
+        .filter((t) => t.task_date === date)
+        .map((t) => t.id)
+        .join("\0") === order.join("\0");
+    if (sameOrder) return;
+
+    const rank = new Map(order.map((oid, i) => [oid, i]));
+    setData((d) =>
+      d
+        ? {
+            ...d,
+            tasks: d.tasks
+              .map((t) => {
+                if (t.id === id) return { ...t, task_date: date, sort_order: rank.get(id) ?? 0 };
+                const next = rank.get(t.id);
+                return next === undefined ? t : { ...t, sort_order: next };
+              })
+              .sort(
+                (a, b) =>
+                  a.task_date.localeCompare(b.task_date) ||
+                  a.sort_order - b.sort_order ||
+                  a.start_time.localeCompare(b.start_time)
+              ),
+          }
+        : d
+    );
+
+    const res = await fetch(`/api/forecast/${person}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskDate: date, order }),
+    });
+    if (!res.ok) {
+      setError("Could not reorder that task.");
       load(week, { silent: true });
       return;
     }
@@ -1857,6 +1924,7 @@ export default function PersonForecastPage() {
     const id = dragId || e.dataTransfer.getData("text/plain");
     setDragId(null);
     setDropDay(null);
+    setDropBeforeId(null);
     setDrag(null);
     // A day column has no hour under the cursor, so a to-do dropped here is
     // booked to that day and stays in the queue until it's given a time.
@@ -1865,7 +1933,7 @@ export default function PersonForecastPage() {
       return;
     }
     if (!id) return;
-    await moveTask(id, date);
+    await placeTask(id, date, null);
   }
 
   // Spread across the day containers in every view that accepts a drop.
@@ -1886,6 +1954,39 @@ export default function PersonForecastPage() {
       draggable: true,
       onDragStart: (e: React.DragEvent) => onDragStart(e, task),
       onDragEnd,
+    };
+  }
+
+  function onTaskDragOver(e: React.DragEvent, task: { id: string }, date: string) {
+    // A Basecamp to-do dropped on a row still books to the day, so leave that
+    // to the day container rather than stealing the drop here.
+    if (drag?.kind === "todo") return;
+    if (!dragId || dragId === task.id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    if (dropBeforeId !== task.id) setDropBeforeId(task.id);
+    if (dropDay !== date) setDropDay(date);
+  }
+
+  async function onTaskDrop(e: React.DragEvent, before: { id: string }, date: string) {
+    if (drag?.kind === "todo") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = dragId || e.dataTransfer.getData("text/plain");
+    setDragId(null);
+    setDropDay(null);
+    setDropBeforeId(null);
+    setDrag(null);
+    if (!id || id === before.id) return;
+    await placeTask(id, date, before.id);
+  }
+
+  function reorderProps(task: { id: string }, date: string) {
+    return {
+      ...dragProps(task),
+      onDragOver: (e: React.DragEvent) => onTaskDragOver(e, task, date),
+      onDrop: (e: React.DragEvent) => void onTaskDrop(e, task, date),
     };
   }
 
@@ -2481,7 +2582,10 @@ export default function PersonForecastPage() {
               );
             }
             return (
-              <div className="fc-today">
+              <div
+                className={`fc-today ${dropDay === today ? "is-drop-target" : ""}`}
+                {...dayDropProps(today)}
+              >
                 <div className="fc-today-head">
                   <div>
                     <div className="fc-today-day">{dayName(today)}</div>
@@ -2494,10 +2598,19 @@ export default function PersonForecastPage() {
                 </div>
 
                 {tasks.length === 0 ? (
-                  <p className="muted" style={{ margin: "4px 0 14px" }}>Nothing planned for today yet. Add your first task below.</p>
+                  <p className="muted" style={{ margin: "4px 0 14px" }}>
+                    {dragId ? "Drop here to move it to today." : "Nothing planned for today yet. Add your first task below."}
+                  </p>
                 ) : (
                   tasks.map((t) => (
-                    <div key={t.id} className={`ops-list-row col-${normalizeTaskColor(t.color)}`}>
+                    <div
+                      key={t.id}
+                      className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
+                        dragId === t.id ? "is-dragging" : ""
+                      } ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
+                      title="Drag to reorder"
+                      {...reorderProps(t, today)}
+                    >
                       <input
                         type="checkbox"
                         checked={!!t.completed}
@@ -2597,9 +2710,9 @@ export default function PersonForecastPage() {
                         key={t.id}
                         className={`ops-task-chip col-${normalizeTaskColor(t.color)} ${t.completed ? "is-done" : ""} ${
                           dragId === t.id ? "is-dragging" : ""
-                        }`}
-                        title="Drag to another day to reschedule"
-                        {...dragProps(t)}
+                        } ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
+                        title="Drag to reorder, or onto another day to reschedule"
+                        {...reorderProps(t, date)}
                       >
                         <div className="chip-top">
                           <input
@@ -2884,9 +2997,11 @@ export default function PersonForecastPage() {
                     tasks.map((t) => (
                       <div
                         key={t.id}
-                        className={`ops-list-row col-${normalizeTaskColor(t.color)} ${dragId === t.id ? "is-dragging" : ""}`}
-                        title="Drag to another day to reschedule"
-                        {...dragProps(t)}
+                        className={`ops-list-row col-${normalizeTaskColor(t.color)} ${dragId === t.id ? "is-dragging" : ""} ${
+                          dropBeforeId === t.id ? "is-drop-before" : ""
+                        }`}
+                        title="Drag to reorder, or onto another day to reschedule"
+                        {...reorderProps(t, date)}
                       >
                         <input
                           type="checkbox"

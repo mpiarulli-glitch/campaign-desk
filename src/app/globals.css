@@ -6997,6 +6997,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
 }
 .ops-list-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -7010,14 +7011,23 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
     opacity 0.2s var(--fc-ease);
 }
 .ops-list-row:hover { box-shadow: var(--shadow); }
-/* Only the rows that can actually be moved advertise it. The Today view shows a
-   single day, so its rows aren't draggable. */
 .ops-list-row[draggable="true"] { cursor: grab; }
 .ops-list-row[draggable="true"]:active { cursor: grabbing; }
 .ops-list-row.is-dragging {
   opacity: 0.5;
   transform: scale(0.995) rotate(-0.4deg);
   box-shadow: var(--shadow-lift);
+}
+.ops-list-row.is-drop-before::before,
+.ops-task-chip.is-drop-before::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -5px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 .ops-list-row + .ops-list-row { margin-top: 6px; }
 .ops-list-row input.client {
@@ -7280,6 +7290,11 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   border-radius: 16px;
   padding: 20px 22px;
   box-shadow: var(--shadow);
+  transition: border-color 0.2s var(--fc-ease), box-shadow 0.2s var(--fc-ease);
+}
+.fc-today.is-drop-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
 }
 .fc-today-head {
   display: flex;

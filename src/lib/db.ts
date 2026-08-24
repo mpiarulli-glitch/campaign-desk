@@ -392,6 +392,9 @@ export interface ForecastTask {
   // running. Stored rather than held in the page so a reload, a second tab, or a
   // different machine all see the same timer still going.
   timer_started_at: string;
+  // Hand-set order within a person's day. 0 until something is reordered or
+  // added after that, so existing rows keep sorting by start time.
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -1546,6 +1549,7 @@ export function getDb(): Database.Database {
       tracked_seconds INTEGER NOT NULL DEFAULT 0,
       timer_started_at TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2649,6 +2653,11 @@ function migrate(database: Database.Database) {
   }
   if (forecastCols.length && !forecastCols.includes("color")) {
     database.exec(`ALTER TABLE forecast_tasks ADD COLUMN color TEXT NOT NULL DEFAULT ''`);
+  }
+  if (forecastCols.length && !forecastCols.includes("sort_order")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`
+    );
   }
 
   // Two-factor and the onboarding gate. Existing rows land with 2FA off and
