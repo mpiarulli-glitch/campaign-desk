@@ -1,13 +1,21 @@
 import { nanoid } from "nanoid";
-import { getDb, nowIso, type ForecastNote, type ForecastTask } from "./db";
+import {
+  getDb,
+  nowIso,
+  type ForecastNote,
+  type ForecastSubtask,
+  type ForecastTask,
+} from "./db";
 import { PEOPLE, isValidPerson, personLabel } from "./people";
 import { normalizeTaskColor } from "./forecast-colors";
 import { parseTimeInput } from "./forecast-time";
 import { runningSeconds } from "./forecast-timer";
 import { addWeeks } from "./week";
 
-export type { ForecastTask };
+export type { ForecastSubtask, ForecastTask };
 export { PEOPLE, isValidPerson, personLabel };
+
+export type ForecastTaskWithSubtasks = ForecastTask & { subtasks: ForecastSubtask[] };
 
 export const WEEKLY_CAPACITY_HOURS = 40;
 
@@ -24,9 +32,9 @@ export function weekdays(weekStart: string): string[] {
   return out;
 }
 
-export function listTasksForPersonWeek(person: string, weekStart: string): ForecastTask[] {
+export function listTasksForPersonWeek(person: string, weekStart: string): ForecastTaskWithSubtasks[] {
   const end = addWeeks(weekStart, 1);
-  return getDb()
+  const tasks = getDb()
     .prepare(
       `SELECT * FROM forecast_tasks
        WHERE person = ? AND task_date >= ? AND task_date < ?
@@ -37,6 +45,27 @@ export function listTasksForPersonWeek(person: string, weekStart: string): Forec
          created_at ASC`
     )
     .all(person, weekStart, end) as ForecastTask[];
+  return attachSubtasks(tasks);
+}
+
+function attachSubtasks(tasks: ForecastTask[]): ForecastTaskWithSubtasks[] {
+  if (!tasks.length) return [];
+  const ids = tasks.map((t) => t.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM forecast_subtasks
+        WHERE task_id IN (${placeholders})
+        ORDER BY sort_order ASC, created_at ASC`
+    )
+    .all(...ids) as ForecastSubtask[];
+  const byTask = new Map<string, ForecastSubtask[]>();
+  for (const row of rows) {
+    const list = byTask.get(row.task_id) || [];
+    list.push(row);
+    byTask.set(row.task_id, list);
+  }
+  return tasks.map((t) => ({ ...t, subtasks: byTask.get(t.id) || [] }));
 }
 
 function nextSortOrder(person: string, date: string): number {
@@ -105,6 +134,94 @@ export function getTask(id: string): ForecastTask | null {
       | ForecastTask
       | undefined) || null
   );
+}
+
+export function getSubtask(id: string): ForecastSubtask | null {
+  return (
+    (getDb().prepare(`SELECT * FROM forecast_subtasks WHERE id = ?`).get(id) as
+      | ForecastSubtask
+      | undefined) || null
+  );
+}
+
+function nextSubtaskSortOrder(taskId: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) AS m FROM forecast_subtasks WHERE task_id = ?`
+    )
+    .get(taskId) as { m: number };
+  return row.m + 1;
+}
+
+export function createSubtask(input: {
+  taskId: string;
+  notes: string;
+  completed?: boolean;
+}): ForecastSubtask | null {
+  const notes = input.notes.trim();
+  if (!notes) return null;
+  if (!getTask(input.taskId)) return null;
+  const id = nanoid(12);
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO forecast_subtasks (id, task_id, notes, completed, sort_order, basecamp_step_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, '', ?, ?)`
+    )
+    .run(
+      id,
+      input.taskId,
+      notes,
+      input.completed === false ? 0 : 1,
+      nextSubtaskSortOrder(input.taskId),
+      ts,
+      ts
+    );
+  return getSubtask(id);
+}
+
+export function linkSubtaskBasecamp(
+  id: string,
+  basecampStepId: string
+): ForecastSubtask | null {
+  if (!getSubtask(id)) return null;
+  getDb()
+    .prepare(
+      `UPDATE forecast_subtasks SET basecamp_step_id = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(basecampStepId.trim(), nowIso(), id);
+  return getSubtask(id);
+}
+
+export function updateSubtask(
+  id: string,
+  updates: Partial<{ notes: string; completed: boolean }>
+): ForecastSubtask | null {
+  const existing = getSubtask(id);
+  if (!existing) return null;
+  const notes =
+    updates.notes !== undefined ? updates.notes.trim() : existing.notes;
+  if (!notes) return null;
+  getDb()
+    .prepare(
+      `UPDATE forecast_subtasks SET notes = ?, completed = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(
+      notes,
+      updates.completed !== undefined
+        ? updates.completed
+          ? 1
+          : 0
+        : existing.completed,
+      nowIso(),
+      id
+    );
+  return getSubtask(id);
+}
+
+export function deleteSubtask(id: string): boolean {
+  return getDb().prepare(`DELETE FROM forecast_subtasks WHERE id = ?`).run(id)
+    .changes > 0;
 }
 
 export function createTask(input: {

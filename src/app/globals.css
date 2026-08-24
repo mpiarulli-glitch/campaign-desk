@@ -5229,12 +5229,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   border-left: 3px solid var(--fc-rail);
   border-radius: 10px;
   padding: 8px 10px 8px 11px;
-  cursor: grab;
   transition: box-shadow 0.2s var(--fc-ease), transform 0.2s var(--fc-ease),
     opacity 0.2s var(--fc-ease);
 }
 .ops-task-chip:hover { box-shadow: var(--shadow); }
-.ops-task-chip:active { cursor: grabbing; }
 /* Lifted out of the column and tilted, so the card reads as picked up rather
    than just faded. */
 .ops-task-chip.is-dragging {
@@ -7011,8 +7009,133 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
     opacity 0.2s var(--fc-ease);
 }
 .ops-list-row:hover { box-shadow: var(--shadow); }
-.ops-list-row[draggable="true"] { cursor: grab; }
-.ops-list-row[draggable="true"]:active { cursor: grabbing; }
+.ops-task-block {
+  position: relative;
+}
+.ops-task-block + .ops-task-block { margin-top: 6px; }
+.ops-task-block.is-drop-before::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -5px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  z-index: 1;
+}
+.ops-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 100%;
+  margin: 2px 0 0 28px;
+}
+.ops-task-chip .ops-subtasks {
+  margin: 6px 0 4px 22px;
+}
+.ops-subtask {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.ops-subtask input[type="checkbox"] {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.ops-subtask-mark {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0.7;
+}
+.ops-subtask-notes {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.ops-subtask.is-done .ops-subtask-notes {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+.ops-subtask-notes::placeholder { color: var(--text-muted); opacity: 0.8; }
+.ops-subtask-notes:hover { background: var(--bg-soft); border-radius: 5px; }
+.ops-subtask-notes:focus {
+  outline: none;
+  background: var(--bg-soft);
+  border-radius: 5px;
+}
+.ops-subtask-remove,
+.ops-subtask-add-go {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.ops-subtask-remove { opacity: 0; }
+.ops-subtask:hover .ops-subtask-remove,
+.ops-subtask:focus-within .ops-subtask-remove { opacity: 1; }
+.ops-subtask-remove:hover { color: var(--danger); }
+.ops-subtask-add-go:disabled { opacity: 0.4; cursor: default; }
+.ops-subtask-add-go:not(:disabled):hover { color: var(--accent); }
+.ops-subtask-trigger {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ops-subtask-trigger:hover { color: var(--accent); }
+.ops-subtask.is-add .ops-subtask-notes { font-size: 12px; }
+.fc-edit .ops-subtasks { margin-left: 0; }
+.ops-row-handle {
+  flex: none;
+  width: 14px;
+  align-self: stretch;
+  min-height: 28px;
+  margin: -2px 2px -2px -4px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  cursor: grab;
+  touch-action: none;
+  opacity: 0.4;
+  background-image:
+    radial-gradient(circle, var(--text-muted) 1.15px, transparent 1.3px),
+    radial-gradient(circle, var(--text-muted) 1.15px, transparent 1.3px);
+  background-size: 6px 6px, 6px 6px;
+  background-position: 1px 50%, 7px 50%;
+  background-repeat: repeat-y;
+}
+.ops-row-handle:hover,
+.ops-row-handle:focus-visible {
+  opacity: 0.9;
+  outline: none;
+  background-color: var(--bg-soft);
+}
+.ops-row-handle:active { cursor: grabbing; }
+.ops-task-chip .ops-row-handle {
+  width: 12px;
+  min-height: 22px;
+  margin: 0 0 0 -4px;
+}
 .ops-list-row.is-dragging {
   opacity: 0.5;
   transform: scale(0.995) rotate(-0.4deg);
@@ -8028,6 +8151,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
     gap: 7px 9px;
     padding: 11px 12px;
   }
+  .ops-list-row > .ops-row-handle {
+    order: 0;
+    width: 28px;
+    min-height: 36px;
+    margin: -2px 0 -2px -6px;
+  }
   .ops-list-row > input[type="checkbox"] {
     order: 1;
     flex: none;
@@ -8037,11 +8166,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
        and bounce the client name onto its own line. */
     margin: 0;
   }
-  /* Takes the rest of the first line, beside the checkbox: 20px control plus
-     the 9px column gap, with a little slack. */
+  /* Takes the rest of the first line, beside the handle and checkbox. */
   .ops-list-row input.client {
     order: 2;
-    flex: 1 1 calc(100% - 36px);
+    flex: 1 1 calc(100% - 68px);
     min-width: 0;
     font-size: 14px;
   }
@@ -8263,6 +8391,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
 }
 .course-toc-item {
   display: flex;

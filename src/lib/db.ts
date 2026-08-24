@@ -399,6 +399,23 @@ export interface ForecastTask {
   updated_at: string;
 }
 
+// A progress step on a forecast task: "I built the welcome-series popup"
+// rather than a second row on the day. Completing the parent is still the
+// parent; these are just the trail of what got done along the way.
+export interface ForecastSubtask {
+  id: string;
+  task_id: string;
+  notes: string;
+  completed: number;
+  sort_order: number;
+  // Set when this step was mirrored onto the parent Basecamp to-do as a
+  // Kanban::Step. Empty when the forecast row has no to-do, or Basecamp
+  // wasn't reachable at create time.
+  basecamp_step_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // One freeform note per person per week (Monday-keyed) — general context for
 // the week, separate from individual task notes.
 export interface ForecastNote {
@@ -1013,6 +1030,9 @@ export interface Course {
   author: string;
   summary: string;
   sort_order: number;
+  // Unguessable public share token for /learn/<token>. Possession of the
+  // URL is the access grant — same model as /plan and /crew links.
+  share_token?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1556,6 +1576,19 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
 
+    CREATE TABLE IF NOT EXISTS forecast_subtasks (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      completed INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      basecamp_step_id TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES forecast_tasks(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_forecast_subtasks_task ON forecast_subtasks(task_id);
+
     /* Basecamp Schedule::Entry rows, cached locally.
        The API has no date filter and pages at 15, so the account's ~1,400
        entries take ~95 requests to sweep — far too slow to do on a page load.
@@ -1739,6 +1772,7 @@ export function getDb(): Database.Database {
       author TEXT NOT NULL DEFAULT '',
       summary TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
+      share_token TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2660,6 +2694,13 @@ function migrate(database: Database.Database) {
     );
   }
 
+  const forecastSubtaskCols = tableColumns(database, "forecast_subtasks");
+  if (forecastSubtaskCols.length && !forecastSubtaskCols.includes("basecamp_step_id")) {
+    database.exec(
+      `ALTER TABLE forecast_subtasks ADD COLUMN basecamp_step_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+
   // Two-factor and the onboarding gate. Existing rows land with 2FA off and
   // setup_completed_at null, so everybody already in the table is asked to
   // finish setup the next time they sign in rather than being locked out.
@@ -2685,6 +2726,32 @@ function migrate(database: Database.Database) {
   }
   if (userCols.length && !userCols.includes("setup_completed_at")) {
     database.exec(`ALTER TABLE users ADD COLUMN setup_completed_at TEXT`);
+  }
+
+  // Public share tokens for Team Hub training. Existing courses get a token
+  // on boot so a /learn/<token> link works without a separate backfill.
+  const courseCols = tableColumns(database, "courses");
+  if (courseCols.length && !courseCols.includes("share_token")) {
+    database.exec(`ALTER TABLE courses ADD COLUMN share_token TEXT`);
+  }
+  if (courseCols.length) {
+    database.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share_token
+         ON courses(share_token) WHERE share_token IS NOT NULL`
+    );
+    const missingShare = database
+      .prepare(
+        `SELECT id FROM courses WHERE share_token IS NULL OR share_token = ''`
+      )
+      .all() as Array<{ id: string }>;
+    if (missingShare.length) {
+      const setShare = database.prepare(
+        `UPDATE courses SET share_token = ? WHERE id = ?`
+      );
+      for (const row of missingShare) {
+        setShare.run(nanoid(24), row.id);
+      }
+    }
   }
 
   const whiteboardBoardCols = tableColumns(database, "whiteboard_boards");

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
 import { ForecastQueue, type AssignedSource } from "@/components/ForecastQueue";
+import { ForecastSubtasks } from "@/components/ForecastSubtasks";
 import {
   TASK_COLORS,
   normalizeTaskColor,
@@ -52,6 +53,7 @@ type Task = {
   tracked_seconds: number;
   timer_started_at: string;
   sort_order: number;
+  subtasks?: Array<{ id: string; notes: string; completed: number }>;
 };
 
 type Data = {
@@ -1101,6 +1103,15 @@ export default function PersonForecastPage() {
   // Row a dragged task is hovering over, so a drop inserts before it instead of
   // only moving the task to that day.
   const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
+  // Touch/pen reordering is pointer-driven because HTML5 drag-and-drop never
+  // starts on iOS, and making the whole row draggable ate the scroll gesture.
+  // Held in a ref so move/up handlers see the grab that pointerdown stored,
+  // rather than a render-stale copy of dragId.
+  const pointerDrag = useRef<{
+    id: string;
+    date: string;
+    pointerId: number;
+  } | null>(null);
   // What the calendar is currently receiving: an existing row being moved, or a
   // Basecamp to-do being booked for the first time. Held here rather than on the
   // drag event because dragover can't read dataTransfer, and the grid needs to
@@ -1939,6 +1950,7 @@ export default function PersonForecastPage() {
   // Spread across the day containers in every view that accepts a drop.
   function dayDropProps(date: string) {
     return {
+      "data-forecast-day": date,
       onDragOver: (e: React.DragEvent) => onDayDragOver(e, date),
       onDragLeave: (e: React.DragEvent) => {
         // Ignore the events fired while crossing child elements.
@@ -1949,19 +1961,18 @@ export default function PersonForecastPage() {
     };
   }
 
-  function dragProps(task: { id: string }) {
-    return {
-      draggable: true,
-      onDragStart: (e: React.DragEvent) => onDragStart(e, task),
-      onDragEnd,
-    };
-  }
-
   function onTaskDragOver(e: React.DragEvent, task: { id: string }, date: string) {
     // A Basecamp to-do dropped on a row still books to the day, so leave that
     // to the day container rather than stealing the drop here.
     if (drag?.kind === "todo") return;
-    if (!dragId || dragId === task.id) return;
+    if (!dragId) return;
+    // Hovering the row being dragged must not bubble to the day, or a tiny
+    // drag that lands back on itself would read as "drop at the end".
+    if (dragId === task.id) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
@@ -1982,12 +1993,116 @@ export default function PersonForecastPage() {
     await placeTask(id, date, before.id);
   }
 
+  // Drop target only: the handle is what starts a drag, so clicking an input
+  // or ticking complete never picks the row up, and a phone can still scroll.
   function reorderProps(task: { id: string }, date: string) {
     return {
-      ...dragProps(task),
+      "data-forecast-row": "",
+      "data-task-id": task.id,
+      "data-task-date": date,
       onDragOver: (e: React.DragEvent) => onTaskDragOver(e, task, date),
       onDrop: (e: React.DragEvent) => void onTaskDrop(e, task, date),
     };
+  }
+
+  function rowFromPoint(x: number, y: number): { id: string; date: string } | null {
+    const el = document.elementFromPoint(x, y);
+    if (!(el instanceof Element)) return null;
+    const row = el.closest("[data-forecast-row]");
+    if (row instanceof HTMLElement && row.dataset.taskId && row.dataset.taskDate) {
+      return { id: row.dataset.taskId, date: row.dataset.taskDate };
+    }
+    const day = el.closest("[data-forecast-day]");
+    if (day instanceof HTMLElement && day.dataset.forecastDay) {
+      return { id: "", date: day.dataset.forecastDay };
+    }
+    return null;
+  }
+
+  function clearPointerDrag() {
+    pointerDrag.current = null;
+    setDragId(null);
+    setDropDay(null);
+    setDropBeforeId(null);
+  }
+
+  function onHandlePointerDown(
+    e: React.PointerEvent,
+    task: { id: string },
+    date: string
+  ) {
+    if (e.button !== 0) return;
+    // Mouse keeps HTML5 drag-and-drop so dropping on another day still works
+    // the way the week and list views already do.
+    if (e.pointerType === "mouse") return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    pointerDrag.current = { id: task.id, date, pointerId: e.pointerId };
+    setDragId(task.id);
+  }
+
+  function onHandlePointerMove(e: React.PointerEvent) {
+    const held = pointerDrag.current;
+    if (!held || e.pointerId !== held.pointerId) return;
+    const hit = rowFromPoint(e.clientX, e.clientY);
+    if (!hit) return;
+    if (dropDay !== hit.date) setDropDay(hit.date);
+    const before = hit.id && hit.id !== held.id ? hit.id : null;
+    if (dropBeforeId !== before) setDropBeforeId(before);
+  }
+
+  function onHandlePointerUp(e: React.PointerEvent) {
+    const held = pointerDrag.current;
+    if (!held || e.pointerId !== held.pointerId) return;
+    const hit = rowFromPoint(e.clientX, e.clientY);
+    clearPointerDrag();
+    if (!hit) return;
+    if (hit.id === held.id && hit.date === held.date) return;
+    const beforeId = hit.id && hit.id !== held.id ? hit.id : null;
+    void placeTask(held.id, hit.date, beforeId);
+  }
+
+  function onReorderKey(e: React.KeyboardEvent, id: string, date: string) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const ids = (data?.tasks || [])
+      .filter((t) => t.task_date === date)
+      .map((t) => t.id);
+    const i = ids.indexOf(id);
+    if (i < 0) return;
+    const j = e.key === "ArrowUp" ? i - 1 : i + 1;
+    if (j < 0 || j >= ids.length) return;
+    const next = [...ids];
+    next.splice(i, 1);
+    next.splice(j, 0, id);
+    void placeTask(id, date, next[j + 1] || null);
+  }
+
+  function reorderHandle(task: { id: string }, date: string) {
+    return (
+      <span
+        className="ops-row-handle"
+        role="button"
+        tabIndex={0}
+        aria-label="Reorder task"
+        title="Drag to reorder"
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStart(e, task);
+          const row = (e.currentTarget as HTMLElement).closest("[data-forecast-row]");
+          if (row instanceof HTMLElement) {
+            e.dataTransfer.setDragImage(row, 24, 16);
+          }
+        }}
+        onDragEnd={onDragEnd}
+        onPointerDown={(e) => onHandlePointerDown(e, task, date)}
+        onPointerMove={onHandlePointerMove}
+        onPointerUp={onHandlePointerUp}
+        onPointerCancel={clearPointerDrag}
+        onKeyDown={(e) => onReorderKey(e, task.id, date)}
+      />
+    );
   }
 
   // Shared by the log pill and the finished-a-task prompt. See hoursToOffer.
@@ -2605,62 +2720,73 @@ export default function PersonForecastPage() {
                   tasks.map((t) => (
                     <div
                       key={t.id}
-                      className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
-                        dragId === t.id ? "is-dragging" : ""
-                      } ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
-                      title="Drag to reorder"
+                      className={`ops-task-block ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
                       {...reorderProps(t, today)}
                     >
-                      <input
-                        type="checkbox"
-                        checked={!!t.completed}
-                        onChange={() => toggleCompleted(t)}
-                        aria-label="Mark complete"
-                      />
-                      <input
-                        key={`${t.id}-client`}
-                        defaultValue={t.client}
-                        onBlur={(e) => saveField(t, "client", e.target.value)}
-                        placeholder="Client"
-                        className="client"
-                        style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
-                      />
-                      <input
-                        key={`${t.id}-notes`}
-                        defaultValue={t.notes}
-                        onBlur={(e) => saveField(t, "notes", e.target.value)}
-                        placeholder="Task notes"
-                        className="notes"
-                        title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
-                        style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
-                      />
-                      <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
-                      <div className="row" style={{ gap: 2 }}>
+                      <div
+                        className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
+                          dragId === t.id ? "is-dragging" : ""
+                        }`}
+                      >
+                        {reorderHandle(t, today)}
                         <input
-                          key={`${t.id}-hours`}
-                          defaultValue={t.hours}
-                          onBlur={(e) => saveField(t, "hours", e.target.value)}
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          className="hrs"
+                          type="checkbox"
+                          checked={!!t.completed}
+                          onChange={() => toggleCompleted(t)}
+                          aria-label="Mark complete"
                         />
-                        <span className="muted">h</span>
+                        <input
+                          key={`${t.id}-client`}
+                          defaultValue={t.client}
+                          onBlur={(e) => saveField(t, "client", e.target.value)}
+                          placeholder="Client"
+                          className="client"
+                          style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
+                        />
+                        <input
+                          key={`${t.id}-notes`}
+                          defaultValue={t.notes}
+                          onBlur={(e) => saveField(t, "notes", e.target.value)}
+                          placeholder="Task notes"
+                          className="notes"
+                          title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                          style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
+                        />
+                        <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
+                        <div className="row" style={{ gap: 2 }}>
+                          <input
+                            key={`${t.id}-hours`}
+                            defaultValue={t.hours}
+                            onBlur={(e) => saveField(t, "hours", e.target.value)}
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            className="hrs"
+                          />
+                          <span className="muted">h</span>
+                        </div>
+                        <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
+                        <span className="ops-row-actions">
+                          <TimerButton task={t} />
+                          <LogTime task={t} />
+                          <MoveMenu task={t} />
+                          <button
+                            className="ops-row-remove"
+                            aria-label="Remove task"
+                            title="Remove task"
+                            onClick={() => removeTask(t.id)}
+                          >
+                            ×
+                          </button>
+                        </span>
+                        <ForecastSubtasks
+                          person={person}
+                          taskId={t.id}
+                          subtasks={t.subtasks || []}
+                          onChanged={() => load(week, { silent: true })}
+                          onNotice={setError}
+                        />
                       </div>
-                      <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
-                      <span className="ops-row-actions">
-                        <TimerButton task={t} />
-                        <LogTime task={t} />
-                        <MoveMenu task={t} />
-                        <button
-                          className="ops-row-remove"
-                          aria-label="Remove task"
-                          title="Remove task"
-                          onClick={() => removeTask(t.id)}
-                        >
-                          ×
-                        </button>
-                      </span>
                     </div>
                   ))
                 )}
@@ -2711,10 +2837,10 @@ export default function PersonForecastPage() {
                         className={`ops-task-chip col-${normalizeTaskColor(t.color)} ${t.completed ? "is-done" : ""} ${
                           dragId === t.id ? "is-dragging" : ""
                         } ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
-                        title="Drag to reorder, or onto another day to reschedule"
                         {...reorderProps(t, date)}
                       >
                         <div className="chip-top">
+                          {reorderHandle(t, date)}
                           <input
                             type="checkbox"
                             className="done-check"
@@ -2748,6 +2874,14 @@ export default function PersonForecastPage() {
                           placeholder="Task notes"
                           className="notes"
                           title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                        />
+                        <ForecastSubtasks
+                          person={person}
+                          taskId={t.id}
+                          subtasks={t.subtasks || []}
+                          compact
+                          onChanged={() => load(week, { silent: true })}
+                          onNotice={setError}
                         />
                         <div className="chip-foot">
                           <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
@@ -2919,6 +3053,16 @@ export default function PersonForecastPage() {
                       onChange={(c) => void setColor(editingTask, c)}
                     />
                   </div>
+                  <div className="fc-edit-field">
+                    <span>Steps</span>
+                    <ForecastSubtasks
+                      person={person}
+                      taskId={editingTask.id}
+                      subtasks={editingTask.subtasks || []}
+                      onChanged={() => load(week, { silent: true })}
+                      onNotice={setError}
+                    />
+                  </div>
                   <div className="fc-edit-foot">
                     <button
                       type="button"
@@ -2997,68 +3141,77 @@ export default function PersonForecastPage() {
                     tasks.map((t) => (
                       <div
                         key={t.id}
-                        className={`ops-list-row col-${normalizeTaskColor(t.color)} ${dragId === t.id ? "is-dragging" : ""} ${
-                          dropBeforeId === t.id ? "is-drop-before" : ""
-                        }`}
-                        title="Drag to reorder, or onto another day to reschedule"
+                        className={`ops-task-block ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
                         {...reorderProps(t, date)}
                       >
-                        <input
-                          type="checkbox"
-                          checked={!!t.completed}
-                          onChange={() => toggleCompleted(t)}
-                          aria-label="Mark complete"
-                        />
-                        <input
-                          key={`${t.id}-client`}
-                          defaultValue={t.client}
-                          onBlur={(e) => saveField(t, "client", e.target.value)}
-                          placeholder="Client"
-                          className="client"
-                          style={{
-                            textDecoration: t.completed ? "line-through" : "none",
-                            opacity: t.completed ? 0.6 : 1,
-                          }}
-                        />
-                        <input
-                          key={`${t.id}-notes`}
-                          defaultValue={t.notes}
-                          onBlur={(e) => saveField(t, "notes", e.target.value)}
-                          placeholder="Task notes"
-                          className="notes"
-                          title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
-                          style={{
-                            textDecoration: t.completed ? "line-through" : "none",
-                            opacity: t.completed ? 0.6 : 1,
-                          }}
-                        />
-                        <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
-                        <div className="row" style={{ gap: 2 }}>
+                        <div
+                          className={`ops-list-row col-${normalizeTaskColor(t.color)} ${dragId === t.id ? "is-dragging" : ""}`}
+                        >
+                          {reorderHandle(t, date)}
                           <input
-                            key={`${t.id}-hours`}
-                            defaultValue={t.hours}
-                            onBlur={(e) => saveField(t, "hours", e.target.value)}
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            className="hrs"
+                            type="checkbox"
+                            checked={!!t.completed}
+                            onChange={() => toggleCompleted(t)}
+                            aria-label="Mark complete"
                           />
-                          <span className="muted">h</span>
+                          <input
+                            key={`${t.id}-client`}
+                            defaultValue={t.client}
+                            onBlur={(e) => saveField(t, "client", e.target.value)}
+                            placeholder="Client"
+                            className="client"
+                            style={{
+                              textDecoration: t.completed ? "line-through" : "none",
+                              opacity: t.completed ? 0.6 : 1,
+                            }}
+                          />
+                          <input
+                            key={`${t.id}-notes`}
+                            defaultValue={t.notes}
+                            onBlur={(e) => saveField(t, "notes", e.target.value)}
+                            placeholder="Task notes"
+                            className="notes"
+                            title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                            style={{
+                              textDecoration: t.completed ? "line-through" : "none",
+                              opacity: t.completed ? 0.6 : 1,
+                            }}
+                          />
+                          <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
+                          <div className="row" style={{ gap: 2 }}>
+                            <input
+                              key={`${t.id}-hours`}
+                              defaultValue={t.hours}
+                              onBlur={(e) => saveField(t, "hours", e.target.value)}
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              className="hrs"
+                            />
+                            <span className="muted">h</span>
+                          </div>
+                          <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
+                          <span className="ops-row-actions">
+                            <TimerButton task={t} />
+                            <LogTime task={t} />
+                            <MoveMenu task={t} />
+                            <button
+                              className="ops-row-remove"
+                              aria-label="Remove task"
+                              title="Remove task"
+                              onClick={() => removeTask(t.id)}
+                            >
+                              ×
+                            </button>
+                          </span>
+                          <ForecastSubtasks
+                            person={person}
+                            taskId={t.id}
+                            subtasks={t.subtasks || []}
+                            onChanged={() => load(week, { silent: true })}
+                            onNotice={setError}
+                          />
                         </div>
-                        <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
-                        <span className="ops-row-actions">
-                          <TimerButton task={t} />
-                          <LogTime task={t} />
-                          <MoveMenu task={t} />
-                          <button
-                            className="ops-row-remove"
-                            aria-label="Remove task"
-                            title="Remove task"
-                            onClick={() => removeTask(t.id)}
-                          >
-                            ×
-                          </button>
-                        </span>
                       </div>
                     ))
                   )}

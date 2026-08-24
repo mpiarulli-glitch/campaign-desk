@@ -1018,6 +1018,147 @@ export async function setForecastStepCompletion(
   return { ok: false, error: result.error };
 }
 
+/**
+ * Create a checklist subtask on a Basecamp to-do.
+ *
+ * To-do subtasks are Kanban::Step recordings even when the parent is a normal
+ * Todo, so the create path is the card-table steps endpoint with the parent
+ * to-do's id in the card slot. A few accounts still want the `kanban_step`
+ * wrapper or the older `/todos/{id}/steps` route; those are tried only if the
+ * first shape is rejected, so a success does not pay for three round trips.
+ */
+export async function createTodoStep(
+  projectId: string,
+  todoId: string,
+  title: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const trimmed = title.trim().slice(0, 999);
+  if (!projectId || !todoId || !trimmed) {
+    return { ok: false, error: "missing project, todo, or title" };
+  }
+  const attempts: Array<{ path: string; body: string }> = [
+    {
+      path: `/buckets/${projectId}/card_tables/cards/${todoId}/steps.json`,
+      body: JSON.stringify({ title: trimmed }),
+    },
+    {
+      path: `/buckets/${projectId}/card_tables/cards/${todoId}/steps.json`,
+      body: JSON.stringify({ kanban_step: { title: trimmed } }),
+    },
+    {
+      path: `/buckets/${projectId}/todos/${todoId}/steps.json`,
+      body: JSON.stringify({ title: trimmed }),
+    },
+  ];
+  let lastError = "create step failed";
+  for (const attempt of attempts) {
+    try {
+      const res = await bc(
+        attempt.path,
+        { method: "POST", body: attempt.body },
+        identity
+      );
+      if (res.ok) {
+        const step = await res.json().catch(() => null);
+        const id = step?.id != null ? String(step.id) : "";
+        if (id) return { ok: true, id };
+        lastError = "create step returned no id";
+        continue;
+      }
+      lastError = `create step ${res.status}`;
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: lastError };
+      }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
+/**
+ * Rename a to-do subtask. Title has to travel with every update — Basecamp
+ * treats omitted fields as a revert, so a title-less PUT would blank the step.
+ */
+export async function updateTodoStep(
+  projectId: string,
+  stepId: string,
+  title: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = title.trim().slice(0, 999);
+  if (!projectId || !stepId || !trimmed) {
+    return { ok: false, error: "missing project, step, or title" };
+  }
+  const attempts: Array<{ path: string; body: string }> = [
+    {
+      path: `/buckets/${projectId}/card_tables/steps/${stepId}.json`,
+      body: JSON.stringify({ title: trimmed }),
+    },
+    {
+      path: `/buckets/${projectId}/card_tables/steps/${stepId}.json`,
+      body: JSON.stringify({ kanban_step: { title: trimmed } }),
+    },
+    {
+      path: `/buckets/${projectId}/steps/${stepId}.json`,
+      body: JSON.stringify({ title: trimmed }),
+    },
+  ];
+  let lastError = "update step failed";
+  for (const attempt of attempts) {
+    try {
+      const res = await bc(
+        attempt.path,
+        { method: "PUT", body: attempt.body },
+        identity
+      );
+      if (res.ok) return { ok: true };
+      lastError = `update step ${res.status}`;
+      if (res.status === 404) return { ok: true };
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: lastError };
+      }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
+/**
+ * Remove a recording from the Basecamp UI (recoverable trash, not a hard
+ * delete). Used when a forecast step is removed so the matching to-do
+ * subtask does not linger as an open checklist item.
+ */
+export async function trashRecording(
+  projectId: string,
+  recordingId: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: boolean; error?: string }> {
+  if (!projectId || !recordingId) {
+    return { ok: false, error: "missing project or recording id" };
+  }
+  const paths = [
+    `/buckets/${projectId}/recordings/${recordingId}/status/trashed.json`,
+    `/recordings/${recordingId}/status/trashed.json`,
+  ];
+  let lastStatus = 0;
+  for (const path of paths) {
+    try {
+      const res = await bc(path, { method: "PUT", body: JSON.stringify({}) }, identity);
+      if (res.ok || res.status === 404) return { ok: true };
+      lastStatus = res.status;
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: `trash ${res.status}` };
+      }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+  return { ok: false, error: `trash ${lastStatus}` };
+}
+
 // Name of the todo list Forecast creates its own shadow todos in, for tasks
 // someone typed by hand instead of picking an existing Basecamp todo. Kept in
 // one list per project rather than scattered across whichever list happened
