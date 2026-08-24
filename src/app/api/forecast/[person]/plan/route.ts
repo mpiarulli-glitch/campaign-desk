@@ -8,8 +8,9 @@ type Params = { params: Promise<{ person: string }> };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Fill this person's week from their Basecamp assignments, plus Michael's
-// standing blocks (leadership, outreach, campaign audits). Safe to click twice:
-// rows already on the calendar are left alone.
+// standing blocks (leadership, outreach, campaign audits). Incomplete work
+// already on the calendar can be moved to make room for 10:00 leadership or
+// to get a to-do off its due date. Finished rows stay put.
 export async function POST(request: Request, { params }: Params) {
   const { person } = await params;
   if (!(await isForecastAuthenticated(person))) {
@@ -39,6 +40,7 @@ export async function POST(request: Request, { params }: Params) {
   return NextResponse.json({
     week: result.week,
     created: result.created,
+    moved: result.moved,
     skipped: result.skipped,
     unplaced: result.unplaced,
     note: result.note,

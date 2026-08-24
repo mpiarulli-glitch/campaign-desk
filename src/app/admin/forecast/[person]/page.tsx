@@ -2390,8 +2390,8 @@ export default function PersonForecastPage() {
   }
 
   // Fill this week from Basecamp. Standing blocks (leadership, MEG outreach,
-  // campaign audits) are Michael's; everyone still gets to-dos booked a weekday
-  // before they are due. Safe to click twice — existing rows stay put.
+  // campaign audits) are Michael's. Incomplete work can be moved so leadership
+  // stays at 10:00 and to-dos land a weekday before they are due.
   async function planThisWeek() {
     setPlanning(true);
     setError("");
@@ -2408,6 +2408,7 @@ export default function PersonForecastPage() {
         return;
       }
       const created = Number(json.created) || 0;
+      const moved = Number(json.moved) || 0;
       const skipped = Number(json.skipped) || 0;
       const unplaced = Array.isArray(json.unplaced) ? json.unplaced.length : 0;
       const reason =
@@ -2418,14 +2419,16 @@ export default function PersonForecastPage() {
             : json.assignmentsReason === "none-assigned"
               ? " Nothing is assigned to you in Basecamp right now."
               : "";
+      const bits = [
+        created ? `added ${created}` : "",
+        moved ? `moved ${moved}` : "",
+        skipped && !created && !moved ? "already in place" : "",
+        unplaced ? `${unplaced} could not be placed` : "",
+      ].filter(Boolean);
       setPlanNotice(
-        created
-          ? `Planned ${created} block${created === 1 ? "" : "s"} onto this week.${
-              skipped ? ` ${skipped} already there.` : ""
-            }${unplaced ? ` ${unplaced} could not be placed.` : ""}${reason}`
-          : skipped
-            ? `This week is already planned.${reason}`
-            : `Nothing new to add.${reason}`
+        bits.length
+          ? `Planned this week: ${bits.join(", ")}.${reason}`
+          : `Nothing new to add.${reason}`
       );
       await load(week, { silent: true });
       await loadAssigned();
@@ -2528,7 +2531,7 @@ export default function PersonForecastPage() {
               className="btn btn-ghost btn-sm"
               onClick={() => void planThisWeek()}
               disabled={planning || loading}
-              title="Fill this week from Basecamp: work a day before each due date, keep leadership meetings, and leave room for MEG outreach and campaign audits."
+              title="Fill this week from Basecamp. Incomplete work may move so leadership stays at 10:00 Mon/Wed/Fri and to-dos land a day before they are due."
             >
               {planning ? "Planning…" : "Plan this week"}
             </button>

@@ -9,7 +9,7 @@ import {
   WARM_OUTREACH_NOTES,
   WEEK_NOTE_PREFIX,
   addDays,
-  blocksNotYetPlaced,
+  diffPlannedBlocks,
   estimateTaskHours,
   findSlot,
   isPlannerNote,
@@ -215,9 +215,10 @@ test("open subtasks replace their parent so the same job is not booked twice", (
   assert.ok(work.every((b) => b.taskDate === "2026-08-26"));
 });
 
-test("already-booked Basecamp ids and standing titles are not duplicated", () => {
+test("already-booked Basecamp to-dos are moved rather than duplicated", () => {
   const existing: PlanExisting[] = [
     {
+      id: "row-t1",
       notes: "Build welcome flow",
       client: "Acme",
       taskDate: "2026-08-24",
@@ -227,6 +228,7 @@ test("already-booked Basecamp ids and standing titles are not duplicated", () =>
       basecampStepId: "",
     },
     {
+      id: "row-lead-mon",
       notes: LEADERSHIP_NOTES,
       client: "Empire Leadership HQ",
       taskDate: "2026-08-24",
@@ -243,24 +245,34 @@ test("already-booked Basecamp ids and standing titles are not duplicated", () =>
     existing,
     includeOwnerRoutines: true,
   });
-  assert.equal(blocks.filter((b) => b.kind === "todo").length, 0);
+  const work = blocks.filter((b) => b.kind === "todo");
+  assert.equal(work.length, 1);
+  assert.equal(work[0].existingId, "row-t1");
+  assert.equal(work[0].taskDate, "2026-08-25");
+  assert.equal(work[0].basecampTodoId, "t1");
+
+  const mondayLead = blocks.find(
+    (b) => b.notes === LEADERSHIP_NOTES && b.taskDate === "2026-08-24"
+  );
+  assert.equal(mondayLead?.startTime, "10:00");
+  assert.equal(mondayLead?.existingId, "row-lead-mon");
+
+  const diff = diffPlannedBlocks(blocks, existing);
+  assert.equal(diff.create.filter((b) => b.basecampTodoId === "t1").length, 0);
   assert.equal(
-    blocks.filter((b) => b.notes === LEADERSHIP_NOTES && b.taskDate === "2026-08-24").length,
+    diff.move.filter((b) => b.existingId === "row-lead-mon").length,
     0
   );
-  const leftover = blocksNotYetPlaced(blocks, existing);
-  assert.equal(
-    leftover.filter((b) => b.notes === LEADERSHIP_NOTES && b.taskDate === "2026-08-24").length,
-    0
-  );
+  assert.equal(diff.move.find((b) => b.existingId === "row-t1")?.taskDate, "2026-08-25");
 });
 
 test("a to-do is left unplaced rather than booked on its due date", () => {
-  // Fill Monday so the Tuesday-due to-do cannot land a day early.
+  // Finished work stays put, so a packed Monday cannot absorb a Tuesday-due to-do.
   const existing: PlanExisting[] = [];
   for (let h = 8; h <= 16; h++) {
     if (h === 12) continue;
     existing.push({
+      id: `busy-${h}`,
       notes: `Busy ${h}`,
       client: "Acme",
       taskDate: "2026-08-24",
@@ -268,6 +280,7 @@ test("a to-do is left unplaced rather than booked on its due date", () => {
       hours: 1,
       basecampTodoId: "",
       basecampStepId: "",
+      completed: true,
     });
   }
   const { blocks, unplaced } = planWeek({
@@ -315,3 +328,88 @@ test("addDays crosses month boundaries", () => {
   assert.equal(addDays("2026-08-31", 1), "2026-09-01");
   assert.equal(addDays("2026-08-24", 4), "2026-08-28");
 });
+
+test("work sitting on Monday 10:00 is moved so leadership can take that hour", () => {
+  const existing: PlanExisting[] = [
+    {
+      id: "row-client",
+      notes: "Build welcome flow",
+      client: "Acme",
+      taskDate: "2026-08-24",
+      startTime: "10:00",
+      hours: 1,
+      basecampTodoId: "t1",
+      basecampStepId: "",
+    },
+  ];
+  const { blocks } = planWeek({
+    weekStart: WEEK,
+    today: TODAY,
+    assignments: [todo({ id: "t1", title: "Build welcome flow", dueOn: "2026-08-26" })],
+    existing,
+    includeOwnerRoutines: true,
+  });
+  const lead = blocks.find((b) => b.kind === "leadership" && b.taskDate === "2026-08-24");
+  assert.equal(lead?.startTime, "10:00");
+  const work = blocks.find((b) => b.existingId === "row-client");
+  assert.ok(work);
+  assert.equal(work.taskDate, "2026-08-25");
+  assert.notEqual(`${work.taskDate} ${work.startTime}`, "2026-08-24 10:00");
+  const diff = diffPlannedBlocks(blocks, existing);
+  assert.equal(diff.move.find((b) => b.existingId === "row-client")?.taskDate, "2026-08-25");
+  assert.ok(diff.create.some((b) => b.kind === "leadership" && b.taskDate === "2026-08-24"));
+});
+
+test("a leadership meeting at the wrong time is slid onto 10:00", () => {
+  const existing: PlanExisting[] = [
+    {
+      id: "row-lead",
+      notes: "Weekly leadership",
+      client: "Empire Leadership HQ",
+      taskDate: "2026-08-24",
+      startTime: "09:00",
+      hours: 1,
+      basecampTodoId: "",
+      basecampStepId: "",
+    },
+  ];
+  const { blocks } = planWeek({
+    weekStart: WEEK,
+    today: TODAY,
+    assignments: [],
+    existing,
+    includeOwnerRoutines: true,
+  });
+  const monday = blocks.find((b) => b.kind === "leadership" && b.taskDate === "2026-08-24");
+  assert.equal(monday?.startTime, "10:00");
+  assert.equal(monday?.existingId, "row-lead");
+  const diff = diffPlannedBlocks(blocks, existing);
+  assert.equal(diff.move.find((b) => b.existingId === "row-lead")?.startTime, "10:00");
+  assert.equal(diff.move.find((b) => b.existingId === "row-lead")?.taskDate, "2026-08-24");
+  assert.equal(blocks.filter((b) => b.kind === "leadership").length, 3);
+});
+
+test("an existing to-do on its due date is moved a weekday earlier", () => {
+  const existing: PlanExisting[] = [
+    {
+      id: "row-due",
+      notes: "Build welcome flow",
+      client: "Acme",
+      taskDate: "2026-08-26",
+      startTime: "14:00",
+      hours: 1,
+      basecampTodoId: "t1",
+      basecampStepId: "",
+    },
+  ];
+  const { blocks } = planWeek({
+    weekStart: WEEK,
+    today: TODAY,
+    assignments: [todo({ id: "t1", title: "Build welcome flow", dueOn: "2026-08-26" })],
+    existing,
+    includeOwnerRoutines: false,
+  });
+  const work = blocks.find((b) => b.existingId === "row-due");
+  assert.equal(work?.taskDate, "2026-08-25");
+});
+

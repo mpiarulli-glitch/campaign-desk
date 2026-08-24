@@ -1,9 +1,10 @@
 // Apply a planned week to one person's forecast: read their Basecamp
-// assignments, run the pure planner, write any missing rows.
+// assignments, run the planner, create missing rows and move existing ones
+// when that is what gets leadership onto 10:00 or a to-do off its due date.
 //
-// Idempotent. A second run the same week skips anything already on the
-// calendar (matched by Basecamp recording id, or by title for the standing
-// blocks). Existing rows are never deleted or moved.
+// Finished rows, running timers, and Basecamp meetings other than leadership
+// are left alone. Clicking twice is still safe: a row already in the right
+// slot is skipped.
 
 import {
   asPerson,
@@ -16,10 +17,11 @@ import {
   createTask,
   getWeekNote,
   listTasksForPersonWeek,
+  updateTask,
   upsertWeekNote,
 } from "./forecast";
 import {
-  blocksNotYetPlaced,
+  diffPlannedBlocks,
   isPlannerNote,
   planWeek,
   type PlanAssignment,
@@ -79,6 +81,7 @@ function asExisting(
   tasks: ReturnType<typeof listTasksForPersonWeek>
 ): PlanExisting[] {
   return tasks.map((t) => ({
+    id: t.id,
     notes: t.notes,
     client: t.client,
     taskDate: t.task_date,
@@ -86,6 +89,11 @@ function asExisting(
     hours: t.hours,
     basecampTodoId: t.basecamp_todo_id,
     basecampStepId: t.basecamp_step_id,
+    basecampEventId: t.basecamp_event_id,
+    basecampProjectId: t.basecamp_project_id,
+    color: t.color,
+    completed: Boolean(t.completed),
+    timerRunning: Boolean(t.timer_started_at),
   }));
 }
 
@@ -101,6 +109,7 @@ export interface RunForecastPlanResult extends PlanWeekResult {
   week: string;
   today: string;
   created: number;
+  moved: number;
   skipped: number;
   assignmentsReason: string | null;
   dryRun: boolean;
@@ -126,10 +135,11 @@ export async function runForecastPlan(
     includeOwnerRoutines: input.person === OWNER_SLUG,
   });
 
-  const toCreate = blocksNotYetPlaced(planned.blocks, existing);
+  const diff = diffPlannedBlocks(planned.blocks, existing);
   let created = 0;
+  let moved = 0;
   if (!input.dryRun) {
-    for (const block of toCreate) {
+    for (const block of diff.create) {
       createTask({
         person: input.person,
         taskDate: block.taskDate,
@@ -144,6 +154,14 @@ export async function runForecastPlan(
       });
       created += 1;
     }
+    for (const block of diff.move) {
+      if (!block.existingId) continue;
+      updateTask(block.existingId, {
+        taskDate: block.taskDate,
+        startTime: block.startTime,
+      });
+      moved += 1;
+    }
 
     const currentNote = getWeekNote(input.person, week);
     if (!currentNote.trim() || isPlannerNote(currentNote)) {
@@ -157,7 +175,8 @@ export async function runForecastPlan(
     week,
     today,
     created: input.dryRun ? 0 : created,
-    skipped: planned.blocks.length - toCreate.length,
+    moved: input.dryRun ? 0 : moved,
+    skipped: diff.unchanged,
     assignmentsReason: reason,
     dryRun: Boolean(input.dryRun),
   };

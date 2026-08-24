@@ -9,10 +9,16 @@
 //   • work a to-do at least one weekday before it is due
 //   • every task is an hour unless it is "upload email" or "authenticate domain"
 //     (those take ten minutes, stored as a 15-minute calendar slot)
-//   • leadership meetings Mon/Wed/Fri at 10:00
+//   • leadership meetings Mon/Wed/Fri at 10:00 — always, even if that means
+//     sliding something else out of the way
 //   • at least 3 hours of MEG cold + warm outreach, as one focus block
 //   • leave a hour a day for campaign audits, updates, and check-ins
 //   • do not land on lunch (12–1) or past 5pm, and do not overfill an 8-hour day
+//
+// Incomplete work already on the week can be moved when that is what gets
+// leadership onto 10:00, a to-do off its due date, or the outreach block a
+// contiguous afternoon. Finished rows, running timers, and Basecamp meetings
+// (other than leadership) stay where they are.
 
 import {
   bookedRecordingIds,
@@ -37,6 +43,7 @@ export const AUDIT_HOURS = 1;
 export const OUTREACH_HOURS = 3;
 export const COLD_OUTREACH_HOURS = 1.5;
 export const WARM_OUTREACH_HOURS = 1.5;
+export const LEADERSHIP_START = "10:00";
 
 export const DAY_START_MIN = 8 * 60;
 export const DAY_END_MIN = 17 * 60;
@@ -65,6 +72,7 @@ export type PlanAssignment = {
 };
 
 export type PlanExisting = {
+  id?: string;
   notes: string;
   client: string;
   taskDate: string;
@@ -72,6 +80,11 @@ export type PlanExisting = {
   hours: number;
   basecampTodoId: string;
   basecampStepId: string;
+  basecampEventId?: string;
+  basecampProjectId?: string;
+  color?: string;
+  completed?: boolean;
+  timerRunning?: boolean;
 };
 
 export type PlannedKind = "leadership" | "outreach" | "audit" | "todo";
@@ -87,6 +100,9 @@ export type PlannedBlock = {
   basecampStepId: string;
   basecampProjectId: string;
   kind: PlannedKind;
+  // Set when this block is an existing forecast row that should be moved (or
+  // left in place if the slot already matches).
+  existingId?: string;
 };
 
 export type PlanWeekInput = {
@@ -105,7 +121,25 @@ export type PlanWeekResult = {
   unplaced: Array<{ title: string; dueOn: string | null; reason: string }>;
 };
 
+export type PlanDiff = {
+  create: PlannedBlock[];
+  move: PlannedBlock[];
+  unchanged: number;
+};
+
 type Occupied = { start: number; end: number };
+
+type WorkItem = {
+  existingId?: string;
+  hours: number;
+  client: string;
+  notes: string;
+  dueOn: string | null;
+  projectId: string;
+  basecampTodoId: string;
+  basecampStepId: string;
+  color: string;
+};
 
 export function estimateTaskHours(title: string): number {
   const t = (title || "").toLowerCase();
@@ -187,18 +221,52 @@ function occupy(occupied: Occupied[], startTime: string, hours: number) {
   occupied.push({ start, end: start + durationMinutes(hours) });
 }
 
-function hoursOnDay(existing: PlanExisting[], date: string): number {
-  return existing
-    .filter((t) => t.taskDate === date)
-    .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
-}
-
 function notesMatch(value: string, expected: string): boolean {
   return (value || "").trim().toLowerCase() === expected.toLowerCase();
 }
 
-function hasNotesOnDay(existing: PlanExisting[], date: string, notes: string): boolean {
-  return existing.some((t) => t.taskDate === date && notesMatch(t.notes, notes));
+export function isLeadershipNotes(notes: string): boolean {
+  return /\bleadership\b/i.test(notes || "");
+}
+
+function isColdOutreachNotes(notes: string): boolean {
+  return notesMatch(notes, COLD_OUTREACH_NOTES) || /cold outreach/i.test(notes || "");
+}
+
+function isWarmOutreachNotes(notes: string): boolean {
+  return notesMatch(notes, WARM_OUTREACH_NOTES) || /warm outreach/i.test(notes || "");
+}
+
+function isAuditNotes(notes: string): boolean {
+  return notesMatch(notes, AUDIT_NOTES) || /campaign audit/i.test(notes || "");
+}
+
+function isStandingNotes(notes: string): boolean {
+  return (
+    isLeadershipNotes(notes) ||
+    isColdOutreachNotes(notes) ||
+    isWarmOutreachNotes(notes) ||
+    isAuditNotes(notes)
+  );
+}
+
+function isPinned(task: PlanExisting, earliest: string): boolean {
+  if (task.completed) return true;
+  if (task.timerRunning) return true;
+  if (task.taskDate < earliest) return true;
+  // Real Basecamp meetings keep their time, except leadership, which we will
+  // slide onto 10:00 if it is already on the week.
+  if (task.basecampEventId && !isLeadershipNotes(task.notes)) return true;
+  return false;
+}
+
+function takeExisting(
+  pool: PlanExisting[],
+  predicate: (task: PlanExisting) => boolean
+): PlanExisting | undefined {
+  const index = pool.findIndex(predicate);
+  if (index < 0) return undefined;
+  return pool.splice(index, 1)[0];
 }
 
 function workItems(assignments: PlanAssignment[]): PlanAssignment[] {
@@ -212,7 +280,7 @@ function workItems(assignments: PlanAssignment[]): PlanAssignment[] {
   return assignments.filter((a) => a.kind === "step" || !parentsWithSteps.has(a.id));
 }
 
-function sortWork(items: PlanAssignment[], today: string): PlanAssignment[] {
+function sortWork(items: WorkItem[], today: string): WorkItem[] {
   return [...items].sort((a, b) => {
     const aDue = a.dueOn || "";
     const bDue = b.dueOn || "";
@@ -221,7 +289,7 @@ function sortWork(items: PlanAssignment[], today: string): PlanAssignment[] {
     if (aOver !== bOver) return aOver ? -1 : 1;
     if (aDue && bDue && aDue !== bDue) return aDue.localeCompare(bDue);
     if (aDue !== bDue) return aDue ? -1 : 1;
-    return a.title.localeCompare(b.title);
+    return a.notes.localeCompare(b.notes);
   });
 }
 
@@ -264,6 +332,29 @@ function formatRange(startTime: string, hours: number): string {
   return end ? `${pretty(startTime)}–${pretty(end)}` : pretty(startTime);
 }
 
+function assignmentFor(task: PlanExisting, assignments: PlanAssignment[]): PlanAssignment | undefined {
+  const ids = [task.basecampStepId, task.basecampTodoId].filter(Boolean);
+  return assignments.find((a) => ids.includes(a.id));
+}
+
+function workFromExisting(task: PlanExisting, assignments: PlanAssignment[]): WorkItem {
+  const match = assignmentFor(task, assignments);
+  const link = match
+    ? queueTodoLinkage(match)
+    : { basecampTodoId: task.basecampTodoId, basecampStepId: task.basecampStepId };
+  return {
+    existingId: task.id,
+    hours: task.hours || estimateTaskHours(task.notes),
+    client: task.client || match?.clientName || match?.projectName || "",
+    notes: task.notes || (match ? queueTodoNotes(match) : ""),
+    dueOn: match?.dueOn || null,
+    projectId: task.basecampProjectId || match?.projectId || "",
+    basecampTodoId: link.basecampTodoId,
+    basecampStepId: link.basecampStepId,
+    color: task.color || "blue",
+  };
+}
+
 export function planWeek(input: PlanWeekInput): PlanWeekResult {
   const daysList = planWeekdays(input.weekStart);
   const weekEnd = addWeeks(input.weekStart, 1);
@@ -276,24 +367,29 @@ export function planWeek(input: PlanWeekInput): PlanWeekResult {
           ? input.today
           : daysList[0];
 
-  const booked = bookedRecordingIds(
-    input.existing.map((t) => ({
-      basecamp_todo_id: t.basecampTodoId,
-      basecamp_step_id: t.basecampStepId,
-    }))
-  );
+  const pinned: PlanExisting[] = [];
+  const movable: PlanExisting[] = [];
+  for (const task of input.existing) {
+    (isPinned(task, earliest) ? pinned : movable).push(task);
+  }
 
   const days: Record<string, DayState> = {};
   for (const date of daysList) {
     const occupied: Occupied[] = [];
-    for (const t of input.existing.filter((row) => row.taskDate === date && row.startTime)) {
-      occupy(occupied, t.startTime, t.hours);
+    let hours = 0;
+    for (const t of pinned.filter((row) => row.taskDate === date)) {
+      hours += Number(t.hours) || 0;
+      if (t.startTime) occupy(occupied, t.startTime, t.hours);
     }
-    days[date] = { occupied, hours: hoursOnDay(input.existing, date) };
+    days[date] = { occupied, hours };
   }
 
   const blocks: PlannedBlock[] = [];
   const unplaced: PlanWeekResult["unplaced"] = [];
+  const leadershipPool = movable.filter((t) => isLeadershipNotes(t.notes));
+  const coldPool = movable.filter((t) => isColdOutreachNotes(t.notes));
+  const warmPool = movable.filter((t) => isWarmOutreachNotes(t.notes));
+  const auditPool = movable.filter((t) => isAuditNotes(t.notes));
 
   function push(block: PlannedBlock) {
     blocks.push(block);
@@ -304,125 +400,142 @@ export function planWeek(input: PlanWeekInput): PlanWeekResult {
       if (date < earliest) continue;
       const dow = weekdayOf(date);
       if (dow !== 1 && dow !== 3 && dow !== 5) continue;
-      if (hasNotesOnDay(input.existing, date, LEADERSHIP_NOTES)) continue;
-      const start = placeBlock(days, date, 1, "10:00", DAY_CAPACITY_HOURS - days[date].hours);
-      if (!start) {
-        unplaced.push({
-          title: LEADERSHIP_NOTES,
-          dueOn: date,
-          reason: "10:00 was already taken",
-        });
-        continue;
-      }
+      // Leadership is the one immovable appointment: 10:00 even if a pinned
+      // meeting already sits there. Movable work has already been lifted, so
+      // this is usually a free hour; overlapping a real Basecamp event is
+      // still preferable to dropping the meeting.
+      const start = findSlot(days[date].occupied, 1, LEADERSHIP_START) || LEADERSHIP_START;
+      occupy(days[date].occupied, start, 1);
+      days[date].hours += 1;
+      const existing =
+        takeExisting(leadershipPool, (t) => t.taskDate === date) ||
+        takeExisting(leadershipPool, () => true);
       push({
         taskDate: date,
         startTime: start,
         hours: 1,
-        client: LEADERSHIP_CLIENT,
-        notes: LEADERSHIP_NOTES,
-        color: "violet",
-        basecampTodoId: "",
-        basecampStepId: "",
-        basecampProjectId: "",
+        client: existing?.client || LEADERSHIP_CLIENT,
+        notes: existing?.notes || LEADERSHIP_NOTES,
+        color: existing?.color || "violet",
+        basecampTodoId: existing?.basecampTodoId || "",
+        basecampStepId: existing?.basecampStepId || "",
+        basecampProjectId: existing?.basecampProjectId || "",
         kind: "leadership",
+        existingId: existing?.id,
       });
     }
 
-    const outreachAlready =
-      input.existing.some((t) => notesMatch(t.notes, COLD_OUTREACH_NOTES)) &&
-      input.existing.some((t) => notesMatch(t.notes, WARM_OUTREACH_NOTES));
-    if (!outreachAlready) {
-      const preferDates = [
-        daysList[1], // Tuesday
-        daysList[3], // Thursday
-        daysList[2],
-        daysList[4],
-        daysList[0],
-      ].filter((date) => date >= earliest);
+    const preferDates = [
+      daysList[1],
+      daysList[3],
+      daysList[2],
+      daysList[4],
+      daysList[0],
+    ].filter((date) => date >= earliest);
 
-      let placed = false;
-      for (const date of preferDates) {
-        const room = DAY_CAPACITY_HOURS - days[date].hours;
-        if (room < OUTREACH_HOURS) continue;
-        const coldStart = placeBlock(
-          days,
-          date,
-          COLD_OUTREACH_HOURS,
-          "13:00",
-          room
-        );
-        if (!coldStart) continue;
-        const warmStart = placeBlock(
-          days,
-          date,
-          WARM_OUTREACH_HOURS,
-          addHoursToTime(coldStart, COLD_OUTREACH_HOURS) || "14:30",
-          DAY_CAPACITY_HOURS - days[date].hours
-        );
-        if (!warmStart) {
-          // Roll back the cold block if warm could not sit next to it.
-          const coldMin = minutesFromMidnight(coldStart);
-          if (coldMin != null) {
-            days[date].occupied = days[date].occupied.filter(
-              (o) => o.start !== coldMin
-            );
-            days[date].hours -= COLD_OUTREACH_HOURS;
-          }
-          continue;
+    let placedOutreach = false;
+    for (const date of preferDates) {
+      const room = DAY_CAPACITY_HOURS - days[date].hours;
+      if (room < OUTREACH_HOURS) continue;
+      const coldStart = placeBlock(days, date, COLD_OUTREACH_HOURS, "13:00", room);
+      if (!coldStart) continue;
+      const warmStart = placeBlock(
+        days,
+        date,
+        WARM_OUTREACH_HOURS,
+        addHoursToTime(coldStart, COLD_OUTREACH_HOURS) || "14:30",
+        DAY_CAPACITY_HOURS - days[date].hours
+      );
+      if (!warmStart) {
+        const coldMin = minutesFromMidnight(coldStart);
+        if (coldMin != null) {
+          days[date].occupied = days[date].occupied.filter((o) => o.start !== coldMin);
+          days[date].hours -= COLD_OUTREACH_HOURS;
         }
-        push({
-          taskDate: date,
-          startTime: coldStart,
-          hours: COLD_OUTREACH_HOURS,
-          client: MEG_CLIENT,
-          notes: COLD_OUTREACH_NOTES,
-          color: "green",
-          basecampTodoId: "",
-          basecampStepId: "",
-          basecampProjectId: "",
-          kind: "outreach",
-        });
-        push({
-          taskDate: date,
-          startTime: warmStart,
-          hours: WARM_OUTREACH_HOURS,
-          client: MEG_CLIENT,
-          notes: WARM_OUTREACH_NOTES,
-          color: "green",
-          basecampTodoId: "",
-          basecampStepId: "",
-          basecampProjectId: "",
-          kind: "outreach",
-        });
-        placed = true;
-        break;
+        continue;
       }
-      if (!placed) {
-        unplaced.push({
-          title: "MEG cold + warm outreach",
-          dueOn: null,
-          reason: "no 3-hour focus block left this week",
-        });
-      }
+      const coldExisting = takeExisting(coldPool, () => true);
+      const warmExisting = takeExisting(warmPool, () => true);
+      push({
+        taskDate: date,
+        startTime: coldStart,
+        hours: COLD_OUTREACH_HOURS,
+        client: coldExisting?.client || MEG_CLIENT,
+        notes: coldExisting?.notes || COLD_OUTREACH_NOTES,
+        color: coldExisting?.color || "green",
+        basecampTodoId: "",
+        basecampStepId: "",
+        basecampProjectId: coldExisting?.basecampProjectId || "",
+        kind: "outreach",
+        existingId: coldExisting?.id,
+      });
+      push({
+        taskDate: date,
+        startTime: warmStart,
+        hours: WARM_OUTREACH_HOURS,
+        client: warmExisting?.client || MEG_CLIENT,
+        notes: warmExisting?.notes || WARM_OUTREACH_NOTES,
+        color: warmExisting?.color || "green",
+        basecampTodoId: "",
+        basecampStepId: "",
+        basecampProjectId: warmExisting?.basecampProjectId || "",
+        kind: "outreach",
+        existingId: warmExisting?.id,
+      });
+      placedOutreach = true;
+      break;
+    }
+    if (!placedOutreach) {
+      unplaced.push({
+        title: "MEG cold + warm outreach",
+        dueOn: null,
+        reason: "no 3-hour focus block left this week",
+      });
     }
   }
 
-  const todos = sortWork(workItems(input.assignments), input.today);
-  for (const todo of todos) {
-    if (booked.has(todo.id)) continue;
+  const already = bookedRecordingIds(
+    input.existing.map((t) => ({
+      basecamp_todo_id: t.basecampTodoId,
+      basecamp_step_id: t.basecampStepId,
+    }))
+  );
+  const movableWork = movable.filter((t) => !isStandingNotes(t.notes));
+  const work: WorkItem[] = movableWork.map((t) => workFromExisting(t, input.assignments));
+  for (const todo of workItems(input.assignments)) {
+    if (already.has(todo.id)) continue;
+    const link = queueTodoLinkage(todo);
+    const overdue = Boolean(todo.dueOn && todo.dueOn < input.today);
+    work.push({
+      hours: estimateTaskHours(todo.title),
+      client: todo.clientName || todo.projectName,
+      notes: queueTodoNotes(todo),
+      dueOn: todo.dueOn,
+      projectId: todo.projectId,
+      basecampTodoId: link.basecampTodoId,
+      basecampStepId: link.basecampStepId,
+      color: overdue ? "amber" : "blue",
+    });
+  }
 
-    const hours = estimateTaskHours(todo.title);
-    const dueOn = todo.dueOn;
+  for (const item of sortWork(work, input.today)) {
+    const dueOn = item.dueOn;
     const dueThisHorizon = !dueOn || dueOn < addDays(weekEnd, 7);
-    if (!dueThisHorizon) continue;
+    if (!dueThisHorizon) {
+      if (item.existingId) {
+        unplaced.push({
+          title: item.notes,
+          dueOn,
+          reason: "due too far out to keep on this week",
+        });
+      }
+      continue;
+    }
 
     const mustDoSoon = Boolean(dueOn && dueOn <= input.today);
     const latest = dueOn
       ? clampToWeek(previousWeekday(dueOn), daysList, earliest)
       : daysList[4];
-    if (!latest && dueOn && dueOn < daysList[0]) {
-      // Due before this week and previousWeekday fell outside. Use earliest.
-    }
     const latestDay = latest || earliest;
 
     const tryDates: string[] = [];
@@ -439,19 +552,16 @@ export function planWeek(input: PlanWeekInput): PlanWeekResult {
     for (const date of tryDates) {
       const keepAudit = mustDoSoon ? 0 : AUDIT_HOURS;
       const budget = DAY_CAPACITY_HOURS - days[date].hours - keepAudit;
-      start = placeBlock(days, date, hours, undefined, budget);
+      start = placeBlock(days, date, item.hours, undefined, budget);
       if (start) {
         placedOn = date;
         break;
       }
     }
 
-    const link = queueTodoLinkage(todo);
-    const notes = queueTodoNotes(todo);
-    const overdue = Boolean(dueOn && dueOn < input.today);
     if (!placedOn) {
       unplaced.push({
-        title: notes,
+        title: item.notes,
         dueOn,
         reason:
           mustDoSoon || !dueOn
@@ -461,38 +571,43 @@ export function planWeek(input: PlanWeekInput): PlanWeekResult {
       continue;
     }
 
+    const overdue = Boolean(dueOn && dueOn < input.today);
     push({
       taskDate: placedOn,
       startTime: start,
-      hours,
-      client: todo.clientName || todo.projectName,
-      notes,
-      color: overdue ? "amber" : "blue",
-      basecampTodoId: link.basecampTodoId,
-      basecampStepId: link.basecampStepId,
-      basecampProjectId: todo.projectId,
+      hours: item.hours,
+      client: item.client,
+      notes: item.notes,
+      color: overdue ? "amber" : item.color || "blue",
+      basecampTodoId: item.basecampTodoId,
+      basecampStepId: item.basecampStepId,
+      basecampProjectId: item.projectId,
       kind: "todo",
+      existingId: item.existingId,
     });
   }
 
   for (const date of daysList) {
     if (date < earliest) continue;
-    if (hasNotesOnDay(input.existing, date, AUDIT_NOTES)) continue;
     const budget = DAY_CAPACITY_HOURS - days[date].hours;
     if (budget < AUDIT_HOURS) continue;
     const start = placeBlock(days, date, AUDIT_HOURS, "16:00", budget);
     if (!start) continue;
+    const existing =
+      takeExisting(auditPool, (t) => t.taskDate === date) ||
+      takeExisting(auditPool, () => true);
     push({
       taskDate: date,
       startTime: start,
       hours: AUDIT_HOURS,
-      client: MEG_CLIENT,
-      notes: AUDIT_NOTES,
-      color: "teal",
+      client: existing?.client || MEG_CLIENT,
+      notes: existing?.notes || AUDIT_NOTES,
+      color: existing?.color || "teal",
       basecampTodoId: "",
       basecampStepId: "",
-      basecampProjectId: "",
+      basecampProjectId: existing?.basecampProjectId || "",
       kind: "audit",
+      existingId: existing?.id,
     });
   }
 
@@ -510,14 +625,14 @@ function buildWeekNote(
 ): string {
   const lines: string[] = [
     `${WEEK_NOTE_PREFIX} · ${weekLabel(weekStart)}`,
-    "Work is booked at least a weekday before each due date. Upload-email and authenticate-domain tasks are 15 minutes; everything else is an hour.",
+    "Work is booked at least a weekday before each due date. Upload-email and authenticate-domain tasks are 15 minutes; everything else is an hour. Leadership meetings stay at 10:00 Mon/Wed/Fri.",
   ];
 
   const leadership = blocks.filter((b) => b.kind === "leadership");
   if (leadership.length) {
     lines.push(
       `Leadership meetings: ${leadership
-        .map((b) => `${weekdayName(b.taskDate)} 10:00`)
+        .map((b) => `${weekdayName(b.taskDate)} ${b.startTime === "10:00" ? "10:00" : b.startTime}`)
         .join(", ")}.`
     );
   }
@@ -568,28 +683,55 @@ export function isPlannerNote(body: string): boolean {
   return (body || "").trim().startsWith(WEEK_NOTE_PREFIX);
 }
 
-export function blocksNotYetPlaced(
+function sameSlot(block: PlannedBlock, task: PlanExisting): boolean {
+  return task.taskDate === block.taskDate && (task.startTime || "") === (block.startTime || "");
+}
+
+function matchExisting(block: PlannedBlock, existing: PlanExisting[]): PlanExisting | undefined {
+  if (block.existingId) {
+    const byId = existing.find((t) => t.id === block.existingId);
+    if (byId) return byId;
+  }
+  if (block.basecampStepId) {
+    const byStep = existing.find((t) => t.basecampStepId === block.basecampStepId);
+    if (byStep) return byStep;
+  }
+  if (block.basecampTodoId) {
+    const byTodo = existing.find(
+      (t) => !t.basecampStepId && t.basecampTodoId === block.basecampTodoId
+    );
+    if (byTodo) return byTodo;
+  }
+  return existing.find(
+    (t) => t.taskDate === block.taskDate && notesMatch(t.notes, block.notes)
+  );
+}
+
+export function diffPlannedBlocks(
   planned: PlannedBlock[],
   existing: PlanExisting[]
-): PlannedBlock[] {
-  const booked = bookedRecordingIds(
-    existing.map((t) => ({
-      basecamp_todo_id: t.basecampTodoId,
-      basecamp_step_id: t.basecampStepId,
-    }))
-  );
-  return planned.filter((b) => {
-    if (b.basecampStepId && booked.has(b.basecampStepId)) return false;
-    if (!b.basecampStepId && b.basecampTodoId && booked.has(b.basecampTodoId)) {
-      return false;
+): PlanDiff {
+  const used = new Set<string>();
+  const create: PlannedBlock[] = [];
+  const move: PlannedBlock[] = [];
+  let unchanged = 0;
+
+  for (const block of planned) {
+    const match = matchExisting(
+      block,
+      existing.filter((t) => !t.id || !used.has(t.id))
+    );
+    if (!match) {
+      create.push(block);
+      continue;
     }
-    if (
-      existing.some(
-        (t) => t.taskDate === b.taskDate && notesMatch(t.notes, b.notes)
-      )
-    ) {
-      return false;
+    if (match.id) used.add(match.id);
+    if (sameSlot(block, match)) {
+      unchanged += 1;
+      continue;
     }
-    return true;
-  });
+    move.push({ ...block, existingId: match.id || block.existingId });
+  }
+
+  return { create, move, unchanged };
 }

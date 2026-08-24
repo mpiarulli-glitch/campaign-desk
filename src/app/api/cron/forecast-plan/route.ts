@@ -48,13 +48,14 @@ async function handle(request: Request) {
   });
   console.log(
     `[cron] forecast-plan ${dryRun ? "(dry run) " : ""}week ${result.week}: ` +
-      `created ${result.created}, skipped ${result.skipped}, ` +
+      `created ${result.created}, moved ${result.moved}, skipped ${result.skipped}, ` +
       `unplaced ${result.unplaced.length}` +
       (result.assignmentsReason ? ` (${result.assignmentsReason})` : "")
   );
   return NextResponse.json({
     week: result.week,
     created: result.created,
+    moved: result.moved,
     skipped: result.skipped,
     unplaced: result.unplaced,
     assignmentsReason: result.assignmentsReason,
