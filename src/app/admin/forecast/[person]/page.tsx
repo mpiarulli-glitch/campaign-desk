@@ -1136,6 +1136,8 @@ export default function PersonForecastPage() {
   const [moved, setMoved] = useState<
     { id: string; label: string; from: string } | null
   >(null);
+  const [planning, setPlanning] = useState(false);
+  const [planNotice, setPlanNotice] = useState("");
   // Everything Basecamp says is assigned to this person, across every project.
   // Fetched once per visit: it is one request and it backs the queue's default
   // view, so nobody has to pick a client to find their own work.
@@ -2502,6 +2504,56 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  // Fill this week from Basecamp. Standing blocks (leadership, MEG outreach,
+  // campaign audits) are Michael's. Incomplete work can be moved so leadership
+  // stays at 10:00 and to-dos land a weekday before they are due.
+  async function planThisWeek() {
+    setPlanning(true);
+    setError("");
+    setPlanNotice("");
+    try {
+      const res = await fetch(`/api/forecast/${person}/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Could not plan this week.");
+        return;
+      }
+      const created = Number(json.created) || 0;
+      const moved = Number(json.moved) || 0;
+      const skipped = Number(json.skipped) || 0;
+      const unplaced = Array.isArray(json.unplaced) ? json.unplaced.length : 0;
+      const reason =
+        json.assignmentsReason === "person-not-connected"
+          ? " Connect Basecamp to pull in your to-dos."
+          : json.assignmentsReason === "not-connected"
+            ? " Basecamp isn't connected, so only the standing blocks were added."
+            : json.assignmentsReason === "none-assigned"
+              ? " Nothing is assigned to you in Basecamp right now."
+              : "";
+      const bits = [
+        created ? `added ${created}` : "",
+        moved ? `moved ${moved}` : "",
+        skipped && !created && !moved ? "already in place" : "",
+        unplaced ? `${unplaced} could not be placed` : "",
+      ].filter(Boolean);
+      setPlanNotice(
+        bits.length
+          ? `Planned this week: ${bits.join(", ")}.${reason}`
+          : `Nothing new to add.${reason}`
+      );
+      await load(week, { silent: true });
+      await loadAssigned();
+    } catch {
+      setError("Could not plan this week.");
+    } finally {
+      setPlanning(false);
+    }
+  }
+
   async function undoMove() {
     if (!moved) return;
     const { id, from } = moved;
@@ -2589,6 +2641,15 @@ export default function PersonForecastPage() {
                 </button>
               ) : null}
             </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => void planThisWeek()}
+              disabled={planning || loading}
+              title="Fill this week from Basecamp. Incomplete work may move so leadership stays at 10:00 Mon/Wed/Fri and to-dos land a day before they are due."
+            >
+              {planning ? "Planning…" : "Plan this week"}
+            </button>
             {/* Both syncs live in the queue sidebar on the calendar, next to the
                 pickers they actually feed, rather than up here in the chrome. */}
             {view === "calendar" ? null : (
@@ -2615,6 +2676,20 @@ export default function PersonForecastPage() {
         </div>
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
+
+        {planNotice ? (
+          <p className="fc-moved">
+            <span>{planNotice}</span>
+            <button
+              type="button"
+              className="fc-moved-x"
+              aria-label="Dismiss"
+              onClick={() => setPlanNotice("")}
+            >
+              ×
+            </button>
+          </p>
+        ) : null}
 
         {moved ? (
           <p className="fc-moved">
