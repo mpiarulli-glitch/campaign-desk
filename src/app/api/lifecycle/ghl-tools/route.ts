@@ -65,10 +65,17 @@ export async function GET(request: Request) {
       if (!locationId) {
         return NextResponse.json({ error: "locationId is required" }, { status: 400 });
       }
-      const name =
+      // The client-record lookup only resolves accounts that are mapped, which
+      // is precisely the set that is not the problem. So fall through to the
+      // GoHighLevel location list before showing a raw id.
+      let name =
         url.searchParams.get("locationName") ||
         listRevClients().find((c) => c.ghl_location_id === locationId)?.name ||
-        locationId;
+        "";
+      if (!name) {
+        name =
+          (await listLocations()).find((l) => l.id === locationId)?.name || locationId;
+      }
       return NextResponse.json(await hotContacts(locationId, name));
     }
     return NextResponse.json(

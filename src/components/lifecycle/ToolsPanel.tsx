@@ -396,7 +396,14 @@ export function ToolsPanel() {
             <button
               className="btn btn-sm"
               disabled={running !== null || !location}
-              onClick={() => run("hot", `&locationId=${encodeURIComponent(location)}`)}
+              onClick={() =>
+                run(
+                  "hot",
+                  `&locationId=${encodeURIComponent(location)}&locationName=${encodeURIComponent(
+                    locations.find((l) => l.id === location)?.name || ""
+                  )}`
+                )
+              }
             >
               {running === "hot" ? "Scoring..." : "Score"}
             </button>
@@ -406,7 +413,19 @@ export function ToolsPanel() {
         {hot ? (
           hot.contacts.length === 0 ? (
             <p className="lc-tool-note">
-              Nothing scored above zero in {hot.locationName}. {hot.scanned} contacts looked at.
+              {hot.scanned === 0 ? (
+                <>
+                  No contact in {hot.locationName} carries any of the signals this
+                  scores on, so there was nothing to rank. That usually means the
+                  booking form is not wired up in this subaccount, rather than that
+                  the account is empty.
+                </>
+              ) : (
+                <>
+                  Nothing in {hot.locationName} scored above zero, out of {hot.scanned}{" "}
+                  contacts carrying at least one signal.
+                </>
+              )}
             </p>
           ) : (
             <>
