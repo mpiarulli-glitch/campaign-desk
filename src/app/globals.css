@@ -4867,10 +4867,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --ops-bg: #fafafa;
   --ops-border: #e8e8ea;
   --ops-border-soft: #f0f0f1;
-  /* Calendar blocks are solid fills with white text rather than pale cards with
-     a coloured edge. At a glance the week then reads as shapes and colour, which
-     is the whole job of a calendar, and the text on top stays legible without
-     depending on the page's own foreground colour. */
+  /* Calendar block hue. The time-grid card uses this as a solid left rail plus
+     a glass fill; titles pick a brighter mix of the same colour. Queue chips and
+     list rows only take the variable for their leading edge. */
   --fc-col-blue: #2f6f9f;
   --fc-col-indigo: #4f5bc4;
   --fc-col-violet: #7a4fb5;
@@ -4903,7 +4902,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --fc-col-red: #e05263;
   --fc-col-slate: #767e8c;
   --fc-col-done: #6b6b72;
-  --fc-grid-line: #212124;
+  /* A notch brighter than the day fill so hour lines still read through a
+     ~38% glass event, instead of disappearing into --bg-elevated. */
+  --fc-grid-line: #2e2e34;
 }
 
 .ops-nav {
@@ -5547,23 +5548,31 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   isolation: isolate;
   box-sizing: border-box;
   overflow: hidden;
-  border-radius: 7px;
+  border-radius: 6px;
   /* Tight, because the vertical budget is fixed by how long the task runs: a
      one-hour block is 64px and has to hold two lines of title plus its time. */
-  padding: 4px 8px 5px;
+  padding: 4px 8px 5px 8px;
   line-height: 1.25;
+  /* Tools and stamps stay white on their own dark pills. Title/time use --fc-ink. */
   color: #fff;
-  /* Translucent fill only: hour lines and the now-line read through the card,
-     while the title stays solid white. 75% is enough to see the grid without
-     washing the colour out. */
-  background: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 75%, transparent);
-  border: none;
+  --fc-ink: var(--fc-block, var(--fc-col-blue));
+  --fc-ink-dim: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 68%, #4a4a52);
+  /* Glass card: hour lines read through the wash. Colour identity lives on the
+     solid left rail, not the fill — 38% is in the 30–50% window of a typical
+     calendar event, unlike the old 75% slab which still read as opaque. */
+  background: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 38%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 22%, transparent);
+  border-left: 3px solid var(--fc-block, var(--fc-col-blue));
   cursor: grab;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   gap: 1px;
   min-width: 0;
+}
+:root[data-theme="dark"] .fc-cal-block {
+  --fc-ink: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 42%, #fff);
+  --fc-ink-dim: color-mix(in srgb, var(--fc-block, var(--fc-col-blue)) 55%, #c5c8d0);
 }
 /* Colour is set once, as a variable, so the block rule above stays the only
    place that decides how a fill is composited. */
@@ -5577,14 +5586,15 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .col-slate { --fc-block: var(--fc-col-slate); }
 .fc-cal-block.is-done {
   --fc-block: var(--fc-col-done);
-  opacity: 0.72;
 }
 .fc-cal-block.is-done .fc-cal-block-title { text-decoration: line-through; }
 .fc-cal-block.is-dragging { opacity: 0.4; }
 .fc-cal-block.is-resizing { cursor: ns-resize; }
-.fc-cal-block.is-resizing,
-.fc-cal-block.is-timing {
+.fc-cal-block.is-resizing {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px #fff;
+}
+.fc-cal-block.is-timing {
+  box-shadow: 0 0 0 2px var(--fc-col-blue);
 }
 
 .fc-cal-block-main {
@@ -5603,8 +5613,9 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
      lines and the second one renders sliced in half. */
   flex: none;
   font-size: 11.5px;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.2;
+  color: var(--fc-ink);
   /* A real two-line clamp. A max-height in em shaved the second line in half,
      so "MEG Weekly Team Meeting" rendered with the descenders of "Meeting"
      sliced off. */
@@ -5629,10 +5640,28 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   flex: none;
   font-size: 9.5px;
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fc-ink-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.fc-cal-block-when {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fc-cal-block-when::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1.15px solid currentColor;
+  border-radius: 50%;
+  background:
+    linear-gradient(currentColor, currentColor) 50% 58% / 1.15px 3px no-repeat,
+    linear-gradient(currentColor, currentColor) 68% 48% / 2.4px 1.15px no-repeat;
+  opacity: 0.9;
 }
 /* Footer row: what the block has to say on the left, what you can do to it on
    the right. Both in normal flow, so controls can never land on top of the
@@ -5643,7 +5672,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    .has-stamp below. */
 .fc-cal-block-foot {
   position: absolute;
-  left: 8px;
+  left: 10px;
   right: 4px;
   bottom: 3px;
   display: flex;
@@ -5656,13 +5685,18 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   min-width: 0;
   padding: 0 4px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.48);
+  color: #fff;
   font-size: 9.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.fc-cal-block-stamp.is-running {
+  background: color-mix(in srgb, var(--fc-col-blue) 42%, #111);
+  color: #fff;
 }
 .fc-cal-block-stamp em {
   font-style: normal;
@@ -5690,7 +5724,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   margin-left: auto;
   padding: 1px 2px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.5);
   opacity: 0;
   transition: opacity 0.12s ease;
 }
