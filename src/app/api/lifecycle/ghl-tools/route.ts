@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { isGhlConfigured, listLocations } from "@/lib/ghl";
-import { listRevClients } from "@/lib/revenue";
+import { listRevClients, updateRevClient } from "@/lib/revenue";
 import {
   accountReport,
   applyTagPlan,
   auditTags,
   hotContacts,
+  planLinks,
   tagContacts,
   type TagAction,
 } from "@/lib/ghl-tools";
@@ -54,6 +55,17 @@ export async function GET(request: Request) {
           .sort((a, b) => Number(b.mapped) - Number(a.mapped) || a.name.localeCompare(b.name)),
       });
     }
+    // Which clients have no GoHighLevel location id, and which location looks
+    // like theirs. Read-only: applying is a separate POST.
+    if (tool === "links") {
+      const clients = listRevClients().map((c) => ({
+        id: c.id,
+        name: c.name,
+        ghl_location_id: c.ghl_location_id || "",
+      }));
+      const locs = (await listLocations()).map((l) => ({ id: l.id, name: l.name }));
+      return NextResponse.json(planLinks(clients, locs));
+    }
     if (tool === "accounts") {
       return NextResponse.json(await accountReport(mappedLocationIds(), force));
     }
@@ -79,7 +91,7 @@ export async function GET(request: Request) {
       return NextResponse.json(await hotContacts(locationId, name));
     }
     return NextResponse.json(
-      { error: "tool must be locations, accounts, tags or hot" },
+      { error: "tool must be locations, links, accounts, tags or hot" },
       { status: 400 }
     );
   } catch (err) {
@@ -140,6 +152,51 @@ export async function POST(request: Request) {
         );
       }
       return NextResponse.json(await tagContacts(locationId, ids, tag));
+    }
+
+    // Write the approved client-to-location links. Guarded so an approved pair
+    // can never overwrite a client that already points somewhere, and so two
+    // clients cannot be pointed at the same subaccount: either would silently
+    // show one business another's numbers.
+    if (body.action === "apply-links") {
+      const pairs = Array.isArray(body.links)
+        ? (body.links as Array<{ clientId?: unknown; locationId?: unknown }>)
+        : [];
+      if (pairs.length === 0) {
+        return NextResponse.json({ error: "Nothing to link" }, { status: 400 });
+      }
+
+      const clients = listRevClients();
+      const taken = new Map(
+        clients
+          .filter((c) => (c.ghl_location_id || "").trim())
+          .map((c) => [c.ghl_location_id.trim(), c.name])
+      );
+
+      let linked = 0;
+      const skipped: string[] = [];
+      for (const pair of pairs) {
+        const clientId = typeof pair.clientId === "string" ? pair.clientId : "";
+        const locationId = typeof pair.locationId === "string" ? pair.locationId.trim() : "";
+        const client = clients.find((c) => c.id === clientId);
+        if (!client || !locationId) {
+          skipped.push("A link was missing its client or location");
+          continue;
+        }
+        if ((client.ghl_location_id || "").trim()) {
+          skipped.push(`${client.name} already points at a subaccount`);
+          continue;
+        }
+        const owner = taken.get(locationId);
+        if (owner) {
+          skipped.push(`That subaccount is already ${owner}'s`);
+          continue;
+        }
+        updateRevClient(client.id, { ghlLocationId: locationId });
+        taken.set(locationId, client.name);
+        linked++;
+      }
+      return NextResponse.json({ linked, skipped });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

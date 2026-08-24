@@ -553,3 +553,149 @@ export async function pushEmailTemplate(args: {
   );
   return { id: String(res.id || ""), previewUrl: String(res.previewUrl || "") };
 }
+
+/* ------------------------------------------- link locations to clients */
+
+export interface LinkProposal {
+  clientId: string;
+  clientName: string;
+  locationId: string;
+  locationName: string;
+  /** "exact" after normalising, or "close" when one name contains the other. */
+  confidence: "exact" | "close";
+  /** Set when the client already points somewhere else, which needs a human. */
+  currentLocationId: string;
+}
+
+export interface LinkPlan {
+  proposals: LinkProposal[];
+  unmatchedClients: Array<{ id: string; name: string }>;
+  unmatchedLocations: Array<{ id: string; name: string }>;
+  alreadyLinked: number;
+}
+
+/**
+ * Client and location names reduced so cosmetic differences stop mattering.
+ *
+ * Suffixes go because a GoHighLevel location is routinely "Pacific Coast
+ * Generation, Inc" while the client record is "Pacific Coast Generation". The
+ * ampersand mapping matters for names like "Titan Tent & Event Rentals".
+ */
+function nameKey(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\b(inc|llc|ltd|co|corp|corporation|company|the)\b/g, " ")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Propose a location for every client that has no location id yet.
+ *
+ * Exact normalised matches first. A "close" match is one name containing the
+ * other, which catches "Krak Boba Temecula" against "Krak Boba - Temecula" but
+ * is reported separately because it is a guess, and a wrong link points a
+ * client's whole snapshot at another business's data.
+ *
+ * Nothing is written here. `applyLinks` does that, and only for pairs handed to
+ * it.
+ */
+export function planLinks(
+  clients: Array<{ id: string; name: string; ghl_location_id: string }>,
+  locations: Array<{ id: string; name: string }>
+): LinkPlan {
+  const takenLocationIds = new Set(
+    clients.map((c) => (c.ghl_location_id || "").trim()).filter(Boolean)
+  );
+  const needing = clients.filter((c) => !(c.ghl_location_id || "").trim());
+  const free = locations.filter((l) => !takenLocationIds.has(l.id));
+
+  const byKey = new Map<string, Array<{ id: string; name: string }>>();
+  for (const l of free) {
+    const k = nameKey(l.name);
+    if (!k) continue;
+    const list = byKey.get(k);
+    if (list) list.push(l);
+    else byKey.set(k, [l]);
+  }
+
+  const proposals: LinkProposal[] = [];
+  const usedLocations = new Set<string>();
+  const matchedClients = new Set<string>();
+
+  // Exact first, so a clean match is never stolen by a fuzzy one.
+  for (const c of needing) {
+    const k = nameKey(c.name);
+    const hits = (byKey.get(k) || []).filter((l) => !usedLocations.has(l.id));
+    // Two locations normalising to the same name is ambiguous, so it is left
+    // for a person rather than guessed at.
+    if (hits.length === 1) {
+      usedLocations.add(hits[0].id);
+      matchedClients.add(c.id);
+      proposals.push({
+        clientId: c.id,
+        clientName: c.name,
+        locationId: hits[0].id,
+        locationName: hits[0].name,
+        confidence: "exact",
+        currentLocationId: "",
+      });
+    }
+  }
+
+  for (const c of needing) {
+    if (matchedClients.has(c.id)) continue;
+    const k = nameKey(c.name);
+    if (k.length < 5) continue; // too short to contain-match safely
+    const hits = free.filter((l) => {
+      if (usedLocations.has(l.id)) return false;
+      const lk = nameKey(l.name);
+      return lk.length >= 5 && (lk.includes(k) || k.includes(lk));
+    });
+    if (hits.length === 1) {
+      usedLocations.add(hits[0].id);
+      matchedClients.add(c.id);
+      proposals.push({
+        clientId: c.id,
+        clientName: c.name,
+        locationId: hits[0].id,
+        locationName: hits[0].name,
+        confidence: "close",
+        currentLocationId: "",
+      });
+    }
+  }
+
+  // A match is only "exact" if no other unlinked client could plausibly want
+  // that same subaccount. "Relentless Brewing Co" matches a location called
+  // "Relentless Brewing" once the suffix is stripped, but "Relentless Brewing &
+  // Spirits" is also sitting there unlinked, and picking wrong points a whole
+  // client snapshot at the other business. Ambiguity like that gets downgraded
+  // so it arrives unticked and a person decides.
+  for (const p of proposals) {
+    if (p.confidence !== "exact") continue;
+    const locKey = nameKey(p.locationName);
+    const rival = needing.some((c) => {
+      if (c.id === p.clientId) return false;
+      const ck = nameKey(c.name);
+      if (ck.length < 5 || locKey.length < 5) return false;
+      return ck.includes(locKey) || locKey.includes(ck);
+    });
+    if (rival) p.confidence = "close";
+  }
+
+  return {
+    proposals: proposals.sort(
+      (a, b) =>
+        (a.confidence === b.confidence ? 0 : a.confidence === "exact" ? -1 : 1) ||
+        a.clientName.localeCompare(b.clientName)
+    ),
+    unmatchedClients: needing
+      .filter((c) => !matchedClients.has(c.id))
+      .map((c) => ({ id: c.id, name: c.name })),
+    unmatchedLocations: free
+      .filter((l) => !usedLocations.has(l.id))
+      .map((l) => ({ id: l.id, name: l.name })),
+    alreadyLinked: clients.length - needing.length,
+  };
+}

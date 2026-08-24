@@ -10,7 +10,22 @@ import { useEffect, useState } from "react";
 // mount, because a full sweep is roughly 150 API calls and nobody wants that
 // firing every time they open the lifecycle page.
 
-type Tool = "accounts" | "tags" | "hot" | null;
+type Tool = "links" | "accounts" | "tags" | "hot" | null;
+
+type LinkProposal = {
+  clientId: string;
+  clientName: string;
+  locationId: string;
+  locationName: string;
+  confidence: "exact" | "close";
+};
+
+type LinkPlan = {
+  proposals: LinkProposal[];
+  unmatchedClients: Array<{ id: string; name: string }>;
+  unmatchedLocations: Array<{ id: string; name: string }>;
+  alreadyLinked: number;
+};
 
 type AccountRow = {
   locationId: string;
@@ -86,6 +101,8 @@ export function ToolsPanel() {
   const [accounts, setAccounts] = useState<AccountReport | null>(null);
   const [tags, setTags] = useState<TagAudit | null>(null);
   const [hot, setHot] = useState<HotList | null>(null);
+  const [links, setLinks] = useState<LinkPlan | null>(null);
+  const [linkPick, setLinkPick] = useState<Set<string>>(new Set());
 
   // Which tag fixes have been ticked. Keyed by locationId + tagId so the same
   // tag name in two subaccounts is approved separately, because it is a
@@ -116,6 +133,19 @@ export function ToolsPanel() {
       if (!res.ok) {
         setError(data.error || "That report failed.");
         return;
+      }
+      if (tool === "links") {
+        setLinks(data);
+        // Exact matches pre-ticked, close ones not: a close match is a guess,
+        // and a wrong link points a client's whole snapshot at another
+        // business's data.
+        setLinkPick(
+          new Set(
+            (data.proposals || [])
+              .filter((p: LinkProposal) => p.confidence === "exact")
+              .map((p: LinkProposal) => p.clientId)
+          )
+        );
       }
       if (tool === "accounts") setAccounts(data);
       if (tool === "tags") {
@@ -200,6 +230,32 @@ export function ToolsPanel() {
     void run("tags", "&force=1");
   }
 
+  async function applyLinks() {
+    if (!links) return;
+    const chosen = links.proposals.filter((p) => linkPick.has(p.clientId));
+    if (chosen.length === 0) return;
+    setRunning("links");
+    const res = await fetch("/api/lifecycle/ghl-tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "apply-links",
+        links: chosen.map((p) => ({ clientId: p.clientId, locationId: p.locationId })),
+      }),
+    });
+    const data = await res.json();
+    setRunning(null);
+    if (!res.ok) {
+      setError(data.error || "Linking failed.");
+      return;
+    }
+    setMessage(
+      `Linked ${data.linked} client${data.linked === 1 ? "" : "s"}.` +
+        (data.skipped?.length ? ` ${data.skipped.length} skipped.` : "")
+    );
+    void run("links");
+  }
+
   async function tagHot() {
     if (!hot || hotPick.size === 0 || !hotTag.trim()) return;
     setRunning("hot");
@@ -239,6 +295,93 @@ export function ToolsPanel() {
 
       {error ? <p className="error">{error}</p> : null}
       {message ? <p className="success">{message}</p> : null}
+
+      {/* ---- link clients to subaccounts */}
+      <section className="lc-tool">
+        <div className="lc-tool-head">
+          <div>
+            <h3>Link clients to subaccounts</h3>
+            <p>
+              A client only counts as mapped once its record here carries a GoHighLevel
+              location ID. Most do not, which is why the account report reads mostly
+              unmapped. This matches them up by name.
+            </p>
+          </div>
+          <button className="btn btn-sm" disabled={running !== null} onClick={() => run("links")}>
+            {running === "links" ? "Matching..." : "Find matches"}
+          </button>
+        </div>
+
+        {links ? (
+          <>
+            <div className="lc-tool-stats">
+              <span><strong>{links.alreadyLinked}</strong> already linked</span>
+              <span><strong>{links.proposals.length}</strong> matches found</span>
+              <span className={links.unmatchedClients.length ? "is-warn" : ""}>
+                <strong>{links.unmatchedClients.length}</strong> clients still unmatched
+              </span>
+            </div>
+
+            {links.proposals.length === 0 ? (
+              <p className="lc-tool-note">
+                No unlinked client name matched a subaccount name closely enough to
+                suggest. Those need doing by hand on the client record.
+              </p>
+            ) : (
+              <>
+                <div className="lc-tool-rows">
+                  <table>
+                    <thead>
+                      <tr><th></th><th>Client</th><th>Subaccount</th><th>Match</th></tr>
+                    </thead>
+                    <tbody>
+                      {links.proposals.map((p) => (
+                        <tr key={p.clientId}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={linkPick.has(p.clientId)}
+                              onChange={() => toggle(linkPick, p.clientId, setLinkPick)}
+                            />
+                          </td>
+                          <td>{p.clientName}</td>
+                          <td>{p.locationName}</td>
+                          <td>
+                            {p.confidence === "exact" ? (
+                              <span className="cs-pill is-good">exact</span>
+                            ) : (
+                              <span className="cs-pill is-warn">close, check it</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="lc-tool-foot">
+                  <span className="lc-tool-note">
+                    Close matches are left unticked on purpose. A wrong link points a
+                    client&apos;s whole snapshot at another business&apos;s numbers.
+                  </span>
+                  <button
+                    className="btn btn-sm"
+                    disabled={running !== null || linkPick.size === 0}
+                    onClick={applyLinks}
+                  >
+                    Link {linkPick.size}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {links.unmatchedClients.length ? (
+              <p className="lc-tool-note">
+                No match for: {links.unmatchedClients.map((c) => c.name).join(", ")}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </section>
 
       {/* ---- accounts */}
       <section className="lc-tool">
