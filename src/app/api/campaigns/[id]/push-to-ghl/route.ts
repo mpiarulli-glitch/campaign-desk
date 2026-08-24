@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { isGhlConfigured } from "@/lib/ghl";
+import { applyExactGhlLinks } from "@/lib/ghl-links";
 import { pushEmailTemplate, type TemplatePush } from "@/lib/ghl-tools";
 import { getCampaignById, listEmailsWithSubjects } from "@/lib/campaigns";
 import { getRevClient } from "@/lib/revenue";
@@ -21,12 +22,28 @@ type Params = { params: Promise<{ id: string }> };
  */
 const PUSHABLE = new Set(["email", "interactive"]);
 
-function resolve(campaignId: string) {
+async function resolve(campaignId: string) {
   const campaign = getCampaignById(campaignId);
   if (!campaign) return { error: "Campaign not found", status: 404 as const };
 
-  const client = campaign.client_id ? getRevClient(campaign.client_id) : null;
-  const locationId = (client?.ghl_location_id || "").trim();
+  let client = campaign.client_id ? getRevClient(campaign.client_id) : null;
+  let locationId = (client?.ghl_location_id || "").trim();
+
+  // Exact name matches are the pairs Find matches would have pre-ticked.
+  // Fill them now so opening this modal (or pushing) links Ecoworkz and
+  // everyone else with a unique subaccount, instead of asking a person to
+  // visit Lifecycle → Tools first.
+  if (!locationId && isGhlConfigured()) {
+    try {
+      await applyExactGhlLinks();
+    } catch {
+      // Leave the missing-id error below; a GHL outage is not a reason to
+      // pretend the client is linked.
+    }
+    client = campaign.client_id ? getRevClient(campaign.client_id) : null;
+    locationId = (client?.ghl_location_id || "").trim();
+  }
+
   if (!locationId) {
     return {
       error: client
@@ -43,7 +60,7 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const r = resolve(id);
+  const r = await resolve(id);
   if ("error" in r) {
     return NextResponse.json(
       { ready: false, error: r.error },
@@ -84,7 +101,7 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const { id } = await params;
-  const r = resolve(id);
+  const r = await resolve(id);
   if ("error" in r) {
     return NextResponse.json({ error: r.error }, { status: r.status });
   }

@@ -16,6 +16,11 @@ export async function register() {
   const { runBasecampClientBackfillOnce } = await import("./lib/basecamp-clients");
   void runBasecampClientBackfillOnce();
 
+  // Exact GoHighLevel location matches, the ones Find matches would pre-tick.
+  // Without this, clients like Ecoworkz stay unlinked until someone opens Tools.
+  const { runGhlExactLinkBackfillOnce } = await import("./lib/ghl-links");
+  void runGhlExactLinkBackfillOnce();
+
   // Refreshes the calendar's event cache when it's empty or over 12h old.
   // There's no scheduler here, so boot is what keeps it current.
   const { syncBasecampEventsIfStale } = await import("./lib/basecamp-events");
