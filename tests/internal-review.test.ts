@@ -4,24 +4,46 @@ import fs from "node:fs";
 import os from "os";
 import path from "path";
 import {
+  internalReviewMention,
   internalReviewTodoContent,
+  parseInternalReviewDueOn,
   pickDefaultInternalReviewer,
   teamPeopleForInternalReview,
 } from "../src/lib/internal-review";
 
-test("internal review todo copy includes both campaign links", () => {
+test("internal review todo copy mentions the AM and only the review link", () => {
   const content = internalReviewTodoContent({
-    campaignTitle: "Welcome Series",
-    clientName: "Vitatherapy",
-    reviewerName: "Cassidy Merideth",
-    adminUrl: "https://desk.example/admin/campaigns/abc",
+    campaignTitle: "Krak Boba Oceanside Post-Launch Email + SMS Sequence",
+    clientName: "Krak Boba Oceanside",
+    mention: "@Cassidy",
     reviewUrl: "https://desk.example/review/internal-token",
   });
-  assert.match(content.title, /Welcome Series/);
-  assert.match(content.title, /Vitatherapy/);
-  assert.match(content.description, /Cassidy Merideth/);
+  assert.equal(
+    content.title,
+    "Review Krak Boba Oceanside: Krak Boba Oceanside Post-Launch Email + SMS Sequence"
+  );
+  assert.match(content.description, /@Cassidy, please review this campaign internally/);
+  assert.match(content.description, /Internal review link/);
   assert.match(content.description, /https:\/\/desk\.example\/review\/internal-token/);
-  assert.match(content.description, /https:\/\/desk\.example\/admin\/campaigns\/abc/);
+  assert.doesNotMatch(content.description, /Open in Campaign Desk/);
+});
+
+test("internal review mention uses the Basecamp attachment when possible", () => {
+  assert.equal(
+    internalReviewMention({
+      id: 2,
+      name: "Cassidy Merideth",
+      attachable_sgid: "sgid-cassidy",
+    }),
+    `<bc-attachment sgid="sgid-cassidy"></bc-attachment>`
+  );
+  assert.equal(
+    internalReviewMention({ id: 2, name: "Cassidy Merideth" }),
+    "@Cassidy"
+  );
+  assert.equal(parseInternalReviewDueOn("2026-08-25"), "2026-08-25");
+  assert.equal(parseInternalReviewDueOn("tomorrow"), null);
+  assert.equal(parseInternalReviewDueOn(""), null);
 });
 
 test("default internal reviewer prefers the mapped account manager", () => {
@@ -100,7 +122,12 @@ test("sending a campaign for internal review", async (t) => {
       nowIso()
     );
 
-  let lastTodo: { content?: string; assignee_ids?: number[] } | null = null;
+  let lastTodo: {
+    content?: string;
+    description?: string;
+    assignee_ids?: number[];
+    due_on?: string;
+  } | null = null;
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -118,7 +145,7 @@ test("sending a campaign for internal review", async (t) => {
           email_address: "cassidy@meg.com",
           client: false,
           employee: true,
-          attachable_sgid: "sgid",
+          attachable_sgid: "sgid-cassidy",
         },
       ]);
     }
@@ -143,14 +170,20 @@ test("sending a campaign for internal review", async (t) => {
     const result = await internal.sendCampaignForInternalReview({
       campaignId: created.id,
       reviewerId: 2,
+      dueOn: "2026-08-25",
     });
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.reviewerName, "Cassidy Merideth");
     assert.equal(result.todoUrl, "https://3.basecamp.com/todo/99");
     assert.equal(result.status, "in_review");
+    assert.equal(result.dueOn, "2026-08-25");
     assert.equal(lastTodo?.assignee_ids?.[0], 2);
+    assert.equal(lastTodo?.due_on, "2026-08-25");
     assert.match(lastTodo?.content || "", /April newsletter/);
+    assert.match(lastTodo?.description || "", /bc-attachment sgid="sgid-cassidy"/);
+    assert.match(lastTodo?.description || "", /Internal review link/);
+    assert.doesNotMatch(lastTodo?.description || "", /Open in Campaign Desk/);
 
     const row = campaigns.getCampaignById(created.id)!;
     assert.equal(row.status, "in_review");
@@ -161,5 +194,6 @@ test("sending a campaign for internal review", async (t) => {
     const deskTodo = todos.listTodos({ assignee: "cassidy" })[0];
     assert.ok(deskTodo);
     assert.match(deskTodo.title, /April newsletter/);
+    assert.equal(deskTodo.due_date, "2026-08-25");
   });
 });

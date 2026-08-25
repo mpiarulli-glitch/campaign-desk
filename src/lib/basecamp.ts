@@ -853,6 +853,90 @@ export async function listAllScheduleEntries(maxPages = 140): Promise<BcSchedule
     .filter((e) => e.title && e.startsAt);
 }
 
+export type CreateScheduleEntryResult =
+  | {
+      ok: true;
+      id: string;
+      appUrl: string;
+      projectName: string;
+      participants: string[];
+      startsAt: string;
+      endsAt: string;
+      allDay: boolean;
+      title: string;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Put a meeting on a project's Basecamp calendar (Schedule::Entry).
+ *
+ * Timesheet entries hang off the recording id this returns, which is why a
+ * typed forecast meeting has to land here instead of staying local: logging
+ * hours needs a real Basecamp recording on that project.
+ */
+export async function createScheduleEntry(
+  projectId: string,
+  input: {
+    summary: string;
+    startsAt: string;
+    endsAt: string;
+    allDay: boolean;
+    participantIds?: number[];
+    description?: string;
+  },
+  identity: BcIdentity = SERVICE
+): Promise<CreateScheduleEntryResult> {
+  const summary = input.summary.trim().slice(0, 999);
+  if (!projectId) return { ok: false, error: "No Basecamp project set." };
+  if (!summary) return { ok: false, error: "A meeting needs a name." };
+  try {
+    const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
+    if (!pr.ok) return { ok: false, error: `Could not open that Basecamp project (${pr.status}).` };
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
+    const schedule = dock.find((d) => d.name === "schedule" && d.enabled !== false);
+    if (!schedule) {
+      return { ok: false, error: "That Basecamp project has no calendar." };
+    }
+    const body: Record<string, unknown> = {
+      summary,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      all_day: input.allDay,
+      notify: false,
+    };
+    if (input.description) body.description = input.description;
+    if (input.participantIds && input.participantIds.length) {
+      body.participant_ids = input.participantIds;
+    }
+    const res = await bc(
+      `/buckets/${projectId}/schedules/${schedule.id}/entries.json`,
+      { method: "POST", body: JSON.stringify(body) },
+      identity
+    );
+    if (!res.ok) {
+      return { ok: false, error: `Could not add that meeting to Basecamp (${res.status}).` };
+    }
+    const entry = await res.json();
+    if (!entry.id) return { ok: false, error: "Basecamp did not return a calendar entry." };
+    return {
+      ok: true,
+      id: String(entry.id),
+      appUrl: entry.app_url || "",
+      projectName: project.name || entry.bucket?.name || "",
+      participants: (entry.participants || [])
+        .map((p: { name?: string }) => p.name || "")
+        .filter(Boolean),
+      startsAt: entry.starts_at || input.startsAt,
+      endsAt: entry.ends_at || input.endsAt,
+      allDay: Boolean(entry.all_day ?? input.allDay),
+      title: (entry.summary || summary).trim(),
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message || "Could not add that meeting to Basecamp." };
+  }
+}
+
 /* -------------------------------------------------------------- timesheets */
 
 export interface TimeEntryResult {
@@ -1284,12 +1368,14 @@ export async function createAssignedTodo(input: {
   title: string;
   description?: string;
   assigneeIds: number[];
+  dueOn?: string | null;
   identity?: BcIdentity;
 }): Promise<{ ok: true; todoId: string; todoUrl: string } | { ok: false; error: string }> {
   const identity = input.identity ?? SERVICE;
   if (!input.projectId) return { ok: false, error: "No Basecamp project set." };
   const title = input.title.trim().slice(0, 999);
   if (!title) return { ok: false, error: "To-do title is required." };
+  const dueOn = (input.dueOn || "").trim();
   try {
     const list = await getOrCreateCampaignReviewTodolist(input.projectId, identity);
     if ("error" in list) return { ok: false, error: list.error };
@@ -1302,6 +1388,7 @@ export async function createAssignedTodo(input: {
           description: input.description || "",
           assignee_ids: input.assigneeIds,
           notify: input.assigneeIds.length > 0,
+          ...(dueOn ? { due_on: dueOn } : {}),
         }),
       },
       identity

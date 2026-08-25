@@ -36,12 +36,17 @@ export async function POST(request: Request, { params }: Params) {
       { status: 400 }
     );
   }
+  const dueOn =
+    typeof body.dueOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.dueOn.trim())
+      ? body.dueOn.trim()
+      : null;
 
   const sender = await sessionUserSlug();
   const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
   const result = await sendCampaignForInternalReview({
     campaignId: id,
     reviewerId,
+    dueOn,
     identity,
   });
   if (!result.ok) {

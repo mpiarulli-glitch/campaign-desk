@@ -12,6 +12,7 @@ import {
   parseTimeInput,
   timeAtOffset,
   staggerStartTimes,
+  scheduleEntryTimes,
 } from "../src/lib/forecast-time";
 
 test("parseTimeInput accepts 24-hour and am/pm", () => {
@@ -97,4 +98,36 @@ test("resizing snaps to quarter hours and never reaches zero", () => {
   assert.equal(hoursFromResize(yFor(8, 0), "09:00"), 0.25);
   // Dragged past the end of the day.
   assert.equal(hoursFromResize(yFor(CAL_END_HOUR + 3), "18:00"), 1);
+});
+
+test("scheduleEntryTimes uses the app timezone, or all-day when there is no start", () => {
+  const pacific = "America/Los_Angeles";
+  assert.deepEqual(
+    scheduleEntryTimes({
+      date: "2026-08-25",
+      startTime: "",
+      hours: 1,
+      timeZone: pacific,
+    }),
+    { startsAt: "2026-08-25", endsAt: "2026-08-25", allDay: true }
+  );
+  // 10am PDT (UTC-7) for half an hour.
+  const timed = scheduleEntryTimes({
+    date: "2026-08-25",
+    startTime: "10:00",
+    hours: 0.5,
+    timeZone: pacific,
+  });
+  assert.equal(timed.allDay, false);
+  assert.equal(timed.startsAt, "2026-08-25T17:00:00.000Z");
+  assert.equal(timed.endsAt, "2026-08-25T17:30:00.000Z");
+  // 10am PST (UTC-8) in January.
+  const winter = scheduleEntryTimes({
+    date: "2026-01-15",
+    startTime: "10:00",
+    hours: 1,
+    timeZone: pacific,
+  });
+  assert.equal(winter.startsAt, "2026-01-15T18:00:00.000Z");
+  assert.equal(winter.endsAt, "2026-01-15T19:00:00.000Z");
 });

@@ -195,6 +195,60 @@ export function listEventsForDay(
   return { mine, others };
 }
 
+// Keep a just-created schedule entry in the local cache so the meeting picker
+// can show it without waiting for the next full account sweep.
+export function cacheScheduleEntry(input: {
+  id: string;
+  projectId: string;
+  clientId?: string | null;
+  clientName?: string;
+  projectName?: string;
+  title: string;
+  eventDate: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  participants?: string;
+  appUrl?: string;
+}): void {
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO basecamp_events
+         (id, project_id, client_id, client_name, project_name, title, event_date,
+          starts_at, ends_at, all_day, participants, app_url, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         project_id = excluded.project_id,
+         client_id = excluded.client_id,
+         client_name = excluded.client_name,
+         project_name = excluded.project_name,
+         title = excluded.title,
+         event_date = excluded.event_date,
+         starts_at = excluded.starts_at,
+         ends_at = excluded.ends_at,
+         all_day = excluded.all_day,
+         participants = excluded.participants,
+         app_url = excluded.app_url,
+         synced_at = excluded.synced_at`
+    )
+    .run(
+      input.id,
+      input.projectId,
+      input.clientId ?? null,
+      input.clientName || "",
+      input.projectName || "",
+      input.title,
+      input.eventDate,
+      input.startsAt,
+      input.endsAt,
+      input.allDay ? 1 : 0,
+      input.participants || "",
+      input.appUrl || "",
+      ts
+    );
+}
+
 export function lastEventSyncAt(): string | null {
   const row = getDb()
     .prepare(`SELECT MAX(synced_at) AS at FROM basecamp_events`)

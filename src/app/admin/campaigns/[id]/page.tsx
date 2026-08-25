@@ -304,6 +304,10 @@ export default function AdminCampaignPage() {
     null
   );
   const [internalReviewerId, setInternalReviewerId] = useState<number | "">("");
+  const [internalReviewDueOn, setInternalReviewDueOn] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [sendingInternalReview, setSendingInternalReview] = useState(false);
 
   async function submitReply(commentId: string) {
@@ -883,7 +887,10 @@ export default function AdminCampaignPage() {
     const res = await fetch(`/api/campaigns/${id}/internal-review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reviewerId: internalReviewerId }),
+      body: JSON.stringify({
+        reviewerId: internalReviewerId,
+        dueOn: internalReviewDueOn,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     setSendingInternalReview(false);
@@ -895,6 +902,7 @@ export default function AdminCampaignPage() {
     if (data.status) setStatus(data.status);
     setMessage(
       `Internal review to-do created for ${data.reviewerName || "the account manager"}.` +
+        (data.dueOn ? ` Due ${data.dueOn}.` : "") +
         (data.todoUrl ? " Check Basecamp for the assigned to-do." : "")
     );
     await load(activeEmailId);
@@ -1763,39 +1771,51 @@ export default function AdminCampaignPage() {
               </div>
             </div>
             <div className="bc-form">
-              <div className="field">
-                <label htmlFor="internal-reviewer">Account manager</label>
-                <select
-                  id="internal-reviewer"
-                  value={internalReviewerId}
-                  onChange={(e) =>
-                    setInternalReviewerId(
-                      e.target.value ? Number(e.target.value) : ""
-                    )
-                  }
-                  disabled={!internalReview?.people.length}
-                >
-                  <option value="">
-                    {internalReview?.people.length
-                      ? "Pick who should review..."
-                      : internalReview?.peopleReason ||
-                        "No project roster available"}
-                  </option>
-                  {(internalReview?.people || []).map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
-                      {internalReview?.accountManager &&
-                      person.id === internalReview.defaultReviewerId
-                        ? " · account manager"
-                        : ""}
+              <div className="bc-form-row">
+                <div className="field">
+                  <label htmlFor="internal-reviewer">Account manager</label>
+                  <select
+                    id="internal-reviewer"
+                    value={internalReviewerId}
+                    onChange={(e) =>
+                      setInternalReviewerId(
+                        e.target.value ? Number(e.target.value) : ""
+                      )
+                    }
+                    disabled={!internalReview?.people.length}
+                  >
+                    <option value="">
+                      {internalReview?.people.length
+                        ? "Pick who should review..."
+                        : internalReview?.peopleReason ||
+                          "No project roster available"}
                     </option>
-                  ))}
-                </select>
-                <span className="field-hint">
-                  Creates a Basecamp to-do assigned to them with the internal
-                  review link. Does not mark the campaign client-approved.
-                </span>
+                    {(internalReview?.people || []).map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
+                        {internalReview?.accountManager &&
+                        person.id === internalReview.defaultReviewerId
+                          ? " · account manager"
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="internal-review-due">Due date</label>
+                  <input
+                    id="internal-review-due"
+                    type="date"
+                    value={internalReviewDueOn}
+                    onChange={(e) => setInternalReviewDueOn(e.target.value)}
+                  />
+                </div>
               </div>
+              <p className="field-hint" style={{ margin: 0 }}>
+                Creates a Basecamp to-do assigned to them with the internal
+                review link and this due date. Does not mark the campaign
+                client-approved.
+              </p>
             </div>
             {internalReview && !internalReview.ready ? (
               <p className="bc-fact">

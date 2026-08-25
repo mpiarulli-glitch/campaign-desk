@@ -12,6 +12,7 @@ import {
   reorderDayTasks,
   upsertWeekNote,
 } from "@/lib/forecast";
+import { bookTypedMeetingOnBasecamp } from "@/lib/forecast-schedule";
 import { parseTimeInput } from "@/lib/forecast-time";
 import { addWeeks, currentWeek } from "@/lib/week";
 
@@ -106,11 +107,39 @@ export async function POST(request: Request, { params }: Params) {
   if (startRaw.trim() && !startTime) {
     return NextResponse.json({ error: "startTime must be a time" }, { status: 400 });
   }
+  const notes = typeof body.notes === "string" ? body.notes : "";
+  const client = typeof body.client === "string" ? body.client : "";
+  let eventId =
+    typeof body.basecampEventId === "string" ? body.basecampEventId : "";
+  let projectId =
+    typeof body.basecampProjectId === "string" ? body.basecampProjectId : "";
+  // A typed meeting is not yet a Basecamp recording. Create the calendar
+  // entry on that project's schedule so later time logs have somewhere to land.
+  if (body.createScheduleEntry === true && !eventId.trim()) {
+    const booked = await bookTypedMeetingOnBasecamp({
+      person,
+      taskDate,
+      startTime,
+      hours,
+      title: notes,
+      clientId: typeof body.clientId === "string" ? body.clientId : "",
+      clientName: client,
+      basecampProjectId: projectId,
+    });
+    if (!booked.ok) {
+      return NextResponse.json(
+        { error: booked.error, needsBasecamp: booked.needsBasecamp },
+        { status: booked.status }
+      );
+    }
+    eventId = booked.eventId;
+    projectId = booked.projectId;
+  }
   const task = createTask({
     person,
     taskDate,
-    client: typeof body.client === "string" ? body.client : "",
-    notes: typeof body.notes === "string" ? body.notes : "",
+    client,
+    notes,
     hours,
     color: typeof body.color === "string" ? body.color : undefined,
     // Present only when the task text came from the Basecamp todo picker.
@@ -118,12 +147,10 @@ export async function POST(request: Request, { params }: Params) {
     // Present as well when the picked item was a subtask, in which case
     // basecampTodoId is its parent to-do — see createTask.
     basecampStepId: typeof body.basecampStepId === "string" ? body.basecampStepId : "",
-    basecampProjectId:
-      typeof body.basecampProjectId === "string" ? body.basecampProjectId : "",
-    // Present instead when it came from the meeting picker. createTask drops the
-    // todo link if both arrive.
-    basecampEventId:
-      typeof body.basecampEventId === "string" ? body.basecampEventId : "",
+    basecampProjectId: projectId,
+    // Present instead when it came from the meeting picker, or after a typed
+    // meeting was written onto that project's Basecamp calendar.
+    basecampEventId: eventId,
     startTime,
   });
   return NextResponse.json({ task }, { status: 201 });

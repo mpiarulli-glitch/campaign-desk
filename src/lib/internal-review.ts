@@ -3,6 +3,7 @@ import {
   basecampConnected,
   createAssignedTodo,
   getProjectPeopleForMention,
+  mentionHtml,
   type BcIdentity,
   type BcPerson,
 } from "./basecamp";
@@ -18,7 +19,32 @@ export type InternalReviewPerson = {
   name: string;
   email: string;
   isClient: boolean;
+  attachableSgid?: string;
 };
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function parseInternalReviewDueOn(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  return DATE_RE.test(value) ? value : null;
+}
+
+function firstNameOf(name: string): string {
+  const cleaned = (name || "").trim();
+  return cleaned.split(/\s+/)[0] || cleaned;
+}
+
+export function internalReviewMention(person: {
+  id: number;
+  name: string;
+  email_address?: string;
+  attachable_sgid?: string;
+}): string {
+  if (person.attachable_sgid) return mentionHtml(person as BcPerson);
+  const first = firstNameOf(person.name);
+  return first ? `@${escapeHtml(first)}` : "";
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -29,7 +55,7 @@ function escapeHtml(value: string): string {
 }
 
 export function teamPeopleForInternalReview(
-  people: Array<Pick<BcPerson, "id" | "name" | "email_address" | "client" | "employee">>
+  people: Array<Pick<BcPerson, "id" | "name" | "email_address" | "client" | "employee" | "attachable_sgid">>
 ): InternalReviewPerson[] {
   return people
     .filter((person) => !person.client)
@@ -38,6 +64,7 @@ export function teamPeopleForInternalReview(
       name: person.name,
       email: person.email_address || "",
       isClient: Boolean(person.client),
+      attachableSgid: person.attachable_sgid || "",
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -80,18 +107,17 @@ export function pickDefaultInternalReviewer(
 export function internalReviewTodoContent(input: {
   campaignTitle: string;
   clientName: string;
-  reviewerName: string;
-  adminUrl: string;
+  mention: string;
   reviewUrl: string;
 }): { title: string; description: string } {
   const who = input.clientName.trim() ? `${input.clientName.trim()}: ` : "";
+  const greeting = input.mention || "Hey";
   return {
     title: `Review ${who}${input.campaignTitle}`.slice(0, 999),
     description: [
-      `<p>${escapeHtml(input.reviewerName)}, please review this campaign internally before it goes to the client.</p>`,
+      `<p>${greeting}, please review this campaign internally before it goes to the client.</p>`,
       `<ul>`,
       `<li><a href="${escapeHtml(input.reviewUrl)}">Internal review link</a></li>`,
-      `<li><a href="${escapeHtml(input.adminUrl)}">Open in Campaign Desk</a></li>`,
       `</ul>`,
     ].join(""),
   };
@@ -100,6 +126,7 @@ export function internalReviewTodoContent(input: {
 export async function sendCampaignForInternalReview(input: {
   campaignId: string;
   reviewerId: number;
+  dueOn?: string | null;
   identity?: BcIdentity;
 }): Promise<
   | {
@@ -107,6 +134,7 @@ export async function sendCampaignForInternalReview(input: {
       reviewerName: string;
       todoUrl: string;
       status: string;
+      dueOn: string | null;
     }
   | { ok: false; error: string; status: number }
 > {
@@ -152,19 +180,27 @@ export async function sendCampaignForInternalReview(input: {
     };
   }
 
+  const reviewerPerson = roster.find((person) => person.id === reviewer.id);
   const content = internalReviewTodoContent({
     campaignTitle: campaign.title,
     clientName: campaign.client_name || client.name,
-    reviewerName: reviewer.name,
-    adminUrl: adminCampaignUrl(campaign.id),
+    mention: internalReviewMention(
+      reviewerPerson || {
+        id: reviewer.id,
+        name: reviewer.name,
+        attachable_sgid: reviewer.attachableSgid,
+      }
+    ),
     reviewUrl: reviewUrl(campaign.magic_token),
   });
+  const dueOn = parseInternalReviewDueOn(input.dueOn);
 
   const created = await createAssignedTodo({
     projectId: client.basecamp_project_id,
     title: content.title,
     description: content.description,
     assigneeIds: [reviewer.id],
+    dueOn,
     identity,
   });
   if (!created.ok) {
@@ -181,6 +217,7 @@ export async function sendCampaignForInternalReview(input: {
       notes: `Internal review\n${reviewUrl(campaign.magic_token)}\n${adminCampaignUrl(campaign.id)}`,
       clientId: campaign.client_id,
       assignee: assigneeSlug,
+      dueDate: dueOn,
       source: "internal_review",
       listName: "Campaign Review",
     });
@@ -197,6 +234,7 @@ export async function sendCampaignForInternalReview(input: {
     reviewerName: reviewer.name,
     todoUrl: created.todoUrl,
     status,
+    dueOn,
   };
 }
 

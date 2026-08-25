@@ -100,14 +100,15 @@ type TodoState = {
 
 // A Basecamp schedule entry, i.e. a meeting. Booked into the forecast so a
 // meeting takes up its real hours without anyone creating a todo to represent
-// it. Meetings often belong to no client at all (internal MEG calls), which is
-// why this picker never asks for one first.
+// it. Picked meetings often belong to no client (internal MEG calls). Typed
+// ones ask for a client or project so they can be written onto that calendar.
 type BcEvent = {
   id: string;
   title: string;
   clientId: string | null;
   clientName: string;
   projectName: string;
+  projectId?: string;
   allDay: boolean;
   time: string;
   startTime: string;
@@ -158,8 +159,8 @@ function todosInOrder(todos: BcTodo[], ids: string[]): BcTodo[] {
 }
 
 // "work" is the original flow: pick a client, then one of its Basecamp todos.
-// "meeting" books a Basecamp schedule entry, or a typed meeting with no
-// Basecamp link, so a meeting can take up hours without a todo being invented.
+// "meeting" books a Basecamp schedule entry, or types one and writes it onto
+// that project's Basecamp calendar so hours can be logged against it.
 type DraftMode = "work" | "meeting";
 
 type Draft = {
@@ -210,12 +211,14 @@ function ClientCombobox({
   onPick,
   autoFocus,
   style,
+  placeholder,
 }: {
   clients: ClientOption[];
   value: string;
   onPick: (clientId: string) => void;
   autoFocus?: boolean;
   style?: React.CSSProperties;
+  placeholder?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -303,7 +306,7 @@ function ClientCombobox({
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder={selected ? selected.name : "Type a client or project"}
+        placeholder={selected ? selected.name : placeholder || "Type a client or project"}
         autoFocus={autoFocus}
         role="combobox"
         aria-expanded={open}
@@ -679,7 +682,9 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
 // Same idea as todoHint, for the meeting picker.
 function eventHint(draft: Draft, state: EventState | undefined): string {
   if (draft.manual) {
-    return "Typing this one by hand, so it won't be linked to a Basecamp meeting.";
+    return draft.clientId
+      ? "This goes on that project's Basecamp calendar so you can log time."
+      : "Pick a client or project so this can go on that Basecamp calendar.";
   }
   if (!state || state.loading) return "";
   const total = state.mine.length + state.others.length;
@@ -828,7 +833,7 @@ function AddTaskForm({
           clientId: hit?.clientId || "",
           client: hit?.clientName || "",
           todoIds: [],
-          projectId: "",
+          projectId: hit?.projectId || "",
           manual: false,
         });
       }}
@@ -856,6 +861,7 @@ function AddTaskForm({
       value={draft.clientId}
       onPick={onPickClient}
       autoFocus={autoFocus && !meeting}
+      placeholder={meeting ? "Pick a client or project" : undefined}
       style={stack ? undefined : { flex: "1 1 170px" }}
     />
   );
@@ -956,8 +962,8 @@ function AddTaskForm({
       <div className="ops-day-add-form">
         {modeToggle}
         {/* Picked Basecamp meetings skip the client box: most are internal,
-            and the event supplies one when it has. Typed meetings can take
-            an optional client the same way a typed work task does. */}
+            and the event supplies one when it has. Typed meetings need a
+            client or project so the meeting can be added to that calendar. */}
         {meeting && showMeetingClient ? clientSelect : null}
         {meeting ? meetingField : clientSelect}
         {meetingToggle}
@@ -1393,13 +1399,19 @@ export default function PersonForecastPage() {
   function pickClient(date: string, clientId: string) {
     const hit = pickerClients.find((c) => c.id === clientId);
     const current = draftFor(date);
-    // A typed meeting only needs the client name. Wiping notes or flipping
-    // `manual` would throw them back into the Basecamp picker.
+    // A typed meeting needs the client/project so it can land on that
+    // Basecamp calendar. Wiping notes or flipping `manual` would throw them
+    // back into the Basecamp picker.
     if (current.mode === "meeting") {
+      const projectId = clientId.startsWith("internal:")
+        ? clientId.slice("internal:".length)
+        : "";
       setDraft(date, {
         clientId,
         client: hit?.name || "",
+        projectId,
       });
+      if (!projectId) ensureTodos(clientId);
       return;
     }
     // Changing client invalidates whatever task was picked for the old one.
@@ -1575,6 +1587,10 @@ export default function PersonForecastPage() {
         setError("Pick a meeting, or type what it is.");
         return;
       }
+      if (!draft.eventId && !draft.clientId) {
+        setError("Pick a client or project so this can go on that Basecamp calendar.");
+        return;
+      }
     } else if (!draft.client.trim()) {
       setError("Pick a client for that task.");
       return;
@@ -1637,15 +1653,19 @@ export default function PersonForecastPage() {
 
     setError("");
     setSaving(true);
-    const projectId = meeting ? "" : state?.projectId || draft.projectId || "";
+    const projectId = meeting
+      ? draft.projectId || state?.projectId || ""
+      : state?.projectId || draft.projectId || "";
+    const typedMeeting = meeting && !draft.eventId;
     const results = await Promise.all(
-      rows.map((row) =>
-        fetch(`/api/forecast/${person}`, {
+      rows.map(async (row) => {
+        const res = await fetch(`/api/forecast/${person}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             taskDate: date,
             client: draft.client,
+            clientId: draft.clientId,
             notes: row.notes,
             hours: row.hours,
             basecampTodoId: row.todoId,
@@ -1653,18 +1673,23 @@ export default function PersonForecastPage() {
             basecampProjectId: projectId,
             basecampEventId: row.eventId,
             startTime: row.startTime,
+            createScheduleEntry: typedMeeting,
           }),
-        })
-      )
+        });
+        const json = await res.json().catch(() => null);
+        return { ok: res.ok, json };
+      })
     );
     setSaving(false);
-    if (results.some((res) => !res.ok)) {
+    const failed = results.find((res) => !res.ok);
+    if (failed) {
       setError(
-        rows.length > 1
-          ? "Could not add some of those tasks. Refresh and try the ones that are missing."
-          : meeting
-            ? "Could not add that meeting."
-            : "Could not add that task."
+        (failed.json && typeof failed.json.error === "string" && failed.json.error) ||
+          (rows.length > 1
+            ? "Could not add some of those tasks. Refresh and try the ones that are missing."
+            : meeting
+              ? "Could not add that meeting."
+              : "Could not add that task.")
       );
       load(week, { silent: true });
       return;
@@ -1672,6 +1697,13 @@ export default function PersonForecastPage() {
     setDrafts((d) => ({ ...d, [date]: emptyDraft }));
     setAddingFor(null);
     setAddAnchor(null);
+    if (typedMeeting) {
+      setEventsByDate((prev) => {
+        const next = { ...prev };
+        delete next[date];
+        return next;
+      });
+    }
     load(week, { silent: true });
   }
 

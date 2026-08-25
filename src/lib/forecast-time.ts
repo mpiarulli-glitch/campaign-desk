@@ -175,3 +175,84 @@ export function hoursFromResize(y: number, startTime: string): number {
   );
   return Math.round((minutes / 60) * 100) / 100;
 }
+
+function zonedWallClock(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
+
+// Wall clock in `timeZone` → a UTC Date. Two passes so a DST spring-forward
+// still lands on the intended local hour instead of an hour earlier.
+export function zonedLocalToUtc(
+  dateYmd: string,
+  hhmm: string,
+  timeZone: string
+): Date | null {
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
+  const minutes = minutesFromMidnight(hhmm);
+  if (!dm || minutes == null) return null;
+  const year = Number(dm[1]);
+  const month = Number(dm[2]);
+  const day = Number(dm[3]);
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  // Treat the wall clock as UTC, then subtract the zone offset of that instant.
+  // Repeat so a DST boundary uses the offset of the real instant, not the guess.
+  const desired = Date.UTC(year, month - 1, day, hour, minute, 0);
+  let instant = desired;
+  for (let i = 0; i < 3; i++) {
+    const seen = zonedWallClock(new Date(instant), timeZone);
+    const wallAsUtc = Date.UTC(
+      seen.year,
+      seen.month - 1,
+      seen.day,
+      seen.hour,
+      seen.minute,
+      seen.second
+    );
+    instant = desired - (wallAsUtc - instant);
+  }
+  return new Date(instant);
+}
+
+// Times for a Basecamp schedule entry. A blank start is an all-day event on
+// that date; otherwise start + hours in the app timezone, as UTC ISO.
+export function scheduleEntryTimes(input: {
+  date: string;
+  startTime: string;
+  hours: number;
+  timeZone: string;
+}): { startsAt: string; endsAt: string; allDay: boolean } {
+  const startTime = parseTimeInput(input.startTime);
+  if (!startTime) {
+    return { startsAt: input.date, endsAt: input.date, allDay: true };
+  }
+  const start = zonedLocalToUtc(input.date, startTime, input.timeZone);
+  if (!start) {
+    return { startsAt: input.date, endsAt: input.date, allDay: true };
+  }
+  const hours = Number.isFinite(input.hours) && input.hours > 0 ? input.hours : 1;
+  const end = new Date(start.getTime() + hours * 3_600_000);
+  return {
+    startsAt: start.toISOString(),
+    endsAt: end.toISOString(),
+    allDay: false,
+  };
+}
