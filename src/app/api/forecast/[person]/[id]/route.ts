@@ -13,6 +13,7 @@ import {
 import {
   deleteTask,
   getTask,
+  linkTaskBasecamp,
   personLabel,
   recordTimeEntry,
   startTimer,
@@ -137,6 +138,25 @@ export async function PATCH(request: Request, { params }: Params) {
 
   // { logTimeHours: 1.5 } is its own action, not a field update.
   if (body.logTimeHours !== undefined) {
+    // Typed/restored rows can arrive with no recording. The page asks the
+    // person to pick the todo rather than inventing one; attach it here so
+    // logTime has somewhere real to write.
+    const todoId =
+      typeof body.basecampTodoId === "string" ? body.basecampTodoId.trim() : "";
+    const projectId =
+      typeof body.basecampProjectId === "string"
+        ? body.basecampProjectId.trim()
+        : "";
+    const stepId =
+      typeof body.basecampStepId === "string" ? body.basecampStepId.trim() : "";
+    if (
+      todoId &&
+      projectId &&
+      !existing.basecamp_todo_id &&
+      !existing.basecamp_event_id
+    ) {
+      linkTaskBasecamp(id, todoId, projectId, stepId);
+    }
     const { status, body: out } = await logTime(id, person, Number(body.logTimeHours));
     return NextResponse.json(out, { status });
   }

@@ -7,12 +7,13 @@ import {
   hasPlanUndo,
   isValidPerson,
   listTasksForPersonWeek,
+  loggedHoursByDate,
   personLabel,
   reorderDayTasks,
   upsertWeekNote,
 } from "@/lib/forecast";
 import { parseTimeInput } from "@/lib/forecast-time";
-import { currentWeek } from "@/lib/week";
+import { addWeeks, currentWeek } from "@/lib/week";
 
 type Params = { params: Promise<{ person: string }> };
 
@@ -30,12 +31,16 @@ export async function GET(request: Request, { params }: Params) {
   const week = url.searchParams.get("week") || currentWeek();
   const tasks = listTasksForPersonWeek(person, week);
   const hours = tasks.reduce((sum, t) => sum + t.hours, 0);
+  // Logged totals are keyed by the day the hours were written, not where the
+  // task currently sits — so a Monday log still counts on Monday after a move.
+  const loggedByDate = loggedHoursByDate(person, week, addWeeks(week, 1));
   return NextResponse.json({
     person,
     label: personLabel(person),
     week,
     tasks,
     hours,
+    loggedByDate,
     capacity: WEEKLY_CAPACITY_HOURS,
     allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
     note: getWeekNote(person, week),

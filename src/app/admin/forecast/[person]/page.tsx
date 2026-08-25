@@ -31,8 +31,10 @@ import {
 } from "@/lib/forecast-time";
 import {
   formatTracked,
+  hasTimesheetDestination,
   hoursToOffer,
   isRunning,
+  shouldAskToLogOnComplete,
   trackedSeconds,
 } from "@/lib/forecast-timer";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
@@ -68,6 +70,9 @@ type Data = {
   allocationPct: number;
   note: string;
   canUndoPlan?: boolean;
+  // Hours logged to Basecamp, keyed by the day they were written (not the
+  // task's current slot). Week/day gauges read this so a move cannot steal them.
+  loggedByDate?: Record<string, number>;
 };
 
 type ClientOption = { id: string; name: string; internal?: boolean };
@@ -1154,6 +1159,9 @@ export default function PersonForecastPage() {
   // task is the moment you know what it took, so that is when to ask — the pill
   // in the row is for every other moment.
   const [logAsk, setLogAsk] = useState<string | null>(null);
+  // Destination picked on the finish card when the row itself has none.
+  const [logLinkClientId, setLogLinkClientId] = useState("");
+  const [logLinkTodoId, setLogLinkTodoId] = useState("");
   const [saving, setSaving] = useState(false);
   // Ticks once a second, but only while something is being timed, so a page left
   // open on a quiet week re-renders no more than it used to.
@@ -1513,15 +1521,15 @@ export default function PersonForecastPage() {
   // Hours split into done vs still planned, both as a share of the weekly
   // capacity, so one track shows progress and load at once.
   //
-  // `loggedHours` is Basecamp timesheet time: each successful Log time write
-  // adds to that task's actual_hours, so summing the week is the hours that
-  // actually landed. The local timer is tracked_seconds and is ignored here.
+  // `loggedHours` is Basecamp timesheet time on days in this week, keyed by
+  // the day the hours were written — not where the task currently sits. The
+  // local timer is tracked_seconds and is ignored here.
   const gauge = useMemo(() => {
     const all = data?.tasks || [];
     const capacity = data?.capacity || 40;
     const doneHours = all.filter((t) => t.completed).reduce((s, t) => s + t.hours, 0);
     const totalHours = all.reduce((s, t) => s + t.hours, 0);
-    const loggedHours = all.reduce((s, t) => s + t.actual_hours, 0);
+    const loggedHours = Object.values(data?.loggedByDate || {}).reduce((s, n) => s + n, 0);
     const openHours = totalHours - doneHours;
     const pct = capacity ? Math.round((totalHours / capacity) * 100) : 0;
     return {
@@ -1991,22 +1999,75 @@ export default function PersonForecastPage() {
   }, [editing, data]);
 
   // Looked up from the current data rather than captured at tick time, so the
-  // figure offered reflects any timer that was just banked.
+  // figure offered reflects any timer that was just banked. Unlinked rows stay
+  // in so the card can ask them to pick a todo instead of silently skipping.
   const logAskTask = useMemo(() => {
     if (!logAsk) return null;
     const task = (data?.tasks || []).find((t) => t.id === logAsk);
-    if (!task || !task.completed) return null;
-    // Nothing to log against means nothing to ask about.
-    if (!(task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id)) {
-      return null;
-    }
+    if (!task) return null;
+    if (!shouldAskToLogOnComplete(task, nowMs)) return null;
     return task;
-  }, [logAsk, data]);
+  }, [logAsk, data, nowMs]);
+
+  const logAskLinked = Boolean(logAskTask && hasTimesheetDestination(logAskTask));
+  const logAskTodos = logLinkClientId ? todosByClient[logLinkClientId] : undefined;
+
+  useEffect(() => {
+    setLogLinkClientId("");
+    setLogLinkTodoId("");
+  }, [logAsk]);
+
+  // Restored/typed rows often still have a client name. Pre-pick that project
+  // and, if a todo title matches, offer it — never attach without a click.
+  useEffect(() => {
+    if (!logAskTask || logAskLinked || logLinkClientId || pickerClients.length === 0) {
+      return;
+    }
+    const want = logAskTask.client.trim().toLowerCase();
+    if (!want) return;
+    const match = pickerClients.find((c) => c.name.trim().toLowerCase() === want);
+    if (!match) return;
+    setLogLinkClientId(match.id);
+    void ensureTodos(match.id);
+  }, [logAskTask, logAskLinked, logLinkClientId, pickerClients, ensureTodos]);
+
+  useEffect(() => {
+    if (!logAskTask || logAskLinked || logLinkTodoId || !logAskTodos?.todos.length) {
+      return;
+    }
+    const want = logAskTask.notes.trim().toLowerCase();
+    if (!want) return;
+    const hit = logAskTodos.todos.find((t) => t.title.trim().toLowerCase() === want);
+    if (hit) setLogLinkTodoId(hit.id);
+  }, [logAskTask, logAskLinked, logLinkTodoId, logAskTodos]);
 
   async function logTimeAndClose(task: Task) {
     // Left open on failure: the error explains itself above, and dismissing the
     // ask would quietly lose the hours somebody just typed.
-    if (await logTime(task)) setLogAsk(null);
+    let link: { todoId: string; projectId: string; stepId?: string } | undefined;
+    if (!hasTimesheetDestination(task)) {
+      const todo = (logAskTodos?.todos || []).find((t) => t.id === logLinkTodoId);
+      const projectId = logAskTodos?.projectId || "";
+      if (!todo || !projectId) {
+        setError("Pick the Basecamp todo these hours belong to.");
+        return;
+      }
+      const linkage = queueTodoLinkage({
+        id: todo.id,
+        kind: todo.kind === "step" ? "step" : "todo",
+        parentId: todo.parentId,
+      });
+      if (!linkage.basecampTodoId) {
+        setError("That subtask has no parent todo to log hours against.");
+        return;
+      }
+      link = {
+        todoId: linkage.basecampTodoId,
+        projectId,
+        stepId: linkage.basecampStepId || undefined,
+      };
+    }
+    if (await logTime(task, link)) setLogAsk(null);
   }
 
   function closeAdd() {
@@ -2200,7 +2261,10 @@ export default function PersonForecastPage() {
     return hoursToOffer(task, nowMs);
   }
 
-  async function logTime(task: Task) {
+  async function logTime(
+    task: Task,
+    link?: { todoId: string; projectId: string; stepId?: string }
+  ) {
     const raw = logDrafts[task.id] ?? logDefault(task);
     const hours = Number(raw);
     if (!Number.isFinite(hours) || hours <= 0) {
@@ -2208,10 +2272,16 @@ export default function PersonForecastPage() {
       return false;
     }
     setLogging(task.id);
+    const body: Record<string, unknown> = { logTimeHours: hours };
+    if (link?.todoId && link.projectId) {
+      body.basecampTodoId = link.todoId;
+      body.basecampProjectId = link.projectId;
+      if (link.stepId) body.basecampStepId = link.stepId;
+    }
     const res = await fetch(`/api/forecast/${person}/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ logTimeHours: hours }),
+      body: JSON.stringify(body),
     });
     setLogging(null);
     if (!res.ok) {
@@ -2941,7 +3011,7 @@ export default function PersonForecastPage() {
             const tasks = tasksByDay.get(today) || [];
             const inWeek = days.includes(today);
             const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
-            const dayLogged = tasks.reduce((sum, t) => sum + t.actual_hours, 0);
+            const dayLogged = data?.loggedByDate?.[today] || 0;
             const dayLoggedShort = dayHours > 0 && dayLogged < dayHours;
             const doneToday = tasks.filter((t) => t.completed).length;
             const draft = draftFor(today);
@@ -3562,10 +3632,14 @@ export default function PersonForecastPage() {
           what it took. Decided against re-rendering it inline per view: ticking
           happens in four of them, one of which is a 32px calendar block with no
           room for an input, so this is one card that behaves the same
-          everywhere. Rendered only while there is something worth logging —
-          logDefault answers "" once nothing is outstanding. */}
-      {logAskTask && logDefault(logAskTask) !== "" ? (
-        <div className="fc-log-ask" role="dialog" aria-label="Log time for this task">
+          everywhere. Linked rows hide once nothing is outstanding; unlinked
+          rows still ask so a restored/typed task cannot silently skip. */}
+      {logAskTask ? (
+        <div
+          className={`fc-log-ask ${logAskLinked ? "" : "is-unlinked"}`}
+          role="dialog"
+          aria-label="Log time for this task"
+        >
           <div className="fc-log-ask-head">
             <strong>Finished — log the time?</strong>
             <button
@@ -3583,6 +3657,43 @@ export default function PersonForecastPage() {
               <span> · {logAskTask.client}</span>
             ) : null}
           </p>
+          {logAskLinked ? null : (
+            <div className="fc-log-ask-link">
+              <p className="fc-log-ask-note">
+                This task is not linked to a Basecamp todo, so hours have
+                nowhere to land. Pick the todo it belongs to. We will not invent
+                one.
+              </p>
+              <ClientCombobox
+                clients={pickerClients}
+                value={logLinkClientId}
+                onPick={(clientId) => {
+                  setLogLinkClientId(clientId);
+                  setLogLinkTodoId("");
+                  void ensureTodos(clientId);
+                }}
+              />
+              {logLinkClientId ? (
+                logAskTodos?.loading ? (
+                  <p className="fc-log-ask-note">Loading todos…</p>
+                ) : (logAskTodos?.todos.length || 0) > 0 ? (
+                  <TodoPicker
+                    todos={logAskTodos!.todos}
+                    selectedIds={logLinkTodoId ? [logLinkTodoId] : []}
+                    onChange={(ids) => setLogLinkTodoId(ids[ids.length - 1] || "")}
+                  />
+                ) : (
+                  <p className="fc-log-ask-note">
+                    {logAskTodos?.reason === "person-not-connected"
+                      ? "Connect your Basecamp account to pick a todo."
+                      : "No open todos on that project."}
+                  </p>
+                )
+              ) : (
+                <p className="fc-log-ask-note">Pick the client or project first.</p>
+              )}
+            </div>
+          )}
           <div className="fc-log-ask-row">
             <input
               value={logDrafts[logAskTask.id] ?? logDefault(logAskTask)}
@@ -3597,13 +3708,16 @@ export default function PersonForecastPage() {
               min="0"
               step="0.25"
               aria-label="Hours to log to Basecamp"
-              autoFocus
+              autoFocus={logAskLinked}
             />
             <span className="muted">hrs</span>
             <button
               type="button"
               className="fc-log-ask-go"
-              disabled={logging === logAskTask.id}
+              disabled={
+                logging === logAskTask.id ||
+                (!logAskLinked && !logLinkTodoId)
+              }
               onClick={() => void logTimeAndClose(logAskTask)}
             >
               {logging === logAskTask.id ? "Logging…" : "Log to Basecamp"}

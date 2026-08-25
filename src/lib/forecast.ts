@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { todayYmd } from "./cadence";
 import {
   getDb,
   nowIso,
@@ -12,8 +13,10 @@ import { parseTimeInput } from "./forecast-time";
 import { runningSeconds } from "./forecast-timer";
 import { addWeeks } from "./week";
 
-export type { ForecastSubtask, ForecastTask };
+export type { ForecastSubtask, ForecastTask, ForecastTimeLog } from "./db";
 export { PEOPLE, isValidPerson, personLabel };
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type ForecastTaskWithSubtasks = ForecastTask & { subtasks: ForecastSubtask[] };
 
@@ -196,17 +199,21 @@ export function linkSubtaskBasecamp(
 export function linkTaskBasecamp(
   id: string,
   basecampTodoId: string,
-  basecampProjectId: string
+  basecampProjectId: string,
+  basecampStepId = ""
 ): ForecastTask | null {
   if (!getTask(id)) return null;
   const todoId = basecampTodoId.trim();
   const projectId = basecampProjectId.trim();
   if (!todoId || !projectId) return null;
+  // A step id without its parent to-do is useless — logging time has to land
+  // on the parent — so it is only kept when both arrived together.
+  const stepId = todoId ? basecampStepId.trim() : "";
   getDb()
     .prepare(
-      `UPDATE forecast_tasks SET basecamp_todo_id = ?, basecamp_project_id = ?, updated_at = ? WHERE id = ?`
+      `UPDATE forecast_tasks SET basecamp_todo_id = ?, basecamp_project_id = ?, basecamp_step_id = ?, updated_at = ? WHERE id = ?`
     )
-    .run(todoId, projectId, nowIso(), id);
+    .run(todoId, projectId, stepId, nowIso(), id);
   return getTask(id);
 }
 
@@ -349,11 +356,15 @@ export function updateTask(
  * `actual_hours` therefore accumulates, and every Basecamp entry id is kept in a
  * comma-separated list so nothing that was sent is forgotten — the column's
  * emptiness is still what "nothing logged yet" means everywhere it's read.
+ *
+ * Each write also lands in forecast_time_logs on the day it was logged (app
+ * timezone), so day/week gauges keep those hours when the task is rescheduled.
  */
 export function recordTimeEntry(
   id: string,
   hours: number,
-  entryId: string
+  entryId: string,
+  loggedDate?: string
 ): ForecastTask | null {
   const existing = getTask(id);
   if (!existing) return null;
@@ -361,17 +372,62 @@ export function recordTimeEntry(
     ? existing.basecamp_time_entry_id.split(",").filter(Boolean)
     : [];
   if (entryId && !ids.includes(entryId)) ids.push(entryId);
-  getDb()
-    .prepare(
+  const date = loggedDate && DATE_RE.test(loggedDate) ? loggedDate : todayYmd();
+  const nextHours = Math.round((existing.actual_hours + hours) * 100) / 100;
+  const rounded = Math.round(hours * 100) / 100;
+  const db = getDb();
+  const ts = nowIso();
+  const run = db.transaction(() => {
+    db.prepare(
       `UPDATE forecast_tasks SET actual_hours = ?, basecamp_time_entry_id = ?, updated_at = ? WHERE id = ?`
-    )
-    .run(
-      Math.round((existing.actual_hours + hours) * 100) / 100,
-      ids.join(","),
-      nowIso(),
-      id
-    );
+    ).run(nextHours, ids.join(","), ts, id);
+    db.prepare(
+      `INSERT INTO forecast_time_logs
+         (id, task_id, person, logged_date, hours, basecamp_time_entry_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(nanoid(12), id, existing.person, date, rounded, entryId || "", ts);
+  });
+  run();
   return getTask(id);
+}
+
+/** Hours logged on each calendar day in [startInclusive, endExclusive). */
+export function loggedHoursByDate(
+  person: string,
+  startInclusive: string,
+  endExclusive: string
+): Record<string, number> {
+  const rows = getDb()
+    .prepare(
+      `SELECT logged_date, SUM(hours) AS hours
+         FROM forecast_time_logs
+        WHERE person = ? AND logged_date >= ? AND logged_date < ?
+        GROUP BY logged_date`
+    )
+    .all(person, startInclusive, endExclusive) as Array<{
+    logged_date: string;
+    hours: number;
+  }>;
+  const out: Record<string, number> = {};
+  for (const row of rows) {
+    out[row.logged_date] = Math.round(row.hours * 100) / 100;
+  }
+  return out;
+}
+
+export function loggedHoursOnDate(person: string, date: string): number {
+  return loggedHoursByDate(person, date, addDays(date, 1))[date] || 0;
+}
+
+export function loggedHoursForWeek(person: string, weekStart: string): number {
+  const byDate = loggedHoursByDate(person, weekStart, addWeeks(weekStart, 1));
+  return Object.values(byDate).reduce((s, n) => s + n, 0);
+}
+
+function addDays(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 
 /* ------------------------------------------------------ start / stop timer */

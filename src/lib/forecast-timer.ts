@@ -88,3 +88,37 @@ export function hoursToOffer(
   if (task.basecamp_time_entry_id) return "";
   return String(task.hours);
 }
+
+/** Somewhere hours can land without inventing a Basecamp recording. */
+export function hasTimesheetDestination(task: {
+  basecamp_todo_id?: string;
+  basecamp_event_id?: string;
+  basecamp_project_id?: string;
+}): boolean {
+  return Boolean(
+    task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id
+  );
+}
+
+/**
+ * Whether finishing a task should raise the "log the time?" card.
+ *
+ * Linked work only asks while hours are still outstanding. Unlinked work
+ * (typed, restored, or missing Basecamp ids) still asks — there is nowhere
+ * for the hours to have gone, and hiding the card made those ticks look like
+ * the time had already been handled.
+ */
+export function shouldAskToLogOnComplete(
+  task: TimedTask & {
+    hours: number;
+    actual_hours: number;
+    basecamp_time_entry_id: string;
+    basecamp_todo_id?: string;
+    basecamp_event_id?: string;
+    basecamp_project_id?: string;
+  },
+  nowMs: number
+): boolean {
+  if (!hasTimesheetDestination(task)) return true;
+  return hoursToOffer(task, nowMs) !== "";
+}

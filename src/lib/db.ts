@@ -373,9 +373,9 @@ export interface ForecastTask {
   // so booking one must never create or close a todo. Completing a meeting row
   // stays local, because there is nothing on the Basecamp side to flip.
   basecamp_event_id: string;
-  // Time actually spent, logged to the linked Basecamp todo's timesheet on
-  // completion. Distinct from `hours`, which is the up-front forecast estimate.
-  // 0 means nothing has been logged yet.
+  // Cumulative hours sent to Basecamp for this row (the Log time pill).
+  // Day/week "logged" gauges read forecast_time_logs by logged_date instead,
+  // so moving the task does not move those hours.
   actual_hours: number;
   // Basecamp Timesheet::Entry id, set once time has been logged. Its presence
   // is what stops the same task logging twice.
@@ -397,6 +397,19 @@ export interface ForecastTask {
   sort_order: number;
   created_at: string;
   updated_at: string;
+}
+
+// One Basecamp timesheet write. Hours stay on `logged_date` even if the
+// unfinished task later moves to another day. `forecast_tasks.actual_hours`
+// is still the cumulative total for that row (the Log time pill).
+export interface ForecastTimeLog {
+  id: string;
+  task_id: string;
+  person: string;
+  logged_date: string; // YYYY-MM-DD in APP_TIME_ZONE
+  hours: number;
+  basecamp_time_entry_id: string;
+  created_at: string;
 }
 
 // A progress step on a forecast task: "I built the welcome-series popup"
@@ -1589,6 +1602,23 @@ export function getDb(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_forecast_subtasks_task ON forecast_subtasks(task_id);
 
+    /* Each successful Basecamp timesheet write, dated the day it was logged
+       (APP_TIME_ZONE). Day and week "logged" gauges sum this table so moving
+       an unfinished task cannot steal hours from the day they were written. */
+    CREATE TABLE IF NOT EXISTS forecast_time_logs (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      person TEXT NOT NULL,
+      logged_date TEXT NOT NULL,
+      hours REAL NOT NULL,
+      basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES forecast_tasks(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_forecast_time_logs_person_date
+      ON forecast_time_logs(person, logged_date);
+    CREATE INDEX IF NOT EXISTS idx_forecast_time_logs_task ON forecast_time_logs(task_id);
+
     /* Basecamp Schedule::Entry rows, cached locally.
        The API has no date filter and pages at 15, so the account's ~1,400
        entries take ~95 requests to sweep — far too slow to do on a page load.
@@ -2714,6 +2744,10 @@ function migrate(database: Database.Database) {
     );
   }
 
+  // Existing actual_hours with no log rows stay on the task's current date so
+  // already-logged work is not zeroed. New writes after this use the log date.
+  backfillForecastTimeLogs(database);
+
   // Two-factor and the onboarding gate. Existing rows land with 2FA off and
   // setup_completed_at null, so everybody already in the table is asked to
   // finish setup the next time they sign in rather than being locked out.
@@ -2852,4 +2886,50 @@ function seedUsers(database: Database.Database) {
 
 export function nowIso(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Attribute leftover `actual_hours` to the task's current `task_date` when
+ * that row has no forecast_time_logs yet. Safe to call more than once: tasks
+ * that already have a log are skipped, so later writes keep their real log date.
+ */
+export function backfillForecastTimeLogs(database: Database.Database): number {
+  const rows = database
+    .prepare(
+      `SELECT id, person, task_date, actual_hours, basecamp_time_entry_id
+         FROM forecast_tasks
+        WHERE actual_hours > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM forecast_time_logs WHERE task_id = forecast_tasks.id
+          )`
+    )
+    .all() as Array<{
+    id: string;
+    person: string;
+    task_date: string;
+    actual_hours: number;
+    basecamp_time_entry_id: string;
+  }>;
+  if (!rows.length) return 0;
+  const insert = database.prepare(
+    `INSERT INTO forecast_time_logs
+       (id, task_id, person, logged_date, hours, basecamp_time_entry_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  const ts = nowIso();
+  const run = database.transaction(() => {
+    for (const row of rows) {
+      insert.run(
+        nanoid(12),
+        row.id,
+        row.person,
+        row.task_date,
+        row.actual_hours,
+        row.basecamp_time_entry_id,
+        ts
+      );
+    }
+  });
+  run();
+  return rows.length;
 }

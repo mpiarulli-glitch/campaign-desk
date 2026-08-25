@@ -6288,8 +6288,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
   animation: fc-dock-in 0.18s ease-out;
 }
+.fc-log-ask.is-unlinked {
+  width: min(380px, calc(100vw - 36px));
+}
 /* Both docked bottom-right, so the timers step aside while the ask is up. */
 .fc-log-ask ~ .fc-timer-docks { bottom: 132px; }
+.fc-log-ask.is-unlinked ~ .fc-timer-docks { bottom: 280px; }
 @media (prefers-reduced-motion: reduce) {
   .fc-log-ask { animation: none; }
 }
@@ -6354,6 +6358,14 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-size: 10.5px;
   color: var(--text-muted);
 }
+.fc-log-ask-link {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0 0 10px;
+}
+.fc-log-ask-link .fc-log-ask-note { margin: 0; }
+.fc-log-ask-link .fc-combo { width: 100%; }
 
 /* ------------------------------------------------- log hours, inline in a row */
 /* A pill the width of a word, not a form. It opens on click, because logging
@@ -8943,7 +8955,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   border-color: var(--accent);
   background: var(--bg-soft);
 }
-
 
 /* Standing reminder for anyone still on a shared env-var password. */
 .app-banner {

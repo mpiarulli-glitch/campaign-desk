@@ -127,9 +127,10 @@ test("forecast subtasks", async (t) => {
       notes: "First Batch of Emails",
       hours: 1,
     });
-    const linked = forecast.linkTaskBasecamp(parent.id, "10152277900", "48158835");
+    const linked = forecast.linkTaskBasecamp(parent.id, "10152277900", "48158835", "step_9");
     assert.equal(linked!.basecamp_todo_id, "10152277900");
     assert.equal(linked!.basecamp_project_id, "48158835");
+    assert.equal(linked!.basecamp_step_id, "step_9");
   });
 
   await t.test("todo titles match ignoring suffixes and nested labels", async () => {

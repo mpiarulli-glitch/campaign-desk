@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   blockHours,
   formatTracked,
+  hasTimesheetDestination,
   hoursToOffer,
   isRunning,
   runningSeconds,
+  shouldAskToLogOnComplete,
   trackedHours,
   trackedSeconds,
 } from "../src/lib/forecast-timer";
@@ -99,6 +101,48 @@ test("hours already sent are subtracted, so a second log can't double-count", ()
       startMs
     ),
     "1.5"
+  );
+});
+
+test("unlinked work still asks to log, even with no hours outstanding", () => {
+  const unlinked = {
+    ...untimed,
+    hours: 1,
+    actual_hours: 0,
+    basecamp_time_entry_id: "",
+    basecamp_todo_id: "",
+    basecamp_event_id: "",
+    basecamp_project_id: "",
+  };
+  assert.equal(hasTimesheetDestination(unlinked), false);
+  assert.equal(shouldAskToLogOnComplete(unlinked, startMs), true);
+  // Project-only is already a destination: a shadow todo can be created.
+  assert.equal(
+    hasTimesheetDestination({ ...unlinked, basecamp_project_id: "28110364" }),
+    true
+  );
+  assert.equal(
+    shouldAskToLogOnComplete(
+      { ...unlinked, basecamp_project_id: "28110364" },
+      startMs
+    ),
+    true
+  );
+  // Linked and already sent: do not nag.
+  assert.equal(
+    shouldAskToLogOnComplete(
+      {
+        ...untimed,
+        hours: 1,
+        actual_hours: 1,
+        basecamp_time_entry_id: "te_1",
+        basecamp_todo_id: "todo_1",
+        basecamp_event_id: "",
+        basecamp_project_id: "28110364",
+      },
+      startMs
+    ),
+    false
   );
 });
 
