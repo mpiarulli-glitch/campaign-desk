@@ -8918,6 +8918,33 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-mode-btn:hover { background: var(--bg-soft); }
 .fc-mode-btn.is-on { background: var(--pill-bg); color: var(--pill-text); }
 
+/* Typed-meeting (and calendar popover) escape from the Basecamp picker.
+   Full width so it cannot wrap off a 320px slot popover. */
+.fc-type-instead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fc-type-instead:hover {
+  border-color: var(--accent);
+  background: var(--bg-soft);
+}
+
+
 /* Standing reminder for anyone still on a shared env-var password. */
 .app-banner {
   display: flex;

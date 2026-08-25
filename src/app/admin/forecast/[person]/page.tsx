@@ -153,8 +153,8 @@ function todosInOrder(todos: BcTodo[], ids: string[]): BcTodo[] {
 }
 
 // "work" is the original flow: pick a client, then one of its Basecamp todos.
-// "meeting" books a Basecamp schedule entry instead, so a meeting can take up
-// hours without a todo being invented to hold it.
+// "meeting" books a Basecamp schedule entry, or a typed meeting with no
+// Basecamp link, so a meeting can take up hours without a todo being invented.
 type DraftMode = "work" | "meeting";
 
 type Draft = {
@@ -173,7 +173,7 @@ type Draft = {
   // Set instead when the row came from the meeting picker. Never set alongside
   // todoIds: a meeting has nothing to close.
   eventId: string;
-  // True once someone chooses to type the task rather than pick one.
+  // True once someone chooses to type the task or meeting rather than pick one.
   manual: boolean;
 };
 
@@ -672,14 +672,17 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
 }
 
 // Same idea as todoHint, for the meeting picker.
-function eventHint(state: EventState | undefined): string {
+function eventHint(draft: Draft, state: EventState | undefined): string {
+  if (draft.manual) {
+    return "Typing this one by hand, so it won't be linked to a Basecamp meeting.";
+  }
   if (!state || state.loading) return "";
   const total = state.mine.length + state.others.length;
   if (!total) {
     if (state.reason === "never-synced") {
-      return "Basecamp events haven't synced yet, so there's nothing to pick.";
+      return "Basecamp events haven't synced yet. Type the meeting name instead.";
     }
-    return "No Basecamp events on this day.";
+    return "No Basecamp events on this day. Type the meeting name instead.";
   }
   if (!state.mine.length) {
     return `${total} on the schedule, none listing you.`;
@@ -743,7 +746,7 @@ function AddTaskForm({
   const selectedCount = draft.todoIds.length;
 
   const usePicker = Boolean(draft.clientId) && !draft.manual && todos.length > 0;
-  const hint = meeting ? eventHint(eventState) : todoHint(draft, todoState);
+  const hint = meeting ? eventHint(draft, eventState) : todoHint(draft, todoState);
 
   // Work or meeting. Kept as two small buttons rather than a select because it
   // switches which fields are shown, and a select there reads like data entry.
@@ -778,11 +781,34 @@ function AddTaskForm({
   const hasEvents = Boolean(
     (eventState?.mine.length || 0) + (eventState?.others.length || 0)
   );
+  // Picker only when there is something to pick and they haven't asked to type.
+  // Typing during the load (or with no events) stays typed so a late fetch
+  // cannot swap the box out from under them.
+  const typeMeeting = meeting && (draft.manual || !hasEvents);
+  // Don't flash the optional client box during the events fetch — it would
+  // vanish the moment the picker arrived. Show it once they are typing, or
+  // once we know there is nothing to pick.
+  const showMeetingClient =
+    typeMeeting && (draft.manual || !eventState?.loading);
 
   // Picking a meeting fills in everything the row needs: the title becomes the
   // task text, the duration becomes the hours, and the event's client (if it has
   // one) is carried across so the row still lands under that client.
-  const meetingField = hasEvents ? (
+  const meetingField = typeMeeting ? (
+    <input
+      autoFocus={autoFocus}
+      value={draft.notes}
+      onChange={(e) =>
+        patch({ notes: e.target.value, eventId: "", manual: true })
+      }
+      placeholder={
+        eventState?.loading && !draft.manual && !draft.notes
+          ? "Loading meetings..."
+          : "Meeting name"
+      }
+      style={stack ? undefined : { flex: "3 1 260px" }}
+    />
+  ) : (
     <select
       autoFocus={autoFocus}
       value={draft.eventId}
@@ -798,6 +824,7 @@ function AddTaskForm({
           client: hit?.clientName || "",
           todoIds: [],
           projectId: "",
+          manual: false,
         });
       }}
       aria-label="Basecamp meeting"
@@ -816,14 +843,6 @@ function AddTaskForm({
         </optgroup>
       ))}
     </select>
-  ) : (
-    <input
-      value={draft.notes}
-      onChange={(e) => patch({ notes: e.target.value, eventId: "" })}
-      placeholder={eventState?.loading ? "Loading meetings..." : "Meeting name"}
-      disabled={Boolean(eventState?.loading)}
-      style={stack ? undefined : { flex: "3 1 260px" }}
-    />
   );
 
   const clientSelect = (
@@ -831,7 +850,7 @@ function AddTaskForm({
       clients={clients}
       value={draft.clientId}
       onPick={onPickClient}
-      autoFocus={autoFocus}
+      autoFocus={autoFocus && !meeting}
       style={stack ? undefined : { flex: "1 1 170px" }}
     />
   );
@@ -884,9 +903,30 @@ function AddTaskForm({
     />
   );
 
-  // Only worth offering once there are todos to switch away from, and never for
-  // meetings, which have their own free-text fallback built in.
-  const manualToggle =
+  // Meeting escape sits under the picker as a full-width control so it cannot
+  // wrap off the 320px calendar popover the way a 12px "Type it instead" link did.
+  // Shown whenever there is a Basecamp event to pick — including the one-event
+  // days that used to look picker-only.
+  const meetingToggle =
+    meeting && hasEvents ? (
+      <button
+        type="button"
+        className="fc-type-instead"
+        onClick={() =>
+          patch({
+            manual: !draft.manual,
+            notes: "",
+            eventId: "",
+            clientId: "",
+            client: "",
+          })
+        }
+      >
+        {draft.manual ? "Pick a meeting instead" : "Type it instead"}
+      </button>
+    ) : null;
+
+  const workToggle =
     !meeting && draft.clientId && todos.length > 0 ? (
       <button
         type="button"
@@ -910,9 +950,12 @@ function AddTaskForm({
     return (
       <div className="ops-day-add-form">
         {modeToggle}
-        {/* Meetings skip the client select entirely: most of them are internal
-            and have no client, and the picked event supplies one when it has. */}
+        {/* Picked Basecamp meetings skip the client box: most are internal,
+            and the event supplies one when it has. Typed meetings can take
+            an optional client the same way a typed work task does. */}
+        {meeting && showMeetingClient ? clientSelect : null}
         {meeting ? meetingField : clientSelect}
+        {meetingToggle}
         {meeting ? null : taskField}
         <div className="row" style={{ gap: 6 }}>
           {startInput}
@@ -921,7 +964,7 @@ function AddTaskForm({
             {busy ? "Adding…" : addLabel}
           </button>
         </div>
-        {manualToggle}
+        {workToggle}
         {hint ? (
           <p className="muted" style={{ fontSize: 11, margin: "2px 0 0" }}>
             {hint}
@@ -940,6 +983,7 @@ function AddTaskForm({
     <div style={{ marginTop: 12 }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         {modeToggle}
+        {meeting && showMeetingClient ? clientSelect : null}
         {meeting ? meetingField : clientSelect}
         {meeting ? null : taskField}
         {startInput}
@@ -953,9 +997,10 @@ function AddTaskForm({
           </button>
         ) : null}
       </div>
-      {manualToggle || hint ? (
+      {meetingToggle}
+      {workToggle || hint ? (
         <div className="row" style={{ gap: 10, marginTop: 6, flexWrap: "wrap" }}>
-          {manualToggle}
+          {workToggle}
           {hint ? (
             <span className="muted" style={{ fontSize: 12 }}>
               {hint}
@@ -993,21 +1038,32 @@ function SlotPopover({
   const [placed, setPlaced] = useState<{ left: number; top: number } | null>(null);
 
   // Measured after mount, because how far it can drop or how far right it can sit
-  // depends on how tall and wide the form turned out to be.
+  // depends on how tall and wide the form turned out to be. Re-place when the
+  // form grows (typed-meeting fields, optional client) so it stays on screen.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const margin = 12;
-    const width = rect.width || 320;
-    const height = rect.height || 260;
-    let left = anchor.x - width / 2;
-    left = Math.max(margin, Math.min(window.innerWidth - width - margin, left));
-    let top = anchor.y + 6;
-    if (top + height > window.innerHeight - margin) {
-      top = Math.max(margin, anchor.y - height - 30);
+    function place() {
+      const node = ref.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      const margin = 12;
+      const width = rect.width || 320;
+      const height = rect.height || 260;
+      let left = anchor.x - width / 2;
+      left = Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+      let top = anchor.y + 6;
+      if (top + height > window.innerHeight - margin) {
+        top = Math.max(margin, anchor.y - height - 30);
+      }
+      setPlaced((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top }
+      );
     }
-    setPlaced({ left, top });
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [anchor.x, anchor.y]);
 
   useEffect(() => {
@@ -1328,6 +1384,16 @@ export default function PersonForecastPage() {
 
   function pickClient(date: string, clientId: string) {
     const hit = pickerClients.find((c) => c.id === clientId);
+    const current = draftFor(date);
+    // A typed meeting only needs the client name. Wiping notes or flipping
+    // `manual` would throw them back into the Basecamp picker.
+    if (current.mode === "meeting") {
+      setDraft(date, {
+        clientId,
+        client: hit?.name || "",
+      });
+      return;
+    }
     // Changing client invalidates whatever task was picked for the old one.
     setDraft(date, {
       clientId,

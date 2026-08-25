@@ -109,6 +109,33 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     assert.equal(task.basecamp_todo_id, "");
   });
 
+  await t.test("a typed meeting stores no event id", () => {
+    const task = forecast.createTask({
+      person: "michael",
+      taskDate: "2026-08-03",
+      client: "Humble Somm",
+      notes: "Ad hoc client call",
+      hours: 0.5,
+      startTime: "14:00",
+    });
+    assert.equal(task.basecamp_event_id, "");
+    assert.equal(task.basecamp_todo_id, "");
+    assert.equal(task.notes, "Ad hoc client call");
+    assert.equal(task.client, "Humble Somm");
+  });
+
+  await t.test("the add form keeps Type it instead when events exist", () => {
+    const src = fs.readFileSync(
+      path.join(originalCwd, "src/app/admin/forecast/[person]/page.tsx"),
+      "utf8"
+    );
+    assert.match(src, /Type it instead/);
+    assert.match(src, /fc-type-instead/);
+    // Picker days used to hide the typed-meeting escape; it must stay available
+    // whenever there is a Basecamp event to pick.
+    assert.match(src, /meeting && hasEvents/);
+  });
+
   await t.test("a normal work task is unaffected", () => {
     const task = forecast.createTask({
       person: "michael",
