@@ -36,6 +36,7 @@ import {
 } from "./automation-map";
 import {
   isOperatorCampaignStatus,
+  storedStatusForOperatorChoice,
   type OperatorCampaignStatus,
 } from "./campaign-status";
 
@@ -1044,7 +1045,12 @@ export function addComment(input: {
   );
 
   const campaign = getCampaignById(input.campaignId);
-  if (campaign && (campaign.status === "in_review" || campaign.status === "draft")) {
+  if (
+    campaign &&
+    (campaign.status === "in_review" ||
+      campaign.status === "internal_review" ||
+      campaign.status === "draft")
+  ) {
     updateCampaign(input.campaignId, { status: "needs_changes" });
   }
 
@@ -1350,7 +1356,7 @@ export function applyOperatorCampaignStatus(
     clearApprovalThankYou(campaignId);
   }
   return updateCampaign(campaignId, {
-    status: choice,
+    status: storedStatusForOperatorChoice(choice),
     approvedAt: leavingApproved ? null : undefined,
     approvedBy: leavingApproved ? null : undefined,
     approvedChannel: leavingApproved ? null : undefined,

@@ -15,6 +15,7 @@ test("operator status helpers distinguish approved internally from approved", ()
   assert.equal(operatorStatusValue("approved", "client"), "approved");
   assert.equal(operatorStatusValue("approved", null), "approved");
   assert.equal(operatorStatusValue("in_review", null), "in_review");
+  assert.equal(operatorStatusValue("internal_review", null), "internal_review");
 
   assert.equal(isInternallyApproved("approved", "internal"), true);
   assert.equal(isInternallyApproved("approved_internally", null), true);
@@ -23,6 +24,7 @@ test("operator status helpers distinguish approved internally from approved", ()
 
   assert.equal(storedStatusForOperatorChoice("approved_internally"), "approved");
   assert.equal(storedStatusForOperatorChoice("approved"), "approved");
+  assert.equal(storedStatusForOperatorChoice("internal_review"), "internal_review");
   assert.equal(storedStatusForOperatorChoice("in_review"), "in_review");
 
   const internal = { status: "approved", approved_channel: "internal" };
@@ -124,5 +126,14 @@ test("operator status picker writes approved internally vs client approved", asy
     const created = campaign();
     assert.equal(campaigns.applyOperatorCampaignStatus(created.id, "approved_by_boss"), null);
     assert.equal(campaigns.getCampaignById(created.id)!.status, "draft");
+  });
+
+  await t.test("picking Internal review stores that status, not client In review", () => {
+    const created = campaign();
+    const row = campaigns.applyOperatorCampaignStatus(created.id, "internal_review");
+    assert.ok(row);
+    assert.equal(row.status, "internal_review");
+    assert.equal(row.approved_channel, null);
+    assert.equal(operatorStatusValue(row.status, row.approved_channel), "internal_review");
   });
 });

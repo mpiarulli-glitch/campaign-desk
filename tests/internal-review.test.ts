@@ -166,7 +166,7 @@ test("sending a campaign for internal review", async (t) => {
     globalThis.fetch = realFetch;
   });
 
-  await t.test("creates an assigned Basecamp to-do and opens in_review", async () => {
+  await t.test("creates an assigned Basecamp to-do and sets Internal review", async () => {
     const result = await internal.sendCampaignForInternalReview({
       campaignId: created.id,
       reviewerId: 2,
@@ -176,7 +176,7 @@ test("sending a campaign for internal review", async (t) => {
     if (!result.ok) return;
     assert.equal(result.reviewerName, "Cassidy Merideth");
     assert.equal(result.todoUrl, "https://3.basecamp.com/todo/99");
-    assert.equal(result.status, "in_review");
+    assert.equal(result.status, "internal_review");
     assert.equal(result.dueOn, "2026-08-25");
     assert.equal(lastTodo?.assignee_ids?.[0], 2);
     assert.equal(lastTodo?.due_on, "2026-08-25");
@@ -186,7 +186,8 @@ test("sending a campaign for internal review", async (t) => {
     assert.doesNotMatch(lastTodo?.description || "", /Open in Campaign Desk/);
 
     const row = campaigns.getCampaignById(created.id)!;
-    assert.equal(row.status, "in_review");
+    assert.equal(row.status, "internal_review");
+    assert.notEqual(row.status, "in_review");
     assert.notEqual(row.status, "approved");
     assert.equal(row.approved_channel, null);
     assert.equal(row.approval_thank_you_due_at, null);

@@ -5,6 +5,7 @@ import { isInternallyApproved } from "@/lib/campaign-status";
 
 const LABELS: Record<CampaignStatus, string> = {
   draft: "Draft",
+  internal_review: "Internal review",
   in_review: "In review",
   needs_changes: "Needs changes",
   approved: "Approved",

@@ -48,6 +48,7 @@ export interface User {
 
 export type CampaignStatus =
   | "draft"
+  | "internal_review"
   | "in_review"
   | "needs_changes"
   | "approved"

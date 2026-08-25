@@ -8,7 +8,7 @@ import {
   type BcPerson,
 } from "./basecamp";
 import { createTodo } from "./todos";
-import { getCampaignById, updateCampaign } from "./campaigns";
+import { getCampaignById, applyOperatorCampaignStatus } from "./campaigns";
 import { resolveCampaignClient } from "./campaign-card-sync";
 import { adminCampaignUrl, reviewUrl } from "./auth";
 import { basecampNameForManager } from "./people";
@@ -223,11 +223,8 @@ export async function sendCampaignForInternalReview(input: {
     });
   }
 
-  let status = campaign.status;
-  if (status === "draft") {
-    const updated = updateCampaign(campaign.id, { status: "in_review" });
-    status = updated?.status || "in_review";
-  }
+  const updated = applyOperatorCampaignStatus(input.campaignId, "internal_review");
+  const status = updated?.status || "internal_review";
 
   return {
     ok: true,

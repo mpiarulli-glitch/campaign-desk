@@ -3,6 +3,7 @@
 // has to appear as its own option wherever someone can pick a campaign status.
 export const OPERATOR_STATUS_VALUES = [
   "draft",
+  "internal_review",
   "in_review",
   "needs_changes",
   "approved_internally",
@@ -18,6 +19,7 @@ export const OPERATOR_STATUS_OPTIONS: {
   label: string;
 }[] = [
   { value: "draft", label: "Draft" },
+  { value: "internal_review", label: "Internal review" },
   { value: "in_review", label: "In review" },
   { value: "needs_changes", label: "Needs changes" },
   { value: "approved_internally", label: "Approved internally" },

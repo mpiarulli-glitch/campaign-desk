@@ -76,12 +76,15 @@ function publicCampaign(campaign: Campaign, viewer: ReviewChannel) {
   const internalOnly =
     campaign.status === "approved" && campaign.approved_channel === "internal";
   const hideFromClient = viewer === "external" && internalOnly;
+  const clientSeesInReview =
+    hideFromClient ||
+    (viewer === "external" && campaign.status === "internal_review");
   return {
     id: campaign.id,
     title: campaign.title,
     client_name: campaign.client_name,
     description: campaign.description,
-    status: hideFromClient ? "in_review" : campaign.status,
+    status: clientSeesInReview ? "in_review" : campaign.status,
     updated_at: campaign.updated_at,
     approved_at: hideFromClient
       ? null

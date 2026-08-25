@@ -760,6 +760,12 @@ button {
   background: var(--bg-tint);
 }
 
+.badge-internal_review {
+  color: #007a87;
+  border-color: rgba(0, 212, 232, 0.35);
+  background: var(--bg-tint);
+}
+
 .badge-needs_changes {
   color: var(--warning);
   border-color: rgba(196, 137, 0, 0.28);
