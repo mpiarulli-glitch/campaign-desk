@@ -212,6 +212,7 @@ export async function sendCampaignForInternalReview(input: {
     assigneeIds: [reviewer.id],
     dueOn,
     identity,
+    listName: "Campaign Review",
   });
   if (!created.ok) {
     return { ok: false, error: created.error, status: 502 };

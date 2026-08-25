@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { MoodAvatar, MOOD_LABEL, moodForPct } from "@/components/MoodAvatar";
+import { AssignTodoPanel } from "@/components/AssignTodoPanel";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
 import { PEOPLE, personLabel } from "@/lib/people";
 import { currentWeek, weekLabel } from "@/lib/week";
@@ -204,6 +205,8 @@ export function LeadershipHome({ person }: { person: string }) {
         </div>
 
         {error ? <p className="error">{error}</p> : null}
+
+        <AssignTodoPanel />
 
         {loading ? (
           <p className="muted">Loading…</p>

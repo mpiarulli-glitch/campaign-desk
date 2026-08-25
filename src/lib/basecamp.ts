@@ -1337,12 +1337,24 @@ export async function ensureForecastTodo(
   }
 }
 
-const CAMPAIGN_REVIEW_TODOLIST_NAME = "Campaign Review";
+export const CAMPAIGN_REVIEW_TODOLIST_NAME = "Campaign Review";
+export const OPS_TODOLIST_NAME = "Tasks";
 
-async function getOrCreateCampaignReviewTodolist(
+const LIST_DESCRIPTIONS: Record<string, string> = {
+  [CAMPAIGN_REVIEW_TODOLIST_NAME]:
+    "Internal campaign review asks from Campaign Desk. Assigned to the account manager who should sign off before the client sees it.",
+  [OPS_TODOLIST_NAME]: "Assigned from Campaign Desk.",
+};
+
+async function getOrCreateNamedTodolist(
   projectId: string,
-  identity: BcIdentity
+  listName: string,
+  identity: BcIdentity,
+  fallbackToFirst = false
 ): Promise<{ id: string } | { error: string }> {
+  const wanted = listName.trim();
+  if (!wanted) return { error: "To-do list name is required." };
+
   const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
   if (!pr.ok) return { error: `Could not open that Basecamp project (${pr.status}).` };
   const project = await pr.json();
@@ -1357,10 +1369,9 @@ async function getOrCreateCampaignReviewTodolist(
     4,
     identity
   );
+  const wantedKey = wanted.toLowerCase();
   const existing = lists.find(
-    (l) =>
-      (l.title || l.name || "").trim().toLowerCase() ===
-      CAMPAIGN_REVIEW_TODOLIST_NAME.toLowerCase()
+    (l) => (l.title || l.name || "").trim().toLowerCase() === wantedKey
   );
   if (existing) return { id: String(existing.id) };
 
@@ -1369,19 +1380,28 @@ async function getOrCreateCampaignReviewTodolist(
     {
       method: "POST",
       body: JSON.stringify({
-        name: CAMPAIGN_REVIEW_TODOLIST_NAME,
+        name: wanted,
         description:
-          "Internal campaign review asks from Campaign Desk. Assigned to the account manager who should sign off before the client sees it.",
+          LIST_DESCRIPTIONS[wanted] || "Assigned from Campaign Desk.",
       }),
     },
     identity
   );
-  if (!created.ok) {
-    return { error: `Could not create the Campaign Review to-do list (${created.status}).` };
+  if (created.ok) {
+    const list = await created.json();
+    if (list.id) return { id: String(list.id) };
   }
-  const list = await created.json();
-  if (!list.id) return { error: "Basecamp did not return a to-do list." };
-  return { id: String(list.id) };
+
+  if (fallbackToFirst) {
+    const first = lists[0];
+    if (first?.id) return { id: String(first.id) };
+  }
+
+  const label = wanted === CAMPAIGN_REVIEW_TODOLIST_NAME ? "Campaign Review" : wanted;
+  if (!created.ok) {
+    return { error: `Could not create the ${label} to-do list (${created.status}).` };
+  }
+  return { error: "Basecamp did not return a to-do list." };
 }
 
 export async function createAssignedTodo(input: {
@@ -1391,14 +1411,22 @@ export async function createAssignedTodo(input: {
   assigneeIds: number[];
   dueOn?: string | null;
   identity?: BcIdentity;
+  /** Defaults to Campaign Review so internal review stays on that list. */
+  listName?: string;
 }): Promise<{ ok: true; todoId: string; todoUrl: string } | { ok: false; error: string }> {
   const identity = input.identity ?? SERVICE;
   if (!input.projectId) return { ok: false, error: "No Basecamp project set." };
   const title = input.title.trim().slice(0, 999);
   if (!title) return { ok: false, error: "To-do title is required." };
   const dueOn = (input.dueOn || "").trim();
+  const listName = (input.listName || CAMPAIGN_REVIEW_TODOLIST_NAME).trim();
   try {
-    const list = await getOrCreateCampaignReviewTodolist(input.projectId, identity);
+    const list = await getOrCreateNamedTodolist(
+      input.projectId,
+      listName,
+      identity,
+      listName.toLowerCase() === OPS_TODOLIST_NAME.toLowerCase()
+    );
     if ("error" in list) return { ok: false, error: list.error };
     const res = await bc(
       `/buckets/${input.projectId}/todolists/${list.id}/todos.json`,

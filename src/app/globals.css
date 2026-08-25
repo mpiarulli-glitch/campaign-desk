@@ -5134,6 +5134,52 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   margin: 0;
 }
 
+.assign-panel {
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+.assign-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 18px;
+}
+.assign-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.assign-form-row .field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.assign-form-row .assign-hours {
+  flex: 0 0 88px;
+}
+.assign-form-row .btn {
+  flex: 0 0 auto;
+}
+.assign-form .field input,
+.assign-form .field select {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.assign-done {
+  margin: 0;
+  font-size: 13px;
+}
+.assign-warn-title {
+  margin: 0;
+  font-size: 18px;
+}
+.assign-warn-copy {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
 .ops-item {
   display: flex;
   align-items: center;
@@ -10594,9 +10640,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    colour week hues are identity only, on the rail and on a booked day, never
    decoration. Cyan stays reserved for interaction.
 
-   Layout note: every grid child carries min-width:0, and no label combines
-   nowrap with a max-width. That pair overflows its box and prints on top of the
-   next column, which is exactly how this went wrong the first time. */
+   Layout note: min-width:0 on every grid child is necessary but not enough.
+   The action cluster used to be nowrap + justify-end in a fixed 300px track.
+   Flex-end overflow paints toward the start, so "NOT DUE YET" sat on the date
+   and the outreach title tooltip sat on the calendar. Actions now stretch the
+   column and wrap; a container query stacks before the sidebar eats the room
+   a 900px viewport media query would still think we have. */
 
 .pcon-chips {
   display: flex;
@@ -10640,6 +10689,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
+  container-type: inline-size;
+  container-name: pcon;
 }
 
 .pcon-band { position: relative; border-bottom: 1px solid var(--border); }
@@ -10654,12 +10705,11 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .pcon-in {
   display: grid;
-  /* Fixed tracks, deliberately. Each band is its own grid, so an `auto` or
-     content-sized track makes the strip sit at a different x on every row and
-     the list reads ragged. These widths are the same on every band, so the
-     strips align down the page. 190px fits five 33px cells plus their gaps. */
-  grid-template-columns: minmax(0, 1fr) 190px minmax(0, 190px) 300px;
-  gap: 18px;
+  /* The calendar track stays 190px so the strips line up down the page
+     (five 33px cells plus gaps). Name, facts, and actions share the rest so a
+     sidebar-narrowed pane does not force the last column to overflow left. */
+  grid-template-columns: minmax(0, 1.3fr) 190px minmax(0, 0.9fr) minmax(0, 1.2fr);
+  gap: 14px 18px;
   align-items: center;
   padding: 15px 20px 15px 23px;
 }
@@ -10763,13 +10813,32 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 
 .pcon-act {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  justify-self: end;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.pcon-act-row {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
 }
 .pcon-act .btn { white-space: nowrap; }
+.pcon-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  text-align: right;
+  max-width: min(36ch, 100%);
+  overflow-wrap: break-word;
+}
 .pcon-pill {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -10778,6 +10847,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   padding: 5px 10px;
   border-radius: 999px;
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .pcon-pill.is-bad { background: var(--danger-wash); color: var(--danger-ink); }
 .pcon-pill.is-warn { background: var(--warning-wash); color: var(--warning-ink); }
@@ -10823,9 +10896,40 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .pcon-sw.is-gone { background: transparent; opacity: 0.45; }
 .pcon-sw.is-on { background: #ef4444; border-color: transparent; }
 
+/* Sidebar takes ~208px, so a 1100px window still has a ~860px list. Stack
+   from the list's own width, not the viewport. */
+@container pcon (max-width: 880px) {
+  .pcon-in {
+    grid-template-columns: minmax(0, 1fr) 190px;
+  }
+  .pcon-who,
+  .pcon-facts { grid-column: 1; }
+  .pcon-strip,
+  .pcon-nowindow,
+  .pcon-act { grid-column: 2; }
+}
+@container pcon (max-width: 560px) {
+  .pcon-in { grid-template-columns: 1fr; gap: 13px; }
+  .pcon-who,
+  .pcon-facts,
+  .pcon-strip,
+  .pcon-nowindow,
+  .pcon-act { grid-column: auto; }
+  .pcon-act,
+  .pcon-act-row { align-items: flex-start; justify-content: flex-start; }
+  .pcon-hint { text-align: left; }
+}
+
 @media (max-width: 900px) {
   .pcon-in { grid-template-columns: 1fr; gap: 13px; }
-  .pcon-act { justify-self: start; justify-content: flex-start; }
+  .pcon-who,
+  .pcon-facts,
+  .pcon-strip,
+  .pcon-nowindow,
+  .pcon-act { grid-column: auto; }
+  .pcon-act,
+  .pcon-act-row { align-items: flex-start; justify-content: flex-start; }
+  .pcon-hint { text-align: left; }
 }
 
 /* The inline editors were sized for table cells, where width:100% means "as wide

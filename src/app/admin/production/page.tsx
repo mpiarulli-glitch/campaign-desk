@@ -140,7 +140,7 @@ type Row = {
   // What to display: the hand-set status if there is one, else the real one.
   status: CycleStatus;
   // What the cadence engine actually computes, kept so an override never hides
-  // the truth: it still shows in the tooltip and on the edit control.
+  // the truth: it still shows in the row hint and on the edit control.
   realStatus: CycleStatus;
   overridden: boolean;
   existingSend: { id: string; sendDate: string; status: string } | null;
@@ -346,6 +346,37 @@ function fmtDate(ymd: string | null): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+// Status detail that used to live on a native `title` tooltip. Those hover
+// notes painted over the calendar because the pill itself had overflowed left
+// onto the strip. Keep the copy in the row, wrapping in the action column.
+function rowHint(r: Row, paused: boolean): string | null {
+  const parts: string[] = [];
+  if (r.overridden) {
+    parts.push(
+      `Set by hand to "${STATUS_LABEL[r.status]}". Actual status is "${STATUS_LABEL[r.realStatus]}". ${
+        HANDLED.includes(r.status)
+          ? "Outreach is stopped while this is set."
+          : "Outreach continues."
+      } Set it back to Automatic under More.`
+    );
+  } else if (!r.existingSend && outreachCount(r) > 0) {
+    const last = r.currentReachoutLast
+      ? `, last on ${fmtDate(r.currentReachoutLast.ymd)} by ${REACHOUT_LABEL[r.currentReachoutLast.channel].toLowerCase()}`
+      : r.lastEmailSent
+        ? `, last on ${fmtDate(r.lastEmailSent)}`
+        : "";
+    parts.push(
+      `Outreach sent ${outreachCount(r)} time${outreachCount(r) === 1 ? "" : "s"}${last}. ${STATUS_LABEL[r.status]}. Waiting on them to book.`
+    );
+  }
+  if (paused) {
+    parts.push(
+      "Outreach is paused by hand. This client gets no emails and no Basecamp nudges until it is switched back on."
+    );
+  }
+  return parts.length ? parts.join(" ") : null;
 }
 
 function fmtWindow(w: { start: string; end: string } | null): string {
@@ -1529,6 +1560,7 @@ export default function ProductionPage() {
             {visible.map((r) => {
               const c = r.client;
               const open = openRow === c.id;
+              const hint = rowHint(r, Boolean(c.outreach_paused));
               return (
                 <div
                   key={c.id}
@@ -1631,6 +1663,7 @@ export default function ProductionPage() {
                     </div>
 
                     <div className="pcon-act">
+                      <div className="pcon-act-row">
                       {/* A client who has been asked and has not booked reads as
                           "Not due yet" on status alone, which looks like nothing
                           has happened. Say the ask happened instead: it is the
@@ -1641,29 +1674,13 @@ export default function ProductionPage() {
                       {r.overridden ? (
                         // Hand-set, so it wins over everything the row could
                         // work out for itself. The real status stays in the
-                        // tooltip: a pinned row should never be able to lie
+                        // hint: a pinned row should never be able to lie
                         // about what the cadence engine thinks.
-                        <span
-                          className={`pcon-pill ${TONE[r.status]}`}
-                          title={`Set by hand to "${STATUS_LABEL[r.status]}". Actual status is "${STATUS_LABEL[r.realStatus]}". ${
-                            HANDLED.includes(r.status)
-                              ? "Outreach is stopped while this is set."
-                              : "Outreach continues."
-                          } Set it back to Automatic in the row below.`}
-                        >
+                        <span className={`pcon-pill ${TONE[r.status]}`}>
                           {STATUS_LABEL[r.status]} (set)
                         </span>
                       ) : !r.existingSend && outreachCount(r) > 0 ? (
-                        <span
-                          className="pcon-pill is-warn"
-                          title={`Outreach sent ${outreachCount(r)} time${outreachCount(r) === 1 ? "" : "s"}${
-                            r.currentReachoutLast
-                              ? `, last on ${fmtDate(r.currentReachoutLast.ymd)} by ${REACHOUT_LABEL[r.currentReachoutLast.channel].toLowerCase()}`
-                              : r.lastEmailSent
-                                ? `, last on ${fmtDate(r.lastEmailSent)}`
-                                : ""
-                          }. ${STATUS_LABEL[r.status]}. Waiting on them to book.`}
-                        >
+                        <span className="pcon-pill is-warn">
                           Outreach sent{outreachCount(r) > 1 ? ` ${outreachCount(r)}x` : ""}
                         </span>
                       ) : (
@@ -1672,10 +1689,7 @@ export default function ProductionPage() {
                         </span>
                       )}
                       {c.outreach_paused ? (
-                        <span
-                          className="pcon-pill is-bad"
-                          title="Outreach is paused by hand. This client gets no emails and no Basecamp nudges until it is switched back on."
-                        >
+                        <span className="pcon-pill is-bad">
                           Paused
                         </span>
                       ) : null}
@@ -1695,6 +1709,10 @@ export default function ProductionPage() {
                       >
                         {open ? "Less" : "More"}
                       </button>
+                      </div>
+                      {hint ? (
+                        <p className="pcon-hint">{hint}</p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -1964,6 +1982,7 @@ export default function ProductionPage() {
               <div className="pcon-list">
                 {awaiting.map((r) => {
                   const c = r.client;
+                  const hint = rowHint(r, false);
                   return (
                     <div key={c.id} className="pcon-band" data-week={c.color_week}>
                       <div className="pcon-rail" aria-hidden="true" />
@@ -2022,24 +2041,29 @@ export default function ProductionPage() {
                         </div>
 
                         <div className="pcon-act">
-                          <span className="pcon-pill is-warn">
-                            Outreach sent{outreachCount(r) > 1 ? ` ${outreachCount(r)}x` : ""}
-                          </span>
-                          {isAdmin ? (
-                            <>
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => copyLink(c.id)}
-                              >
-                                Copy link
-                              </button>
-                              <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => openLog(c.id)}
-                              >
-                                Log a shoot
-                              </button>
-                            </>
+                          <div className="pcon-act-row">
+                            <span className="pcon-pill is-warn">
+                              Outreach sent{outreachCount(r) > 1 ? ` ${outreachCount(r)}x` : ""}
+                            </span>
+                            {isAdmin ? (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => copyLink(c.id)}
+                                >
+                                  Copy link
+                                </button>
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => openLog(c.id)}
+                                >
+                                  Log a shoot
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                          {hint ? (
+                            <p className="pcon-hint">{hint}</p>
                           ) : null}
                         </div>
                       </div>
@@ -2369,36 +2393,38 @@ function ProductionQueue({
               </div>
 
               <div className="pcon-act">
-                <span className={`pcon-pill ${tone}`}>{statusLabel}</span>
-                <Link
-                  className="btn btn-secondary btn-sm"
-                  href={`/admin/production/${production.id}`}
-                >
-                  Open
-                </Link>
-                {isAdmin ? (
-                  production.cancelled_at ? (
-                    <>
-                      <button className="btn btn-ghost btn-sm" onClick={() => onRestore(production.id)}>
-                        Restore
-                      </button>
+                <div className="pcon-act-row">
+                  <span className={`pcon-pill ${tone}`}>{statusLabel}</span>
+                  <Link
+                    className="btn btn-secondary btn-sm"
+                    href={`/admin/production/${production.id}`}
+                  >
+                    Open
+                  </Link>
+                  {isAdmin ? (
+                    production.cancelled_at ? (
+                      <>
+                        <button className="btn btn-ghost btn-sm" onClick={() => onRestore(production.id)}>
+                          Restore
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => onDelete(production.id, production.client_name)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : (
                       <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => onDelete(production.id, production.client_name)}
+                        className="btn btn-ghost btn-sm"
+                        title="Cancel this production. The client goes back to needing one."
+                        onClick={() => onCancel(production.id)}
                       >
-                        Delete
+                        Cancel
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      title="Cancel this production. The client goes back to needing one."
-                      onClick={() => onCancel(production.id)}
-                    >
-                      Cancel
-                    </button>
-                  )
-                ) : null}
+                    )
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

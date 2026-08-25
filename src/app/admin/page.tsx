@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { FailuresPanel } from "@/components/FailuresPanel";
 import { LeadershipHome } from "@/components/LeadershipHome";
+import { AssignTodoPanel } from "@/components/AssignTodoPanel";
 import { operatorStatusLabel } from "@/lib/campaign-status";
 import { usesLeadershipHome } from "@/lib/people";
 import { currentWeek } from "@/lib/week";
@@ -205,6 +206,8 @@ function AdminHome() {
 
         {/* Renders nothing when the app is behaving, so it stays an alert. */}
         <FailuresPanel />
+
+        <AssignTodoPanel />
 
         {loading || !s ? (
           <p className="muted">Loading…</p>

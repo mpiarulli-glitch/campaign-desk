@@ -21,6 +21,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export type ForecastTaskWithSubtasks = ForecastTask & { subtasks: ForecastSubtask[] };
 
 export const WEEKLY_CAPACITY_HOURS = 40;
+export const DAILY_CAPACITY_HOURS = WEEKLY_CAPACITY_HOURS / 5;
 
 // The five workday dates (Mon-Fri) making up a Monday-keyed week.
 export function weekdays(weekStart: string): string[] {

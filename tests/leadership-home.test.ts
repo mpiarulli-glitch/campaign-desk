@@ -30,6 +30,7 @@ test("the admin home routes leadership slugs to LeadershipHome", () => {
   );
   assert.match(src, /usesLeadershipHome/);
   assert.match(src, /LeadershipHome/);
+  assert.match(src, /AssignTodoPanel/);
   assert.equal(usesLeadershipHome("sylvia"), true);
   assert.equal(usesLeadershipHome("kyle_onstott"), true);
   assert.equal(usesLeadershipHome("luis_romero"), true);
