@@ -13,6 +13,7 @@ type Attention = {
   title: string;
   client_name: string;
   status: string;
+  approved_channel?: string | null;
   open_comments: number;
   updated_at: string;
 };
@@ -258,7 +259,10 @@ function AdminHome() {
                                 : "No open comments"}
                             </p>
                           </div>
-                          <StatusBadge status={c.status} />
+                          <StatusBadge
+                            status={c.status}
+                            approvedChannel={c.approved_channel}
+                          />
                         </Link>
                       ))
                     )}

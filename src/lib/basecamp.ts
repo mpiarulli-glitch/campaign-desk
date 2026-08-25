@@ -1232,6 +1232,95 @@ export async function ensureForecastTodo(
   }
 }
 
+const CAMPAIGN_REVIEW_TODOLIST_NAME = "Campaign Review";
+
+async function getOrCreateCampaignReviewTodolist(
+  projectId: string,
+  identity: BcIdentity
+): Promise<{ id: string } | { error: string }> {
+  const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
+  if (!pr.ok) return { error: `Could not open that Basecamp project (${pr.status}).` };
+  const project = await pr.json();
+  const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
+  const todoset = dock.find((d) => d.name === "todoset" && d.enabled !== false);
+  if (!todoset) {
+    return { error: "This Basecamp project has to-dos turned off." };
+  }
+
+  const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
+    `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`,
+    4,
+    identity
+  );
+  const existing = lists.find(
+    (l) =>
+      (l.title || l.name || "").trim().toLowerCase() ===
+      CAMPAIGN_REVIEW_TODOLIST_NAME.toLowerCase()
+  );
+  if (existing) return { id: String(existing.id) };
+
+  const created = await bc(
+    `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: CAMPAIGN_REVIEW_TODOLIST_NAME,
+        description:
+          "Internal campaign review asks from Campaign Desk. Assigned to the account manager who should sign off before the client sees it.",
+      }),
+    },
+    identity
+  );
+  if (!created.ok) {
+    return { error: `Could not create the Campaign Review to-do list (${created.status}).` };
+  }
+  const list = await created.json();
+  if (!list.id) return { error: "Basecamp did not return a to-do list." };
+  return { id: String(list.id) };
+}
+
+export async function createAssignedTodo(input: {
+  projectId: string;
+  title: string;
+  description?: string;
+  assigneeIds: number[];
+  identity?: BcIdentity;
+}): Promise<{ ok: true; todoId: string; todoUrl: string } | { ok: false; error: string }> {
+  const identity = input.identity ?? SERVICE;
+  if (!input.projectId) return { ok: false, error: "No Basecamp project set." };
+  const title = input.title.trim().slice(0, 999);
+  if (!title) return { ok: false, error: "To-do title is required." };
+  try {
+    const list = await getOrCreateCampaignReviewTodolist(input.projectId, identity);
+    if ("error" in list) return { ok: false, error: list.error };
+    const res = await bc(
+      `/buckets/${input.projectId}/todolists/${list.id}/todos.json`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          content: title,
+          description: input.description || "",
+          assignee_ids: input.assigneeIds,
+          notify: input.assigneeIds.length > 0,
+        }),
+      },
+      identity
+    );
+    if (!res.ok) {
+      return { ok: false, error: `Could not create the Basecamp to-do (${res.status}).` };
+    }
+    const todo = await res.json();
+    if (!todo.id) return { ok: false, error: "Basecamp did not return a to-do." };
+    return {
+      ok: true,
+      todoId: String(todo.id),
+      todoUrl: todo.app_url || "",
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message || "Could not create the Basecamp to-do." };
+  }
+}
+
 // Create a card in the project's card table, in the "In progress" column
 // (falls back to the first column if none matches). If assigneeIds are given,
 // the card is assigned to those people via a follow-up update (the create

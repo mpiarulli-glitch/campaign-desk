@@ -36,6 +36,7 @@ export async function GET() {
     title: string;
     client_name: string;
     status: string;
+    approved_channel: string | null;
     open_comments: number;
     updated_at: string;
   }> = [];
@@ -54,6 +55,7 @@ export async function GET() {
         title: c.title,
         client_name: c.client_name,
         status: c.status,
+        approved_channel: c.approved_channel,
         open_comments: open,
         updated_at: c.updated_at,
       });

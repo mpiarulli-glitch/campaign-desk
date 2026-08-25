@@ -338,6 +338,7 @@ export interface BoardCampaignItem {
   id: string;
   title: string;
   status: string;
+  approvedChannel?: string | null;
   updatedAt: string;
   magicToken: string;
   emailCount: number;

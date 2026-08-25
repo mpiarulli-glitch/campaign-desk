@@ -601,6 +601,10 @@ export function reviewUrl(magicToken: string): string {
   return `${getAppUrl()}/review/${magicToken}`;
 }
 
+export function adminCampaignUrl(id: string): string {
+  return `${getAppUrl()}/admin/campaigns/${id}`;
+}
+
 export function scheduleUrl(scheduleToken: string): string {
   return `${getAppUrl()}/schedule/${scheduleToken}`;
 }

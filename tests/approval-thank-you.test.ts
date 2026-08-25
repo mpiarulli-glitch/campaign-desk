@@ -82,4 +82,22 @@ test("scheduling approval thank-you", async (t) => {
     assert.equal(row.approval_thank_you_due_at, null);
     assert.equal(row.approval_thank_you_sent_at, null);
   });
+
+  await t.test("internal approval never schedules the client thank-you", () => {
+    const internal = campaigns.createCampaign({
+      title: "Boss review",
+      clientName: "Vitatherapy",
+      htmlContent: "<p>Hi</p>",
+    });
+    db.prepare(`UPDATE campaigns SET basecamp_card_id = ? WHERE id = ?`).run(
+      "card-internal",
+      internal.id
+    );
+    campaigns.markApproved(internal.id, "Morris Kyle", "internal");
+    const row = campaigns.getCampaignById(internal.id)!;
+    assert.equal(row.approved_channel, "internal");
+    assert.equal(row.approval_thank_you_due_at, null);
+    campaigns.scheduleApprovalThankYou(internal.id);
+    assert.equal(campaigns.getCampaignById(internal.id)!.approval_thank_you_due_at, null);
+  });
 });

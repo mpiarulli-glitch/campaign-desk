@@ -772,6 +772,12 @@ button {
   background: var(--success-wash);
 }
 
+.badge-approved-internal {
+  color: #007a87;
+  border-color: rgba(0, 212, 232, 0.35);
+  background: var(--bg-tint);
+}
+
 .badge-scheduled {
   color: #5b3fb0;
   border-color: rgba(91, 63, 176, 0.28);

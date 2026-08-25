@@ -239,6 +239,24 @@ export function getCampaignById(id: string): Campaign | null {
   );
 }
 
+// Review-link audience → stored approval channel. The internal (boss/team)
+// token must never be recorded as a client sign-off.
+export function approvalChannelForReview(
+  channel: ReviewChannel
+): "client" | "internal" {
+  return channel === "internal" ? "internal" : "client";
+}
+
+// External reviewers can still leave feedback / sign off after a boss
+// internal approve. Only a true client channel locks them out.
+export function reviewAcceptsViewerAction(
+  campaign: Campaign,
+  viewer: ReviewChannel
+): boolean {
+  if (campaign.status !== "approved") return true;
+  return viewer === "external" && campaign.approved_channel !== "client";
+}
+
 export function getCampaignByToken(token: string): Campaign | null {
   return (
     (getDb()
@@ -1276,7 +1294,7 @@ export function markApproved(
   const ts = nowIso();
   getDb()
     .prepare(
-      `UPDATE campaign_emails SET approved_at = ?, approved_by = ?, approved_channel = ? WHERE campaign_id = ? AND approved_at IS NULL`
+      `UPDATE campaign_emails SET approved_at = ?, approved_by = ?, approved_channel = ? WHERE campaign_id = ?`
     )
     .run(ts, approvedBy ?? null, approvedChannel, campaignId);
   const updated = updateCampaign(campaignId, {
@@ -1398,6 +1416,7 @@ export interface ActivityItem {
   resolved: number | null;
   star_rating: number | null;
   attachment_count: number;
+  approved_channel: string | null;
   at: string;
 }
 
@@ -1424,6 +1443,7 @@ export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
            c.resolved AS resolved,
            NULL AS star_rating,
            (SELECT COUNT(*) FROM comment_attachments a WHERE a.comment_id = c.id) AS attachment_count,
+           NULL AS approved_channel,
            c.created_at AS at
          FROM comments c
          JOIN campaigns cam ON cam.id = c.campaign_id
@@ -1438,13 +1458,14 @@ export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
            cam.title AS campaign_title,
            cam.client_name AS client_name,
            cam.client_id AS client_id,
-           NULL AS actor,
+           cam.approved_by AS actor,
            NULL AS body,
            NULL AS comment_type,
            NULL AS email_title,
            NULL AS resolved,
            cam.star_rating AS star_rating,
            0 AS attachment_count,
+           cam.approved_channel AS approved_channel,
            cam.updated_at AS at
          FROM campaigns cam
          WHERE cam.status = 'approved'

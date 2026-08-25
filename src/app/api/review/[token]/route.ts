@@ -16,8 +16,10 @@ import {
   unapproveCampaign,
   setEmailApproved,
   countOpenComments,
+  approvalChannelForReview,
+  reviewAcceptsViewerAction,
 } from "@/lib/campaigns";
-import type { Campaign } from "@/lib/db";
+import type { Campaign, ReviewChannel } from "@/lib/db";
 import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
 import { notifyClientFeedback } from "@/lib/notify";
 
@@ -66,16 +68,31 @@ type Params = { params: Promise<{ token: string }> };
 // Which admin approved internally is agency-internal information, not
 // something a client reading their own review link needs to see — so only a
 // client's own typed approval name ever crosses onto this link.
-function publicCampaign(campaign: Campaign) {
+//
+// After a boss internal approve, the client link must stay open: rewrite
+// status back to in_review and flag internally_approved so the page can say
+// "waiting for your approval" instead of locking like they already signed off.
+function publicCampaign(campaign: Campaign, viewer: ReviewChannel) {
+  const internalOnly =
+    campaign.status === "approved" && campaign.approved_channel === "internal";
+  const hideFromClient = viewer === "external" && internalOnly;
   return {
     id: campaign.id,
     title: campaign.title,
     client_name: campaign.client_name,
     description: campaign.description,
-    status: campaign.status,
+    status: hideFromClient ? "in_review" : campaign.status,
     updated_at: campaign.updated_at,
-    approved_at: campaign.approved_at,
-    approved_by: campaign.approved_channel === "client" ? campaign.approved_by : null,
+    approved_at: hideFromClient
+      ? null
+      : campaign.approved_channel === "client" || viewer === "internal"
+        ? campaign.approved_at
+        : null,
+    approved_by:
+      viewer === "external" && campaign.approved_channel !== "client"
+        ? null
+        : campaign.approved_by,
+    internally_approved: internalOnly,
     presentation: campaign.presentation,
     trigger_label: campaign.trigger_label,
     trigger_kind: campaign.trigger_kind,
@@ -115,8 +132,14 @@ export async function GET(_request: Request, { params }: Params) {
     purpose: e.purpose,
     delay_ms: e.delay_ms ?? 0,
     sort_order: e.sort_order,
-    approved_at: e.approved_at,
-    approved_by: e.approved_channel === "client" ? e.approved_by : null,
+    approved_at:
+      channel === "external" && e.approved_channel !== "client"
+        ? null
+        : e.approved_at,
+    approved_by:
+      channel === "external" && e.approved_channel !== "client"
+        ? null
+        : e.approved_by,
     chosen_subject_id: e.chosen_subject_id,
     subjects: e.subjects.map((s) => ({
       id: s.id,
@@ -130,7 +153,7 @@ export async function GET(_request: Request, { params }: Params) {
   }
 
   return NextResponse.json({
-    campaign: publicCampaign(fresh),
+    campaign: publicCampaign(fresh, channel),
     emails,
     flow: listFlowSteps(fresh.id),
     comments: listCommentsWithAttachments(fresh.id, undefined, countChannel).map(
@@ -162,10 +185,12 @@ export async function POST(request: Request, { params }: Params) {
 
   const body = await request.json().catch(() => ({}));
 
+  const approvedChannel = approvalChannelForReview(channel);
+
   if (body.markApproved === true) {
-    if (campaign.status === "approved") {
+    if (!reviewAcceptsViewerAction(campaign, channel)) {
       return NextResponse.json({
-        campaign: publicCampaign(campaign),
+        campaign: publicCampaign(campaign, channel),
         message: "Already approved",
       });
     }
@@ -179,10 +204,10 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    const approved = markApproved(campaign.id, approverName);
+    const approved = markApproved(campaign.id, approverName, approvedChannel);
     await syncCampaignDeliverablesCard(campaign.id, "approved");
     return NextResponse.json({
-      campaign: publicCampaign(approved!),
+      campaign: publicCampaign(approved!, channel),
       message: "Campaign approved",
     });
   }
@@ -230,14 +255,19 @@ export async function POST(request: Request, { params }: Params) {
     if (!target) {
       return NextResponse.json({ error: "Email not found" }, { status: 404 });
     }
-    const { allApproved } = setEmailApproved(target.id, true, approverName);
-    if (allApproved && campaign.status !== "approved") {
-      markApproved(campaign.id, approverName);
+    const { allApproved } = setEmailApproved(
+      target.id,
+      true,
+      approverName,
+      approvedChannel
+    );
+    if (allApproved && reviewAcceptsViewerAction(campaign, channel)) {
+      markApproved(campaign.id, approverName, approvedChannel);
       await syncCampaignDeliverablesCard(campaign.id, "approved");
     }
     const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({
-      campaign: publicCampaign(fresh),
+      campaign: publicCampaign(fresh, channel),
       allApproved,
       message: allApproved
         ? "All emails approved. The team has been notified."
@@ -260,7 +290,7 @@ export async function POST(request: Request, { params }: Params) {
     }
     const fresh = getCampaignById(campaign.id)!;
     return NextResponse.json({
-      campaign: publicCampaign(fresh),
+      campaign: publicCampaign(fresh, channel),
       message: "Approval undone. You can leave feedback again.",
     });
   }
@@ -298,7 +328,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ reply }, { status: 201 });
   }
 
-  if (campaign.status === "approved") {
+  if (!reviewAcceptsViewerAction(campaign, channel)) {
     return NextResponse.json(
       { error: "This campaign is approved and no longer accepting feedback." },
       { status: 403 }

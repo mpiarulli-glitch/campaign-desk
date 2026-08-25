@@ -144,6 +144,7 @@ type Campaign = {
   presentation?: string;
   trigger_label?: string;
   trigger_kind?: string;
+  internally_approved?: boolean;
 };
 
 // A typed first + last name is what makes an approval a paper trail rather
@@ -496,7 +497,16 @@ export default function ReviewPage() {
     <div className="app-shell review-page">
       <header className="topbar">
         <Brand />
-        <StatusBadge status={campaign.status} />
+        <StatusBadge
+          status={campaign.status}
+          approvedChannel={
+            campaign.internally_approved
+              ? "internal"
+              : campaign.status === "approved"
+                ? "client"
+                : null
+          }
+        />
       </header>
 
       <main className="container container-wide stack">
@@ -626,10 +636,15 @@ export default function ReviewPage() {
         ) : (
           <div className="rv-approve">
             <div className="rv-approve-copy">
-              <span className="rv-approve-title">Ready to approve?</span>
+              <span className="rv-approve-title">
+                {campaign.internally_approved
+                  ? "Approved internally, waiting for your approval"
+                  : "Ready to approve?"}
+              </span>
               <p className="rv-approve-sub">
-                This covers every {isAutomation ? "email in the automation" : "item in the package"}. Type your full name to
-                confirm it&apos;s you.
+                {campaign.internally_approved
+                  ? "The team has signed off internally. This still needs your approval before it is client-approved."
+                  : `This covers every ${isAutomation ? "email in the automation" : "item in the package"}. Type your full name to confirm it is you.`}
               </p>
             </div>
             <div className="row" style={{ gap: 8 }}>

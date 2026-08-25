@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { approvalActivityParts } from "@/lib/activity-copy";
 
 type ActivityItem = {
   kind: "feedback" | "approved";
@@ -16,6 +17,7 @@ type ActivityItem = {
   resolved: number | null;
   star_rating: number | null;
   attachment_count: number;
+  approved_channel?: string | null;
   at: string;
 };
 
@@ -160,6 +162,7 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
           {visible.map((item) => {
             const key = `${item.kind}-${item.id}`;
             const isRead = readIds.has(key);
+            const approval = item.kind === "approved" ? approvalActivityParts(item) : null;
             return (
               <div key={key} className="activity-sidebar-row">
                 <Link
@@ -181,10 +184,9 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
                   />
                   <span className="activity-sidebar-text">
                     <span className="activity-sidebar-line">
-                      {item.kind === "approved" ? (
+                      {item.kind === "approved" && approval ? (
                         <>
-                          <strong>{item.client_name || "Client"}</strong> approved{" "}
-                          {item.campaign_title}
+                          <strong>{approval.actor}</strong> {approval.rest}
                           {item.star_rating ? ` (${item.star_rating}★)` : ""}
                         </>
                       ) : (

@@ -11,8 +11,21 @@ const LABELS: Record<CampaignStatus, string> = {
   sent: "Sent",
 };
 
-export function StatusBadge({ status }: { status: CampaignStatus | string }) {
+export function StatusBadge({
+  status,
+  approvedChannel,
+}: {
+  status: CampaignStatus | string;
+  approvedChannel?: string | null;
+}) {
   const key = status as CampaignStatus;
-  const label = LABELS[key] || status;
-  return <span className={`badge badge-${status}`}>{label}</span>;
+  const internal = key === "approved" && approvedChannel === "internal";
+  const label = internal ? "Approved internally" : LABELS[key] || status;
+  return (
+    <span
+      className={`badge badge-${status}${internal ? " badge-approved-internal" : ""}`}
+    >
+      {label}
+    </span>
+  );
 }

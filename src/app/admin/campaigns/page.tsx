@@ -11,6 +11,7 @@ type CampaignRow = {
   title: string;
   client_name: string;
   status: string;
+  approved_channel?: string | null;
   created_at: string;
   updated_at: string;
   approved_at: string | null;
@@ -188,7 +189,7 @@ function CampaignCard({
         </div>
       </div>
       <div className="row" style={{ alignItems: "center", gap: 8 }}>
-        <StatusBadge status={c.status} />
+        <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
         {!renaming ? (
           <button
             type="button"

@@ -106,6 +106,7 @@ export interface BoardCampaignItem {
   id: string;
   title: string;
   status: CampaignStatus;
+  approvedChannel: string | null;
   updatedAt: string;
   magicToken: string;
   /**
@@ -224,7 +225,7 @@ export function listBoardCards(period: string): BoardCard[] {
   // campaign rows would under-report delivered volume.
   const campaignRows = db
     .prepare(
-      `SELECT c.id, c.title, c.client_id, c.status, c.updated_at, c.magic_token,
+      `SELECT c.id, c.title, c.client_id, c.status, c.approved_channel, c.updated_at, c.magic_token,
               c.basecamp_card_id,
               SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
               SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
@@ -242,6 +243,7 @@ export function listBoardCards(period: string): BoardCard[] {
     title: string;
     client_id: string;
     status: CampaignStatus;
+    approved_channel: string | null;
     updated_at: string;
     magic_token: string;
     basecamp_card_id: string | null;
@@ -255,6 +257,7 @@ export function listBoardCards(period: string): BoardCard[] {
       id: r.id,
       title: r.title,
       status: r.status,
+      approvedChannel: r.approved_channel,
       updatedAt: r.updated_at,
       magicToken: r.magic_token,
       emailCount: r.email_count,

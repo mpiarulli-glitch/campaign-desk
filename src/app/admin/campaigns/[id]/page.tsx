@@ -198,6 +198,16 @@ type BasecampApprovalState = {
   dueOn: string;
 };
 
+type InternalReviewState = {
+  ready: boolean;
+  missing: string[];
+  clientName: string;
+  accountManager: string;
+  people: Array<{ id: number; name: string; email: string; isClient: boolean }>;
+  peopleReason: string;
+  defaultReviewerId: number | null;
+};
+
 function firstNameOf(name: string): string {
   const cleaned = (name || "").trim();
   if (!cleaned) return "there";
@@ -286,6 +296,11 @@ export default function AdminCampaignPage() {
   const [approvalAssigneeIds, setApprovalAssigneeIds] = useState<number[]>([]);
   const [approvalDueOn, setApprovalDueOn] = useState("");
   const [approvalMessage, setApprovalMessage] = useState("");
+  const [internalReview, setInternalReview] = useState<InternalReviewState | null>(
+    null
+  );
+  const [internalReviewerId, setInternalReviewerId] = useState<number | "">("");
+  const [sendingInternalReview, setSendingInternalReview] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -325,6 +340,7 @@ export default function AdminCampaignPage() {
       setStatus(data.campaign.status);
       setFlow(data.flow || []);
       loadBasecampApproval();
+      loadInternalReview();
 
       const nextId =
         preferredEmailId &&
@@ -367,6 +383,19 @@ export default function AdminCampaignPage() {
     setApprovalMessage((current) => (current ? current : data.message || ""));
   }
 
+  async function loadInternalReview() {
+    const res = await fetch(`/api/campaigns/${id}/internal-review`);
+    if (!res.ok) {
+      setInternalReview(null);
+      return;
+    }
+    const data: InternalReviewState = await res.json();
+    setInternalReview(data);
+    setInternalReviewerId((current) =>
+      current === "" ? (data.defaultReviewerId ?? "") : current
+    );
+  }
+
   async function matchBasecampProject() {
     if (matchingBasecamp) return;
     setMatchingBasecamp(true);
@@ -390,6 +419,7 @@ export default function AdminCampaignPage() {
         : "No new Basecamp matches. Check the client name matches the Growth OS project."
     );
     await loadBasecampApproval();
+    await loadInternalReview();
   }
 
   useEffect(() => {
@@ -832,6 +862,36 @@ export default function AdminCampaignPage() {
     );
     await load(activeEmailId);
     await loadBasecampApproval();
+  }
+
+  async function sendInternalReview() {
+    if (sendingInternalReview) return;
+    if (!internalReviewerId) {
+      setError("Pick the account manager who should review this.");
+      return;
+    }
+    setSendingInternalReview(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/campaigns/${id}/internal-review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewerId: internalReviewerId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSendingInternalReview(false);
+    if (!res.ok) {
+      setError(data.error || "Could not send this for internal review.");
+      await loadInternalReview();
+      return;
+    }
+    if (data.status) setStatus(data.status);
+    setMessage(
+      `Internal review to-do created for ${data.reviewerName || "the account manager"}.` +
+        (data.todoUrl ? " Check Basecamp for the assigned to-do." : "")
+    );
+    await load(activeEmailId);
+    await loadInternalReview();
   }
 
   async function saveStatus(next: string) {
@@ -1282,7 +1342,10 @@ export default function AdminCampaignPage() {
   return (
     <div className="app-shell">
       <div className="page-actions">
-        <StatusBadge status={status} />
+        <StatusBadge
+          status={status}
+          approvedChannel={campaign.approved_channel}
+        />
         <PushToGhl campaignId={campaign.id} campaignTitle={campaign.title} />
         <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
           All campaigns
@@ -1646,6 +1709,88 @@ export default function AdminCampaignPage() {
                 <code>{campaign.external_review_url}</code>
               </div>
             </div>
+          </div>
+
+          <div className="bc-panel">
+            <div className="bc-head">
+              <div className="bc-head-copy">
+                <span className="review-link-label">
+                  Internal review{" "}
+                  <span className="muted">· account manager</span>
+                </span>
+                {internalReview ? (
+                  <span
+                    className={`bc-state ${
+                      internalReview.ready ? "is-ready" : "is-blocked"
+                    }`}
+                  >
+                    {internalReview.ready ? "Ready to send" : "Setup needed"}
+                  </span>
+                ) : (
+                  <span className="bc-state">Checking...</span>
+                )}
+              </div>
+              <div className="bc-head-actions">
+                <button
+                  className="btn btn-sm"
+                  onClick={sendInternalReview}
+                  disabled={
+                    !internalReview?.ready ||
+                    sendingInternalReview ||
+                    !internalReviewerId
+                  }
+                >
+                  {sendingInternalReview
+                    ? "Sending..."
+                    : "Send campaign for internal review"}
+                </button>
+              </div>
+            </div>
+            <div className="bc-form">
+              <div className="field">
+                <label htmlFor="internal-reviewer">Account manager</label>
+                <select
+                  id="internal-reviewer"
+                  value={internalReviewerId}
+                  onChange={(e) =>
+                    setInternalReviewerId(
+                      e.target.value ? Number(e.target.value) : ""
+                    )
+                  }
+                  disabled={!internalReview?.people.length}
+                >
+                  <option value="">
+                    {internalReview?.people.length
+                      ? "Pick who should review..."
+                      : internalReview?.peopleReason ||
+                        "No project roster available"}
+                  </option>
+                  {(internalReview?.people || []).map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.name}
+                      {internalReview?.accountManager &&
+                      person.id === internalReview.defaultReviewerId
+                        ? " · account manager"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                <span className="field-hint">
+                  Creates a Basecamp to-do assigned to them with the internal
+                  review link. Does not mark the campaign client-approved.
+                </span>
+              </div>
+            </div>
+            {internalReview && !internalReview.ready ? (
+              <p className="bc-fact">
+                {internalReview.missing.includes("Basecamp connection")
+                  ? "Basecamp isn't connected. Connect it before sending for internal review."
+                  : internalReview.missing.length
+                    ? `Setup needed: ${internalReview.missing.join(", ")}.`
+                    : internalReview.peopleReason ||
+                      "Pick an account manager once the project roster loads."}
+              </p>
+            ) : null}
           </div>
 
           <div className="bc-panel">

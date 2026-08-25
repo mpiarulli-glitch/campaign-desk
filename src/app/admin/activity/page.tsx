@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { approvalActivityParts } from "@/lib/activity-copy";
 
 type ActivityItem = {
   kind: "feedback" | "approved";
@@ -17,6 +18,7 @@ type ActivityItem = {
   resolved: number | null;
   star_rating: number | null;
   attachment_count: number;
+  approved_channel?: string | null;
   at: string;
 };
 
@@ -144,12 +146,15 @@ export default function ActivityPage() {
                       {item.kind === "approved" ? (
                         <>
                           <strong>
-                            {item.client_name || "Client"}
+                            {approvalActivityParts(item).actor}
                           </strong>{" "}
                           approved{" "}
                           <Link href={`/admin/campaigns/${item.campaign_id}`}>
                             {item.campaign_title}
                           </Link>
+                          {item.approved_channel === "internal"
+                            ? " internally"
+                            : ""}
                           {item.star_rating ? (
                             <span style={{ marginLeft: 8 }}>
                               {"★".repeat(item.star_rating)}

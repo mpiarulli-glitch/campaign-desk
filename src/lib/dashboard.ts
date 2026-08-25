@@ -13,6 +13,7 @@ import { mondayOf } from "./week";
 import { aggregate, getRevClient, kpisForModel, listMetrics } from "./revenue";
 import { planSends } from "./plan";
 import { listActivity, listPendingApprovalCampaigns, type ActivityItem, type PendingApproval } from "./campaigns";
+import { approvalActivitySummary } from "./activity-copy";
 import { listOkrs, type OkrStatus } from "./okrs";
 import { listTodos } from "./todos";
 import { teamLabel, avatarFor, slugForName } from "./team";
@@ -94,7 +95,7 @@ export function accountActivity(clientId: string, limit = 30): AccountActivityIt
       at: item.at,
       summary:
         item.kind === "approved"
-          ? `${item.campaign_title} approved`
+          ? approvalActivitySummary(item)
           : `${item.actor || "Someone"} commented on ${item.campaign_title}`,
       detail: item.kind === "approved" ? "" : item.body || "",
     })

@@ -96,7 +96,10 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                 className="hud-board-camp-chip"
                 title={`${camp.title} — ${parts.join(" + ")}`}
               >
-                <StatusBadge status={camp.status} />
+                <StatusBadge
+                  status={camp.status}
+                  approvedChannel={camp.approvedChannel}
+                />
                 <span>{camp.title}</span>
                 {camp.smsCount > 0 ? (
                   <em className="hud-board-camp-sms">SMS</em>
