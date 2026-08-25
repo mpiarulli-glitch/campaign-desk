@@ -274,10 +274,11 @@ export async function POST(request: Request, { params }: Params) {
     campaignTitle: state.campaign.title,
     // Built after the recipient resolves, so the greeting is a real mention.
     // An edited draft is what the sender saw; otherwise the usual template.
-    buildContent: (contactMention?: string) =>
+    // Sylvia's CC mention is resolved in sendApprovalToDeliverables.
+    buildContent: (contactMention?: string, ccMention?: string) =>
       customMessage
-        ? clientApprovalMessageHtmlFromText(customMessage, contactMention)
-        : clientApprovalMessageHtml(state.messageInput, contactMention),
+        ? clientApprovalMessageHtmlFromText(customMessage, contactMention, ccMention)
+        : clientApprovalMessageHtml(state.messageInput, contactMention, ccMention),
     recipientIdentifiers: [
       client.contact_email,
       client.contact_name,

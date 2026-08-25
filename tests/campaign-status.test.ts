@@ -173,6 +173,12 @@ test("operator status picker writes approved internally vs client approved", asy
     assert.equal(campaigns.getCampaignById(created.id)!.status, "draft");
   });
 
+  await t.test("picking Scheduled without a send datetime does not change status", () => {
+    const created = campaign();
+    assert.equal(campaigns.applyOperatorCampaignStatus(created.id, "scheduled"), null);
+    assert.equal(campaigns.getCampaignById(created.id)!.status, "draft");
+  });
+
   await t.test("picking Internal Review stores that status, not client Sent for approval", () => {
     const created = campaign();
     const row = campaigns.applyOperatorCampaignStatus(created.id, "internal_review");

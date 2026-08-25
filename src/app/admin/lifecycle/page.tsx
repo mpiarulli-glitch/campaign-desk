@@ -112,8 +112,8 @@ export default function LifecyclePage() {
   const li = data.linkedIn;
 
   return (
-    <div className="hud">
-      <div className="hud-page">
+    <div className={`hud ${channel === "board" ? "hud-fill" : ""}`}>
+      <div className={`hud-page ${channel === "board" ? "hud-page-fill" : ""}`}>
         <header className="hud-bar hud-in hud-in-1">
           <div className="hud-mark">
             <h1>Lifecycle</h1>

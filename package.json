@@ -14,6 +14,7 @@
     "cron:approval-thank-you": "node scripts/run-approval-thank-you.mjs",
     "cron:weekly-snapshot": "node scripts/run-weekly-snapshot.mjs",
     "cron:forecast-plan": "node scripts/run-forecast-plan.mjs",
+    "cron:campaign-sends": "node scripts/run-campaign-sends.mjs",
     "knowledge:sync": "node scripts/scrape-inbox-newsletter.mjs --new-only",
     "knowledge:rebuild": "node scripts/scrape-inbox-newsletter.mjs",
     "prepare": "husky"

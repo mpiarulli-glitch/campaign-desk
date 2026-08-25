@@ -23,6 +23,7 @@ test("client approval message uses the approved template without subject lines",
   assert.match(text, /Review the Vitatherapy Welcome Series:/);
   assert.match(text, /one round of revisions per campaign/);
   assert.match(text, /reply with "Approved"/);
+  assert.match(text, /CC: @Sylvia/);
   assert.doesNotMatch(text, /subject line/i);
 });
 
@@ -38,6 +39,7 @@ test("Basecamp HTML escapes account data and links the external review", () => {
     html,
     /https:\/\/example\.com\/review\?client=&quot;vita&quot;/
   );
+  assert.match(html, /CC: @Sylvia/);
   assert.doesNotMatch(html, /<Admin>/);
 });
 
@@ -96,8 +98,11 @@ Preview Link:
 
 Review the Vitatherapy Welcome Series: https://campaign-desk.example/review/client-token
 
-<script>alert(1)</script>`,
-    '<bc-attachment sgid="abc"></bc-attachment>'
+<script>alert(1)</script>
+
+CC: @Sylvia`,
+    '<bc-attachment sgid="abc"></bc-attachment>',
+    '<bc-attachment sgid="sgid-sylvia"></bc-attachment>'
   );
   assert.match(html, /Hi <bc-attachment sgid="abc"><\/bc-attachment>,/);
   assert.doesNotMatch(html, /Hi Katie,/);
@@ -109,6 +114,8 @@ Review the Vitatherapy Welcome Series: https://campaign-desk.example/review/clie
   );
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /CC: <bc-attachment sgid="sgid-sylvia"><\/bc-attachment>/);
+  assert.equal(html.match(/CC:/g)?.length, 1);
 });
 
 test("edited approval text still mentions the recipient if the greeting was removed", () => {
@@ -118,6 +125,7 @@ test("edited approval text still mentions the recipient if the greeting was remo
   );
   assert.match(html, /^<p>Hi <bc-attachment sgid="abc"><\/bc-attachment>,<\/p>/);
   assert.match(html, /One extra note about the rodeo graphic/);
+  assert.match(html, /CC: @Sylvia/);
 });
 
 test("automation approval copy tells the client they will see a map", () => {

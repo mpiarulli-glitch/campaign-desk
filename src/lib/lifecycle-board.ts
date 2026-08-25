@@ -20,7 +20,8 @@ import {
   type LifecycleBoardCard,
   type LifecycleBoardRemoval,
 } from "./db";
-import { currentPeriod, shiftPeriod } from "./period";
+import { createCampaign } from "./campaigns";
+import { APP_TIME_ZONE, currentPeriod, shiftPeriod } from "./period";
 import { listRevClients, updateRevClient } from "./revenue";
 
 export interface BoardColumn {
@@ -121,6 +122,8 @@ export interface BoardCampaignItem {
   delivered: boolean;
   /** True once an approval card exists to comment a follow-up onto. */
   hasCard: boolean;
+  /** True when this send was logged from the board for work done off-app. */
+  loggedOffApp: boolean;
 }
 
 export interface BoardCard {
@@ -226,7 +229,7 @@ export function listBoardCards(period: string): BoardCard[] {
   const campaignRows = db
     .prepare(
       `SELECT c.id, c.title, c.client_id, c.status, c.approved_channel, c.updated_at, c.magic_token,
-              c.basecamp_card_id,
+              c.basecamp_card_id, c.logged_off_app,
               SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
               SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
          FROM campaigns c
@@ -247,6 +250,7 @@ export function listBoardCards(period: string): BoardCard[] {
     updated_at: string;
     magic_token: string;
     basecamp_card_id: string | null;
+    logged_off_app: number;
     email_count: number;
     sms_count: number;
   }>;
@@ -264,6 +268,7 @@ export function listBoardCards(period: string): BoardCard[] {
       smsCount: r.sms_count,
       delivered: true,
       hasCard: Boolean(r.basecamp_card_id),
+      loggedOffApp: Boolean(r.logged_off_app),
     });
     campaignsByClient.set(r.client_id, list);
   }
@@ -291,6 +296,89 @@ function getCardRow(id: string): LifecycleBoardCard | undefined {
 
 export function boardCardExists(id: string): boolean {
   return Boolean(getCardRow(id));
+}
+
+const OFF_APP_STATUSES = new Set<CampaignStatus>(["sent", "approved"]);
+
+export interface OffAppCampaignInput {
+  title: string;
+  /** YYYY-MM-DD. Clamped onto this card's month so the send lands on this board. */
+  sentOn?: string;
+  status?: "sent" | "approved";
+}
+
+/**
+ * Stamp a completed send onto a board card for work that never went through
+ * Campaign Desk. The board's counts read live off `campaigns`, so this is a
+ * real sent/approved campaign with one email — not a parallel ledger.
+ */
+export function logOffAppCampaign(
+  cardId: string,
+  input: OffAppCampaignInput
+): BoardCard | null {
+  const row = getCardRow(cardId);
+  if (!row || row.dismissed === 1) return null;
+  const title = input.title.trim();
+  if (!title) return null;
+
+  const client = listRevClients(true).find((c) => c.id === row.client_id);
+  if (!client) return null;
+
+  const status: CampaignStatus = OFF_APP_STATUSES.has(input.status as CampaignStatus)
+    ? (input.status as CampaignStatus)
+    : "sent";
+  const createdAt = isoInPeriod(row.period, input.sentOn);
+  const ts = nowIso();
+
+  const db = getDb();
+  const run = db.transaction(() => {
+    const campaign = createCampaign({
+      title,
+      clientName: client.name,
+      clientId: client.id,
+      description: "Logged off-app. Completed outside Campaign Desk.",
+      htmlContent: "<p>Logged off-app — no copy in Campaign Desk.</p>",
+      emailTitle: title,
+    });
+    db.prepare(
+      `UPDATE campaigns
+          SET status = ?, created_at = ?, logged_off_app = 1,
+              approved_at = ?, approved_channel = ?, updated_at = ?
+        WHERE id = ?`
+    ).run(
+      status,
+      createdAt,
+      status === "approved" ? createdAt : null,
+      status === "approved" ? "client" : null,
+      ts,
+      campaign.id
+    );
+    return campaign.id;
+  });
+  run();
+
+  return listBoardCards(row.period).find((c) => c.id === cardId) ?? null;
+}
+
+/** Put `sentOn` (or today) on this board month so SQLite's UTC month key matches. */
+function isoInPeriod(period: string, sentOn?: string): string {
+  const [py, pm] = period.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  let day = Math.min(15, lastDay);
+
+  if (sentOn && /^\d{4}-\d{2}-\d{2}$/.test(sentOn)) {
+    const d = Number(sentOn.slice(8, 10));
+    if (Number.isFinite(d) && d >= 1) day = Math.min(d, lastDay);
+  } else if (currentPeriod() === period) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: APP_TIME_ZONE,
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const today = Number(parts.find((p) => p.type === "day")?.value || "15");
+    if (Number.isFinite(today) && today >= 1) day = Math.min(today, lastDay);
+  }
+
+  return new Date(Date.UTC(py, pm - 1, day, 12, 0, 0)).toISOString();
 }
 
 /**

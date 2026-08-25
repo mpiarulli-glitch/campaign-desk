@@ -57,6 +57,52 @@
   padding: 30px 0 96px;
 }
 
+/* Deliverables board uses the whole main pane: no leftover vertical scroll,
+   cards fill leftover height then overflow to the right. */
+.hud.hud-fill {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.hud-page.hud-page-fill {
+  width: calc(100% - 40px);
+  max-width: none;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  padding: 16px 0 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.hud-page-fill .hud-bar {
+  flex: none;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+.hud-page-fill .hud-channels {
+  flex: none;
+  margin-bottom: 12px;
+}
+
+.hud-board-fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+.hud-board-fill .hud-board-toolbar,
+.hud-board-fill .hud-board-summary,
+.hud-board-fill .hud-err,
+.hud-board-fill .hud-empty {
+  flex: none;
+}
+
 /* --------------------------------------------------------------- primitives */
 
 .hud-eyebrow {
@@ -1005,6 +1051,7 @@
    rather than a column, because it holds the whole roster and a vertical
    column of fifty cards is unusable. */
 .hud-triage {
+  flex: none;
   border: 1px solid var(--seam);
   border-radius: 10px;
   background: var(--hull-lift);
@@ -1019,7 +1066,6 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-.hud-triage.open .hud-triage-head { margin-bottom: 9px; }
 
 .hud-triage-toggle {
   appearance: none;
@@ -1049,22 +1095,59 @@
   color: var(--ghost-dim);
 }
 
+.hud-board-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.hud-triage-empty {
+  flex: 0 0 220px;
+  align-self: center;
+  margin: 0;
+}
+
+/* Height-first columns: cards fill leftover height, then spill to the right.
+   The workspace is the only scroller, and it only moves left-to-right. */
 .hud-triage-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: stretch;
+  align-self: stretch;
   gap: 7px;
-  max-height: 340px;
-  overflow-y: auto;
-  padding-right: 2px;
-  align-content: start;
+  height: 100%;
+  max-height: 100%;
+  width: max-content;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.hud-triage-grid > .hud-board-card {
+  width: 196px;
+  flex: 0 0 auto;
 }
 
 .hud-board-cols {
   display: flex;
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  align-items: flex-start;
+  align-items: stretch;
+  align-self: stretch;
+  height: 100%;
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-bottom: 0;
+}
+.hud-triage-grid + .hud-board-cols,
+.hud-triage-empty + .hud-board-cols {
+  padding-left: 10px;
+  margin-left: 2px;
+  border-left: 1px solid var(--seam);
 }
 
 .hud-board-col {
@@ -1077,8 +1160,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-height: 100px;
-  max-height: 620px;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   transition: background-color 0.15s ease;
 }
@@ -1129,6 +1213,8 @@
 .hud-board-card.open {
   border-color: var(--arc);
   box-shadow: var(--shadow);
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .hud-board-card-head {
@@ -1223,6 +1309,55 @@
 }
 .hud-board-card-edit .hud-link { font-size: 10px; align-self: flex-start; }
 
+.hud-board-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 7px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--seam);
+}
+.hud-board-log-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ghost-dim);
+}
+.hud-board-log input[type="text"] {
+  width: 100%;
+  font-size: 11px;
+  padding: 4px 6px;
+  text-align: left;
+}
+.hud-board-log-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.hud-board-log input[type="date"] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  font-size: 10px;
+  padding: 2px 4px;
+  text-align: left;
+}
+.hud-board-log select {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  padding: 2px 4px;
+}
+.hud-board-log .hud-btn {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 4px 8px;
+  letter-spacing: 0.04em;
+}
+.hud-board-log .hud-err {
+  font-size: 10px;
+  margin: 0;
+}
+
 .hud-board-camp-wrap {
   display: flex;
   flex-direction: column;
@@ -1307,6 +1442,18 @@
   letter-spacing: 0.06em;
   color: var(--arc-deep);
   border: 1px solid var(--arc);
+  border-radius: 3px;
+  padding: 0 3px;
+  flex-shrink: 0;
+}
+.hud-board-camp-off {
+  font-family: var(--instrument);
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ghost);
+  border: 1px solid var(--seam-lit);
   border-radius: 3px;
   padding: 0 3px;
   flex-shrink: 0;

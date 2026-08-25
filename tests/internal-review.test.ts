@@ -25,7 +25,19 @@ test("internal review todo copy mentions the AM and only the review link", () =>
   assert.match(content.description, /@Cassidy, please review this campaign internally/);
   assert.match(content.description, /Internal review link/);
   assert.match(content.description, /https:\/\/desk\.example\/review\/internal-token/);
+  assert.match(content.description, /CC: @Sylvia/);
   assert.doesNotMatch(content.description, /Open in Campaign Desk/);
+});
+
+test("internal review CC uses the Basecamp attachment when Sylvia is resolved", () => {
+  const content = internalReviewTodoContent({
+    campaignTitle: "April newsletter",
+    clientName: "Vitatherapy",
+    mention: '<bc-attachment sgid="sgid-cassidy"></bc-attachment>',
+    reviewUrl: "https://desk.example/review/internal-token",
+    cc: '<bc-attachment sgid="sgid-sylvia"></bc-attachment>',
+  });
+  assert.match(content.description, /CC: <bc-attachment sgid="sgid-sylvia"><\/bc-attachment>/);
 });
 
 test("internal review mention uses the Basecamp attachment when possible", () => {
@@ -128,6 +140,7 @@ test("sending a campaign for internal review", async (t) => {
     assignee_ids?: number[];
     due_on?: string;
   } | null = null;
+  let nextTodoId = 99;
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -147,6 +160,14 @@ test("sending a campaign for internal review", async (t) => {
           employee: true,
           attachable_sgid: "sgid-cassidy",
         },
+        {
+          id: 8,
+          name: "Sylvia Artiga",
+          email_address: "sylvia@meg.com",
+          client: false,
+          employee: true,
+          attachable_sgid: "sgid-sylvia",
+        },
       ]);
     }
     if (url.includes("/projects/") && method === "GET") {
@@ -157,7 +178,8 @@ test("sending a campaign for internal review", async (t) => {
     }
     if (url.includes("/todos.json") && method === "POST") {
       lastTodo = JSON.parse(String(init?.body || "{}"));
-      return json({ id: 99, app_url: "https://3.basecamp.com/todo/99" });
+      const id = nextTodoId++;
+      return json({ id, app_url: `https://3.basecamp.com/todo/${id}` });
     }
     return json([]);
   }) as typeof fetch;
@@ -166,7 +188,20 @@ test("sending a campaign for internal review", async (t) => {
     globalThis.fetch = realFetch;
   });
 
+  await t.test("GET state has no to-do link before the first send", async () => {
+    const state = await internal.internalReviewState(created.id);
+    assert.ok(state);
+    assert.equal(state.todoUrl, null);
+    assert.equal(state.todoId, null);
+  });
+
   await t.test("creates an assigned Basecamp to-do and sets Internal review", async () => {
+    getDb()
+      .prepare(
+        `UPDATE campaigns SET basecamp_card_id = ?, basecamp_card_url = ? WHERE id = ?`
+      )
+      .run("card-1", "https://3.basecamp.com/card/1", created.id);
+
     const result = await internal.sendCampaignForInternalReview({
       campaignId: created.id,
       reviewerId: 2,
@@ -175,6 +210,7 @@ test("sending a campaign for internal review", async (t) => {
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.reviewerName, "Cassidy Merideth");
+    assert.equal(result.todoId, "99");
     assert.equal(result.todoUrl, "https://3.basecamp.com/todo/99");
     assert.equal(result.status, "internal_review");
     assert.equal(result.dueOn, "2026-08-25");
@@ -182,6 +218,8 @@ test("sending a campaign for internal review", async (t) => {
     assert.equal(lastTodo?.due_on, "2026-08-25");
     assert.match(lastTodo?.content || "", /April newsletter/);
     assert.match(lastTodo?.description || "", /bc-attachment sgid="sgid-cassidy"/);
+    assert.match(lastTodo?.description || "", /bc-attachment sgid="sgid-sylvia"/);
+    assert.match(lastTodo?.description || "", /CC:/);
     assert.match(lastTodo?.description || "", /Internal review link/);
     assert.doesNotMatch(lastTodo?.description || "", /Open in Campaign Desk/);
 
@@ -191,10 +229,56 @@ test("sending a campaign for internal review", async (t) => {
     assert.notEqual(row.status, "approved");
     assert.equal(row.approved_channel, null);
     assert.equal(row.approval_thank_you_due_at, null);
+    assert.equal(row.internal_review_todo_id, "99");
+    assert.equal(row.internal_review_todo_url, "https://3.basecamp.com/todo/99");
+    assert.equal(row.basecamp_card_id, "card-1");
+    assert.equal(row.basecamp_card_url, "https://3.basecamp.com/card/1");
+
+    const state = await internal.internalReviewState(created.id);
+    assert.ok(state);
+    assert.equal(state.todoUrl, "https://3.basecamp.com/todo/99");
+    assert.equal(state.todoId, "99");
 
     const deskTodo = todos.listTodos({ assignee: "cassidy" })[0];
     assert.ok(deskTodo);
     assert.match(deskTodo.title, /April newsletter/);
     assert.equal(deskTodo.due_date, "2026-08-25");
   });
+
+  await t.test("re-send stores the new Basecamp to-do URL", async () => {
+    const result = await internal.sendCampaignForInternalReview({
+      campaignId: created.id,
+      reviewerId: 2,
+      dueOn: "2026-08-26",
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.todoId, "100");
+    assert.equal(result.todoUrl, "https://3.basecamp.com/todo/100");
+
+    const row = campaigns.getCampaignById(created.id)!;
+    assert.equal(row.internal_review_todo_id, "100");
+    assert.equal(row.internal_review_todo_url, "https://3.basecamp.com/todo/100");
+    assert.equal(row.basecamp_card_id, "card-1");
+    assert.equal(row.basecamp_card_url, "https://3.basecamp.com/card/1");
+  });
+});
+
+test("campaign detail shows a Basecamp to-do link after internal review", () => {
+  const page = fs.readFileSync(
+    path.join("src/app/admin/campaigns/[id]/page.tsx"),
+    "utf8"
+  );
+  const start = page.indexOf("Internal review");
+  const end = page.indexOf("client approval workflow");
+  assert.ok(start >= 0 && end > start);
+  const panel = page.slice(start, end);
+
+  assert.match(panel, /Open Basecamp to-do/);
+  assert.match(panel, /internalReview\?\.todoUrl/);
+  assert.match(panel, /target="_blank"/);
+  assert.match(page, /data\.todoUrl/);
+  assert.match(page, /setInternalReview\(\(prev\) =>/);
+  assert.doesNotMatch(panel, /basecampApproval\.cardUrl/);
+  assert.doesNotMatch(panel, /basecamp_card_url/);
 });

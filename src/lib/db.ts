@@ -87,6 +87,10 @@ export interface Campaign {
   archived_at: string | null;
   basecamp_card_id: string | null;
   basecamp_card_url: string | null;
+  // Internal-review Basecamp to-do (assigned to the AM). Separate from the
+  // client-approval Deliverables card in basecamp_card_*.
+  internal_review_todo_id: string | null;
+  internal_review_todo_url: string | null;
   basecamp_approval_revision: string | null;
   basecamp_approval_sent_at: string | null;
   // YYYY-MM-DD last sent to the Deliverables card, or null when none was set.
@@ -102,6 +106,13 @@ export interface Campaign {
   presentation: "package" | "automation";
   trigger_label: string;
   trigger_kind: string;
+  /** 1 when this row was logged from the board for work done outside Campaign Desk. */
+  logged_off_app: number;
+  // When status is scheduled, the Pacific send instant (UTC ISO). Cron flips
+  // scheduled → sent once this has passed. Kept after send as the paper trail.
+  scheduled_send_at: string | null;
+  // Calendar scheduled_sends row used for this send, if we found/updated one.
+  scheduled_send_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2280,6 +2291,27 @@ function migrate(database: Database.Database) {
       `ALTER TABLE campaigns ADD COLUMN trigger_kind TEXT NOT NULL DEFAULT 'custom'`
     );
   }
+  if (!campaignCols.includes("logged_off_app")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN logged_off_app INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (!campaignCols.includes("scheduled_send_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN scheduled_send_at TEXT`);
+  }
+  if (!campaignCols.includes("scheduled_send_id")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN scheduled_send_id TEXT`);
+  }
+  if (!campaignCols.includes("internal_review_todo_id")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN internal_review_todo_id TEXT`);
+  }
+  if (!campaignCols.includes("internal_review_todo_url")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN internal_review_todo_url TEXT`);
+  }
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_campaigns_scheduled_due
+       ON campaigns(status, scheduled_send_at)`
+  );
   // Best-effort backfill by exact name match — only fills rows still unset,
   // so it's safe to run on every boot and never clobbers a manually-set link.
   database.exec(

@@ -944,6 +944,26 @@ export function recordBasecampApproval(
   return getCampaignById(id);
 }
 
+export function recordInternalReviewTodo(
+  id: string,
+  input: { todoId?: string | null; todoUrl?: string | null }
+): Campaign | null {
+  const existing = getCampaignById(id);
+  if (!existing) return null;
+  const todoId = (input.todoId || "").trim() || null;
+  const todoUrl = (input.todoUrl || "").trim() || null;
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+       SET internal_review_todo_id = ?,
+           internal_review_todo_url = ?,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .run(todoId, todoUrl, nowIso(), id);
+  return getCampaignById(id);
+}
+
 export function rememberBasecampApprovalCard(
   id: string,
   cardId: string,
@@ -1351,16 +1371,39 @@ export function applyOperatorCampaignStatus(
     });
   }
 
+  // Scheduled needs a send datetime. scheduleCampaign() is the only writer.
+  if (choice === "scheduled") {
+    return null;
+  }
+
   const leavingApproved = existing.status === "approved";
   if (leavingApproved) {
     clearApprovalThankYou(campaignId);
   }
-  return updateCampaign(campaignId, {
+  const updated = updateCampaign(campaignId, {
     status: storedStatusForOperatorChoice(choice),
     approvedAt: leavingApproved ? null : undefined,
     approvedBy: leavingApproved ? null : undefined,
     approvedChannel: leavingApproved ? null : undefined,
   });
+  // Drop the send instant when leaving the scheduled/sent path so a later
+  // cron tick cannot revive a draft from a leftover timestamp.
+  if (
+    updated &&
+    existing.status === "scheduled" &&
+    updated.status !== "sent" &&
+    updated.status !== "scheduled"
+  ) {
+    getDb()
+      .prepare(
+        `UPDATE campaigns
+         SET scheduled_send_at = NULL, scheduled_send_id = NULL, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(nowIso(), campaignId);
+    return getCampaignById(campaignId);
+  }
+  return updated;
 }
 
 // Move a campaign back out of "approved" (e.g. a single email got

@@ -1118,7 +1118,15 @@ function SlotPopover({
   );
 }
 
-type View = "today" | "list" | "week" | "calendar";
+type View = "today" | "list" | "calendar";
+
+// The old Week day-column board is gone. Bookmarks with ?view=week (or
+// anything unrecognised) land on the same default as a fresh visit: Today
+// for this week, List when looking at another week.
+function parseForecastView(raw: string | null, weekStart: string): View {
+  if (raw === "today" || raw === "list" || raw === "calendar") return raw;
+  return isCurrentWeek(weekStart) ? "today" : "list";
+}
 
 export default function PersonForecastPage() {
   const router = useRouter();
@@ -1126,7 +1134,9 @@ export default function PersonForecastPage() {
   const searchParams = useSearchParams();
 
   const [week, setWeek] = useState(searchParams.get("week") || currentWeek());
-  const [view, setView] = useState<View>(isCurrentWeek(searchParams.get("week") || currentWeek()) ? "today" : "list");
+  const [view, setView] = useState<View>(() =>
+    parseForecastView(searchParams.get("view"), searchParams.get("week") || currentWeek())
+  );
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2388,7 +2398,7 @@ export default function PersonForecastPage() {
     return (
       <button
         type="button"
-        className={`fc-timer-btn ${live ? "is-running" : ""} ${compact ? "is-compact" : ""}`}
+        className={`fc-timer-btn ${compact ? "is-compact" : ""} ${live ? "is-running" : ""}`}
         disabled={timerBusy === task.id}
         onClick={(e) => {
           e.stopPropagation();
@@ -2406,10 +2416,10 @@ export default function PersonForecastPage() {
         <span className="fc-timer-icon" aria-hidden="true" />
         {live
           ? formatTracked(seconds, true)
-          : seconds
-            ? formatTracked(seconds, false)
-            : compact
-              ? "Start"
+          : compact
+            ? "Start timer"
+            : seconds
+              ? formatTracked(seconds, false)
               : "Start task"}
       </button>
     );
@@ -2851,9 +2861,6 @@ export default function PersonForecastPage() {
               <button className={`view-toggle-btn ${view === "list" ? "is-on" : ""}`} onClick={() => setView("list")}>
                 List
               </button>
-              <button className={`view-toggle-btn ${view === "week" ? "is-on" : ""}`} onClick={() => setView("week")}>
-                Week
-              </button>
               <button className={`view-toggle-btn ${view === "calendar" ? "is-on" : ""}`} onClick={() => setView("calendar")}>
                 Calendar
               </button>
@@ -3222,119 +3229,6 @@ export default function PersonForecastPage() {
               </div>
             );
           })()
-        ) : view === "week" ? (
-          <div className="ops-planner">
-            {days.map((date) => {
-              const tasks = tasksByDay.get(date) || [];
-              const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
-              const draft = draftFor(date);
-              const isAdding = addingFor === date;
-              return (
-                <div
-                  key={date}
-                  className={`ops-day-col ${date === today ? "is-today" : ""} ${
-                    dropDay === date ? "is-drop-target" : ""
-                  } ${dayHours > 8 ? "is-loaded" : ""}`}
-                  {...dayDropProps(date)}
-                >
-                  <div className="ops-day-head">
-                    <div>
-                      <div className="ops-day-name">{dayName(date)}</div>
-                      <div className="ops-day-date">{dayShortDate(date)}</div>
-                    </div>
-                    <span className="ops-day-hours">{dayHours ? `${dayHours}h` : "—"}</span>
-                  </div>
-
-                  <div className="ops-day-tasks">
-                    {tasks.map((t) => (
-                      <div
-                        key={t.id}
-                        className={`ops-task-chip col-${normalizeTaskColor(t.color)} ${t.completed ? "is-done" : ""} ${
-                          dragId === t.id ? "is-dragging" : ""
-                        } ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
-                        {...reorderProps(t, date)}
-                      >
-                        <div className="chip-top">
-                          {reorderHandle(t, date)}
-                          <input
-                            type="checkbox"
-                            className="done-check"
-                            checked={!!t.completed}
-                            onChange={() => toggleCompleted(t)}
-                            aria-label="Mark complete"
-                          />
-                          <input
-                            key={`${t.id}-client`}
-                            defaultValue={t.client}
-                            onBlur={(e) => saveField(t, "client", e.target.value)}
-                            placeholder="Client"
-                            className="client"
-                          />
-                          <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
-                          <input
-                            key={`${t.id}-hours`}
-                            defaultValue={t.hours}
-                            onBlur={(e) => saveField(t, "hours", e.target.value)}
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            className="hrs"
-                            aria-label="Hours"
-                          />
-                        </div>
-                        <input
-                          key={`${t.id}-notes`}
-                          defaultValue={t.notes}
-                          onBlur={(e) => saveField(t, "notes", e.target.value)}
-                          placeholder="Task notes"
-                          className="notes"
-                          title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
-                        />
-                        <ForecastSubtasks
-                          person={person}
-                          taskId={t.id}
-                          subtasks={t.subtasks || []}
-                          compact
-                          onChanged={() => load(week, { silent: true })}
-                          onNotice={setError}
-                        />
-                        <div className="chip-foot">
-                          <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
-                          <TimerButton task={t} compact />
-                          <LogTime task={t} />
-                          <button className="remove" onClick={() => removeTask(t.id)}>×</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="ops-day-add">
-                    {isAdding ? (
-                      <AddTaskForm
-                        draft={draft}
-                        patch={(p) => setDraft(date, p)}
-                        clients={pickerClients}
-                        todoState={todosByClient[draft.clientId]}
-
-                        eventState={eventsByDate[date]}
-                        onPickClient={(id) => pickClient(date, id)}
-                        onPickMode={(m) => pickMode(date, m)}
-                        onAdd={() => addTask(date)}
-                        onCancel={() => setAddingFor(null)}
-                        layout="stack"
-                        autoFocus
-                        busy={saving}
-                      />
-                    ) : (
-                      <button className="ops-add-trigger" onClick={() => setAddingFor(date)}>
-                        + Add task
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         ) : view === "calendar" ? (
           <div className="fc-planner">
             <ForecastQueue
@@ -3489,13 +3383,16 @@ export default function PersonForecastPage() {
                     >
                       Remove task
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => setEditing(null)}
-                    >
-                      Done
-                    </button>
+                    <div className="fc-edit-foot-actions">
+                      <TimerButton task={editingTask} compact />
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setEditing(null)}
+                      >
+                        Done
+                      </button>
+                    </div>
                   </div>
                 </div>
               </SlotPopover>

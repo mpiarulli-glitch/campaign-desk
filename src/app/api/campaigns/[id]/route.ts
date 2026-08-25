@@ -27,6 +27,7 @@ import {
   applyOperatorCampaignStatus,
 } from "@/lib/campaigns";
 import { isOperatorCampaignStatus } from "@/lib/campaign-status";
+import { scheduleCampaign, suggestedSendForCampaign } from "@/lib/campaign-schedule";
 import {
   actorBasecampIdentity,
   syncCampaignDeliverablesCard,
@@ -87,6 +88,7 @@ export async function GET(_request: Request, { params }: Params) {
       review_url: reviewUrl(campaign.magic_token),
       external_review_url: reviewUrl(campaign.external_token),
       email_count: emails.length,
+      suggested_send: suggestedSendForCampaign(campaign),
     },
     emails,
     flow,
@@ -211,7 +213,17 @@ export async function PATCH(request: Request, { params }: Params) {
     typeof body.status === "string" && isOperatorCampaignStatus(body.status)
       ? body.status
       : undefined;
-  if (statusChoice) {
+  let flippedToSent = false;
+  if (statusChoice === "scheduled") {
+    const sendDate = typeof body.sendDate === "string" ? body.sendDate : "";
+    const sendTime = typeof body.sendTime === "string" ? body.sendTime : "";
+    const sendId = typeof body.sendId === "string" ? body.sendId : undefined;
+    const scheduled = scheduleCampaign(id, { sendDate, sendTime, sendId });
+    if ("error" in scheduled) {
+      return NextResponse.json({ error: scheduled.error }, { status: 400 });
+    }
+    flippedToSent = scheduled.flippedToSent;
+  } else if (statusChoice) {
     applyOperatorCampaignStatus(id, statusChoice, await internalApproverLabel());
   }
 
@@ -249,17 +261,24 @@ export async function PATCH(request: Request, { params }: Params) {
     existing.status !== "approved"
   ) {
     await syncCard(id, "approved");
-  } else if (statusChoice === "scheduled" && existing.status !== "scheduled") {
+  } else if (
+    statusChoice === "scheduled" &&
+    !flippedToSent &&
+    existing.status !== "scheduled"
+  ) {
     await syncCard(id, "scheduled");
   }
 
+  const fresh = campaign || getCampaignById(id);
   return NextResponse.json({
     campaign: {
-      ...campaign,
+      ...fresh,
       open_comments: countOpenComments(id),
-      review_url: reviewUrl(campaign!.magic_token),
+      review_url: reviewUrl(fresh!.magic_token),
+      suggested_send: fresh ? suggestedSendForCampaign(fresh) : null,
     },
     emails: listEmails(id),
+    flippedToSent,
   });
 }
 

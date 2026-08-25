@@ -4,15 +4,21 @@ import {
   createAssignedTodo,
   getProjectPeopleForMention,
   mentionHtml,
+  resolveSylviaMention,
   type BcIdentity,
   type BcPerson,
 } from "./basecamp";
 import { createTodo } from "./todos";
-import { getCampaignById, applyOperatorCampaignStatus } from "./campaigns";
+import {
+  getCampaignById,
+  applyOperatorCampaignStatus,
+  recordInternalReviewTodo,
+} from "./campaigns";
 import { resolveCampaignClient } from "./campaign-card-sync";
 import { adminCampaignUrl, reviewUrl } from "./auth";
 import { basecampNameForManager } from "./people";
 import { slugForName, teamLabel } from "./team";
+import { sylviaCcHtml } from "./review-cc";
 
 export type InternalReviewPerson = {
   id: number;
@@ -109,6 +115,7 @@ export function internalReviewTodoContent(input: {
   clientName: string;
   mention: string;
   reviewUrl: string;
+  cc?: string;
 }): { title: string; description: string } {
   const who = input.clientName.trim() ? `${input.clientName.trim()}: ` : "";
   const greeting = input.mention || "Hey";
@@ -119,6 +126,7 @@ export function internalReviewTodoContent(input: {
       `<ul>`,
       `<li><a href="${escapeHtml(input.reviewUrl)}">Internal review link</a></li>`,
       `</ul>`,
+      sylviaCcHtml(input.cc),
     ].join(""),
   };
 }
@@ -132,6 +140,7 @@ export async function sendCampaignForInternalReview(input: {
   | {
       ok: true;
       reviewerName: string;
+      todoId: string;
       todoUrl: string;
       status: string;
       dueOn: string | null;
@@ -192,6 +201,7 @@ export async function sendCampaignForInternalReview(input: {
       }
     ),
     reviewUrl: reviewUrl(campaign.magic_token),
+    cc: await resolveSylviaMention(roster, identity),
   });
   const dueOn = parseInternalReviewDueOn(input.dueOn);
 
@@ -206,6 +216,11 @@ export async function sendCampaignForInternalReview(input: {
   if (!created.ok) {
     return { ok: false, error: created.error, status: 502 };
   }
+
+  recordInternalReviewTodo(input.campaignId, {
+    todoId: created.todoId,
+    todoUrl: created.todoUrl,
+  });
 
   const assigneeSlug =
     slugForName(reviewer.name) ||
@@ -229,6 +244,7 @@ export async function sendCampaignForInternalReview(input: {
   return {
     ok: true,
     reviewerName: reviewer.name,
+    todoId: created.todoId,
     todoUrl: created.todoUrl,
     status,
     dueOn,
@@ -244,6 +260,8 @@ export async function internalReviewState(campaignId: string): Promise<
       people: InternalReviewPerson[];
       peopleReason: string;
       defaultReviewerId: number | null;
+      todoUrl: string | null;
+      todoId: string | null;
     }
   | null
 > {
@@ -275,6 +293,7 @@ export async function internalReviewState(campaignId: string): Promise<
     people,
     client?.account_manager || ""
   );
+  const stored = getCampaignById(campaignId) || campaign;
 
   return {
     ready: missing.length === 0 && people.length > 0,
@@ -284,6 +303,8 @@ export async function internalReviewState(campaignId: string): Promise<
     people,
     peopleReason,
     defaultReviewerId: defaultReviewer?.id ?? null,
+    todoUrl: (stored.internal_review_todo_url || "").trim() || null,
+    todoId: (stored.internal_review_todo_id || "").trim() || null,
   };
 }
 

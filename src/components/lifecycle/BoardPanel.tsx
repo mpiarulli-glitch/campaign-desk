@@ -22,6 +22,10 @@ interface CardHandlers {
   onRemove: (card: BoardCard) => void;
   onFollowedUp: (cardId: string) => void;
   onFollowError: (error: string) => void;
+  onLogCampaign: (
+    id: string,
+    input: { title: string; sentOn?: string; status: "sent" | "approved" }
+  ) => Promise<void>;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }
@@ -40,12 +44,47 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
     card.suggestedColumnKey !== card.columnKey
       ? h.columns.find((c) => c.key === card.suggestedColumnKey)?.label
       : null;
+  const [logTitle, setLogTitle] = useState("");
+  const [logDate, setLogDate] = useState("");
+  const [logStatus, setLogStatus] = useState<"sent" | "approved">("sent");
+  const [logging, setLogging] = useState(false);
+  const [logError, setLogError] = useState("");
+
+  async function submitLog(e: React.FormEvent) {
+    e.preventDefault();
+    const title = logTitle.trim();
+    if (!title) {
+      setLogError("Add a title.");
+      return;
+    }
+    setLogging(true);
+    setLogError("");
+    try {
+      await h.onLogCampaign(card.id, {
+        title,
+        sentOn: logDate || undefined,
+        status: logStatus,
+      });
+      setLogTitle("");
+      setLogDate("");
+      setLogStatus("sent");
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : "Could not log that campaign.");
+    } finally {
+      setLogging(false);
+    }
+  }
 
   return (
     <div
       className={`hud-board-card ${h.dragging ? "dragging" : ""} ${h.isOpen ? "open" : ""}`}
       draggable
       onDragStart={(e) => {
+        const t = e.target as HTMLElement | null;
+        if (t?.closest("input, select, textarea, button, a, form")) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.setData("text/plain", card.id);
         h.onDragStart(card.id);
       }}
@@ -103,6 +142,9 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                 <span>{camp.title}</span>
                 {camp.smsCount > 0 ? (
                   <em className="hud-board-camp-sms">SMS</em>
+                ) : null}
+                {camp.loggedOffApp ? (
+                  <em className="hud-board-camp-off">Off-app</em>
                 ) : null}
                 {camp.emailCount > 1 ? (
                   <em className="hud-board-camp-n">×{camp.emailCount}</em>
@@ -164,6 +206,37 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
               Move to {suggestHint}
             </button>
           ) : null}
+
+          <form className="hud-board-log" onSubmit={(e) => void submitLog(e)}>
+            <span className="hud-board-log-label">Log campaign</span>
+            <input
+              type="text"
+              value={logTitle}
+              onChange={(e) => setLogTitle(e.target.value)}
+              placeholder="Title"
+              aria-label="Campaign title"
+            />
+            <div className="hud-board-log-row">
+              <input
+                type="date"
+                value={logDate}
+                onChange={(e) => setLogDate(e.target.value)}
+                aria-label="Sent date"
+              />
+              <select
+                value={logStatus}
+                onChange={(e) => setLogStatus(e.target.value as "sent" | "approved")}
+                aria-label="Status"
+              >
+                <option value="sent">Sent</option>
+                <option value="approved">Approved</option>
+              </select>
+              <button className="hud-btn hud-btn-quiet" type="submit" disabled={logging}>
+                {logging ? "Saving" : "Log"}
+              </button>
+            </div>
+            {logError ? <p className="hud-err">{logError}</p> : null}
+          </form>
         </div>
       ) : null}
     </div>
@@ -213,8 +286,8 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     void load(period);
   }, [period, load]);
 
-  // Triage is rendered as its own area above the board, so it is kept out of
-  // the pipeline column list rather than shown as a first column.
+  // Pipeline columns sit to the right of triage in the same horizontal
+  // scroller, so the page never has to scroll down to reach a stage.
   const pipelineColumns = useMemo(
     () => columns.filter((c) => c.key !== TRIAGE),
     [columns]
@@ -284,6 +357,31 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     [load, period]
   );
 
+  const logCampaign = useCallback(
+    async (
+      cardId: string,
+      input: { title: string; sentOn?: string; status: "sent" | "approved" }
+    ) => {
+      const res = await fetch(`/api/lifecycle/board/cards/${cardId}/campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Could not log that campaign."
+        );
+      }
+      if (data.card) {
+        setCards((prev) => prev.map((c) => (c.id === data.card.id ? data.card : c)));
+      } else {
+        void load(period);
+      }
+    },
+    [load, period]
+  );
+
   // Removing dismisses the card rather than deleting it, so the board's
   // per-client re-seed cannot bring it back on the next load. It also carries
   // into every later month, which past months never see.
@@ -324,6 +422,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
       onToggle: toggleCard,
       onMove: (id, key) => void moveCard(id, key),
       onQuota: (id, q) => void saveQuota(id, q),
+      onLogCampaign: logCampaign,
       onRemove: (c) => void removeCard(c),
       onFollowedUp: (cardId) => {
         setError("");
@@ -359,7 +458,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   }
 
   return (
-    <div className="hud-stack" style={{ gap: 14 }}>
+    <div className="hud-board-fill">
       <div className="hud-board-toolbar">
         <div className="hud-board-month">
           <button className="hud-btn hud-btn-quiet" onClick={() => setPeriod((p) => shiftPeriod(p, -1))}>
@@ -454,46 +553,48 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
               ) : null}
               <span className="hud-triage-hint">Drag one into a stage to start work</span>
             </div>
+          </div>
 
+          <div className="hud-board-workspace">
             {triageOpen ? (
               triageCards.length === 0 ? (
-                <p className="hud-empty" style={{ margin: 0 }}>
+                <p className="hud-empty hud-triage-empty">
                   {search ? "No client matches that." : "Triage is clear."}
                 </p>
               ) : (
-                <div className="hud-triage-grid">
+                <div className="hud-triage-grid" {...dropProps(TRIAGE)}>
                   {triageCards.map((card) => (
                     <Card key={card.id} card={card} {...handlersFor(card)} />
                   ))}
                 </div>
               )
             ) : null}
-          </div>
 
-          <div className="hud-board-cols">
-            {pipelineColumns.map((col) => {
-              const colCards = cardsByColumn.get(col.key) ?? [];
-              return (
-                <div
-                  key={col.key}
-                  className={`hud-board-col ${dragOverCol === col.key ? "drag-over" : ""}`}
-                  {...dropProps(col.key)}
-                >
-                  <div className="hud-board-col-head">
-                    <span>{col.label}</span>
-                    <span className="hud-board-col-count">{colCards.length}</span>
+            <div className="hud-board-cols">
+              {pipelineColumns.map((col) => {
+                const colCards = cardsByColumn.get(col.key) ?? [];
+                return (
+                  <div
+                    key={col.key}
+                    className={`hud-board-col ${dragOverCol === col.key ? "drag-over" : ""}`}
+                    {...dropProps(col.key)}
+                  >
+                    <div className="hud-board-col-head">
+                      <span>{col.label}</span>
+                      <span className="hud-board-col-count">{colCards.length}</span>
+                    </div>
+
+                    {colCards.length === 0 ? (
+                      <div className="hud-board-empty-col">Drop a card here</div>
+                    ) : (
+                      colCards.map((card) => (
+                        <Card key={card.id} card={card} {...handlersFor(card)} />
+                      ))
+                    )}
                   </div>
-
-                  {colCards.length === 0 ? (
-                    <div className="hud-board-empty-col">Drop a card here</div>
-                  ) : (
-                    colCards.map((card) => (
-                      <Card key={card.id} card={card} {...handlersFor(card)} />
-                    ))
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </>
       )}

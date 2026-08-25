@@ -232,7 +232,12 @@ export const ACCOUNT_MANAGER_BASECAMP_NAME: Record<string, string> = {
   kyle: "Morris Kyle",
   cassidy: "Cassidy Merideth",
   luis: "Luis Romero",
+  sylvia: "Sylvia Artiga",
 };
+
+// Basecamp display name used when CC'ing Sylvia on review notes. Same mapping
+// as the account-manager table so a first-name match cannot ping the wrong person.
+export const SYLVIA_BASECAMP_NAME = ACCOUNT_MANAGER_BASECAMP_NAME.sylvia;
 
 export function basecampNameForManager(value: string): string {
   return ACCOUNT_MANAGER_BASECAMP_NAME[(value || "").trim().toLowerCase()] || "";

@@ -23,6 +23,7 @@ import {
   type OpenTodoStep,
 } from "./todo-steps";
 import { shapeAssignments, type BcAssignment } from "./assignments";
+import { findSylviaOnRoster } from "./review-cc";
 
 // Re-exported so callers get the identity vocabulary from the same module they
 // already import the API functions from.
@@ -449,6 +450,26 @@ export function mentionHtml(person: BcPerson): string {
   return person.attachable_sgid
     ? `<bc-attachment sgid="${person.attachable_sgid}"></bc-attachment>`
     : `@${person.name}`;
+}
+
+// Real Basecamp mention for Sylvia when she is on the project or pingable on
+// the account. Falls back to the letters "@Sylvia" so the CC line still reads
+// the same if we cannot resolve her.
+export async function resolveSylviaMention(
+  people: BcPerson[],
+  identity: BcIdentity = SERVICE
+): Promise<string> {
+  let sylvia = findSylviaOnRoster(people);
+  if (!sylvia?.attachable_sgid) {
+    try {
+      const fromAccount = findSylviaOnRoster(await getPingablePeople(identity));
+      if (fromAccount?.attachable_sgid) sylvia = fromAccount;
+      else if (!sylvia) sylvia = fromAccount;
+    } catch {
+      // Keep the project hit, or nobody — the CC line still goes out.
+    }
+  }
+  return sylvia?.attachable_sgid ? mentionHtml(sylvia) : "@Sylvia";
 }
 
 // Post a rich-text line to a project's Campfire using the app's existing
@@ -1802,8 +1823,9 @@ export async function sendApprovalToDeliverables(input: {
   projectId: string;
   campaignTitle: string;
   // Built once the recipient is resolved, so the greeting can be a real mention
-  // rather than their name as plain text.
-  buildContent: (contactMention?: string) => string;
+  // rather than their name as plain text. Second argument is Sylvia's mention
+  // for the CC line.
+  buildContent: (contactMention?: string, ccMention?: string) => string;
   recipientIdentifiers: string[];
   existingCardId?: string | null;
   // An explicit pick from the send form. Beats the saved contact, which is why
@@ -1862,6 +1884,8 @@ export async function sendApprovalToDeliverables(input: {
       people.map((person) => person.id)
     );
     const dueFields = approvalDueFields(input.dueOn);
+    const ccMention = await resolveSylviaMention(people, identity);
+    const content = input.buildContent(mentionHtml(recipient), ccMention);
 
     let card: BcCard | null = null;
     if (input.existingCardId) {
@@ -1915,7 +1939,7 @@ export async function sendApprovalToDeliverables(input: {
       const commentRes = await bc(`/recordings/${card.id}/comments.json`, {
         method: "POST",
         body: JSON.stringify({
-          content: input.buildContent(mentionHtml(recipient)),
+          content,
         }),
       }, identity);
       if (!commentRes.ok) {
@@ -1941,7 +1965,7 @@ export async function sendApprovalToDeliverables(input: {
       method: "POST",
       body: JSON.stringify({
         title: input.campaignTitle,
-        content: input.buildContent(mentionHtml(recipient)),
+        content,
         notify: true,
         ...dueFields,
       }),

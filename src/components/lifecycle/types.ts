@@ -345,6 +345,7 @@ export interface BoardCampaignItem {
   smsCount: number;
   delivered: boolean;
   hasCard: boolean;
+  loggedOffApp?: boolean;
 }
 
 export interface BoardCard {

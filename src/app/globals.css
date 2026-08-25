@@ -5257,145 +5257,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --fc-rail: var(--border-strong);
 }
 
-.ops-planner {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  align-items: start;
-}
-.ops-day-col {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  transition: border-color 0.2s var(--fc-ease), box-shadow 0.2s var(--fc-ease),
-    background 0.2s var(--fc-ease);
-}
-/* Today's column is the one you're most likely acting on, so it gets a hairline
-   of accent rather than a full highlight. */
-.ops-day-col.is-today { border-color: rgba(0, 212, 232, 0.55); }
-.ops-day-col.is-drop-target {
-  border-color: var(--accent);
-  background: var(--bg-tint);
-  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.16);
-}
-.ops-day-head {
-  padding: 12px 14px 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-.ops-day-name {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-}
-.ops-day-date { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
-.ops-day-hours {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  flex: none;
-}
-.ops-day-col.is-loaded .ops-day-hours { color: var(--accent-ink); }
-.ops-day-tasks {
-  padding: 0 10px 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
-
-.ops-task-chip {
-  position: relative;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--fc-rail);
-  border-radius: 10px;
-  padding: 8px 10px 8px 11px;
-  transition: box-shadow 0.2s var(--fc-ease), transform 0.2s var(--fc-ease),
-    opacity 0.2s var(--fc-ease);
-}
-.ops-task-chip:hover { box-shadow: var(--shadow); }
-/* Lifted out of the column and tilted, so the card reads as picked up rather
-   than just faded. */
-.ops-task-chip.is-dragging {
-  opacity: 0.5;
-  transform: scale(0.98) rotate(-1.5deg);
-  box-shadow: var(--shadow-lift);
-}
-.ops-task-chip .chip-top {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.ops-task-chip .client {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-weight: 600;
-  font-size: 12.5px;
-  border: none;
-  background: none;
-  padding: 1px 0;
-  font-family: inherit;
-  color: var(--text);
-}
-.ops-task-chip .notes {
-  display: block;
-  width: 100%;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  border: none;
-  background: none;
-  padding: 1px 0 0;
-  font-family: inherit;
-}
-.ops-task-chip .hrs {
-  flex: none;
-  width: 34px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-body);
-  background: none;
-  border: none;
-  text-align: right;
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-}
-.ops-task-chip .chip-foot {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-/* Remove stays hard right however many controls sit before it. */
-.ops-task-chip .chip-foot .remove { margin-left: auto; }
-/* Destructive and secondary, so it stays invisible until the card is hovered
-   or something inside it has focus. */
-.ops-task-chip .remove {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 6px;
-  opacity: 0;
-  transition: opacity 0.15s var(--fc-ease), color 0.15s var(--fc-ease);
-}
-.ops-task-chip:hover .remove,
-.ops-task-chip:focus-within .remove { opacity: 1; }
-.ops-task-chip .remove:hover { color: var(--danger); background: rgba(214, 69, 69, 0.08); }
-.ops-task-chip.is-done { background: var(--bg-soft); border-left-color: var(--border-strong); }
-.ops-task-chip.is-done .client,
-.ops-task-chip.is-done .notes { opacity: 0.5; text-decoration: line-through; }
-
 /* Type-to-filter client picker. Its own input rules, because the shared field
    styles inside a task card strip borders to make text look inert. */
 .fc-combo { position: relative; min-width: 0; }
@@ -6672,8 +6533,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   width: 92px;
   font-variant-numeric: tabular-nums;
 }
-.ops-list-row input.ops-time,
-.ops-task-chip input.ops-time {
+.ops-list-row input.ops-time {
   border: none;
   background: none;
   padding: 2px 0;
@@ -6688,12 +6548,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   flex: none;
   width: 118px;
 }
-.ops-task-chip input.ops-time {
-  width: 78px;
-  font-size: 11px;
-}
 
-.ops-day-add { padding: 8px 10px 10px; }
 .ops-day-add-form { display: flex; flex-direction: column; gap: 6px; }
 .ops-day-add-form input,
 .ops-day-add-form select {
@@ -6703,24 +6558,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-size: 12px;
   font-family: inherit;
   background: var(--bg-elevated);
-}
-.ops-day-add button.ops-add-trigger {
-  width: 100%;
-  background: none;
-  border: 1px dashed var(--border-strong);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 7px;
-  border-radius: 9px;
-  transition: color 0.15s var(--fc-ease), border-color 0.15s var(--fc-ease),
-    background 0.15s var(--fc-ease);
-}
-.ops-day-add button.ops-add-trigger:hover {
-  background: var(--bg-soft);
-  border-color: var(--accent);
-  color: var(--accent-ink);
 }
 
 .ops-week-total {
@@ -6737,7 +6574,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 @media (max-width: 900px) {
   .ops-grid { grid-template-columns: 1fr; }
   .ops-stats { grid-template-columns: repeat(3, 1fr); }
-  .ops-planner { grid-template-columns: 1fr; }
   .ops-cap-row { grid-template-columns: 1fr; gap: 8px; }
 }
 
@@ -6968,7 +6804,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 /* A task's colour, carried by the card's leading rail only. Tinting the whole
    row turned a normal week into a wall of colour and drowned out everything
    else — the calendar is where a colour gets to be the whole block. */
-.ops-task-chip[class*="col-"],
 .ops-list-row[class*="col-"] { border-left-color: var(--fc-block); }
 
 .fc-swatches { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
@@ -7145,6 +6980,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   gap: 8px;
   margin-top: 2px;
 }
+.fc-edit-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.fc-edit-foot .fc-timer-btn.is-compact {
+  padding: 4px 9px;
+  font-size: 11px;
+}
 .fc-edit-remove { font-size: 11.5px; color: var(--danger); }
 
 /* List view (stacked day cards, full-width task rows) */
@@ -7199,9 +7044,6 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   gap: 4px;
   flex: 1 1 100%;
   margin: 2px 0 0 28px;
-}
-.ops-task-chip .ops-subtasks {
-  margin: 6px 0 4px 22px;
 }
 .ops-subtask {
   display: flex;
@@ -7331,18 +7173,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background-color: var(--bg-soft);
 }
 .ops-row-handle:active { cursor: grabbing; }
-.ops-task-chip .ops-row-handle {
-  width: 12px;
-  min-height: 22px;
-  margin: 0 0 0 -4px;
-}
 .ops-list-row.is-dragging {
   opacity: 0.5;
   transform: scale(0.995) rotate(-0.4deg);
   box-shadow: var(--shadow-lift);
 }
-.ops-list-row.is-drop-before::before,
-.ops-task-chip.is-drop-before::before {
+.ops-list-row.is-drop-before::before {
   content: "";
   position: absolute;
   left: 8px;
@@ -7385,10 +7221,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   font-variant-numeric: tabular-nums;
 }
 /* Editable-in-place fields read as plain text until you touch them. */
-.ops-list-row input:hover,
-.ops-task-chip input:hover { background: var(--bg-soft); border-radius: 5px; }
-.ops-list-row input:focus,
-.ops-task-chip input:focus {
+.ops-list-row input:hover { background: var(--bg-soft); border-radius: 5px; }
+.ops-list-row input:focus {
   background: var(--bg-elevated);
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -8316,14 +8150,13 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 @media (hover: none) {
   .ops-row-remove,
   .ops-list-row .btn-ghost,
-  .ops-task-chip .remove,
   .fc-queue-remove {
     opacity: 1;
   }
 }
 
 @media (max-width: 720px) {
-  /* The view switcher is four buttons that no longer fit. It scrolls sideways
+  /* The view switcher is three buttons that no longer fit. It scrolls sideways
      rather than wrapping mid-control, and keeps its rounded ends. */
   .view-toggle {
     max-width: 100%;
@@ -8972,6 +8805,8 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    neutralized here so it can't overflow the fixed shell. */
 .app-content { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 .app-content > * { min-height: 100%; }
+/* Lifecycle Deliverables fills the pane and only scrolls sideways. */
+.app-content:has(.hud-fill) { overflow: hidden; }
 
 /* Light / Dark / System segmented control in the account menu. */
 .app-theme-row { display: flex; gap: 4px; padding: 4px 10px 8px; }

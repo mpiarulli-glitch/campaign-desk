@@ -187,6 +187,7 @@ test("Kyle is Morris Kyle, not Kyle Onstott", () => {
 test("the other two managers map to their full names", () => {
   assert.equal(basecampNameForManager("Cassidy"), "Cassidy Merideth");
   assert.equal(basecampNameForManager("Luis"), "Luis Romero");
+  assert.equal(basecampNameForManager("Sylvia"), "Sylvia Artiga");
 });
 
 test("casing and stray spaces do not break the map", () => {

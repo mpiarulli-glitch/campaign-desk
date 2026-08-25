@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Campaign, CampaignEmail } from "./db";
+import { SYLVIA_CC_TEXT, stripSylviaCcLines, sylviaCcHtml } from "./review-cc";
 
 function escapeHtml(value: string): string {
   return value
@@ -49,7 +50,9 @@ One quick note: we accommodate one round of revisions per campaign, so please co
 
 To move forward, just reply with "Approved" or send over your feedback. Let us know if you have any questions.
 
-Looking forward to hearing from you!`;
+Looking forward to hearing from you!
+
+${SYLVIA_CC_TEXT}`;
 }
 
 export const APPROVAL_MESSAGE_MAX_CHARS = 12_000;
@@ -92,10 +95,11 @@ function blocksToHtml(text: string): string {
 // they rewrote or deleted "Hi Name," — assigning the card does not notify them.
 export function clientApprovalMessageHtmlFromText(
   text: string,
-  contactMention?: string
+  contactMention?: string,
+  ccMention?: string
 ): string {
-  const trimmed = (text || "").replace(/\r\n/g, "\n").trim();
-  if (!trimmed) return "";
+  const trimmed = stripSylviaCcLines((text || "").replace(/\r\n/g, "\n"));
+  if (!trimmed) return sylviaCcHtml(ccMention);
 
   const match = trimmed.match(GREETING_RE);
   const rest = match ? trimmed.slice(match[0].length).replace(/^\s+/, "") : trimmed;
@@ -103,7 +107,7 @@ export function clientApprovalMessageHtmlFromText(
     ? contactMention
     : escapeHtml((match?.[1] || "there").trim());
   const greeting = `<p>Hi ${greetingName},</p>`;
-  return greeting + (rest ? blocksToHtml(rest) : "");
+  return greeting + (rest ? blocksToHtml(rest) : "") + sylviaCcHtml(ccMention);
 }
 
 export function clientApprovalMessageHtml(
@@ -112,7 +116,8 @@ export function clientApprovalMessageHtml(
   // person on the project. Assigning somebody to the card does not notify them;
   // only a mention does, so "Hi Dana," in plain text looked like an address and
   // pinged nobody.
-  contactMention?: string
+  contactMention?: string,
+  ccMention?: string
 ): string {
   const name = contactMention || escapeHtml(firstName(input.clientContactName));
   const title = escapeHtml(input.campaignTitle);
@@ -141,6 +146,7 @@ export function clientApprovalMessageHtml(
     "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before replying. That way we can turn everything around in one pass.</p>",
     '<p>To move forward, just reply with <strong>"Approved"</strong> or send over your feedback. Let us know if you have any questions.</p>',
     "<p>Looking forward to hearing from you!</p>",
+    sylviaCcHtml(ccMention),
   ].join("");
 }
 

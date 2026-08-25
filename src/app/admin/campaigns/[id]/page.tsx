@@ -13,6 +13,8 @@ import {
   operatorStatusLabel,
   operatorStatusValue,
 } from "@/lib/campaign-status";
+import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
+import { APP_TIME_ZONE } from "@/lib/period";
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
 import {
@@ -153,6 +155,14 @@ type EmailItem = {
   delay_ms?: number;
 };
 
+type SuggestedSend = {
+  sendDate: string;
+  sendTime: string;
+  sendId: string | null;
+  title: string | null;
+  source: "calendar" | "saved";
+};
+
 type Campaign = {
   id: string;
   title: string;
@@ -174,6 +184,9 @@ type Campaign = {
   presentation?: Presentation;
   trigger_label?: string;
   trigger_kind?: string;
+  scheduled_send_at?: string | null;
+  scheduled_send_id?: string | null;
+  suggested_send?: SuggestedSend | null;
 };
 
 type BasecampPerson = {
@@ -211,6 +224,8 @@ type InternalReviewState = {
   people: Array<{ id: number; name: string; email: string; isClient: boolean }>;
   peopleReason: string;
   defaultReviewerId: number | null;
+  todoUrl: string | null;
+  todoId: string | null;
 };
 
 function firstNameOf(name: string): string {
@@ -227,6 +242,39 @@ function withApprovalGreeting(text: string, fullName: string): string {
 
 function withoutApprovalGreeting(text: string): string {
   return text.replace(/^Hi\s+[^,\n]+,\s*/, "");
+}
+
+function pacificDateTimeParts(at = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value || "";
+  return {
+    date: `${part("year")}-${part("month")}-${part("day")}`,
+    time: `${part("hour")}:${part("minute")}`,
+  };
+}
+
+function fmtYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function scheduleIsPast(sendDate: string, sendTime: string): boolean {
+  const at = zonedLocalToUtc(sendDate, sendTime, APP_TIME_ZONE);
+  return Boolean(at && at.getTime() <= Date.now());
 }
 
 export default function AdminCampaignPage() {
@@ -310,6 +358,12 @@ export default function AdminCampaignPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [sendingInternalReview, setSendingInternalReview] = useState(false);
+  const [schedulePromptOpen, setSchedulePromptOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("09:00");
+  const [scheduleSendId, setScheduleSendId] = useState("");
+  const [scheduleFromCalendar, setScheduleFromCalendar] = useState(false);
+  const [scheduleCalendarTitle, setScheduleCalendarTitle] = useState("");
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -374,6 +428,15 @@ export default function AdminCampaignPage() {
   useEffect(() => {
     load();
   }, [id]);
+
+  useEffect(() => {
+    if (!schedulePromptOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSchedulePromptOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [schedulePromptOpen]);
 
   async function loadBasecampApproval() {
     const res = await fetch(`/api/campaigns/${id}/basecamp-approval`);
@@ -901,35 +964,87 @@ export default function AdminCampaignPage() {
       return;
     }
     if (data.status) setStatus(data.status);
+    if (data.todoUrl) {
+      setInternalReview((prev) =>
+        prev
+          ? { ...prev, todoUrl: data.todoUrl, todoId: data.todoId || prev.todoId }
+          : prev
+      );
+    }
     setMessage(
       `Internal review to-do created for ${data.reviewerName || "the account manager"}.` +
-        (data.dueOn ? ` Due ${data.dueOn}.` : "") +
-        (data.todoUrl ? " Check Basecamp for the assigned to-do." : "")
+        (data.dueOn ? ` Due ${data.dueOn}.` : "")
     );
     await load(activeEmailId);
     await loadInternalReview();
   }
 
-  async function saveStatus(next: string) {
+  async function saveStatus(
+    next: string,
+    extras?: { sendDate?: string; sendTime?: string; sendId?: string }
+  ) {
     setSaving(true);
     setMessage("");
+    setError("");
     const res = await fetch(`/api/campaigns/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
+      body: JSON.stringify({
+        status: next,
+        sendDate: extras?.sendDate,
+        sendTime: extras?.sendTime,
+        sendId: extras?.sendId || undefined,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) {
-      setError("Could not update status.");
-      return;
+      setError(data.error || "Could not update status.");
+      return false;
     }
     if (data.campaign) {
       setCampaign(data.campaign);
       setStatus(data.campaign.status);
     }
-    setMessage("Status updated.");
+    setMessage(
+      data.flippedToSent
+        ? "Send time was already past, so this is marked Sent."
+        : "Status updated."
+    );
     load(activeEmailId);
+    return true;
+  }
+
+  function openSchedulePrompt() {
+    const hint = campaign?.suggested_send;
+    const fallback = pacificDateTimeParts();
+    setScheduleDate(hint?.sendDate || fallback.date);
+    setScheduleTime(hint?.sendTime || "09:00");
+    setScheduleSendId(hint?.sendId || "");
+    setScheduleFromCalendar(hint?.source === "calendar");
+    setScheduleCalendarTitle(hint?.title || "");
+    setSchedulePromptOpen(true);
+  }
+
+  function onStatusChoice(next: string) {
+    if (next === "scheduled") {
+      openSchedulePrompt();
+      return;
+    }
+    void saveStatus(next);
+  }
+
+  async function confirmSchedule() {
+    if (!scheduleDate || !scheduleTime) {
+      setError("Pick the date and time this campaign will send.");
+      return;
+    }
+    const ok = await saveStatus("scheduled", {
+      sendDate: scheduleDate,
+      sendTime: scheduleTime,
+      sendId: scheduleSendId,
+    });
+    if (ok) setSchedulePromptOpen(false);
   }
 
   // Copy edited straight in the preview. The edits name text runs rather than
@@ -1442,7 +1557,7 @@ export default function AdminCampaignPage() {
             ) : null}
             <select
               value={operatorStatusValue(status, campaign.approved_channel)}
-              onChange={(e) => saveStatus(e.target.value)}
+              onChange={(e) => onStatusChoice(e.target.value)}
               disabled={saving}
               className="select-clean"
               aria-label="Campaign status"
@@ -1453,6 +1568,25 @@ export default function AdminCampaignPage() {
                 </option>
               ))}
             </select>
+            {status === "scheduled" && campaign.scheduled_send_at ? (
+              <span className="muted" style={{ fontSize: 13 }}>
+                Sends {fmtYmd(pacificDateTimeParts(new Date(campaign.scheduled_send_at)).date)}
+                {" at "}
+                {formatTimeLabel(
+                  pacificDateTimeParts(new Date(campaign.scheduled_send_at)).time
+                )}{" "}
+                PT
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={openSchedulePrompt}
+                  disabled={saving}
+                  style={{ marginLeft: 6 }}
+                >
+                  Change time
+                </button>
+              </span>
+            ) : null}
             <button
               className="btn btn-secondary btn-sm"
               onClick={toggleArchived}
@@ -1749,15 +1883,31 @@ export default function AdminCampaignPage() {
                       internalReview.ready ? "is-ready" : "is-blocked"
                     }`}
                   >
-                    {internalReview.ready ? "Ready to send" : "Setup needed"}
+                    {internalReview.ready
+                      ? internalReview.todoUrl
+                        ? "Sent"
+                        : "Ready to send"
+                      : "Setup needed"}
                   </span>
                 ) : (
                   <span className="bc-state">Checking...</span>
                 )}
               </div>
               <div className="bc-head-actions">
+                {internalReview?.todoUrl ? (
+                  <a
+                    className="btn btn-secondary btn-sm"
+                    href={internalReview.todoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Basecamp to-do
+                  </a>
+                ) : null}
                 <button
-                  className="btn btn-sm"
+                  className={`btn btn-sm ${
+                    internalReview?.todoUrl ? "btn-secondary" : ""
+                  }`}
                   onClick={sendInternalReview}
                   disabled={
                     !internalReview?.ready ||
@@ -1767,7 +1917,9 @@ export default function AdminCampaignPage() {
                 >
                   {sendingInternalReview
                     ? "Sending..."
-                    : "Send campaign for internal review"}
+                    : internalReview?.todoUrl
+                      ? "Resend for internal review"
+                      : "Send campaign for internal review"}
                 </button>
               </div>
             </div>
@@ -1819,14 +1971,16 @@ export default function AdminCampaignPage() {
               </p>
             </div>
             {internalReview && !internalReview.ready ? (
-              <p className="bc-fact">
-                {internalReview.missing.includes("Basecamp connection")
-                  ? "Basecamp isn't connected. Connect it before sending for internal review."
-                  : internalReview.missing.length
-                    ? `Setup needed: ${internalReview.missing.join(", ")}.`
-                    : internalReview.peopleReason ||
-                      "Pick an account manager once the project roster loads."}
-              </p>
+              <div className="bc-facts">
+                <p className="bc-fact">
+                  {internalReview.missing.includes("Basecamp connection")
+                    ? "Basecamp isn't connected. Connect it before sending for internal review."
+                    : internalReview.missing.length
+                      ? `Setup needed: ${internalReview.missing.join(", ")}.`
+                      : internalReview.peopleReason ||
+                        "Pick an account manager once the project roster loads."}
+                </p>
+              </div>
             ) : null}
           </div>
 
@@ -2715,6 +2869,95 @@ export default function AdminCampaignPage() {
           </div>
         ) : null}
       </main>
+      {schedulePromptOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => setSchedulePromptOpen(false)}
+        >
+          <div
+            className="modal card card-pad stack"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="schedule-send-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 id="schedule-send-title" className="h2">
+                When does this send?
+              </h2>
+              <p className="muted" style={{ marginTop: 6 }}>
+                Pacific time. After this moment the campaign is marked Sent
+                automatically.
+              </p>
+            </div>
+            {scheduleFromCalendar ? (
+              <p className="field-hint" style={{ margin: 0 }}>
+                This matches
+                {scheduleCalendarTitle ? (
+                  <>
+                    {" "}
+                    <strong>{scheduleCalendarTitle}</strong>
+                  </>
+                ) : (
+                  " a send"
+                )}{" "}
+                already on the calendar
+                {scheduleDate
+                  ? ` for ${fmtYmd(scheduleDate)}${
+                      scheduleTime ? ` at ${formatTimeLabel(scheduleTime)}` : ""
+                    }`
+                  : ""}
+                . Keep that time or change it.
+              </p>
+            ) : null}
+            <div className="rev-form-grid">
+              <div className="field">
+                <label htmlFor="campaign-send-date">Send date</label>
+                <input
+                  id="campaign-send-date"
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="campaign-send-time">Send time</label>
+                <input
+                  id="campaign-send-time"
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            {scheduleDate && scheduleTime && scheduleIsPast(scheduleDate, scheduleTime) ? (
+              <p className="field-hint" style={{ margin: 0 }}>
+                That time has already passed, so this will be marked Sent now.
+              </p>
+            ) : null}
+            <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setSchedulePromptOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void confirmSchedule()}
+                disabled={saving || !scheduleDate || !scheduleTime}
+              >
+                {saving ? "Saving..." : "Schedule"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
