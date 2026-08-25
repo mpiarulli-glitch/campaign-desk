@@ -1,0 +1,29 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import fs from "node:fs";
+import path from "path";
+import { isValidPerson, usesLeadershipHome } from "../src/lib/people";
+import { weekSummaryForAllPeople } from "../src/lib/forecast";
+import { currentWeek } from "../src/lib/week";
+
+test("Sylvia has a forecast roster slot like everyone else", () => {
+  assert.equal(isValidPerson("sylvia"), true);
+  const week = weekSummaryForAllPeople(currentWeek());
+  assert.ok(
+    week.some((p) => p.person === "sylvia"),
+    "Sylvia should appear in the all-team forecast"
+  );
+});
+
+test("the admin home routes leadership slugs to LeadershipHome", () => {
+  const src = fs.readFileSync(
+    path.join("src/app/admin/page.tsx"),
+    "utf8"
+  );
+  assert.match(src, /usesLeadershipHome/);
+  assert.match(src, /LeadershipHome/);
+  assert.equal(usesLeadershipHome("sylvia"), true);
+  assert.equal(usesLeadershipHome("kyle_onstott"), true);
+  assert.equal(usesLeadershipHome("luis_romero"), true);
+  assert.equal(usesLeadershipHome("kyle_morris"), true);
+});

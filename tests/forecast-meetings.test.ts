@@ -213,6 +213,10 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     // Basecamp calendar, otherwise there is nothing to log time against.
     assert.match(src, /createScheduleEntry/);
     assert.match(src, /Pick a client or project so this can go on that Basecamp calendar/);
+    // Unlinked rows used to hide the Log time pill entirely. It has to stay on
+    // the row so typed/restored work can still pick a todo and log hours.
+    assert.doesNotMatch(src, /if \(!linked\) return null/);
+    assert.match(src, /setLogAskMode\("manual"\)/);
   });
 
   await t.test("a normal work task is unaffected", () => {

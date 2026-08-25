@@ -10,6 +10,7 @@ import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   OPERATOR_STATUS_OPTIONS,
+  operatorStatusLabel,
   operatorStatusValue,
 } from "@/lib/campaign-status";
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
@@ -1686,7 +1687,7 @@ export default function AdminCampaignPage() {
                 className="btn"
                 onClick={markRevisionDone}
                 disabled={saving}
-                title="Marks all open feedback resolved and sets status to In review so your boss can check the update."
+                title={`Marks all open feedback resolved and sets status to ${operatorStatusLabel("in_review")} so the client can check the update.`}
               >
                 {saving ? "Saving..." : "Mark revision done"}
               </button>
@@ -2356,6 +2357,19 @@ export default function AdminCampaignPage() {
                 interactive={activeDoc.interactive}
                 editing={editingCopy}
                 onEditsChange={setPendingEdits}
+                packageNav={
+                  emails.length > 1
+                    ? {
+                        items: emails.map((email) => ({
+                          id: email.id,
+                          title: email.title,
+                        })),
+                        activeId: activeEmail.id,
+                        onSelect: selectEmail,
+                        itemLabel: kindNoun(activeEmail.kind ?? "email"),
+                      }
+                    : undefined
+                }
               />
               <EmailLinks html={activeDoc.html} />
 

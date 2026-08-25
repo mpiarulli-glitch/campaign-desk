@@ -1260,13 +1260,89 @@ button {
   border-radius: 6px;
 }
 
-/* Device preview toggle (desktop / mobile) above the email preview. */
+/* Device preview toggle (desktop / mobile) above the email preview.
+   When the package has more than one item, prev/next sit in this same bar. */
 .preview-devicebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.preview-devices {
   display: flex;
   gap: 6px;
   justify-content: center;
-  margin-top: 14px;
-  margin-bottom: 10px;
+}
+
+.preview-package-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preview-package-nav-end {
+  justify-content: flex-end;
+}
+
+.preview-package-btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: inherit;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.preview-package-btn:hover:not(:disabled) {
+  background: var(--bg-soft);
+}
+
+.preview-package-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.preview-package-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.preview-package-count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-package-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .preview-package-title {
+    display: none;
+  }
 }
 
 .preview-device-btn {
@@ -9558,6 +9634,34 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 @media (max-width: 900px) { .hub-launch { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .hub-launch { grid-template-columns: 1fr; } }
 
+.lead-mood-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.lead-mood-grid .mood-card { padding: 12px 14px; border-radius: 14px; gap: 12px; }
+.lead-prod-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 4px 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.lead-prod-chips b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.lead-prod-upcoming {
+  border-top: 1px solid var(--ops-border-soft);
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.lead-cs-tile {
+  margin: 0;
+  box-shadow: var(--shadow);
+}
+
 /* ==========================================================================
    Review page (client magic link) at /review/[token]
    Everything here is scoped to .review-page so the admin views keep their
@@ -10162,6 +10266,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   .fc-mode-btn,
   .app-theme-btn,
   .preview-device-btn,
+  .preview-package-btn,
   .cal-nav-btn,
   .hub-nav-btn {
     min-height: 44px;

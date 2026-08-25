@@ -16,6 +16,7 @@ import {
   teamFocus,
   PERSON_TEAM,
   OWNER_SLUG,
+  usesLeadershipHome,
 } from "../src/lib/people";
 import { ADMIN_PEOPLE } from "../src/lib/admin-people";
 
@@ -138,6 +139,22 @@ test("Kyle Morris is on the forecast roster", () => {
   assert.equal(isValidPerson("kyle_morris"), true);
   assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.label, "Kyle Morris");
   assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.entryLevel, false);
+});
+
+test("Sylvia is on the forecast roster", () => {
+  assert.equal(isValidPerson("sylvia"), true);
+  assert.equal(PEOPLE.find((p) => p.slug === "sylvia")?.label, "Sylvia");
+  assert.equal(PEOPLE.find((p) => p.slug === "sylvia")?.entryLevel, false);
+  assert.equal(hasProductionAccess("sylvia"), true);
+});
+
+test("Kyle, Sylvia, Luis, and Morris get the leadership home", () => {
+  for (const slug of ["kyle_onstott", "sylvia", "luis_romero", "kyle_morris"]) {
+    assert.equal(usesLeadershipHome(slug), true, slug);
+  }
+  assert.equal(usesLeadershipHome("michael"), false);
+  assert.equal(usesLeadershipHome("cassidy"), false);
+  assert.equal(usesLeadershipHome(null), false);
 });
 
 test("every focused slug is a real person", () => {

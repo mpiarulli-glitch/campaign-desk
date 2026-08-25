@@ -4,11 +4,50 @@ import fs from "node:fs";
 import os from "os";
 import path from "path";
 import {
+  OPERATOR_STATUS_OPTIONS,
   isInternallyApproved,
   matchesCampaignStatusFilter,
+  operatorStatusLabel,
   operatorStatusValue,
   storedStatusForOperatorChoice,
 } from "../src/lib/campaign-status";
+
+test("operator status options use Sent for approval and workflow order", () => {
+  assert.deepEqual(
+    OPERATOR_STATUS_OPTIONS.map((o) => o.value),
+    [
+      "draft",
+      "internal_review",
+      "approved_internally",
+      "in_review",
+      "needs_changes",
+      "approved",
+      "scheduled",
+      "sent",
+    ]
+  );
+  assert.deepEqual(
+    OPERATOR_STATUS_OPTIONS.map((o) => o.label),
+    [
+      "Draft",
+      "Internal Review",
+      "Approved Internally",
+      "Sent for approval",
+      "Needs Changes",
+      "Approved",
+      "Scheduled",
+      "Sent",
+    ]
+  );
+  assert.equal(operatorStatusLabel("in_review"), "Sent for approval");
+  assert.equal(operatorStatusLabel("internal_review"), "Internal Review");
+  assert.equal(
+    operatorStatusLabel("approved", "internal"),
+    "Approved Internally"
+  );
+  assert.equal(operatorStatusLabel("approved", "client"), "Approved");
+  assert.notEqual(operatorStatusLabel("in_review"), operatorStatusLabel("internal_review"));
+});
 
 test("operator status helpers distinguish approved internally from approved", () => {
   assert.equal(operatorStatusValue("approved", "internal"), "approved_internally");
@@ -74,6 +113,12 @@ test("operator status picker writes approved internally vs client approved", asy
     return POST(req, { params: Promise.resolve({ token }) });
   }
 
+  await t.test("new campaigns start as Draft", () => {
+    const created = campaign();
+    assert.equal(created.status, "draft");
+    assert.equal(operatorStatusLabel(created.status), "Draft");
+  });
+
   await t.test("picking Approved internally stores channel internal and skips thank-you", () => {
     const created = campaign();
     getDb()
@@ -128,7 +173,7 @@ test("operator status picker writes approved internally vs client approved", asy
     assert.equal(campaigns.getCampaignById(created.id)!.status, "draft");
   });
 
-  await t.test("picking Internal review stores that status, not client In review", () => {
+  await t.test("picking Internal Review stores that status, not client Sent for approval", () => {
     const created = campaign();
     const row = campaigns.applyOperatorCampaignStatus(created.id, "internal_review");
     assert.ok(row);

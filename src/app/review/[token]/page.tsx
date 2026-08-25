@@ -789,6 +789,19 @@ export default function ReviewPage() {
               pinMode={mode === "pin" && !locked}
               onPlacePin={(x, y) => setPendingPin({ x, y })}
               onSelectPin={setActivePinId}
+              packageNav={
+                emails.length > 1
+                  ? {
+                      items: emails.map((email) => ({
+                        id: email.id,
+                        title: email.title,
+                      })),
+                      activeId: activeEmail.id,
+                      onSelect: selectEmail,
+                      itemLabel: itemNoun,
+                    }
+                  : undefined
+              }
             />
 
             {activeEmail.subjects && activeEmail.subjects.length > 0 ? (

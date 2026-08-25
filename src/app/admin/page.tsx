@@ -6,6 +6,9 @@ import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { FailuresPanel } from "@/components/FailuresPanel";
+import { LeadershipHome } from "@/components/LeadershipHome";
+import { operatorStatusLabel } from "@/lib/campaign-status";
+import { usesLeadershipHome } from "@/lib/people";
 import { currentWeek } from "@/lib/week";
 
 type Attention = {
@@ -108,6 +111,7 @@ function todayYmd(): string {
 export default function AdminHomePage() {
   const router = useRouter();
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
+  const [person, setPerson] = useState<string | null>(null);
   const [checkingRole, setCheckingRole] = useState(true);
 
   useEffect(() => {
@@ -119,6 +123,7 @@ export default function AdminHomePage() {
           return;
         }
         setRole(data.role);
+        setPerson(data.person || null);
         setCheckingRole(false);
       })
       .catch(() => setCheckingRole(false));
@@ -133,7 +138,11 @@ export default function AdminHomePage() {
     );
   }
 
-  return role === "forecast" ? <TeamMemberHome /> : <AdminHome />;
+  if (role === "forecast") return <TeamMemberHome />;
+  if (person && usesLeadershipHome(person)) {
+    return <LeadershipHome person={person} />;
+  }
+  return <AdminHome />;
 }
 
 function AdminHome() {
@@ -204,11 +213,11 @@ function AdminHome() {
             <div className="ops-stats">
               <Link className="ops-stat" href="/admin/campaigns?status=in_review">
                 <span className="n">{s.campaigns.inReview}</span>
-                <span className="l">In review</span>
+                <span className="l">{operatorStatusLabel("in_review")}</span>
               </Link>
               <Link className="ops-stat" href="/admin/campaigns?status=needs_changes">
                 <span className="n">{s.campaigns.needsChanges}</span>
-                <span className="l">Needs changes</span>
+                <span className="l">{operatorStatusLabel("needs_changes")}</span>
               </Link>
               <Link className="ops-stat" href="/admin/campaigns">
                 <span className="n">{s.campaigns.openComments}</span>

@@ -10,6 +10,7 @@ import { ADMIN_PEOPLE } from "./admin-people";
 // logins, so they're excluded from that list.
 export const PEOPLE = [
   { slug: "cassidy", label: "Cassidy", productionAccess: false, entryLevel: false },
+  { slug: "sylvia", label: "Sylvia", productionAccess: false, entryLevel: false },
   { slug: "kyle_morris", label: "Kyle Morris", productionAccess: false, entryLevel: false },
   { slug: "carlos", label: "Carlos", productionAccess: false, entryLevel: false },
   { slug: "roy", label: "Roy", productionAccess: false, entryLevel: true },
@@ -144,8 +145,8 @@ export function personLabel(slug: string): string {
 /**
  * Display name for a stored actor tag, as written by sessionActor in ./auth.
  *
- * Consults both rosters because they do not fully overlap: several admin logins
- * (sylvia, kyle_onstott, luis_romero) are not in PEOPLE at all, and personLabel
+ * Consults both rosters because they do not fully overlap: a few admin logins
+ * (kyle_onstott, luis_romero) are not on the forecast roster, and personLabel
  * alone would render them as their raw slug.
  *
  * A tag can carry an `:impersonated` marker. That is kept visible on purpose. The
@@ -189,6 +190,22 @@ export const PRODUCTION_ACCESS: readonly string[] = [
 
 export function hasProductionAccess(slug: string): boolean {
   return PRODUCTION_ACCESS.includes(slug);
+}
+
+/**
+ * Kyle Onstott, Sylvia, Luis, and Morris land on a team-ops home instead of
+ * the campaign dashboard: every forecast, production highlights, and a door
+ * into Client Services.
+ */
+export const LEADERSHIP_HOME_SLUGS = [
+  "kyle_onstott",
+  "sylvia",
+  "luis_romero",
+  "kyle_morris",
+] as const;
+
+export function usesLeadershipHome(slug: string | null): boolean {
+  return Boolean(slug) && (LEADERSHIP_HOME_SLUGS as readonly string[]).includes(slug!);
 }
 
 // SEO side of the team. They work on blog content only, so the campaigns list is

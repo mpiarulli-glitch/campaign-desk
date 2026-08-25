@@ -1161,10 +1161,10 @@ export default function PersonForecastPage() {
     {}
   );
   const [logging, setLogging] = useState<string | null>(null);
-  // Task that was just ticked off and hasn't been answered about yet. Ticking a
-  // task is the moment you know what it took, so that is when to ask — the pill
-  // in the row is for every other moment.
+  // Task the log card is open for. Completing still asks; the row pill can
+  // also open it, which is how unlinked rows log time without ticking done.
   const [logAsk, setLogAsk] = useState<string | null>(null);
+  const [logAskMode, setLogAskMode] = useState<"complete" | "manual">("complete");
   // Destination picked on the finish card when the row itself has none.
   const [logLinkClientId, setLogLinkClientId] = useState("");
   const [logLinkTodoId, setLogLinkTodoId] = useState("");
@@ -1796,7 +1796,12 @@ export default function PersonForecastPage() {
       return;
     }
     // Unticking is a correction, not a finish, so it never asks.
-    setLogAsk(finishing ? task.id : null);
+    if (finishing) {
+      setLogAskMode("complete");
+      setLogAsk(task.id);
+    } else {
+      setLogAsk(null);
+    }
     // The forecast row saved either way, so a Basecamp sync failure is a notice
     // rather than an error that implies nothing happened.
     const json = await res.json().catch(() => null);
@@ -2037,9 +2042,10 @@ export default function PersonForecastPage() {
     if (!logAsk) return null;
     const task = (data?.tasks || []).find((t) => t.id === logAsk);
     if (!task) return null;
+    if (logAskMode === "manual") return task;
     if (!shouldAskToLogOnComplete(task, nowMs)) return null;
     return task;
-  }, [logAsk, data, nowMs]);
+  }, [logAsk, logAskMode, data, nowMs]);
 
   const logAskLinked = Boolean(logAskTask && hasTimesheetDestination(logAskTask));
   const logAskTodos = logLinkClientId ? todosByClient[logLinkClientId] : undefined;
@@ -2417,15 +2423,32 @@ export default function PersonForecastPage() {
    * input and a bright Log to Basecamp button — three lines of row for a thing
    * you do once. Now it's a pill the width of a word until you ask for it.
    *
-   * Hidden entirely only for a row linked to nothing in Basecamp, where there is
-   * genuinely nowhere for hours to land. Never gated on the task being finished:
-   * work spans days and time has to go in while it's fresh.
+   * Always on the row. Linked tasks expand in place; unlinked tasks open the
+   * same picker used on complete, because hours still have to name a todo.
+   * Never gated on the task being finished: work spans days and time has to
+   * go in while it's fresh.
    */
   function LogTime({ task }: { task: Task }) {
-    const linked = task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id;
-    if (!linked) return null;
+    const linked = hasTimesheetDestination(task);
     const logged = Boolean(task.basecamp_time_entry_id);
     const open = Boolean(logExpanded[task.id]);
+
+    if (!linked) {
+      return (
+        <button
+          type="button"
+          className="fc-log-pill"
+          onClick={() => {
+            setLogAskMode("manual");
+            setLogAsk(task.id);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="This row is not linked to Basecamp yet. Pick a todo, then log hours."
+        >
+          Log time
+        </button>
+      );
+    }
 
     if (!open) {
       return (
@@ -3660,12 +3683,9 @@ export default function PersonForecastPage() {
         {/* Week total lives in the capacity gauge at the top of the page now. */}
       </div>
 
-      {/* Asked at the moment a task is ticked off, because that is when you know
-          what it took. Decided against re-rendering it inline per view: ticking
-          happens in four of them, one of which is a 32px calendar block with no
-          room for an input, so this is one card that behaves the same
-          everywhere. Linked rows hide once nothing is outstanding; unlinked
-          rows still ask so a restored/typed task cannot silently skip. */}
+      {/* Opened from ticking a task off, or from Log time on an unlinked row.
+          Linked rows hide the complete-ask once nothing is outstanding; unlinked
+          rows still get a card so a restored/typed task cannot silently skip. */}
       {logAskTask ? (
         <div
           className={`fc-log-ask ${logAskLinked ? "" : "is-unlinked"}`}
@@ -3673,7 +3693,9 @@ export default function PersonForecastPage() {
           aria-label="Log time for this task"
         >
           <div className="fc-log-ask-head">
-            <strong>Finished — log the time?</strong>
+            <strong>
+              {logAskMode === "complete" ? "Finished — log the time?" : "Log time"}
+            </strong>
             <button
               type="button"
               aria-label="Not now"

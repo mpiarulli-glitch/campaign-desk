@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { adjacentPackageId } from "@/lib/email-package";
 
 export type PinComment = {
   id: string;
@@ -8,6 +9,18 @@ export type PinComment = {
   pin_y: number | null;
   resolved: number;
   body?: string;
+};
+
+export type PackageNavItem = {
+  id: string;
+  title: string;
+};
+
+export type PackageNav = {
+  items: PackageNavItem[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  itemLabel?: string;
 };
 
 type Props = {
@@ -25,6 +38,8 @@ type Props = {
   // applyTextEdits to splice back in.
   editing?: boolean;
   onEditsChange?: (edits: PendingEdit[]) => void;
+  // Prev/next across the rest of the package, shown in the device bar.
+  packageNav?: PackageNav;
 };
 
 // A single run of text the reviewer has changed. `ordinal` counts occurrences
@@ -134,6 +149,7 @@ export function EmailPreview({
   interactive = false,
   editing = false,
   onEditsChange,
+  packageNav,
 }: Props) {
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -415,23 +431,87 @@ export function EmailPreview({
     (p) => p.pin_x !== null && p.pin_y !== null
   );
 
+  const packageItems = packageNav?.items ?? [];
+  const showPackageNav = packageItems.length > 1;
+  const packageIds = packageItems.map((item) => item.id);
+  const activePackageIndex = packageNav
+    ? packageIds.indexOf(packageNav.activeId)
+    : -1;
+  const prevPackageId = packageNav
+    ? adjacentPackageId(packageIds, packageNav.activeId, -1)
+    : null;
+  const nextPackageId = packageNav
+    ? adjacentPackageId(packageIds, packageNav.activeId, 1)
+    : null;
+  const itemLabel = packageNav?.itemLabel || "email";
+  const activePackageTitle =
+    activePackageIndex >= 0 ? packageItems[activePackageIndex]?.title : "";
+
   return (
     <div className="preview-frame-wrap">
-      <div className="preview-devicebar">
-        <button
-          type="button"
-          className={`preview-device-btn ${device === "desktop" ? "active" : ""}`}
-          onClick={() => setDevice("desktop")}
-        >
-          Desktop
-        </button>
-        <button
-          type="button"
-          className={`preview-device-btn ${device === "mobile" ? "active" : ""}`}
-          onClick={() => setDevice("mobile")}
-        >
-          Mobile
-        </button>
+      <div
+        className={`preview-devicebar${showPackageNav ? " has-package" : ""}`}
+      >
+        {showPackageNav && packageNav ? (
+          <div className="preview-package-nav">
+            <button
+              type="button"
+              className="preview-package-btn"
+              aria-label={`Previous ${itemLabel}`}
+              disabled={!prevPackageId}
+              onClick={() => {
+                if (prevPackageId) packageNav.onSelect(prevPackageId);
+              }}
+            >
+              ‹
+            </button>
+            <span className="preview-package-label">
+              <span className="preview-package-count">
+                {activePackageIndex + 1} of {packageItems.length}
+              </span>
+              {activePackageTitle ? (
+                <span className="preview-package-title">
+                  {activePackageTitle}
+                </span>
+              ) : null}
+            </span>
+          </div>
+        ) : (
+          <div />
+        )}
+        <div className="preview-devices">
+          <button
+            type="button"
+            className={`preview-device-btn ${device === "desktop" ? "active" : ""}`}
+            onClick={() => setDevice("desktop")}
+          >
+            Desktop
+          </button>
+          <button
+            type="button"
+            className={`preview-device-btn ${device === "mobile" ? "active" : ""}`}
+            onClick={() => setDevice("mobile")}
+          >
+            Mobile
+          </button>
+        </div>
+        {showPackageNav && packageNav ? (
+          <div className="preview-package-nav preview-package-nav-end">
+            <button
+              type="button"
+              className="preview-package-btn"
+              aria-label={`Next ${itemLabel}`}
+              disabled={!nextPackageId}
+              onClick={() => {
+                if (nextPackageId) packageNav.onSelect(nextPackageId);
+              }}
+            >
+              ›
+            </button>
+          </div>
+        ) : (
+          <div />
+        )}
       </div>
       {!ready ? (
         <div className="preview-loading">

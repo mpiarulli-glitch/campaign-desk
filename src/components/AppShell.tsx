@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { doesCampaignWork, entryLevelPeople, hasProductionAccess, campaignKindFor, personLabel as forecastPersonLabel } from "@/lib/people";
+import { doesCampaignWork, entryLevelPeople, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
 import {
   applyTheme,
@@ -184,7 +184,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Forecast is per-person, so its href depends on the session and it can't live
   // in the static arrays above. Team members get it second, since it's their
   // daily view; admins get it grouped with the other team tools.
-  const forecastHref = session.person ? `/admin/forecast/${session.person}` : "/admin/forecast";
+  const forecastHref =
+    session.person && isValidPerson(session.person)
+      ? `/admin/forecast/${session.person}`
+      : "/admin/forecast";
   const forecastItem: NavItem = {
     href: forecastHref,
     label: "Forecast",
