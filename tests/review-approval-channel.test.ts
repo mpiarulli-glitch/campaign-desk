@@ -55,6 +55,21 @@ test("internal vs client approval channels", async (t) => {
     assert.equal(row.approval_thank_you_due_at, null);
   });
 
+  await t.test("AM approve on one email still records approved internally when all are signed off", async () => {
+    const created = campaign();
+    const email = campaigns.listEmails(created.id)[0];
+    const res = await postToken(created.magic_token, {
+      approveEmail: email.id,
+      approverName: "Morris Kyle",
+    });
+    assert.equal(res.status, 200);
+    const row = campaigns.getCampaignById(created.id)!;
+    assert.equal(row.status, "approved");
+    assert.equal(row.approved_channel, "internal");
+    assert.equal(row.approval_thank_you_due_at, null);
+    assert.equal(campaigns.listEmails(created.id)[0].approved_channel, "internal");
+  });
+
   await t.test("external review token records approved_channel client", async () => {
     const created = campaign();
     getDb()

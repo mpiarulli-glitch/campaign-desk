@@ -34,6 +34,10 @@ import {
   type FlowBranch,
   type ConditionKind,
 } from "./automation-map";
+import {
+  isOperatorCampaignStatus,
+  type OperatorCampaignStatus,
+} from "./campaign-status";
 
 // The campaigns.html_content column is only a convenience thumbnail for list
 // views. Keep it in sync with the first asset, rendered the same way the
@@ -1305,8 +1309,52 @@ export function markApproved(
   });
   if (updated && approvedChannel === "client") {
     scheduleApprovalThankYou(campaignId);
+  } else if (updated && approvedChannel === "internal") {
+    cancelPendingApprovalThankYou(campaignId);
   }
   return updated;
+}
+
+// Status dropdown / PATCH. "approved_internally" is stored as status approved
+// + approved_channel internal so it stays distinct from client "Approved"
+// without introducing a new DB status.
+export function applyOperatorCampaignStatus(
+  campaignId: string,
+  next: string,
+  approverLabel?: string | null
+): Campaign | null {
+  if (!isOperatorCampaignStatus(next)) return null;
+  const existing = getCampaignById(campaignId);
+  if (!existing) return null;
+
+  const choice: OperatorCampaignStatus = next;
+  if (choice === "approved_internally") {
+    return markApproved(
+      campaignId,
+      approverLabel?.trim() || existing.approved_by || "Admin",
+      "internal"
+    );
+  }
+
+  if (choice === "approved") {
+    return updateCampaign(campaignId, {
+      status: "approved",
+      approvedAt: existing.approved_at || nowIso(),
+      approvedBy: existing.approved_by,
+      approvedChannel: "client",
+    });
+  }
+
+  const leavingApproved = existing.status === "approved";
+  if (leavingApproved) {
+    clearApprovalThankYou(campaignId);
+  }
+  return updateCampaign(campaignId, {
+    status: choice,
+    approvedAt: leavingApproved ? null : undefined,
+    approvedBy: leavingApproved ? null : undefined,
+    approvedChannel: leavingApproved ? null : undefined,
+  });
 }
 
 // Move a campaign back out of "approved" (e.g. a single email got

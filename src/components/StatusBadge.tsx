@@ -1,6 +1,7 @@
 "use client";
 
 import type { CampaignStatus } from "@/lib/db";
+import { isInternallyApproved } from "@/lib/campaign-status";
 
 const LABELS: Record<CampaignStatus, string> = {
   draft: "Draft",
@@ -19,11 +20,11 @@ export function StatusBadge({
   approvedChannel?: string | null;
 }) {
   const key = status as CampaignStatus;
-  const internal = key === "approved" && approvedChannel === "internal";
+  const internal = isInternallyApproved(status, approvedChannel);
   const label = internal ? "Approved internally" : LABELS[key] || status;
   return (
     <span
-      className={`badge badge-${status}${internal ? " badge-approved-internal" : ""}`}
+      className={`badge badge-${internal ? "approved" : status}${internal ? " badge-approved-internal" : ""}`}
     >
       {label}
     </span>

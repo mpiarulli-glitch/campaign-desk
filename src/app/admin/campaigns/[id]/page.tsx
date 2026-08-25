@@ -8,6 +8,10 @@ import { EmailPreview, type PendingEdit } from "@/components/EmailPreview";
 import { applyTextEdits } from "@/lib/inline-edit";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
+import {
+  OPERATOR_STATUS_OPTIONS,
+  operatorStatusValue,
+} from "@/lib/campaign-status";
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
 import {
@@ -785,6 +789,9 @@ export default function AdminCampaignPage() {
   const canMarkRevisionDone =
     status === "needs_changes" || openCount > 0 || status === "draft";
   const isApproved = status === "approved";
+  const internallyApproved =
+    isApproved && campaign?.approved_channel === "internal";
+  const isClientApproved = isApproved && !internallyApproved;
 
   function selectEmail(emailId: string) {
     setActiveEmailId(emailId);
@@ -902,12 +909,16 @@ export default function AdminCampaignPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: next }),
     });
+    const data = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) {
       setError("Could not update status.");
       return;
     }
-    setStatus(next);
+    if (data.campaign) {
+      setCampaign(data.campaign);
+      setStatus(data.campaign.status);
+    }
     setMessage("Status updated.");
     load(activeEmailId);
   }
@@ -1421,17 +1432,17 @@ export default function AdminCampaignPage() {
               </button>
             ) : null}
             <select
-              value={status}
+              value={operatorStatusValue(status, campaign.approved_channel)}
               onChange={(e) => saveStatus(e.target.value)}
               disabled={saving}
               className="select-clean"
+              aria-label="Campaign status"
             >
-              <option value="draft">Draft</option>
-              <option value="in_review">In review</option>
-              <option value="needs_changes">Needs changes</option>
-              <option value="approved">Approved</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="sent">Sent</option>
+              {OPERATOR_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
             <button
               className="btn btn-secondary btn-sm"
@@ -1638,15 +1649,20 @@ export default function AdminCampaignPage() {
 
         {isApproved ? (
           <div className="card card-pad approve-card is-approved">
-            <strong>This package is approved.</strong>
+            <strong>
+              {internallyApproved
+                ? "This package is approved internally."
+                : "This package is approved."}
+            </strong>
             <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
               {campaign.approved_by
-                ? campaign.approved_channel === "internal"
+                ? internallyApproved
                   ? `Approved internally by ${campaign.approved_by}. `
                   : `Approved by ${campaign.approved_by}. `
                 : ""}
-              Feedback is closed. Change the status dropdown if you need to
-              reopen it.
+              {internallyApproved
+                ? "Client review is still open. Pick Approved after the client signs off, or change the status dropdown to reopen internal work."
+                : "Feedback is closed. Change the status dropdown if you need to reopen it."}
             </p>
           </div>
         ) : canMarkRevisionDone ? (
@@ -2298,9 +2314,9 @@ export default function AdminCampaignPage() {
                       <button
                         className="btn btn-secondary btn-sm"
                         onClick={() => setEditingCopy(true)}
-                        disabled={isApproved}
+                        disabled={isClientApproved}
                         title={
-                          isApproved
+                          isClientApproved
                             ? "This package is approved. Reopen it to edit copy."
                             : undefined
                         }
@@ -2389,7 +2405,7 @@ export default function AdminCampaignPage() {
                     className="btn btn-sm"
                     onClick={runAllAiRevisions}
                     disabled={
-                      saving || aiLoadingCommentId !== null || isApproved
+                      saving || aiLoadingCommentId !== null || isClientApproved
                     }
                   >
                     {aiLoadingCommentId === "all"
@@ -2533,7 +2549,7 @@ export default function AdminCampaignPage() {
                               disabled={
                                 saving ||
                                 aiLoadingCommentId === c.id ||
-                                isApproved ||
+                                isClientApproved ||
                                 aiLoadingCommentId === "all"
                               }
                            >

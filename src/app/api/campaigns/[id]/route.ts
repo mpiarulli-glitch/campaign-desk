@@ -24,26 +24,18 @@ import {
   countOpenComments,
   markRevisionDone,
   markApproved,
+  applyOperatorCampaignStatus,
 } from "@/lib/campaigns";
+import { isOperatorCampaignStatus } from "@/lib/campaign-status";
 import {
   actorBasecampIdentity,
   syncCampaignDeliverablesCard,
 } from "@/lib/campaign-card-sync";
-import type { CampaignStatus } from "@/lib/db";
 import { notifyCampaignRemoved } from "@/lib/notify";
 import {
   coercePresentation,
   coerceTriggerKind,
 } from "@/lib/automation-map";
-
-const STATUSES: CampaignStatus[] = [
-  "draft",
-  "in_review",
-  "needs_changes",
-  "approved",
-  "scheduled",
-  "sent",
-];
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -215,10 +207,13 @@ export async function PATCH(request: Request, { params }: Params) {
     });
   }
 
-  const status =
-    typeof body.status === "string" && STATUSES.includes(body.status)
-      ? (body.status as CampaignStatus)
+  const statusChoice =
+    typeof body.status === "string" && isOperatorCampaignStatus(body.status)
+      ? body.status
       : undefined;
+  if (statusChoice) {
+    applyOperatorCampaignStatus(id, statusChoice, await internalApproverLabel());
+  }
 
   const campaign = updateCampaign(id, {
     title: typeof body.title === "string" ? body.title : undefined,
@@ -235,7 +230,6 @@ export async function PATCH(request: Request, { params }: Params) {
     htmlContent:
       typeof body.htmlContent === "string" ? body.htmlContent : undefined,
     emailId: typeof body.emailId === "string" ? body.emailId : undefined,
-    status,
     versionNote:
       typeof body.versionNote === "string" ? body.versionNote : undefined,
     presentation:
@@ -250,9 +244,12 @@ export async function PATCH(request: Request, { params }: Params) {
         : undefined,
   });
 
-  if (status === "approved" && existing.status !== "approved") {
+  if (
+    (statusChoice === "approved" || statusChoice === "approved_internally") &&
+    existing.status !== "approved"
+  ) {
     await syncCard(id, "approved");
-  } else if (status === "scheduled" && existing.status !== "scheduled") {
+  } else if (statusChoice === "scheduled" && existing.status !== "scheduled") {
     await syncCard(id, "scheduled");
   }
 

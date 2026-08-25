@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
+import {
+  OPERATOR_STATUS_OPTIONS,
+  matchesCampaignStatusFilter,
+  type OperatorCampaignStatus,
+} from "@/lib/campaign-status";
 
 type CampaignRow = {
   id: string;
@@ -30,23 +35,11 @@ const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
 
 type View = "all" | "folders";
 type GroupBy = "client" | "month";
-type StatusFilter =
-  | "all"
-  | "draft"
-  | "in_review"
-  | "needs_changes"
-  | "approved"
-  | "scheduled"
-  | "sent";
+type StatusFilter = "all" | OperatorCampaignStatus;
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "in_review", label: "In review" },
-  { value: "needs_changes", label: "Needs changes" },
-  { value: "approved", label: "Approved" },
-  { value: "scheduled", label: "Scheduled" },
-  { value: "sent", label: "Sent" },
+  ...OPERATOR_STATUS_OPTIONS,
 ];
 
 // Grouped by the month the campaign was created/sent, not by approval date,
@@ -239,7 +232,7 @@ export default function AdminPage() {
   const visible =
     statusFilter === "all"
       ? campaigns
-      : campaigns.filter((c) => c.status === statusFilter);
+      : campaigns.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
 
   function toggleFolder(key: string) {
     setOpenFolders((prev) => {
@@ -346,7 +339,9 @@ export default function AdminPage() {
             const count =
               sf.value === "all"
                 ? campaigns.length
-                : campaigns.filter((c) => c.status === sf.value).length;
+                : campaigns.filter((c) =>
+                    matchesCampaignStatusFilter(c, sf.value)
+                  ).length;
             return (
               <button
                 key={sf.value}
