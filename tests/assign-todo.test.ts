@@ -110,22 +110,23 @@ test("assign load and warning copy", async (t) => {
       neededHours: 1,
       asOf: "2026-08-24",
     });
-    assert.equal(load.count, 2);
-    assert.equal(load.plannedHours, 7.5);
-    assert.deepEqual(load.dates, ["2026-08-24", "2026-08-26"]);
-    assert.deepEqual(load.clients, ["Krak Boba", "Vitatherapy"]);
+    assert.equal(load.count, 3);
+    assert.equal(load.plannedHours, 15.5);
+    assert.deepEqual(load.dates, ["2026-08-24", "2026-08-25", "2026-08-26"]);
+    assert.deepEqual(load.clients, ["Done already", "Krak Boba", "Vitatherapy"]);
     assert.equal(load.capacity, 40);
-    assert.equal(load.freeHours, 32.5);
+    assert.equal(load.freeHours, 24.5);
     assert.equal(load.hasRoom, true);
 
     const warning = assign.assignWarningCopy(load);
     assert.equal(
       warning.headline,
-      "They have about 32.5h free before Aug 28 (7.5h already planned). Proceed?"
+      "They have about 24.5h free before Aug 28 (15.5h already planned). Proceed?"
     );
     assert.match(warning.detail, /Aug 24/);
+    assert.match(warning.detail, /Aug 25/);
     assert.match(warning.detail, /Aug 26/);
-    assert.match(warning.detail, /Krak Boba and Vitatherapy occupy that calendar/);
+    assert.match(warning.detail, /Done already, Krak Boba, and Vitatherapy occupy that calendar/);
     assert.doesNotMatch(warning.headline + warning.detail, /priority/i);
     assert.doesNotMatch(warning.headline + warning.detail, /shuffle/i);
   });
@@ -178,6 +179,203 @@ test("assign load and warning copy", async (t) => {
     assert.match(warning.detail, /MEG Web HQ occupies that calendar/);
     assert.doesNotMatch(warning.headline, /will (shuffle|reprioritize)/i);
     assert.doesNotMatch(warning.headline, /priority/i);
+  });
+
+  await t.test("8h+8h across two days leaves no room for a 1h task", () => {
+    forecast.createTask({
+      person: "sylvia",
+      taskDate: "2026-08-25",
+      client: "Full Tuesday",
+      hours: 8,
+    });
+    forecast.createTask({
+      person: "sylvia",
+      taskDate: "2026-08-26",
+      client: "Full Wednesday",
+      hours: 8,
+    });
+    const load = assign.assignLoadForPerson({
+      person: "sylvia",
+      dueOn: "2026-08-26",
+      neededHours: 1,
+      asOf: "2026-08-25",
+    });
+    assert.equal(load.workdays, 2);
+    assert.equal(load.capacity, 16);
+    assert.equal(load.plannedHours, 16);
+    assert.equal(load.freeHours, 0);
+    assert.equal(load.hasRoom, false);
+    const warning = assign.assignWarningCopy(load);
+    assert.match(warning.headline, /don't have enough open time before Aug 26/i);
+    assert.match(warning.headline, /16h planned, this needs 1h/);
+    assert.match(warning.headline, /notify the team to reprioritize/);
+  });
+
+  await t.test("completed hours still occupy the day", () => {
+    const done = forecast.createTask({
+      person: "cassidy",
+      taskDate: "2026-08-25",
+      client: "Finished this morning",
+      hours: 8,
+    });
+    forecast.updateTask(done.id, { completed: true });
+    forecast.createTask({
+      person: "cassidy",
+      taskDate: "2026-08-26",
+      client: "Tomorrow's stack",
+      hours: 8,
+    });
+    const load = assign.assignLoadForPerson({
+      person: "cassidy",
+      dueOn: "2026-08-26",
+      neededHours: 1,
+      asOf: "2026-08-25",
+    });
+    assert.equal(load.count, 2);
+    assert.equal(load.plannedHours, 16);
+    assert.equal(load.freeHours, 0);
+    assert.equal(load.hasRoom, false);
+    assert.deepEqual(load.dates, ["2026-08-25", "2026-08-26"]);
+  });
+
+  await t.test("a day at 8h+ has zero free even when the other day has leftover", () => {
+    forecast.createTask({
+      person: "carlos",
+      taskDate: "2026-08-25",
+      client: "Light Tuesday",
+      hours: 6.5,
+    });
+    forecast.createTask({
+      person: "carlos",
+      taskDate: "2026-08-26",
+      client: "Over Wednesday",
+      hours: 8.8,
+    });
+    const load = assign.assignLoadForPerson({
+      person: "carlos",
+      dueOn: "2026-08-26",
+      neededHours: 2,
+      asOf: "2026-08-25",
+    });
+    assert.equal(load.plannedHours, 15.3);
+    assert.equal(load.freeHours, 1.5);
+    assert.equal(load.hasRoom, false);
+  });
+
+  await t.test("meetings and tracked overruns fill the calendar like the UI", async () => {
+    const { getDb: openDb } = await import("../src/lib/db");
+    const ranLong = forecast.createTask({
+      person: "kyle_morris",
+      taskDate: "2026-08-25",
+      client: "Krak Boba",
+      notes: "ran long",
+      hours: 0.5,
+      startTime: "09:15",
+    });
+    openDb()
+      .prepare(`UPDATE forecast_tasks SET tracked_seconds = ? WHERE id = ?`)
+      .run(Math.round(1.9 * 3600), ranLong.id);
+    forecast.createTask({
+      person: "kyle_morris",
+      taskDate: "2026-08-25",
+      client: "Standup",
+      hours: 1,
+      startTime: "11:00",
+      basecampEventId: "evt-standup",
+    });
+    forecast.createTask({
+      person: "kyle_morris",
+      taskDate: "2026-08-25",
+      client: "Rest of day",
+      hours: 5.1,
+      startTime: "12:00",
+    });
+    // max(0.5, 1.9) + 1 meeting + 5.1 = 8. Occupied Tuesday is full.
+    forecast.createTask({
+      person: "kyle_morris",
+      taskDate: "2026-08-26",
+      client: "Full Wednesday",
+      hours: 8,
+    });
+    const load = assign.assignLoadForPerson({
+      person: "kyle_morris",
+      dueOn: "2026-08-26",
+      neededHours: 1,
+      asOf: "2026-08-25",
+    });
+    assert.equal(load.plannedHours, 16);
+    assert.equal(load.freeHours, 0);
+    assert.equal(load.hasRoom, false);
+    assert.ok(load.clients.includes("Standup"));
+  });
+
+  await t.test("tracked overrun plus a completed block leaves only crumbs, not room", async () => {
+    const { getDb: openDb } = await import("../src/lib/db");
+    const ranLong = forecast.createTask({
+      person: "jerald",
+      taskDate: "2026-08-25",
+      client: "Krak Boba Oceanside",
+      hours: 0.5,
+    });
+    openDb()
+      .prepare(`UPDATE forecast_tasks SET tracked_seconds = ? WHERE id = ?`)
+      .run(Math.round(1.9 * 3600), ranLong.id);
+    const done = forecast.createTask({
+      person: "jerald",
+      taskDate: "2026-08-25",
+      client: "12 Volt Power",
+      hours: 0.75,
+    });
+    forecast.updateTask(done.id, { completed: true });
+    forecast.createTask({
+      person: "jerald",
+      taskDate: "2026-08-25",
+      client: "Rest of Tuesday",
+      hours: 5.25,
+    });
+    forecast.createTask({
+      person: "jerald",
+      taskDate: "2026-08-26",
+      client: "Full Wednesday",
+      hours: 8.8,
+    });
+    const load = assign.assignLoadForPerson({
+      person: "jerald",
+      dueOn: "2026-08-26",
+      neededHours: 1,
+      asOf: "2026-08-25",
+    });
+    assert.equal(load.plannedHours, 16.7);
+    assert.equal(load.freeHours, 0.1);
+    assert.equal(load.hasRoom, false);
+    const warning = assign.assignWarningCopy(load);
+    assert.match(warning.headline, /don't have enough open time before Aug 26/i);
+    assert.match(warning.headline, /16.7h planned, this needs 1h/);
+  });
+
+  await t.test("week at capacity warns even when the due window looks empty", () => {
+    forecast.createTask({
+      person: "saqib",
+      taskDate: "2026-08-28",
+      client: "Friday dump",
+      hours: 40,
+    });
+    const load = assign.assignLoadForPerson({
+      person: "saqib",
+      dueOn: "2026-08-26",
+      neededHours: 1,
+      asOf: "2026-08-25",
+    });
+    assert.equal(load.count, 0);
+    assert.equal(load.plannedHours, 0);
+    assert.equal(load.freeHours, 16);
+    assert.equal(load.weekHours, 40);
+    assert.equal(load.weekRemaining, 0);
+    assert.equal(load.hasRoom, false);
+    const warning = assign.assignWarningCopy(load);
+    assert.match(warning.headline, /week is at capacity/i);
+    assert.match(warning.headline, /40h planned this week against 40h/);
+    assert.match(warning.headline, /notify the team to reprioritize/);
   });
 
   process.env.BASECAMP_CLIENT_ID = "test-client";

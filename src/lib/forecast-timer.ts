@@ -15,6 +15,15 @@ export function isRunning(task: TimedTask): boolean {
   return Boolean(task.timer_started_at);
 }
 
+// The shell dock and the forecast page share this so starting/stopping in one
+// place refreshes the other without waiting for the next poll.
+export const FORECAST_TIMER_CHANGED = "forecast-timer-changed";
+
+export function notifyForecastTimerChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(FORECAST_TIMER_CHANGED));
+}
+
 // Seconds since the timer started, or 0 when nothing is running. Never negative:
 // a clock that has moved backwards since the timer started would otherwise take
 // time off the total.

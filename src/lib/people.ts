@@ -30,6 +30,27 @@ export const PEOPLE = [
 // owner keeps full access while still having a real, self-managed password.
 export const OWNER_SLUG = "michael";
 
+/**
+ * Whose forecast the current session is acting as — used by the global timer
+ * dock, which must never ask for another person's running tasks.
+ *
+ * Owner sessions carry a null person (that's how every owner check works), so
+ * they resolve to OWNER_SLUG. Forecast-role and named-admin sessions use the
+ * slug on the cookie. Null when there is no session, or a session with no
+ * person that isn't the owner.
+ */
+export function forecastSlugForSession(session: {
+  role: "admin" | "forecast" | null;
+  person: string | null;
+  owner?: boolean;
+} | null): string | null {
+  if (!session) return null;
+  if (session.owner || (session.role === "admin" && !session.person)) {
+    return OWNER_SLUG;
+  }
+  return session.person;
+}
+
 /* ---------------------------------------------------------------------------
    Team focus
    ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
 import { doesCampaignWork, entryLevelPeople, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
+import { TimerDock } from "./TimerDock";
 import {
   applyTheme,
   readThemeChoice,
@@ -434,6 +435,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="app-content">{children}</main>
       </div>
+      {/* Global: a running forecast timer has to stay visible on every signed-in
+          page, not only /admin/forecast/[person]. Last in the shell so it sits
+          above page content without covering the left nav. */}
+      {session.role ? <TimerDock /> : null}
     </div>
   );
 }

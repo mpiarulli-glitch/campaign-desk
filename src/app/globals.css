@@ -6065,14 +6065,16 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    parked over the page. */
 .fc-timer-docks {
   position: fixed;
-  z-index: 60;
+  z-index: 70;
   right: 18px;
   bottom: 18px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  pointer-events: none;
 }
+.fc-timer-docks .fc-timer-dock { pointer-events: auto; }
 .fc-timer-dock {
   display: flex;
   align-items: center;
@@ -6280,9 +6282,11 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-log-ask.is-unlinked {
   width: min(380px, calc(100vw - 36px));
 }
-/* Both docked bottom-right, so the timers step aside while the ask is up. */
-.fc-log-ask ~ .fc-timer-docks { bottom: 132px; }
-.fc-log-ask.is-unlinked ~ .fc-timer-docks { bottom: 280px; }
+/* Both docked bottom-right, so the timers step aside while the ask is up.
+   The dock now lives in the shell, not as a sibling of the ask, so :has()
+   is what still keeps them from overlapping. */
+.cd-shell:has(.fc-log-ask) .fc-timer-docks { bottom: 132px; }
+.cd-shell:has(.fc-log-ask.is-unlinked) .fc-timer-docks { bottom: 280px; }
 @media (prefers-reduced-motion: reduce) {
   .fc-log-ask { animation: none; }
 }

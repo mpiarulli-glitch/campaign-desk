@@ -12,13 +12,15 @@ import {
 import { listInternalProjects } from "./basecamp-clients";
 import { todayYmd } from "./cadence";
 import { getDb } from "./db";
-import { DAILY_CAPACITY_HOURS } from "./forecast";
+import { DAILY_CAPACITY_HOURS, WEEKLY_CAPACITY_HOURS } from "./forecast";
+import { blockHours } from "./forecast-timer";
 import {
   pickDefaultInternalReviewer,
   teamPeopleForInternalReview,
 } from "./internal-review";
 import { PEOPLE, basecampNameForManager, isValidPerson, personLabel } from "./people";
 import { listRevClients } from "./revenue";
+import { addWeeks, mondayOf } from "./week";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -74,6 +76,34 @@ export function workdaysOnOrBefore(start: string, end: string): string[] {
   return out;
 }
 
+function tenths(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function mondayFromYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return mondayOf(new Date(y, m - 1, d));
+}
+
+type OccupancyRow = {
+  task_date: string;
+  client: string;
+  hours: number;
+  tracked_seconds: number;
+  timer_started_at: string;
+};
+
+function occupancyHours(row: OccupancyRow, nowMs: number): number {
+  return blockHours(
+    {
+      hours: Number(row.hours) || 0,
+      tracked_seconds: Number(row.tracked_seconds) || 0,
+      timer_started_at: row.timer_started_at || "",
+    },
+    nowMs
+  );
+}
+
 export type AssignLoad = {
   person: string;
   dueOn: string;
@@ -86,6 +116,9 @@ export type AssignLoad = {
   capacity: number;
   freeHours: number;
   neededHours: number;
+  weekHours: number;
+  weekCapacity: number;
+  weekRemaining: number;
   hasRoom: boolean;
 };
 
@@ -110,38 +143,83 @@ export function assignLoadForPerson(input: {
     capacity: 0,
     freeHours: 0,
     neededHours,
+    weekHours: 0,
+    weekCapacity: WEEKLY_CAPACITY_HOURS,
+    weekRemaining: 0,
     hasRoom: neededHours <= 0,
   };
   if (!dueOn || !isValidPerson(input.person)) return empty;
 
   const workdays = workdaysOnOrBefore(asOf, dueOn);
-  const capacity = Math.round(workdays.length * DAILY_CAPACITY_HOURS * 10) / 10;
+  const capacity = tenths(workdays.length * DAILY_CAPACITY_HOURS);
+  if (workdays.length === 0) {
+    return { ...empty, workdays: 0, capacity: 0, hasRoom: neededHours <= 0 };
+  }
+
+  const weekStarts = [...new Set(workdays.map(mondayFromYmd))].sort();
+  const rangeStart = weekStarts[0];
+  const rangeEnd = addWeeks(weekStarts[weekStarts.length - 1], 1);
+  const nowMs = Date.now();
+  const workdaySet = new Set(workdays);
 
   const rows = getDb()
     .prepare(
-      `SELECT task_date, client, hours FROM forecast_tasks
-        WHERE person = ? AND completed = 0 AND task_date >= ? AND task_date <= ?
+      `SELECT task_date, client, hours, tracked_seconds, timer_started_at
+         FROM forecast_tasks
+        WHERE person = ? AND task_date >= ? AND task_date < ?
         ORDER BY task_date ASC`
     )
-    .all(input.person, asOf, dueOn) as Array<{
-    task_date: string;
-    client: string;
-    hours: number;
-  }>;
+    .all(input.person, rangeStart, rangeEnd) as OccupancyRow[];
 
-  const plannedHours =
-    Math.round(rows.reduce((sum, row) => sum + (Number(row.hours) || 0), 0) * 10) / 10;
-  const dates = [...new Set(rows.map((row) => row.task_date))];
+  const occupiedByDay = new Map<string, number>();
+  const weekOccupied = new Map<string, number>();
+  const windowRows: OccupancyRow[] = [];
+  for (const day of workdays) occupiedByDay.set(day, 0);
+  for (const week of weekStarts) weekOccupied.set(week, 0);
+
+  for (const row of rows) {
+    const occ = occupancyHours(row, nowMs);
+    const week = mondayFromYmd(row.task_date);
+    if (weekOccupied.has(week)) {
+      weekOccupied.set(week, (weekOccupied.get(week) || 0) + occ);
+    }
+    if (!workdaySet.has(row.task_date)) continue;
+    windowRows.push(row);
+    occupiedByDay.set(row.task_date, (occupiedByDay.get(row.task_date) || 0) + occ);
+  }
+
+  let plannedHours = 0;
+  let freeHours = 0;
+  for (const day of workdays) {
+    const occupied = tenths(occupiedByDay.get(day) || 0);
+    plannedHours += occupied;
+    // A day at/over the daily cap has no leftover, even if another day in
+    // the window is under. Crumbs on a packed day are not "room."
+    freeHours += occupied >= DAILY_CAPACITY_HOURS ? 0 : DAILY_CAPACITY_HOURS - occupied;
+  }
+  plannedHours = tenths(plannedHours);
+  freeHours = tenths(freeHours);
+
+  let weekHours = 0;
+  let weekRemaining = 0;
+  for (const week of weekStarts) {
+    const occupied = tenths(weekOccupied.get(week) || 0);
+    weekHours += occupied;
+    weekRemaining += Math.max(0, WEEKLY_CAPACITY_HOURS - occupied);
+  }
+  weekHours = tenths(weekHours);
+  weekRemaining = tenths(weekRemaining);
+
+  const dates = [...new Set(windowRows.map((row) => row.task_date))];
   const clients = [
-    ...new Set(rows.map((row) => row.client.trim()).filter(Boolean)),
+    ...new Set(windowRows.map((row) => row.client.trim()).filter(Boolean)),
   ].sort((a, b) => a.localeCompare(b));
-  const freeHours = Math.max(0, Math.round((capacity - plannedHours) * 10) / 10);
 
   return {
     person: input.person,
     dueOn,
     asOf,
-    count: rows.length,
+    count: windowRows.length,
     plannedHours,
     clients,
     dates,
@@ -149,7 +227,10 @@ export function assignLoadForPerson(input: {
     capacity,
     freeHours,
     neededHours,
-    hasRoom: neededHours <= freeHours,
+    weekHours,
+    weekCapacity: tenths(weekStarts.length * WEEKLY_CAPACITY_HOURS),
+    weekRemaining,
+    hasRoom: neededHours <= freeHours && neededHours <= weekRemaining,
   };
 }
 
@@ -170,6 +251,8 @@ export function assignWarningCopy(load: AssignLoad): AssignWarning {
     headline = `There's nothing on their forecast on or before ${due}. They have about ${free} free. Proceed?`;
   } else if (load.hasRoom) {
     headline = `They have about ${free} free before ${due} (${planned} already planned). Proceed?`;
+  } else if (load.neededHours <= load.freeHours) {
+    headline = `Their week is at capacity — ${formatHours(load.weekHours)} planned this week against ${formatHours(load.weekCapacity)}. You'll need to notify the team to reprioritize if you assign this. Still proceed?`;
   } else {
     headline = `They don't have enough open time before ${due} — ${planned} planned, this needs ${needed}. You'll need to notify the team to reprioritize if you assign this. Still proceed?`;
   }
