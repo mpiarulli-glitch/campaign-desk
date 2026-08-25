@@ -39,6 +39,10 @@ test("login accounts", async (t) => {
     assert.equal(users.getUser("kyle_morris")?.role, "admin");
     // A forecast-only person stays forecast.
     assert.equal(users.getUser("jack")?.role, "forecast");
+    assert.equal(users.getUser("saqib")?.role, "forecast");
+    assert.equal(users.getUser("jerald")?.role, "forecast");
+    assert.equal(users.getUser("saqib")?.label, "Saqib");
+    assert.equal(users.getUser("jerald")?.label, "Jerald");
   });
 
   await t.test("nobody starts with a password", () => {

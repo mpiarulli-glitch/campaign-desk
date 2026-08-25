@@ -51,7 +51,7 @@ test("being an admin no longer implies production access", () => {
 });
 
 test("the people left off the list do not have production access", () => {
-  for (const slug of ["carlos", "roy", "abel", "mike_hines"]) {
+  for (const slug of ["carlos", "roy", "abel", "mike_hines", "saqib", "jerald"]) {
     assert.equal(hasProductionAccess(slug), false, `${slug} should not have it`);
   }
 });
@@ -141,6 +141,22 @@ test("Kyle Morris is on the forecast roster", () => {
   assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.entryLevel, false);
 });
 
+test("Saqib and Jerald are restricted forecast logins", () => {
+  for (const { slug, label } of [
+    { slug: "saqib", label: "Saqib" },
+    { slug: "jerald", label: "Jerald" },
+  ]) {
+    assert.equal(isValidPerson(slug), true, slug);
+    const person = PEOPLE.find((p) => p.slug === slug);
+    assert.equal(person?.label, label);
+    assert.equal(person?.entryLevel, true, `${slug} should show in view-as`);
+    assert.equal(person?.productionAccess, false);
+    assert.equal(hasProductionAccess(slug), false);
+    assert.equal(teamFocus(slug), null, `${slug} should be unrestricted`);
+    assert.equal(personTeam(slug), null, `${slug} has no team yet`);
+  }
+});
+
 test("Sylvia is on the forecast roster", () => {
   assert.equal(isValidPerson("sylvia"), true);
   assert.equal(PEOPLE.find((p) => p.slug === "sylvia")?.label, "Sylvia");
@@ -198,6 +214,8 @@ test("an unassigned person is unscoped rather than shut out", () => {
   // never "sees nothing", or a team would lose sight of its own work.
   assert.equal(personTeam("jack"), null);
   assert.equal(personTeam("paula"), null);
+  assert.equal(personTeam("saqib"), null);
+  assert.equal(personTeam("jerald"), null);
   assert.equal(personTeam(OWNER_SLUG), null);
   assert.equal(personTeam(null), null);
   assert.equal(personTeam("not-a-person"), null);
@@ -211,6 +229,8 @@ test("peopleWithoutTeam lists exactly the gaps still to be filled", () => {
     assert.ok(!gaps.includes(slug), `${slug} has a team and should not be a gap`);
   }
   assert.ok(gaps.includes("jack"), "jack has no team yet");
+  assert.ok(gaps.includes("saqib"), "saqib has no team yet");
+  assert.ok(gaps.includes("jerald"), "jerald has no team yet");
   assert.ok(assigned.length > 0);
 });
 

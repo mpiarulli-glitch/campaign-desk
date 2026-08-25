@@ -21,6 +21,8 @@ export const PEOPLE = [
   { slug: "abel", label: "Abel", productionAccess: false, entryLevel: true },
   { slug: "mike_hines", label: "Mike Hines", productionAccess: false, entryLevel: false },
   { slug: "lana", label: "Lana Verrecchio", productionAccess: true, entryLevel: true },
+  { slug: "saqib", label: "Saqib", productionAccess: false, entryLevel: true },
+  { slug: "jerald", label: "Jerald", productionAccess: false, entryLevel: true },
 ] as const;
 
 // The single owner account. Logging in as this slug issues the null-person

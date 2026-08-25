@@ -15,6 +15,14 @@ test("Sylvia has a forecast roster slot like everyone else", () => {
   );
 });
 
+test("Saqib and Jerald have forecast roster slots", () => {
+  assert.equal(isValidPerson("saqib"), true);
+  assert.equal(isValidPerson("jerald"), true);
+  const week = weekSummaryForAllPeople(currentWeek());
+  assert.ok(week.some((p) => p.person === "saqib"), "Saqib should appear in the all-team forecast");
+  assert.ok(week.some((p) => p.person === "jerald"), "Jerald should appear in the all-team forecast");
+});
+
 test("the admin home routes leadership slugs to LeadershipHome", () => {
   const src = fs.readFileSync(
     path.join("src/app/admin/page.tsx"),
