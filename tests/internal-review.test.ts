@@ -322,12 +322,11 @@ test("campaign detail shows a Basecamp to-do link after internal review", () => 
   assert.ok(start >= 0 && end > start);
   const panel = page.slice(start, end);
 
-  assert.match(panel, /Open Basecamp to-do/);
   assert.match(panel, /Open to-do/);
   assert.match(panel, /Follow-up with/);
   assert.match(panel, /internalReview\?\.todoUrl/);
-  assert.match(panel, /internalReview\?\.forecastUrl/);
   assert.match(panel, /target="_blank"/);
+  assert.doesNotMatch(panel, /forecastUrl/);
   assert.match(page, /data\.todoUrl/);
   assert.match(page, /setInternalReview\(\(prev\) =>/);
   assert.doesNotMatch(panel, /basecampApproval\.cardUrl/);

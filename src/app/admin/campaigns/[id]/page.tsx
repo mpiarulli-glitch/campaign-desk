@@ -1920,11 +1920,6 @@ export default function AdminCampaignPage() {
                 )}
               </div>
               <div className="bc-head-actions">
-                {internalReview?.forecastUrl ? (
-                  <a className="btn btn-secondary btn-sm" href={internalReview.forecastUrl}>
-                    Open to-do
-                  </a>
-                ) : null}
                 {internalReview?.todoUrl ? (
                   <a
                     className="btn btn-secondary btn-sm"
@@ -1932,7 +1927,7 @@ export default function AdminCampaignPage() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open Basecamp to-do
+                    Open to-do
                   </a>
                 ) : null}
                 {internalReview?.todoUrl || internalReview?.deskTodoId ? (
