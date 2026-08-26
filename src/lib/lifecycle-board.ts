@@ -21,7 +21,12 @@ import {
   type LifecycleBoardRemoval,
 } from "./db";
 import { createCampaign } from "./campaigns";
-import { campaignCountsTowardQuota, sameLifecycleAccount } from "./email-launch";
+import {
+  campaignCountsTowardQuota,
+  campaignReachedClient,
+  CLIENT_APPROVAL_STATUSES,
+  sameLifecycleAccount,
+} from "./email-launch";
 import { APP_TIME_ZONE, currentPeriod, shiftPeriod } from "./period";
 import { listRevClients, updateRevClient } from "./revenue";
 
@@ -91,18 +96,13 @@ function removedClientIds(period: string): Set<string> {
 }
 
 /**
- * A campaign counts toward the month's contracted volume once it has left our
- * hands, not once the client signs off. `needs_changes` still counts: the work
- * was delivered and is now in a revision loop, so dropping it would make the
- * number fall backwards when a client sends notes.
+ * A campaign counts toward the month's contracted volume once it has been
+ * sent to the client for approval (`in_review`), not when Cassidy has it
+ * (`internal_review`) and not only once it has gone out to the list (`sent`).
+ * Later statuses still count: dropping `needs_changes` / `approved` /
+ * `scheduled` / `sent` would make the number fall backwards after notes or send.
  */
-const DELIVERED_STATUSES: CampaignStatus[] = [
-  "in_review",
-  "needs_changes",
-  "approved",
-  "scheduled",
-  "sent",
-];
+const DELIVERED_STATUSES: CampaignStatus[] = [...CLIENT_APPROVAL_STATUSES];
 
 export interface BoardCampaignItem {
   id: string;
@@ -119,7 +119,7 @@ export interface BoardCampaignItem {
   /** Text messages inside this campaign. Shown, but never counted against the
    *  email quota — a client's contract is written in emails. */
   smsCount: number;
-  /** Whether this campaign's emails count toward the month's quota yet. */
+  /** Whether this campaign's emails count toward the month's quota (client approval+). */
   delivered: boolean;
   /** False for automations — they show on the card but never tick the quota. */
   countsTowardQuota: boolean;
@@ -142,19 +142,25 @@ export interface BoardCard {
   campaigns: BoardCampaignItem[];
   /** Emails per month this client is contracted for. 0 means none on file. */
   quota: number;
-  /** Emails delivered against that quota this month. */
+  /** Emails sent to the client for approval against that quota this month. */
   delivered: number;
   updatedAt: string;
 }
 
+function deliveredEmailCount(campaigns: BoardCampaignItem[]): number {
+  return campaigns.reduce((n, c) => n + (c.delivered ? c.emailCount : 0), 0);
+}
+
 /**
  * Only campaigns that reached the client appear on a card, so this reads the
- * worst live status: anything in revision outranks anything awaiting sign-off,
- * and a card is only "met" once every send has actually gone out.
+ * worst live status: anything in revision outranks anything awaiting sign-off.
+ * "Deliverables Met" is contracted volume sent for client approval — not only
+ * once every email has been published to the list.
  */
-function suggestColumn(campaigns: BoardCampaignItem[]): BoardColumnKey {
+function suggestColumn(campaigns: BoardCampaignItem[], quota: number): BoardColumnKey {
   const quotaWork = campaigns.filter((c) => c.countsTowardQuota);
   if (quotaWork.length === 0) return "triage";
+  if (quota > 0 && deliveredEmailCount(quotaWork) >= quota) return "deliverables_met";
   if (quotaWork.some((c) => c.status === "needs_changes")) return "needs_revisions";
   if (quotaWork.some((c) => c.status === "in_review")) return "sent_for_approval";
   if (quotaWork.every((c) => c.status === "sent")) return "deliverables_met";
@@ -174,11 +180,11 @@ function toBoardCard(
     clientName,
     period: row.period,
     columnKey: row.column_key,
-    suggestedColumnKey: suggestColumn(campaigns),
+    suggestedColumnKey: suggestColumn(campaigns, quota),
     sortOrder: row.sort_order,
     campaigns: [...campaigns].sort((a, b) => a.title.localeCompare(b.title)),
     quota,
-    delivered: campaigns.reduce((n, c) => n + (c.countsTowardQuota ? c.emailCount : 0), 0),
+    delivered: deliveredEmailCount(campaigns),
     updatedAt: row.updated_at,
   };
 }
@@ -262,6 +268,7 @@ export function listBoardCards(period: string): BoardCard[] {
            ON e.campaign_id = c.id AND e.kind IN ('email', 'sms')
         WHERE c.archived_at IS NULL
           AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
+          AND NOT (c.status = 'approved' AND ifnull(c.approved_channel, '') = 'internal')
           AND strftime('%Y-%m', c.created_at) = ?
         GROUP BY c.id
         HAVING COUNT(e.id) > 0`
@@ -290,6 +297,7 @@ export function listBoardCards(period: string): BoardCard[] {
   };
   for (const r of campaignRows) {
     const isAutomation = !campaignCountsTowardQuota(r.presentation, r.title);
+    const countsTowardQuota = !isAutomation;
     const item: BoardCampaignItem = {
       id: r.id,
       title: r.title,
@@ -299,8 +307,8 @@ export function listBoardCards(period: string): BoardCard[] {
       magicToken: r.magic_token,
       emailCount: r.email_count,
       smsCount: r.sms_count,
-      delivered: !isAutomation,
-      countsTowardQuota: !isAutomation,
+      delivered: countsTowardQuota && campaignReachedClient(r.status, r.approved_channel),
+      countsTowardQuota,
       isAutomation,
       hasCard: Boolean(r.basecamp_card_id),
       loggedOffApp: Boolean(r.logged_off_app),

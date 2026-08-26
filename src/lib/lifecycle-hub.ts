@@ -14,6 +14,7 @@ import {
   PIPELINE_LABEL,
   calendarSendIsAutomation,
   campaignCountsTowardQuota,
+  campaignReachedClient,
   contractPace,
   daysInPeriod,
   isEmailPlatform,
@@ -52,6 +53,8 @@ export interface HubCampaign {
   emailCount: number;
   kind: HubWorkKind;
   countsTowardQuota: boolean;
+  /** True once this campaign's emails count against the monthly contract. */
+  delivered: boolean;
 }
 
 export interface HubActivity {
@@ -62,6 +65,7 @@ export interface HubActivity {
   date: string | null;
   status: string;
   countsTowardQuota: boolean;
+  delivered: boolean;
   href: string | null;
 }
 
@@ -354,6 +358,7 @@ function campaignsByClient(
       emailCount: r.email_count,
       kind: counts ? "campaign" : "automation",
       countsTowardQuota: counts,
+      delivered: counts && campaignReachedClient(r.status, r.approved_channel),
     };
     if (r.client_id && idSet.has(r.client_id)) {
       add(r.client_id, campaign);
@@ -408,7 +413,7 @@ function groupBoardCards(cards: BoardCard[]): CardGroup[] {
       memberIds: group.map((c) => c.clientId),
       memberNames: group.map((c) => c.clientName),
       campaigns,
-      delivered: campaigns.reduce((n, c) => n + (c.countsTowardQuota ? c.emailCount : 0), 0),
+      delivered: campaigns.reduce((n, c) => n + (c.delivered ? c.emailCount : 0), 0),
       quota: Math.max(...group.map((c) => c.quota)),
     };
   });
@@ -438,6 +443,7 @@ function buildActivity(sends: HubSend[], campaigns: HubCampaign[]): HubActivity[
     date: s.date,
     status: s.status,
     countsTowardQuota: false,
+    delivered: false,
     href: "/admin/calendar",
   }));
   const fromCampaigns: HubActivity[] = campaigns
@@ -450,6 +456,7 @@ function buildActivity(sends: HubSend[], campaigns: HubCampaign[]): HubActivity[
       date: c.status === "sent" ? ymdFromIso(c.updatedAt) || ymdFromIso(c.createdAt) : null,
       status: c.status,
       countsTowardQuota: c.countsTowardQuota,
+      delivered: c.delivered,
       href: `/admin/campaigns/${c.id}`,
     }));
   return [...fromSends, ...fromCampaigns].sort((a, b) => {

@@ -39,6 +39,7 @@ type HubActivity = {
   date: string | null;
   status: string;
   countsTowardQuota: boolean;
+  delivered?: boolean;
   href: string | null;
 };
 
@@ -439,16 +440,16 @@ function ClientDetail({
               <strong>{client.delivered}</strong>
               <span> of {client.quota}</span>
             </p>
-            <p className="lh-quota-label">campaign emails this month</p>
+            <p className="lh-quota-label">campaign emails sent for client approval</p>
             <div className={`lh-bar is-${client.pace}`}>
               <div className="lh-bar-fill" style={{ width: `${pct}%` }} />
             </div>
             <p className="lh-card-note">
               {client.pace === "met"
-                ? "Contract met. Automations are listed below but don’t count."
+                ? "Contract met — counted once those emails were sent to the client for approval. Automations don’t count."
                 : client.remaining === 1
-                  ? "1 campaign email still owed. Automations don’t count toward this."
-                  : `${client.remaining} campaign emails still owed. Automations don’t count toward this.`}
+                  ? "1 campaign email still owed. Counted once sent to the client for approval."
+                  : `${client.remaining} campaign emails still owed. Counted once sent to the client for approval.`}
             </p>
           </>
         ) : (
@@ -592,7 +593,11 @@ function ActivityRow({ row }: { row: HubActivity }) {
       <span className="lh-row-meta">
         {row.date ? prettyDate(row.date) : status}
         {row.date ? ` · ${status}` : ""}
-        {row.kind === "automation" ? " · doesn’t count" : ""}
+        {row.kind === "automation"
+          ? " · doesn’t count"
+          : row.source === "campaign" && !row.delivered
+            ? " · not with the client yet"
+            : ""}
       </span>
     </li>
   );

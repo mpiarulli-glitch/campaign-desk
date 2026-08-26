@@ -137,6 +137,7 @@ export function buildMonthBriefing(cards: BriefingCard[]): MonthBriefing {
     .map(toItem);
 
   const notStarted = cards.filter((c) => c.columnKey === "triage" && c.quota > 0).length;
+  // `delivered` is emails already sent to the client for approval.
   const met = cards.filter(
     (c) =>
       c.columnKey === "deliverables_met" || (c.quota > 0 && c.delivered >= c.quota)

@@ -546,7 +546,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
             <b>
               {totals.delivered}/{totals.quota}
             </b>{" "}
-            emails delivered against contract
+            emails sent for client approval against contract
           </span>
           <span>
             <b>{totals.inPlay}</b> in the pipeline

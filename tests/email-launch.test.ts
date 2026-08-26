@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   addCalendarDays,
   campaignCountsTowardQuota,
+  campaignReachedClient,
   contractPace,
   emailPlatformLabel,
   isEmailPlatform,
@@ -18,6 +19,18 @@ test("automation packages and welcome series do not count toward quota", () => {
   assert.equal(campaignCountsTowardQuota("package", "Our Watch Welcome Series V2"), false);
   assert.equal(campaignCountsTowardQuota("package", "First Look Automation"), false);
   assert.equal(campaignCountsTowardQuota("package", "Browse Return Flow"), false);
+});
+
+test("quota ticks at client approval, not internal review", () => {
+  assert.equal(campaignReachedClient("draft"), false);
+  assert.equal(campaignReachedClient("internal_review"), false);
+  assert.equal(campaignReachedClient("approved", "internal"), false);
+  assert.equal(campaignReachedClient("in_review"), true);
+  assert.equal(campaignReachedClient("needs_changes"), true);
+  assert.equal(campaignReachedClient("approved", "client"), true);
+  assert.equal(campaignReachedClient("approved"), true);
+  assert.equal(campaignReachedClient("scheduled"), true);
+  assert.equal(campaignReachedClient("sent"), true);
 });
 
 test("contact-suffix aliases are the same lifecycle account", () => {

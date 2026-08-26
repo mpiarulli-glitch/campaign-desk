@@ -134,3 +134,96 @@ test("automation emails do not tick the monthly quota", async (t) => {
   assert.equal(welcome.countsTowardQuota, false);
 });
 
+test("board quota ticks when sent to the client, not at internal review or list send", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-board-met-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const board = await import("../src/lib/lifecycle-board");
+  const campaigns = await import("../src/lib/campaigns");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_met", "Northline", 2, now, now);
+
+  const period = board.currentPeriod();
+  const stamp = `${period}-10T12:00:00.000Z`;
+  assert.equal(board.addBoardCard("cl_met", period), true);
+
+  const camp = campaigns.createCampaign({
+    title: "September broadcasts",
+    clientName: "Northline",
+    clientId: "cl_met",
+    htmlContent: "<p>Hi</p>",
+  });
+
+  const setStatus = (status: string, channel: string | null = null) => {
+    db.prepare(
+      `UPDATE campaigns SET status = ?, approved_channel = ?, created_at = ?, updated_at = ? WHERE id = ?`
+    ).run(status, channel, stamp, stamp, camp.id);
+  };
+
+  setStatus("draft");
+  let card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 0);
+  assert.equal(card.campaigns.length, 0);
+  assert.equal(card.suggestedColumnKey, "triage");
+
+  setStatus("internal_review");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 0);
+  assert.equal(card.campaigns.length, 0);
+
+  setStatus("approved", "internal");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 0);
+  assert.equal(card.campaigns.length, 0);
+
+  setStatus("in_review");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 1);
+  assert.equal(card.campaigns[0].delivered, true);
+  assert.equal(card.suggestedColumnKey, "sent_for_approval");
+
+  campaigns.addEmail({
+    campaignId: camp.id,
+    title: "Email 2",
+    htmlContent: "<p>Two</p>",
+  });
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 2);
+  assert.equal(card.suggestedColumnKey, "deliverables_met");
+
+  setStatus("needs_changes");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 2);
+  assert.equal(card.suggestedColumnKey, "deliverables_met");
+
+  setStatus("scheduled");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 2);
+  assert.equal(card.suggestedColumnKey, "deliverables_met");
+
+  setStatus("sent");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 2);
+  assert.equal(card.suggestedColumnKey, "deliverables_met");
+});
+

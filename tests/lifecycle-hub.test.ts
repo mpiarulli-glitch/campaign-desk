@@ -170,3 +170,66 @@ test("hub shows sent campaigns and calendar sends, and skips automation quota", 
   assert.equal(looda.delivered, 2);
 });
 
+test("hub contract is met at client approval, not internal review", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-met-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const campaigns = await import("../src/lib/campaigns");
+  const { getDb, nowIso } = await import("../src/lib/db");
+  const { currentPeriod } = await import("../src/lib/period");
+  const { todayYmd } = await import("../src/lib/cadence");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  const period = currentPeriod();
+  const today = todayYmd();
+  const stamp = `${period}-10T12:00:00.000Z`;
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_pace", "Pace Co", 1, now, now);
+
+  assert.equal(hub.addClientToHub("cl_pace", today, "michael", period, "ghl").ok, true);
+
+  const camp = campaigns.createCampaign({
+    title: "August promo",
+    clientName: "Pace Co",
+    clientId: "cl_pace",
+    htmlContent: "<p>Hi</p>",
+  });
+  db.prepare(
+    `UPDATE campaigns SET status = 'internal_review', created_at = ?, updated_at = ? WHERE id = ?`
+  ).run(stamp, stamp, camp.id);
+
+  let snapshot = hub.buildLifecycleHub();
+  let client = snapshot.clients.find((c) => c.id === "cl_pace");
+  assert.ok(client);
+  assert.equal(client.delivered, 0);
+  assert.notEqual(client.pace, "met");
+  const internal = client.activity.find((a) => a.title === "August promo");
+  assert.ok(internal);
+  assert.equal(internal.delivered, false);
+  assert.equal(internal.status, "internal_review");
+
+  db.prepare(
+    `UPDATE campaigns SET status = 'in_review', created_at = ?, updated_at = ? WHERE id = ?`
+  ).run(stamp, stamp, camp.id);
+
+  snapshot = hub.buildLifecycleHub();
+  client = snapshot.clients.find((c) => c.id === "cl_pace");
+  assert.ok(client);
+  assert.equal(client.delivered, 1);
+  assert.equal(client.pace, "met");
+  assert.equal(client.paceLabel, "Contract met");
+  const withClient = client.activity.find((a) => a.title === "August promo");
+  assert.ok(withClient);
+  assert.equal(withClient.delivered, true);
+});
+

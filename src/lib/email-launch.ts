@@ -45,6 +45,33 @@ export function campaignCountsTowardQuota(
   return true;
 }
 
+/**
+ * Statuses that mean the package has been sent to the client for approval
+ * (or already came back). Draft, QA, and Cassidy/internal review are not here.
+ */
+export const CLIENT_APPROVAL_STATUSES = [
+  "in_review",
+  "needs_changes",
+  "approved",
+  "scheduled",
+  "sent",
+] as const;
+
+/**
+ * A campaign ticks the monthly contract once it has been sent to the client
+ * for approval. `internal_review` and internally-approved work have not left
+ * our hands. Later statuses still count so the number does not fall backwards
+ * after notes, approval, scheduling, or send.
+ */
+export function campaignReachedClient(
+  status?: string | null,
+  approvedChannel?: string | null
+): boolean {
+  if (!status) return false;
+  if (status === "approved" && approvedChannel === "internal") return false;
+  return (CLIENT_APPROVAL_STATUSES as readonly string[]).includes(status);
+}
+
 export function calendarSendIsAutomation(assetType: string | null | undefined): boolean {
   return assetType === "crm_automation";
 }
@@ -138,8 +165,8 @@ export interface PaceResult {
 
 /**
  * Contract pace for the month. Quota is emails owed; delivered is emails
- * that have already left our hands. Remaining work vs remaining weeks, with
- * one extra email of slack so the first days of the month are not "behind".
+ * already sent to the client for approval. Remaining work vs remaining weeks,
+ * with one extra email of slack so the first days of the month are not "behind".
  */
 export function contractPace(
   quota: number,
