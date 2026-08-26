@@ -38,6 +38,7 @@ import {
   isRunning,
   meetingNeedsCalendar,
   notifyForecastTimerChanged,
+  resolveLogTimeDate,
   shouldAskToLogOnComplete,
   trackedSeconds,
 } from "@/lib/forecast-timer";
@@ -1159,8 +1160,10 @@ export default function PersonForecastPage() {
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
   const [logDrafts, setLogDrafts] = useState<Record<string, string>>({});
-  // Rows whose log box is open. Defaults to open until something has been logged,
-  // then collapses to a "Log more time" link so a finished row reads as finished.
+  // Day the hours should land on in Basecamp. Defaults to the row's date when
+  // the log popup or finish card opens, so a forgotten yesterday still logs as
+  // yesterday unless somebody picks another day.
+  const [logDates, setLogDates] = useState<Record<string, string>>({});
   const [logExpanded, setLogExpanded] = useState<Record<string, boolean>>({});
   const [addingSubtask, setAddingSubtask] = useState<Record<string, boolean>>(
     {}
@@ -1806,6 +1809,7 @@ export default function PersonForecastPage() {
     // Unticking is a correction, not a finish, so it never asks.
     if (finishing) {
       setLogAskMode("complete");
+      setLogDates((d) => ({ ...d, [task.id]: task.task_date }));
       setLogAsk(task.id);
     } else {
       setLogAsk(null);
@@ -2374,8 +2378,13 @@ export default function PersonForecastPage() {
       setError("Enter how many hours to log to Basecamp.");
       return false;
     }
+    const date = resolveLogTimeDate(logDates[task.id], task.task_date);
+    if (!date) {
+      setError("Pick the date these hours should land on.");
+      return false;
+    }
     setLogging(task.id);
-    const body: Record<string, unknown> = { logTimeHours: hours };
+    const body: Record<string, unknown> = { logTimeHours: hours, logTimeDate: date };
     if (link?.todoId && link.projectId) {
       body.basecampTodoId = link.todoId;
       body.basecampProjectId = link.projectId;
@@ -2400,6 +2409,11 @@ export default function PersonForecastPage() {
     }
     setError("");
     setLogDrafts((d) => {
+      const next = { ...d };
+      delete next[task.id];
+      return next;
+    });
+    setLogDates((d) => {
       const next = { ...d };
       delete next[task.id];
       return next;
@@ -2490,21 +2504,44 @@ export default function PersonForecastPage() {
   /**
    * Inline "log some hours to Basecamp" control, sized to sit in a task row.
    *
-   * Collapsed by default, always. It used to open expanded on anything with
-   * nothing logged yet, which meant every unlogged task carried a full-width
-   * input and a bright Log to Basecamp button — three lines of row for a thing
-   * you do once. Now it's a pill the width of a word until you ask for it.
+   * Clicking the pill opens a small popup — same shape as Move — with hours,
+   * the day Basecamp should record, and Log / Cancel. The date defaults to the
+   * forecast row so a forgotten yesterday still logs as yesterday.
    *
-   * Always on the row. Linked tasks expand in place; unlinked tasks open the
-   * same picker used on complete, because hours still have to name a todo.
-   * Never gated on the task being finished: work spans days and time has to
-   * go in while it's fresh.
+   * Always on the row. Linked tasks log from that popup; unlinked tasks open
+   * the same picker used on complete, because hours still have to name a todo
+   * or a meeting's client. Never gated on the task being finished: work spans
+   * days and time has to go in while it's fresh.
    */
   function LogTime({ task }: { task: Task }) {
     const linked = hasTimesheetDestination(task);
     const needsCalendar = meetingNeedsCalendar(task);
     const logged = Boolean(task.basecamp_time_entry_id);
     const open = Boolean(logExpanded[task.id]);
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (!open) return;
+      function onDown(e: MouseEvent) {
+        if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+          setLogExpanded((d) => ({ ...d, [task.id]: false }));
+        }
+      }
+      function onKey(e: KeyboardEvent) {
+        if (e.key === "Escape") setLogExpanded((d) => ({ ...d, [task.id]: false }));
+      }
+      document.addEventListener("mousedown", onDown);
+      document.addEventListener("keydown", onKey);
+      return () => {
+        document.removeEventListener("mousedown", onDown);
+        document.removeEventListener("keydown", onKey);
+      };
+    }, [open, task.id]);
+
+    function openLog() {
+      setLogDates((d) => ({ ...d, [task.id]: d[task.id] || task.task_date }));
+      setLogExpanded((d) => ({ ...d, [task.id]: true }));
+    }
 
     if (!linked) {
       return (
@@ -2513,6 +2550,7 @@ export default function PersonForecastPage() {
           className="fc-log-pill"
           onClick={() => {
             setLogAskMode("manual");
+            setLogDates((d) => ({ ...d, [task.id]: d[task.id] || task.task_date }));
             setLogAsk(task.id);
           }}
           onMouseDown={(e) => e.stopPropagation()}
@@ -2527,12 +2565,16 @@ export default function PersonForecastPage() {
       );
     }
 
-    if (!open) {
-      return (
+    return (
+      <div className="fc-move" ref={wrapRef}>
         <button
           type="button"
           className={`fc-log-pill ${logged ? "is-logged" : ""}`}
-          onClick={() => setLogExpanded((d) => ({ ...d, [task.id]: true }))}
+          aria-expanded={open}
+          onClick={() => {
+            if (open) setLogExpanded((d) => ({ ...d, [task.id]: false }));
+            else openLog();
+          }}
           onMouseDown={(e) => e.stopPropagation()}
           title={
             logged
@@ -2542,41 +2584,55 @@ export default function PersonForecastPage() {
         >
           {logged ? `${task.actual_hours}h logged` : "Log time"}
         </button>
-      );
-    }
-
-    return (
-      <span className="fc-log-open" onMouseDown={(e) => e.stopPropagation()}>
-        <input
-          value={logDrafts[task.id] ?? logDefault(task)}
-          onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void logTime(task);
-            if (e.key === "Escape") setLogExpanded((d) => ({ ...d, [task.id]: false }));
-          }}
-          type="number"
-          min="0"
-          step="0.25"
-          aria-label="Hours to log to Basecamp"
-          autoFocus
-        />
-        <button
-          type="button"
-          className="fc-log-go"
-          disabled={logging === task.id}
-          onClick={() => void logTime(task)}
-        >
-          {logging === task.id ? "…" : "Log"}
-        </button>
-        <button
-          type="button"
-          className="fc-log-cancel"
-          aria-label="Cancel"
-          onClick={() => setLogExpanded((d) => ({ ...d, [task.id]: false }))}
-        >
-          ×
-        </button>
-      </span>
+        {open ? (
+          <div className="fc-move-menu fc-log-menu" role="dialog" aria-label="Log time to Basecamp">
+            <label className="fc-move-date">
+              <span>Hours</span>
+              <input
+                value={logDrafts[task.id] ?? logDefault(task)}
+                onChange={(e) => setLogDrafts((d) => ({ ...d, [task.id]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void logTime(task);
+                }}
+                type="number"
+                min="0"
+                step="0.25"
+                aria-label="Hours to log to Basecamp"
+                autoFocus
+              />
+            </label>
+            <label className="fc-move-date">
+              <span>Log as</span>
+              <input
+                type="date"
+                value={logDates[task.id] || task.task_date}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setLogDates((d) => ({ ...d, [task.id]: e.target.value }));
+                }}
+                aria-label="Date to log on the Basecamp timesheet"
+              />
+            </label>
+            <div className="fc-log-menu-actions">
+              <button
+                type="button"
+                className="fc-log-go"
+                disabled={logging === task.id}
+                onClick={() => void logTime(task)}
+              >
+                {logging === task.id ? "…" : "Log"}
+              </button>
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => setLogExpanded((d) => ({ ...d, [task.id]: false }))}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -3751,6 +3807,18 @@ export default function PersonForecastPage() {
               </button>
             </div>
           )}
+          <label className="fc-log-ask-date">
+            <span>Log as</span>
+            <input
+              type="date"
+              value={logDates[logAskTask.id] || logAskTask.task_date}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setLogDates((d) => ({ ...d, [logAskTask.id]: e.target.value }));
+              }}
+              aria-label="Date to log on the Basecamp timesheet"
+            />
+          </label>
           <div className="fc-log-ask-row">
             <input
               value={logDrafts[logAskTask.id] ?? logDefault(logAskTask)}

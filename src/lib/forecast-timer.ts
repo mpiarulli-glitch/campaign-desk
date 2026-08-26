@@ -156,3 +156,21 @@ export function shouldAskToLogOnComplete(
   if (!hasTimesheetDestination(task)) return true;
   return hoursToOffer(task, nowMs) !== "";
 }
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Which calendar day Basecamp should record the hours against.
+ *
+ * A picked YYYY-MM-DD wins, so yesterday's work can land on yesterday even if
+ * the row has since moved. Anything missing or blank falls back to the
+ * forecast row's day. Invalid input is rejected rather than silently logged
+ * as today.
+ */
+export function resolveLogTimeDate(chosen: unknown, taskDate: string): string | null {
+  if (chosen === undefined || chosen === null || chosen === "") {
+    return DATE_RE.test(taskDate) ? taskDate : null;
+  }
+  if (typeof chosen === "string" && DATE_RE.test(chosen)) return chosen;
+  return null;
+}

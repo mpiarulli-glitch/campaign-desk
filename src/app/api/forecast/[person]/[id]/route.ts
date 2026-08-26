@@ -23,7 +23,7 @@ import {
 } from "@/lib/forecast";
 import { ensureMeetingOnBasecamp } from "@/lib/forecast-schedule";
 import { parseTimeInput } from "@/lib/forecast-time";
-import { isForecastMeeting } from "@/lib/forecast-timer";
+import { isForecastMeeting, resolveLogTimeDate } from "@/lib/forecast-timer";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
@@ -52,12 +52,17 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 async function logTime(
   taskId: string,
   person: string,
-  hours: number
+  hours: number,
+  logTimeDate?: unknown
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   let task = getTask(taskId);
   if (!task) return { status: 404, body: { error: "Not found" } };
   if (!(hours > 0)) {
     return { status: 400, body: { error: "hours must be a positive number" } };
+  }
+  const date = resolveLogTimeDate(logTimeDate, task.task_date);
+  if (!date) {
+    return { status: 400, body: { error: "logTimeDate must be YYYY-MM-DD" } };
   }
   if (!basecampConnected()) {
     return { status: 400, body: { error: "Basecamp isn't connected." } };
@@ -121,7 +126,7 @@ async function logTime(
   const result = await createTimeEntry(
     recordingId,
     {
-      date: task.task_date,
+      date,
       hours,
       // The name is no longer needed as a prefix now that Basecamp attributes the
       // entry to them, so the description is just what the time went on.
@@ -134,7 +139,8 @@ async function logTime(
   }
   // Recorded only after Basecamp accepts, so a failed write leaves the task
   // loggable rather than looking done. Adds to whatever was logged before.
-  const updated = recordTimeEntry(taskId, hours, result.entryId || "");
+  // Same date as Basecamp, so a backdated entry counts on that day here too.
+  const updated = recordTimeEntry(taskId, hours, result.entryId || "", date);
   return { status: 200, body: { task: updated, entryId: result.entryId, appUrl: result.appUrl } };
 }
 
@@ -198,7 +204,12 @@ export async function PATCH(request: Request, { params }: Params) {
         linkTaskBasecamp(id, todoId, projectId, stepId);
       }
     }
-    const { status, body: out } = await logTime(id, person, Number(body.logTimeHours));
+    const { status, body: out } = await logTime(
+      id,
+      person,
+      Number(body.logTimeHours),
+      body.logTimeDate
+    );
     return NextResponse.json(out, { status });
   }
 

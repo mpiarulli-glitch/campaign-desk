@@ -269,6 +269,40 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     assert.match(src, /setLogAskMode\("manual"\)/);
   });
 
+  await t.test("logging time opens a date popup and sends that day to Basecamp", () => {
+    const page = fs.readFileSync(
+      path.join(originalCwd, "src/app/admin/forecast/[person]/page.tsx"),
+      "utf8"
+    );
+    const route = fs.readFileSync(
+      path.join(originalCwd, "src/app/api/forecast/[person]/[id]/route.ts"),
+      "utf8"
+    );
+
+    // Same anchored menu as Move — not a new modal — with a date that defaults
+    // to the forecast row so yesterday's work is one click, not a blank picker.
+    assert.match(page, /fc-move-menu fc-log-menu/);
+    assert.match(page, /aria-label="Log time to Basecamp"/);
+    assert.match(page, /Date to log on the Basecamp timesheet/);
+    assert.match(page, /logDates\[task\.id\] \|\| task\.task_date/);
+    assert.match(page, /logTimeDate: date/);
+    assert.match(page, /<span>Log as<\/span>/);
+    assert.match(page, />\s*Cancel\s*</);
+
+    // Meetings still log from this action without being forced onto a to-do.
+    const logTimeFn = page.slice(page.indexOf("async function logTime("), page.indexOf("async function toggleTimer("));
+    assert.match(logTimeFn, /body\.createScheduleEntry = true/);
+    assert.match(logTimeFn, /logTimeDate: date/);
+
+    assert.match(route, /resolveLogTimeDate\(logTimeDate, task\.task_date\)/);
+    assert.match(route, /body\.logTimeDate/);
+    assert.match(
+      route,
+      /recordTimeEntry\(taskId, hours, result\.entryId \|\| "", date\)/
+    );
+    assert.match(route, /createTimeEntry\(\s*recordingId,\s*\{\s*date,/);
+  });
+
   await t.test("a normal work task is unaffected", () => {
     const task = forecast.createTask({
       person: "michael",
@@ -308,5 +342,54 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     });
     const updated = forecast.updateTask(task.id, { startTime: "" });
     assert.equal(updated?.start_time, "");
+  });
+
+  await t.test("the chosen date is what Basecamp receives, not today", async () => {
+    const basecamp = await import("../src/lib/basecamp");
+    getDb()
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(
+        "basecamp_tokens",
+        JSON.stringify({
+          access_token: "TEST-TOKEN",
+          refresh_token: "test-refresh",
+          expires_at: Date.now() + 3600_000,
+        }),
+        nowIso()
+      );
+
+    const realFetch = globalThis.fetch;
+    let posted: { url?: string; body?: Record<string, unknown> } = {};
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      posted = {
+        url: String(_input),
+        body: JSON.parse(String(init?.body || "{}")) as Record<string, unknown>,
+      };
+      return new Response(
+        JSON.stringify({ id: "te_backdated", app_url: "https://bc/te_backdated" }),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+
+    try {
+      const result = await basecamp.createTimeEntry("todo_99", {
+        date: "2026-08-25",
+        hours: 1.5,
+        description: "Forgot yesterday",
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.entryId, "te_backdated");
+      assert.match(posted.url || "", /\/recordings\/todo_99\/timesheet\/entries\.json$/);
+      assert.deepEqual(posted.body, {
+        date: "2026-08-25",
+        hours: "1.5",
+        description: "Forgot yesterday",
+      });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

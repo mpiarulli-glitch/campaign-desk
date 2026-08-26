@@ -9,6 +9,7 @@ import {
   isRunning,
   meetingNeedsCalendar,
   runningSeconds,
+  resolveLogTimeDate,
   shouldAskToLogOnComplete,
   trackedHours,
   trackedSeconds,
@@ -169,6 +170,14 @@ test("a typed meeting is not a timesheet destination until it is on the calendar
   const booked = { ...typed, basecamp_event_id: "e1" };
   assert.equal(meetingNeedsCalendar(booked), false);
   assert.equal(hasTimesheetDestination(booked), true);
+});
+
+test("logging time uses a picked date, or the forecast row's day", () => {
+  assert.equal(resolveLogTimeDate("2026-08-25", "2026-08-26"), "2026-08-25");
+  assert.equal(resolveLogTimeDate(undefined, "2026-08-26"), "2026-08-26");
+  assert.equal(resolveLogTimeDate("", "2026-08-26"), "2026-08-26");
+  assert.equal(resolveLogTimeDate("yesterday", "2026-08-26"), null);
+  assert.equal(resolveLogTimeDate("2026/08/25", "2026-08-26"), null);
 });
 
 test("nothing outstanding offers nothing, which is also the signal not to ask", () => {
