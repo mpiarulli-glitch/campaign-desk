@@ -1,14 +1,16 @@
 import {
   SERVICE,
   basecampConnected,
+  commentOnCard,
   createAssignedTodo,
+  findOpenTodoOnNamedList,
   getProjectPeopleForMention,
   mentionHtml,
   resolveSylviaMention,
   type BcIdentity,
   type BcPerson,
 } from "./basecamp";
-import { createTodo } from "./todos";
+import { createTodo, getTodo, updateTodo, type TodoView } from "./todos";
 import {
   getCampaignById,
   applyOperatorCampaignStatus,
@@ -16,6 +18,7 @@ import {
 } from "./campaigns";
 import { resolveCampaignClient } from "./campaign-card-sync";
 import { adminCampaignUrl, reviewUrl } from "./auth";
+import { getDb } from "./db";
 import { basecampNameForManager } from "./people";
 import { slugForName, teamLabel } from "./team";
 import { sylviaCcHtml } from "./review-cc";
@@ -131,6 +134,34 @@ export function internalReviewTodoContent(input: {
   };
 }
 
+export function internalReviewFollowupHtml(input: {
+  reviewerName: string;
+  campaignTitle: string;
+  reviewUrl: string;
+  mention?: string;
+}): string {
+  const name = input.mention || escapeHtml(firstNameOf(input.reviewerName) || "there");
+  const title = escapeHtml(input.campaignTitle);
+  const url = escapeHtml(input.reviewUrl);
+  return [
+    `<p>Hi ${name},</p>`,
+    `<p>Just a nudge on this internal review — <strong>${title}</strong> is still waiting on you.</p>`,
+    `<p><a href="${url}">Internal review link</a></p>`,
+  ].join("");
+}
+
+export function deskInternalReviewTodo(campaignId: string): TodoView | null {
+  const needle = `/admin/campaigns/${campaignId}`;
+  const row = getDb()
+    .prepare(
+      `SELECT id FROM todos
+        WHERE source = 'internal_review' AND notes LIKE ?
+        ORDER BY created_at DESC`
+    )
+    .get(`%${needle}%`) as { id: string } | undefined;
+  return row ? getTodo(row.id) : null;
+}
+
 export async function sendCampaignForInternalReview(input: {
   campaignId: string;
   reviewerId: number;
@@ -230,8 +261,13 @@ export async function sendCampaignForInternalReview(input: {
   if (assigneeSlug) {
     createTodo({
       title: content.title,
-      notes: `Internal review\n${reviewUrl(campaign.magic_token)}\n${adminCampaignUrl(campaign.id)}`,
-      clientId: campaign.client_id,
+      notes: [
+        "Internal review",
+        reviewUrl(campaign.magic_token),
+        adminCampaignUrl(campaign.id),
+        created.todoUrl,
+      ].join("\n"),
+      clientId: campaign.client_id || client.id,
       assignee: assigneeSlug,
       dueDate: dueOn,
       source: "internal_review",
@@ -263,6 +299,11 @@ export async function internalReviewState(campaignId: string): Promise<
       defaultReviewerId: number | null;
       todoUrl: string | null;
       todoId: string | null;
+      deskTodoId: string | null;
+      forecastUrl: string | null;
+      assigneeSlug: string | null;
+      assigneeName: string | null;
+      dueDate: string | null;
     }
   | null
 > {
@@ -290,11 +331,42 @@ export async function internalReviewState(campaignId: string): Promise<
     }
   }
 
-  const defaultReviewer = pickDefaultInternalReviewer(
-    people,
-    client?.account_manager || ""
-  );
+  const desk = deskInternalReviewTodo(campaignId);
+  if (desk && client?.id && !desk.client_id) {
+    updateTodo(desk.id, { clientId: client.id });
+  }
   const stored = getCampaignById(campaignId) || campaign;
+  let todoId = (stored.internal_review_todo_id || "").trim() || null;
+  let todoUrl = (stored.internal_review_todo_url || "").trim() || null;
+
+  if (!todoUrl && client?.basecamp_project_id && basecampConnected()) {
+    const title =
+      desk?.title ||
+      internalReviewTodoContent({
+        campaignTitle: campaign.title,
+        clientName: campaign.client_name || client.name,
+        mention: "",
+        reviewUrl: reviewUrl(campaign.magic_token),
+      }).title;
+    const found = await findOpenTodoOnNamedList(
+      client.basecamp_project_id,
+      "Campaign Review",
+      title
+    );
+    if (found) {
+      recordInternalReviewTodo(campaignId, { todoId: found.id, todoUrl: found.url });
+      todoId = found.id;
+      todoUrl = found.url;
+    }
+  }
+
+  const assigneeSlug = desk?.assignee || null;
+  const sentReviewer = pickDefaultInternalReviewer(
+    people,
+    assigneeSlug || client?.account_manager || ""
+  );
+  const defaultReviewer =
+    sentReviewer || pickDefaultInternalReviewer(people, client?.account_manager || "");
 
   return {
     ready: missing.length === 0 && people.length > 0,
@@ -304,8 +376,94 @@ export async function internalReviewState(campaignId: string): Promise<
     people,
     peopleReason,
     defaultReviewerId: defaultReviewer?.id ?? null,
-    todoUrl: (stored.internal_review_todo_url || "").trim() || null,
-    todoId: (stored.internal_review_todo_id || "").trim() || null,
+    todoUrl,
+    todoId,
+    deskTodoId: desk?.id || null,
+    forecastUrl: assigneeSlug ? `/admin/forecast/${assigneeSlug}` : null,
+    assigneeSlug,
+    assigneeName: assigneeSlug ? teamLabel(assigneeSlug) : sentReviewer?.name || null,
+    dueDate: desk?.due_date || null,
+  };
+}
+
+export async function followUpInternalReview(
+  campaignId: string,
+  identity: BcIdentity = SERVICE
+): Promise<
+  | { ok: true; recipient: string; todoUrl: string }
+  | { ok: false; error: string; status: number }
+> {
+  const campaign = getCampaignById(campaignId);
+  if (!campaign) return { ok: false, error: "Not found", status: 404 };
+  if (!basecampConnected()) {
+    return { ok: false, error: "Basecamp isn't connected.", status: 400 };
+  }
+  const client = resolveCampaignClient(campaign);
+  if (!client?.basecamp_project_id) {
+    return {
+      ok: false,
+      error: "This campaign's client has no Basecamp project.",
+      status: 400,
+    };
+  }
+
+  const state = await internalReviewState(campaignId);
+  const todoId = state?.todoId || campaign.internal_review_todo_id;
+  if (!todoId) {
+    return {
+      ok: false,
+      error: "There's no Basecamp to-do to follow up on yet.",
+      status: 400,
+    };
+  }
+
+  let roster: BcPerson[] = [];
+  try {
+    roster = await getProjectPeopleForMention(client.basecamp_project_id, identity);
+  } catch (err) {
+    return {
+      ok: false,
+      error: (err as Error).message || "Could not load the Basecamp project roster.",
+      status: 502,
+    };
+  }
+  const team = teamPeopleForInternalReview(roster);
+  const reviewer =
+    pickDefaultInternalReviewer(team, state?.assigneeSlug || client.account_manager) ||
+    team.find((person) => String(person.id) && state?.defaultReviewerId === person.id) ||
+    null;
+  if (!reviewer) {
+    return {
+      ok: false,
+      error: "Could not match the reviewer on that Basecamp project.",
+      status: 400,
+    };
+  }
+  const reviewerPerson = roster.find((person) => person.id === reviewer.id);
+  const html = internalReviewFollowupHtml({
+    reviewerName: reviewer.name,
+    campaignTitle: campaign.title,
+    reviewUrl: reviewUrl(campaign.magic_token),
+    mention: internalReviewMention(
+      reviewerPerson || {
+        id: reviewer.id,
+        name: reviewer.name,
+        attachable_sgid: reviewer.attachableSgid,
+      }
+    ),
+  });
+  const result = await commentOnCard(client.basecamp_project_id, todoId, html, identity);
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error || "Could not post the follow-up in Basecamp.",
+      status: 502,
+    };
+  }
+  return {
+    ok: true,
+    recipient: reviewer.name,
+    todoUrl: result.url || state?.todoUrl || "",
   };
 }
 

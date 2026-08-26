@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "os";
 import path from "path";
 import {
+  internalReviewFollowupHtml,
   internalReviewMention,
   internalReviewTodoContent,
   parseInternalReviewDueOn,
@@ -68,6 +69,18 @@ test("default internal reviewer prefers the mapped account manager", () => {
   assert.equal(pickDefaultInternalReviewer(people, "cassidy")?.id, 2);
   assert.equal(pickDefaultInternalReviewer(people, "kyle")?.id, 3);
   assert.equal(pickDefaultInternalReviewer(people, "")?.id, undefined);
+});
+
+test("internal review follow-up copy nudges the AM", () => {
+  const html = internalReviewFollowupHtml({
+    reviewerName: "Cassidy Merideth",
+    campaignTitle: "Krak Boba Oceanside Post-Launch Email + SMS Sequence",
+    reviewUrl: "https://desk.example/review/token",
+    mention: "@Cassidy",
+  });
+  assert.match(html, /Hi @Cassidy/);
+  assert.match(html, /still waiting on you/);
+  assert.match(html, /https:\/\/desk\.example\/review\/token/);
 });
 
 test("sending a campaign for internal review", async (t) => {
@@ -140,6 +153,7 @@ test("sending a campaign for internal review", async (t) => {
     assignee_ids?: number[];
     due_on?: string;
   } | null = null;
+  const createdTodos: Array<{ id: number; content: string; app_url: string }> = [];
   let nextTodoId = 99;
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -179,7 +193,15 @@ test("sending a campaign for internal review", async (t) => {
     if (url.includes("/todos.json") && method === "POST") {
       lastTodo = JSON.parse(String(init?.body || "{}"));
       const id = nextTodoId++;
-      return json({ id, app_url: `https://3.basecamp.com/todo/${id}` });
+      const app_url = `https://3.basecamp.com/todo/${id}`;
+      createdTodos.push({ id, content: lastTodo?.content || "", app_url });
+      return json({ id, app_url });
+    }
+    if (url.includes("/todos.json") && method === "GET") {
+      return json(createdTodos);
+    }
+    if (url.includes("/comments.json") && method === "POST") {
+      return json({ id: 1, app_url: "https://3.basecamp.com/comment/1" });
     }
     return json([]);
   }) as typeof fetch;
@@ -262,6 +284,32 @@ test("sending a campaign for internal review", async (t) => {
     assert.equal(row.basecamp_card_id, "card-1");
     assert.equal(row.basecamp_card_url, "https://3.basecamp.com/card/1");
   });
+
+  await t.test("state still finds Cassidy's desk to-do if the campaign lost the Basecamp URL", async () => {
+    getDb()
+      .prepare(
+        `UPDATE campaigns SET internal_review_todo_id = NULL, internal_review_todo_url = NULL WHERE id = ?`
+      )
+      .run(created.id);
+    const desk = internal.deskInternalReviewTodo(created.id);
+    assert.ok(desk);
+    assert.equal(desk.assignee, "cassidy");
+
+    const state = await internal.internalReviewState(created.id);
+    assert.ok(state);
+    assert.equal(state.deskTodoId, desk.id);
+    assert.equal(state.assigneeSlug, "cassidy");
+    assert.equal(state.forecastUrl, "/admin/forecast/cassidy");
+    assert.equal(state.todoId, "100");
+    assert.equal(state.todoUrl, "https://3.basecamp.com/todo/100");
+  });
+
+  await t.test("follow-up comments on the Basecamp to-do", async () => {
+    const result = await internal.followUpInternalReview(created.id);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.recipient, "Cassidy Merideth");
+  });
 });
 
 test("campaign detail shows a Basecamp to-do link after internal review", () => {
@@ -275,7 +323,10 @@ test("campaign detail shows a Basecamp to-do link after internal review", () => 
   const panel = page.slice(start, end);
 
   assert.match(panel, /Open Basecamp to-do/);
+  assert.match(panel, /Open to-do/);
+  assert.match(panel, /Follow-up with/);
   assert.match(panel, /internalReview\?\.todoUrl/);
+  assert.match(panel, /internalReview\?\.forecastUrl/);
   assert.match(panel, /target="_blank"/);
   assert.match(page, /data\.todoUrl/);
   assert.match(page, /setInternalReview\(\(prev\) =>/);

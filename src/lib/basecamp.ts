@@ -50,6 +50,16 @@ function apiBase(): string {
   return `https://3.basecampapi.com/${accountId()}`;
 }
 
+export function basecampTodoAppUrl(
+  projectId: string,
+  todoId: string,
+  appUrl?: string | null
+): string {
+  const existing = (appUrl || "").trim();
+  if (existing) return existing;
+  return `https://3.basecamp.com/${accountId()}/buckets/${projectId}/todos/${todoId}`;
+}
+
 export function basecampConfigured(): boolean {
   return Boolean(clientId() && clientSecret());
 }
@@ -1404,6 +1414,49 @@ async function getOrCreateNamedTodolist(
   return { error: "Basecamp did not return a to-do list." };
 }
 
+export async function findOpenTodoOnNamedList(
+  projectId: string,
+  listName: string,
+  title: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ id: string; url: string } | null> {
+  const wantedTitle = title.trim().toLowerCase();
+  const wantedList = listName.trim().toLowerCase();
+  if (!projectId || !wantedTitle || !wantedList) return null;
+  try {
+    const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
+    if (!pr.ok) return null;
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string; enabled?: boolean }> = project.dock || [];
+    const todoset = dock.find((d) => d.name === "todoset" && d.enabled !== false);
+    if (!todoset) return null;
+    const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
+      `/buckets/${projectId}/todosets/${todoset.id}/todolists.json`,
+      4,
+      identity
+    );
+    const list = lists.find(
+      (row) => (row.title || row.name || "").trim().toLowerCase() === wantedList
+    );
+    if (!list) return null;
+    const todos = await bcCollection<{
+      id: number;
+      content?: string;
+      title?: string;
+      app_url?: string;
+    }>(`/buckets/${projectId}/todolists/${list.id}/todos.json`, 2, identity);
+    const matches = todos.filter(
+      (row) => (row.content || row.title || "").trim().toLowerCase() === wantedTitle
+    );
+    const hit = matches.at(-1);
+    if (!hit?.id) return null;
+    const id = String(hit.id);
+    return { id, url: basecampTodoAppUrl(projectId, id, hit.app_url) };
+  } catch {
+    return null;
+  }
+}
+
 export async function createAssignedTodo(input: {
   projectId: string;
   title: string;
@@ -1447,10 +1500,11 @@ export async function createAssignedTodo(input: {
     }
     const todo = await res.json();
     if (!todo.id) return { ok: false, error: "Basecamp did not return a to-do." };
+    const todoId = String(todo.id);
     return {
       ok: true,
-      todoId: String(todo.id),
-      todoUrl: todo.app_url || "",
+      todoId,
+      todoUrl: basecampTodoAppUrl(input.projectId, todoId, todo.app_url),
     };
   } catch (err) {
     return { ok: false, error: (err as Error).message || "Could not create the Basecamp to-do." };

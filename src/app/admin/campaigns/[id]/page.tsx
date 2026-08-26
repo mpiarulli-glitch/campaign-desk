@@ -226,6 +226,11 @@ type InternalReviewState = {
   defaultReviewerId: number | null;
   todoUrl: string | null;
   todoId: string | null;
+  deskTodoId: string | null;
+  forecastUrl: string | null;
+  assigneeSlug: string | null;
+  assigneeName: string | null;
+  dueDate: string | null;
 };
 
 function firstNameOf(name: string): string {
@@ -358,6 +363,7 @@ export default function AdminCampaignPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [sendingInternalReview, setSendingInternalReview] = useState(false);
+  const [sendingInternalFollowup, setSendingInternalFollowup] = useState(false);
   const [schedulePromptOpen, setSchedulePromptOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("09:00");
@@ -976,6 +982,26 @@ export default function AdminCampaignPage() {
         (data.dueOn ? ` Due ${data.dueOn}.` : "")
     );
     await load(activeEmailId);
+    await loadInternalReview();
+  }
+
+  async function sendInternalFollowup() {
+    if (sendingInternalFollowup) return;
+    setSendingInternalFollowup(true);
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/campaigns/${id}/internal-review/followup`, {
+      method: "POST",
+    });
+    const data = await res.json().catch(() => ({}));
+    setSendingInternalFollowup(false);
+    if (!res.ok) {
+      setError(data.error || "Could not follow up on that to-do.");
+      return;
+    }
+    setMessage(
+      `Follow-up posted${data.recipient ? ` to ${data.recipient}` : ""} on the internal review to-do.`
+    );
     await loadInternalReview();
   }
 
@@ -1884,7 +1910,7 @@ export default function AdminCampaignPage() {
                     }`}
                   >
                     {internalReview.ready
-                      ? internalReview.todoUrl
+                      ? internalReview.todoUrl || internalReview.deskTodoId
                         ? "Sent"
                         : "Ready to send"
                       : "Setup needed"}
@@ -1894,6 +1920,11 @@ export default function AdminCampaignPage() {
                 )}
               </div>
               <div className="bc-head-actions">
+                {internalReview?.forecastUrl ? (
+                  <a className="btn btn-secondary btn-sm" href={internalReview.forecastUrl}>
+                    Open to-do
+                  </a>
+                ) : null}
                 {internalReview?.todoUrl ? (
                   <a
                     className="btn btn-secondary btn-sm"
@@ -1904,9 +1935,25 @@ export default function AdminCampaignPage() {
                     Open Basecamp to-do
                   </a>
                 ) : null}
+                {internalReview?.todoUrl || internalReview?.deskTodoId ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={sendInternalFollowup}
+                    disabled={sendingInternalFollowup || !internalReview.todoId}
+                  >
+                    {sendingInternalFollowup
+                      ? "Sending…"
+                      : internalReview.assigneeName
+                        ? `Follow-up with ${internalReview.assigneeName.split(" ")[0]}`
+                        : "Follow-up with reviewer"}
+                  </button>
+                ) : null}
                 <button
                   className={`btn btn-sm ${
-                    internalReview?.todoUrl ? "btn-secondary" : ""
+                    internalReview?.todoUrl || internalReview?.deskTodoId
+                      ? "btn-secondary"
+                      : ""
                   }`}
                   onClick={sendInternalReview}
                   disabled={
@@ -1917,7 +1964,7 @@ export default function AdminCampaignPage() {
                 >
                   {sendingInternalReview
                     ? "Sending..."
-                    : internalReview?.todoUrl
+                    : internalReview?.todoUrl || internalReview?.deskTodoId
                       ? "Resend for internal review"
                       : "Send campaign for internal review"}
                 </button>
@@ -1965,9 +2012,19 @@ export default function AdminCampaignPage() {
                 </div>
               </div>
               <p className="field-hint" style={{ margin: 0 }}>
-                Creates a Basecamp to-do assigned to them with the internal
-                review link and this due date. Does not mark the campaign
-                client-approved.
+                {internalReview?.deskTodoId || internalReview?.todoUrl
+                  ? [
+                      internalReview.assigneeName
+                        ? `Assigned to ${internalReview.assigneeName}`
+                        : "Internal review to-do sent",
+                      internalReview.dueDate
+                        ? `due ${internalReview.dueDate}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") +
+                    ". Follow-up comments on that Basecamp to-do. Does not mark the campaign client-approved."
+                  : "Creates a Basecamp to-do assigned to them with the internal review link and this due date. Does not mark the campaign client-approved."}
               </p>
             </div>
             {internalReview && !internalReview.ready ? (
