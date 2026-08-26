@@ -73,7 +73,7 @@ export default function LifecyclePage() {
       <header className="lh-page-bar">
         <div>
           <h1>Lifecycle</h1>
-          <p className="muted">Email clients — contract, sends, and launch work.</p>
+          <p className="muted">What’s owed, what went out, what’s left to launch.</p>
         </div>
         <div className="lh-page-bar-right">
           {tool ? (

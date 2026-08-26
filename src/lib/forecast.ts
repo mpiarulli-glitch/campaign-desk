@@ -218,6 +218,38 @@ export function linkTaskBasecamp(
   return getTask(id);
 }
 
+/**
+ * Attach a just-created Basecamp schedule entry to a forecast meeting.
+ *
+ * Clears any todo link: a meeting must never close or log against a to-do.
+ */
+export function linkTaskEvent(
+  id: string,
+  input: { eventId: string; projectId: string; client?: string }
+): ForecastTask | null {
+  const existing = getTask(id);
+  if (!existing) return null;
+  const eventId = input.eventId.trim();
+  const projectId = input.projectId.trim();
+  if (!eventId || !projectId) return null;
+  getDb()
+    .prepare(
+      `UPDATE forecast_tasks
+          SET basecamp_event_id = ?, basecamp_project_id = ?, client = ?,
+              basecamp_todo_id = '', basecamp_step_id = '', kind = 'meeting',
+              updated_at = ?
+        WHERE id = ?`
+    )
+    .run(
+      eventId,
+      projectId,
+      input.client !== undefined ? input.client.trim() : existing.client,
+      nowIso(),
+      id
+    );
+  return getTask(id);
+}
+
 export function updateSubtask(
   id: string,
   updates: Partial<{ notes: string; completed: boolean }>
@@ -262,6 +294,10 @@ export function createTask(input: {
   basecampStepId?: string;
   basecampProjectId?: string;
   basecampEventId?: string;
+  // Typed meetings have no event id yet. Storing kind=meeting is what lets
+  // complete ask for a client and write the calendar entry, instead of treating
+  // the row as unlinked work that needs a todo.
+  kind?: "work" | "meeting";
   startTime?: string;
 }): ForecastTask {
   const startTime = parseTimeInput(input.startTime || "");
@@ -272,14 +308,16 @@ export function createTask(input: {
   // wins and the todo link is dropped, so booking a meeting can never end up
   // closing an unrelated todo when the row is ticked off.
   const eventId = (input.basecampEventId || "").trim();
-  const todoId = eventId ? "" : (input.basecampTodoId || "").trim();
+  const isMeeting = Boolean(eventId) || input.kind === "meeting";
+  const kind: ForecastTask["kind"] = isMeeting ? "meeting" : "work";
+  const todoId = isMeeting ? "" : (input.basecampTodoId || "").trim();
   // A step id without its parent to-do is useless — ticking it would work but
   // logging time would have nothing timesheetable to land on — so it is only
   // kept when both arrived together.
   const stepId = todoId ? (input.basecampStepId || "").trim() : "";
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, start_time, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, kind, start_time, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -292,6 +330,7 @@ export function createTask(input: {
     stepId,
     (input.basecampProjectId || "").trim(),
     eventId,
+    kind,
     startTime,
     nextSortOrder(input.person, input.taskDate),
     ts,

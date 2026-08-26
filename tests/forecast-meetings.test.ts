@@ -109,6 +109,23 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     assert.equal(schedule.resolveForecastProjectId({ clientId: "" }), "");
   });
 
+  await t.test("completing a typed meeting without a project still refuses to book", async () => {
+    const task = forecast.createTask({
+      person: "michael",
+      taskDate: "2026-08-03",
+      notes: "Call",
+      hours: 0.5,
+      startTime: "10:00",
+      kind: "meeting",
+    });
+    const result = await schedule.ensureMeetingOnBasecamp({
+      task,
+      person: "michael",
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.status, 400);
+  });
+
   await t.test("booking a typed meeting without a project is refused", async () => {
     const result = await schedule.bookTypedMeetingOnBasecamp({
       person: "michael",
@@ -146,6 +163,7 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
       startTime: "09:00",
       basecampEventId: "e1",
     });
+    assert.equal(task.kind, "meeting");
     assert.equal(task.basecamp_event_id, "e1");
     assert.equal(task.basecamp_todo_id, "");
     assert.equal(task.start_time, "09:00");
@@ -164,23 +182,25 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
       basecampEventId: "e1",
       basecampTodoId: "should-be-ignored",
     });
+    assert.equal(task.kind, "meeting");
     assert.equal(task.basecamp_event_id, "e1");
     assert.equal(task.basecamp_todo_id, "");
   });
 
-  await t.test("a typed meeting stores no event id until Basecamp books it", () => {
+  await t.test("a typed meeting is a meeting before Basecamp books it", () => {
     const task = forecast.createTask({
       person: "michael",
       taskDate: "2026-08-03",
-      client: "Humble Somm",
       notes: "Ad hoc client call",
       hours: 0.5,
       startTime: "14:00",
+      kind: "meeting",
     });
+    assert.equal(task.kind, "meeting");
     assert.equal(task.basecamp_event_id, "");
     assert.equal(task.basecamp_todo_id, "");
     assert.equal(task.notes, "Ad hoc client call");
-    assert.equal(task.client, "Humble Somm");
+    assert.equal(task.client, "");
   });
 
   await t.test("a typed meeting that was booked onto Basecamp stores the event", () => {
@@ -191,15 +211,38 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
       notes: "Ad hoc client call",
       hours: 0.5,
       startTime: "14:00",
+      kind: "meeting",
       basecampEventId: "e-new",
       basecampProjectId: "222",
     });
+    assert.equal(task.kind, "meeting");
     assert.equal(task.basecamp_event_id, "e-new");
     assert.equal(task.basecamp_project_id, "222");
     assert.equal(task.basecamp_todo_id, "");
   });
 
-  await t.test("the add form keeps Type it instead when events exist", () => {
+  await t.test("linking an event onto a typed meeting never keeps a todo", () => {
+    const task = forecast.createTask({
+      person: "michael",
+      taskDate: "2026-08-03",
+      notes: "Client call",
+      hours: 0.5,
+      startTime: "14:00",
+      kind: "meeting",
+    });
+    const linked = forecast.linkTaskEvent(task.id, {
+      eventId: "e-booked",
+      projectId: "222",
+      client: "Humble Somm",
+    });
+    assert.equal(linked?.kind, "meeting");
+    assert.equal(linked?.basecamp_event_id, "e-booked");
+    assert.equal(linked?.basecamp_project_id, "222");
+    assert.equal(linked?.client, "Humble Somm");
+    assert.equal(linked?.basecamp_todo_id, "");
+  });
+
+  await t.test("completing a typed meeting asks for a client, not a todo", () => {
     const src = fs.readFileSync(
       path.join(originalCwd, "src/app/admin/forecast/[person]/page.tsx"),
       "utf8"
@@ -209,10 +252,17 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     // Picker days used to hide the typed-meeting escape; it must stay available
     // whenever there is a Basecamp event to pick.
     assert.match(src, /meeting && hasEvents/);
-    // Typed meetings have to name a project so they can be written onto that
-    // Basecamp calendar, otherwise there is nothing to log time against.
-    assert.match(src, /createScheduleEntry/);
-    assert.match(src, /Pick a client or project so this can go on that Basecamp calendar/);
+    // Completing is when the client is named and the calendar entry is written.
+    // Add only books the local slot so it does not force a client up front.
+    assert.match(src, /Finished — which client was this for\?/);
+    assert.match(src, /kind: meeting \? "meeting"/);
+    assert.match(src, /createScheduleEntry: true/);
+    assert.match(src, /This was a meeting/);
+    assert.doesNotMatch(src, /createScheduleEntry: typedMeeting/);
+    assert.doesNotMatch(
+      src,
+      /Pick a client or project so this can go on that Basecamp calendar/
+    );
     // Unlinked rows used to hide the Log time pill entirely. It has to stay on
     // the row so typed/restored work can still pick a todo and log hours.
     assert.doesNotMatch(src, /if \(!linked\) return null/);
@@ -232,6 +282,7 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
     });
     assert.equal(task.basecamp_todo_id, "todo_9");
     assert.equal(task.basecamp_event_id, "");
+    assert.equal(task.kind, "work");
   });
 
   await t.test("a task can be created without a start time", () => {

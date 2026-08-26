@@ -7,6 +7,7 @@ import {
 import { getConnection } from "./basecamp-identity";
 import { cacheScheduleEntry } from "./basecamp-events";
 import { scheduleEntryTimes } from "./forecast-time";
+import { linkTaskEvent, type ForecastTask } from "./forecast";
 import { getRevClient } from "./revenue";
 
 export function resolveForecastProjectId(input: {
@@ -96,4 +97,44 @@ export async function bookTypedMeetingOnBasecamp(input: {
   });
 
   return { ok: true, eventId: created.id, projectId };
+}
+
+export type EnsureMeetingResult =
+  | { ok: true; task: ForecastTask }
+  | { ok: false; status: number; error: string; needsBasecamp?: boolean };
+
+/**
+ * Put a typed forecast meeting onto a project's Basecamp calendar if it is not
+ * there yet, then store the event id on the row. Completing/logging is what
+ * names the client; add only books the local forecast slot.
+ */
+export async function ensureMeetingOnBasecamp(input: {
+  task: ForecastTask;
+  person: string;
+  clientId?: string;
+  clientName?: string;
+  basecampProjectId?: string;
+}): Promise<EnsureMeetingResult> {
+  if (input.task.basecamp_event_id) {
+    return { ok: true, task: input.task };
+  }
+  const clientName = (input.clientName || input.task.client || "").trim();
+  const booked = await bookTypedMeetingOnBasecamp({
+    person: input.person,
+    taskDate: input.task.task_date,
+    startTime: input.task.start_time,
+    hours: input.task.hours,
+    title: input.task.notes || clientName || "Meeting",
+    clientId: input.clientId,
+    clientName,
+    basecampProjectId: input.basecampProjectId || input.task.basecamp_project_id,
+  });
+  if (!booked.ok) return booked;
+  const task =
+    linkTaskEvent(input.task.id, {
+      eventId: booked.eventId,
+      projectId: booked.projectId,
+      client: clientName,
+    }) || input.task;
+  return { ok: true, task };
 }

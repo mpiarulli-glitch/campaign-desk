@@ -44,3 +44,129 @@ test("adding a client to the hub requires a launch date and platform", async (t)
   assert.equal(client.platform, "klaviyo");
   assert.equal(client.launch.total, 3);
 });
+
+test("hub shows sent campaigns and calendar sends, and skips automation quota", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-sent-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const board = await import("../src/lib/lifecycle-board");
+  const campaigns = await import("../src/lib/campaigns");
+  const { getDb, nowIso } = await import("../src/lib/db");
+  const { currentPeriod } = await import("../src/lib/period");
+  const { todayYmd } = await import("../src/lib/cadence");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  const period = currentPeriod();
+  const today = todayYmd();
+  const sentDate = `${period}-04`;
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_watch", "Our Watch", 4, now, now);
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_watch_tim", "Our Watch w/Tim Thompson", 4, now, now);
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_looda_a", "Looda House Pawn", 2, now, now);
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_looda_b", "Looda House Pawn", 2, now, now);
+
+  assert.equal(hub.addClientToHub("cl_watch", today, "michael", period, "klaviyo").ok, true);
+  assert.equal(board.addBoardCard("cl_watch_tim", period), true);
+  assert.equal(board.addBoardCard("cl_looda_a", period), true);
+  assert.equal(board.addBoardCard("cl_looda_b", period), true);
+
+  const welcome = campaigns.createCampaign({
+    title: "Our Watch Welcome Series V2",
+    clientName: "Our Watch w/Tim Thompson",
+    clientId: "cl_watch_tim",
+    htmlContent: "<p>Hi</p>",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'sent', created_at = ?, updated_at = ? WHERE id = ?`).run(
+    `${sentDate}T12:00:00.000Z`,
+    `${sentDate}T12:00:00.000Z`,
+    welcome.id
+  );
+
+  const broadcasts = campaigns.createCampaign({
+    title: "Our Watch | August 2026 Broadcasts",
+    clientName: "Our Watch w/Tim Thompson",
+    clientId: "cl_watch_tim",
+    htmlContent: "<p>Hi</p>",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'in_review', created_at = ?, updated_at = ? WHERE id = ?`).run(
+    `${period}-13T12:00:00.000Z`,
+    `${period}-13T12:00:00.000Z`,
+    broadcasts.id
+  );
+
+  const flow = campaigns.createCampaign({
+    title: "Looda House Pawn Browse Return Flow",
+    clientName: "Looda House Pawn",
+    clientId: "cl_looda_a",
+    htmlContent: "<p>Hi</p>",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'approved', created_at = ?, updated_at = ? WHERE id = ?`).run(
+    `${period}-18T12:00:00.000Z`,
+    `${period}-18T12:00:00.000Z`,
+    flow.id
+  );
+
+  const past = campaigns.createCampaign({
+    title: "Looda House Pawn August 2026 Past Customer Campaigns",
+    clientName: "Looda House Pawn",
+    clientId: "cl_looda_a",
+    htmlContent: "<p>Hi</p>",
+  });
+  campaigns.addEmail({
+    campaignId: past.id,
+    title: "Email 2",
+    htmlContent: "<p>Two</p>",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'in_review', created_at = ?, updated_at = ? WHERE id = ?`).run(
+    `${period}-12T12:00:00.000Z`,
+    `${period}-12T12:00:00.000Z`,
+    past.id
+  );
+
+  db.prepare(
+    `INSERT INTO scheduled_sends
+      (id, client_id, client_name, title, send_date, status, asset_type, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'sent', 'email_campaign', ?, ?)`
+  ).run("send_looda", "cl_looda_a", "Looda House Pawn", "August promo", sentDate, now, now);
+
+  const snapshot = hub.buildLifecycleHub();
+  const watchRows = snapshot.clients.filter((c) => c.name.toLowerCase().includes("watch"));
+  assert.equal(watchRows.length, 1);
+  const watch = watchRows[0];
+  assert.ok(watch.memberIds.includes("cl_watch"));
+  assert.ok(watch.memberIds.includes("cl_watch_tim"));
+  assert.ok(watch.activity.some((a) => a.title.includes("Welcome Series") && a.status === "sent"));
+  assert.ok(watch.activity.some((a) => a.title.includes("Broadcasts")));
+  assert.equal(watch.delivered, 1);
+  assert.equal(
+    watch.activity.find((a) => a.title.includes("Welcome Series"))?.kind,
+    "automation"
+  );
+
+  const loodaRows = snapshot.clients.filter((c) => c.name === "Looda House Pawn");
+  assert.equal(loodaRows.length, 1);
+  const looda = loodaRows[0];
+  assert.ok(looda.activity.some((a) => a.title === "August promo" && a.status === "sent"));
+  assert.ok(looda.activity.some((a) => a.title.includes("Browse Return Flow")));
+  assert.equal(looda.delivered, 2);
+});
+

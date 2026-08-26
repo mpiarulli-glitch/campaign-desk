@@ -18,6 +18,7 @@ import type { ForecastDrag } from "@/lib/forecast-queue";
 import {
   blockHours,
   formatTracked,
+  isForecastMeeting,
   isRunning,
   trackedSeconds,
 } from "@/lib/forecast-timer";
@@ -33,6 +34,7 @@ export type CalendarTask = {
   color: string;
   start_time: string;
   basecamp_event_id: string;
+  kind?: "work" | "meeting";
   basecamp_todo_id: string;
   basecamp_step_id: string;
   actual_hours: number;
@@ -274,8 +276,8 @@ export function ForecastCalendar({
                       b.item.completed ? "is-done" : ""
                     } ${dragId === b.item.id ? "is-dragging" : ""} ${
                       resizing?.id === b.item.id ? "is-resizing" : ""
-                    } ${compact ? "is-compact" : ""} ${
-                      b.item.basecamp_event_id ? "is-meeting" : ""
+                    } ${compact ? "is-compact" : ""                    } ${
+                      isForecastMeeting(b.item) ? "is-meeting" : ""
                     } ${timing ? "is-timing" : ""} ${
                       timing || logged ? "has-stamp" : ""
                     }`}

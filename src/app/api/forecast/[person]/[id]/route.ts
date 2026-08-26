@@ -19,8 +19,11 @@ import {
   startTimer,
   stopTimer,
   updateTask,
+  type ForecastTask,
 } from "@/lib/forecast";
+import { ensureMeetingOnBasecamp } from "@/lib/forecast-schedule";
 import { parseTimeInput } from "@/lib/forecast-time";
+import { isForecastMeeting } from "@/lib/forecast-timer";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
@@ -74,7 +77,17 @@ async function logTime(
   }
 
   // At most one of these is ever set on a picked/booked row (see createTask).
+  // Meetings log against the schedule entry. Never invent a shadow todo for
+  // them — that is what forced picking a to-do when completing a typed meeting.
   let recordingId = task.basecamp_todo_id || task.basecamp_event_id;
+  if (!recordingId && isForecastMeeting(task)) {
+    return {
+      status: 400,
+      body: {
+        error: "Pick which client this meeting was for so it can go on that Basecamp calendar.",
+      },
+    };
+  }
   if (!recordingId && task.basecamp_project_id) {
     const created = await ensureForecastTodo(
       task.basecamp_project_id,
@@ -136,29 +149,70 @@ export async function PATCH(request: Request, { params }: Params) {
   }
   const body = await request.json().catch(() => ({}));
 
+  async function bookMeetingIfNeeded(task: ForecastTask) {
+    if (task.basecamp_event_id) return { ok: true as const, task };
+    if (!isForecastMeeting(task) && body.createScheduleEntry !== true) {
+      return { ok: true as const, task };
+    }
+    return ensureMeetingOnBasecamp({
+      task,
+      person,
+      clientId: typeof body.clientId === "string" ? body.clientId : "",
+      clientName: typeof body.client === "string" ? body.client : task.client,
+      basecampProjectId:
+        typeof body.basecampProjectId === "string"
+          ? body.basecampProjectId
+          : task.basecamp_project_id,
+    });
+  }
+
   // { logTimeHours: 1.5 } is its own action, not a field update.
   if (body.logTimeHours !== undefined) {
-    // Typed/restored rows can arrive with no recording. The page asks the
-    // person to pick the todo rather than inventing one; attach it here so
-    // logTime has somewhere real to write.
-    const todoId =
-      typeof body.basecampTodoId === "string" ? body.basecampTodoId.trim() : "";
-    const projectId =
-      typeof body.basecampProjectId === "string"
-        ? body.basecampProjectId.trim()
-        : "";
-    const stepId =
-      typeof body.basecampStepId === "string" ? body.basecampStepId.trim() : "";
-    if (
-      todoId &&
-      projectId &&
-      !existing.basecamp_todo_id &&
-      !existing.basecamp_event_id
-    ) {
-      linkTaskBasecamp(id, todoId, projectId, stepId);
+    // Typed meetings name a client here, get a calendar entry, then log hours
+    // against that event. Work rows still pick a todo. Never attach a todo to
+    // a meeting — completing one must not turn it into a work item.
+    const meeting = isForecastMeeting(existing) || body.createScheduleEntry === true;
+    if (meeting) {
+      const booked = await bookMeetingIfNeeded(existing);
+      if (!booked.ok) {
+        return NextResponse.json(
+          { error: booked.error, needsBasecamp: booked.needsBasecamp },
+          { status: booked.status }
+        );
+      }
+    } else {
+      const todoId =
+        typeof body.basecampTodoId === "string" ? body.basecampTodoId.trim() : "";
+      const projectId =
+        typeof body.basecampProjectId === "string"
+          ? body.basecampProjectId.trim()
+          : "";
+      const stepId =
+        typeof body.basecampStepId === "string" ? body.basecampStepId.trim() : "";
+      if (
+        todoId &&
+        projectId &&
+        !existing.basecamp_todo_id &&
+        !existing.basecamp_event_id
+      ) {
+        linkTaskBasecamp(id, todoId, projectId, stepId);
+      }
     }
     const { status, body: out } = await logTime(id, person, Number(body.logTimeHours));
     return NextResponse.json(out, { status });
+  }
+
+  // Completing a typed meeting can add it to the Basecamp calendar without
+  // also logging hours (Skip on the finish card, after picking a client).
+  if (body.createScheduleEntry === true) {
+    const booked = await bookMeetingIfNeeded(existing);
+    if (!booked.ok) {
+      return NextResponse.json(
+        { error: booked.error, needsBasecamp: booked.needsBasecamp },
+        { status: booked.status }
+      );
+    }
+    return NextResponse.json({ task: booked.task, basecamp: { synced: true } });
   }
 
   // { timer: "start" | "stop" } is its own action too. Purely local: the timer

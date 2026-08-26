@@ -13744,7 +13744,7 @@ button.am-node:hover .am-edit-cue,
 
 .lh-list-item {
   display: grid;
-  grid-template-columns: 10px 1fr auto;
+  grid-template-columns: 10px 1fr;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -13756,6 +13756,13 @@ button.am-node:hover .am-edit-cue,
   padding: 8px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+
+.lh-list-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .lh-list-item:hover {
@@ -13857,10 +13864,74 @@ button.am-node:hover .am-edit-cue,
   margin-bottom: 10px;
 }
 
-.lh-card-head h3 {
+.lh-card-links {
+  display: flex;
+  gap: 12px;
+}
+
+.lh-quota-num {
   margin: 0;
-  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.lh-quota-num strong {
+  font-size: 32px;
   font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.lh-quota-num span {
+  font-size: 16px;
+  color: var(--text-muted);
+}
+
+.lh-quota-label {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.lh-subhead {
+  margin: 16px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lh-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lh-time-row {
+  display: grid;
+  grid-template-columns: 88px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.lh-time-row.is-sent .lh-row-title {
+  font-weight: 550;
+}
+
+.lh-kind {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lh-kind.is-automation {
+  color: var(--accent-ink);
 }
 
 .lh-card-note {
@@ -14020,4 +14091,10 @@ button.am-node:hover .am-edit-cue,
     grid-template-rows: minmax(200px, 34vh) 1fr;
   }
   .lh-rail { border-right: 0; border-bottom: 1px solid var(--border); }
+  .lh-time-row {
+    grid-template-columns: 72px 1fr;
+  }
+  .lh-time-row .lh-row-meta {
+    grid-column: 2;
+  }
 }

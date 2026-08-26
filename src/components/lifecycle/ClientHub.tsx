@@ -11,6 +11,8 @@ import {
   type PaceStatus,
 } from "@/lib/email-launch";
 
+type HubWorkKind = "campaign" | "automation";
+
 type HubSend = {
   id: string;
   title: string;
@@ -18,6 +20,7 @@ type HubSend = {
   time: string;
   status: string;
   assetType: string;
+  kind: HubWorkKind;
 };
 
 type HubCampaign = {
@@ -26,6 +29,17 @@ type HubCampaign = {
   status: string;
   approvedChannel: string | null;
   updatedAt: string;
+};
+
+type HubActivity = {
+  id: string;
+  source: "calendar" | "campaign";
+  kind: HubWorkKind;
+  title: string;
+  date: string | null;
+  status: string;
+  countsTowardQuota: boolean;
+  href: string | null;
 };
 
 type HubLaunchTodo = {
@@ -50,6 +64,8 @@ type HubClient = {
   nextSend: HubSend | null;
   sends: HubSend[];
   campaigns: HubCampaign[];
+  activity: HubActivity[];
+  memberIds: string[];
   launch: {
     started: boolean;
     open: number;
@@ -80,6 +96,24 @@ function sendLabel(status: string): string {
   if (status === "requested") return "Requested";
   if (status === "sent") return "Sent";
   return status;
+}
+
+function kindLabel(kind: HubWorkKind): string {
+  return kind === "automation" ? "Automation" : "Campaign";
+}
+
+function listLine(c: HubClient): string {
+  if (c.quota > 0) {
+    const next = c.nextSend ? ` · next ${prettyDate(c.nextSend.date)}` : "";
+    return `${c.delivered} of ${c.quota}${next}`;
+  }
+  if (c.nextSend) return `Next ${prettyDate(c.nextSend.date)}`;
+  if (c.launch.open > 0) return `Launching · ${c.launch.open} open`;
+  return emailPlatformLabel(c.platform) || "No quota";
+}
+
+function matchesClient(c: HubClient, id: string): boolean {
+  return c.id === id || (c.memberIds || []).includes(id);
 }
 
 function readClientParam(): string {
@@ -121,11 +155,9 @@ function ClientList({
             onClick={() => onSelect(c.id)}
           >
             <PaceDot pace={c.pace} launching={c.launch.open > 0} />
-            <span className="lh-list-name">{c.name}</span>
-            <span className="lh-list-meta">
-              {c.quota > 0
-                ? `${c.delivered}/${c.quota}`
-                : emailPlatformLabel(c.platform) || c.pipelineLabel}
+            <span className="lh-list-copy">
+              <span className="lh-list-name">{c.name}</span>
+              <span className="lh-list-meta">{listLine(c)}</span>
             </span>
           </button>
         </li>
@@ -376,109 +408,102 @@ function ClientDetail({
     onChanged();
   }
 
+  const activity = client.activity || [];
+  const thisMonth = activity.filter((a) => a.date);
+  const inReview = activity.filter((a) => !a.date);
+  const sentThisMonth = activity.filter((a) => a.status === "sent").length;
+  const headerBits = [
+    emailPlatformLabel(client.platform),
+    client.launchDate ? `Launch ${prettyDate(client.launchDate)}` : "",
+    client.nextSend
+      ? `Next ${prettyDate(client.nextSend.date)}`
+      : sentThisMonth
+        ? `${sentThisMonth} sent this month`
+        : "",
+  ].filter(Boolean);
+
   return (
     <div className="lh-detail">
       <header className="lh-detail-head">
         <div>
           <h2>{client.name}</h2>
-          <p className="muted">
-            {[
-              client.launchDate ? `Launch ${prettyDate(client.launchDate)}` : client.pipelineLabel,
-              emailPlatformLabel(client.platform),
-              client.nextSend
-                ? `Next send ${prettyDate(client.nextSend.date)}`
-                : "Nothing on the calendar",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+          {headerBits.length ? <p className="muted">{headerBits.join(" · ")}</p> : null}
         </div>
         <span className={`lh-pace is-${client.pace}`}>{client.paceLabel}</span>
       </header>
 
-      <section className="lh-card">
-        <div className="lh-card-head">
-          <h3>Contract this month</h3>
-          <span className="muted">
-            {client.quota > 0
-              ? `${client.delivered} of ${client.quota} emails`
-              : "No monthly quota on file"}
-          </span>
-        </div>
+      <section className="lh-card lh-quota">
         {client.quota > 0 ? (
           <>
+            <p className="lh-quota-num">
+              <strong>{client.delivered}</strong>
+              <span> of {client.quota}</span>
+            </p>
+            <p className="lh-quota-label">campaign emails this month</p>
             <div className={`lh-bar is-${client.pace}`}>
               <div className="lh-bar-fill" style={{ width: `${pct}%` }} />
             </div>
             <p className="lh-card-note">
               {client.pace === "met"
-                ? "This month’s emails are delivered."
+                ? "Contract met. Automations are listed below but don’t count."
                 : client.remaining === 1
-                  ? "1 email still owed."
-                  : `${client.remaining} emails still owed.`}
+                  ? "1 campaign email still owed. Automations don’t count toward this."
+                  : `${client.remaining} campaign emails still owed. Automations don’t count toward this.`}
             </p>
           </>
         ) : (
-          <p className="lh-card-note">Set a monthly email quota on the client if this account is contracted for email.</p>
+          <p className="lh-card-note">
+            No monthly campaign quota on file. Automations still show in the list.
+          </p>
         )}
       </section>
 
       <section className="lh-card">
         <div className="lh-card-head">
-          <h3>Sending</h3>
-          <Link href="/admin/calendar" className="lh-link">
-            Calendar
-          </Link>
+          <h3>This month</h3>
+          <span className="lh-card-links">
+            <Link href="/admin/calendar" className="lh-link">
+              Calendar
+            </Link>
+            <Link href="/admin/campaigns" className="lh-link">
+              Campaigns
+            </Link>
+          </span>
         </div>
-        {client.sends.length === 0 ? (
-          <p className="lh-card-note">Nothing scheduled from today through next month.</p>
+        {thisMonth.length === 0 && inReview.length === 0 ? (
+          <p className="lh-card-note">Nothing sent or scheduled yet this month.</p>
         ) : (
-          <ul className="lh-rows">
-            {client.sends.map((s) => (
-              <li key={s.id}>
-                <span className="lh-row-title">{s.title}</span>
-                <span className="lh-row-meta">
-                  {prettyDate(s.date)}
-                  {s.time ? ` · ${s.time}` : ""} · {sendLabel(s.status)}
-                </span>
-              </li>
+          <ul className="lh-timeline">
+            {thisMonth.map((row) => (
+              <ActivityRow key={row.id} row={row} />
             ))}
           </ul>
         )}
+        {inReview.length > 0 ? (
+          <>
+            <h4 className="lh-subhead">Still in review</h4>
+            <ul className="lh-timeline">
+              {inReview.map((row) => (
+                <ActivityRow key={row.id} row={row} />
+              ))}
+            </ul>
+          </>
+        ) : null}
       </section>
 
       <section className="lh-card">
         <div className="lh-card-head">
-          <h3>In flight</h3>
-          <Link href="/admin/campaigns" className="lh-link">
-            Campaigns
-          </Link>
-        </div>
-        {client.campaigns.length === 0 ? (
-          <p className="lh-card-note">No open email campaigns.</p>
-        ) : (
-          <ul className="lh-rows">
-            {client.campaigns.map((c) => (
-              <li key={c.id}>
-                <Link href={`/admin/campaigns/${c.id}`} className="lh-row-title">
-                  {c.title}
-                </Link>
-                <span className="lh-row-meta">
-                  {operatorStatusLabel(c.status, c.approvedChannel)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="lh-card">
-        <div className="lh-card-head">
-          <h3>Launch checklist</h3>
+          <h3>Launch</h3>
           {!client.launch.started && !launching ? (
             <button type="button" className="lh-link" onClick={() => setLaunching(true)}>
               Set launch date
             </button>
+          ) : client.launch.started ? (
+            <span className="muted">
+              {client.launch.open
+                ? `${client.launch.open} of ${client.launch.total} open`
+                : "Done"}
+            </span>
           ) : null}
         </div>
         {client.launch.started ? (
@@ -550,6 +575,29 @@ function ClientDetail({
   );
 }
 
+function ActivityRow({ row }: { row: HubActivity }) {
+  const status =
+    row.source === "campaign" ? operatorStatusLabel(row.status, null) : sendLabel(row.status);
+  const title = row.href ? (
+    <Link href={row.href} className="lh-row-title">
+      {row.title}
+    </Link>
+  ) : (
+    <span className="lh-row-title">{row.title}</span>
+  );
+  return (
+    <li className={`lh-time-row ${row.status === "sent" ? "is-sent" : ""}`}>
+      <span className={`lh-kind is-${row.kind}`}>{kindLabel(row.kind)}</span>
+      {title}
+      <span className="lh-row-meta">
+        {row.date ? prettyDate(row.date) : status}
+        {row.date ? ` · ${status}` : ""}
+        {row.kind === "automation" ? " · doesn’t count" : ""}
+      </span>
+    </li>
+  );
+}
+
 export function ClientHub() {
   const [data, setData] = useState<HubPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -593,7 +641,7 @@ export function ClientHub() {
 
   useEffect(() => {
     if (!data || !urlReady) return;
-    if (selectedId && data.clients.some((c) => c.id === selectedId)) return;
+    if (selectedId && data.clients.some((c) => matchesClient(c, selectedId))) return;
     const next = filtered[0]?.id || data.clients[0]?.id || "";
     if (next) {
       setSelectedId(next);
@@ -616,7 +664,7 @@ export function ClientHub() {
     return <p className="lh-empty">Could not load clients.</p>;
   }
 
-  const selected = data.clients.find((c) => c.id === selectedId) || null;
+  const selected = data.clients.find((c) => matchesClient(c, selectedId)) || null;
   const counts = data.counts;
 
   return (

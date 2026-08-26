@@ -2,13 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   addCalendarDays,
+  campaignCountsTowardQuota,
   contractPace,
   emailPlatformLabel,
   isEmailPlatform,
   lastYmdOfPeriod,
   previewLaunchTodos,
+  sameLifecycleAccount,
   weekdayOnOrAfter,
 } from "../src/lib/email-launch";
+
+test("automation packages and welcome series do not count toward quota", () => {
+  assert.equal(campaignCountsTowardQuota("package", "August broadcasts"), true);
+  assert.equal(campaignCountsTowardQuota("automation", "August broadcasts"), false);
+  assert.equal(campaignCountsTowardQuota("package", "Our Watch Welcome Series V2"), false);
+  assert.equal(campaignCountsTowardQuota("package", "First Look Automation"), false);
+  assert.equal(campaignCountsTowardQuota("package", "Browse Return Flow"), false);
+});
+
+test("contact-suffix aliases are the same lifecycle account", () => {
+  assert.equal(sameLifecycleAccount("Our Watch", "Our Watch w/Tim Thompson"), true);
+  assert.equal(sameLifecycleAccount("Looda House Pawn", "Looda House Pawn"), true);
+  assert.equal(sameLifecycleAccount("Krak Boba", "Krak Boba Oceanside"), false);
+  assert.equal(sameLifecycleAccount("Looda House Auction", "Looda House Pawn"), false);
+});
 
 test("email platforms are the five ESPs we ask for", () => {
   assert.equal(isEmailPlatform("ghl"), true);

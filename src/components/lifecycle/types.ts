@@ -344,6 +344,8 @@ export interface BoardCampaignItem {
   emailCount: number;
   smsCount: number;
   delivered: boolean;
+  countsTowardQuota?: boolean;
+  isAutomation?: boolean;
   hasCard: boolean;
   loggedOffApp?: boolean;
 }

@@ -12,11 +12,14 @@ import {
   EMAIL_LAUNCH_SOURCE,
   PACE_RANK,
   PIPELINE_LABEL,
+  calendarSendIsAutomation,
+  campaignCountsTowardQuota,
   contractPace,
   daysInPeriod,
   isEmailPlatform,
   isYmd,
   previewLaunchTodos,
+  sameLifecycleAccount,
   type EmailPlatform,
   type PaceStatus,
 } from "./email-launch";
@@ -26,6 +29,8 @@ import { todayYmd } from "./cadence";
 import { createTodo, listTodos, type TodoView } from "./todos";
 import { getRevClient, listRevClients } from "./revenue";
 
+export type HubWorkKind = "campaign" | "automation";
+
 export interface HubSend {
   id: string;
   title: string;
@@ -33,6 +38,7 @@ export interface HubSend {
   time: string;
   status: string;
   assetType: string;
+  kind: HubWorkKind;
 }
 
 export interface HubCampaign {
@@ -41,6 +47,22 @@ export interface HubCampaign {
   status: string;
   approvedChannel: string | null;
   updatedAt: string;
+  createdAt: string;
+  presentation: string;
+  emailCount: number;
+  kind: HubWorkKind;
+  countsTowardQuota: boolean;
+}
+
+export interface HubActivity {
+  id: string;
+  source: "calendar" | "campaign";
+  kind: HubWorkKind;
+  title: string;
+  date: string | null;
+  status: string;
+  countsTowardQuota: boolean;
+  href: string | null;
 }
 
 export interface HubLaunchTodo {
@@ -65,6 +87,8 @@ export interface HubClient {
   nextSend: HubSend | null;
   sends: HubSend[];
   campaigns: HubCampaign[];
+  activity: HubActivity[];
+  memberIds: string[];
   launch: {
     started: boolean;
     open: number;
@@ -88,13 +112,22 @@ export interface LifecycleHub {
   available: Array<{ id: string; name: string }>;
 }
 
-function monthWindow(period: string, today: string): { start: string; end: string } {
+function monthWindow(period: string): { start: string; end: string } {
   const [y, m] = period.split("-").map(Number);
   const endMonth = m === 12 ? 1 : m + 1;
   const endYear = m === 12 ? y + 1 : y;
   const endPeriod = `${endYear}-${String(endMonth).padStart(2, "0")}`;
   const end = `${endPeriod}-${String(daysInPeriod(endPeriod)).padStart(2, "0")}`;
-  return { start: today, end };
+  return { start: `${period}-01`, end };
+}
+
+function normalizeTitle(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function ymdFromIso(iso: string): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(iso);
+  return match ? match[1] : null;
 }
 
 function launchMetaByClient(
@@ -193,80 +226,242 @@ function launchTodosByClient(clientIds: string[]): Map<string, HubLaunchTodo[]> 
   );
 }
 
-function sendsByClient(clientIds: string[], start: string, end: string): Map<string, HubSend[]> {
+function sendsByClient(
+  clientIds: string[],
+  idToName: Map<string, string>,
+  start: string,
+  end: string
+): Map<string, HubSend[]> {
   if (!clientIds.length) return new Map();
+  const nameKeys = [
+    ...new Set([...idToName.values()].map((n) => n.trim().toLowerCase()).filter(Boolean)),
+  ];
+  const nameClause = nameKeys.length
+    ? `OR lower(trim(client_name)) IN (${nameKeys.map(() => "?").join(",")})`
+    : "";
   const rows = getDb()
     .prepare(
-      `SELECT id, client_id, title, send_date, send_time, status, asset_type
+      `SELECT id, client_id, client_name, title, send_date, send_time, status, asset_type
          FROM scheduled_sends
-        WHERE client_id IN (${clientIds.map(() => "?").join(",")})
+        WHERE (client_id IN (${clientIds.map(() => "?").join(",")}) ${nameClause})
           AND send_date >= ? AND send_date <= ?
           AND cancelled_at IS NULL
           AND requested_by_client = 0
           AND (asset_type = '' OR asset_type IN ('email_campaign', 'crm_automation'))
         ORDER BY send_date ASC, send_time ASC, created_at ASC`
     )
-    .all(...clientIds, start, end) as Array<{
+    .all(...clientIds, ...nameKeys, start, end) as Array<{
     id: string;
-    client_id: string;
+    client_id: string | null;
+    client_name: string;
     title: string;
     send_date: string;
     send_time: string;
     status: string;
     asset_type: string;
   }>;
-  return groupByClient(
-    rows.map((r) => ({
-      clientId: r.client_id,
+  const idSet = new Set(clientIds);
+  const map = new Map<string, HubSend[]>();
+  const add = (clientId: string, send: HubSend) => {
+    const list = map.get(clientId) ?? [];
+    if (list.some((s) => s.id === send.id)) return;
+    list.push(send);
+    map.set(clientId, list);
+  };
+  for (const r of rows) {
+    const automation = calendarSendIsAutomation(r.asset_type);
+    const send: HubSend = {
       id: r.id,
       title: r.title,
       date: r.send_date,
       time: r.send_time || "",
       status: r.status,
       assetType: r.asset_type || "",
-    }))
-  );
+      kind: automation ? "automation" : "campaign",
+    };
+    if (r.client_id && idSet.has(r.client_id)) {
+      add(r.client_id, send);
+      continue;
+    }
+    for (const [id, name] of idToName) {
+      if (sameLifecycleAccount(name, r.client_name || "")) add(id, send);
+    }
+  }
+  return map;
 }
 
-function campaignsByClient(clientIds: string[]): Map<string, HubCampaign[]> {
+function campaignsByClient(
+  clientIds: string[],
+  idToName: Map<string, string>,
+  period: string
+): Map<string, HubCampaign[]> {
   if (!clientIds.length) return new Map();
+  const nameKeys = [
+    ...new Set([...idToName.values()].map((n) => n.trim().toLowerCase()).filter(Boolean)),
+  ];
+  const nameClause = nameKeys.length
+    ? `OR lower(trim(c.client_name)) IN (${nameKeys.map(() => "?").join(",")})`
+    : "";
   const rows = getDb()
     .prepare(
-      `SELECT c.id, c.client_id, c.title, c.status, c.approved_channel, c.updated_at
+      `SELECT c.id, c.client_id, c.client_name, c.title, c.status, c.approved_channel,
+              c.updated_at, c.created_at, c.presentation,
+              (SELECT COUNT(*) FROM campaign_emails e
+                WHERE e.campaign_id = c.id AND e.kind = 'email') AS email_count
          FROM campaigns c
-        WHERE c.client_id IN (${clientIds.map(() => "?").join(",")})
-          AND c.archived_at IS NULL
-          AND c.status != 'sent'
+        WHERE c.archived_at IS NULL
+          AND (
+            strftime('%Y-%m', c.created_at) = ?
+            OR (c.status = 'sent' AND strftime('%Y-%m', c.updated_at) = ?)
+          )
+          AND (c.client_id IN (${clientIds.map(() => "?").join(",")}) ${nameClause})
           AND EXISTS (
             SELECT 1 FROM campaign_emails e
              WHERE e.campaign_id = c.id AND e.kind IN ('email', 'sms')
           )
         ORDER BY c.updated_at DESC`
     )
-    .all(...clientIds) as Array<{
+    .all(period, period, ...clientIds, ...nameKeys) as Array<{
     id: string;
-    client_id: string;
+    client_id: string | null;
+    client_name: string;
     title: string;
     status: string;
     approved_channel: string | null;
     updated_at: string;
+    created_at: string;
+    presentation: string | null;
+    email_count: number;
   }>;
-  const grouped = groupByClient(
-    rows.map((r) => ({
-      clientId: r.client_id,
+  const idSet = new Set(clientIds);
+  const map = new Map<string, HubCampaign[]>();
+  const add = (clientId: string, campaign: HubCampaign) => {
+    const list = map.get(clientId) ?? [];
+    if (list.some((c) => c.id === campaign.id)) return;
+    list.push(campaign);
+    map.set(clientId, list);
+  };
+  for (const r of rows) {
+    const counts = campaignCountsTowardQuota(r.presentation, r.title);
+    const campaign: HubCampaign = {
       id: r.id,
       title: r.title,
       status: r.status,
       approvedChannel: r.approved_channel,
       updatedAt: r.updated_at,
-    }))
-  );
-  for (const [id, list] of grouped) grouped.set(id, list.slice(0, 12));
-  return grouped;
+      createdAt: r.created_at,
+      presentation: r.presentation || "package",
+      emailCount: r.email_count,
+      kind: counts ? "campaign" : "automation",
+      countsTowardQuota: counts,
+    };
+    if (r.client_id && idSet.has(r.client_id)) {
+      add(r.client_id, campaign);
+      continue;
+    }
+    for (const [id, name] of idToName) {
+      if (sameLifecycleAccount(name, r.client_name || "")) add(id, campaign);
+    }
+  }
+  return map;
+}
+
+type BoardCard = ReturnType<typeof listBoardCards>[number];
+
+interface CardGroup {
+  primary: BoardCard;
+  displayName: string;
+  memberIds: string[];
+  memberNames: string[];
+  campaigns: BoardCard["campaigns"];
+  delivered: number;
+  quota: number;
+}
+
+function groupBoardCards(cards: BoardCard[]): CardGroup[] {
+  const groups: BoardCard[][] = [];
+  for (const card of cards) {
+    const existing = groups.find((g) =>
+      g.some((c) => sameLifecycleAccount(c.clientName, card.clientName))
+    );
+    if (existing) existing.push(card);
+    else groups.push([card]);
+  }
+  return groups.map((group) => {
+    const primary = [...group].sort(
+      (a, b) => b.campaigns.length - a.campaigns.length || b.clientName.length - a.clientName.length
+    )[0];
+    const displayName = [...group].sort((a, b) => a.clientName.length - b.clientName.length)[0]
+      .clientName;
+    const seen = new Set<string>();
+    const campaigns: BoardCard["campaigns"] = [];
+    for (const card of group) {
+      for (const camp of card.campaigns) {
+        if (seen.has(camp.id)) continue;
+        seen.add(camp.id);
+        campaigns.push(camp);
+      }
+    }
+    return {
+      primary: { ...primary, clientName: displayName, campaigns },
+      displayName,
+      memberIds: group.map((c) => c.clientId),
+      memberNames: group.map((c) => c.clientName),
+      campaigns,
+      delivered: campaigns.reduce((n, c) => n + (c.countsTowardQuota ? c.emailCount : 0), 0),
+      quota: Math.max(...group.map((c) => c.quota)),
+    };
+  });
+}
+
+function collectForIds<T>(map: Map<string, T[]>, ids: string[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const id of ids) {
+    for (const row of map.get(id) ?? []) {
+      const key = (row as { id: string }).id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+function buildActivity(sends: HubSend[], campaigns: HubCampaign[]): HubActivity[] {
+  const calendarTitles = new Set(sends.map((s) => normalizeTitle(s.title)));
+  const fromSends: HubActivity[] = sends.map((s) => ({
+    id: `send:${s.id}`,
+    source: "calendar",
+    kind: s.kind,
+    title: s.title,
+    date: s.date,
+    status: s.status,
+    countsTowardQuota: false,
+    href: "/admin/calendar",
+  }));
+  const fromCampaigns: HubActivity[] = campaigns
+    .filter((c) => !calendarTitles.has(normalizeTitle(c.title)))
+    .map((c) => ({
+      id: `camp:${c.id}`,
+      source: "campaign" as const,
+      kind: c.kind,
+      title: c.title,
+      date: c.status === "sent" ? ymdFromIso(c.updatedAt) || ymdFromIso(c.createdAt) : null,
+      status: c.status,
+      countsTowardQuota: c.countsTowardQuota,
+      href: `/admin/campaigns/${c.id}`,
+    }));
+  return [...fromSends, ...fromCampaigns].sort((a, b) => {
+    if (a.date && b.date) return a.date.localeCompare(b.date) || a.title.localeCompare(b.title);
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return a.title.localeCompare(b.title);
+  });
 }
 
 function toHubClient(
-  card: ReturnType<typeof listBoardCards>[number],
+  group: CardGroup,
   today: string,
   period: string,
   sends: HubSend[],
@@ -276,23 +471,25 @@ function toHubClient(
   platform: EmailPlatform | null
 ): HubClient {
   const dayOfMonth = Number(today.slice(8, 10));
-  const pace = contractPace(card.quota, card.delivered, dayOfMonth, daysInPeriod(period));
-  const upcoming = sends.filter((s) => s.status !== "sent");
+  const pace = contractPace(group.quota, group.delivered, dayOfMonth, daysInPeriod(period));
+  const upcoming = sends.filter((s) => s.status !== "sent" && s.date >= today);
   return {
-    id: card.clientId,
-    name: card.clientName,
-    quota: card.quota,
-    delivered: card.delivered,
+    id: group.primary.clientId,
+    name: group.displayName,
+    quota: group.quota,
+    delivered: group.delivered,
     remaining: pace.remaining,
     pace: pace.status,
     paceLabel: pace.label,
-    pipeline: card.columnKey,
-    pipelineLabel: PIPELINE_LABEL[card.columnKey] || card.columnKey,
+    pipeline: group.primary.columnKey,
+    pipelineLabel: PIPELINE_LABEL[group.primary.columnKey] || group.primary.columnKey,
     launchDate,
     platform,
     nextSend: upcoming[0] || null,
     sends,
     campaigns,
+    activity: buildActivity(sends, campaigns),
+    memberIds: group.memberIds,
     launch: {
       started: launch.length > 0,
       open: launch.filter((t) => t.status === "open").length,
@@ -305,11 +502,15 @@ function toHubClient(
 export function buildLifecycleHub(now = new Date()): LifecycleHub {
   const period = currentPeriod(now);
   const today = todayYmd();
-  const cards = listBoardCards(period);
-  const { start, end } = monthWindow(period, today);
-  const clientIds = cards.map((c) => c.clientId);
-  const sends = sendsByClient(clientIds, start, end);
-  const campaigns = campaignsByClient(clientIds);
+  const groups = groupBoardCards(listBoardCards(period));
+  const { start, end } = monthWindow(period);
+  const clientIds = groups.flatMap((g) => g.memberIds);
+  const idToName = new Map<string, string>();
+  for (const group of groups) {
+    group.memberIds.forEach((id, i) => idToName.set(id, group.memberNames[i] || group.displayName));
+  }
+  const sends = sendsByClient(clientIds, idToName, start, end);
+  const campaigns = campaignsByClient(clientIds, idToName, period);
   const launch = launchTodosByClient(clientIds);
   const meta = launchMetaByClient(clientIds);
   const onBoard = new Set(clientIds);
@@ -317,19 +518,23 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
     .filter((c) => c.active === 1 && !onBoard.has(c.id))
     .map((c) => ({ id: c.id, name: c.name }));
 
-  const clients = cards
-    .map((card) =>
-      toHubClient(
-        card,
+  const clients = groups
+    .map((group) => {
+      const launchDate =
+        group.memberIds.map((id) => meta.get(id)?.launchDate).find(Boolean) ?? null;
+      const platform =
+        group.memberIds.map((id) => meta.get(id)?.platform).find(Boolean) ?? null;
+      return toHubClient(
+        group,
         today,
         period,
-        sends.get(card.clientId) ?? [],
-        campaigns.get(card.clientId) ?? [],
-        launch.get(card.clientId) ?? [],
-        meta.get(card.clientId)?.launchDate ?? null,
-        meta.get(card.clientId)?.platform ?? null
-      )
-    )
+        collectForIds(sends, group.memberIds),
+        collectForIds(campaigns, group.memberIds),
+        collectForIds(launch, group.memberIds),
+        launchDate,
+        platform
+      );
+    })
     .sort((a, b) => sortKey(a) - sortKey(b) || a.name.localeCompare(b.name));
 
   return {

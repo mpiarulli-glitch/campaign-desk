@@ -21,6 +21,7 @@ import {
   type LifecycleBoardRemoval,
 } from "./db";
 import { createCampaign } from "./campaigns";
+import { campaignCountsTowardQuota, sameLifecycleAccount } from "./email-launch";
 import { APP_TIME_ZONE, currentPeriod, shiftPeriod } from "./period";
 import { listRevClients, updateRevClient } from "./revenue";
 
@@ -120,6 +121,9 @@ export interface BoardCampaignItem {
   smsCount: number;
   /** Whether this campaign's emails count toward the month's quota yet. */
   delivered: boolean;
+  /** False for automations — they show on the card but never tick the quota. */
+  countsTowardQuota: boolean;
+  isAutomation: boolean;
   /** True once an approval card exists to comment a follow-up onto. */
   hasCard: boolean;
   /** True when this send was logged from the board for work done off-app. */
@@ -149,11 +153,12 @@ export interface BoardCard {
  * and a card is only "met" once every send has actually gone out.
  */
 function suggestColumn(campaigns: BoardCampaignItem[]): BoardColumnKey {
-  if (campaigns.length === 0) return "triage";
-  if (campaigns.some((c) => c.status === "needs_changes")) return "needs_revisions";
-  if (campaigns.some((c) => c.status === "in_review")) return "sent_for_approval";
-  if (campaigns.every((c) => c.status === "sent")) return "deliverables_met";
-  if (campaigns.every((c) => c.status === "scheduled" || c.status === "sent")) return "scheduling";
+  const quotaWork = campaigns.filter((c) => c.countsTowardQuota);
+  if (quotaWork.length === 0) return "triage";
+  if (quotaWork.some((c) => c.status === "needs_changes")) return "needs_revisions";
+  if (quotaWork.some((c) => c.status === "in_review")) return "sent_for_approval";
+  if (quotaWork.every((c) => c.status === "sent")) return "deliverables_met";
+  if (quotaWork.every((c) => c.status === "scheduled" || c.status === "sent")) return "scheduling";
   return "completed";
 }
 
@@ -173,7 +178,7 @@ function toBoardCard(
     sortOrder: row.sort_order,
     campaigns: [...campaigns].sort((a, b) => a.title.localeCompare(b.title)),
     quota,
-    delivered: campaigns.reduce((n, c) => n + c.emailCount, 0),
+    delivered: campaigns.reduce((n, c) => n + (c.countsTowardQuota ? c.emailCount : 0), 0),
     updatedAt: row.updated_at,
   };
 }
@@ -239,19 +244,23 @@ export function listBoardCards(period: string): BoardCard[] {
   // two drops out entirely via the HAVING clause.
   //
   // The counts are split because a client's contract is written in emails.
-  // SMS shows on the card but does not tick off an email quota, and per-kind
-  // counts matter because a package routinely bundles several sends; counting
-  // campaign rows would under-report delivered volume.
+  // SMS and automations show on the card but do not tick off an email quota.
+  // Per-kind counts matter because a package routinely bundles several sends;
+  // counting campaign rows would under-report delivered volume.
+  // Campaigns missing client_id still attach when the client name matches.
+  const namesToId = new Map(
+    allClients.map((c) => [c.name.trim().toLowerCase(), c.id] as const)
+  );
   const campaignRows = db
     .prepare(
-      `SELECT c.id, c.title, c.client_id, c.status, c.approved_channel, c.updated_at, c.magic_token,
-              c.basecamp_card_id, c.logged_off_app,
+      `SELECT c.id, c.title, c.client_id, c.client_name, c.status, c.approved_channel, c.updated_at,
+              c.magic_token, c.basecamp_card_id, c.logged_off_app, c.presentation,
               SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
               SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
          FROM campaigns c
          JOIN campaign_emails e
            ON e.campaign_id = c.id AND e.kind IN ('email', 'sms')
-        WHERE c.archived_at IS NULL AND c.client_id IS NOT NULL
+        WHERE c.archived_at IS NULL
           AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
           AND strftime('%Y-%m', c.created_at) = ?
         GROUP BY c.id
@@ -260,20 +269,28 @@ export function listBoardCards(period: string): BoardCard[] {
     .all(...DELIVERED_STATUSES, period) as Array<{
     id: string;
     title: string;
-    client_id: string;
+    client_id: string | null;
+    client_name: string;
     status: CampaignStatus;
     approved_channel: string | null;
     updated_at: string;
     magic_token: string;
     basecamp_card_id: string | null;
     logged_off_app: number;
+    presentation: string | null;
     email_count: number;
     sms_count: number;
   }>;
   const campaignsByClient = new Map<string, BoardCampaignItem[]>();
+  const pushCampaign = (clientId: string, item: BoardCampaignItem) => {
+    const list = campaignsByClient.get(clientId) ?? [];
+    if (list.some((c) => c.id === item.id)) return;
+    list.push(item);
+    campaignsByClient.set(clientId, list);
+  };
   for (const r of campaignRows) {
-    const list = campaignsByClient.get(r.client_id) ?? [];
-    list.push({
+    const isAutomation = !campaignCountsTowardQuota(r.presentation, r.title);
+    const item: BoardCampaignItem = {
       id: r.id,
       title: r.title,
       status: r.status,
@@ -282,11 +299,20 @@ export function listBoardCards(period: string): BoardCard[] {
       magicToken: r.magic_token,
       emailCount: r.email_count,
       smsCount: r.sms_count,
-      delivered: true,
+      delivered: !isAutomation,
+      countsTowardQuota: !isAutomation,
+      isAutomation,
       hasCard: Boolean(r.basecamp_card_id),
       loggedOffApp: Boolean(r.logged_off_app),
-    });
-    campaignsByClient.set(r.client_id, list);
+    };
+    const owners = new Set<string>();
+    if (r.client_id) owners.add(r.client_id);
+    const fallback = namesToId.get((r.client_name || "").trim().toLowerCase());
+    if (fallback) owners.add(fallback);
+    for (const client of allClients) {
+      if (sameLifecycleAccount(client.name, r.client_name || "")) owners.add(client.id);
+    }
+    for (const id of owners) pushCampaign(id, item);
   }
 
   return cardRows

@@ -34,7 +34,9 @@ import {
   formatTracked,
   hasTimesheetDestination,
   hoursToOffer,
+  isForecastMeeting,
   isRunning,
+  meetingNeedsCalendar,
   notifyForecastTimerChanged,
   shouldAskToLogOnComplete,
   trackedSeconds,
@@ -55,6 +57,7 @@ type Task = {
   basecamp_step_id: string;
   basecamp_project_id: string;
   basecamp_event_id: string;
+  kind?: "work" | "meeting";
   actual_hours: number;
   basecamp_time_entry_id: string;
   tracked_seconds: number;
@@ -161,8 +164,8 @@ function todosInOrder(todos: BcTodo[], ids: string[]): BcTodo[] {
 }
 
 // "work" is the original flow: pick a client, then one of its Basecamp todos.
-// "meeting" books a Basecamp schedule entry, or types one and writes it onto
-// that project's Basecamp calendar so hours can be logged against it.
+// "meeting" books a slot locally. Completing a typed meeting asks which client
+// it was for and writes it onto that project's Basecamp calendar.
 type DraftMode = "work" | "meeting";
 
 type Draft = {
@@ -684,9 +687,7 @@ function todoHint(draft: Draft, state: TodoState | undefined): string {
 // Same idea as todoHint, for the meeting picker.
 function eventHint(draft: Draft, state: EventState | undefined): string {
   if (draft.manual) {
-    return draft.clientId
-      ? "This goes on that project's Basecamp calendar so you can log time."
-      : "Pick a client or project so this can go on that Basecamp calendar.";
+    return "We'll ask which client this was for when you finish, and add it to that Basecamp calendar.";
   }
   if (!state || state.loading) return "";
   const total = state.mine.length + state.others.length;
@@ -694,7 +695,7 @@ function eventHint(draft: Draft, state: EventState | undefined): string {
     if (state.reason === "never-synced") {
       return "Basecamp events haven't synced yet. Type the meeting name instead.";
     }
-    return "No Basecamp events on this day. Type the meeting name instead.";
+    return "No Basecamp events on this day. Type the meeting name instead. We'll ask which client when you finish.";
   }
   if (!state.mine.length) {
     return `${total} on the schedule, none listing you.`;
@@ -797,11 +798,6 @@ function AddTaskForm({
   // Typing during the load (or with no events) stays typed so a late fetch
   // cannot swap the box out from under them.
   const typeMeeting = meeting && (draft.manual || !hasEvents);
-  // Don't flash the optional client box during the events fetch — it would
-  // vanish the moment the picker arrived. Show it once they are typing, or
-  // once we know there is nothing to pick.
-  const showMeetingClient =
-    typeMeeting && (draft.manual || !eventState?.loading);
 
   // Picking a meeting fills in everything the row needs: the title becomes the
   // task text, the duration becomes the hours, and the event's client (if it has
@@ -963,10 +959,8 @@ function AddTaskForm({
     return (
       <div className="ops-day-add-form">
         {modeToggle}
-        {/* Picked Basecamp meetings skip the client box: most are internal,
-            and the event supplies one when it has. Typed meetings need a
-            client or project so the meeting can be added to that calendar. */}
-        {meeting && showMeetingClient ? clientSelect : null}
+        {/* Typed meetings wait until complete to name a client and land on
+            that Basecamp calendar. Picked ones already have an event. */}
         {meeting ? meetingField : clientSelect}
         {meetingToggle}
         {meeting ? null : taskField}
@@ -996,7 +990,6 @@ function AddTaskForm({
     <div style={{ marginTop: 12 }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         {modeToggle}
-        {meeting && showMeetingClient ? clientSelect : null}
         {meeting ? meetingField : clientSelect}
         {meeting ? null : taskField}
         {startInput}
@@ -1180,6 +1173,10 @@ export default function PersonForecastPage() {
   // Destination picked on the finish card when the row itself has none.
   const [logLinkClientId, setLogLinkClientId] = useState("");
   const [logLinkTodoId, setLogLinkTodoId] = useState("");
+  // Unlinked work can be a typed meeting from before kind was stored. The
+  // finish card offers "This was a meeting" so those rows still go on a
+  // calendar instead of forcing a to-do.
+  const [logAskAsMeeting, setLogAskAsMeeting] = useState(false);
   const [saving, setSaving] = useState(false);
   // Ticks once a second, but only while something is being timed, so a page left
   // open on a quiet week re-renders no more than it used to.
@@ -1411,9 +1408,7 @@ export default function PersonForecastPage() {
   function pickClient(date: string, clientId: string) {
     const hit = pickerClients.find((c) => c.id === clientId);
     const current = draftFor(date);
-    // A typed meeting needs the client/project so it can land on that
-    // Basecamp calendar. Wiping notes or flipping `manual` would throw them
-    // back into the Basecamp picker.
+    // Completing is when a typed meeting names its client. Don't wipe notes.
     if (current.mode === "meeting") {
       const projectId = clientId.startsWith("internal:")
         ? clientId.slice("internal:".length)
@@ -1610,10 +1605,6 @@ export default function PersonForecastPage() {
         setError("Pick a meeting, or type what it is.");
         return;
       }
-      if (!draft.eventId && !draft.clientId) {
-        setError("Pick a client or project so this can go on that Basecamp calendar.");
-        return;
-      }
     } else if (!draft.client.trim()) {
       setError("Pick a client for that task.");
       return;
@@ -1679,7 +1670,6 @@ export default function PersonForecastPage() {
     const projectId = meeting
       ? draft.projectId || state?.projectId || ""
       : state?.projectId || draft.projectId || "";
-    const typedMeeting = meeting && !draft.eventId;
     const results = await Promise.all(
       rows.map(async (row) => {
         const res = await fetch(`/api/forecast/${person}`, {
@@ -1696,7 +1686,7 @@ export default function PersonForecastPage() {
             basecampProjectId: projectId,
             basecampEventId: row.eventId,
             startTime: row.startTime,
-            createScheduleEntry: typedMeeting,
+            kind: meeting ? "meeting" : "work",
           }),
         });
         const json = await res.json().catch(() => null);
@@ -1720,13 +1710,6 @@ export default function PersonForecastPage() {
     setDrafts((d) => ({ ...d, [date]: emptyDraft }));
     setAddingFor(null);
     setAddAnchor(null);
-    if (typedMeeting) {
-      setEventsByDate((prev) => {
-        const next = { ...prev };
-        delete next[date];
-        return next;
-      });
-    }
     load(week, { silent: true });
   }
 
@@ -1781,9 +1764,11 @@ export default function PersonForecastPage() {
       return;
     }
     if (field === "client" && !rawValue.trim()) {
-      setError("A task needs a client.");
-      load(week, { silent: true });
-      return;
+      if (!isForecastMeeting(task)) {
+        setError("A task needs a client.");
+        load(week, { silent: true });
+        return;
+      }
     }
     if (rawValue === task[field]) return;
     setError("");
@@ -2072,14 +2057,20 @@ export default function PersonForecastPage() {
 
   const logAskLinked = Boolean(logAskTask && hasTimesheetDestination(logAskTask));
   const logAskTodos = logLinkClientId ? todosByClient[logLinkClientId] : undefined;
+  const logAskNeedsCalendar = Boolean(
+    logAskTask && (meetingNeedsCalendar(logAskTask) || logAskAsMeeting)
+  );
 
   useEffect(() => {
     setLogLinkClientId("");
     setLogLinkTodoId("");
+    setLogAskAsMeeting(false);
   }, [logAsk]);
 
   // Restored/typed rows often still have a client name. Pre-pick that project
   // and, if a todo title matches, offer it — never attach without a click.
+  // Meetings only need the client; fetching todos would put the to-do picker
+  // back in front of them.
   useEffect(() => {
     if (!logAskTask || logAskLinked || logLinkClientId || pickerClients.length === 0) {
       return;
@@ -2089,22 +2080,47 @@ export default function PersonForecastPage() {
     const match = pickerClients.find((c) => c.name.trim().toLowerCase() === want);
     if (!match) return;
     setLogLinkClientId(match.id);
-    void ensureTodos(match.id);
-  }, [logAskTask, logAskLinked, logLinkClientId, pickerClients, ensureTodos]);
+    if (!isForecastMeeting(logAskTask) && !logAskAsMeeting) void ensureTodos(match.id);
+  }, [logAskTask, logAskLinked, logLinkClientId, logAskAsMeeting, pickerClients, ensureTodos]);
 
   useEffect(() => {
-    if (!logAskTask || logAskLinked || logLinkTodoId || !logAskTodos?.todos.length) {
+    if (
+      !logAskTask ||
+      logAskLinked ||
+      isForecastMeeting(logAskTask) ||
+      logAskAsMeeting ||
+      logLinkTodoId ||
+      !logAskTodos?.todos.length
+    ) {
       return;
     }
     const want = logAskTask.notes.trim().toLowerCase();
     if (!want) return;
     const hit = logAskTodos.todos.find((t) => t.title.trim().toLowerCase() === want);
     if (hit) setLogLinkTodoId(hit.id);
-  }, [logAskTask, logAskLinked, logLinkTodoId, logAskTodos]);
+  }, [logAskTask, logAskLinked, logAskAsMeeting, logLinkTodoId, logAskTodos]);
+
+  function meetingClientPayload() {
+    const hit = pickerClients.find((c) => c.id === logLinkClientId);
+    if (!hit) return null;
+    const projectId = hit.id.startsWith("internal:")
+      ? hit.id.slice("internal:".length)
+      : logAskTodos?.projectId || "";
+    return { clientId: hit.id, client: hit.name, projectId };
+  }
 
   async function logTimeAndClose(task: Task) {
     // Left open on failure: the error explains itself above, and dismissing the
     // ask would quietly lose the hours somebody just typed.
+    if (meetingNeedsCalendar(task) || logAskAsMeeting) {
+      const meeting = meetingClientPayload();
+      if (!meeting) {
+        setError("Pick which client this meeting was for.");
+        return;
+      }
+      if (await logTime(task, undefined, meeting)) setLogAsk(null);
+      return;
+    }
     let link: { todoId: string; projectId: string; stepId?: string } | undefined;
     if (!hasTimesheetDestination(task)) {
       const todo = (logAskTodos?.todos || []).find((t) => t.id === logLinkTodoId);
@@ -2129,6 +2145,31 @@ export default function PersonForecastPage() {
       };
     }
     if (await logTime(task, link)) setLogAsk(null);
+  }
+
+  async function dismissLogAsk(task: Task | null) {
+    if (task && (meetingNeedsCalendar(task) || logAskAsMeeting) && logLinkClientId) {
+      const meeting = meetingClientPayload();
+      if (meeting) {
+        const res = await fetch(`/api/forecast/${person}/${task.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            createScheduleEntry: true,
+            clientId: meeting.clientId,
+            client: meeting.client,
+            basecampProjectId: meeting.projectId,
+          }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          setError(json?.error || "Could not add that meeting to Basecamp.");
+          return;
+        }
+        load(week, { silent: true });
+      }
+    }
+    setLogAsk(null);
   }
 
   function closeAdd() {
@@ -2324,7 +2365,8 @@ export default function PersonForecastPage() {
 
   async function logTime(
     task: Task,
-    link?: { todoId: string; projectId: string; stepId?: string }
+    link?: { todoId: string; projectId: string; stepId?: string },
+    meeting?: { clientId: string; client: string; projectId?: string }
   ) {
     const raw = logDrafts[task.id] ?? logDefault(task);
     const hours = Number(raw);
@@ -2338,6 +2380,12 @@ export default function PersonForecastPage() {
       body.basecampTodoId = link.todoId;
       body.basecampProjectId = link.projectId;
       if (link.stepId) body.basecampStepId = link.stepId;
+    }
+    if (meeting?.clientId) {
+      body.createScheduleEntry = true;
+      body.clientId = meeting.clientId;
+      body.client = meeting.client;
+      if (meeting.projectId) body.basecampProjectId = meeting.projectId;
     }
     const res = await fetch(`/api/forecast/${person}/${task.id}`, {
       method: "PATCH",
@@ -2454,6 +2502,7 @@ export default function PersonForecastPage() {
    */
   function LogTime({ task }: { task: Task }) {
     const linked = hasTimesheetDestination(task);
+    const needsCalendar = meetingNeedsCalendar(task);
     const logged = Boolean(task.basecamp_time_entry_id);
     const open = Boolean(logExpanded[task.id]);
 
@@ -2467,7 +2516,11 @@ export default function PersonForecastPage() {
             setLogAsk(task.id);
           }}
           onMouseDown={(e) => e.stopPropagation()}
-          title="This row is not linked to Basecamp yet. Pick a todo, then log hours."
+          title={
+            needsCalendar
+              ? "This meeting is not on a Basecamp calendar yet. Pick a client, then log hours."
+              : "This row is not linked to Basecamp yet. Pick a todo, then log hours."
+          }
         >
           Log time
         </button>
@@ -3171,7 +3224,7 @@ export default function PersonForecastPage() {
                           onBlur={(e) => saveField(t, "notes", e.target.value)}
                           placeholder="Task notes"
                           className="notes"
-                          title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                          title={isForecastMeeting(t) ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                           style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
                         />
                         <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
@@ -3497,7 +3550,7 @@ export default function PersonForecastPage() {
                             onBlur={(e) => saveField(t, "notes", e.target.value)}
                             placeholder="Task notes"
                             className="notes"
-                            title={t.basecamp_event_id ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
+                            title={isForecastMeeting(t) ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                             style={{
                               textDecoration: t.completed ? "line-through" : "none",
                               opacity: t.completed ? 0.6 : 1,
@@ -3596,22 +3649,31 @@ export default function PersonForecastPage() {
 
       {/* Opened from ticking a task off, or from Log time on an unlinked row.
           Linked rows hide the complete-ask once nothing is outstanding; unlinked
-          rows still get a card so a restored/typed task cannot silently skip. */}
+          rows still get a card so a restored/typed task cannot silently skip.
+          Typed meetings ask which client, then go on that Basecamp calendar. */}
       {logAskTask ? (
         <div
           className={`fc-log-ask ${logAskLinked ? "" : "is-unlinked"}`}
           role="dialog"
-          aria-label="Log time for this task"
+          aria-label={
+            logAskNeedsCalendar
+              ? "Which client was this meeting for?"
+              : "Log time for this task"
+          }
         >
           <div className="fc-log-ask-head">
             <strong>
-              {logAskMode === "complete" ? "Finished — log the time?" : "Log time"}
+              {logAskMode === "complete"
+                ? logAskNeedsCalendar
+                  ? "Finished — which client was this for?"
+                  : "Finished — log the time?"
+                : "Log time"}
             </strong>
             <button
               type="button"
               aria-label="Not now"
               title="Not now"
-              onClick={() => setLogAsk(null)}
+              onClick={() => void dismissLogAsk(logAskTask)}
             >
               ×
             </button>
@@ -3622,7 +3684,27 @@ export default function PersonForecastPage() {
               <span> · {logAskTask.client}</span>
             ) : null}
           </p>
-          {logAskLinked ? null : (
+          {logAskLinked ? null : logAskNeedsCalendar ? (
+            <div className="fc-log-ask-link">
+              <p className="fc-log-ask-note">
+                Pick which client this meeting was for. We&apos;ll add it to that
+                Basecamp calendar and log hours against the meeting, not a to-do.
+              </p>
+              <ClientCombobox
+                clients={pickerClients}
+                value={logLinkClientId}
+                onPick={(clientId) => {
+                  setLogLinkClientId(clientId);
+                  setLogLinkTodoId("");
+                }}
+                autoFocus
+                placeholder="Which client was this for?"
+              />
+              {logLinkClientId ? null : (
+                <p className="fc-log-ask-note">Pick the client or project first.</p>
+              )}
+            </div>
+          ) : (
             <div className="fc-log-ask-link">
               <p className="fc-log-ask-note">
                 This task is not linked to a Basecamp todo, so hours have
@@ -3657,6 +3739,16 @@ export default function PersonForecastPage() {
               ) : (
                 <p className="fc-log-ask-note">Pick the client or project first.</p>
               )}
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => {
+                  setLogAskAsMeeting(true);
+                  setLogLinkTodoId("");
+                }}
+              >
+                This was a meeting
+              </button>
             </div>
           )}
           <div className="fc-log-ask-row">
@@ -3667,7 +3759,7 @@ export default function PersonForecastPage() {
               }
               onKeyDown={(e) => {
                 if (e.key === "Enter") void logTimeAndClose(logAskTask);
-                if (e.key === "Escape") setLogAsk(null);
+                if (e.key === "Escape") void dismissLogAsk(logAskTask);
               }}
               type="number"
               min="0"
@@ -3681,13 +3773,23 @@ export default function PersonForecastPage() {
               className="fc-log-ask-go"
               disabled={
                 logging === logAskTask.id ||
-                (!logAskLinked && !logLinkTodoId)
+                (logAskNeedsCalendar
+                  ? !logLinkClientId
+                  : !logAskLinked && !logLinkTodoId)
               }
               onClick={() => void logTimeAndClose(logAskTask)}
             >
-              {logging === logAskTask.id ? "Logging…" : "Log to Basecamp"}
+              {logging === logAskTask.id
+                ? "Logging…"
+                : logAskNeedsCalendar
+                  ? "Add to Basecamp"
+                  : "Log to Basecamp"}
             </button>
-            <button type="button" className="linklike" onClick={() => setLogAsk(null)}>
+            <button
+              type="button"
+              className="linklike"
+              onClick={() => void dismissLogAsk(logAskTask)}
+            >
               Skip
             </button>
           </div>

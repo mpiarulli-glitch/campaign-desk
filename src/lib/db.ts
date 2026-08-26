@@ -385,10 +385,15 @@ export interface ForecastTask {
   // basecamp_todo_id still holds the PARENT to-do and time lands there.
   basecamp_step_id: string;
   basecamp_project_id: string;
+  // "work" or "meeting". Typed meetings are stored as meetings before they have
+  // a Basecamp event id, so completing them can ask for a client and write the
+  // calendar entry instead of treating the row as unlinked work that needs a todo.
+  kind: "work" | "meeting";
   // Set instead of basecamp_todo_id when the row came from a Basecamp schedule
   // entry, i.e. a meeting. Meetings take up real hours but are not work items,
-  // so booking one must never create or close a todo. Completing a meeting row
-  // stays local, because there is nothing on the Basecamp side to flip.
+  // so booking one must never create or close a todo. Completing a typed meeting
+  // that has no event yet writes the calendar entry onto the chosen client's
+  // project; picked meetings already have one, so the tick stays local.
   basecamp_event_id: string;
   // Cumulative hours sent to Basecamp for this row (the Log time pill).
   // Day/week "logged" gauges read forecast_time_logs by logged_date instead,
@@ -1595,6 +1600,7 @@ export function getDb(): Database.Database {
       basecamp_step_id TEXT NOT NULL DEFAULT '',
       basecamp_project_id TEXT NOT NULL DEFAULT '',
       basecamp_event_id TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL DEFAULT 'work',
       actual_hours REAL NOT NULL DEFAULT 0,
       basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
       start_time TEXT NOT NULL DEFAULT '',
@@ -2782,6 +2788,14 @@ function migrate(database: Database.Database) {
   if (forecastCols.length && !forecastCols.includes("sort_order")) {
     database.exec(
       `ALTER TABLE forecast_tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("kind")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'work'`
+    );
+    database.exec(
+      `UPDATE forecast_tasks SET kind = 'meeting' WHERE TRIM(basecamp_event_id) != ''`
     );
   }
 

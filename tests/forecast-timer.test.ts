@@ -5,7 +5,9 @@ import {
   formatTracked,
   hasTimesheetDestination,
   hoursToOffer,
+  isForecastMeeting,
   isRunning,
+  meetingNeedsCalendar,
   runningSeconds,
   shouldAskToLogOnComplete,
   trackedHours,
@@ -144,6 +146,29 @@ test("unlinked work still asks to log, even with no hours outstanding", () => {
     ),
     false
   );
+});
+
+test("a typed meeting is not a timesheet destination until it is on the calendar", () => {
+  const typed = {
+    ...untimed,
+    hours: 0.5,
+    actual_hours: 0,
+    basecamp_time_entry_id: "",
+    kind: "meeting" as const,
+    basecamp_todo_id: "",
+    basecamp_event_id: "",
+    basecamp_project_id: "28110364",
+  };
+  assert.equal(isForecastMeeting(typed), true);
+  assert.equal(meetingNeedsCalendar(typed), true);
+  // Project id alone would otherwise invent a shadow todo. Completing has to
+  // ask for the client and write a calendar entry instead.
+  assert.equal(hasTimesheetDestination(typed), false);
+  assert.equal(shouldAskToLogOnComplete(typed, startMs), true);
+
+  const booked = { ...typed, basecamp_event_id: "e1" };
+  assert.equal(meetingNeedsCalendar(booked), false);
+  assert.equal(hasTimesheetDestination(booked), true);
 });
 
 test("nothing outstanding offers nothing, which is also the signal not to ask", () => {

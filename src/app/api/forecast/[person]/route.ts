@@ -109,12 +109,13 @@ export async function POST(request: Request, { params }: Params) {
   }
   const notes = typeof body.notes === "string" ? body.notes : "";
   const client = typeof body.client === "string" ? body.client : "";
+  const kind = body.kind === "meeting" ? "meeting" : "work";
   let eventId =
     typeof body.basecampEventId === "string" ? body.basecampEventId : "";
   let projectId =
     typeof body.basecampProjectId === "string" ? body.basecampProjectId : "";
-  // A typed meeting is not yet a Basecamp recording. Create the calendar
-  // entry on that project's schedule so later time logs have somewhere to land.
+  // Optional: a client already chosen at add time can still write the calendar
+  // entry immediately. Completing a typed meeting without one asks then.
   if (body.createScheduleEntry === true && !eventId.trim()) {
     const booked = await bookTypedMeetingOnBasecamp({
       person,
@@ -151,6 +152,7 @@ export async function POST(request: Request, { params }: Params) {
     // Present instead when it came from the meeting picker, or after a typed
     // meeting was written onto that project's Basecamp calendar.
     basecampEventId: eventId,
+    kind: eventId || kind === "meeting" ? "meeting" : "work",
     startTime,
   });
   return NextResponse.json({ task }, { status: 201 });

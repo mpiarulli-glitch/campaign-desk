@@ -83,3 +83,54 @@ test("logging an off-app campaign counts on that month's board card", async (t) 
     assert.equal(row.approved_channel, "client");
   });
 });
+
+test("automation emails do not tick the monthly quota", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-board-auto-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const board = await import("../src/lib/lifecycle-board");
+  const campaigns = await import("../src/lib/campaigns");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_auto", "Our Watch", 4, now, now);
+
+  const period = board.currentPeriod();
+  assert.equal(board.addBoardCard("cl_auto", period), true);
+
+  const auto = campaigns.createCampaign({
+    title: "Welcome Series V2",
+    clientName: "Our Watch",
+    clientId: "cl_auto",
+    htmlContent: "<p>Hi</p>",
+    presentation: "automation",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'sent' WHERE id = ?`).run(auto.id);
+
+  const blast = campaigns.createCampaign({
+    title: "August broadcasts",
+    clientName: "Our Watch",
+    clientId: "cl_auto",
+    htmlContent: "<p>Hi</p>",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'sent' WHERE id = ?`).run(blast.id);
+
+  const card = board.listBoardCards(period).find((c) => c.clientId === "cl_auto");
+  assert.ok(card);
+  assert.equal(card.delivered, 1);
+  const welcome = card.campaigns.find((c) => c.title === "Welcome Series V2");
+  assert.ok(welcome);
+  assert.equal(welcome.isAutomation, true);
+  assert.equal(welcome.countsTowardQuota, false);
+});
+

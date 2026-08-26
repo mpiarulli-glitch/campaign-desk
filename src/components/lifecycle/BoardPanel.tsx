@@ -141,6 +141,9 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                   approvedChannel={camp.approvedChannel}
                 />
                 <span>{camp.title}</span>
+                {camp.isAutomation ? (
+                  <em className="hud-board-camp-sms">Auto</em>
+                ) : null}
                 {camp.smsCount > 0 ? (
                   <em className="hud-board-camp-sms">SMS</em>
                 ) : null}

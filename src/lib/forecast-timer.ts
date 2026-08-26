@@ -98,12 +98,32 @@ export function hoursToOffer(
   return String(task.hours);
 }
 
+export function isForecastMeeting(task: {
+  kind?: string;
+  basecamp_event_id?: string;
+}): boolean {
+  return task.kind === "meeting" || Boolean(task.basecamp_event_id);
+}
+
+/** Typed meeting that is not on a Basecamp calendar yet. */
+export function meetingNeedsCalendar(task: {
+  kind?: string;
+  basecamp_event_id?: string;
+}): boolean {
+  return isForecastMeeting(task) && !task.basecamp_event_id;
+}
+
 /** Somewhere hours can land without inventing a Basecamp recording. */
 export function hasTimesheetDestination(task: {
+  kind?: string;
   basecamp_todo_id?: string;
   basecamp_event_id?: string;
   basecamp_project_id?: string;
 }): boolean {
+  // A typed meeting may already know its project from the add form. That is
+  // not a timesheet destination: logging would otherwise invent a shadow todo
+  // instead of putting the meeting on that project's calendar.
+  if (meetingNeedsCalendar(task)) return false;
   return Boolean(
     task.basecamp_todo_id || task.basecamp_event_id || task.basecamp_project_id
   );
@@ -116,18 +136,23 @@ export function hasTimesheetDestination(task: {
  * (typed, restored, or missing Basecamp ids) still asks — there is nowhere
  * for the hours to have gone, and hiding the card made those ticks look like
  * the time had already been handled.
+ *
+ * Typed meetings always ask until they are on a Basecamp calendar, even if
+ * hours were somehow already sent: completing is what names the client.
  */
 export function shouldAskToLogOnComplete(
   task: TimedTask & {
     hours: number;
     actual_hours: number;
     basecamp_time_entry_id: string;
+    kind?: string;
     basecamp_todo_id?: string;
     basecamp_event_id?: string;
     basecamp_project_id?: string;
   },
   nowMs: number
 ): boolean {
+  if (meetingNeedsCalendar(task)) return true;
   if (!hasTimesheetDestination(task)) return true;
   return hoursToOffer(task, nowMs) !== "";
 }

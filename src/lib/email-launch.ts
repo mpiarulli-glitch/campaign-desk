@@ -28,6 +28,44 @@ export function emailPlatformLabel(slug: string | null | undefined): string {
   return EMAIL_PLATFORMS.find((p) => p.slug === slug)?.label || "";
 }
 
+/**
+ * Automations are tracked, but they are not contracted monthly volume.
+ * Presentation is the source of truth; titles still catch packages that were
+ * never flipped to the automation type (welcome series, flows).
+ */
+export function campaignCountsTowardQuota(
+  presentation?: string | null,
+  title?: string | null
+): boolean {
+  if (presentation === "automation") return false;
+  const t = (title || "").toLowerCase();
+  if (/\bautomations?\b/.test(t)) return false;
+  if (/\bwelcome series\b/.test(t)) return false;
+  if (/\bflows?\b/.test(t)) return false;
+  return true;
+}
+
+export function calendarSendIsAutomation(assetType: string | null | undefined): boolean {
+  return assetType === "crm_automation";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Duplicate revenue rows, or "Our Watch" vs "Our Watch w/Tim Thompson".
+ * Location splits (Oceanside vs Corporate) stay separate.
+ */
+export function sameLifecycleAccount(a: string, b: string): boolean {
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return new RegExp(`^${escapeRegExp(short)}\\s+(w\\/|with)\\s*`, "i").test(long);
+}
+
 export interface LaunchTaskTemplate {
   title: string;
   /** Whole weeks after the launch date. */
