@@ -179,17 +179,33 @@ function toBoardCard(
 }
 
 /**
- * Every active client gets a card for `period` the first time the board opens
- * on it, except the ones removed from the board on or before that month. A
- * removal has to be honoured here rather than only on existing rows: a future
- * month has no rows yet, and seeding it blind would put a client the team
- * already took off back on the board.
+ * Every client already on the board (or given a launch date) gets a card for
+ * `period` the first time that month opens, except the ones removed on or
+ * before it. New clients are not seeded — they have to be added with a launch
+ * date, which is what creates the onboarding to-dos.
  */
 function ensureCardsForPeriod(period: string): void {
   const db = getDb();
   const removed = removedClientIds(period);
+  const alreadyOn = new Set(
+    (
+      db.prepare(`SELECT DISTINCT client_id FROM lifecycle_board_cards`).all() as Array<{
+        client_id: string;
+      }>
+    ).map((r) => r.client_id)
+  );
+  const launched = new Set(
+    (
+      db
+        .prepare(
+          `SELECT id FROM rev_clients
+            WHERE lifecycle_launch_date IS NOT NULL AND lifecycle_launch_date != ''`
+        )
+        .all() as Array<{ id: string }>
+    ).map((r) => r.id)
+  );
   const clients = listRevClients(false).filter(
-    (c) => c.active === 1 && !removed.has(c.id)
+    (c) => c.active === 1 && !removed.has(c.id) && (alreadyOn.has(c.id) || launched.has(c.id))
   );
   if (!clients.length) return;
   const ts = nowIso();

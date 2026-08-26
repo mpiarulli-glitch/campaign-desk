@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 // The month in the header and the server's idea of "this month" have to be the
 // same month, so the period helpers are shared rather than written twice.
 import { currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
+import { EMAIL_PLATFORMS, type EmailPlatform } from "@/lib/email-launch";
 import { FollowUpButton } from "./FollowUpButton";
 import type { BoardCard, BoardColumn, ClientRef } from "./types";
 
@@ -252,6 +253,8 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [addingClientId, setAddingClientId] = useState("");
+  const [addingLaunchDate, setAddingLaunchDate] = useState("");
+  const [addingPlatform, setAddingPlatform] = useState<EmailPlatform | "">("");
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [triageOpen, setTriageOpen] = useState(true);
   const [search, setSearch] = useState("");
@@ -392,23 +395,29 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   }, [load, period]);
 
   async function addCard() {
-    if (!addingClientId) return;
+    if (!addingClientId || !addingLaunchDate || !addingPlatform) return;
     const wanted = addingClientId;
     setError("");
     const res = await fetch("/api/lifecycle/board", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId: wanted, period }),
+      body: JSON.stringify({
+        clientId: wanted,
+        period,
+        launchDate: addingLaunchDate,
+        platform: addingPlatform,
+      }),
     });
     if (!res.ok) {
-      setError("Could not add that client to the board.");
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not add that client to the board.");
       return;
     }
     const data = await res.json();
     setAddingClientId("");
+    setAddingLaunchDate("");
+    setAddingPlatform("");
     setCards(data.cards || []);
-    // A 200 that didn't actually put the client on the board is the failure
-    // mode worth shouting about — it used to look like nothing happened.
     if (!(data.cards || []).some((c: BoardCard) => c.clientId === wanted)) {
       setError("That client could not be added. Reload and try again.");
     }
@@ -494,7 +503,31 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              <button className="hud-btn" disabled={!addingClientId} onClick={addCard}>
+              <input
+                type="date"
+                value={addingLaunchDate}
+                onChange={(e) => setAddingLaunchDate(e.target.value)}
+                aria-label="Launch date"
+                required
+              />
+              <select
+                value={addingPlatform}
+                onChange={(e) => setAddingPlatform((e.target.value as EmailPlatform) || "")}
+                aria-label="Platform"
+                required
+              >
+                <option value="">Platform…</option>
+                {EMAIL_PLATFORMS.map((p) => (
+                  <option key={p.slug} value={p.slug}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="hud-btn"
+                disabled={!addingClientId || !addingLaunchDate || !addingPlatform}
+                onClick={addCard}
+              >
                 Add
               </button>
             </>

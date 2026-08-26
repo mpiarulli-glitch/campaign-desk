@@ -1,25 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSession, isAdminAuthenticated } from "@/lib/auth";
-import {
-  BOARD_COLUMNS,
-  currentPeriod,
-  isValidPeriod,
-  listBoardCards,
-} from "@/lib/lifecycle-board";
-import { addClientToHub } from "@/lib/lifecycle-hub";
+import { addClientToHub, buildLifecycleHub } from "@/lib/lifecycle-hub";
 import { isEmailPlatform, isYmd } from "@/lib/email-launch";
 
-export async function GET(request: Request) {
+export async function GET() {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
-  const requested = new URL(request.url).searchParams.get("period") || "";
-  const period = isValidPeriod(requested) ? requested : currentPeriod();
-  return NextResponse.json({
-    period,
-    columns: BOARD_COLUMNS,
-    cards: listBoardCards(period),
-  });
+  return NextResponse.json(buildLifecycleHub());
 }
 
 export async function POST(request: Request) {
@@ -30,7 +18,6 @@ export async function POST(request: Request) {
   const clientId = typeof body.clientId === "string" ? body.clientId : "";
   const launchDate = typeof body.launchDate === "string" ? body.launchDate : "";
   const platform = isEmailPlatform(body.platform) ? body.platform : null;
-  const period = isValidPeriod(body.period) ? body.period : currentPeriod();
   if (!clientId) {
     return NextResponse.json({ error: "Pick a client." }, { status: 400 });
   }
@@ -41,9 +28,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Pick a platform." }, { status: 400 });
   }
   const session = await getSession();
-  const result = addClientToHub(clientId, launchDate, session?.person || "michael", period, platform);
+  const result = addClientToHub(clientId, launchDate, session?.person || "michael", undefined, platform);
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.error === "Unknown client." ? 404 : 400 });
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  return NextResponse.json({ period, cards: listBoardCards(period) });
+  return NextResponse.json(buildLifecycleHub());
 }

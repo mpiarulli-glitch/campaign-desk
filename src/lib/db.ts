@@ -296,6 +296,11 @@ export interface RevClient {
   // volume on file, which the Deliverables board shows as untracked rather
   // than as a failed quota.
   monthly_email_quota: number;
+  // When this client was launched on the Lifecycle hub. Drives the dated
+  // onboarding to-dos (calendar +2 weeks, first campaigns +3, automations +4).
+  lifecycle_launch_date: string | null;
+  // ESP they send from: ghl | klaviyo | mailchimp | hubspot | instantly.
+  lifecycle_email_platform: string;
   created_at: string;
   updated_at: string;
 }
@@ -1272,6 +1277,8 @@ export function getDb(): Database.Database {
       snapshot_token TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       monthly_email_quota INTEGER NOT NULL DEFAULT 0,
+      lifecycle_launch_date TEXT,
+      lifecycle_email_platform TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2455,6 +2462,14 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("monthly_email_quota")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN monthly_email_quota INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("lifecycle_launch_date")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN lifecycle_launch_date TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("lifecycle_email_platform")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN lifecycle_email_platform TEXT NOT NULL DEFAULT ''`
     );
   }
   if (revClientCols.length && !revClientCols.includes("contract_start")) {

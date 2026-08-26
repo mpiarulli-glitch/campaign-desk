@@ -1039,8 +1039,13 @@
 .hud-board-add {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
-.hud-board-add select { min-width: 200px; }
+.hud-board-add select { min-width: 160px; }
+.hud-board-add input[type="date"] {
+  min-width: 150px;
+}
 .hud-board-add-none {
   font-size: 11px;
   color: var(--ghost-dim);

@@ -44,6 +44,9 @@ test("board removals and adds carry forward, never backward", async (t) => {
   const names = (period: string) =>
     board.listBoardCards(period).map((c) => c.clientName).sort();
 
+  assert.equal(board.addBoardCard("cl_1", last), true);
+  assert.equal(board.addBoardCard("cl_2", last), true);
+
   // Open last month first, so it has real rows to protect.
   assert.deepEqual(names(last), ["Humble Somm", "Pipe It Right"]);
 

@@ -25,6 +25,7 @@ test("logging an off-app campaign counts on that month's board card", async (t) 
   ).run("cl_log", "CIPO Cloud Software", 8, now, now);
 
   const period = board.currentPeriod();
+  assert.equal(board.addBoardCard("cl_log", period), true);
   const card = board.listBoardCards(period).find((c) => c.clientId === "cl_log");
   assert.ok(card);
   assert.equal(card.delivered, 0);

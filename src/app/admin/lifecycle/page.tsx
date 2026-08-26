@@ -5,18 +5,16 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
 import { BoardPanel } from "@/components/lifecycle/BoardPanel";
+import { ClientHub } from "@/components/lifecycle/ClientHub";
 import { SubjectBankPanel } from "@/components/lifecycle/SubjectBankPanel";
 import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
 import { LinkedInHub } from "@/components/lifecycle/LinkedInHub";
 import { NotesPanel } from "@/components/lifecycle/NotesPanel";
 import { ReportPanel } from "@/components/lifecycle/ReportPanel";
 import { ToolsPanel } from "@/components/lifecycle/ToolsPanel";
-import { StatusBriefing } from "@/components/lifecycle/StatusBriefing";
 import type { LifecycleDashboard } from "@/components/lifecycle/types";
 
-type Channel =
-  | "status"
-  | "tools"
+type Tool =
   | "board"
   | "subjects"
   | "linkedin"
@@ -24,18 +22,11 @@ type Channel =
   | "sops"
   | "knowledge"
   | "notes"
-  | "report";
+  | "report"
+  | "tools";
 
-// Ordered for the person who lives in this tab: email work first, then the
-// reference material, with LinkedIn outreach last because it belongs to someone
-// else's day. Approvals used to sit second; the Approvals ageing report covers
-// the same ground with ageing and per-client breakdowns, so the channel went
-// rather than being maintained in two places. The Status readout still carries
-// the pending count. Deliverables sits right after Status since it's the
-// other tab someone opens daily: where every client stands this month.
-const CHANNELS: Array<{ id: Channel; label: string }> = [
-  { id: "status", label: "Status" },
-  { id: "board", label: "Deliverables" },
+const TOOLS: Array<{ id: Tool; label: string }> = [
+  { id: "board", label: "Deliverables board" },
   { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
   { id: "report", label: "Account report" },
@@ -46,21 +37,14 @@ const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: "linkedin", label: "LinkedIn" },
 ];
 
-/** Zulu-style clock. A console shows the time in one unambiguous zone. */
-function stamp(iso: string | null): string {
-  if (!iso) return "--:--:--Z";
-  return `${new Date(iso).toISOString().slice(11, 19)}Z`;
-}
-
 export default function LifecyclePage() {
   const router = useRouter();
-  const [channel, setChannel] = useState<Channel>("status");
+  const [tool, setTool] = useState<Tool | null>(null);
   const [data, setData] = useState<LifecycleDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [denied, setDenied] = useState(false);
 
-  const load = useCallback(async (force = false) => {
+  const loadTools = useCallback(async (force = false) => {
     if (force) setSyncing(true);
     try {
       const res = await fetch(`/api/lifecycle${force ? "?refresh=1" : ""}`);
@@ -70,163 +54,133 @@ export default function LifecyclePage() {
       }
       if (res.ok) setData(await res.json());
     } finally {
-      setLoading(false);
       setSyncing(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (tool && !data) void loadTools();
+  }, [tool, data, loadTools]);
 
   useEffect(() => {
     if (denied) router.push("/login");
   }, [denied, router]);
 
-  const refresh = useCallback(() => void load(false), [load]);
-
-  if (loading) {
-    return (
-      <div className="hud">
-        <div className="hud-page">
-          <p className="hud-empty">Establishing link…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="hud">
-        <div className="hud-page">
-          <div className="hud-alert">
-            <h3>No signal</h3>
-            <p className="hud-err">The lifecycle console could not load. Reload to retry.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const c = data.counts;
-  const li = data.linkedIn;
+  const refresh = useCallback(() => void loadTools(false), [loadTools]);
 
   return (
-    <div className={`hud ${channel === "board" ? "hud-fill" : ""}`}>
-      <div className={`hud-page ${channel === "board" ? "hud-page-fill" : ""}`}>
-        <header className="hud-bar hud-in hud-in-1">
-          <div className="hud-mark">
-            <h1>Lifecycle</h1>
-            <span className="hud-clock">
-              {li.fetchedAt ? `SYNC ${stamp(li.fetchedAt)}` : "NO SYNC"}
-            </span>
-          </div>
-          <div className="hud-bar-right">
-            <button className="hud-btn" disabled={syncing} onClick={() => void load(true)}>
-              {syncing ? "Syncing" : "Resync"}
-            </button>
-          </div>
-        </header>
-
-        <nav className="hud-channels hud-in hud-in-1">
-          {CHANNELS.map((ch) => {
-            const badge =
-              ch.id === "board" && (data.counts.myQueue > 0 || data.counts.behindQuota > 0)
-                ? { n: data.counts.myQueue || data.counts.behindQuota, alert: data.counts.myQueue > 0 }
-                : ch.id === "linkedin" && c.campaignsNeedingRefresh > 0
-                  ? { n: c.campaignsNeedingRefresh, alert: true }
-                  : null;
-            return (
-              <button
-                key={ch.id}
-                className={`hud-channel ${channel === ch.id ? "on" : ""}`}
-                onClick={() => setChannel(ch.id)}
-              >
-                {ch.label}
-                {badge ? (
-                  <span className={`hud-channel-count ${badge.alert ? "alert" : ""}`}>
-                    {badge.n}
-                  </span>
-                ) : null}
+    <div className={`lh-page ${tool === "board" ? "hud hud-fill" : ""}`}>
+      <header className="lh-page-bar">
+        <div>
+          <h1>Lifecycle</h1>
+          <p className="muted">Email clients — contract, sends, and launch work.</p>
+        </div>
+        <div className="lh-page-bar-right">
+          {tool ? (
+            <>
+              {tool === "linkedin" || tool === "tools" ? (
+                <button
+                  className="btn btn-secondary"
+                  disabled={syncing}
+                  onClick={() => void loadTools(true)}
+                >
+                  {syncing ? "Syncing" : "Resync"}
+                </button>
+              ) : null}
+              <button type="button" className="btn btn-ghost" onClick={() => setTool(null)}>
+                Back to clients
               </button>
-            );
-          })}
-        </nav>
+            </>
+          ) : (
+            <label className="lh-tools-pick">
+              <span className="sr-only">More tools</span>
+              <select
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value as Tool;
+                  if (v) setTool(v);
+                }}
+              >
+                <option value="">More tools</option>
+                {TOOLS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      </header>
 
-        {channel === "status" ? (
-          <StatusBriefing
-            data={data}
-            onOpenBoard={() => setChannel("board")}
-            onOpenLinkedIn={() => setChannel("linkedin")}
-            onChanged={refresh}
-          />
-        ) : null}
+      {tool === null ? <ClientHub /> : null}
 
-        {channel === "board" ? <BoardPanel clients={data.clients} /> : null}
+      {tool && !data ? <p className="lh-empty">Loading…</p> : null}
 
-        {channel === "linkedin" ? (
-          <LinkedInHub
-            data={li}
-            clients={data.clients}
-            counts={data.counts}
-            refreshSettings={data.refreshSettings}
-            onChanged={refresh}
-          />
-        ) : null}
-
-        {channel === "automations" ? (
-          <AutomationsPanel
-            automations={data.automations}
-            ghl={data.ghl}
-            clients={data.clients}
-            onChanged={refresh}
-          />
-        ) : null}
-
-        {channel === "sops" ? (
-          <div className="hud-panel">
-            <div className="hud-panel-head">
-              <h2 className="hud-panel-title">Playbooks</h2>
-              <Link href="/admin/hub" className="hud-link">
-                Edit in Team Hub
-              </Link>
-            </div>
-            {data.sops.length === 0 ? (
-              <p className="hud-empty">No SOPs written yet.</p>
-            ) : (
-              data.sops.map((s) => (
-                <div key={s.id} className="hud-row">
-                  <span>
-                    {s.link ? (
-                      <a href={s.link} target="_blank" rel="noreferrer">{s.title}</a>
-                    ) : (
-                      s.title
-                    )}
-                  </span>
-                  <span className="hud-row-meta">{s.category || "Uncategorised"}</span>
+      {tool && data ? (
+        <div className={`hud ${tool === "board" ? "hud-fill" : ""}`}>
+          <div className={`hud-page ${tool === "board" ? "hud-page-fill" : ""}`}>
+            {tool === "board" ? <BoardPanel clients={data.clients} /> : null}
+            {tool === "linkedin" ? (
+              <LinkedInHub
+                data={data.linkedIn}
+                clients={data.clients}
+                counts={data.counts}
+                refreshSettings={data.refreshSettings}
+                onChanged={refresh}
+              />
+            ) : null}
+            {tool === "automations" ? (
+              <AutomationsPanel
+                automations={data.automations}
+                ghl={data.ghl}
+                clients={data.clients}
+                onChanged={refresh}
+              />
+            ) : null}
+            {tool === "sops" ? (
+              <div className="hud-panel">
+                <div className="hud-panel-head">
+                  <h2 className="hud-panel-title">Playbooks</h2>
+                  <Link href="/admin/hub" className="hud-link">
+                    Edit in Team Hub
+                  </Link>
                 </div>
-              ))
-            )}
+                {data.sops.length === 0 ? (
+                  <p className="hud-empty">No SOPs written yet.</p>
+                ) : (
+                  data.sops.map((s) => (
+                    <div key={s.id} className="hud-row">
+                      <span>
+                        {s.link ? (
+                          <a href={s.link} target="_blank" rel="noreferrer">
+                            {s.title}
+                          </a>
+                        ) : (
+                          s.title
+                        )}
+                      </span>
+                      <span className="hud-row-meta">{s.category || "Uncategorised"}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : null}
+            {tool === "knowledge" ? <KnowledgePanel /> : null}
+            {tool === "notes" ? (
+              <NotesPanel
+                notes={data.notes}
+                links={data.links}
+                clients={data.clients}
+                onChanged={refresh}
+              />
+            ) : null}
+            {tool === "subjects" ? <SubjectBankPanel /> : null}
+            {tool === "report" ? <ReportPanel clients={data.clients} /> : null}
+            {tool === "tools" ? <ToolsPanel /> : null}
           </div>
-        ) : null}
-
-        {channel === "knowledge" ? <KnowledgePanel /> : null}
-
-        {channel === "notes" ? (
-          <NotesPanel
-            notes={data.notes}
-            links={data.links}
-            clients={data.clients}
-            onChanged={refresh}
-          />
-        ) : null}
-
-        {channel === "subjects" ? <SubjectBankPanel /> : null}
-
-        {channel === "report" ? <ReportPanel clients={data.clients} /> : null}
-
-        {channel === "tools" ? <ToolsPanel /> : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
