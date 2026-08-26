@@ -8,10 +8,12 @@ name: Production scheduling reminders
 # CRON_SECRET environment variable set on the Railway service.
 
 on:
-  schedule:
-    # 16:00 UTC daily (~9am Pacific). GitHub may delay scheduled runs a few
-    # minutes; that's fine, the job only sends once per client per day.
-    - cron: "0 16 * * *"
+  # Paused 2026-08-26 for the September production-week cutover.
+  # Restore the schedule below when the calendar remap is done.
+  # schedule:
+  #   # 16:00 UTC daily (~9am Pacific). GitHub may delay scheduled runs a few
+  #   # minutes; that's fine, the job only sends once per client per day.
+  #   - cron: "0 16 * * *"
   # Lets you trigger a run by hand from the Actions tab to test.
   workflow_dispatch: {}
 
