@@ -117,12 +117,45 @@ test("a date maps back to the production window it belongs to", () => {
 });
 
 test("purple's window sits in the month before the one it belongs to", () => {
-  // Purple publishes in the first full week of August (Aug 3), so it shoots
+  // Purple publishes in the first week of August (Aug 3), so it shoots
   // Jul 27-31. A late-July date has to resolve forward into August's window,
   // which is why the lookup checks neighbouring months.
   assert.deepEqual(productionWindowForDate("purple", "2026-07-29"), {
     start: "2026-07-27",
     end: "2026-07-31",
+  });
+});
+
+test("a Tuesday 1st still counts as the first week of the month", () => {
+  // September 2026 starts Tuesday the 1st. Week one is the week containing
+  // that Tuesday, so its Monday is Aug 31. Purple publishes Aug 31–Sep 4 and
+  // shoots the week before.
+  assert.deepEqual(productionWindowForDate("purple", "2026-08-26"), {
+    start: "2026-08-24",
+    end: "2026-08-28",
+  });
+  // Red publishes the second week (Sep 7) and shoots week one.
+  assert.deepEqual(productionWindowForDate("red", "2026-09-01"), {
+    start: "2026-08-31",
+    end: "2026-09-04",
+  });
+});
+
+test("a Wednesday 1st is not the first week of the month", () => {
+  // July 2026 starts Wednesday the 1st. That is not week one; wait for Monday
+  // Jul 6. Purple publishes Jul 6–10 and shoots Jun 29–Jul 3. Red shoots the
+  // week of Jul 6, so July 1 is purple's shoot week, not red's.
+  assert.deepEqual(productionWindowForDate("purple", "2026-07-01"), {
+    start: "2026-06-29",
+    end: "2026-07-03",
+  });
+  assert.notDeepEqual(productionWindowForDate("red", "2026-07-01"), {
+    start: "2026-06-29",
+    end: "2026-07-03",
+  });
+  assert.deepEqual(productionWindowForDate("red", "2026-07-06"), {
+    start: "2026-07-06",
+    end: "2026-07-10",
   });
 });
 

@@ -40,9 +40,13 @@ const CADENCE_MONTHS: Record<Exclude<ProductionCadence, "">, number> = {
   quarterly: 3,
 };
 
-// Which full week of the month each color PUBLISHES in (0-based):
-// Purple = 1st full week, Red = 2nd, Blue = 3rd, Green = 4th. Production
-// happens the week before the publish week.
+// Which week of the month each color PUBLISHES in (0-based):
+// Purple = 1st week, Red = 2nd, Blue = 3rd, Green = 4th. Production happens
+// the week before the publish week.
+//
+// "First week" is the week that contains the 1st when the month starts Monday
+// or Tuesday (Tuesday still counts; the Monday may sit in the previous month).
+// A Wednesday-or-later start is not a first week — wait for the next Monday.
 const COLOR_WEEK_INDEX: Record<Exclude<ColorWeek, "">, number> = {
   purple: 0,
   red: 1,
@@ -80,17 +84,21 @@ function addDays(d: Date, n: number): Date {
   return new Date(d.getTime() + n * MS_PER_DAY);
 }
 
-// The first Monday on or after the 1st of the month = the start of the "first
-// full week." getUTCDay: 0 = Sun ... 6 = Sat.
+// Monday that starts the first color week of the month.
+// getUTCDay: 0 = Sun ... 6 = Sat.
 function firstMondayOfMonth(year: number, monthIdx0: number): Date {
   const first = new Date(Date.UTC(year, monthIdx0, 1));
   const dow = first.getUTCDay();
-  const add = (8 - dow) % 7; // Sun->1, Mon->0, Tue->6, Wed->5, ...
+  if (dow === 1) return first;
+  // Tuesday 1st is still week one; that week's Monday is the last day of the
+  // previous month.
+  if (dow === 2) return addDays(first, -1);
+  const add = (8 - dow) % 7; // Sun->1, Wed->5, Thu->4, Fri->3, Sat->2
   return new Date(Date.UTC(year, monthIdx0, 1 + add));
 }
 
 // The production window (Mon-Fri) for a color in a given month: the week BEFORE
-// that color's publish week. Publish week = the Nth full week of the month
+// that color's publish week. Publish week = the Nth week of the month
 // (Purple 1st ... Green 4th); the shoot happens the week before.
 function productionWindowForMonth(
   year: number,
@@ -133,7 +141,8 @@ export function nextWindow(client: RevClient, today: string): Window | null {
 // outside the app, so it lands on the same cadence beat a client booking would.
 //
 // A window can start in the month before the one it belongs to (purple
-// publishes in the first full week, so it shoots the week prior), which is why
+// publishes in the first week, so it shoots the week prior; a Tuesday 1st
+// also puts that first week's Monday in the previous month), which is why
 // this checks the neighbouring months rather than just the date's own month.
 export function productionWindowForDate(
   colorWeek: ColorWeek,

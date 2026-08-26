@@ -34,7 +34,7 @@ export function durationAllowsStart(
 // Shape plus the window bounds is not enough. The window check compares strings,
 // so for a window that spans two months "2026-09-31" sorts between "2026-09-28"
 // and "2026-10-02" and passes both tests. Purple windows always span two months,
-// because purple publishes in the first full week and shoots the week before, so
+// because purple publishes in the first week and shoots the week before, so
 // this reached real accounts. A stored date of 2026-09-31 then rolls to 1 October
 // wherever it is formatted, silently moving a shoot by a day.
 export function isRealDate(ymd: string): boolean {
