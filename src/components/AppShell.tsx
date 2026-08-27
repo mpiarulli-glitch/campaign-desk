@@ -44,6 +44,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/campaigns", label: "Campaigns", icon: "mail" },
   // Admin-only: aggregates every client's approvals, outreach and economics.
   { href: "/admin/lifecycle", label: "Lifecycle", icon: "funnel" },
+  { href: "/admin/ads", label: "Ads", icon: "ads" },
   { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
   // Production is spliced in below for the people on PRODUCTION_ACCESS only, so
   // it is deliberately absent here.
@@ -79,6 +80,7 @@ const ICONS = {
   doc: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>,
   activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
   funnel: <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />,
+  ads: <><path d="M3 11v2a1 1 0 0 0 1 1h2l6 6V4L6 10H4a1 1 0 0 0-1 1z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M18.07 5.93a9 9 0 0 1 0 12.14" /></>,
   users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
   ring: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="m5.6 5.6 3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9" /></>,
   forecast: <><path d="M3 3v18h18" /><path d="m7 14 4-4 3 3 5-6" /></>,

@@ -20,6 +20,7 @@ const QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-production", title: "Production", subtitle: "Scheduler", href: "/admin/production" },
   { kind: "client", id: "nav-forecast", title: "Forecast", subtitle: "Team allocation", href: "/admin/forecast" },
   { kind: "client", id: "nav-clients", title: "Clients", subtitle: "All clients", href: "/admin/clients" },
+  { kind: "client", id: "nav-ads", title: "Ads", subtitle: "Paid media dashboard", href: "/admin/ads" },
 ];
 
 export function CommandPalette() {

@@ -63,6 +63,7 @@ function greeting(): string {
 
 const HUB_LAUNCH: { href: string; title: string; desc: string; icon: string }[] = [
   { href: "/admin/clients", title: "Clients", desc: "Accounts, health & control rooms", icon: "clients" },
+  { href: "/admin/ads", title: "Ads", desc: "Spend, landing pages & tracking", icon: "ads" },
   { href: "/admin/campaigns", title: "Campaigns", desc: "Review packages & approvals", icon: "mail" },
   { href: "/admin/calendar", title: "Calendar", desc: "What's going out and when", icon: "calendar" },
   { href: "/admin/production", title: "Production", desc: "Shoots & scheduling", icon: "video" },
@@ -76,6 +77,7 @@ const LAUNCH_ICONS: Record<string, React.ReactNode> = {
   video: <><path d="m23 7-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></>,
   chart: <><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></>,
   chat: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  ads: <><path d="M3 11v2a1 1 0 0 0 1 1h2l6 6V4L6 10H4a1 1 0 0 0-1 1z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M18.07 5.93a9 9 0 0 1 0 12.14" /></>,
 };
 function LaunchIcon({ name }: { name: string }) {
   return (

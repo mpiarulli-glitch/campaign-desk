@@ -2107,6 +2107,30 @@ export function getDb(): Database.Database {
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
     );
 
+    -- Paid-media snapshot per client. Filled in by the team; there is no
+    -- Google Ads API in this app. One row per client, created on first save.
+    CREATE TABLE IF NOT EXISTS ads_accounts (
+      client_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'unknown',
+      monthly_spend_limit REAL,
+      google_customer_id TEXT NOT NULL DEFAULT '',
+      channels TEXT NOT NULL DEFAULT '[]',
+      landing_page_url TEXT NOT NULL DEFAULT '',
+      landing_page_label TEXT NOT NULL DEFAULT '',
+      lead_magnet TEXT NOT NULL DEFAULT 'unknown',
+      lead_magnet_notes TEXT NOT NULL DEFAULT '',
+      nurture_status TEXT NOT NULL DEFAULT 'unknown',
+      nurture_notes TEXT NOT NULL DEFAULT '',
+      tracking_json TEXT NOT NULL DEFAULT '{}',
+      conversion_action TEXT NOT NULL DEFAULT '',
+      offer TEXT NOT NULL DEFAULT '',
+      last_reviewed_at TEXT,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
     -- Login accounts. The roster itself still lives in code (admin-people.ts,
     -- people.ts) because client components import it at module scope; this
     -- table owns credentials and identity only, and is seeded from those
