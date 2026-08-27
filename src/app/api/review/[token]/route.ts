@@ -22,6 +22,7 @@ import {
 import type { Campaign, ReviewChannel } from "@/lib/db";
 import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
 import { notifyClientFeedback } from "@/lib/notify";
+import { statusAfterReviewLinkView } from "@/lib/campaign-status";
 
 const ALLOWED_IMAGE_MIME = new Set([
   "image/png",
@@ -78,7 +79,9 @@ function publicCampaign(campaign: Campaign, viewer: ReviewChannel) {
   const hideFromClient = viewer === "external" && internalOnly;
   const clientSeesInReview =
     hideFromClient ||
-    (viewer === "external" && campaign.status === "internal_review");
+    (viewer === "external" &&
+      (campaign.status === "internal_review" ||
+        campaign.status === "needs_revisions_internal"));
   return {
     id: campaign.id,
     title: campaign.title,
@@ -117,8 +120,9 @@ export async function GET(_request: Request, { params }: Params) {
   const { channel } = match;
   const campaign = match.campaign;
 
-  if (campaign.status === "draft") {
-    updateCampaign(campaign.id, { status: "in_review" });
+  const next = statusAfterReviewLinkView(campaign.status, channel);
+  if (next) {
+    updateCampaign(campaign.id, { status: next as Campaign["status"] });
   }
 
   const fresh = getCampaignById(campaign.id)!;

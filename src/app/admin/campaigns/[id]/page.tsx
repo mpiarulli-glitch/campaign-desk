@@ -888,7 +888,10 @@ export default function AdminCampaignPage() {
   const openOnActive = emailComments.filter((c) => !c.resolved).length;
   const unresolvedComments = emailComments.filter((c) => !c.resolved);
   const canMarkRevisionDone =
-    status === "needs_changes" || openCount > 0 || status === "draft";
+    status === "needs_changes" ||
+    status === "needs_revisions_internal" ||
+    openCount > 0 ||
+    status === "draft";
   const isApproved = status === "approved";
   const internallyApproved =
     isApproved && campaign?.approved_channel === "internal";
@@ -1387,7 +1390,9 @@ export default function AdminCampaignPage() {
       setError("Could not mark revision done.");
       return;
     }
-    setStatus("in_review");
+    const data = await res.json().catch(() => ({}));
+    if (data.campaign?.status) setStatus(data.campaign.status);
+    else setStatus(status === "needs_revisions_internal" ? "internal_review" : "in_review");
     setMessage(
       "Revision marked done. All feedback resolved and package is ready for re-review."
     );
@@ -1875,7 +1880,11 @@ export default function AdminCampaignPage() {
                 className="btn"
                 onClick={markRevisionDone}
                 disabled={saving}
-                title={`Marks all open feedback resolved and sets status to ${operatorStatusLabel("in_review")} so the client can check the update.`}
+                title={
+                  status === "needs_revisions_internal"
+                    ? `Marks all open feedback resolved and sets status to ${operatorStatusLabel("internal_review")} so the account manager can check the update.`
+                    : `Marks all open feedback resolved and sets status to ${operatorStatusLabel("in_review")} so the client can check the update.`
+                }
               >
                 {saving ? "Saving..." : "Mark revision done"}
               </button>

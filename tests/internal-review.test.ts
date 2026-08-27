@@ -318,6 +318,16 @@ test("sending a campaign for internal review", async (t) => {
     assert.equal(deskTodo.due_date, "2026-08-25");
   });
 
+  await t.test("opening the posted internal review link does not flip to Sent for approval", async () => {
+    const { GET } = await import("../src/app/api/review/[token]/route");
+    const camp = campaigns.getCampaignById(created.id)!;
+    const req = new Request(`http://localhost/api/review/${camp.magic_token}`);
+    await GET(req, { params: Promise.resolve({ token: camp.magic_token }) });
+    const row = campaigns.getCampaignById(created.id)!;
+    assert.equal(row.status, "internal_review");
+    assert.notEqual(row.status, "in_review");
+  });
+
   await t.test("re-send stores the new Basecamp to-do URL", async () => {
     const result = await internal.sendCampaignForInternalReview({
       campaignId: created.id,

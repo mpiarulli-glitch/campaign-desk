@@ -344,6 +344,11 @@ export async function sendCampaignForInternalReview(input: {
   });
   const dueOn = parseInternalReviewDueOn(input.dueOn);
 
+  // Persist Internal Review before the Basecamp to-do is created so a link
+  // unfurl of the review URL cannot race the send and write Sent for approval.
+  const updated = applyOperatorCampaignStatus(input.campaignId, "internal_review");
+  const status = updated?.status || "internal_review";
+
   const created = await createAssignedTodo({
     projectId: client.basecamp_project_id,
     title: content.title,
@@ -382,9 +387,6 @@ export async function sendCampaignForInternalReview(input: {
       listName: "Campaign Review",
     });
   }
-
-  const updated = applyOperatorCampaignStatus(input.campaignId, "internal_review");
-  const status = updated?.status || "internal_review";
 
   return {
     ok: true,

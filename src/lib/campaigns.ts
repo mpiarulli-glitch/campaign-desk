@@ -36,6 +36,8 @@ import {
 } from "./automation-map";
 import {
   isOperatorCampaignStatus,
+  statusAfterMarkRevisionDone,
+  statusAfterReviewerComment,
   storedStatusForOperatorChoice,
   type OperatorCampaignStatus,
 } from "./campaign-status";
@@ -1065,13 +1067,14 @@ export function addComment(input: {
   );
 
   const campaign = getCampaignById(input.campaignId);
-  if (
-    campaign &&
-    (campaign.status === "in_review" ||
-      campaign.status === "internal_review" ||
-      campaign.status === "draft")
-  ) {
-    updateCampaign(input.campaignId, { status: "needs_changes" });
+  const nextStatus = campaign
+    ? statusAfterReviewerComment(
+        campaign.status,
+        input.channel || "internal"
+      )
+    : null;
+  if (nextStatus && nextStatus !== campaign?.status) {
+    updateCampaign(input.campaignId, { status: nextStatus as CampaignStatus });
   }
 
   return getDb().prepare(`SELECT * FROM comments WHERE id = ?`).get(id) as Comment;
@@ -1237,7 +1240,8 @@ export function markRevisionDone(campaignId: string): Campaign | null {
   if (!existing) return null;
 
   resolveAllComments(campaignId);
-  return updateCampaign(campaignId, { status: "in_review" });
+  const next = statusAfterMarkRevisionDone(existing.status) as CampaignStatus;
+  return updateCampaign(campaignId, { status: next });
 }
 
 /** Default delay before Michael's thank-you posts on the approval card. */

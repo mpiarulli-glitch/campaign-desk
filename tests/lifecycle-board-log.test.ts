@@ -185,6 +185,12 @@ test("board quota ticks when sent to the client, not at internal review or list 
   assert.equal(card.delivered, 0);
   assert.equal(card.campaigns.length, 0);
 
+  setStatus("needs_revisions_internal");
+  card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
+  assert.ok(card);
+  assert.equal(card.delivered, 0);
+  assert.equal(card.campaigns.length, 0);
+
   setStatus("approved", "internal");
   card = board.listBoardCards(period).find((c) => c.clientId === "cl_met");
   assert.ok(card);

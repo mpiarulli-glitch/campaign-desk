@@ -24,6 +24,7 @@ test("automation packages and welcome series do not count toward quota", () => {
 test("quota ticks at client approval, not internal review", () => {
   assert.equal(campaignReachedClient("draft"), false);
   assert.equal(campaignReachedClient("internal_review"), false);
+  assert.equal(campaignReachedClient("needs_revisions_internal"), false);
   assert.equal(campaignReachedClient("approved", "internal"), false);
   assert.equal(campaignReachedClient("in_review"), true);
   assert.equal(campaignReachedClient("needs_changes"), true);
