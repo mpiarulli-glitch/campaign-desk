@@ -7,9 +7,12 @@ import {
   internalReviewFollowupHtml,
   internalReviewMention,
   internalReviewTodoContent,
+  internalReviewTodoHtmlFromText,
+  internalReviewTodoMessageText,
   parseInternalReviewDueOn,
   pickDefaultInternalReviewer,
   teamPeopleForInternalReview,
+  withInternalReviewGreeting,
 } from "../src/lib/internal-review";
 
 test("internal review todo copy mentions the AM and only the review link", () => {
@@ -28,6 +31,52 @@ test("internal review todo copy mentions the AM and only the review link", () =>
   assert.match(content.description, /https:\/\/desk\.example\/review\/internal-token/);
   assert.match(content.description, /CC: @Sylvia/);
   assert.doesNotMatch(content.description, /Open in Campaign Desk/);
+});
+
+test("internal review note starts from a plaintext template the sender can edit", () => {
+  const text = internalReviewTodoMessageText({
+    reviewerName: "Cassidy Merideth",
+    reviewUrl: "https://desk.example/review/internal-token",
+  });
+  assert.match(text, /^@Cassidy, please review this campaign internally/);
+  assert.match(text, /Internal review link:\nhttps:\/\/desk\.example\/review\/internal-token/);
+  assert.match(text, /CC: @Sylvia/);
+  assert.equal(
+    withInternalReviewGreeting(text.replace(/^@Cassidy,/, "Hey,"), "Kyle Morris"),
+    text.replace(/^@Cassidy,/, "@Kyle,")
+  );
+});
+
+test("edited internal review note keeps extras, links, and mentions", () => {
+  const html = internalReviewTodoHtmlFromText(
+    `@Cassidy, please also check the SMS copy.
+
+Internal review link:
+https://desk.example/review/internal-token
+
+<script>alert(1)</script>
+
+CC: @Sylvia`,
+    '<bc-attachment sgid="sgid-cassidy"></bc-attachment>',
+    '<bc-attachment sgid="sgid-sylvia"></bc-attachment>'
+  );
+  assert.match(html, /<bc-attachment sgid="sgid-cassidy"><\/bc-attachment>, please also check the SMS copy/);
+  assert.doesNotMatch(html, /@Cassidy,/);
+  assert.match(html, /<a href="https:\/\/desk\.example\/review\/internal-token">Internal review link<\/a>/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /CC: <bc-attachment sgid="sgid-sylvia"><\/bc-attachment>/);
+  assert.equal(html.match(/CC:/g)?.length, 1);
+});
+
+test("edited internal review note still mentions the reviewer if the greeting was removed", () => {
+  const html = internalReviewTodoHtmlFromText(
+    "One extra note about the footer links.",
+    '<bc-attachment sgid="sgid-cassidy"></bc-attachment>'
+  );
+  assert.match(html, /^<p><bc-attachment sgid="sgid-cassidy"><\/bc-attachment>, /);
+  assert.match(html, /One extra note about the footer links/);
+  assert.match(html, /CC: @Sylvia/);
 });
 
 test("internal review CC uses the Basecamp attachment when Sylvia is resolved", () => {
@@ -215,6 +264,8 @@ test("sending a campaign for internal review", async (t) => {
     assert.ok(state);
     assert.equal(state.todoUrl, null);
     assert.equal(state.todoId, null);
+    assert.match(state.message, /@Cassidy, please review this campaign internally/);
+    assert.match(state.message, /Internal review link:/);
   });
 
   await t.test("creates an assigned Basecamp to-do and sets Internal review", async () => {
@@ -310,6 +361,25 @@ test("sending a campaign for internal review", async (t) => {
     if (!result.ok) return;
     assert.equal(result.recipient, "Cassidy Merideth");
   });
+
+  await t.test("edited note becomes the Basecamp to-do description", async () => {
+    const result = await internal.sendCampaignForInternalReview({
+      campaignId: created.id,
+      reviewerId: 2,
+      message: `@Cassidy, please also check the SMS copy.
+
+Internal review link:
+https://desk.example/review/custom`,
+    });
+    assert.equal(result.ok, true);
+    assert.match(lastTodo?.description || "", /please also check the SMS copy/);
+    assert.match(lastTodo?.description || "", /bc-attachment sgid="sgid-cassidy"/);
+    assert.match(lastTodo?.description || "", /https:\/\/desk\.example\/review\/custom/);
+    assert.doesNotMatch(
+      lastTodo?.description || "",
+      /please review this campaign internally before it goes to the client/
+    );
+  });
 });
 
 test("campaign detail shows a Basecamp to-do link after internal review", () => {
@@ -325,6 +395,9 @@ test("campaign detail shows a Basecamp to-do link after internal review", () => 
   assert.match(panel, /Open to-do/);
   assert.match(panel, /Follow-up with/);
   assert.match(panel, /internalReview\?\.todoUrl/);
+  assert.match(panel, /To-do note/);
+  assert.match(panel, /internal-review-message/);
+  assert.match(panel, /internalReviewMessage/);
   assert.match(panel, /target="_blank"/);
   assert.doesNotMatch(panel, /forecastUrl/);
   assert.match(page, /data\.todoUrl/);

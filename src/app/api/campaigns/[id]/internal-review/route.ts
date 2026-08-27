@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated, sessionUserSlug } from "@/lib/auth";
 import { asPerson, hasConnection, SERVICE } from "@/lib/basecamp";
 import {
+  INTERNAL_REVIEW_MESSAGE_MAX_CHARS,
   internalReviewState,
   sendCampaignForInternalReview,
 } from "@/lib/internal-review";
@@ -41,6 +42,18 @@ export async function POST(request: Request, { params }: Params) {
       ? body.dueOn.trim()
       : null;
 
+  let message: string | null = null;
+  if (typeof body.message === "string") {
+    const trimmed = body.message.replace(/\r\n/g, "\n").trim();
+    if (trimmed.length > INTERNAL_REVIEW_MESSAGE_MAX_CHARS) {
+      return NextResponse.json(
+        { error: "That review note is too long to send." },
+        { status: 400 }
+      );
+    }
+    message = trimmed || null;
+  }
+
   const sender = await sessionUserSlug();
   const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
   const result = await sendCampaignForInternalReview({
@@ -48,6 +61,7 @@ export async function POST(request: Request, { params }: Params) {
     reviewerId,
     dueOn,
     identity,
+    message,
   });
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });

@@ -231,6 +231,7 @@ type InternalReviewState = {
   assigneeSlug: string | null;
   assigneeName: string | null;
   dueDate: string | null;
+  message: string;
 };
 
 function firstNameOf(name: string): string {
@@ -247,6 +248,18 @@ function withApprovalGreeting(text: string, fullName: string): string {
 
 function withoutApprovalGreeting(text: string): string {
   return text.replace(/^Hi\s+[^,\n]+,\s*/, "");
+}
+
+function withInternalReviewGreeting(text: string, fullName: string): string {
+  if (!text || !fullName.trim()) return text;
+  const first = firstNameOf(fullName);
+  if (/^Hey,/.test(text)) return text.replace(/^Hey,/, `@${first},`);
+  if (/^@[^\s,]+,/.test(text)) return text.replace(/^@[^\s,]+,/, `@${first},`);
+  return text;
+}
+
+function withoutInternalReviewGreeting(text: string): string {
+  return text.replace(/^(@[^\s,]+|Hey),\s*/, "");
 }
 
 function pacificDateTimeParts(at = new Date()) {
@@ -362,6 +375,7 @@ export default function AdminCampaignPage() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
+  const [internalReviewMessage, setInternalReviewMessage] = useState("");
   const [sendingInternalReview, setSendingInternalReview] = useState(false);
   const [sendingInternalFollowup, setSendingInternalFollowup] = useState(false);
   const [schedulePromptOpen, setSchedulePromptOpen] = useState(false);
@@ -472,6 +486,9 @@ export default function AdminCampaignPage() {
     setInternalReviewerId((current) =>
       current === "" ? (data.defaultReviewerId ?? "") : current
     );
+    setInternalReviewMessage((current) =>
+      current ? current : data.message || ""
+    );
   }
 
   async function matchBasecampProject() {
@@ -507,6 +524,16 @@ export default function AdminCampaignPage() {
     if (!name) return;
     setApprovalMessage((current) => withApprovalGreeting(current, name));
   }, [approvalRecipientId, basecampApproval?.people]);
+
+  useEffect(() => {
+    const name =
+      internalReview?.people.find((person) => person.id === internalReviewerId)
+        ?.name || "";
+    if (!name) return;
+    setInternalReviewMessage((current) =>
+      withInternalReviewGreeting(current, name)
+    );
+  }, [internalReviewerId, internalReview?.people]);
 
   const [revClients, setRevClients] = useState<{ id: string; name: string }[]>([]);
   const [clientQuery, setClientQuery] = useState("");
@@ -960,6 +987,7 @@ export default function AdminCampaignPage() {
       body: JSON.stringify({
         reviewerId: internalReviewerId,
         dueOn: internalReviewDueOn,
+        message: internalReviewMessage,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -2005,6 +2033,42 @@ export default function AdminCampaignPage() {
                     onChange={(e) => setInternalReviewDueOn(e.target.value)}
                   />
                 </div>
+              </div>
+              <div className="field">
+                <div className="bc-label-row">
+                  <label htmlFor="internal-review-message">To-do note</label>
+                  {internalReview?.message &&
+                  withoutInternalReviewGreeting(internalReviewMessage) !==
+                    withoutInternalReviewGreeting(internalReview.message) ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        const name =
+                          internalReview.people.find(
+                            (person) => person.id === internalReviewerId
+                          )?.name || "";
+                        setInternalReviewMessage(
+                          withInternalReviewGreeting(internalReview.message, name)
+                        );
+                      }}
+                    >
+                      Restore template
+                    </button>
+                  ) : null}
+                </div>
+                <textarea
+                  id="internal-review-message"
+                  className="bc-message"
+                  value={internalReviewMessage}
+                  onChange={(e) => setInternalReviewMessage(e.target.value)}
+                  rows={8}
+                  disabled={sendingInternalReview}
+                />
+                <span className="field-hint">
+                  Starts from the usual template. Add a note, change a line, or
+                  leave it as-is. This is what goes on the Basecamp to-do.
+                </span>
               </div>
               <p className="field-hint" style={{ margin: 0 }}>
                 {internalReview?.deskTodoId || internalReview?.todoUrl

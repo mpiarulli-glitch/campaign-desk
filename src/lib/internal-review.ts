@@ -21,7 +21,7 @@ import { adminCampaignUrl, reviewUrl } from "./auth";
 import { getDb } from "./db";
 import { basecampNameForManager } from "./people";
 import { slugForName, teamLabel } from "./team";
-import { sylviaCcHtml } from "./review-cc";
+import { stripSylviaCcLines, SYLVIA_CC_TEXT, sylviaCcHtml } from "./review-cc";
 
 export type InternalReviewPerson = {
   id: number;
@@ -32,6 +32,9 @@ export type InternalReviewPerson = {
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const INTERNAL_REVIEW_MESSAGE_MAX_CHARS = 12_000;
+const MENTION_TOKEN = "__IR_MENTION__";
+const GREETING_RE = /^(@[^\s,]+|Hey),/;
 
 export function parseInternalReviewDueOn(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -61,6 +64,112 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function linkifyEscaped(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<]+/g, (url) => {
+    const trail = url.match(/[),.;!?]+$/);
+    const href = trail ? url.slice(0, -trail[0].length) : url;
+    const after = trail ? trail[0] : "";
+    return `<a href="${href}">${href}</a>${after}`;
+  });
+}
+
+function reviewLinkHtml(block: string): string | null {
+  const lines = block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const text = lines.join(" ");
+  const match = text.match(/^Internal review link:\s*(https?:\/\/\S+)$/i);
+  if (!match) return null;
+  const raw = match[1];
+  const trail = raw.match(/[),.;!?]+$/);
+  const href = trail ? raw.slice(0, -trail[0].length) : raw;
+  return `<ul><li><a href="${escapeHtml(href)}">Internal review link</a></li></ul>`;
+}
+
+function blocksToHtml(text: string): string {
+  const blocks = text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const reviewLink = reviewLinkHtml(block);
+      if (reviewLink) return reviewLink;
+      const lines = block
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const allBullets =
+        lines.length > 0 && lines.every((line) => /^[•\-*]\s+/.test(line));
+      if (allBullets) {
+        const items = lines
+          .map((line) => line.replace(/^[•\-*]\s+/, ""))
+          .map((line) => `<li>${linkifyEscaped(escapeHtml(line))}</li>`)
+          .join("");
+        return `<ul>${items}</ul>`;
+      }
+      return `<p>${linkifyEscaped(escapeHtml(block.trim())).replace(/\n/g, "<br>")}</p>`;
+    })
+    .join("");
+}
+
+export function internalReviewTodoMessageText(input: {
+  reviewerName?: string;
+  reviewUrl: string;
+}): string {
+  const first = firstNameOf(input.reviewerName || "");
+  const greeting = first ? `@${first}` : "Hey";
+  return [
+    `${greeting}, please review this campaign internally before it goes to the client.`,
+    "",
+    "Internal review link:",
+    input.reviewUrl,
+    "",
+    SYLVIA_CC_TEXT,
+  ].join("\n");
+}
+
+export function withInternalReviewGreeting(text: string, fullName: string): string {
+  if (!text || !fullName.trim()) return text;
+  const first = firstNameOf(fullName);
+  if (!first) return text;
+  if (/^Hey,/.test(text)) return text.replace(/^Hey,/, `@${first},`);
+  if (/^@[^\s,]+,/.test(text)) return text.replace(/^@[^\s,]+,/, `@${first},`);
+  return text;
+}
+
+export function withoutInternalReviewGreeting(text: string): string {
+  return text.replace(/^(@[^\s,]+|Hey),\s*/, "");
+}
+
+// Turns the editable plaintext into Basecamp HTML. The leading @Name (or Hey)
+// becomes a real mention when we have one, even if they rewrote the greeting —
+// assigning the to-do does not notify them.
+export function internalReviewTodoHtmlFromText(
+  text: string,
+  mention?: string,
+  cc?: string
+): string {
+  const trimmed = stripSylviaCcLines((text || "").replace(/\r\n/g, "\n"));
+  const ping = (mention || "").trim();
+  const match = trimmed.match(GREETING_RE);
+  const rendered = ping || (match ? escapeHtml(match[1]) : "Hey");
+
+  let body = trimmed;
+  if (!body) {
+    body = `${MENTION_TOKEN}, please review this campaign internally before it goes to the client.`;
+  } else if (match) {
+    body = body.replace(/^(@[^\s,]+|Hey)/, MENTION_TOKEN);
+  } else if (ping) {
+    body = `${MENTION_TOKEN}, ${body}`;
+  } else {
+    return blocksToHtml(body) + sylviaCcHtml(cc);
+  }
+
+  return (
+    blocksToHtml(body).replace(new RegExp(MENTION_TOKEN, "g"), () => rendered) +
+    sylviaCcHtml(cc)
+  );
 }
 
 export function teamPeopleForInternalReview(
@@ -119,18 +228,15 @@ export function internalReviewTodoContent(input: {
   mention: string;
   reviewUrl: string;
   cc?: string;
+  message?: string;
 }): { title: string; description: string } {
   const who = input.clientName.trim() ? `${input.clientName.trim()}: ` : "";
-  const greeting = input.mention || "Hey";
+  const text =
+    (input.message || "").trim() ||
+    internalReviewTodoMessageText({ reviewUrl: input.reviewUrl });
   return {
     title: `Review ${who}${input.campaignTitle}`.slice(0, 999),
-    description: [
-      `<p>${greeting}, please review this campaign internally before it goes to the client.</p>`,
-      `<ul>`,
-      `<li><a href="${escapeHtml(input.reviewUrl)}">Internal review link</a></li>`,
-      `</ul>`,
-      sylviaCcHtml(input.cc),
-    ].join(""),
+    description: internalReviewTodoHtmlFromText(text, input.mention, input.cc),
   };
 }
 
@@ -167,6 +273,7 @@ export async function sendCampaignForInternalReview(input: {
   reviewerId: number;
   dueOn?: string | null;
   identity?: BcIdentity;
+  message?: string | null;
 }): Promise<
   | {
       ok: true;
@@ -233,6 +340,7 @@ export async function sendCampaignForInternalReview(input: {
     ),
     reviewUrl: reviewUrl(campaign.magic_token),
     cc: await resolveSylviaMention(roster, identity),
+    message: (input.message || "").replace(/\r\n/g, "\n").trim() || undefined,
   });
   const dueOn = parseInternalReviewDueOn(input.dueOn);
 
@@ -304,6 +412,7 @@ export async function internalReviewState(campaignId: string): Promise<
       assigneeSlug: string | null;
       assigneeName: string | null;
       dueDate: string | null;
+      message: string;
     }
   | null
 > {
@@ -383,6 +492,10 @@ export async function internalReviewState(campaignId: string): Promise<
     assigneeSlug,
     assigneeName: assigneeSlug ? teamLabel(assigneeSlug) : sentReviewer?.name || null,
     dueDate: desk?.due_date || null,
+    message: internalReviewTodoMessageText({
+      reviewerName: defaultReviewer?.name || "",
+      reviewUrl: reviewUrl(campaign.magic_token),
+    }),
   };
 }
 
