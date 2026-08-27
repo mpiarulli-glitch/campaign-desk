@@ -4,6 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  adsBoardLane,
+  adsDashboardCounts,
+  adsPassSummary,
+  canMarkReviewedOnRow,
+  compareAdsRows,
   computeGaps,
   cycleTracking,
   effectiveNurture,
@@ -15,6 +20,9 @@ import {
   looksLikeNurture,
   parseChannels,
   parseTracking,
+  reviewSignal,
+  reviewSignalLabel,
+  sortAdsRows,
   trackingPlan,
   trackingScore,
 } from "../src/lib/ads";
@@ -63,13 +71,97 @@ test("active ads without a landing page, budget, or conversion tag are blocked",
   const keys = gaps.map((g) => g.key);
   assert.ok(keys.includes("no_budget"));
   assert.ok(keys.includes("no_landing"));
-  assert.ok(keys.includes("track_gtm"));
-  assert.ok(keys.includes("track_google_ads_tag"));
+  assert.ok(keys.includes("track_required"));
   assert.ok(keys.includes("magnet_unknown"));
   assert.ok(keys.includes("nurture_unknown"));
   assert.ok(keys.includes("never_reviewed"));
   assert.equal(gaps.find((g) => g.key === "no_landing")?.severity, "block");
+  assert.equal(gaps.find((g) => g.key === "track_required")?.severity, "block");
   assert.equal(gaps.find((g) => g.key === "nurture_unknown")?.severity, "watch");
+  assert.equal(adsBoardLane(gaps), "block");
+  assert.match(gaps.find((g) => g.key === "track_required")?.label ?? "", /GTM/);
+  // Blocking chips come first so the weekly board isn't a wall of tracking rows.
+  assert.ok(keys.indexOf("no_landing") < keys.indexOf("never_reviewed"));
+});
+
+test("unknown accounts without a PPC strategy still show as not filled in", () => {
+  const gaps = computeGaps({
+    status: "unknown",
+    monthlySpendLimit: null,
+    channels: [],
+    landingPageUrl: "",
+    leadMagnet: "unknown",
+    nurtureStatus: "unknown",
+    tracking: emptyTracking(),
+    conversionAction: "",
+    lastReviewedAt: null,
+    hasPpcInStrategy: false,
+  });
+  assert.deepEqual(
+    gaps.map((g) => g.key),
+    ["not_filled"]
+  );
+  assert.equal(canMarkReviewedOnRow(gaps), false);
+});
+
+test("the weekly board sorts blocking above watch, then never-reviewed above alphabetical", () => {
+  const now = Date.parse("2026-08-27T12:00:00.000Z");
+  const blocking = {
+    name: "Zebra Ads",
+    lastReviewedAt: "2026-08-20T12:00:00.000Z",
+    gaps: [
+      { key: "no_landing", label: "No landing page", severity: "block" as const },
+      { key: "no_budget", label: "No spend limit", severity: "block" as const },
+    ],
+  };
+  const never = {
+    name: "Acme",
+    lastReviewedAt: null,
+    gaps: [{ key: "never_reviewed", label: "Never reviewed", severity: "watch" as const }],
+  };
+  const stale = {
+    name: "Beta Co",
+    lastReviewedAt: "2026-07-01T12:00:00.000Z",
+    gaps: [{ key: "stale_review", label: "Review 57d ago", severity: "watch" as const }],
+  };
+  const clear = {
+    name: "Aardvark",
+    lastReviewedAt: "2026-08-20T12:00:00.000Z",
+    gaps: [] as Array<{ key: string; label: string; severity: "block" | "watch" }>,
+  };
+  const sorted = sortAdsRows([clear, stale, never, blocking], now);
+  assert.deepEqual(
+    sorted.map((r) => r.name),
+    ["Zebra Ads", "Acme", "Beta Co", "Aardvark"]
+  );
+  assert.ok(compareAdsRows(blocking, never, now) < 0);
+  assert.equal(reviewSignal(null, now).kind, "never");
+  assert.equal(reviewSignal("2026-07-01T12:00:00.000Z", now).kind, "stale");
+  assert.equal(reviewSignalLabel(reviewSignal("2026-08-27T12:00:00.000Z", now)), "Reviewed today");
+  assert.equal(canMarkReviewedOnRow(never.gaps), true);
+  assert.equal(canMarkReviewedOnRow(blocking.gaps), false);
+  assert.equal(
+    adsPassSummary({
+      total: 4,
+      active: 2,
+      paused: 0,
+      off: 1,
+      unknown: 1,
+      attention: 3,
+      blocking: 1,
+      watch: 2,
+      ready: 1,
+    }),
+    "3 accounts need you · 1 blocking · 2 to watch"
+  );
+  assert.equal(
+    adsDashboardCounts([
+      { status: "active", gaps: blocking.gaps, ready: false },
+      { status: "active", gaps: never.gaps, ready: true },
+      { status: "off", gaps: [], ready: false },
+    ]).blocking,
+    1
+  );
 });
 
 test("ads off do not raise tracking gaps, but a PPC strategy still flags them", () => {
@@ -173,11 +265,16 @@ test("dashboard lists every active client and upserts a snapshot", async (t) => 
   assert.equal(empty.rows.length, 2);
   assert.ok(empty.rows.every((r) => r.clientId !== "cl_old"));
   const acme = empty.rows.find((r) => r.clientId === "cl_acme")!;
+  const quiet = empty.rows.find((r) => r.clientId === "cl_quiet")!;
   assert.equal(acme.status, "unknown");
   assert.equal(acme.nurtureStatus, "live");
   assert.equal(acme.nurtureSource, "detected");
   assert.equal(acme.nurtureDetectedLabel, "Lead nurture");
   assert.ok(acme.gaps.some((g) => g.key === "unset"));
+  assert.ok(quiet.gaps.some((g) => g.key === "not_filled"));
+  assert.equal(empty.counts.attention, 2);
+  assert.equal(empty.counts.watch, 2);
+  assert.equal(empty.counts.blocking, 0);
 
   const saved = ads.upsertAdsAccount("cl_acme", {
     status: "active",
@@ -212,6 +309,9 @@ test("dashboard lists every active client and upserts a snapshot", async (t) => 
   assert.equal(paused?.monthlySpendLimit, null);
   assert.ok(paused?.gaps.some((g) => g.key === "paused"));
   assert.ok(paused?.gaps.some((g) => g.key === "no_budget"));
+  const afterPause = ads.buildAdsDashboard();
+  assert.equal(afterPause.rows[0]?.clientId, "cl_acme");
+  assert.equal(afterPause.counts.blocking, 1);
 
   assert.equal(ads.upsertAdsAccount("missing", { status: "off" }), null);
   assert.deepEqual(ads.parseAdsPatch({ status: "running" }), { error: "Invalid ads status" });

@@ -52,14 +52,14 @@ export const TRACKING_STATES = ["unknown", "yes", "no"] as const;
 export type TrackingState = (typeof TRACKING_STATES)[number];
 
 export const TRACKING_ITEMS = [
-  { key: "gtm", label: "Google Tag Manager" },
-  { key: "ga4", label: "GA4" },
-  { key: "google_ads_tag", label: "Google Ads conversion" },
-  { key: "enhanced_conversions", label: "Enhanced conversions" },
-  { key: "call_tracking", label: "Call tracking" },
-  { key: "form_tracking", label: "Form / CRM tracking" },
-  { key: "thank_you_page", label: "Thank-you page" },
-  { key: "meta_pixel", label: "Meta Pixel" },
+  { key: "gtm", label: "Google Tag Manager", short: "GTM" },
+  { key: "ga4", label: "GA4", short: "GA4" },
+  { key: "google_ads_tag", label: "Google Ads conversion", short: "Ads tag" },
+  { key: "enhanced_conversions", label: "Enhanced conversions", short: "Enhanced" },
+  { key: "call_tracking", label: "Call tracking", short: "Calls" },
+  { key: "form_tracking", label: "Form / CRM tracking", short: "Forms" },
+  { key: "thank_you_page", label: "Thank-you page", short: "Thank-you" },
+  { key: "meta_pixel", label: "Meta Pixel", short: "Pixel" },
 ] as const;
 
 export type TrackingKey = (typeof TRACKING_ITEMS)[number]["key"];
@@ -129,6 +129,12 @@ export function leadMagnetLabel(magnet: LeadMagnet): string {
 
 export function nurtureStatusLabel(status: NurtureStatus): string {
   return NURTURE_STATUSES.find((n) => n.value === status)?.label ?? status;
+}
+
+export function trackingItemLabel(key: TrackingKey, compact = false): string {
+  const item = TRACKING_ITEMS.find((t) => t.key === key);
+  if (!item) return key;
+  return compact ? item.short : item.label;
 }
 
 export function emptyTracking(): TrackingMap {
@@ -258,14 +264,52 @@ function isRunning(status: AdsStatus): boolean {
   return status === "active" || status === "paused";
 }
 
+function missingTrackingLabel(keys: TrackingKey[]): string {
+  const names = keys.map((key) => trackingItemLabel(key, true));
+  if (names.length === 1) return `${names[0]} missing`;
+  if (names.length === 2) return `${names[0]} & ${names[1]} missing`;
+  return `${names[0]}, ${names[1]} +${names.length - 2} missing`;
+}
+
+const GAP_SORT = [
+  "no_landing",
+  "no_budget",
+  "no_channels",
+  "track_required",
+  "unset",
+  "not_filled",
+  "never_reviewed",
+  "stale_review",
+  "magnet_unknown",
+  "no_magnet",
+  "nurture_unknown",
+  "no_nurture",
+  "nurture_draft",
+  "no_conversion",
+  "track_recommended",
+  "paused",
+  "ppc_off",
+];
+
+function sortGaps(gaps: AdsGap[]): AdsGap[] {
+  return [...gaps].sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === "block" ? -1 : 1;
+    const ia = GAP_SORT.indexOf(a.key);
+    const ib = GAP_SORT.indexOf(b.key);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+}
+
 export function computeGaps(input: AdsGapInput): AdsGap[] {
   const gaps: AdsGap[] = [];
   const running = isRunning(input.status);
 
-  if (input.status === "unknown" && input.hasPpcInStrategy) {
+  if (input.status === "unknown") {
     gaps.push({
-      key: "unset",
-      label: "Paid ads on strategy, status not filled in",
+      key: input.hasPpcInStrategy ? "unset" : "not_filled",
+      label: input.hasPpcInStrategy
+        ? "Status not filled in · PPC on strategy"
+        : "Not filled in",
       severity: "watch",
     });
   }
@@ -323,25 +367,21 @@ export function computeGaps(input: AdsGapInput): AdsGap[] {
     }
 
     const plan = trackingPlan(input.channels);
-    for (const key of plan.required) {
-      if (input.tracking[key] !== "yes") {
-        const item = TRACKING_ITEMS.find((t) => t.key === key);
-        gaps.push({
-          key: `track_${key}`,
-          label: `${item?.label ?? key} missing`,
-          severity: "block",
-        });
-      }
+    const missingRequired = plan.required.filter((key) => input.tracking[key] !== "yes");
+    if (missingRequired.length) {
+      gaps.push({
+        key: "track_required",
+        label: missingTrackingLabel(missingRequired),
+        severity: "block",
+      });
     }
-    for (const key of plan.recommended) {
-      if (input.tracking[key] !== "yes") {
-        const item = TRACKING_ITEMS.find((t) => t.key === key);
-        gaps.push({
-          key: `track_${key}`,
-          label: `${item?.label ?? key} missing`,
-          severity: "watch",
-        });
-      }
+    const missingRecommended = plan.recommended.filter((key) => input.tracking[key] !== "yes");
+    if (missingRecommended.length) {
+      gaps.push({
+        key: "track_recommended",
+        label: missingTrackingLabel(missingRecommended),
+        severity: "watch",
+      });
     }
 
     const now = input.nowMs ?? Date.now();
@@ -362,7 +402,7 @@ export function computeGaps(input: AdsGapInput): AdsGap[] {
     }
   }
 
-  return gaps;
+  return sortGaps(gaps);
 }
 
 export function isFunnelReady(input: {
@@ -375,6 +415,154 @@ export function isFunnelReady(input: {
   if (input.leadMagnet === "unknown" || input.leadMagnet === "none") return false;
   if (input.nurtureStatus !== "live") return false;
   return input.gaps.every((g) => g.severity !== "block");
+}
+
+export type AdsBoardLane = "block" | "watch" | "ok";
+
+export function adsBoardLane(gaps: AdsGap[]): AdsBoardLane {
+  if (gaps.some((g) => g.severity === "block")) return "block";
+  if (gaps.length > 0) return "watch";
+  return "ok";
+}
+
+export function adsGapCounts(gaps: AdsGap[]): { block: number; watch: number } {
+  let block = 0;
+  let watch = 0;
+  for (const gap of gaps) {
+    if (gap.severity === "block") block += 1;
+    else watch += 1;
+  }
+  return { block, watch };
+}
+
+const FILL_KEYS = new Set(["never_reviewed", "not_filled", "unset"]);
+const REVIEW_ONLY_KEYS = new Set(["never_reviewed", "stale_review", "paused", "track_recommended"]);
+
+function fillPriority(gaps: AdsGap[]): number {
+  const keys = new Set(gaps.map((g) => g.key));
+  if ([...FILL_KEYS].some((key) => keys.has(key))) return 0;
+  if (keys.has("stale_review")) return 1;
+  return 2;
+}
+
+export function reviewAgeDays(lastReviewedAt: string | null, nowMs = Date.now()): number | null {
+  if (!lastReviewedAt) return null;
+  const ms = Date.parse(lastReviewedAt);
+  if (!Number.isFinite(ms)) return null;
+  return Math.floor((nowMs - ms) / 86_400_000);
+}
+
+export type ReviewSignal =
+  | { kind: "never" }
+  | { kind: "stale"; days: number }
+  | { kind: "ok"; days: number };
+
+export function reviewSignal(lastReviewedAt: string | null, nowMs = Date.now()): ReviewSignal {
+  const days = reviewAgeDays(lastReviewedAt, nowMs);
+  if (days == null) return { kind: "never" };
+  if (days >= REVIEW_STALE_DAYS) return { kind: "stale", days };
+  return { kind: "ok", days };
+}
+
+export function reviewSignalLabel(signal: ReviewSignal): string {
+  if (signal.kind === "never") return "Never reviewed";
+  if (signal.days === 0) return "Reviewed today";
+  if (signal.days === 1) return "Reviewed yesterday";
+  return `Reviewed ${signal.days}d ago`;
+}
+
+/** Row is set up enough that the weekly pass is a check-in, not a fill-in. */
+export function canMarkReviewedOnRow(gaps: AdsGap[]): boolean {
+  if (gaps.some((g) => g.severity === "block")) return false;
+  return gaps.every((g) => REVIEW_ONLY_KEYS.has(g.key));
+}
+
+export interface AdsSortable {
+  name: string;
+  gaps: AdsGap[];
+  lastReviewedAt: string | null;
+}
+
+export function compareAdsRows(a: AdsSortable, b: AdsSortable, nowMs = Date.now()): number {
+  const laneOrder: Record<AdsBoardLane, number> = { block: 0, watch: 1, ok: 2 };
+  const la = adsBoardLane(a.gaps);
+  const lb = adsBoardLane(b.gaps);
+  if (la !== lb) return laneOrder[la] - laneOrder[lb];
+
+  const ca = adsGapCounts(a.gaps);
+  const cb = adsGapCounts(b.gaps);
+  if (ca.block !== cb.block) return cb.block - ca.block;
+  if (ca.watch !== cb.watch) return cb.watch - ca.watch;
+
+  const fa = fillPriority(a.gaps);
+  const fb = fillPriority(b.gaps);
+  if (fa !== fb) return fa - fb;
+
+  const ageA = reviewAgeDays(a.lastReviewedAt, nowMs);
+  const ageB = reviewAgeDays(b.lastReviewedAt, nowMs);
+  const rankA = ageA == null ? Number.POSITIVE_INFINITY : ageA;
+  const rankB = ageB == null ? Number.POSITIVE_INFINITY : ageB;
+  if (rankA !== rankB) return rankB - rankA;
+
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+export function sortAdsRows<T extends AdsSortable>(rows: T[], nowMs = Date.now()): T[] {
+  return [...rows].sort((a, b) => compareAdsRows(a, b, nowMs));
+}
+
+export function adsDashboardCounts(rows: Array<{
+  status: AdsStatus;
+  gaps: AdsGap[];
+  ready: boolean;
+}>): AdsDashboard["counts"] {
+  let active = 0;
+  let paused = 0;
+  let off = 0;
+  let unknown = 0;
+  let attention = 0;
+  let blocking = 0;
+  let watch = 0;
+  let ready = 0;
+  for (const row of rows) {
+    if (row.status === "active") active += 1;
+    else if (row.status === "paused") paused += 1;
+    else if (row.status === "off") off += 1;
+    else unknown += 1;
+    if (row.gaps.length > 0) attention += 1;
+    const lane = adsBoardLane(row.gaps);
+    if (lane === "block") blocking += 1;
+    else if (lane === "watch") watch += 1;
+    if (row.ready) ready += 1;
+  }
+  return {
+    total: rows.length,
+    active,
+    paused,
+    off,
+    unknown,
+    attention,
+    blocking,
+    watch,
+    ready,
+  };
+}
+
+export function adsPassSummary(counts: AdsDashboard["counts"]): string {
+  if (counts.attention === 0) {
+    return counts.ready
+      ? `Nothing needs you this week. ${counts.ready} funnel-ready.`
+      : "Nothing needs you this week.";
+  }
+  const noun = counts.attention === 1 ? "account needs you" : "accounts need you";
+  const parts = [`${counts.attention} ${noun}`];
+  if (counts.blocking) {
+    parts.push(`${counts.blocking} blocking`);
+  }
+  if (counts.watch) {
+    parts.push(`${counts.watch} to watch`);
+  }
+  return parts.join(" · ");
 }
 
 export function formatSpend(limit: number | null): string {
@@ -460,6 +648,8 @@ export interface AdsDashboard {
     off: number;
     unknown: number;
     attention: number;
+    blocking: number;
+    watch: number;
     ready: number;
   };
   rows: AdsClientRow[];

@@ -7,6 +7,7 @@ import { getDb, nowIso } from "./db";
 import { listRevClients, logoUrlFor } from "./revenue";
 import {
   ADS_CHANNELS,
+  adsDashboardCounts,
   computeGaps,
   effectiveNurture,
   isAdsStatus,
@@ -17,6 +18,7 @@ import {
   looksLikeNurture,
   parseChannels,
   parseTracking,
+  sortAdsRows,
   trackingScore,
   type AdsChannel,
   type AdsClientRow,
@@ -229,19 +231,10 @@ function context() {
 
 export function buildAdsDashboard(): AdsDashboard {
   const { accounts, ppc, detected } = context();
-  const rows = listRevClients(false).map((c) =>
-    rowFrom(c, accounts.get(c.id) ?? null, ppc, detected)
+  const rows = sortAdsRows(
+    listRevClients(false).map((c) => rowFrom(c, accounts.get(c.id) ?? null, ppc, detected))
   );
-  const counts = {
-    total: rows.length,
-    active: rows.filter((r) => r.status === "active").length,
-    paused: rows.filter((r) => r.status === "paused").length,
-    off: rows.filter((r) => r.status === "off").length,
-    unknown: rows.filter((r) => r.status === "unknown").length,
-    attention: rows.filter((r) => r.gaps.length > 0).length,
-    ready: rows.filter((r) => r.ready).length,
-  };
-  return { counts, rows };
+  return { counts: adsDashboardCounts(rows), rows };
 }
 
 export function buildAdsRow(clientId: string): AdsClientRow | null {
