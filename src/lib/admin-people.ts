@@ -5,6 +5,7 @@ export const ADMIN_PEOPLE = [
   { slug: "carlos", label: "Carlos" },
   { slug: "kyle_morris", label: "Kyle Morris" },
   { slug: "luis_romero", label: "Luis Romero" },
+  { slug: "jerald", label: "Jerald" },
 ] as const;
 
 export function isValidAdminPerson(slug: string): boolean {

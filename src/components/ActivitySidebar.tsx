@@ -3,60 +3,21 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { approvalActivityParts } from "@/lib/activity-copy";
+import {
+  ACTIVITY_HIDDEN_IDS_KEY,
+  ACTIVITY_READ_IDS_KEY,
+  activityItemKey,
+  loadActivityIdSet,
+  onActivityReadChange,
+  relativeActivityTime,
+  saveActivityIdSet,
+  type ActivityFeedItem,
+} from "@/lib/activity-read";
 
-type ActivityItem = {
-  kind: "feedback" | "approved";
-  id: string;
-  campaign_id: string;
-  campaign_title: string;
-  client_name: string;
-  actor: string | null;
-  body: string | null;
-  comment_type: "general" | "inline" | null;
-  email_title: string | null;
-  resolved: number | null;
-  star_rating: number | null;
-  attachment_count: number;
-  approved_channel?: string | null;
-  at: string;
-};
-
-function relativeTime(iso: string): string {
-  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-const READ_IDS_KEY = "cd_activity_read_ids";
-const HIDDEN_IDS_KEY = "cd_activity_hidden_ids";
 const COLLAPSED_KEY = "cd_activity_collapsed";
 
-function loadIdSet(key: string): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(key);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveIdSet(key: string, ids: Set<string>) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify([...ids]));
-  } catch {
-    // ignore storage failures
-  }
-}
-
 export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
-  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [items, setItems] = useState<ActivityFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
@@ -66,8 +27,12 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
   });
 
   useEffect(() => {
-    setReadIds(loadIdSet(READ_IDS_KEY));
-    setHiddenIds(loadIdSet(HIDDEN_IDS_KEY));
+    function reloadLocal() {
+      setReadIds(loadActivityIdSet(ACTIVITY_READ_IDS_KEY));
+      setHiddenIds(loadActivityIdSet(ACTIVITY_HIDDEN_IDS_KEY));
+    }
+    reloadLocal();
+    return onActivityReadChange(reloadLocal);
   }, []);
 
   useEffect(() => {
@@ -103,7 +68,7 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
       if (prev.has(key)) return prev;
       const next = new Set(prev);
       next.add(key);
-      saveIdSet(READ_IDS_KEY, next);
+      saveActivityIdSet(ACTIVITY_READ_IDS_KEY, next);
       return next;
     });
   }
@@ -113,13 +78,13 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
       if (prev.has(key)) return prev;
       const next = new Set(prev);
       next.add(key);
-      saveIdSet(HIDDEN_IDS_KEY, next);
+      saveActivityIdSet(ACTIVITY_HIDDEN_IDS_KEY, next);
       return next;
     });
   }
 
   const visible = items
-    .filter((item) => !hiddenIds.has(`${item.kind}-${item.id}`))
+    .filter((item) => !hiddenIds.has(activityItemKey(item)))
     .slice(0, limit);
 
   return (
@@ -160,7 +125,7 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
       ) : (
         <div className="activity-sidebar-list">
           {visible.map((item) => {
-            const key = `${item.kind}-${item.id}`;
+            const key = activityItemKey(item);
             const isRead = readIds.has(key);
             const approval = item.kind === "approved" ? approvalActivityParts(item) : null;
             return (
@@ -200,7 +165,7 @@ export function ActivitySidebar({ limit = 12 }: { limit?: number }) {
                       )}
                     </span>
                     <span className="activity-sidebar-meta">
-                      {item.campaign_title} · {relativeTime(item.at)}
+                      {item.campaign_title} · {relativeActivityTime(item.at)}
                     </span>
                   </span>
                 </Link>

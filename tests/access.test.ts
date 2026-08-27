@@ -141,20 +141,27 @@ test("Kyle Morris is on the forecast roster", () => {
   assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.entryLevel, false);
 });
 
-test("Saqib and Jerald are restricted forecast logins", () => {
-  for (const { slug, label } of [
-    { slug: "saqib", label: "Saqib" },
-    { slug: "jerald", label: "Jerald" },
-  ]) {
-    assert.equal(isValidPerson(slug), true, slug);
-    const person = PEOPLE.find((p) => p.slug === slug);
-    assert.equal(person?.label, label);
-    assert.equal(person?.entryLevel, true, `${slug} should show in view-as`);
-    assert.equal(person?.productionAccess, false);
-    assert.equal(hasProductionAccess(slug), false);
-    assert.equal(teamFocus(slug), null, `${slug} should be unrestricted`);
-    assert.equal(personTeam(slug), null, `${slug} has no team yet`);
-  }
+test("Saqib is a restricted forecast login", () => {
+  assert.equal(isValidPerson("saqib"), true);
+  const person = PEOPLE.find((p) => p.slug === "saqib");
+  assert.equal(person?.label, "Saqib");
+  assert.equal(person?.entryLevel, true, "saqib should show in view-as");
+  assert.equal(person?.productionAccess, false);
+  assert.equal(hasProductionAccess("saqib"), false);
+  assert.equal(teamFocus("saqib"), null, "saqib should be unrestricted");
+  assert.equal(personTeam("saqib"), null, "saqib has no team yet");
+});
+
+test("Jerald is a named full-access admin", () => {
+  assert.ok(ADMIN_PEOPLE.some((p) => p.slug === "jerald"));
+  assert.equal(isValidPerson("jerald"), true);
+  const person = PEOPLE.find((p) => p.slug === "jerald");
+  assert.equal(person?.label, "Jerald");
+  assert.equal(person?.entryLevel, false, "jerald should not show in view-as team members");
+  assert.equal(person?.productionAccess, false);
+  assert.equal(hasProductionAccess("jerald"), false);
+  assert.equal(teamFocus("jerald"), null);
+  assert.equal(personTeam("jerald"), null);
 });
 
 test("Sylvia is on the forecast roster", () => {

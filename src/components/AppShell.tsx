@@ -7,6 +7,7 @@ import { ADMIN_PEOPLE } from "@/lib/admin-people";
 import { doesCampaignWork, entryLevelPeople, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
 import { TimerDock } from "./TimerDock";
+import { ActivityBell } from "./ActivityBell";
 import {
   applyTheme,
   readThemeChoice,
@@ -333,6 +334,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           <div className="app-top-right">
+            {session.role === "admin" ? <ActivityBell /> : null}
             <div ref={menuRef} style={{ position: "relative" }}>
               <button className="app-avatarbtn" onClick={() => setMenuOpen((v) => !v)}>
                 <span className="app-ava">{initials(meLabel)}</span>

@@ -6,8 +6,8 @@ import { ADMIN_PEOPLE } from "./admin-people";
 // non-admins) production scheduling tab.
 // entryLevel: actually-active restricted forecast-role logins, i.e. the
 // people who should show up in the owner's "view as team member" picker.
-// cassidy/carlos/michael/kyle_morris are already covered by full admin
-// logins, so they're excluded from that list.
+// cassidy/carlos/michael/kyle_morris/jerald are already covered by full
+// admin logins, so they're excluded from that list.
 export const PEOPLE = [
   { slug: "cassidy", label: "Cassidy", productionAccess: false, entryLevel: false },
   { slug: "sylvia", label: "Sylvia", productionAccess: false, entryLevel: false },
@@ -22,7 +22,7 @@ export const PEOPLE = [
   { slug: "mike_hines", label: "Mike Hines", productionAccess: false, entryLevel: false },
   { slug: "lana", label: "Lana Verrecchio", productionAccess: true, entryLevel: true },
   { slug: "saqib", label: "Saqib", productionAccess: false, entryLevel: true },
-  { slug: "jerald", label: "Jerald", productionAccess: false, entryLevel: true },
+  { slug: "jerald", label: "Jerald", productionAccess: false, entryLevel: false },
 ] as const;
 
 // The single owner account. Logging in as this slug issues the null-person

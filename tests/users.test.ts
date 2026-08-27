@@ -19,7 +19,7 @@ test("login accounts", async (t) => {
 
   const users = await import("../src/lib/users");
   const { OWNER_SLUG } = await import("../src/lib/people");
-  const { getDb } = await import("../src/lib/db");
+  const { getDb, seedUsers } = await import("../src/lib/db");
 
   t.after(() => {
     process.chdir(originalCwd);
@@ -37,12 +37,22 @@ test("login accounts", async (t) => {
     // A slug in both arrays resolves to admin, not forecast.
     assert.equal(users.getUser("cassidy")?.role, "admin");
     assert.equal(users.getUser("kyle_morris")?.role, "admin");
+    assert.equal(users.getUser("jerald")?.role, "admin");
     // A forecast-only person stays forecast.
     assert.equal(users.getUser("jack")?.role, "forecast");
     assert.equal(users.getUser("saqib")?.role, "forecast");
-    assert.equal(users.getUser("jerald")?.role, "forecast");
     assert.equal(users.getUser("saqib")?.label, "Saqib");
     assert.equal(users.getUser("jerald")?.label, "Jerald");
+  });
+
+  await t.test("an existing forecast row is promoted when the slug is a named admin", () => {
+    getDb()
+      .prepare(`UPDATE users SET role = 'forecast' WHERE slug = 'jerald'`)
+      .run();
+    assert.equal(users.getUser("jerald")?.role, "forecast");
+    seedUsers(getDb());
+    assert.equal(users.getUser("jerald")?.role, "admin");
+    assert.equal(users.getUser("jerald")?.password_hash, null);
   });
 
   await t.test("nobody starts with a password", () => {
