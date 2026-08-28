@@ -165,7 +165,7 @@ function urgency(row: Row): number {
 
 export default function ClientServicesPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>("accounts");
   const [rows, setRows] = useState<Row[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -480,22 +480,22 @@ export default function ClientServicesPage() {
           <button
             type="button"
             role="tab"
-            aria-selected={tab === "dashboard"}
-            className={`tab ${tab === "dashboard" ? "active" : ""}`}
-            onClick={() => setTab("dashboard")}
-          >
-            This week
-            <span className="tab-count">{rows.length}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
             aria-selected={tab === "accounts"}
             className={`tab ${tab === "accounts" ? "active" : ""}`}
             onClick={() => setTab("accounts")}
           >
             Deliverable setup
             <span className="tab-count">{accounts.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "dashboard"}
+            className={`tab ${tab === "dashboard" ? "active" : ""}`}
+            onClick={() => setTab("dashboard")}
+          >
+            This week
+            <span className="tab-count">{rows.length}</span>
           </button>
         </div>
 
