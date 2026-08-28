@@ -3,8 +3,8 @@
  * tracking, funnel, and whether paid ads is on their strategy.
  */
 
-import { getDb, nowIso } from "./db";
-import { listRevClients, logoUrlFor } from "./revenue";
+import { getDb, nowIso, type RevClient } from "./db";
+import { listRevClients, resolveClientLogoUrl } from "./revenue";
 import {
   ADS_CHANNELS,
   adsDashboardCounts,
@@ -151,12 +151,7 @@ function sortChannels(channels: AdsChannel[]): AdsChannel[] {
 }
 
 function rowFrom(
-  client: {
-    id: string;
-    name: string;
-    account_manager: string;
-    website: string;
-  },
+  client: Pick<RevClient, "id" | "name" | "account_manager" | "website" | "logo_path" | "updated_at">,
   record: AdsAccountRecord | null,
   ppc: Set<string>,
   detected: Map<string, DetectedNurture>
@@ -192,7 +187,7 @@ function rowFrom(
     name: client.name,
     accountManager: client.account_manager,
     website: client.website,
-    logoUrl: logoUrlFor(client.website),
+    logoUrl: resolveClientLogoUrl(client),
     status,
     monthlySpendLimit: account.monthly_spend_limit,
     googleCustomerId: account.google_customer_id,

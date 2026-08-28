@@ -6,6 +6,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+import {
+  defaultLoggedForDate,
+  loggedForTargetsOtherPeriod,
+} from "@/lib/snapshot-entry-date";
 import { actorLabel, TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
 import {
@@ -220,6 +224,8 @@ export default function SnapshotEditorPage() {
   // What failed to save, per row, so Retry re-sends every field and not just the
   // last one the person happened to leave.
   const [failedPatch, setFailedPatch] = useState<Record<string, Partial<Row>>>({});
+  /** Per-row backdate override; resets when the viewed week changes. */
+  const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
   const [metricError, setMetricError] = useState("");
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -264,6 +270,7 @@ export default function SnapshotEditorPage() {
           // marker into a different week would point at the wrong row.
           setSaveState({});
           setFailedPatch({});
+          setLoggedForByRow({});
         }
       } catch {
         setError("Network error. Check your connection and try again.");
@@ -443,8 +450,13 @@ export default function SnapshotEditorPage() {
    * the next reload. Now a row says saving, saved, or failed, and a failure keeps
    * a Retry next to it so the typing is not lost.
    */
-  async function saveEntry(delivId: string, patch: Partial<Row>) {
+  async function saveEntry(
+    delivId: string,
+    patch: Partial<Row>,
+    opts?: { loggedFor?: string }
+  ) {
     setSaveState((s) => ({ ...s, [delivId]: "saving" }));
+    const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
     try {
       const res = await fetch("/api/snapshot/entry", {
         method: "POST",
@@ -452,6 +464,7 @@ export default function SnapshotEditorPage() {
         body: JSON.stringify({
           deliverableId: delivId,
           weekStart: week,
+          loggedFor: loggedFor !== defaultLoggedForDate(week) ? loggedFor : undefined,
           status: patch.status,
           workDone: patch.work_done,
           nextSteps: patch.next_steps,
@@ -480,6 +493,10 @@ export default function SnapshotEditorPage() {
         delete next[delivId];
         return next;
       });
+      if (loggedFor !== defaultLoggedForDate(week)) {
+        void loadMeta();
+        void fetchWeek(week);
+      }
     } catch {
       setSaveState((s) => ({ ...s, [delivId]: "failed" }));
       setFailedPatch((f) => ({ ...f, [delivId]: { ...(f[delivId] || {}), ...patch } }));
@@ -491,6 +508,14 @@ export default function SnapshotEditorPage() {
     const pending = failedPatch[delivId];
     if (!pending) return;
     await saveEntry(delivId, pending);
+  }
+
+  function loggedForForRow(delivId: string): string {
+    return loggedForByRow[delivId] ?? defaultLoggedForDate(week);
+  }
+
+  function setLoggedFor(delivId: string, loggedFor: string) {
+    setLoggedForByRow((m) => ({ ...m, [delivId]: loggedFor }));
   }
 
   async function addDeliverable(e: FormEvent) {
@@ -749,11 +774,14 @@ export default function SnapshotEditorPage() {
                           <FillRow
                             key={r.deliverable_id}
                             row={r}
+                            viewWeek={week}
+                            loggedFor={loggedForForRow(r.deliverable_id)}
                             overdue={behindIds.has(r.deliverable_id)}
                             open={openId === r.deliverable_id}
                             saveState={saveState[r.deliverable_id]}
                             onToggle={() => setOpenId(openId === r.deliverable_id ? null : r.deliverable_id)}
                             onPatch={(patch) => patchRow(r.deliverable_id, patch)}
+                            onLoggedForChange={(d) => setLoggedFor(r.deliverable_id, d)}
                             onSave={(patch) => void saveEntry(r.deliverable_id, patch)}
                             onRetry={() => void retryEntry(r.deliverable_id)}
                           />
@@ -1075,20 +1103,26 @@ function StatButton({
 
 function FillRow({
   row,
+  viewWeek,
+  loggedFor,
   overdue,
   open,
   saveState,
   onToggle,
   onPatch,
+  onLoggedForChange,
   onSave,
   onRetry,
 }: {
   row: Row;
+  viewWeek: string;
+  loggedFor: string;
   overdue: boolean;
   open: boolean;
   saveState?: SaveState;
   onToggle: () => void;
   onPatch: (patch: Partial<Row>) => void;
+  onLoggedForChange: (loggedFor: string) => void;
   onSave: (patch: Partial<Row>) => void;
   onRetry: () => void;
 }) {
@@ -1099,6 +1133,12 @@ function FillRow({
     cadence: row.cadence,
     period_start: row.period_start,
     due_date: row.due_date,
+  });
+  const backdateOther = loggedForTargetsOtherPeriod({
+    kind: row.kind,
+    cadence_unit: row.cadence_unit,
+    viewWeek,
+    loggedFor,
   });
   return (
     <div className={`snap-desk-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""}`}>
@@ -1130,6 +1170,16 @@ function FillRow({
               <button type="button" className="link-button" onClick={onRetry}>Retry</button>
             </span>
           ) : null}
+          <label className="snap-logged-for">
+            <span className="snap-logged-for-label">Logged for</span>
+            <input
+              type="date"
+              value={loggedFor}
+              aria-label="Logged for date"
+              title="When this work actually happened"
+              onChange={(e) => onLoggedForChange(e.target.value)}
+            />
+          </label>
           <select
             className={`snap-status-select status-${row.status}`}
             value={row.status}
@@ -1146,6 +1196,11 @@ function FillRow({
           </select>
         </div>
       </div>
+      {backdateOther ? (
+        <p className="snap-backdate-hint">
+          Saves to the period containing {loggedFor}, not the week on screen.
+        </p>
+      ) : null}
       {open ? (
         <div className="snap-fields">
           <label>

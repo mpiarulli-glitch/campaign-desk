@@ -23,6 +23,19 @@ export interface BasecampConnection {
   last_error: string | null;
 }
 
+export interface GoogleConnection {
+  person: string;
+  google_email: string;
+  google_name: string;
+  // Ciphertext. Use the helpers in ./google-identity, never these directly.
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  connected_at: string;
+  last_error: string | null;
+  last_pulled_at: string;
+}
+
 export interface User {
   slug: string;
   label: string;
@@ -263,6 +276,8 @@ export interface RevClient {
   tier: string;
   // Client website (bare domain or full URL) used to auto-derive a brand logo.
   website: string;
+  // Uploaded logo filename under data/client-logos/. Empty = use website favicon.
+  logo_path: string;
   // Manual account-sentiment override: ""|healthy|watch|at_risk. Empty means
   // fall back to the metric-derived sentiment.
   sentiment_override: string;
@@ -396,6 +411,16 @@ export interface ForecastTask {
   // that has no event yet writes the calendar entry onto the chosen client's
   // project; picked meetings already have one, so the tick stays local.
   basecamp_event_id: string;
+  // Google Calendar event id when this meeting is linked to that person's
+  // primary calendar. Empty when they are not connected, or the row is work.
+  google_event_id: string;
+  // 1 when this row was created by a Google Calendar pull. Those are a
+  // read-only overlay: writing them back would overwrite a client-sent Meet.
+  from_google: number;
+  // 1 when Campaign Desk created the Google event, so move/delete here should
+  // PATCH/DELETE there. 0 when we only linked an invite that already existed
+  // at that slot.
+  google_managed: number;
   // Cumulative hours sent to Basecamp for this row (the Log time pill).
   // Day/week "logged" gauges read forecast_time_logs by logged_date instead,
   // so moving the task does not move those hours.
@@ -482,7 +507,8 @@ export interface SnapshotDeliverable {
   client_id: string;
   category: string;
   // Owning team slug (see Team in ./people), or "" for unassigned. Unassigned
-  // deliverables stay visible to every team.
+  // rows are classified from category/name on the fill list rather than shown
+  // to every specialist.
   team: string;
   name: string;
   cadence: string;
@@ -1601,6 +1627,9 @@ export function getDb(): Database.Database {
       basecamp_step_id TEXT NOT NULL DEFAULT '',
       basecamp_project_id TEXT NOT NULL DEFAULT '',
       basecamp_event_id TEXT NOT NULL DEFAULT '',
+      google_event_id TEXT NOT NULL DEFAULT '',
+      from_google INTEGER NOT NULL DEFAULT 0,
+      google_managed INTEGER NOT NULL DEFAULT 0,
       kind TEXT NOT NULL DEFAULT 'work',
       actual_hours REAL NOT NULL DEFAULT 0,
       basecamp_time_entry_id TEXT NOT NULL DEFAULT '',
@@ -2187,6 +2216,21 @@ export function getDb(): Database.Database {
       last_error TEXT
     );
 
+    /* One Google Calendar identity per person. Writes always use that person's
+       token — never a shared app token — so a meeting booked from Forecast
+       appears on their calendar, not a mascot account. */
+    CREATE TABLE IF NOT EXISTS google_connections (
+      person TEXT PRIMARY KEY,
+      google_email TEXT NOT NULL DEFAULT '',
+      google_name TEXT NOT NULL DEFAULT '',
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL DEFAULT 0,
+      connected_at TEXT NOT NULL,
+      last_error TEXT,
+      last_pulled_at TEXT NOT NULL DEFAULT ''
+    );
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite
       ON users(invite_token) WHERE invite_token IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
@@ -2583,6 +2627,11 @@ function migrate(database: Database.Database) {
       `ALTER TABLE rev_clients ADD COLUMN website TEXT NOT NULL DEFAULT ''`
     );
   }
+  if (revClientCols.length && !revClientCols.includes("logo_path")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN logo_path TEXT NOT NULL DEFAULT ''`
+    );
+  }
   if (revClientCols.length && !revClientCols.includes("sentiment_override")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN sentiment_override TEXT NOT NULL DEFAULT ''`
@@ -2823,6 +2872,26 @@ function migrate(database: Database.Database) {
       `UPDATE forecast_tasks SET kind = 'meeting' WHERE TRIM(basecamp_event_id) != ''`
     );
   }
+  if (forecastCols.length && !forecastCols.includes("google_event_id")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN google_event_id TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("from_google")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN from_google INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (forecastCols.length && !forecastCols.includes("google_managed")) {
+    database.exec(
+      `ALTER TABLE forecast_tasks ADD COLUMN google_managed INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_google_event
+       ON forecast_tasks(person, google_event_id)
+       WHERE google_event_id != ''`
+  );
 
   const forecastSubtaskCols = tableColumns(database, "forecast_subtasks");
   if (forecastSubtaskCols.length && !forecastSubtaskCols.includes("basecamp_step_id")) {

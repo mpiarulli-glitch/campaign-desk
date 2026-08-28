@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Sentiment = "healthy" | "watch" | "at_risk" | "unknown";
 
@@ -87,6 +87,8 @@ function ClientAvatar({ client }: { client: Client }) {
 
 export default function AllClientsPage() {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadFor, setUploadFor] = useState<string | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -151,11 +153,37 @@ export default function AllClientsPage() {
     );
     if (next === null || next.trim() === c.website) return;
     const website = next.trim();
-    // Force the avatar to re-fetch by clearing then reloading from the server.
     setClients((cs) =>
       cs.map((x) => (x.id === c.id ? { ...x, website, logo_url: null } : x))
     );
     patch(c.id, { website }).then(load);
+  }
+
+  function pickLogo(c: Client) {
+    setUploadFor(c.id);
+    fileRef.current?.click();
+  }
+
+  async function onLogoFile(file: File | undefined) {
+    if (!file || !uploadFor) return;
+    const id = uploadFor;
+    setUploadFor(null);
+    const body = new FormData();
+    body.append("logo", file);
+    const res = await fetch(`/api/revenue/clients/${id}/logo`, { method: "POST", body });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || "Could not upload that logo.");
+      return;
+    }
+    if (typeof data.logo_url === "string") {
+      setClients((cs) =>
+        cs.map((c) => (c.id === id ? { ...c, logo_url: data.logo_url } : c))
+      );
+    } else {
+      load();
+    }
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   const counts = useMemo(() => {
@@ -170,6 +198,13 @@ export default function AllClientsPage() {
 
   return (
     <div className="app-shell">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        hidden
+        onChange={(e) => void onLogoFile(e.target.files?.[0])}
+      />
       <main className="container stack">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
           <div>
@@ -223,15 +258,28 @@ export default function AllClientsPage() {
                         <button
                           type="button"
                           className="avatar-btn"
-                          title={c.website ? `Edit website (${c.website})` : "Add website for logo"}
+                          title="Upload logo"
                           onClick={(e) => {
                             e.stopPropagation();
-                            editWebsite(c);
+                            pickLogo(c);
                           }}
                         >
                           <ClientAvatar client={c} />
                         </button>
-                        <strong>{c.name}</strong>
+                        <div className="client-cell-text">
+                          <strong>{c.name}</strong>
+                          <button
+                            type="button"
+                            className="link-button client-website-link"
+                            title={c.website ? `Website: ${c.website}` : "Add website for favicon fallback"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              editWebsite(c);
+                            }}
+                          >
+                            {c.website ? "Website" : "Add website"}
+                          </button>
+                        </div>
                       </div>
                     </td>
                     <td>

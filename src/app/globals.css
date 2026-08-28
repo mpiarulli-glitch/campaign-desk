@@ -2912,6 +2912,36 @@ button {
 .snap-save-ok { color: var(--success-ink); }
 .snap-save-bad { color: var(--danger-ink); }
 
+.snap-logged-for {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.snap-logged-for-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.snap-logged-for input[type="date"] {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  background: var(--bg-soft);
+  color: var(--text);
+}
+.snap-backdate-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Editable status select, colored by status */
 .snap-status-select {
   border: 1px solid var(--border-strong);
@@ -12961,6 +12991,254 @@ button.am-node:hover .am-edit-cue,
   margin: 0;
   padding: 12px 0 4px;
   font-size: 13px;
+}
+
+/* ---- snapshot client picker (Deliverable setup tab) --------------------
+   Card grid for choosing which allowlisted account to open. */
+
+.snap-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.snap-pick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+  padding: 18px 18px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    transform 0.14s ease;
+}
+
+.snap-pick-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+
+.snap-pick-card-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.snap-pick-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+.snap-pick-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.snap-pick-logo.is-initials {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-color: transparent;
+}
+
+.snap-pick-logo-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  overflow: hidden;
+  cursor: pointer;
+  flex: none;
+  font: inherit;
+  color: inherit;
+}
+
+.snap-pick-logo-btn.is-initials {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  border-color: transparent;
+}
+
+.snap-pick-logo-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.snap-pick-logo-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.snap-pick-logo-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.snap-pick-logo-btn:hover .snap-pick-logo-overlay,
+.snap-pick-logo-btn:focus-visible .snap-pick-logo-overlay {
+  opacity: 1;
+}
+
+.client-cell-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.client-website-link {
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.snap-pick-card-title {
+  min-width: 0;
+}
+
+.snap-pick-card-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.snap-pick-card-cat {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.snap-pick-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px -4px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.14s ease,
+    background 0.14s ease;
+}
+
+.snap-pick-star:hover {
+  color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.snap-pick-star.is-on {
+  color: var(--accent);
+}
+
+.snap-pick-card-desc {
+  margin: 0;
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-body);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.snap-pick-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.snap-pick-metric {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.snap-pick-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.snap-pick-status.is-active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.snap-pick-status.is-behind {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+@media (max-width: 1180px) {
+  .snap-pick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .snap-pick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .snap-pick-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- the per-client panel ----------------------------------------------

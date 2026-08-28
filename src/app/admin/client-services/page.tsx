@@ -6,6 +6,10 @@ import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { teamLabel } from "@/lib/team";
 import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
+import {
+  SnapshotAccountGrid,
+  type SnapshotAccountCard,
+} from "@/components/SnapshotAccountGrid";
 
 type AskStatus =
   | "paused"
@@ -50,7 +54,7 @@ type Summary = {
   waiting: number;
 };
 
-type Account = { id: string; name: string; deliverable_count: number };
+type Account = SnapshotAccountCard;
 
 type HistoryRow = {
   id: string;
@@ -909,24 +913,7 @@ export default function ClientServicesPage() {
                 <p>No accounts on the snapshot list yet.</p>
               </div>
             ) : (
-              <div className="campaign-list">
-                {accounts.map((a) => (
-                  <Link
-                    key={a.id}
-                    href={`/admin/snapshot/${a.id}`}
-                    className="campaign-item"
-                  >
-                    <div>
-                      <h3>{a.name}</h3>
-                      <div className="meta">
-                        {a.deliverable_count} deliverable
-                        {a.deliverable_count === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                    <span className="btn btn-secondary btn-sm">Open</span>
-                  </Link>
-                ))}
-              </div>
+              <SnapshotAccountGrid accounts={accounts} isAdmin={isAdmin} />
             )}
           </>
         )}

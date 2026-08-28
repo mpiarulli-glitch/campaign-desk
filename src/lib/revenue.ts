@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { clientLogoPublicUrl } from "./client-logos";
 import {
   getDb,
   nowIso,
@@ -55,6 +56,16 @@ export function logoUrlFor(website: string): string | null {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`;
 }
 
+/** Custom upload wins; otherwise fall back to the website favicon. */
+export function resolveClientLogoUrl(
+  client: Pick<RevClient, "id" | "website" | "logo_path" | "updated_at">
+): string | null {
+  if (client.logo_path) {
+    return clientLogoPublicUrl(client.id, client.updated_at);
+  }
+  return logoUrlFor(client.website);
+}
+
 // Derive account health from recent email metrics. Looks at up to the last
 // three months of data: send activity, engagement (open rate), and the
 // month-over-month revenue trend. Deliberately conservative — a manual
@@ -107,7 +118,7 @@ export function listRevClientCards(includeInactive = false): RevClientCard[] {
     const override = (c.sentiment_override || "") as Sentiment | "";
     return {
       ...c,
-      logo_url: logoUrlFor(c.website),
+      logo_url: resolveClientLogoUrl(c),
       sentiment_auto: auto,
       sentiment: override || auto,
     };
@@ -176,6 +187,7 @@ export function updateRevClient(
     accountManager: string;
     tier: string;
     website: string;
+    logoPath: string;
     sentimentOverride: string;
     productionEnrolled: boolean;
     statusOverride: string;
@@ -196,7 +208,7 @@ export function updateRevClient(
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
        contact_name = ?, contact_email = ?, poc = ?, account_manager = ?, tier = ?,
-       website = ?, sentiment_override = ?,
+       website = ?, logo_path = ?, sentiment_override = ?,
        production_enrolled = ?,
        status_override = ?, outreach_paused = ?,
        basecamp_project_id = ?, basecamp_contact_id = ?, videographer_id = ?,
@@ -227,6 +239,7 @@ export function updateRevClient(
     updates.accountManager?.trim() ?? existing.account_manager,
     updates.tier ?? existing.tier,
     updates.website?.trim() ?? existing.website,
+    updates.logoPath === undefined ? existing.logo_path : updates.logoPath,
     updates.sentimentOverride ?? existing.sentiment_override,
     updates.productionEnrolled === undefined
       ? existing.production_enrolled

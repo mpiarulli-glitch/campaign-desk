@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { isTeam } from "./people";
+import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
 import { deliverableVisibleTo } from "./snapshot-fill";
 import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import {
@@ -17,8 +18,21 @@ import {
   type SnapshotStatus,
   type SnapshotWin,
 } from "./db";
-import { addWeeks, mondayOf } from "./week";
+import { mondayOf } from "./week";
 import { metricPeriodLabel, normalizeMetricPeriod } from "./metric-period";
+import {
+  entryWeekStartForDate,
+  periodEndExclusiveFor,
+  periodStartFor,
+  weekOfYmd,
+} from "./snapshot-entry-date";
+
+export {
+  defaultLoggedForDate,
+  entryWeekStartForDate,
+  loggedForTargetsOtherPeriod,
+  periodStartFor,
+} from "./snapshot-entry-date";
 
 export type {
   CadenceUnit,
@@ -58,37 +72,6 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// The period key a given date rolls up to for a cadence unit: the Monday for
-// weekly, the 1st of the month for monthly, the 1st month of the quarter for
-// quarterly. Two dates in the same period always map to the same key, so a
-// deliverable's status only changes when a NEW period actually starts.
-export function periodStartFor(unit: CadenceUnit, ymd: string): string {
-  const [y, m] = ymd.split("-").map(Number);
-  if (unit === "weekly") {
-    const [yy, mm, dd] = ymd.split("-").map(Number);
-    return mondayOf(new Date(yy, mm - 1, dd));
-  }
-  if (unit === "quarterly") {
-    const qStartMonth = Math.floor((m - 1) / 3) * 3 + 1;
-    return `${y}-${String(qStartMonth).padStart(2, "0")}-01`;
-  }
-  return `${y}-${String(m).padStart(2, "0")}-01`; // monthly
-}
-
-// Exclusive end of the period containing ymd (first key of the NEXT period).
-function periodEndExclusiveFor(unit: CadenceUnit, ymd: string): string {
-  const [y, m] = ymd.split("-").map(Number);
-  if (unit === "weekly") return addWeeks(periodStartFor("weekly", ymd), 1);
-  if (unit === "quarterly") {
-    const qStartMonth = Math.floor((m - 1) / 3) * 3 + 1;
-    const nextQStartMonth = qStartMonth + 3;
-    return nextQStartMonth > 12
-      ? `${y + 1}-01-01`
-      : `${y}-${String(nextQStartMonth).padStart(2, "0")}-01`;
-  }
-  return m + 1 > 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`; // monthly
-}
-
 export const SNAPSHOT_STATUSES: { value: SnapshotStatus; label: string }[] = [
   { value: "not_started", label: "Not started" },
   { value: "in_progress", label: "In progress" },
@@ -121,6 +104,73 @@ export function listAccounts(): SnapshotAccount[] {
     )
     .all() as SnapshotAccount[];
   return rows.filter((row) => isSnapshotAllowlisted(row.name));
+}
+
+export type SnapshotPickerStatus = "active" | "behind";
+
+/** Card data for the weekly snapshot client picker grid. */
+export interface SnapshotAccountPickerCard {
+  id: string;
+  name: string;
+  deliverable_count: number;
+  behind_count: number;
+  status: SnapshotPickerStatus;
+  logo_url: string | null;
+  website: string;
+  category: string;
+  description: string;
+}
+
+const TIER_LABELS: Record<string, string> = {
+  tier1: "Tier 1",
+  tier2: "Tier 2",
+  tier3: "Tier 3",
+  standard: "Standard",
+  premium: "Premium",
+  vip: "VIP",
+};
+
+function pickerCategory(account: SnapshotAccount): string {
+  const tier = (account.tier || "").trim();
+  if (tier && TIER_LABELS[tier]) return TIER_LABELS[tier];
+  if (tier) return tier.replace(/_/g, " ");
+  return businessModelLabel(account.business_model);
+}
+
+function pickerDescription(account: SnapshotAccount, behindCount: number): string {
+  const n = account.deliverable_count;
+  const deliverableLine =
+    n === 0
+      ? "No deliverables on the snapshot roster yet."
+      : n === 1
+        ? "One deliverable tracked on the weekly snapshot."
+        : `${n} deliverables tracked on the weekly snapshot.`;
+  if (behindCount > 0) {
+    const overdue =
+      behindCount === 1
+        ? "One item is overdue and needs attention."
+        : `${behindCount} items are overdue and need attention.`;
+    return `${deliverableLine} ${overdue}`;
+  }
+  return `${deliverableLine} All current periods are caught up.`;
+}
+
+/** Allowlisted accounts enriched for the client-selection card grid. */
+export function listAccountPickerCards(): SnapshotAccountPickerCard[] {
+  return listAccounts().map((account) => {
+    const behind_count = behindDeliverablesForClient(account.id).length;
+    return {
+      id: account.id,
+      name: account.name,
+      deliverable_count: account.deliverable_count,
+      behind_count,
+      status: behind_count > 0 ? "behind" : "active",
+      logo_url: resolveClientLogoUrl(account),
+      website: account.website,
+      category: pickerCategory(account),
+      description: pickerDescription(account, behind_count),
+    };
+  });
 }
 
 export function getAccount(id: string): RevClient | null {
@@ -439,6 +489,8 @@ export function weekData(
 export function upsertEntry(input: {
   deliverableId: string;
   weekStart: string;
+  /** Actual calendar date work happened; maps to the correct period/week key. */
+  loggedFor?: string;
   status?: SnapshotStatus;
   workDone?: string;
   nextSteps?: string;
@@ -470,7 +522,15 @@ export function upsertEntry(input: {
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const isOneTime = kind === "one_time";
   const periodKeyed = !isOneTime && unit !== "weekly";
-  const writeKey = periodKeyed ? periodStartFor(unit, input.weekStart) : input.weekStart;
+  // Backdating sends loggedFor; otherwise the viewed week (always a Monday) is
+  // the anchor. Weekly items need Monday normalization when a calendar date is
+  // picked mid-week.
+  const anchor = (input.loggedFor || input.weekStart).trim();
+  const writeKey = isOneTime
+    ? input.loggedFor
+      ? entryWeekStartForDate(kind, unit, anchor)
+      : input.weekStart
+    : entryWeekStartForDate(kind, unit, anchor);
 
   const existing = (
     isOneTime
@@ -488,8 +548,8 @@ export function upsertEntry(input: {
             )
             .get(
               input.deliverableId,
-              periodStartFor(unit, input.weekStart),
-              periodEndExclusiveFor(unit, input.weekStart)
+              periodStartFor(unit, anchor),
+              periodEndExclusiveFor(unit, anchor)
             )
         : db
             .prepare(
@@ -613,11 +673,6 @@ export const LEAD_SOURCE_OPTIONS: { value: LeadSource; label: string }[] = [
   { value: "call", label: "Called in" },
   { value: "other", label: "Other" },
 ];
-
-function weekOfYmd(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return mondayOf(new Date(y, (m || 1) - 1, d || 1));
-}
 
 /**
  * Leads for an account, newest first.
