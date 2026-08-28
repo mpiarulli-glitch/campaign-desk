@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { clearSession, getSession, login } from "@/lib/auth";
+import { forecastGoogleEnabled } from "@/lib/forecast-google";
 import { OWNER_SLUG } from "@/lib/people";
 import { hasOwnPassword } from "@/lib/users";
 import { setupStateFor } from "@/lib/setup";
@@ -24,6 +25,7 @@ export async function GET() {
     // Drives the onboarding banner and the redirect out of the app shell.
     setupComplete: setup ? setup.complete : true,
     setupRemaining: setup ? setup.remaining : [],
+    forecastGoogle: forecastGoogleEnabled(),
   });
 }
 

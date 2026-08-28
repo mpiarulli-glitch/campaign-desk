@@ -26,9 +26,8 @@ type Session = {
   person: string | null;
   owner: boolean;
   impersonating: boolean;
-  // True while this person is still signing in with a shared env-var password
-  // instead of one they set themselves.
   mustSetPassword: boolean;
+  forecastGoogle: boolean;
 };
 
 type NavItem = { href: string; label: string; icon: keyof typeof ICONS };
@@ -109,7 +108,7 @@ function initials(label: string): string {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false });
+  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false, forecastGoogle: false });
   const [menuOpen, setMenuOpen] = useState(false);
   // Mobile nav drawer. Above the breakpoint the sidebar is always in the layout
   // and this class does nothing, so desktop is unaffected either way.
@@ -156,7 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (on && d?.authenticated) {
-          setSession({ role: d.role, person: d.person || null, owner: Boolean(d.owner), impersonating: Boolean(d.impersonating), mustSetPassword: Boolean(d.mustSetPassword) });
+          setSession({ role: d.role, person: d.person || null, owner: Boolean(d.owner), impersonating: Boolean(d.impersonating), mustSetPassword: Boolean(d.mustSetPassword), forecastGoogle: Boolean(d.forecastGoogle) });
         }
       })
       .catch(() => {});
@@ -382,6 +381,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {session.impersonating ? null : (
                     <Link href="/account/basecamp" className="app-menu-i" onClick={() => setMenuOpen(false)}>
                       <Svg name="check" />Basecamp connection
+                    </Link>
+                  )}
+                  {session.impersonating || !session.forecastGoogle ? null : (
+                    <Link href="/account/google" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="calendar" />Google Calendar
                     </Link>
                   )}
                   {session.owner ? (

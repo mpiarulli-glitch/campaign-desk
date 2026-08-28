@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { isForecastAuthenticated } from "@/lib/auth";
+import { isForecastAuthenticated, sessionUserSlug } from "@/lib/auth";
 import {
   WEEKLY_CAPACITY_HOURS,
   createTask,
+  getTask,
   getWeekNote,
   hasPlanUndo,
   isValidPerson,
@@ -12,6 +13,12 @@ import {
   reorderDayTasks,
   upsertWeekNote,
 } from "@/lib/forecast";
+import {
+  forecastGoogleEnabled,
+  googleStatusFor,
+  pullGoogleMeetingsForWeek,
+  pushForecastMeetingToGoogle,
+} from "@/lib/forecast-google";
 import { bookTypedMeetingOnBasecamp } from "@/lib/forecast-schedule";
 import { parseTimeInput } from "@/lib/forecast-time";
 import { addWeeks, currentWeek } from "@/lib/week";
@@ -30,11 +37,17 @@ export async function GET(request: Request, { params }: Params) {
   }
   const url = new URL(request.url);
   const week = url.searchParams.get("week") || currentWeek();
+  // Best-effort: a Google failure must not blank the week. Throttled so the
+  // silent refetches after a checkbox tick do not hammer Calendar.
+  if (forecastGoogleEnabled()) {
+    await pullGoogleMeetingsForWeek(person, week).catch(() => null);
+  }
   const tasks = listTasksForPersonWeek(person, week);
   const hours = tasks.reduce((sum, t) => sum + t.hours, 0);
   // Logged totals are keyed by the day the hours were written, not where the
   // task currently sits — so a Monday log still counts on Monday after a move.
   const loggedByDate = loggedHoursByDate(person, week, addWeeks(week, 1));
+  const self = await sessionUserSlug();
   return NextResponse.json({
     person,
     label: personLabel(person),
@@ -46,6 +59,7 @@ export async function GET(request: Request, { params }: Params) {
     allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
     note: getWeekNote(person, week),
     canUndoPlan: hasPlanUndo(person, week),
+    google: googleStatusFor(person, self === person),
   });
 }
 
@@ -155,5 +169,9 @@ export async function POST(request: Request, { params }: Params) {
     kind: eventId || kind === "meeting" ? "meeting" : "work",
     startTime,
   });
+  if (task.kind === "meeting") {
+    await pushForecastMeetingToGoogle(task).catch(() => null);
+    return NextResponse.json({ task: getTask(task.id) || task }, { status: 201 });
+  }
   return NextResponse.json({ task }, { status: 201 });
 }
