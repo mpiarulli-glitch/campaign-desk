@@ -250,6 +250,89 @@ export function linkTaskEvent(
   return getTask(id);
 }
 
+/**
+ * Attach a Google Calendar event to a forecast meeting.
+ *
+ * fromGoogle marks a pull overlay (read-only, never written back).
+ * googleManaged marks an event Campaign Desk created, so later moves/deletes
+ * can PATCH/DELETE it. Linking an invite that already existed at the slot
+ * stores the id with both flags off, so we do not clobber a client-sent Meet.
+ */
+export function linkTaskGoogle(
+  id: string,
+  input: { eventId: string; fromGoogle?: boolean; googleManaged?: boolean }
+): ForecastTask | null {
+  const existing = getTask(id);
+  if (!existing) return null;
+  const eventId = input.eventId.trim();
+  if (!eventId) return null;
+  getDb()
+    .prepare(
+      `UPDATE forecast_tasks
+          SET google_event_id = ?, from_google = ?, google_managed = ?,
+              kind = 'meeting', updated_at = ?
+        WHERE id = ?`
+    )
+    .run(
+      eventId,
+      input.fromGoogle ? 1 : existing.from_google,
+      input.googleManaged ? 1 : existing.google_managed,
+      nowIso(),
+      id
+    );
+  return getTask(id);
+}
+
+export function getTaskByGoogleEventId(
+  person: string,
+  eventId: string
+): ForecastTask | null {
+  const id = (eventId || "").trim();
+  if (!id) return null;
+  return (
+    (getDb()
+      .prepare(
+        `SELECT * FROM forecast_tasks WHERE person = ? AND google_event_id = ?`
+      )
+      .get(person, id) as ForecastTask | undefined) || null
+  );
+}
+
+/** Unlinked meeting already sitting on this person's day at this clock time. */
+export function findUnlinkedMeetingAtSlot(
+  person: string,
+  date: string,
+  startTime: string
+): ForecastTask | null {
+  const start = parseTimeInput(startTime);
+  if (!start) return null;
+  return (
+    (getDb()
+      .prepare(
+        `SELECT * FROM forecast_tasks
+          WHERE person = ? AND task_date = ? AND start_time = ?
+            AND kind = 'meeting' AND google_event_id = ''
+          ORDER BY created_at ASC`
+      )
+      .get(person, date, start) as ForecastTask | undefined) || null
+  );
+}
+
+export function listGoogleOverlayTasks(
+  person: string,
+  startInclusive: string,
+  endExclusive: string
+): ForecastTask[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM forecast_tasks
+        WHERE person = ? AND from_google = 1
+          AND task_date >= ? AND task_date < ?
+        ORDER BY task_date ASC, start_time ASC`
+    )
+    .all(person, startInclusive, endExclusive) as ForecastTask[];
+}
+
 export function updateSubtask(
   id: string,
   updates: Partial<{ notes: string; completed: boolean }>
@@ -299,6 +382,9 @@ export function createTask(input: {
   // the row as unlinked work that needs a todo.
   kind?: "work" | "meeting";
   startTime?: string;
+  googleEventId?: string;
+  fromGoogle?: boolean;
+  googleManaged?: boolean;
 }): ForecastTask {
   const startTime = parseTimeInput(input.startTime || "");
   const db = getDb();
@@ -308,16 +394,20 @@ export function createTask(input: {
   // wins and the todo link is dropped, so booking a meeting can never end up
   // closing an unrelated todo when the row is ticked off.
   const eventId = (input.basecampEventId || "").trim();
-  const isMeeting = Boolean(eventId) || input.kind === "meeting";
+  const googleEventId = (input.googleEventId || "").trim();
+  const isMeeting =
+    Boolean(eventId) || input.kind === "meeting" || Boolean(googleEventId);
   const kind: ForecastTask["kind"] = isMeeting ? "meeting" : "work";
   const todoId = isMeeting ? "" : (input.basecampTodoId || "").trim();
   // A step id without its parent to-do is useless — ticking it would work but
   // logging time would have nothing timesheetable to land on — so it is only
   // kept when both arrived together.
   const stepId = todoId ? (input.basecampStepId || "").trim() : "";
+  const fromGoogle = input.fromGoogle ? 1 : 0;
+  const googleManaged = input.googleManaged ? 1 : 0;
   db.prepare(
-    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, kind, start_time, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO forecast_tasks (id, person, task_date, client, notes, hours, color, basecamp_todo_id, basecamp_step_id, basecamp_project_id, basecamp_event_id, google_event_id, from_google, google_managed, kind, start_time, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.person,
@@ -330,6 +420,9 @@ export function createTask(input: {
     stepId,
     (input.basecampProjectId || "").trim(),
     eventId,
+    googleEventId,
+    fromGoogle,
+    googleManaged,
     kind,
     startTime,
     nextSortOrder(input.person, input.taskDate),

@@ -74,6 +74,19 @@ export function isoToStartTime(iso: string, timeZone: string): string {
   return padTime(Number(hour), Number(minute));
 }
 
+export function isoToYmd(iso: string, timeZone: string): string {
+  if (!iso) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 export type LaidOutBlock<T> = {
   item: T;
   startMin: number;
