@@ -2,21 +2,20 @@
 /**
  * Wipe weekly snapshot fill progress while keeping deliverable definitions.
  *
- * By default only allowlisted snapshot accounts are reset.
- *
  * Usage:
- *   npx tsx scripts/reset-snapshot-progress.mjs --dry-run
  *   npx tsx scripts/reset-snapshot-progress.mjs
+ *   npx tsx scripts/reset-snapshot-progress.mjs --commit
  *   npx tsx scripts/reset-snapshot-progress.mjs --all
  *   npx tsx scripts/reset-snapshot-progress.mjs --client "Pacific Coast Generation"
  *   npx tsx scripts/reset-snapshot-progress.mjs --client-id cl_abc123
  *
- * Writes to data/campaign-desk.db (local) unless DATABASE_PATH is set.
+ * Default is a dry run over snapshot-allowlisted accounts only.
+ * Writes to data/campaign-desk.db (local) unless run on the Railway volume.
  */
 
 const args = process.argv.slice(2);
-const dryRun = args.includes("--dry-run");
-const allAccounts = args.includes("--all");
+const dryRun = !args.includes("--commit");
+const all = args.includes("--all");
 const clientName = argValue("--client");
 const clientIdArg = argValue("--client-id");
 
@@ -44,27 +43,38 @@ async function main() {
     console.log(`Client: ${row.name} (${row.id})`);
   }
 
-  const result = snapshot.resetSnapshotProgress({
-    clientIds,
-    allowlistedOnly: !allAccounts && !clientIds,
-    dryRun,
-  });
+  const result = clientIds
+    ? snapshot.resetSnapshotProgress({ clientIds, allowlistedOnly: false, dryRun })
+    : snapshot.resetSnapshotProgress({ allowlistedOnly: !all, dryRun });
 
-  const label = dryRun ? "[dry run] Would clear" : "Cleared";
-  const scope =
-    clientIds?.length === 1
-      ? `client ${clientIds[0]}`
-      : allAccounts
-        ? "all accounts with deliverables"
-        : "allowlisted accounts";
-  console.log(`${label} snapshot fill progress for ${scope} (${result.clients.length} clients):`);
-  for (const c of result.clients) console.log(`  - ${c.name}`);
-  console.log(`  entries:         ${result.deleted.entries}`);
-  console.log(`  wins:            ${result.deleted.wins}`);
-  console.log(`  leads:           ${result.deleted.leads}`);
-  console.log(`  metrics:         ${result.deleted.metrics}`);
-  console.log(`  revenue reports: ${result.deleted.revenueReports}`);
-  console.log(`  outreach:        ${result.deleted.outreach}`);
+  console.log(
+    dryRun
+      ? "[dry run] Would clear snapshot fill progress"
+      : "Cleared snapshot fill progress"
+  );
+  console.log(
+    clientIds
+      ? `Scope: ${result.clients.map((c) => c.name).join(", ") || clientIds.join(", ")}`
+      : all
+        ? "Scope: all active accounts with deliverables"
+        : "Scope: snapshot allowlist"
+  );
+  console.log(`Accounts: ${result.clients.length}`);
+  for (const client of result.clients) {
+    console.log(`  - ${client.name}`);
+  }
+  console.log(`  entries:          ${result.deleted.entries}`);
+  console.log(`  wins:             ${result.deleted.wins}`);
+  console.log(`  leads:            ${result.deleted.leads}`);
+  console.log(`  metrics:          ${result.deleted.metrics}`);
+  console.log(`  revenue reports:  ${result.deleted.revenueReports}`);
+  console.log(`  outreach logs:    ${result.deleted.outreach}`);
+
+  if (dryRun) {
+    console.log("\nNo changes made. Re-run with --commit to wipe.");
+  } else {
+    console.log("\nDone. Deliverable definitions were not touched.");
+  }
 }
 
 main().catch((err) => {

@@ -1189,6 +1189,14 @@ function dbLocation(): { dataDir: string; dbPath: string } {
 
 let db: Database.Database | null = null;
 
+/** Close the open connection so a later getDb() picks up a new cwd. Tests only. */
+export function closeDbForTests(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
 export function getDb(): Database.Database {
   if (db) return db;
 

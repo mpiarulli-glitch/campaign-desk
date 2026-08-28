@@ -626,22 +626,85 @@ interface SnapshotEntryResult {
   updatedAt?: string;
 }
 
-/** What clearSnapshotFillProgress removed or would remove. Deliverables are never touched. */
-export interface ClearSnapshotProgressResult {
-  clientId: string | null;
-  dryRun: boolean;
+export interface SnapshotProgressResetCounts {
   entries: number;
   wins: number;
   leads: number;
   metrics: number;
+  revenueReports: number;
+  outreach: number;
+}
+
+/** What clearSnapshotFillProgress removed or would remove. Deliverables are never touched. */
+export interface ClearSnapshotProgressResult extends SnapshotProgressResetCounts {
+  clientId: string | null;
+  dryRun: boolean;
   deliverablesKept: number;
+}
+
+function countSnapshotProgress(db: ReturnType<typeof getDb>, clientIds: string[]) {
+  if (!clientIds.length) {
+    return {
+      entries: 0,
+      wins: 0,
+      leads: 0,
+      metrics: 0,
+      revenueReports: 0,
+      outreach: 0,
+    } satisfies SnapshotProgressResetCounts;
+  }
+  const placeholders = clientIds.map(() => "?").join(", ");
+  const count = (table: string) =>
+    (
+      db
+        .prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE client_id IN (${placeholders})`)
+        .get(...clientIds) as { n: number }
+    ).n;
+  return {
+    entries: count("snapshot_entries"),
+    wins: count("snapshot_wins"),
+    leads: count("snapshot_leads"),
+    metrics: count("snapshot_metrics"),
+    revenueReports: count("snapshot_revenue_reports"),
+    outreach: count("snapshot_outreach"),
+  };
+}
+
+function deleteSnapshotProgress(
+  db: ReturnType<typeof getDb>,
+  clientIds: string[],
+  dryRun: boolean
+): SnapshotProgressResetCounts {
+  const deleted = countSnapshotProgress(db, clientIds);
+  if (dryRun || !clientIds.length) return deleted;
+
+  const placeholders = clientIds.map(() => "?").join(", ");
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM snapshot_entries WHERE client_id IN (${placeholders})`).run(...clientIds);
+    db.prepare(`DELETE FROM snapshot_wins WHERE client_id IN (${placeholders})`).run(...clientIds);
+    db.prepare(`DELETE FROM snapshot_leads WHERE client_id IN (${placeholders})`).run(...clientIds);
+    db.prepare(`DELETE FROM snapshot_metrics WHERE client_id IN (${placeholders})`).run(...clientIds);
+    db.prepare(`DELETE FROM snapshot_revenue_reports WHERE client_id IN (${placeholders})`).run(
+      ...clientIds
+    );
+    db.prepare(`DELETE FROM snapshot_outreach WHERE client_id IN (${placeholders})`).run(...clientIds);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return deleted;
 }
 
 /**
  * Wipe fill progress while keeping contracted deliverable definitions.
  *
- * Clears status rows, wins, leads, and metric values. Does not touch
- * snapshot_deliverables, share tokens, or client-submitted revenue reports.
+ * Clears entries, wins, leads, metrics, client revenue reports, and weekly
+ * outreach logs. Does not touch snapshot_deliverables or share tokens.
+ *
+ * Without clientId this clears every account — prefer resetSnapshotProgress
+ * for the allowlisted production wipe.
  */
 export function clearSnapshotFillProgress(opts?: {
   clientId?: string;
@@ -650,39 +713,30 @@ export function clearSnapshotFillProgress(opts?: {
   const db = getDb();
   const clientId = opts?.clientId?.trim() || null;
   const dryRun = opts?.dryRun ?? false;
-  const where = clientId ? " WHERE client_id = ?" : "";
-  const params = clientId ? [clientId] : [];
+  const clientIds = clientId
+    ? [clientId]
+    : (
+        db
+          .prepare(`SELECT id FROM rev_clients WHERE active = 1`)
+          .all() as Array<{ id: string }>
+      ).map((row) => row.id);
 
-  const count = (table: string) =>
-    (db.prepare(`SELECT COUNT(*) AS n FROM ${table}${where}`).get(...params) as { n: number })
-      .n;
+  const deleted = deleteSnapshotProgress(db, clientIds, dryRun);
+  const deliverablesKept = clientId
+    ? (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM snapshot_deliverables WHERE active = 1 AND client_id = ?`
+          )
+          .get(clientId) as { n: number }
+      ).n
+    : (
+        db
+          .prepare(`SELECT COUNT(*) AS n FROM snapshot_deliverables WHERE active = 1`)
+          .get() as { n: number }
+      ).n;
 
-  const result: ClearSnapshotProgressResult = {
-    clientId,
-    dryRun,
-    entries: count("snapshot_entries"),
-    wins: count("snapshot_wins"),
-    leads: count("snapshot_leads"),
-    metrics: count("snapshot_metrics"),
-    deliverablesKept: (
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM snapshot_deliverables WHERE active = 1${
-            clientId ? " AND client_id = ?" : ""
-          }`
-        )
-        .get(...params) as { n: number }
-    ).n,
-  };
-
-  if (!dryRun) {
-    db.prepare(`DELETE FROM snapshot_entries${where}`).run(...params);
-    db.prepare(`DELETE FROM snapshot_wins${where}`).run(...params);
-    db.prepare(`DELETE FROM snapshot_leads${where}`).run(...params);
-    db.prepare(`DELETE FROM snapshot_metrics${where}`).run(...params);
-  }
-
-  return result;
+  return { clientId, dryRun, deliverablesKept, ...deleted };
 }
 
 /* --------------------------------------------------------------- wins */
@@ -1546,15 +1600,6 @@ export function behindReportAllClients(): ClientBehindReport[] {
 
 /* ------------------------------------------------------ progress reset */
 
-export interface SnapshotProgressResetCounts {
-  entries: number;
-  wins: number;
-  leads: number;
-  metrics: number;
-  revenueReports: number;
-  outreach: number;
-}
-
 export interface SnapshotProgressResetResult {
   dryRun: boolean;
   clients: Array<{ id: string; name: string }>;
@@ -1609,62 +1654,10 @@ export function resetSnapshotProgress(opts?: {
     clients = clients.filter((c) => isSnapshotAllowlisted(c.name));
   }
 
-  const empty: SnapshotProgressResetCounts = {
-    entries: 0,
-    wins: 0,
-    leads: 0,
-    metrics: 0,
-    revenueReports: 0,
-    outreach: 0,
-  };
-  if (!clients.length) {
-    return { dryRun, clients: [], deleted: empty };
-  }
-
-  const ids = clients.map((c) => c.id);
-  const placeholders = ids.map(() => "?").join(", ");
-
-  const count = (sql: string) =>
-    (
-      db.prepare(sql.replace("__IDS__", placeholders)).get(...ids) as {
-        n: number;
-      }
-    ).n;
-
-  const deleted: SnapshotProgressResetCounts = {
-    entries: count(
-      `SELECT COUNT(*) AS n FROM snapshot_entries WHERE client_id IN (__IDS__)`
-    ),
-    wins: count(`SELECT COUNT(*) AS n FROM snapshot_wins WHERE client_id IN (__IDS__)`),
-    leads: count(`SELECT COUNT(*) AS n FROM snapshot_leads WHERE client_id IN (__IDS__)`),
-    metrics: count(`SELECT COUNT(*) AS n FROM snapshot_metrics WHERE client_id IN (__IDS__)`),
-    revenueReports: count(
-      `SELECT COUNT(*) AS n FROM snapshot_revenue_reports WHERE client_id IN (__IDS__)`
-    ),
-    outreach: count(
-      `SELECT COUNT(*) AS n FROM snapshot_outreach WHERE client_id IN (__IDS__)`
-    ),
-  };
-
-  if (dryRun) {
-    return { dryRun, clients, deleted };
-  }
-
-  db.exec("BEGIN");
-  try {
-    db.prepare(`DELETE FROM snapshot_entries WHERE client_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM snapshot_wins WHERE client_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM snapshot_leads WHERE client_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM snapshot_metrics WHERE client_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM snapshot_revenue_reports WHERE client_id IN (${placeholders})`).run(
-      ...ids
-    );
-    db.prepare(`DELETE FROM snapshot_outreach WHERE client_id IN (${placeholders})`).run(...ids);
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
-
+  const deleted = deleteSnapshotProgress(
+    db,
+    clients.map((c) => c.id),
+    dryRun
+  );
   return { dryRun, clients, deleted };
 }
