@@ -14145,6 +14145,78 @@ button.snap-pick-card.lh-pick-card .lh-dot {
   margin-top: 6px;
 }
 
+button.snap-pick-card.lh-pick-card.is-pace-behind {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+button.snap-pick-card.lh-pick-card.is-pace-met {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+}
+
+.lh-pick-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.lh-pick-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.lh-pick-bar.is-behind .lh-pick-bar-fill {
+  background: var(--danger);
+}
+
+.lh-pick-bar.is-on_track .lh-pick-bar-fill {
+  background: var(--accent);
+}
+
+.lh-pick-bar.is-met .lh-pick-bar-fill {
+  background: var(--success);
+}
+
+.lh-pick-card .snap-pick-metric.is-behind {
+  color: var(--danger-ink, var(--danger));
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-pick-card .snap-pick-metric.is-met {
+  color: var(--success-ink, var(--success));
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-pick-card .snap-pick-metric.is-on_track {
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-pick-card .snap-pick-status.is-behind {
+  background: color-mix(in srgb, var(--danger) 18%, var(--bg-soft));
+  color: var(--danger-ink);
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
+}
+
+.snap-pick-status.is-met {
+  background: var(--success);
+  color: var(--bg);
+}
+
+.snap-pick-status.is-launch {
+  background: var(--accent-wash, var(--bg-soft));
+  color: var(--accent-ink, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.snap-pick-status.is-muted {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
 .lh-detail-bar {
   display: flex;
   align-items: center;

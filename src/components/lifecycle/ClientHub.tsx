@@ -137,12 +137,18 @@ function matchesClient(c: HubClient, id: string): boolean {
 }
 
 function metricLabel(c: HubClient): string {
-  if (c.quota > 0) {
-    return c.quota === 1 ? "1 Contracted" : `${c.quota} Contracted`;
-  }
+  if (c.quota > 0) return `${c.delivered} of ${c.quota}`;
   if (c.campaigns.length === 1) return "1 Campaign";
   if (c.campaigns.length > 1) return `${c.campaigns.length} Campaigns`;
   return "No quota";
+}
+
+function paceStatus(c: HubClient): { label: string; tone: string } {
+  if (c.pace === "behind") return { label: "Behind", tone: "is-behind" };
+  if (c.pace === "met") return { label: "Met", tone: "is-met" };
+  if (c.pace === "on_track") return { label: "On track", tone: "is-active" };
+  if (c.launch.open > 0) return { label: "Launching", tone: "is-launch" };
+  return { label: "No quota", tone: "is-muted" };
 }
 
 function ClientLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
@@ -200,32 +206,45 @@ function ClientCards({
   }
   return (
     <div className="snap-pick-grid">
-      {clients.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          className="snap-pick-card lh-pick-card"
-          onClick={() => onSelect(c.id)}
-        >
-          <div className="snap-pick-card-head">
-            <ClientLogo name={c.name} logoUrl={c.logoUrl} />
-            <div className="snap-pick-card-title">
-              <h3>{c.name}</h3>
-              {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+      {clients.map((c) => {
+        const status = paceStatus(c);
+        const pct =
+          c.quota > 0 ? Math.min(100, Math.round((c.delivered / c.quota) * 100)) : 0;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            className={`snap-pick-card lh-pick-card is-pace-${c.pace}`}
+            onClick={() => onSelect(c.id)}
+          >
+            <div className="snap-pick-card-head">
+              <ClientLogo name={c.name} logoUrl={c.logoUrl} />
+              <div className="snap-pick-card-title">
+                <h3>{c.name}</h3>
+                {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+              </div>
+              <PaceDot pace={c.pace} launching={c.launch.open > 0} />
             </div>
-            <PaceDot pace={c.pace} launching={c.launch.open > 0} />
-          </div>
-          <p className="snap-pick-card-desc">{c.description}</p>
-          <div className="snap-pick-card-foot">
-            <span className="snap-pick-metric">{metricLabel(c)}</span>
-            <span
-              className={`snap-pick-status ${c.status === "active" ? "is-active" : "is-behind"}`}
-            >
-              {c.status === "active" ? "Active" : "Needs attention"}
-            </span>
-          </div>
-        </button>
-      ))}
+            <p className="snap-pick-card-desc">{c.description}</p>
+            {c.quota > 0 ? (
+              <div
+                className={`lh-pick-bar is-${c.pace}`}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={c.quota}
+                aria-valuenow={c.delivered}
+                aria-label={`${c.delivered} of ${c.quota} emails sent for approval`}
+              >
+                <div className="lh-pick-bar-fill" style={{ width: `${pct}%` }} />
+              </div>
+            ) : null}
+            <div className="snap-pick-card-foot">
+              <span className={`snap-pick-metric is-${c.pace}`}>{metricLabel(c)}</span>
+              <span className={`snap-pick-status ${status.tone}`}>{status.label}</span>
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
