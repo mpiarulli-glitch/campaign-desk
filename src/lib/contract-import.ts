@@ -12,7 +12,7 @@
 // enough that reviewing a filled-in table beats typing thirty rows from scratch.
 
 import { getDb } from "./db";
-import { isTeam } from "./people";
+import { isTeam, type Team } from "./people";
 import { createDeliverable, type CadenceUnit, type DeliverableKind } from "./snapshot";
 
 /* ------------------------------------------------------------ categories */
@@ -28,12 +28,17 @@ const S = "(?:s|es|ing)?";
 const CATEGORY_RULES: Array<{
   test: RegExp;
   category: string;
-  team: "" | "email" | "seo" | "social" | "web";
+  team: "" | Team;
 }> = [
   { test: new RegExp(`\\b(email${S}|newsletter${S}|broadcast${S}|klaviyo|mailchimp|e-?blast${S}|drip|lifecycle)\\b`, "i"), category: "Email", team: "email" },
   { test: /\b(sms|text messages?|texts?)\b/i, category: "SMS", team: "email" },
   { test: new RegExp(`\\b(crm|automation${S}|workflow${S}|pipeline${S}|nurture|go ?high ?level|ghl|flow${S})\\b`, "i"), category: "CRM & Automation", team: "email" },
   { test: new RegExp(`\\b(blog${S}|article${S}|seo|keyword${S}|backlink${S}|on-?page|search engine|gbp|google business)\\b`, "i"), category: "SEO", team: "seo" },
+  // Outreach / CRM use of LinkedIn is email-team work. Plain LinkedIn posts
+  // still match the social rule below.
+  { test: /\blinkedin\b.{0,40}\b(outreach|connect|inmail|crm|nurture|drip|sequence|lead gen|prospect)/i, category: "LinkedIn", team: "email" },
+  { test: new RegExp(`\\b(onboard(?:ing)?|kick-?off)\\b`, "i"), category: "Onboarding", team: "onboarding" },
+  { test: /\b(client services?|account management|account manager)\b/i, category: "Client Services", team: "client_services" },
   { test: new RegExp(`\\b(social|instagram|facebook|tiktok|linkedin|reel${S}|stor(?:y|ies)|post${S}|community management)\\b`, "i"), category: "Social", team: "social" },
   { test: new RegExp(`\\b(website${S}|web ?site${S}|landing page${S}|webpage${S}|wordpress|shopify|hosting|web design|web dev)\\b`, "i"), category: "Web", team: "web" },
   { test: new RegExp(`\\b(video${S}|photo${S}|shoot${S}|production${S}|videograph\\w*|content capture)\\b`, "i"), category: "Production", team: "social" },

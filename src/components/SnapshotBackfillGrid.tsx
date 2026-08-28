@@ -13,8 +13,13 @@ import {
   type FillViewer,
 } from "@/lib/snapshot-fill";
 import { actorLabel, teamLabelFor } from "@/lib/people";
+import {
+  SNAPSHOT_STATUSES,
+  SNAPSHOT_STATUS_SHORT,
+  type SnapshotStatus,
+} from "@/lib/snapshot-status";
 
-type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
+type Status = SnapshotStatus;
 type Kind = "recurring" | "one_time";
 type CadenceUnit = "weekly" | "monthly" | "quarterly";
 
@@ -49,21 +54,8 @@ type Row = {
   cells: Cell[];
 };
 
-const STATUSES: { value: Status; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "completed", label: "Completed" },
-  { value: "shared", label: "Shared" },
-  { value: "approved", label: "Approved" },
-];
-
-const STATUS_SHORT: Record<Status, string> = {
-  not_started: "—",
-  in_progress: "WIP",
-  completed: "Done",
-  shared: "Shared",
-  approved: "OK",
-};
+const STATUSES = SNAPSHOT_STATUSES;
+const STATUS_SHORT = SNAPSHOT_STATUS_SHORT;
 
 type SaveState = "saving" | "saved" | "failed";
 

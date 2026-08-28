@@ -178,11 +178,11 @@ test("the stated roster drives focus, AM sort, and See all", () => {
   assert.equal(fillFocusTeam(lana), "social");
   assert.equal(fillFocusTeam(roy), "web");
 
-  assert.equal(fillFocusTeam(cassidy), null);
+  assert.equal(fillFocusTeam(cassidy), "client_services");
   assert.equal(fillIsAccountManager(cassidy), true);
-  assert.equal(fillCanSeeAll(cassidy), false);
+  assert.equal(fillCanSeeAll(cassidy), true);
 
-  assert.equal(fillFocusTeam(kyle), null);
+  assert.equal(fillFocusTeam(kyle), "client_services");
   assert.equal(fillIsAccountManager(kyle), true);
 
   assert.equal(fillFocusTeam(carlos), "seo");
@@ -204,20 +204,25 @@ test("fill counts and the weekly pass copy", () => {
   const rows = [
     { deliverable_id: "a", status: "not_started" as const },
     { deliverable_id: "b", status: "in_progress" as const },
-    { deliverable_id: "c", status: "completed" as const },
-    { deliverable_id: "d", status: "shared" as const },
+    { deliverable_id: "c", status: "scheduled" as const },
+    { deliverable_id: "d", status: "completed" as const },
+    { deliverable_id: "e", status: "shared" as const },
+    { deliverable_id: "f", status: "sent_for_approval" as const },
+    { deliverable_id: "g", status: "canceled" as const },
   ];
   const overdue = new Set(["a"]);
   const counts = fillCounts(rows, overdue);
   assert.equal(counts.overdue, 1);
-  assert.equal(counts.todo, 1);
-  assert.equal(counts.done, 2);
-  assert.equal(counts.attention, 2);
-  assert.equal(fillLane(rows[0], overdue), "overdue");
-  assert.equal(fillPassSummary(counts, true), "1 overdue · 1 still needs an update");
+  assert.equal(counts.todo, 2); // in_progress + scheduled
+  assert.equal(counts.done, 4);
+  assert.equal(counts.attention, 3);
+  assert.equal(fillLane(rows[2], overdue), "todo");
+  assert.equal(fillLane(rows[5], overdue), "done");
+  assert.equal(fillLane(rows[6], overdue), "done");
+  assert.equal(fillPassSummary(counts, true), "1 overdue · 2 still need an update");
   assert.deepEqual(
     filterFillRows(rows, "todo", overdue).map((r) => r.deliverable_id),
-    ["a", "b"]
+    ["a", "b", "c"]
   );
   assert.equal(
     fillPassSummary({ total: 3, overdue: 0, todo: 0, done: 3, attention: 0 }, true),

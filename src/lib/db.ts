@@ -488,12 +488,8 @@ export interface ForecastNote {
   updated_at: string;
 }
 
-export type SnapshotStatus =
-  | "not_started"
-  | "in_progress"
-  | "completed"
-  | "shared"
-  | "approved";
+import type { SnapshotStatus } from "./snapshot-status";
+export type { SnapshotStatus } from "./snapshot-status";
 
 export type DeliverableKind = "recurring" | "one_time";
 

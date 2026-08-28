@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
+import { snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
@@ -26,14 +27,8 @@ const SOURCE_LABEL: Record<Lead["source"], string> = {
   call: "Called in",
   other: "Other",
 };
-type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
-const STATUS_LABEL: Record<Status, string> = {
-  not_started: "Not started",
-  in_progress: "In progress",
-  completed: "Completed",
-  shared: "Shared",
-  approved: "Approved",
-};
+type Status = SnapshotStatus;
+const STATUS_LABEL = (status: Status) => snapshotStatusLabel(status);
 
 type Row = {
   deliverable_id: string;
@@ -568,7 +563,7 @@ export default function SnapshotClientPage() {
                                   {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
                                 </div>
                                 <span className={`snap-pill status-${r.status}`}>
-                                  {STATUS_LABEL[r.status]}
+                                  {STATUS_LABEL(r.status)}
                                 </span>
                               </div>
                               <div className="snap-ro-grid">
@@ -634,7 +629,7 @@ export default function SnapshotClientPage() {
                                 {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
                               </div>
                               <span className={`snap-pill status-${o.status}`}>
-                                {STATUS_LABEL[o.status]}
+                                {STATUS_LABEL(o.status)}
                               </span>
                             </div>
                             <div className="snap-deliv-meta">

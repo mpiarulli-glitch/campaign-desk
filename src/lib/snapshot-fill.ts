@@ -6,6 +6,11 @@ import {
   type Team,
 } from "./people";
 
+import {
+  SNAPSHOT_FILL_OPEN_STATUSES,
+  type SnapshotStatus,
+} from "./snapshot-status";
+
 // How the team-side weekly snapshot decides what to put in front of someone.
 //
 // The stored `team` column is the source of truth when it is set. A lot of
@@ -19,12 +24,7 @@ import {
 // fail-open: an untagged mystery is visible on the unscoped (AM / See all)
 // list, not on every specialist's list.
 
-export type FillStatus =
-  | "not_started"
-  | "in_progress"
-  | "completed"
-  | "shared"
-  | "approved";
+export type FillStatus = SnapshotStatus;
 
 export type FillOwnership = Team | "strategy" | "unknown";
 
@@ -44,7 +44,7 @@ export type FillNamed = {
   name: string;
 };
 
-const FILL_OPEN: FillStatus[] = ["not_started", "in_progress"];
+const FILL_OPEN: FillStatus[] = SNAPSHOT_FILL_OPEN_STATUSES;
 
 export function rowIsOpen(status: FillStatus): boolean {
   return FILL_OPEN.includes(status);
@@ -189,6 +189,10 @@ export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
     return "onboarding";
   }
 
+  if (/\b(client services?|account management|account manager)\b/.test(text)) {
+    return "client_services";
+  }
+
   if (
     /\b(video|reel|tiktok|instagram|facebook|social|carousel|production|videograph|photo shoot|content capture)\b/.test(
       text
@@ -267,7 +271,8 @@ export function visibleFillRows<T extends FillNamed>(
  * The owner login carries a null person (every owner check depends on that),
  * but Michael is the email team — so the owner session focuses on email, with
  * See all as the escape hatch that does not strip admin access. Account
- * managers (Cassidy, Kyle Morris) have no specialist team and start unscoped.
+ * managers (Cassidy, Kyle Morris) are on client services but start unscoped
+ * because isSnapshotAccountManager overrides the team filter.
  */
 export function fillFocusTeam(viewer: FillViewer): Team | null {
   if (viewer.owner || (viewer.role === "admin" && !viewer.person)) {

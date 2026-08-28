@@ -12,6 +12,7 @@ import {
 } from "@/lib/snapshot-entry-date";
 import { actorLabel, TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
+import { SNAPSHOT_STATUSES, type SnapshotStatus } from "@/lib/snapshot-status";
 import {
   fillCanSeeAll,
   fillCounts,
@@ -34,8 +35,8 @@ type Section = "week" | "leads" | "wins" | "metrics" | "setup" | "client";
 
 const LANE_COPY: Record<FillLane, { title: string; hint: string }> = {
   overdue: { title: "Overdue", hint: "Past due. Log a status or finish it." },
-  todo: { title: "Needs an update", hint: "Not started or still in progress this period." },
-  done: { title: "Logged", hint: "Completed, shared, or approved." },
+  todo: { title: "Needs an update", hint: "Not started, in progress, or scheduled this period." },
+  done: { title: "Logged", hint: "Completed, sent for approval, shared, approved, or canceled." },
 };
 
 type Win = { id: string; body: string; happened_on: string };
@@ -103,14 +104,8 @@ function groupSeries(rows: MetricRow[]): MetricSeries[] {
   return Array.from(map.values());
 }
 
-type Status = "not_started" | "in_progress" | "completed" | "shared" | "approved";
-const STATUSES: { value: Status; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "completed", label: "Completed" },
-  { value: "shared", label: "Shared — awaiting approval" },
-  { value: "approved", label: "Approved" },
-];
+type Status = SnapshotStatus;
+const STATUSES = SNAPSHOT_STATUSES;
 
 type Kind = "recurring" | "one_time";
 type CadenceUnit = "weekly" | "monthly" | "quarterly";

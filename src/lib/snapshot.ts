@@ -4,6 +4,11 @@ import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
 import { deliverableVisibleTo } from "./snapshot-fill";
 import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import {
+  normSnapshotStatus,
+  SNAPSHOT_BEHIND_DONE_STATUSES,
+  type SnapshotStatus,
+} from "./snapshot-status";
+import {
   getDb,
   nowIso,
   type CadenceUnit,
@@ -15,7 +20,6 @@ import {
   type SnapshotLead,
   type SnapshotMetric,
   type SnapshotRevenueReport,
-  type SnapshotStatus,
   type SnapshotWin,
 } from "./db";
 import { addWeeks, mondayOf } from "./week";
@@ -91,18 +95,14 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export const SNAPSHOT_STATUSES: { value: SnapshotStatus; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "completed", label: "Completed" },
-  { value: "shared", label: "Shared — awaiting approval" },
-  { value: "approved", label: "Approved" },
-];
-const STATUS_VALUES = SNAPSHOT_STATUSES.map((s) => s.value);
+export {
+  SNAPSHOT_STATUSES,
+  SNAPSHOT_STATUS_SHORT,
+  snapshotStatusLabel,
+} from "./snapshot-status";
+
 function normStatus(v: unknown): SnapshotStatus {
-  return STATUS_VALUES.includes(v as SnapshotStatus)
-    ? (v as SnapshotStatus)
-    : "not_started";
+  return normSnapshotStatus(v);
 }
 
 /* ------------------------------------------------------------ accounts */
@@ -1416,7 +1416,7 @@ export interface DeliverableOverview {
   completed_on: string; // for one-time items: the period it was completed, or ""
 }
 
-const DONE_STATUSES: SnapshotStatus[] = ["completed", "approved"];
+const DONE_STATUSES: SnapshotStatus[] = SNAPSHOT_BEHIND_DONE_STATUSES;
 
 // All active deliverables for an account with their rolled-up status. Recurring
 // items keep their configured order; one-time setup items that are done are

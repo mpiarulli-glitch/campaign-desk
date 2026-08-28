@@ -117,7 +117,7 @@ export function campaignKindFor(slug: string | null): "blog" | null {
    classified from their category/name rather than shown to every specialist
    — see snapshot-fill.ts.
    ------------------------------------------------------------------------- */
-export type Team = "email" | "seo" | "social" | "web" | "onboarding";
+export type Team = "email" | "seo" | "social" | "web" | "onboarding" | "client_services";
 
 export const TEAMS: Array<{ slug: Team; label: string }> = [
   { slug: "email", label: "Email" },
@@ -125,6 +125,7 @@ export const TEAMS: Array<{ slug: Team; label: string }> = [
   { slug: "social", label: "Social" },
   { slug: "web", label: "Web" },
   { slug: "onboarding", label: "Onboarding" },
+  { slug: "client_services", label: "Client Services" },
 ];
 
 export function isTeam(v: unknown): v is Team {
@@ -138,9 +139,11 @@ export function teamLabelFor(slug: string): string {
 /**
  * Snapshot fill roster (stated 2026-08-28).
  *
- * Specialist slug → team. The owner slug is on email so Michael's fill list
+ *    Specialist slug → team. The owner slug is on email so Michael's fill list
  * starts there even though the owner session itself carries a null person.
- * Account managers are not in this map — see SNAPSHOT_ACCOUNT_MANAGERS.
+ * Cassidy and Kyle Morris are client services here and also account managers
+ * (SNAPSHOT_ACCOUNT_MANAGERS): they get a team focus label but still see every
+ * deliverable unscoped via isSnapshotAccountManager in snapshot fill.
  *
  *   michael      email
  *   abel         seo
@@ -150,6 +153,8 @@ export function teamLabelFor(slug: string): string {
  *   roy          web
  *   saqib        web
  *   luis_romero  onboarding
+ *   cassidy      client_services
+ *   kyle_morris  client_services
  */
 export const PERSON_TEAM: Record<string, Team> = {
   michael: "email",
@@ -160,6 +165,8 @@ export const PERSON_TEAM: Record<string, Team> = {
   roy: "web",
   saqib: "web",
   luis_romero: "onboarding",
+  cassidy: "client_services",
+  kyle_morris: "client_services",
 };
 
 /** Cassidy and Kyle Morris: every deliverable, strategy/account rows first. */

@@ -2967,10 +2967,16 @@ button {
 }
 .status-not_started { color: #6b7280; background: #f1f3f5; }
 .status-in_progress { color: var(--warning-ink); background: var(--warning-wash); }
+.status-scheduled { color: #5b4fc7; background: #ece9ff; }
+.status-sent_for_approval { color: #1d4ed8; background: var(--bg-soft); }
 .status-completed { color: #146c43; background: var(--success-wash); }
 .status-shared { color: #1d4ed8; background: var(--bg-soft); }
 .status-approved { color: #0b6b3a; background: #dcf3e6; }
+.status-canceled { color: #6b7280; background: #e9ecef; text-decoration: line-through; }
 select.snap-status-select.status-not_started { background: #f1f3f5; }
+select.snap-status-select.status-scheduled { background: #ece9ff; }
+select.snap-status-select.status-sent_for_approval { background: var(--bg-soft); }
+select.snap-status-select.status-canceled { background: #e9ecef; }
 
 .snap-fields {
   display: grid;
@@ -15451,7 +15457,8 @@ button.am-node:hover .am-edit-cue,
   color: var(--text-muted);
 }
 
-.snap-backfill-cell.status-in_progress {
+.snap-backfill-cell.status-in_progress,
+.snap-backfill-cell.status-scheduled {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
@@ -15460,8 +15467,14 @@ button.am-node:hover .am-edit-cue,
   background: color-mix(in srgb, var(--success) 14%, transparent);
 }
 
-.snap-backfill-cell.status-shared {
+.snap-backfill-cell.status-shared,
+.snap-backfill-cell.status-sent_for_approval {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.snap-backfill-cell.status-canceled {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  opacity: 0.75;
 }
 
 .snap-backfill-popover {
