@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
-import { getAccount, listWins, metricsSeries, weekData } from "@/lib/snapshot";
+import { getVisibleSnapshotAccount, listWins, metricsSeries, weekData } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!getAccount(id)) {
+  if (!getVisibleSnapshotAccount(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const week = new URL(request.url).searchParams.get("week") || "";

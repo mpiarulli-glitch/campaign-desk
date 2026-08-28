@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { cell, mapColumns, parseCsv } from "@/lib/csv";
+import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 
 // The per-client panel behind a client name in the Client Services Hub.
 //
@@ -391,12 +392,14 @@ export function ClientServicePanel({
             </p>
           </div>
           <div className="csp-head-side">
-            <Link
-              className="btn btn-ghost btn-sm"
-              href={`/admin/snapshot/${client.clientId}`}
-            >
-              Full account
-            </Link>
+            {isSnapshotAllowlisted(client.name) ? (
+              <Link
+                className="btn btn-ghost btn-sm"
+                href={`/admin/snapshot/${client.clientId}`}
+              >
+                Full account
+              </Link>
+            ) : null}
             <button className="btn btn-ghost btn-sm" onClick={onClose}>
               Close
             </button>

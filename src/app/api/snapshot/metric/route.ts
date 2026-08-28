@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isWorkflowAuthenticated } from "@/lib/auth";
-import { getAccount, upsertMetric } from "@/lib/snapshot";
+import { getVisibleSnapshotAccount, upsertMetric } from "@/lib/snapshot";
 
 export async function POST(request: Request) {
   if (!(await isWorkflowAuthenticated())) {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   const metric = typeof body.metric === "string" ? body.metric.trim() : "";
   const period = typeof body.period === "string" ? body.period.trim() : "";
   const value = typeof body.value === "number" ? body.value : Number(body.value);
-  if (!clientId || !getAccount(clientId)) {
+  if (!clientId || !getVisibleSnapshotAccount(clientId)) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
   if (!metric || !period || Number.isNaN(value)) {

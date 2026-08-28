@@ -410,12 +410,13 @@ export async function sessionFocusSlug(): Promise<string | null> {
 }
 
 /**
- * The team whose portion of the snapshot this session should see, or null for no
- * scoping.
+ * Team for API-side snapshot scoping, or null for the unscoped payload.
  *
- * Null for the owner and for every admin account: they were asked to keep the
- * full picture. Null also for anyone whose team has not been set, which errs
- * toward showing too much rather than hiding a team's own work from it.
+ * Forecast specialists get their PERSON_TEAM slice from the API. Admins
+ * (including the owner, Cassidy, Kyle Morris, Carlos, Luis) get every row so
+ * the fill desk can client-scope: owner/Michael starts on email with See all
+ * still available, AMs see everything, and other admins keep setup access.
+ * Anyone with no team is also unscoped — too much rather than hiding work.
  */
 export async function sessionTeam(): Promise<Team | null> {
   const session = await getSession();

@@ -162,8 +162,7 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
     });
 
     const seo = snapshot.weekData(id, WEEK_1, { team: "seo" }).map((r) => r.name).sort();
-    // Own work plus anything untagged, and nothing belonging to another team.
-    assert.deepEqual(seo, ["Blog posts", "Quarterly review"]);
+    assert.deepEqual(seo, ["Blog posts"]);
 
     // No team means everything, which is what an admin gets.
     assert.equal(snapshot.weekData(id, WEEK_1).length, 3);

@@ -1085,6 +1085,11 @@ button {
   overflow: hidden;
 }
 
+.preview-canvas.is-mobile {
+  max-width: 100%;
+  background: #fff;
+}
+
 .preview-canvas.is-loading {
   opacity: 0.45;
 }
@@ -1631,13 +1636,15 @@ button {
   }
 }
 
-/* Browser-style status bar showing the destination of a hovered email link. */
+/* Browser-style status bar for a hovered email link. Anchored to the
+   preview frame — never `fixed` to the viewport, which painted the URL
+   across the bottom of the email and looked like copy leaking out of the HTML. */
 .link-hover-bar {
-  position: fixed;
+  position: absolute;
   bottom: 0;
   left: 0;
-  max-width: min(720px, 92vw);
-  z-index: 1000;
+  max-width: 100%;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5597,6 +5604,21 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 .fc-cal-block.is-timing {
   box-shadow: 0 0 0 2px var(--fc-col-blue);
 }
+.fc-cal-block.is-google {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc-ink, var(--text)) 28%, transparent);
+}
+.fc-google-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  font-size: 9px;
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fc-ink-dim, var(--text-muted));
+}
 
 .fc-cal-block-main {
   flex: 1 1 auto;
@@ -7259,6 +7281,11 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   background-size: 6px 6px, 6px 6px;
   background-position: 1px 50%, 7px 50%;
   background-repeat: repeat-y;
+}
+.ops-row-handle.is-locked {
+  cursor: default;
+  opacity: 0.25;
+  pointer-events: none;
 }
 .ops-row-handle:hover,
 .ops-row-handle:focus-visible {
@@ -14818,3 +14845,188 @@ button.am-node:hover .am-edit-cue,
     flex-direction: column;
   }
 }
+
+/* ---- Snapshot fill desk ------------------------------------------------ */
+
+.snap-desk {
+  width: min(1200px, calc(100% - 48px));
+}
+
+.snap-desk .ops-sub {
+  max-width: 640px;
+}
+
+.snap-desk-week {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.snap-desk-week-label {
+  font-weight: 650;
+  font-size: 14px;
+  min-width: 11ch;
+  text-align: center;
+}
+
+.snap-desk-contract {
+  margin: -8px 0 16px;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.snap-desk-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--warning-wash);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.snap-desk-stats {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 16px;
+}
+
+.snap-desk-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -4px 0 16px;
+  max-width: 320px;
+}
+
+.snap-desk-search span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snap-desk-search input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+}
+
+.snap-desk-pass {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.snap-desk-lane-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.snap-desk-lane-count {
+  color: var(--text-muted);
+  font-weight: 650;
+}
+
+.snap-desk-lane-head p {
+  margin: 2px 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.snap-desk-lane.is-overdue .snap-desk-lane-head h2 {
+  color: var(--danger-ink);
+}
+
+.snap-desk-cat + .snap-desk-cat {
+  margin-top: 14px;
+}
+
+.snap-desk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snap-desk-row {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.snap-desk-row.is-overdue {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.snap-desk-row.is-open {
+  box-shadow: var(--shadow);
+}
+
+.snap-desk-row-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.snap-desk-row-main {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.snap-desk-overdue {
+  margin-left: 8px;
+  color: var(--danger-ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.snap-setup-card {
+  display: grid;
+  grid-template-columns: 0.9fr 0.8fr 1.4fr 0.8fr 0.9fr 0.8fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.snap-setup-card input,
+.snap-setup-card select {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .snap-desk { width: calc(100% - 32px); }
+  .snap-desk-stats { grid-template-columns: repeat(2, 1fr); }
+  .snap-desk-row-top { flex-direction: column; }
+  .snap-setup-card { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .snap-setup-card { grid-template-columns: 1fr; }
+}
+

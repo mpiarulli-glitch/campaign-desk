@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { getAccount } from "@/lib/snapshot";
+import { getVisibleSnapshotAccount } from "@/lib/snapshot";
 import { updateRevClient } from "@/lib/revenue";
 import {
   applyContractDeliverables,
@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!getAccount(id)) {
+  if (!getVisibleSnapshotAccount(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -120,7 +120,7 @@ export async function PUT(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!getAccount(id)) {
+  if (!getVisibleSnapshotAccount(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));

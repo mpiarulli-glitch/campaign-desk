@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid";
 import { isTeam } from "./people";
+import { deliverableVisibleTo } from "./snapshot-fill";
+import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import {
   getDb,
   nowIso,
@@ -108,7 +110,7 @@ export interface SnapshotAccount extends RevClient {
 }
 
 export function listAccounts(): SnapshotAccount[] {
-  return getDb()
+  const rows = getDb()
     .prepare(
       `SELECT c.*,
         (SELECT COUNT(*) FROM snapshot_deliverables d
@@ -118,6 +120,7 @@ export function listAccounts(): SnapshotAccount[] {
        ORDER BY c.name COLLATE NOCASE`
     )
     .all() as SnapshotAccount[];
+  return rows.filter((row) => isSnapshotAllowlisted(row.name));
 }
 
 export function getAccount(id: string): RevClient | null {
@@ -126,6 +129,13 @@ export function getAccount(id: string): RevClient | null {
       .prepare(`SELECT * FROM rev_clients WHERE id = ?`)
       .get(id) as RevClient | undefined) || null
   );
+}
+
+/** Team-facing snapshot only: allowlisted accounts. Other clients still exist. */
+export function getVisibleSnapshotAccount(id: string): RevClient | null {
+  const acct = getAccount(id);
+  if (!acct || !isSnapshotAllowlisted(acct.name)) return null;
+  return acct;
 }
 
 // Accounts are created via the same flow as revenue clients
@@ -165,26 +175,35 @@ export function getAccountByToken(token: string): RevClient | null {
 /**
  * A client's active deliverables.
  *
- * `team` narrows the list to what that team owns, which is how the weekly
- * snapshot shows someone their own portion. Untagged deliverables (team = '')
- * are always included: an unassigned row should be visible to everyone rather
- * than to nobody. Pass no team to see all of them, which is what admins and the
- * owner get.
+ * `team` narrows the list to what that specialist owns. Untagged rows are
+ * classified from category/name (see snapshot-fill): a blank team on "Blog
+ * posts" is still SEO work, and a blank team on "Quarterly review" is
+ * strategy that only the unscoped (account manager / See all) list shows.
+ * Pass no team to see all of them, which is what account managers and the
+ * owner get from the API.
  */
 export function listDeliverables(
   clientId: string,
   opts?: { team?: string | null }
 ): SnapshotDeliverable[] {
-  const team = opts?.team;
-  const filter = team ? "AND (team = ? OR team = '')" : "";
-  const params = team ? [clientId, team] : [clientId];
-  return getDb()
+  const rows = getDb()
     .prepare(
       `SELECT * FROM snapshot_deliverables
-       WHERE client_id = ? AND active = 1 ${filter}
+       WHERE client_id = ? AND active = 1
        ORDER BY sort_order ASC, created_at ASC`
     )
-    .all(...params) as SnapshotDeliverable[];
+    .all(clientId) as SnapshotDeliverable[];
+  return scopeDeliverables(rows, opts?.team);
+}
+
+function scopeDeliverables<T extends { team: string; category: string; name: string }>(
+  rows: T[],
+  team?: string | null
+): T[] {
+  if (!team || !isTeam(team)) return rows;
+  return rows.filter((row) =>
+    deliverableVisibleTo({ team: row.team, category: row.category, name: row.name }, team)
+  );
 }
 
 export function createDeliverable(input: {
@@ -298,10 +317,12 @@ export function deleteDeliverable(id: string): boolean {
 export interface WeekRow {
   deliverable_id: string;
   category: string;
+  team: string;
   name: string;
   cadence: string;
   kind: DeliverableKind;
   cadence_unit: CadenceUnit;
+  due_date: string | null;
   period_start: string;
   status: SnapshotStatus;
   work_done: string;
@@ -328,24 +349,26 @@ export function weekData(
   weekStart: string,
   opts?: { team?: string | null }
 ): WeekRow[] {
-  const team = opts?.team;
-  const teamFilter = team ? "AND (team = ? OR team = '')" : "";
-  const teamParams = team ? [clientId, team] : [clientId];
-  const deliverables = getDb()
-    .prepare(
-      `SELECT id, category, name, cadence, kind, cadence_unit
-       FROM snapshot_deliverables
-       WHERE client_id = ? AND active = 1 ${teamFilter}
-       ORDER BY sort_order ASC, created_at ASC`
-    )
-    .all(...teamParams) as Array<{
-    id: string;
-    category: string;
-    name: string;
-    cadence: string;
-    kind: string;
-    cadence_unit: string;
-  }>;
+  const deliverables = scopeDeliverables(
+    getDb()
+      .prepare(
+        `SELECT id, category, team, name, cadence, kind, cadence_unit, due_date
+         FROM snapshot_deliverables
+         WHERE client_id = ? AND active = 1
+         ORDER BY sort_order ASC, created_at ASC`
+      )
+      .all(clientId) as Array<{
+      id: string;
+      category: string;
+      team: string;
+      name: string;
+      cadence: string;
+      kind: string;
+      cadence_unit: string;
+      due_date: string | null;
+    }>,
+    opts?.team
+  );
   if (!deliverables.length) return [];
 
   const FIELDS = `status, work_done, next_steps, notes, logged_by, updated_at`;
@@ -396,10 +419,12 @@ export function weekData(
     return {
       deliverable_id: d.id,
       category: d.category,
+      team: d.team || "",
       name: d.name,
       cadence: d.cadence,
       kind,
       cadence_unit,
+      due_date: d.due_date || null,
       period_start,
       status: e?.status ?? "not_started",
       work_done: e?.work_done ?? "",
@@ -1398,6 +1423,7 @@ export function behindReportAllClients(): ClientBehindReport[] {
     .all() as Array<{ id: string; name: string }>;
   const out: ClientBehindReport[] = [];
   for (const c of clients) {
+    if (!isSnapshotAllowlisted(c.name)) continue;
     const items = behindDeliverablesForClient(c.id);
     if (items.length) out.push({ client_id: c.id, client_name: c.name, items });
   }

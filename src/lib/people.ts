@@ -66,7 +66,9 @@ export function forecastSlugForSession(session: {
    the view someone starts in, not a wall. The one exception is an empty list,
    which hides the feature outright.
 
-   Next use for this map: scoping the weekly snapshot to the portion a team owns.
+   Snapshot fill uses PERSON_TEAM (below), not this map. Calendar types and
+   snapshot deliverable teams are related but not 1:1 — LinkedIn outreach is
+   email-team work even though it is not a calendar asset type.
    ------------------------------------------------------------------------- */
 export const TEAM_FOCUS: Record<string, readonly AssetType[]> = {
   // SEO: blog content.
@@ -109,17 +111,20 @@ export function campaignKindFor(slug: string | null): "blog" | null {
    team is responsible for, which needs two halves: which team a person is on
    (below) and which team owns a deliverable (snapshot_deliverables.team).
 
-   Both halves fail open. A person with no team, or a deliverable with no team,
-   is unscoped and visible — so an unassigned row is a row somebody still sees,
-   never one that silently vanishes.
+   Specialists (a slug in PERSON_TEAM) default to their own work. Account
+   managers are an explicit list (SNAPSHOT_ACCOUNT_MANAGERS): they see every
+   row, with strategy and account work sorted to the top. Untagged rows are
+   classified from their category/name rather than shown to every specialist
+   — see snapshot-fill.ts.
    ------------------------------------------------------------------------- */
-export type Team = "email" | "seo" | "social" | "web";
+export type Team = "email" | "seo" | "social" | "web" | "onboarding";
 
 export const TEAMS: Array<{ slug: Team; label: string }> = [
   { slug: "email", label: "Email" },
   { slug: "seo", label: "SEO" },
   { slug: "social", label: "Social" },
   { slug: "web", label: "Web" },
+  { slug: "onboarding", label: "Onboarding" },
 ];
 
 export function isTeam(v: unknown): v is Team {
@@ -131,29 +136,46 @@ export function teamLabelFor(slug: string): string {
 }
 
 /**
- * Which team each person is on.
+ * Snapshot fill roster (stated 2026-08-28).
  *
- * Only the assignments that have actually been stated live here. Anyone absent
- * is unscoped and sees every team's portion, which is the safe direction: the
- * cost of a missing entry is someone seeing too much, not a team losing sight of
- * its own work.
+ * Specialist slug → team. The owner slug is on email so Michael's fill list
+ * starts there even though the owner session itself carries a null person.
+ * Account managers are not in this map — see SNAPSHOT_ACCOUNT_MANAGERS.
+ *
+ *   michael      email
+ *   abel         seo
+ *   carlos       seo
+ *   randi        social
+ *   lana         social
+ *   roy          web
+ *   saqib        web
+ *   luis_romero  onboarding
  */
 export const PERSON_TEAM: Record<string, Team> = {
-  // Stated: the SEO pair, the social pair, and web.
+  michael: "email",
   abel: "seo",
   carlos: "seo",
   randi: "social",
   lana: "social",
   roy: "web",
+  saqib: "web",
+  luis_romero: "onboarding",
 };
+
+/** Cassidy and Kyle Morris: every deliverable, strategy/account rows first. */
+export const SNAPSHOT_ACCOUNT_MANAGERS = ["cassidy", "kyle_morris"] as const;
+
+export function isSnapshotAccountManager(slug: string | null): boolean {
+  return Boolean(slug) && (SNAPSHOT_ACCOUNT_MANAGERS as readonly string[]).includes(slug!);
+}
 
 export function personTeam(slug: string | null): Team | null {
   if (!slug) return null;
   return PERSON_TEAM[slug] ?? null;
 }
 
-// Roster members with no team yet. Surfaced in the admin UI so the gaps are
-// visible rather than being discovered when someone sees more than expected.
+// Roster members with no specialist team. Account managers for snapshot fill
+// are the explicit SNAPSHOT_ACCOUNT_MANAGERS list, not everyone in this gap.
 export function peopleWithoutTeam(): Array<{ slug: string; label: string }> {
   return PEOPLE.filter((p) => !PERSON_TEAM[p.slug]).map((p) => ({
     slug: p.slug,

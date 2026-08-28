@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { teamLabel } from "@/lib/team";
+import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
 
 type AskStatus =
@@ -320,7 +321,20 @@ export default function ClientServicesPage() {
       return;
     }
     const data = await res.json();
-    router.push(`/admin/snapshot/${data.client.id}`);
+    const createdName =
+      typeof data.client?.name === "string" ? data.client.name : newName;
+    if (isSnapshotAllowlisted(createdName) && data.client?.id) {
+      router.push(`/admin/snapshot/${data.client.id}`);
+      return;
+    }
+    setNewName("");
+    setAdding(false);
+    setError("");
+    setMessage(
+      `${createdName} was added, but it is not on the snapshot list so it will not appear here.`
+    );
+    load();
+    loadAccounts();
   }
 
   // Everything below is derived from this one scoped list, so the counts on the
@@ -892,7 +906,7 @@ export default function ClientServicesPage() {
 
             {accounts.length === 0 ? (
               <div className="empty">
-                <p>No accounts yet. Add one to start.</p>
+                <p>No accounts on the snapshot list yet.</p>
               </div>
             ) : (
               <div className="campaign-list">

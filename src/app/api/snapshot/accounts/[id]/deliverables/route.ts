@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
-import { createDeliverable, getAccount, listDeliverables } from "@/lib/snapshot";
+import { createDeliverable, getVisibleSnapshotAccount, listDeliverables } from "@/lib/snapshot";
 import type { CadenceUnit } from "@/lib/db";
 
 const CADENCE_UNITS: CadenceUnit[] = ["weekly", "monthly", "quarterly"];
@@ -13,7 +13,7 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!getAccount(id)) {
+  if (!getVisibleSnapshotAccount(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({
@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!getAccount(id)) {
+  if (!getVisibleSnapshotAccount(id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));

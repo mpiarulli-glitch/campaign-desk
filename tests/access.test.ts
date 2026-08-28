@@ -10,6 +10,7 @@ import {
   hasProductionAccess,
   isSeoOnly,
   isTeam,
+  isSnapshotAccountManager,
   isValidPerson,
   peopleWithoutTeam,
   personTeam,
@@ -149,7 +150,7 @@ test("Saqib is a restricted forecast login", () => {
   assert.equal(person?.productionAccess, false);
   assert.equal(hasProductionAccess("saqib"), false);
   assert.equal(teamFocus("saqib"), null, "saqib should be unrestricted");
-  assert.equal(personTeam("saqib"), null, "saqib has no team yet");
+  assert.equal(personTeam("saqib"), "web");
 });
 
 test("Jerald is a named full-access admin", () => {
@@ -209,36 +210,40 @@ test("isSeoOnly still agrees with the focus map", () => {
 /* -------------------------------------------------------------------- teams */
 
 test("the stated team assignments are in place", () => {
+  assert.equal(personTeam("michael"), "email");
+  assert.equal(personTeam(OWNER_SLUG), "email");
   assert.equal(personTeam("abel"), "seo");
   assert.equal(personTeam("carlos"), "seo");
   assert.equal(personTeam("randi"), "social");
   assert.equal(personTeam("lana"), "social");
   assert.equal(personTeam("roy"), "web");
+  assert.equal(personTeam("saqib"), "web");
+  assert.equal(personTeam("luis_romero"), "onboarding");
 });
 
-test("an unassigned person is unscoped rather than shut out", () => {
-  // Failing open matters here: a missing entry should mean "sees everything",
-  // never "sees nothing", or a team would lose sight of its own work.
+test("account managers are Cassidy and Kyle Morris, not every unassigned person", () => {
+  assert.equal(personTeam("cassidy"), null);
+  assert.equal(personTeam("kyle_morris"), null);
+  assert.equal(isSnapshotAccountManager("cassidy"), true);
+  assert.equal(isSnapshotAccountManager("kyle_morris"), true);
+  assert.equal(isSnapshotAccountManager("michael"), false);
+  assert.equal(isSnapshotAccountManager("jack"), false);
+  assert.equal(isSnapshotAccountManager("paula"), false);
   assert.equal(personTeam("jack"), null);
   assert.equal(personTeam("paula"), null);
-  assert.equal(personTeam("saqib"), null);
   assert.equal(personTeam("jerald"), null);
-  assert.equal(personTeam(OWNER_SLUG), null);
   assert.equal(personTeam(null), null);
   assert.equal(personTeam("not-a-person"), null);
 });
 
-test("peopleWithoutTeam lists exactly the gaps still to be filled", () => {
-  const gaps = peopleWithoutTeam().map((p) => p.slug).sort();
-  const assigned = Object.keys(TEAM_FOCUS);
-  // Nobody with a stated team should appear as a gap.
-  for (const slug of ["abel", "carlos", "randi", "lana", "roy"]) {
-    assert.ok(!gaps.includes(slug), `${slug} has a team and should not be a gap`);
+test("peopleWithoutTeam lists roster members with no specialist team", () => {
+  const gaps = peopleWithoutTeam().map((p) => p.slug);
+  for (const slug of ["michael", "abel", "carlos", "randi", "lana", "roy", "saqib"]) {
+    assert.ok(!gaps.includes(slug), `${slug} has a specialist team`);
   }
-  assert.ok(gaps.includes("jack"), "jack has no team yet");
-  assert.ok(gaps.includes("saqib"), "saqib has no team yet");
-  assert.ok(gaps.includes("jerald"), "jerald has no team yet");
-  assert.ok(assigned.length > 0);
+  assert.ok(gaps.includes("cassidy"));
+  assert.ok(gaps.includes("kyle_morris"));
+  assert.ok(gaps.includes("jack"));
 });
 
 test("every team slug on a person is a real team", () => {
@@ -248,6 +253,7 @@ test("every team slug on a person is a real team", () => {
 });
 
 test("isTeam rejects anything not on the list", () => {
+  assert.equal(isTeam("onboarding"), true);
   assert.equal(isTeam("email"), true);
   assert.equal(isTeam("seo"), true);
   assert.equal(isTeam(""), false);

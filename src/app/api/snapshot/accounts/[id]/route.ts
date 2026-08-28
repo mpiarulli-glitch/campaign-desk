@@ -3,7 +3,7 @@ import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
 import {
   behindDeliverablesForClient,
   contractStatus,
-  getAccount,
+  getVisibleSnapshotAccount,
   getOrCreateToken,
   listDeliverables,
   listMetricsRaw,
@@ -18,7 +18,7 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const account = getAccount(id);
+  const account = getVisibleSnapshotAccount(id);
   if (!account) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
