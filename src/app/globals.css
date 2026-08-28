@@ -3807,6 +3807,22 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   font-size: 16px;
   line-height: 1.6;
 }
+.sched-disclaimer {
+  margin: 0 0 8px;
+  padding: 14px 16px;
+  background: var(--warning-wash);
+  border-left: 4px solid var(--warning);
+  border-radius: 6px;
+}
+.sched-disclaimer p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.sched-disclaimer p + p {
+  margin-top: 8px;
+}
 .sched-confirmed {
   text-align: center;
   padding: 40px 24px;

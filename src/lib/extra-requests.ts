@@ -144,6 +144,25 @@ export function fulfillMatchingExtraRequest(
   if (match) fulfillExtraRequest(match.id, sendId);
 }
 
+// After the invited dates have passed, a makeup booking is outside that
+// range, so fulfillMatchingExtraRequest will not see it. Close the oldest
+// expired ask so the invite does not keep leading the scheduling link.
+export function fulfillExpiredOpenExtraRequest(
+  clientId: string,
+  today: string,
+  sendId: string
+): void {
+  const match = getDb()
+    .prepare(
+      `SELECT id FROM extra_production_requests
+       WHERE client_id = ? AND fulfilled_at IS NULL AND cancelled_at IS NULL
+         AND window_end < ?
+       ORDER BY created_at ASC LIMIT 1`
+    )
+    .get(clientId, today) as { id: string } | undefined;
+  if (match) fulfillExtraRequest(match.id, sendId);
+}
+
 function markCard(id: string, cardId?: string) {
   getDb()
     .prepare(

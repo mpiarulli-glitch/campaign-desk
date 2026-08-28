@@ -30,6 +30,7 @@ type Data = {
   } | null;
   extraRequests: { sendDate: string; sendTime: string; status: string }[];
   extraWindow: { start: string; end: string; note: string } | null;
+  missedWindow: { start: string; end: string } | null;
 };
 
 type Brief = Record<string, string>;
@@ -227,8 +228,15 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         <div className="sched-hero">
           <p className="eyebrow">{data.client.name}</p>
           <h1 className="h1">
-            {data.extraWindow ? "Let's schedule a production" : "Schedule a production"}
+            {data.missedWindow
+              ? "Let's still find a day"
+              : data.extraWindow
+                ? "Let's schedule a production"
+                : "Schedule a production"}
           </h1>
+          {data.missedWindow ? (
+            <MissedWindowNote window={data.missedWindow} />
+          ) : null}
           <p className="sched-sub">
             {data.extraWindow ? (
               <>
@@ -523,6 +531,46 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         {canBook && data.window ? (
           <p className="sched-hint muted" style={{ marginTop: 16 }}>
             Looking to book your regular production?{" "}
+            <button
+              type="button"
+              onClick={() => setViewCadence(true)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                font: "inherit",
+                color: "inherit",
+                textDecoration: "underline",
+                cursor: "pointer",
+              }}
+            >
+              Book that instead
+            </button>
+            .
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (data.missedWindow && data.status !== "inactive" && !viewCadence) {
+    return (
+      <div className="sched-notice">
+        <p className="eyebrow">{data.client.name}</p>
+        <h1 className="h1">Your production window has passed</h1>
+        <MissedWindowNote window={data.missedWindow} />
+        <div style={{ marginTop: 16 }}>
+          <button className="btn" onClick={startExtraRequest}>
+            Pick a new day
+          </button>
+        </div>
+        {canBook && data.window ? (
+          <p className="sched-hint muted" style={{ marginTop: 16 }}>
+            Or book your next regular window,{" "}
+            <strong>
+              {dayNumber(data.window.start)} – {dayNumber(data.window.end)}
+            </strong>
+            .{" "}
             <button
               type="button"
               onClick={() => setViewCadence(true)}
@@ -892,6 +940,27 @@ function BriefFields({
         </div>
       </BriefSection>
     </>
+  );
+}
+
+// Shown when the dates we asked them to pick from have already passed. The
+// booking form still works; this is the reason the shoot will land later than
+// the social/video calendar assumed.
+function MissedWindowNote({ window }: { window: { start: string; end: string } }) {
+  return (
+    <div className="sched-disclaimer">
+      <p>
+        You missed your allocated production window (
+        <strong>
+          {longDate(window.start)} – {longDate(window.end)}
+        </strong>
+        ), but we&apos;d still love to accommodate a production.
+      </p>
+      <p>
+        Because this wasn&apos;t scheduled in time, it will affect the timing of
+        your social and video content.
+      </p>
+    </div>
   );
 }
 

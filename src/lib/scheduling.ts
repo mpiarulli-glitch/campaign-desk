@@ -22,9 +22,11 @@ import { getDb, type RevClient, type ScheduledSend } from "./db";
 import { getAppUrl } from "./auth";
 import { durationAllowsStart, isRealDate, slotHasPassed } from "./scheduling-rules";
 import {
+  fulfillExpiredOpenExtraRequest,
   fulfillMatchingExtraRequest,
   listOpenExtraRequests as listOpenExtraWindows,
 } from "./extra-requests";
+import { resolveMissedAllocatedWindow } from "./missed-production-window";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -65,9 +67,14 @@ export interface SchedulingStatus {
     sendTime: string;
     status: string;
   }[];
-  // An admin-picked window inviting an extra production, if one is open. When
-  // present, the client's out-of-cycle date picker is bounded to it.
+  // An admin-picked window inviting an extra production, if one is open and
+  // its dates have not all passed. When present, the client's out-of-cycle
+  // date picker is bounded to it.
   extraWindow: { start: string; end: string; note: string } | null;
+  // The window we asked them to book, after every day in it has passed and
+  // they still have not. The link stays valid; the page offers a makeup
+  // booking instead of those expired dates.
+  missedWindow: { start: string; end: string } | null;
 }
 
 // A client's own not-cancelled, not-yet-sent out-of-cycle bookings. Ordered
@@ -116,14 +123,24 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
     : "inactive";
   const existing = window ? findSendForWindow(client.id, window.start) : null;
 
-  const openExtra = listOpenExtraWindows(client.id)[0];
-  const extraWindow = openExtra
+  const openExtras = listOpenExtraWindows(client.id);
+  const liveExtra = openExtras.find((req) => req.window_end >= today);
+  const extraWindow = liveExtra
     ? {
-        start: openExtra.window_start,
-        end: openExtra.window_end,
-        note: openExtra.note,
+        start: liveExtra.window_start,
+        end: liveExtra.window_end,
+        note: liveExtra.note,
       }
     : null;
+  const missedWindow = resolveMissedAllocatedWindow({
+    today,
+    openExtras: openExtras.map((req) => ({
+      start: req.window_start,
+      end: req.window_end,
+    })),
+    askedWindows: askedWindowsForClient(client),
+    bookedWindowStarts: bookedCadenceWindowStarts(client.id),
+  });
 
   // Availability has to cover every range a client can actually pick a day in,
   // not just their cadence window. An admin-invited one-off window gets the
@@ -192,7 +209,52 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
       : null,
     extraRequests: listOpenExtraBookings(client.id),
     extraWindow,
+    missedWindow,
   };
+}
+
+function addDaysYmd(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+function askedWindowsForClient(
+  client: RevClient
+): { start: string; end: string }[] {
+  const starts = new Set<string>();
+  const reminders = getDb()
+    .prepare(`SELECT window_start FROM schedule_reminders WHERE client_id = ?`)
+    .all(client.id) as { window_start: string }[];
+  for (const row of reminders) {
+    if (row.window_start) starts.add(row.window_start);
+  }
+  const reachouts = getDb()
+    .prepare(
+      `SELECT DISTINCT window_start FROM reachouts
+       WHERE client_id = ? AND window_start IS NOT NULL AND window_start != ''`
+    )
+    .all(client.id) as { window_start: string }[];
+  for (const row of reachouts) {
+    if (row.window_start) starts.add(row.window_start);
+  }
+  return [...starts].map((start) => {
+    const fromColor = client.color_week
+      ? productionWindowForDate(client.color_week, start)
+      : null;
+    return fromColor || { start, end: addDaysYmd(start, 4) };
+  });
+}
+
+function bookedCadenceWindowStarts(clientId: string): string[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT cadence_window_start FROM scheduled_sends
+         WHERE client_id = ? AND cancelled_at IS NULL
+           AND cadence_window_start IS NOT NULL`
+      )
+      .all(clientId) as { cadence_window_start: string }[]
+  ).map((row) => row.cadence_window_start);
 }
 
 export type BookingResult =
@@ -523,10 +585,16 @@ export async function submitOutOfCycleBooking(
       error: "That day isn't available. Pick another day.",
     };
   }
-  // An open window an admin invited them into bounds the date. Without one,
-  // any real upcoming date is fair game.
-  const openWindow = listOpenExtraWindows(client.id)[0];
-  if (openWindow && (date < openWindow.window_start || date > openWindow.window_end)) {
+  // An open window an admin invited them into bounds the date, but only while
+  // that window still has days left. An expired invite is a makeup booking:
+  // any real upcoming date is fair game, same as asking off their own bat.
+  const liveInvite = listOpenExtraWindows(client.id).find(
+    (req) => req.window_end >= today
+  );
+  if (
+    liveInvite &&
+    (date < liveInvite.window_start || date > liveInvite.window_end)
+  ) {
     return {
       ok: false,
       httpStatus: 400,
@@ -584,6 +652,7 @@ export async function submitOutOfCycleBooking(
   const result = reserve.immediate();
   if (!result.ok) return result;
   fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
+  fulfillExpiredOpenExtraRequest(result.client.id, today, result.send.id);
   const videographer = result.client.videographer_id
     ? listVideographers(true).find(
         (person) => person.id === result.client.videographer_id
@@ -871,6 +940,11 @@ export async function recordOutOfCycleProduction(
   const result = reserve.immediate();
   if (!result.ok) return result;
   fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
+  fulfillExpiredOpenExtraRequest(
+    result.client.id,
+    appDateTime().date,
+    result.send.id
+  );
 
   if (body.notifyTeam === true) {
     const videographer = result.client.videographer_id

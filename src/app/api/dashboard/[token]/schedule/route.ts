@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getClientByDashboardToken } from "@/lib/dashboard";
-import { getSchedulingStatus, submitProductionBooking } from "@/lib/scheduling";
+import {
+  getSchedulingStatus,
+  submitOutOfCycleBooking,
+  submitProductionBooking,
+} from "@/lib/scheduling";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -23,7 +27,10 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
-  const result = await submitProductionBooking(client, body);
+  const result =
+    body.mode === "extra"
+      ? await submitOutOfCycleBooking(client, body)
+      : await submitProductionBooking(client, body);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.httpStatus });
   }
