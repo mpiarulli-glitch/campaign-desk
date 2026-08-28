@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isOwnerToolsAuthenticated } from "@/lib/auth";
 import { parseAdsPatch, upsertAdsAccount } from "@/lib/ads-dashboard";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "Admins only" }, { status: 401 });
+  if (!(await isOwnerToolsAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { clientId } = await params;
   if (!clientId) {

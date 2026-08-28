@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isOwnerToolsAuthenticated } from "@/lib/auth";
 import { getRevClient } from "@/lib/revenue";
 import {
   clearApproval,
@@ -12,7 +12,7 @@ type Params = { params: Promise<{ clientId: string }> };
 
 // Admin view of a client's editorial-plan sharing: token, approval, notes.
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { clientId } = await params;
@@ -30,7 +30,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 // Rotate the share link, or clear a stale approval so the client re-signs off.
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { clientId } = await params;

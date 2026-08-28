@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isAdminAuthenticated, isOwnerToolsAuthenticated } from "@/lib/auth";
 import { countOpenComments, listCampaigns } from "@/lib/campaigns";
 import { listSends } from "@/lib/calendar";
 import { computeCycleStatus, nextWindow, todayYmd } from "@/lib/cadence";
@@ -67,7 +67,8 @@ export async function GET() {
   });
 
   // ---- Upcoming sends (next 14 days) -----------------------------------
-  const sends = listSends(today, ymdPlusDays(today, 14));
+  const ownerTools = await isOwnerToolsAuthenticated();
+  const sends = ownerTools ? listSends(today, ymdPlusDays(today, 14)) : [];
   const upcoming = sends.map((s) => ({
     id: s.id,
     title: s.title,

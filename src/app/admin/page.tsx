@@ -9,7 +9,7 @@ import { FailuresPanel } from "@/components/FailuresPanel";
 import { LeadershipHome } from "@/components/LeadershipHome";
 import { AssignTodoPanel } from "@/components/AssignTodoPanel";
 import { operatorStatusLabel } from "@/lib/campaign-status";
-import { usesLeadershipHome } from "@/lib/people";
+import { usesLeadershipHome, hasOwnerToolsAccess } from "@/lib/people";
 import { currentWeek } from "@/lib/week";
 
 type Attention = {
@@ -101,20 +101,13 @@ function shortDate(ymd: string): string {
   });
 }
 
-function addDaysYmd(ymd: string, n: number): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + n);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-}
-function todayYmd(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 export default function AdminHomePage() {
   const router = useRouter();
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const [person, setPerson] = useState<string | null>(null);
+  const [owner, setOwner] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
   const [checkingRole, setCheckingRole] = useState(true);
 
   useEffect(() => {
@@ -127,11 +120,20 @@ export default function AdminHomePage() {
         }
         setRole(data.role);
         setPerson(data.person || null);
+        setOwner(Boolean(data.owner));
+        setImpersonating(Boolean(data.impersonating));
         setCheckingRole(false);
       })
       .catch(() => setCheckingRole(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const canSeeOwnerTools = hasOwnerToolsAccess({
+    role,
+    person,
+    owner,
+    impersonating,
+  });
 
   if (checkingRole) {
     return (
@@ -145,10 +147,10 @@ export default function AdminHomePage() {
   if (person && usesLeadershipHome(person)) {
     return <LeadershipHome person={person} />;
   }
-  return <AdminHome />;
+  return <AdminHome canSeeOwnerTools={canSeeOwnerTools} />;
 }
 
-function AdminHome() {
+function AdminHome({ canSeeOwnerTools }: { canSeeOwnerTools: boolean }) {
   const router = useRouter();
   const [s, setS] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -232,14 +234,20 @@ function AdminHome() {
                 <span className="n">{s.production.dueCount}</span>
                 <span className="l">Production due</span>
               </Link>
-              <Link className="ops-stat" href="/admin/calendar">
-                <span className="n">{s.calendar.upcomingCount}</span>
-                <span className="l">Sends in 14 days</span>
-              </Link>
+              {canSeeOwnerTools ? (
+                <Link className="ops-stat" href="/admin/calendar">
+                  <span className="n">{s.calendar.upcomingCount}</span>
+                  <span className="l">Sends in 14 days</span>
+                </Link>
+              ) : null}
             </div>
 
             <div className="hub-launch">
-              {HUB_LAUNCH.map((l) => (
+              {HUB_LAUNCH.filter(
+                (l) =>
+                  canSeeOwnerTools ||
+                  (l.href !== "/admin/calendar" && l.href !== "/admin/ads")
+              ).map((l) => (
                 <Link key={l.href} className="hub-tile" href={l.href}>
                   <span className="hub-tile-ico"><LaunchIcon name={l.icon} /></span>
                   <span className="hub-tile-body">
@@ -312,6 +320,7 @@ function AdminHome() {
                   </div>
                 </div>
 
+                {canSeeOwnerTools ? (
                 <div className="ops-panel">
                   <div className="ops-panel-head">
                     <h2>Upcoming sends</h2>
@@ -340,6 +349,7 @@ function AdminHome() {
                     )}
                   </div>
                 </div>
+                ) : null}
 
                 <div className="ops-panel">
                   <div className="ops-panel-head">
@@ -373,7 +383,6 @@ type ForecastData = {
   capacity: number;
   allocationPct: number;
 };
-type CalendarSend = { id: string; title: string; client_name: string; send_date: string; status: string };
 type BehindItem = { deliverable_id: string; name: string; due_date: string };
 type ClientBehind = { client_id: string; client_name: string; items: BehindItem[] };
 
@@ -388,7 +397,6 @@ function TeamMemberHome() {
   const [person, setPerson] = useState<string | null>(null);
   const [canProduction, setCanProduction] = useState(false);
   const [forecast, setForecast] = useState<ForecastData | null>(null);
-  const [sends, setSends] = useState<CalendarSend[]>([]);
   const [behind, setBehind] = useState<ClientBehind[]>([]);
   const [prodDue, setProdDue] = useState<ProdDue[]>([]);
   const [loading, setLoading] = useState(true);
@@ -405,15 +413,12 @@ function TeamMemberHome() {
         }
         setPerson(auth.person);
 
-        const today = todayYmd();
         const week = currentWeek();
-        const [fRes, cRes, bRes] = await Promise.all([
+        const [fRes, bRes] = await Promise.all([
           fetch(`/api/forecast/${auth.person}?week=${week}`),
-          fetch(`/api/calendar?start=${today}&end=${addDaysYmd(today, 14)}`),
           fetch("/api/snapshot/behind-report"),
         ]);
         if (fRes.ok) setForecast(await fRes.json());
-        if (cRes.ok) setSends((await cRes.json()).sends || []);
         if (bRes.ok) setBehind((await bRes.json()).clients || []);
 
         const prodRes = await fetch("/api/production");
@@ -458,16 +463,12 @@ function TeamMemberHome() {
           <p className="muted">Loading…</p>
         ) : (
           <>
-            <div className="ops-stats" style={{ gridTemplateColumns: canProduction ? "repeat(4, 1fr)" : "repeat(3, 1fr)" }}>
+            <div className="ops-stats" style={{ gridTemplateColumns: canProduction ? "repeat(3, 1fr)" : "repeat(2, 1fr)" }}>
               <Link className="ops-stat" href={person ? `/admin/forecast/${person}` : "/admin/forecast"}>
                 <span className="n" style={{ color: forecast ? allocationColor(forecast.allocationPct) : undefined }}>
                   {forecast ? `${forecast.allocationPct}%` : "—"}
                 </span>
                 <span className="l">Your allocation</span>
-              </Link>
-              <Link className="ops-stat" href="/admin/calendar">
-                <span className="n">{sends.length}</span>
-                <span className="l">Sends in 14 days</span>
               </Link>
               <Link className="ops-stat" href="/admin/client-services">
                 <span className="n">{behindCount}</span>
@@ -532,33 +533,6 @@ function TeamMemberHome() {
                     </div>
                   </div>
                 ) : null}
-
-                <div className="ops-panel">
-                  <div className="ops-panel-head">
-                    <h2>Upcoming sends</h2>
-                    <Link href="/admin/calendar">Calendar →</Link>
-                  </div>
-                  <div className="ops-panel-body">
-                    {sends.length === 0 ? (
-                      <p className="ops-panel-empty">No sends scheduled in the next two weeks.</p>
-                    ) : (
-                      sends.slice(0, 8).map((c) => (
-                        <Link key={c.id} className="ops-item" href="/admin/calendar">
-                          <div>
-                            <p className="ops-item-title">{c.title}</p>
-                            <p className="ops-item-sub">
-                              {c.client_name ? `${c.client_name} · ` : ""}
-                              {shortDate(c.send_date)}
-                            </p>
-                          </div>
-                          <span className={`ops-pill ${c.status === "sent" ? "is-sent" : c.status === "requested" ? "is-review" : "is-due"}`}>
-                            {c.status}
-                          </span>
-                        </Link>
-                      ))
-                    )}
-                  </div>
-                </div>
               </div>
 
               <div className="ops-panel">

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { doesCampaignWork, entryLevelPeople, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
+import { doesCampaignWork, entryLevelPeople, hasOwnerToolsAccess, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
 import { TimerDock } from "./TimerDock";
 import { ActivityBell } from "./ActivityBell";
@@ -207,6 +207,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
   const canSeeProduction =
     session.owner || (Boolean(session.person) && hasProductionAccess(session.person!));
+  const canSeeOwnerTools = hasOwnerToolsAccess(session);
 
   // Campaign features follow TEAM_FOCUS. Someone with a narrowed focus that
   // still includes campaign work (the SEO side) gets Campaigns even on the
@@ -226,12 +227,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         forecastItem,
         ...(focusedOnCampaigns ? [campaignsItem] : []),
         ...FORECAST_NAV.slice(1).filter(
-          (item) => ownsCampaignWork || item.href !== "/admin/calendar"
+          (item) =>
+            item.href !== "/admin/calendar" || canSeeOwnerTools
         ),
         ...(canSeeProduction ? [productionItem] : []),
       ]
     : ADMIN_NAV.flatMap((item) => {
-        if (!ownsCampaignWork && (item.href === "/admin/campaigns" || item.href === "/admin/calendar")) {
+        if (
+          (item.href === "/admin/calendar" || item.href === "/admin/ads") &&
+          !canSeeOwnerTools
+        ) {
+          return [];
+        }
+        if (!ownsCampaignWork && item.href === "/admin/campaigns") {
           return [];
         }
         return item.href === "/admin/hub"

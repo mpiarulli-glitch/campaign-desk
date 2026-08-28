@@ -10,6 +10,7 @@ import {
   type EmailPlatform,
   type PaceStatus,
 } from "@/lib/email-launch";
+import { hasOwnerToolsAccess } from "@/lib/people";
 
 type HubWorkKind = "campaign" | "automation";
 
@@ -346,10 +347,12 @@ function ClientDetail({
   client,
   today,
   onChanged,
+  canSeeOwnerTools,
 }: {
   client: HubClient;
   today: string;
   onChanged: () => void;
+  canSeeOwnerTools: boolean;
 }) {
   const [launching, setLaunching] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -463,9 +466,11 @@ function ClientDetail({
         <div className="lh-card-head">
           <h3>This month</h3>
           <span className="lh-card-links">
-            <Link href="/admin/calendar" className="lh-link">
-              Calendar
-            </Link>
+            {canSeeOwnerTools ? (
+              <Link href="/admin/calendar" className="lh-link">
+                Calendar
+              </Link>
+            ) : null}
             <Link href="/admin/campaigns" className="lh-link">
               Campaigns
             </Link>
@@ -476,7 +481,7 @@ function ClientDetail({
         ) : (
           <ul className="lh-timeline">
             {thisMonth.map((row) => (
-              <ActivityRow key={row.id} row={row} />
+              <ActivityRow key={row.id} row={row} canSeeOwnerTools={canSeeOwnerTools} />
             ))}
           </ul>
         )}
@@ -485,7 +490,7 @@ function ClientDetail({
             <h4 className="lh-subhead">Still in review</h4>
             <ul className="lh-timeline">
               {inReview.map((row) => (
-                <ActivityRow key={row.id} row={row} />
+                <ActivityRow key={row.id} row={row} canSeeOwnerTools={canSeeOwnerTools} />
               ))}
             </ul>
           </>
@@ -576,11 +581,19 @@ function ClientDetail({
   );
 }
 
-function ActivityRow({ row }: { row: HubActivity }) {
+function ActivityRow({
+  row,
+  canSeeOwnerTools,
+}: {
+  row: HubActivity;
+  canSeeOwnerTools: boolean;
+}) {
+  const href =
+    row.href === "/admin/calendar" && !canSeeOwnerTools ? null : row.href;
   const status =
     row.source === "campaign" ? operatorStatusLabel(row.status, null) : sendLabel(row.status);
-  const title = row.href ? (
-    <Link href={row.href} className="lh-row-title">
+  const title = href ? (
+    <Link href={href} className="lh-row-title">
       {row.title}
     </Link>
   ) : (
@@ -607,6 +620,7 @@ export function ClientHub() {
   const [data, setData] = useState<HubPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [canSeeOwnerTools, setCanSeeOwnerTools] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [urlReady, setUrlReady] = useState(false);
   const [query, setQuery] = useState("");
@@ -626,6 +640,23 @@ export function ClientHub() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((auth) => {
+        if (!auth?.authenticated) return;
+        setCanSeeOwnerTools(
+          hasOwnerToolsAccess({
+            role: auth.role,
+            person: auth.person || null,
+            owner: Boolean(auth.owner),
+            impersonating: Boolean(auth.impersonating),
+          })
+        );
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setSelectedId(readClientParam());
@@ -721,7 +752,12 @@ export function ClientHub() {
       </aside>
       <div className="lh-main">
         {selected ? (
-          <ClientDetail client={selected} today={data.today} onChanged={() => void load()} />
+          <ClientDetail
+            client={selected}
+            today={data.today}
+            onChanged={() => void load()}
+            canSeeOwnerTools={canSeeOwnerTools}
+          />
         ) : (
           <p className="lh-empty">
             {data.available.length

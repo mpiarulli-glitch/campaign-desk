@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { hasOwnerToolsAccess } from "@/lib/people";
 
 type Hit = {
   kind: "client" | "campaign";
@@ -12,32 +13,68 @@ type Hit = {
 };
 
 // Static destinations always offered so the palette doubles as quick-nav even
-// with an empty query.
-const QUICK_LINKS: Hit[] = [
+// with an empty query. Calendar and Ads are owner-only and spliced in below.
+const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-home", title: "Home", subtitle: "Dashboard", href: "/admin" },
   { kind: "client", id: "nav-campaigns", title: "Campaigns", subtitle: "All campaigns", href: "/admin/campaigns" },
-  { kind: "client", id: "nav-calendar", title: "Calendar", subtitle: "Send calendar", href: "/admin/calendar" },
   { kind: "client", id: "nav-production", title: "Production", subtitle: "Scheduler", href: "/admin/production" },
   { kind: "client", id: "nav-forecast", title: "Forecast", subtitle: "Team allocation", href: "/admin/forecast" },
   { kind: "client", id: "nav-clients", title: "Clients", subtitle: "All clients", href: "/admin/clients" },
+];
+
+const OWNER_QUICK_LINKS: Hit[] = [
+  { kind: "client", id: "nav-calendar", title: "Calendar", subtitle: "Send calendar", href: "/admin/calendar" },
   { kind: "client", id: "nav-ads", title: "Ads", subtitle: "Paid media dashboard", href: "/admin/ads" },
 ];
+
+function quickLinksForSession(session: {
+  role: "admin" | "forecast" | null;
+  person: string | null;
+  owner?: boolean;
+  impersonating?: boolean;
+} | null): Hit[] {
+  if (!hasOwnerToolsAccess(session)) return BASE_QUICK_LINKS;
+  return [
+    BASE_QUICK_LINKS[0],
+    BASE_QUICK_LINKS[1],
+    ...OWNER_QUICK_LINKS,
+    ...BASE_QUICK_LINKS.slice(2),
+  ];
+}
 
 export function CommandPalette() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [hits, setHits] = useState<Hit[]>(QUICK_LINKS);
+  const [quickLinks, setQuickLinks] = useState(BASE_QUICK_LINKS);
+  const [hits, setHits] = useState<Hit[]>(BASE_QUICK_LINKS);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const reqId = useRef(0);
 
+  useEffect(() => {
+    fetch("/api/auth")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.authenticated) return;
+        const links = quickLinksForSession({
+          role: data.role,
+          person: data.person || null,
+          owner: Boolean(data.owner),
+          impersonating: Boolean(data.impersonating),
+        });
+        setQuickLinks(links);
+        setHits(links);
+      })
+      .catch(() => {});
+  }, []);
+
   const close = useCallback(() => {
     setOpen(false);
     setQ("");
-    setHits(QUICK_LINKS);
+    setHits(quickLinks);
     setActive(0);
-  }, []);
+  }, [quickLinks]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -65,7 +102,7 @@ export function CommandPalette() {
   useEffect(() => {
     const query = q.trim();
     if (!query) {
-      setHits(QUICK_LINKS);
+      setHits(quickLinks);
       setActive(0);
       return;
     }
@@ -81,7 +118,7 @@ export function CommandPalette() {
         .catch(() => {});
     }, 120);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, quickLinks]);
 
   function go(hit: Hit) {
     close();

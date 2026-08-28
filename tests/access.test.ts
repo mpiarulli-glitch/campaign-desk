@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs";
+import path from "path";
 import {
   PEOPLE,
   PRODUCTION_ACCESS,
@@ -8,6 +10,7 @@ import {
   campaignKindFor,
   doesCampaignWork,
   hasProductionAccess,
+  hasOwnerToolsAccess,
   isSeoOnly,
   isTeam,
   isSnapshotAccountManager,
@@ -69,6 +72,36 @@ test("every production slug is a real person", () => {
 
 test("the owner has production access", () => {
   assert.equal(hasProductionAccess(OWNER_SLUG), true);
+});
+
+test("campaign calendar and weekly ads are owner-only in the nav", () => {
+  const michaelOwner = { role: "admin" as const, person: null, owner: true };
+  const michaelNamed = { role: "admin" as const, person: "michael", owner: false };
+  const cassidy = { role: "admin" as const, person: "cassidy", owner: false };
+  const jack = { role: "forecast" as const, person: "jack", owner: false };
+  const impersonating = {
+    role: "admin" as const,
+    person: "cassidy",
+    owner: true,
+    impersonating: true,
+  };
+
+  assert.equal(hasOwnerToolsAccess(michaelOwner), true);
+  assert.equal(hasOwnerToolsAccess(michaelNamed), true);
+  assert.equal(hasOwnerToolsAccess(cassidy), false);
+  assert.equal(hasOwnerToolsAccess(jack), false);
+  assert.equal(hasOwnerToolsAccess(impersonating), false);
+  assert.equal(hasOwnerToolsAccess(null), false);
+});
+
+test("the app shell hides calendar and ads unless the owner is signed in", () => {
+  const shell = fs.readFileSync(
+    path.join("src/components/AppShell.tsx"),
+    "utf8"
+  );
+  assert.match(shell, /hasOwnerToolsAccess/);
+  assert.match(shell, /canSeeOwnerTools/);
+  assert.match(shell, /item\.href === "\/admin\/calendar" \|\| item\.href === "\/admin\/ads"/);
 });
 
 test("the SEO team is abel and carlos, and only them", () => {

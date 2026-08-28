@@ -238,6 +238,22 @@ export function hasProductionAccess(slug: string): boolean {
 }
 
 /**
+ * Campaign calendar and weekly ads are owner-only tools. The owner session
+ * (null person) and Michael's named admin login both pass; impersonating does
+ * not, so "view as Cassidy" matches what Cassidy would see.
+ */
+export function hasOwnerToolsAccess(session: {
+  role: "admin" | "forecast" | null;
+  person: string | null;
+  owner?: boolean;
+  impersonating?: boolean;
+} | null): boolean {
+  if (!session || session.impersonating) return false;
+  if (session.role !== "admin") return false;
+  return Boolean(session.owner) || session.person === OWNER_SLUG;
+}
+
+/**
  * Kyle Onstott, Sylvia, Luis, and Morris land on a team-ops home instead of
  * the campaign dashboard: every forecast, production highlights, and a door
  * into Client Services.

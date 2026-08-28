@@ -6,8 +6,8 @@ import {
   doesCampaignWork,
   hasProductionAccess,
   isValidPerson,
-  personTeam,
   OWNER_SLUG,
+  personTeam,
   type Team,
 } from "./people";
 import {
@@ -588,6 +588,15 @@ export async function isProductionAuthenticated(): Promise<boolean> {
   // Owner session carries a null person.
   if (session.role === "admin" && session.person === null) return true;
   return Boolean(session.person) && hasProductionAccess(session.person!);
+}
+
+// Campaign calendar and weekly ads. Owner-only — see hasOwnerToolsAccess in
+// ./people for the matching client-side nav check.
+export async function isOwnerToolsAuthenticated(): Promise<boolean> {
+  const session = await getSession();
+  if (!session || session.impersonating) return false;
+  if (session.role !== "admin") return false;
+  return session.person === null || session.person === OWNER_SLUG;
 }
 
 export function getAppUrl(): string {

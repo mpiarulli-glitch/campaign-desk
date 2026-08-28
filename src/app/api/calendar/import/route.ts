@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isOwnerToolsAuthenticated } from "@/lib/auth";
 import { getRevClient } from "@/lib/revenue";
 import {
   applyCalendarImport,
@@ -18,7 +18,7 @@ const MODES: ImportMode[] = ["add", "skip_duplicates", "replace_range"];
 
 /** Recent import batches for the client, so a bad import can be undone. */
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const clientId = new URL(request.url).searchParams.get("clientId") || "";
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
  * there is no window where the preview and the write can disagree.
  */
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
 /** Undo an import by its batch id. */
 export async function DELETE(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated, sessionFocusSlug } from "@/lib/auth";
+import { isOwnerToolsAuthenticated, sessionFocusSlug } from "@/lib/auth";
 import { teamFocus } from "@/lib/people";
 import { createSend, listSends } from "@/lib/calendar";
 import { isRealDate } from "@/lib/scheduling-rules";
@@ -7,8 +7,7 @@ import { isRealDate } from "@/lib/scheduling-rules";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request) {
-  const session = await getSession();
-  if (!session) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const url = new URL(request.url);
@@ -39,21 +38,11 @@ export async function GET(request: Request) {
     narrowed,
     assetTypes: focus ?? null,
   };
-  if (session.role === "forecast") {
-    return NextResponse.json({
-      sends: sends.map((send) => ({
-        ...send,
-        note: "",
-        production_brief: "",
-      })),
-      scope,
-    });
-  }
   return NextResponse.json({ sends, scope });
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

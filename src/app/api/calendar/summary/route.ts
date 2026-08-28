@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { isOwnerToolsAuthenticated } from "@/lib/auth";
 import { clientCalendarSummary } from "@/lib/calendar";
 import { getRevClient } from "@/lib/revenue";
 
@@ -16,7 +16,7 @@ import { getRevClient } from "@/lib/revenue";
  * admin, but "this client has no calendar yet" is worth knowing either way.
  */
 export async function GET(request: Request) {
-  if (!(await getSession())) {
+  if (!(await isOwnerToolsAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const clientId = new URL(request.url).searchParams.get("clientId") || "";
