@@ -18,8 +18,16 @@ import {
   type SnapshotStatus,
   type SnapshotWin,
 } from "./db";
-import { mondayOf } from "./week";
+import { addWeeks, mondayOf } from "./week";
 import { metricPeriodLabel, normalizeMetricPeriod } from "./metric-period";
+import {
+  backfillWeekRange,
+  isPeriodAnchorWeek,
+  resolveBackfillCell,
+  type BackfillCell,
+  type BackfillEntryMap,
+  type BackfillRow,
+} from "./snapshot-backfill";
 import {
   entryWeekStartForDate,
   periodEndExclusiveFor,
@@ -33,6 +41,17 @@ export {
   loggedForTargetsOtherPeriod,
   periodStartFor,
 } from "./snapshot-entry-date";
+
+export {
+  BACKFILL_WEEK_COUNT,
+  backfillColumns,
+  backfillWeekRange,
+  isPeriodAnchorWeek,
+  resolveBackfillCell,
+  type BackfillCell,
+  type BackfillColumn,
+  type BackfillRow,
+} from "./snapshot-backfill";
 
 export type {
   CadenceUnit,
@@ -440,30 +459,30 @@ export function weekData(
      WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
   );
 
-  type EntryFields = {
-    status: SnapshotStatus;
-    work_done: string;
-    next_steps: string;
-    notes: string;
-    logged_by: string;
-    updated_at: string;
-  };
-
   return deliverables.map((d) => {
     const kind = normKind(d.kind);
     const cadence_unit = normCadenceUnit(d.cadence_unit);
-    let e: EntryFields | undefined;
+    let e:
+      | {
+          status: SnapshotStatus;
+          work_done: string;
+          next_steps: string;
+          notes: string;
+          logged_by: string;
+          updated_at: string;
+        }
+      | undefined;
     let period_start = "";
 
     if (kind === "one_time") {
-      e = latestEverStmt.get(d.id) as EntryFields | undefined;
+      e = latestEverStmt.get(d.id) as typeof e;
     } else if (cadence_unit === "weekly") {
       period_start = weekStart;
-      e = exactStmt.get(d.id, weekStart) as EntryFields | undefined;
+      e = exactStmt.get(d.id, weekStart) as typeof e;
     } else {
       period_start = periodStartFor(cadence_unit, weekStart);
       const end = periodEndExclusiveFor(cadence_unit, weekStart);
-      e = rangeStmt.get(d.id, period_start, end) as EntryFields | undefined;
+      e = rangeStmt.get(d.id, period_start, end) as typeof e;
     }
 
     return {
@@ -484,6 +503,164 @@ export function weekData(
       updated_at: e?.updated_at ?? "",
     };
   });
+}
+
+type BackfillEntryFields = {
+  status: SnapshotStatus;
+  work_done: string;
+  next_steps: string;
+  notes: string;
+  logged_by: string;
+  updated_at: string;
+};
+
+/** Six-month grid for backfilling deliverable progress from one page. */
+export function backfillGridData(
+  clientId: string,
+  opts?: { team?: string | null; endWeek?: string; weekCount?: number }
+): { weeks: string[]; rows: BackfillRow[] } {
+  const weeks = backfillWeekRange(opts?.endWeek, opts?.weekCount);
+  if (!weeks.length) return { weeks: [], rows: [] };
+
+  const deliverables = scopeDeliverables(
+    getDb()
+      .prepare(
+        `SELECT id, category, team, name, cadence, kind, cadence_unit
+         FROM snapshot_deliverables
+         WHERE client_id = ? AND active = 1
+         ORDER BY sort_order ASC, created_at ASC`
+      )
+      .all(clientId) as Array<{
+      id: string;
+      category: string;
+      team: string;
+      name: string;
+      cadence: string;
+      kind: string;
+      cadence_unit: string;
+    }>,
+    opts?.team
+  );
+  if (!deliverables.length) return { weeks, rows: [] };
+
+  const rangeStart = weeks[0];
+  const rangeEnd = addWeeks(weeks[weeks.length - 1], 1);
+  const ids = deliverables.map((d) => d.id);
+  const placeholders = ids.map(() => "?").join(", ");
+
+  const ranged = getDb()
+    .prepare(
+      `SELECT deliverable_id, week_start, status, work_done, next_steps, notes, logged_by, updated_at
+       FROM snapshot_entries
+       WHERE client_id = ? AND week_start >= ? AND week_start < ?
+         AND deliverable_id IN (${placeholders})
+       ORDER BY updated_at ASC, week_start ASC`
+    )
+    .all(clientId, rangeStart, rangeEnd, ...ids) as Array<{
+    deliverable_id: string;
+    week_start: string;
+    status: SnapshotStatus;
+    work_done: string;
+    next_steps: string;
+    notes: string;
+    logged_by: string;
+    updated_at: string;
+  }>;
+
+  const latestOneTime = getDb()
+    .prepare(
+      `SELECT deliverable_id, status, work_done, next_steps, notes, logged_by, updated_at
+       FROM snapshot_entries
+       WHERE client_id = ? AND deliverable_id IN (${placeholders})
+       ORDER BY week_start DESC`
+    )
+    .all(clientId, ...ids) as Array<{
+    deliverable_id: string;
+    status: SnapshotStatus;
+    work_done: string;
+    next_steps: string;
+    notes: string;
+    logged_by: string;
+    updated_at: string;
+  }>;
+
+  const entryMap: BackfillEntryMap = new Map();
+  for (const e of ranged) {
+    const list = entryMap.get(e.deliverable_id) || [];
+    list.push({
+      week_start: e.week_start,
+      status: normStatus(e.status),
+      work_done: e.work_done,
+      next_steps: e.next_steps,
+      notes: e.notes,
+      logged_by: e.logged_by,
+      updated_at: e.updated_at,
+    });
+    entryMap.set(e.deliverable_id, list);
+  }
+
+  const oneTimeLatest = new Map<string, BackfillEntryFields>();
+  for (const d of deliverables) {
+    if (normKind(d.kind) !== "one_time") continue;
+    const hit = latestOneTime.find((e) => e.deliverable_id === d.id);
+    if (hit) {
+      oneTimeLatest.set(d.id, {
+        status: normStatus(hit.status),
+        work_done: hit.work_done,
+        next_steps: hit.next_steps,
+        notes: hit.notes,
+        logged_by: hit.logged_by,
+        updated_at: hit.updated_at,
+      });
+    }
+  }
+
+  const lastWeek = weeks[weeks.length - 1];
+  const rows: BackfillRow[] = deliverables.map((d) => {
+    const kind = normKind(d.kind);
+    const cadence_unit = normCadenceUnit(d.cadence_unit);
+    const cells: BackfillCell[] = weeks.map((weekStart, i) => {
+      const prev = i > 0 ? weeks[i - 1] : null;
+      const editable = isPeriodAnchorWeek(
+        kind,
+        cadence_unit,
+        weekStart,
+        prev,
+        weekStart === lastWeek
+      );
+      const fields = resolveBackfillCell(
+        kind,
+        cadence_unit,
+        weekStart,
+        entryMap,
+        d.id,
+        oneTimeLatest.get(d.id)
+      );
+      let period_start = "";
+      if (kind === "one_time") period_start = "";
+      else if (cadence_unit === "weekly") period_start = weekStart;
+      else period_start = periodStartFor(cadence_unit, weekStart);
+
+      return {
+        week_start: weekStart,
+        period_start,
+        editable,
+        ...fields,
+      };
+    });
+    return {
+      deliverable_id: d.id,
+      category: d.category,
+      team: d.team || "",
+      name: d.name,
+      cadence: d.cadence,
+      kind,
+      cadence_unit,
+      cells,
+    };
+  });
+
+  return { weeks, rows };
 }
 
 export function upsertEntry(input: {
