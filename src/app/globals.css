@@ -8964,7 +8964,8 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .app-content > * { min-height: 100%; }
 /* Lifecycle Deliverables fills the pane and only scrolls sideways. */
 .app-content:has(.hud-fill) { overflow: hidden; }
-.app-content:has(.lh) { overflow: hidden; }
+/* Old master-detail rail scrolls inside itself; the card grid uses page scroll. */
+.app-content:has(.lh:not(.lh-grid-page):not(.lh-detail-page)) { overflow: hidden; }
 
 /* Light / Dark / System segmented control in the account menu. */
 .app-theme-row { display: flex; gap: 4px; padding: 4px 10px 8px; }
@@ -14009,6 +14010,14 @@ button.am-node:hover .am-edit-cue,
   padding: 20px 24px 0;
 }
 
+.lh-page:has(.lh-grid-page),
+.lh-page:has(.lh-detail-page) {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  padding-bottom: 28px;
+}
+
 .lh-page-bar {
   display: flex;
   align-items: flex-end;
@@ -14082,7 +14091,10 @@ button.am-node:hover .am-edit-cue,
 .lh.lh-detail-page {
   display: flex;
   flex-direction: column;
+  flex: none;
   gap: 18px;
+  height: auto;
+  min-height: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
