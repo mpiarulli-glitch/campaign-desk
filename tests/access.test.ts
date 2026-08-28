@@ -175,6 +175,14 @@ test("Kyle Morris is on the forecast roster", () => {
   assert.equal(PEOPLE.find((p) => p.slug === "kyle_morris")?.entryLevel, false);
 });
 
+test("Luis Romero is on the forecast roster", () => {
+  assert.equal(isValidPerson("luis_romero"), true);
+  assert.equal(PEOPLE.find((p) => p.slug === "luis_romero")?.label, "Luis Romero");
+  assert.equal(PEOPLE.find((p) => p.slug === "luis_romero")?.entryLevel, false);
+  assert.equal(hasProductionAccess("luis_romero"), true);
+  assert.equal(personTeam("luis_romero"), "onboarding");
+});
+
 test("Saqib is a restricted forecast login", () => {
   assert.equal(isValidPerson("saqib"), true);
   const person = PEOPLE.find((p) => p.slug === "saqib");
@@ -225,7 +233,7 @@ test("every focused slug is a real person", () => {
 
 test("the social pair keep production access alongside their narrowed calendar", () => {
   // Focus limits what they see on the calendar, not whether they can reach
-  // upcoming productions â€” social owns the video/carousel work that feeds it.
+  // upcoming productions — social owns the video/carousel work that feeds it.
   for (const slug of ["randi", "lana"]) {
     assert.equal(hasProductionAccess(slug), true, `${slug} should keep production`);
   }
@@ -279,6 +287,7 @@ test("peopleWithoutTeam lists roster members with no specialist team", () => {
     "lana",
     "roy",
     "saqib",
+    "luis_romero",
     "cassidy",
     "kyle_morris",
   ]) {

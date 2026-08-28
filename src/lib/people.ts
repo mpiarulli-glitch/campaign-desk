@@ -12,6 +12,7 @@ export const PEOPLE = [
   { slug: "cassidy", label: "Cassidy", productionAccess: false, entryLevel: false },
   { slug: "sylvia", label: "Sylvia", productionAccess: false, entryLevel: false },
   { slug: "kyle_morris", label: "Kyle Morris", productionAccess: false, entryLevel: false },
+  { slug: "luis_romero", label: "Luis Romero", productionAccess: false, entryLevel: false },
   { slug: "carlos", label: "Carlos", productionAccess: false, entryLevel: false },
   { slug: "roy", label: "Roy", productionAccess: false, entryLevel: true },
   { slug: "michael", label: "Michael", productionAccess: false, entryLevel: false },
@@ -197,9 +198,9 @@ export function personLabel(slug: string): string {
 /**
  * Display name for a stored actor tag, as written by sessionActor in ./auth.
  *
- * Consults both rosters because they do not fully overlap: a few admin logins
- * (kyle_onstott, luis_romero) are not on the forecast roster, and personLabel
- * alone would render them as their raw slug.
+ * Consults both rosters because they do not fully overlap: Kyle Onstott is an
+ * admin login who is not on the forecast roster, and personLabel alone would
+ * render him as his raw slug.
  *
  * A tag can carry an `:impersonated` marker. That is kept visible on purpose. The
  * session cookie does not record which admin was acting, so the only honest

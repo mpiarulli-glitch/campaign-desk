@@ -3024,8 +3024,8 @@ function migrate(database: Database.Database) {
 
 // Insert a login row for every person in the code roster who does not have one
 // yet. Never touches an existing row, so it cannot clobber a password someone
-// has already set. Overlapping slugs (cassidy, carlos, kyle_morris, sylvia,
-// jerald appear in both arrays) get the admin role, matching the "admin label
+// has already set. Overlapping slugs (cassidy, carlos, kyle_morris, luis_romero,
+// sylvia, jerald appear in both arrays) get the admin role, matching the "admin label
 // wins" rule in team.ts. INSERT ... ON CONFLICT DO NOTHING cannot change role,
 // so a later pass promotes leftover forecast rows for anyone now in ADMIN_PEOPLE.
 export function seedUsers(database: Database.Database) {

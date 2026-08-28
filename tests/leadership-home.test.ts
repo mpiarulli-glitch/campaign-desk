@@ -15,6 +15,15 @@ test("Sylvia has a forecast roster slot like everyone else", () => {
   );
 });
 
+test("Luis Romero has a forecast roster slot", () => {
+  assert.equal(isValidPerson("luis_romero"), true);
+  const week = weekSummaryForAllPeople(currentWeek());
+  assert.ok(
+    week.some((p) => p.person === "luis_romero"),
+    "Luis should appear in the all-team forecast"
+  );
+});
+
 test("Saqib and Jerald have forecast roster slots", () => {
   assert.equal(isValidPerson("saqib"), true);
   assert.equal(isValidPerson("jerald"), true);

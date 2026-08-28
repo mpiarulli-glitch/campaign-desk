@@ -37,6 +37,7 @@ test("login accounts", async (t) => {
     // A slug in both arrays resolves to admin, not forecast.
     assert.equal(users.getUser("cassidy")?.role, "admin");
     assert.equal(users.getUser("kyle_morris")?.role, "admin");
+    assert.equal(users.getUser("luis_romero")?.role, "admin");
     assert.equal(users.getUser("jerald")?.role, "admin");
     // A forecast-only person stays forecast.
     assert.equal(users.getUser("jack")?.role, "forecast");
