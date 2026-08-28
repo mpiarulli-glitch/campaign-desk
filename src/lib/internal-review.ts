@@ -89,6 +89,10 @@ function reviewLinkHtml(block: string): string | null {
   return `<ul><li><a href="${escapeHtml(href)}">Internal review link</a></li></ul>`;
 }
 
+// Basecamp rich text has no paragraph margins. A blank line in the editor is a
+// bare <br> between blocks; contiguous <p>A</p><p>B</p> renders squished.
+const BC_BLANK_LINE = "<br>";
+
 function blocksToHtml(text: string): string {
   const blocks = text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/);
   return blocks
@@ -110,7 +114,7 @@ function blocksToHtml(text: string): string {
       }
       return `<p>${linkifyEscaped(escapeHtml(block.trim())).replace(/\n/g, "<br>")}</p>`;
     })
-    .join("");
+    .join(BC_BLANK_LINE);
 }
 
 export function internalReviewTodoMessageText(input: {
@@ -163,13 +167,15 @@ export function internalReviewTodoHtmlFromText(
   } else if (ping) {
     body = `${MENTION_TOKEN}, ${body}`;
   } else {
-    return blocksToHtml(body) + sylviaCcHtml(cc);
+    return [blocksToHtml(body), sylviaCcHtml(cc)].filter(Boolean).join(BC_BLANK_LINE);
   }
 
-  return (
-    blocksToHtml(body).replace(new RegExp(MENTION_TOKEN, "g"), () => rendered) +
-    sylviaCcHtml(cc)
-  );
+  return [
+    blocksToHtml(body).replace(new RegExp(MENTION_TOKEN, "g"), () => rendered),
+    sylviaCcHtml(cc),
+  ]
+    .filter(Boolean)
+    .join(BC_BLANK_LINE);
 }
 
 export function teamPeopleForInternalReview(
@@ -253,7 +259,7 @@ export function internalReviewFollowupHtml(input: {
     `<p>Hi ${name},</p>`,
     `<p>Just a nudge on this internal review — <strong>${title}</strong> is still waiting on you.</p>`,
     `<p><a href="${url}">Internal review link</a></p>`,
-  ].join("");
+  ].join(BC_BLANK_LINE);
 }
 
 export function deskInternalReviewTodo(campaignId: string): TodoView | null {

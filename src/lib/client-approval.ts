@@ -68,6 +68,10 @@ function linkifyEscaped(escaped: string): string {
   });
 }
 
+// Basecamp rich text has no paragraph margins. A blank line in the editor is a
+// bare <br> between blocks; contiguous <p>A</p><p>B</p> renders squished.
+const BC_BLANK_LINE = "<br>";
+
 function blocksToHtml(text: string): string {
   const blocks = text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/);
   return blocks
@@ -87,7 +91,7 @@ function blocksToHtml(text: string): string {
       }
       return `<p>${linkifyEscaped(escapeHtml(block.trim())).replace(/\n/g, "<br>")}</p>`;
     })
-    .join("");
+    .join(BC_BLANK_LINE);
 }
 
 // Turns the editable plaintext (template plus whatever the sender added) into
@@ -106,8 +110,12 @@ export function clientApprovalMessageHtmlFromText(
   const greetingName = contactMention
     ? contactMention
     : escapeHtml((match?.[1] || "there").trim());
-  const greeting = `<p>Hi ${greetingName},</p>`;
-  return greeting + (rest ? blocksToHtml(rest) : "") + sylviaCcHtml(ccMention);
+  const parts = [
+    `<p>Hi ${greetingName},</p>`,
+    rest ? blocksToHtml(rest) : "",
+    sylviaCcHtml(ccMention),
+  ].filter(Boolean);
+  return parts.join(BC_BLANK_LINE);
 }
 
 export function clientApprovalMessageHtml(
@@ -127,27 +135,38 @@ export function clientApprovalMessageHtml(
     ? "<p>You'll see the full automation on a map: what starts it, the wait times, and each email. Click an email to preview it.</p>"
     : "";
 
-  return [
+  // <hr> already separates major sections. Between sibling paragraphs/lists,
+  // insert the same blank-line <br> Basecamp's editor uses — otherwise those
+  // blocks sit flush against each other.
+  const intro = [
     `<p>Hi ${name},</p>`,
     `<p>I hope you're doing well. Your ${title} is ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.</p>`,
     flowNote,
-    "<hr>",
+  ]
+    .filter(Boolean)
+    .join(BC_BLANK_LINE);
+  const checklist = [
     "<p><strong>Here's what to check:</strong></p>",
-    "<ul>",
-    "<li><strong>Copy.</strong> Does the messaging reflect your brand and what you want to communicate?</li>",
-    "<li><strong>CTAs.</strong> Are the calls to action clear, and do the wording and links feel right?</li>",
-    "<li><strong>Links.</strong> Do they all point to the right pages?</li>",
-    "<li><strong>Imagery.</strong> Do the visuals match your brand and the message?</li>",
-    "</ul>",
-    "<hr>",
+    [
+      "<ul>",
+      "<li><strong>Copy.</strong> Does the messaging reflect your brand and what you want to communicate?</li>",
+      "<li><strong>CTAs.</strong> Are the calls to action clear, and do the wording and links feel right?</li>",
+      "<li><strong>Links.</strong> Do they all point to the right pages?</li>",
+      "<li><strong>Imagery.</strong> Do the visuals match your brand and the message?</li>",
+      "</ul>",
+    ].join(""),
+  ].join(BC_BLANK_LINE);
+  const preview = [
     "<p><strong>Preview Link:</strong></p>",
     `<p><a href="${url}">Review the ${title}</a></p>`,
-    "<hr>",
+  ].join(BC_BLANK_LINE);
+  const close = [
     "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before replying. That way we can turn everything around in one pass.</p>",
     '<p>To move forward, just reply with <strong>"Approved"</strong> or send over your feedback. Let us know if you have any questions.</p>',
     "<p>Looking forward to hearing from you!</p>",
     sylviaCcHtml(ccMention),
-  ].join("");
+  ].join(BC_BLANK_LINE);
+  return [intro, checklist, preview, close].join("<hr>");
 }
 
 export function clientReviewFollowupText(input: ClientApprovalMessageInput): string {
@@ -185,7 +204,7 @@ export function clientReviewFollowupHtml(
     `<p>Hi ${name},</p>`,
     `<p>Just a friendly follow-up — your ${title} is still waiting on review. When you have a moment, please take a look and reply with <strong>"Approved"</strong> or your feedback so we can keep things moving.</p>`,
     `<p><a href="${url}">Review the ${title}</a></p>`,
-  ].join("");
+  ].join(BC_BLANK_LINE);
 }
 
 export function campaignApprovalRevisionKey(

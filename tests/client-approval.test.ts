@@ -116,6 +116,13 @@ CC: @Sylvia`,
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /CC: <bc-attachment sgid="sgid-sylvia"><\/bc-attachment>/);
   assert.equal(html.match(/CC:/g)?.length, 1);
+  // Basecamp has no paragraph margins — blank lines must be explicit <br>s.
+  assert.match(
+    html,
+    /<\/p><br><p>Please also check the footer before Friday\.<\/p><br><ul>/
+  );
+  assert.match(html, /<\/ul><br><p>Preview Link:<\/p><br><p>/);
+  assert.match(html, /<\/p><br><p>CC:/);
 });
 
 test("edited approval text still mentions the recipient if the greeting was removed", () => {

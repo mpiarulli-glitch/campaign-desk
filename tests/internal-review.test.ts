@@ -67,6 +67,10 @@ CC: @Sylvia`,
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /CC: <bc-attachment sgid="sgid-sylvia"><\/bc-attachment>/);
   assert.equal(html.match(/CC:/g)?.length, 1);
+  // Basecamp has no paragraph margins — blank lines must be explicit <br>s.
+  assert.match(html, /<\/p><br><ul>/);
+  assert.match(html, /<\/ul><br><p>/);
+  assert.match(html, /<\/p><br><p>CC:/);
 });
 
 test("edited internal review note still mentions the reviewer if the greeting was removed", () => {
