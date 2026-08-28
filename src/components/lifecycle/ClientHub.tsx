@@ -68,6 +68,10 @@ type HubClient = {
   campaigns: HubCampaign[];
   activity: HubActivity[];
   memberIds: string[];
+  logoUrl: string | null;
+  category: string;
+  description: string;
+  status: "active" | "behind";
   launch: {
     started: boolean;
     open: number;
@@ -75,6 +79,30 @@ type HubClient = {
     todos: HubLaunchTodo[];
   };
 };
+
+const AVATAR_COLORS = [
+  "#d98b2b",
+  "#3b82f6",
+  "#10b981",
+  "#8b5cf6",
+  "#ef4444",
+  "#0ea5e9",
+  "#f59e0b",
+  "#ec4899",
+];
+
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+
+function avatarColor(name: string): string {
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+}
 
 type HubPayload = {
   period: string;
@@ -104,18 +132,43 @@ function kindLabel(kind: HubWorkKind): string {
   return kind === "automation" ? "Automation" : "Campaign";
 }
 
-function listLine(c: HubClient): string {
-  if (c.quota > 0) {
-    const next = c.nextSend ? ` · next ${prettyDate(c.nextSend.date)}` : "";
-    return `${c.delivered} of ${c.quota}${next}`;
-  }
-  if (c.nextSend) return `Next ${prettyDate(c.nextSend.date)}`;
-  if (c.launch.open > 0) return `Launching · ${c.launch.open} open`;
-  return emailPlatformLabel(c.platform) || "No quota";
-}
-
 function matchesClient(c: HubClient, id: string): boolean {
   return c.id === id || (c.memberIds || []).includes(id);
+}
+
+function metricLabel(c: HubClient): string {
+  if (c.quota > 0) {
+    return c.quota === 1 ? "1 Contracted" : `${c.quota} Contracted`;
+  }
+  if (c.campaigns.length === 1) return "1 Campaign";
+  if (c.campaigns.length > 1) return `${c.campaigns.length} Campaigns`;
+  return "No quota";
+}
+
+function ClientLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (logoUrl && !failed) {
+    return (
+      <span className="snap-pick-logo">
+        <img
+          src={logoUrl}
+          alt=""
+          width={40}
+          height={40}
+          onError={() => setFailed(true)}
+        />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="snap-pick-logo is-initials"
+      style={{ background: avatarColor(name) }}
+      aria-hidden="true"
+    >
+      {initials(name)}
+    </span>
+  );
 }
 
 function readClientParam(): string {
@@ -135,36 +188,45 @@ function PaceDot({ pace, launching }: { pace: PaceStatus; launching: boolean }) 
   return <span className={`lh-dot is-${tone}`} aria-hidden="true" />;
 }
 
-function ClientList({
+function ClientCards({
   clients,
-  selectedId,
   onSelect,
 }: {
   clients: HubClient[];
-  selectedId: string;
   onSelect: (id: string) => void;
 }) {
   if (clients.length === 0) {
     return <p className="lh-empty">No clients match.</p>;
   }
   return (
-    <ul className="lh-list">
+    <div className="snap-pick-grid">
       {clients.map((c) => (
-        <li key={c.id}>
-          <button
-            type="button"
-            className={`lh-list-item ${selectedId === c.id ? "on" : ""}`}
-            onClick={() => onSelect(c.id)}
-          >
+        <button
+          key={c.id}
+          type="button"
+          className="snap-pick-card lh-pick-card"
+          onClick={() => onSelect(c.id)}
+        >
+          <div className="snap-pick-card-head">
+            <ClientLogo name={c.name} logoUrl={c.logoUrl} />
+            <div className="snap-pick-card-title">
+              <h3>{c.name}</h3>
+              {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+            </div>
             <PaceDot pace={c.pace} launching={c.launch.open > 0} />
-            <span className="lh-list-copy">
-              <span className="lh-list-name">{c.name}</span>
-              <span className="lh-list-meta">{listLine(c)}</span>
+          </div>
+          <p className="snap-pick-card-desc">{c.description}</p>
+          <div className="snap-pick-card-foot">
+            <span className="snap-pick-metric">{metricLabel(c)}</span>
+            <span
+              className={`snap-pick-status ${c.status === "active" ? "is-active" : "is-behind"}`}
+            >
+              {c.status === "active" ? "Active" : "Needs attention"}
             </span>
-          </button>
-        </li>
+          </div>
+        </button>
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -676,18 +738,20 @@ export function ClientHub() {
   }, [data, query, filter]);
 
   useEffect(() => {
-    if (!data || !urlReady) return;
-    if (selectedId && data.clients.some((c) => matchesClient(c, selectedId))) return;
-    const next = filtered[0]?.id || data.clients[0]?.id || "";
-    if (next) {
-      setSelectedId(next);
-      writeClientParam(next);
-    }
-  }, [data, filtered, selectedId, urlReady]);
+    if (!data || !urlReady || !selectedId) return;
+    if (data.clients.some((c) => matchesClient(c, selectedId))) return;
+    setSelectedId("");
+    writeClientParam("");
+  }, [data, selectedId, urlReady]);
 
   function select(id: string) {
     setSelectedId(id);
     writeClientParam(id);
+  }
+
+  function clearSelection() {
+    setSelectedId("");
+    writeClientParam("");
   }
 
   if (denied) {
@@ -703,45 +767,62 @@ export function ClientHub() {
   const selected = data.clients.find((c) => matchesClient(c, selectedId)) || null;
   const counts = data.counts;
 
+  if (selected) {
+    return (
+      <div className="lh lh-detail-page">
+        <div className="lh-detail-bar">
+          <button type="button" className="btn btn-ghost" onClick={clearSelection}>
+            ← All clients
+          </button>
+        </div>
+        <ClientDetail
+          client={selected}
+          today={data.today}
+          onChanged={() => void load()}
+          canSeeOwnerTools={canSeeOwnerTools}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="lh">
-      <aside className="lh-rail">
-        <div className="lh-rail-head">
+    <div className="lh lh-grid-page">
+      <div className="lh-grid-toolbar">
+        <div>
           <p className="lh-kicker">{data.periodLabel}</p>
           <p className="lh-counts">
             {counts.behind} behind · {counts.onTrack} on track · {counts.met} met
             {counts.launching ? ` · ${counts.launching} launching` : ""}
           </p>
-          <input
-            className="lh-search"
-            type="search"
-            placeholder="Find a client"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className="lh-filters" role="tablist" aria-label="Filter clients">
-            {(
-              [
-                ["all", "All"],
-                ["behind", "Behind"],
-                ["on_track", "On track"],
-                ["launching", "Launching"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={filter === id}
-                className={filter === id ? "on" : ""}
-                onClick={() => setFilter(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
-        <ClientList clients={filtered} selectedId={selectedId} onSelect={select} />
+        <input
+          className="lh-search"
+          type="search"
+          placeholder="Find a client"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="lh-filters" role="tablist" aria-label="Filter clients">
+          {(
+            [
+              ["all", "All"],
+              ["behind", "Behind"],
+              ["on_track", "On track"],
+              ["launching", "Launching"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={filter === id}
+              className={filter === id ? "on" : ""}
+              onClick={() => setFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <AddClientForm
           available={data.available}
           today={data.today}
@@ -749,23 +830,8 @@ export function ClientHub() {
             void load().then(() => select(id));
           }}
         />
-      </aside>
-      <div className="lh-main">
-        {selected ? (
-          <ClientDetail
-            client={selected}
-            today={data.today}
-            onChanged={() => void load()}
-            canSeeOwnerTools={canSeeOwnerTools}
-          />
-        ) : (
-          <p className="lh-empty">
-            {data.available.length
-              ? "Add a client with a launch date and platform, or pick one from the list."
-              : "Pick a client."}
-          </p>
-        )}
       </div>
+      <ClientCards clients={filtered} onSelect={select} />
     </div>
   );
 }

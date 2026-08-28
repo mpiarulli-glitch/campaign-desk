@@ -28,7 +28,60 @@ import { addBoardCard, listBoardCards } from "./lifecycle-board";
 import { currentPeriod, periodLabel } from "./period";
 import { todayYmd } from "./cadence";
 import { createTodo, listTodos, type TodoView } from "./todos";
-import { getRevClient, listRevClients } from "./revenue";
+import {
+  businessModelLabel,
+  getRevClient,
+  listRevClients,
+  resolveClientLogoUrl,
+  type RevClient,
+} from "./revenue";
+
+const TIER_LABELS: Record<string, string> = {
+  tier1: "Tier 1",
+  tier2: "Tier 2",
+  tier3: "Tier 3",
+  standard: "Standard",
+  premium: "Premium",
+  vip: "VIP",
+};
+
+function clientCategory(client: Pick<RevClient, "tier" | "business_model">): string {
+  const tier = (client.tier || "").trim();
+  if (tier && TIER_LABELS[tier]) return TIER_LABELS[tier];
+  if (tier) return tier.replace(/_/g, " ");
+  return businessModelLabel(client.business_model);
+}
+
+function hubDescription(input: {
+  quota: number;
+  delivered: number;
+  remaining: number;
+  pace: PaceStatus;
+  launchOpen: number;
+  launchTotal: number;
+}): string {
+  if (input.quota > 0) {
+    const base =
+      input.delivered === 0
+        ? "No emails sent for client approval this month yet."
+        : input.delivered === 1
+          ? "1 email sent for client approval this month."
+          : `${input.delivered} emails sent for client approval this month.`;
+    if (input.pace === "behind") {
+      return input.remaining === 1
+        ? `${base} 1 still owed against contract.`
+        : `${base} ${input.remaining} still owed against contract.`;
+    }
+    if (input.pace === "met") {
+      return `${base} Contract met.`;
+    }
+    return `${base} On track against contract.`;
+  }
+  if (input.launchOpen > 0) {
+    return `Launching — ${input.launchOpen} of ${input.launchTotal} onboarding to-dos open.`;
+  }
+  return "No monthly campaign quota on file. All current periods are caught up.";
+}
 
 export type HubWorkKind = "campaign" | "automation";
 
@@ -93,6 +146,10 @@ export interface HubClient {
   campaigns: HubCampaign[];
   activity: HubActivity[];
   memberIds: string[];
+  logoUrl: string | null;
+  category: string;
+  description: string;
+  status: "active" | "behind";
   launch: {
     started: boolean;
     open: number;
@@ -475,11 +532,14 @@ function toHubClient(
   campaigns: HubCampaign[],
   launch: HubLaunchTodo[],
   launchDate: string | null,
-  platform: EmailPlatform | null
+  platform: EmailPlatform | null,
+  rev: RevClient | null
 ): HubClient {
   const dayOfMonth = Number(today.slice(8, 10));
   const pace = contractPace(group.quota, group.delivered, dayOfMonth, daysInPeriod(period));
   const upcoming = sends.filter((s) => s.status !== "sent" && s.date >= today);
+  const launchOpen = launch.filter((t) => t.status === "open").length;
+  const status: "active" | "behind" = pace.status === "behind" ? "behind" : "active";
   return {
     id: group.primary.clientId,
     name: group.displayName,
@@ -497,9 +557,20 @@ function toHubClient(
     campaigns,
     activity: buildActivity(sends, campaigns),
     memberIds: group.memberIds,
+    logoUrl: rev ? resolveClientLogoUrl(rev) : null,
+    category: rev ? clientCategory(rev) : "",
+    description: hubDescription({
+      quota: group.quota,
+      delivered: group.delivered,
+      remaining: pace.remaining,
+      pace: pace.status,
+      launchOpen,
+      launchTotal: launch.length,
+    }),
+    status,
     launch: {
       started: launch.length > 0,
-      open: launch.filter((t) => t.status === "open").length,
+      open: launchOpen,
       total: launch.length,
       todos: launch,
     },
@@ -520,8 +591,9 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
   const campaigns = campaignsByClient(clientIds, idToName, period);
   const launch = launchTodosByClient(clientIds);
   const meta = launchMetaByClient(clientIds);
+  const revById = new Map(listRevClients(true).map((c) => [c.id, c]));
   const onBoard = new Set(clientIds);
-  const available = listRevClients(false)
+  const available = [...revById.values()]
     .filter((c) => c.active === 1 && !onBoard.has(c.id))
     .map((c) => ({ id: c.id, name: c.name }));
 
@@ -539,7 +611,8 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
         collectForIds(campaigns, group.memberIds),
         collectForIds(launch, group.memberIds),
         launchDate,
-        platform
+        platform,
+        revById.get(group.primary.clientId) ?? null
       );
     })
     .sort((a, b) => sortKey(a) - sortKey(b) || a.name.localeCompare(b.name));

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
-import { BoardPanel } from "@/components/lifecycle/BoardPanel";
 import { ClientHub } from "@/components/lifecycle/ClientHub";
 import { SubjectBankPanel } from "@/components/lifecycle/SubjectBankPanel";
 import { KnowledgePanel } from "@/components/lifecycle/KnowledgePanel";
@@ -15,7 +14,6 @@ import { ToolsPanel } from "@/components/lifecycle/ToolsPanel";
 import type { LifecycleDashboard } from "@/components/lifecycle/types";
 
 type Tool =
-  | "board"
   | "subjects"
   | "linkedin"
   | "automations"
@@ -26,7 +24,6 @@ type Tool =
   | "tools";
 
 const TOOLS: Array<{ id: Tool; label: string }> = [
-  { id: "board", label: "Deliverables board" },
   { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
   { id: "report", label: "Account report" },
@@ -69,7 +66,7 @@ export default function LifecyclePage() {
   const refresh = useCallback(() => void loadTools(false), [loadTools]);
 
   return (
-    <div className={`lh-page ${tool === "board" ? "hud hud-fill" : ""}`}>
+    <div className="lh-page">
       <header className="lh-page-bar">
         <div>
           <h1>Lifecycle</h1>
@@ -118,9 +115,8 @@ export default function LifecyclePage() {
       {tool && !data ? <p className="lh-empty">Loading…</p> : null}
 
       {tool && data ? (
-        <div className={`hud ${tool === "board" ? "hud-fill" : ""}`}>
-          <div className={`hud-page ${tool === "board" ? "hud-page-fill" : ""}`}>
-            {tool === "board" ? <BoardPanel clients={data.clients} /> : null}
+        <div className="hud">
+          <div className="hud-page">
             {tool === "linkedin" ? (
               <LinkedInHub
                 data={data.linkedIn}

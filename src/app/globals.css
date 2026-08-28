@@ -14078,6 +14078,87 @@ button.am-node:hover .am-edit-cue,
   overflow: hidden;
 }
 
+.lh.lh-grid-page,
+.lh.lh-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.lh-grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.lh-grid-toolbar .lh-search {
+  width: min(260px, 100%);
+}
+
+.lh-grid-toolbar .lh-add {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) repeat(2, minmax(120px, 0.8fr)) auto;
+  align-items: end;
+  gap: 8px 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+
+.lh-grid-toolbar .lh-add-label {
+  grid-column: 1 / -1;
+}
+
+.lh-grid-toolbar .lh-add .lh-preview,
+.lh-grid-toolbar .lh-add .lh-error {
+  grid-column: 1 / -1;
+}
+
+.lh-grid-toolbar .lh-add > select,
+.lh-grid-toolbar .lh-add .lh-field,
+.lh-grid-toolbar .lh-add .lh-field input,
+.lh-grid-toolbar .lh-add .lh-field select {
+  width: 100%;
+  max-width: none;
+}
+
+.lh-grid-toolbar .lh-add > .btn {
+  justify-self: start;
+}
+
+button.snap-pick-card.lh-pick-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.snap-pick-card.lh-pick-card .lh-dot {
+  margin-top: 6px;
+}
+
+.lh-detail-bar {
+  display: flex;
+  align-items: center;
+}
+
+.lh-detail-page .lh-detail {
+  max-width: 760px;
+  padding: 0 0 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  padding: 22px 24px 32px;
+}
+
 .lh-rail {
   display: flex;
   flex-direction: column;
@@ -14539,11 +14620,14 @@ button.am-node:hover .am-edit-cue,
 
 @media (max-width: 820px) {
   .lh-page { padding: 16px 12px 0; }
-  .lh {
+  .lh:not(.lh-grid-page):not(.lh-detail-page) {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(200px, 34vh) 1fr;
   }
   .lh-rail { border-right: 0; border-bottom: 1px solid var(--border); }
+  .lh-grid-toolbar .lh-add {
+    grid-template-columns: 1fr;
+  }
   .lh-time-row {
     grid-template-columns: 72px 1fr;
   }
