@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adjacentPackageId } from "@/lib/email-package";
+import {
+  MOBILE_PREVIEW_WIDTH,
+  buildPreviewSrcDoc,
+  fitScaleForPreview,
+  measureEmailContentWidth,
+  measurePreviewDocumentHeight,
+} from "@/lib/email-preview";
 
 export type PinComment = {
   id: string;
@@ -127,18 +134,6 @@ async function waitForImages(doc: Document): Promise<void> {
   );
 }
 
-function measureDocHeight(doc: Document): number {
-  const body = doc.body;
-  const htmlEl = doc.documentElement;
-  return Math.max(
-    body?.scrollHeight || 0,
-    body?.offsetHeight || 0,
-    htmlEl?.scrollHeight || 0,
-    htmlEl?.offsetHeight || 0,
-    500
-  );
-}
-
 export function EmailPreview({
   html,
   pins = [],
@@ -154,39 +149,26 @@ export function EmailPreview({
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const frozenHeightRef = useRef<number | null>(null);
+  const lastFitRef = useRef(1);
   const [height, setHeight] = useState(700);
   const [ready, setReady] = useState(false);
   const [hoverHref, setHoverHref] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [fitScale, setFitScale] = useState(1);
+  const [fitContentWidth, setFitContentWidth] = useState(MOBILE_PREVIEW_WIDTH);
 
   // When not placing a pin, let hovers/clicks reach the email so links are
   // hoverable and clickable. In pin mode the overlay captures placement clicks.
   const passThrough = !pinMode;
 
-  const srcDoc = useMemo(() => {
-    if (interactive) {
-      const looksFullDoc =
-        /<html[\s>]/i.test(html) || /<!doctype/i.test(html);
-      if (looksFullDoc) {
-        // Author supplied a full document; run it as-is and just append the
-        // height reporter (before </body> when present).
-        return html.includes("</body>")
-          ? html.replace("</body>", `${HEIGHT_SCRIPT}</body>`)
-          : html + HEIGHT_SCRIPT;
-      }
-      // Bare fragment: wrap it in a clean white canvas (no email chrome) and
-      // let the quiz control its own styling.
-      return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
-        html,body{margin:0;padding:0;background:#ffffff;}
-        img{max-width:100%;height:auto;}
-      </style></head><body>${html}${HEIGHT_SCRIPT}</body></html>`;
-    }
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>
-      html,body{margin:0;padding:0;background:#f4f6f8;}
-      body{padding:16px 0;}
-      img{max-width:100%;height:auto;}
-    </style></head><body>${html}</body></html>`;
-  }, [html, interactive]);
+  const srcDoc = useMemo(
+    () =>
+      buildPreviewSrcDoc(html, {
+        interactive,
+        heightScript: HEIGHT_SCRIPT,
+      }),
+    [html, interactive]
+  );
 
   const freezeHeight = useCallback(async () => {
     const iframe = iframeRef.current;
@@ -202,24 +184,47 @@ export function EmailPreview({
         requestAnimationFrame(() => resolve())
       );
 
-      const measured = measureDocHeight(doc);
+      const measured = measurePreviewDocumentHeight(doc, iframe);
       // Freeze once per HTML load so pins never drift from remeasurement
       frozenHeightRef.current = measured;
       setHeight(measured);
+
+      // Phone frame is 390px. A 600px table (or a 320px table left-aligned on
+      // a white body) has to be scaled to fill it — that's what Gmail does on
+      // a real phone. Interactive quizzes keep native width so clicks line up.
+      if (!interactive && device === "mobile") {
+        const contentWidth = measureEmailContentWidth(doc);
+        const scale = fitScaleForPreview(contentWidth, MOBILE_PREVIEW_WIDTH);
+        setFitScale((prev) => (Math.abs(prev - scale) < 0.001 ? prev : scale));
+        setFitContentWidth((prev) => {
+          const next =
+            scale === 1 ? MOBILE_PREVIEW_WIDTH : Math.round(contentWidth);
+          return prev === next ? prev : next;
+        });
+      } else {
+        setFitScale((prev) => (prev === 1 ? prev : 1));
+        setFitContentWidth((prev) =>
+          prev === MOBILE_PREVIEW_WIDTH ? prev : MOBILE_PREVIEW_WIDTH
+        );
+      }
+
       setReady(true);
     } catch {
       setReady(true);
     }
-  }, []);
+  }, [device, interactive]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
     frozenHeightRef.current = null;
+    lastFitRef.current = 1;
     setReady(false);
     setHeight(700);
     setHoverHref(null);
+    setFitScale(1);
+    setFitContentWidth(MOBILE_PREVIEW_WIDTH);
 
     // Interactive frames report their height via postMessage. Show the frame
     // as soon as it loads rather than trying to measure its document here.
@@ -366,7 +371,8 @@ export function EmailPreview({
 
     doc.addEventListener("input", collect);
     // Typing changes how tall the email is, so the frame has to follow.
-    const onInput = () => setHeight(measureDocHeight(doc));
+    const onInput = () =>
+      setHeight(measurePreviewDocumentHeight(doc, iframe));
     doc.addEventListener("input", onInput);
 
     return () => {
@@ -400,12 +406,28 @@ export function EmailPreview({
   }, [interactive]);
 
   // Re-measure height when switching device width: the email reflows (mobile
-  // is usually taller), so the frozen height must be recomputed.
+  // is usually taller), so the frozen height must be recomputed. Reset scale
+  // first so we measure at the new iframe width, not a leftover 600px layout.
   useEffect(() => {
+    lastFitRef.current = 1;
+    setFitScale(1);
+    setFitContentWidth(MOBILE_PREVIEW_WIDTH);
     if (iframeRef.current?.contentDocument?.readyState === "complete") {
       void freezeHeight();
     }
   }, [device, freezeHeight]);
+
+  // After a fit scale is applied the iframe is as wide as the email (e.g.
+  // 600px), then CSS-scaled down to the phone frame. Height at that layout
+  // can differ from the 390px pass, so measure once more.
+  useEffect(() => {
+    if (interactive || device !== "mobile" || fitScale === 1) return;
+    if (Math.abs(lastFitRef.current - fitScale) < 0.001) return;
+    lastFitRef.current = fitScale;
+    if (iframeRef.current?.contentDocument?.readyState === "complete") {
+      void freezeHeight();
+    }
+  }, [fitScale, fitContentWidth, device, interactive, freezeHeight]);
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!pinMode || !onPlacePin || !ready) return;
@@ -521,10 +543,11 @@ export function EmailPreview({
       <div
         className={`preview-canvas ${interactive ? "interactive" : ""} ${
           ready ? "is-ready" : "is-loading"
-        }`}
+        }${device === "mobile" ? " is-mobile" : ""}`}
         style={{
-          height,
-          width: device === "mobile" ? 390 : undefined,
+          height: device === "mobile" ? Math.round(height * fitScale) : height,
+          width: device === "mobile" ? MOBILE_PREVIEW_WIDTH : undefined,
+          maxWidth: device === "mobile" ? "100%" : undefined,
           margin: device === "mobile" ? "0 auto" : undefined,
         }}
       >
@@ -539,7 +562,12 @@ export function EmailPreview({
           }
           style={{
             height,
-            width: "100%",
+            width:
+              device === "mobile" && fitScale !== 1
+                ? fitContentWidth
+                : "100%",
+            transform: fitScale !== 1 ? `scale(${fitScale})` : undefined,
+            transformOrigin: "top left",
             pointerEvents: passThrough ? "auto" : "none",
           }}
         />
@@ -548,7 +576,7 @@ export function EmailPreview({
           className={`pin-layer ${pinMode && ready ? "clickable" : ""}`}
           onClick={handleClick}
           style={{
-            height,
+            height: device === "mobile" ? Math.round(height * fitScale) : height,
             width: "100%",
             pointerEvents: passThrough ? "none" : "auto",
           }}

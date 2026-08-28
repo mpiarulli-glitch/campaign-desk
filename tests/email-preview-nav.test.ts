@@ -31,6 +31,7 @@ test("campaign and review previews pass packageNav into the device bar", () => {
 
   assert.match(preview, /packageNav/);
   assert.match(preview, /preview-package-btn/);
+  assert.match(preview, /buildPreviewSrcDoc/);
   assert.match(campaign, /packageNav=/);
   assert.match(review, /packageNav=/);
 });
