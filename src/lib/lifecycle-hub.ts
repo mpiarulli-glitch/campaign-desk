@@ -24,7 +24,12 @@ import {
   type EmailPlatform,
   type PaceStatus,
 } from "./email-launch";
-import { addBoardCard, listBoardCards } from "./lifecycle-board";
+import {
+  addBoardCard,
+  listBoardCards,
+  logOffAppCampaign,
+  type OffAppCampaignInput,
+} from "./lifecycle-board";
 import { currentPeriod, periodLabel } from "./period";
 import { todayYmd } from "./cadence";
 import { createTodo, listTodos, type TodoView } from "./todos";
@@ -33,6 +38,7 @@ import {
   getRevClient,
   listRevClients,
   resolveClientLogoUrl,
+  updateRevClient,
   type RevClient,
 } from "./revenue";
 
@@ -703,5 +709,45 @@ export function addClientToHub(
     return { ok: false, error: "Could not add that client." };
   }
   createLaunchTodos(clientId, launchDate, createdBy, platform);
+  return { ok: true };
+}
+
+/**
+ * Contracted monthly campaign volume. Same field the board edits — a client
+ * term, not a per-month value.
+ */
+export function setHubClientQuota(clientId: string, quota: number): boolean {
+  if (!getRevClient(clientId)) return false;
+  return Boolean(
+    updateRevClient(clientId, {
+      monthlyEmailQuota: Math.max(0, Math.round(quota)),
+    })
+  );
+}
+
+/**
+ * Log a completed send that never went through Campaign Desk. Ensures this
+ * month's board card exists, then stamps a real sent/approved campaign so the
+ * hub count and the board stay in sync.
+ */
+export function logHubCampaign(
+  clientId: string,
+  input: OffAppCampaignInput,
+  period = currentPeriod()
+): { ok: true } | { ok: false; error: string } {
+  if (!getRevClient(clientId)) return { ok: false, error: "Unknown client." };
+  if (!input.title.trim()) return { ok: false, error: "Add a title." };
+
+  let card = listBoardCards(period).find((c) => c.clientId === clientId);
+  if (!card) {
+    if (!addBoardCard(clientId, period)) {
+      return { ok: false, error: "Could not add that client to this month." };
+    }
+    card = listBoardCards(period).find((c) => c.clientId === clientId);
+  }
+  if (!card) return { ok: false, error: "Could not find this month's board card." };
+
+  const next = logOffAppCampaign(card.id, input);
+  if (!next) return { ok: false, error: "Could not log that campaign." };
   return { ok: true };
 }

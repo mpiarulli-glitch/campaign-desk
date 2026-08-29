@@ -233,3 +233,61 @@ test("hub contract is met at client approval, not internal review", async (t) =>
   assert.equal(withClient.delivered, true);
 });
 
+test("hub can adjust quota and log an off-app campaign", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-log-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const { getDb, nowIso } = await import("../src/lib/db");
+  const { currentPeriod } = await import("../src/lib/period");
+  const { todayYmd } = await import("../src/lib/cadence");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  const period = currentPeriod();
+  const today = todayYmd();
+  getDb()
+    .prepare(
+      `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    )
+    .run("cl_manual", "Kentina Hospitality", 0, now, now);
+
+  assert.equal(hub.addClientToHub("cl_manual", today, "michael", period, "klaviyo").ok, true);
+  assert.equal(hub.setHubClientQuota("cl_manual", 4), true);
+
+  let snapshot = hub.buildLifecycleHub();
+  let client = snapshot.clients.find((c) => c.id === "cl_manual");
+  assert.ok(client);
+  assert.equal(client.quota, 4);
+  assert.equal(client.delivered, 0);
+
+  assert.deepEqual(hub.logHubCampaign("cl_manual", { title: "   " }), {
+    ok: false,
+    error: "Add a title.",
+  });
+
+  const logged = hub.logHubCampaign("cl_manual", {
+    title: "August newsletter",
+    sentOn: `${period}-12`,
+    status: "sent",
+  });
+  assert.deepEqual(logged, { ok: true });
+
+  snapshot = hub.buildLifecycleHub();
+  client = snapshot.clients.find((c) => c.id === "cl_manual");
+  assert.ok(client);
+  assert.equal(client.quota, 4);
+  assert.equal(client.delivered, 1);
+  assert.equal(client.remaining, 3);
+  const row = client.activity.find((a) => a.title === "August newsletter");
+  assert.ok(row);
+  assert.equal(row.delivered, true);
+  assert.equal(row.status, "sent");
+});
+

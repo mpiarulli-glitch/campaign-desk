@@ -439,8 +439,79 @@ function ClientDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [missingPlatform, setMissingPlatform] = useState<EmailPlatform | "">("");
+  const [quotaDraft, setQuotaDraft] = useState(String(client.quota || ""));
+  const [logTitle, setLogTitle] = useState("");
+  const [logDate, setLogDate] = useState("");
+  const [logStatus, setLogStatus] = useState<"sent" | "approved">("sent");
+  const [logging, setLogging] = useState(false);
+  const [logError, setLogError] = useState("");
+  const [quotaError, setQuotaError] = useState("");
   const pct =
     client.quota > 0 ? Math.min(100, Math.round((client.delivered / client.quota) * 100)) : 0;
+
+  useEffect(() => {
+    setQuotaDraft(String(client.quota || ""));
+    setQuotaError("");
+  }, [client.id, client.quota]);
+
+  async function saveQuota(raw: string) {
+    const next = Math.max(0, Math.round(Number(raw || 0)));
+    if (!Number.isFinite(next)) {
+      setQuotaError("Enter a whole number.");
+      setQuotaDraft(String(client.quota || ""));
+      return;
+    }
+    if (next === client.quota) {
+      setQuotaDraft(String(client.quota || ""));
+      return;
+    }
+    setQuotaError("");
+    const res = await fetch(`/api/lifecycle/hub/${client.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quota: next }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      setQuotaError(data.error || "Could not save that count.");
+      setQuotaDraft(String(client.quota || ""));
+      return;
+    }
+    onChanged();
+  }
+
+  async function submitLog(e: FormEvent) {
+    e.preventDefault();
+    const title = logTitle.trim();
+    if (!title) {
+      setLogError("Add a title.");
+      return;
+    }
+    setLogging(true);
+    setLogError("");
+    try {
+      const res = await fetch(`/api/lifecycle/hub/${client.id}/campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          sentOn: logDate || undefined,
+          status: logStatus,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setLogError(data.error || "Could not log that campaign.");
+        return;
+      }
+      setLogTitle("");
+      setLogDate("");
+      setLogStatus("sent");
+      onChanged();
+    } finally {
+      setLogging(false);
+    }
+  }
 
   async function createLaunch(startDate: string, platform: EmailPlatform) {
     setBusy(true);
@@ -541,6 +612,59 @@ function ClientDetail({
             No monthly campaign quota on file. Automations still show in the list.
           </p>
         )}
+
+        <div className="lh-quota-tools">
+          <label className="lh-field">
+            <span>Contracted /mo</span>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              value={quotaDraft}
+              onChange={(e) => setQuotaDraft(e.target.value)}
+              onBlur={() => void saveQuota(quotaDraft)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              aria-label="Contracted campaign emails per month"
+            />
+          </label>
+          {quotaError ? <p className="lh-error">{quotaError}</p> : null}
+
+          <form className="lh-log-form" onSubmit={(e) => void submitLog(e)}>
+            <span className="lh-log-label">Log campaign</span>
+            <input
+              type="text"
+              value={logTitle}
+              onChange={(e) => setLogTitle(e.target.value)}
+              placeholder="Title"
+              aria-label="Campaign title"
+            />
+            <div className="lh-log-row">
+              <input
+                type="date"
+                value={logDate}
+                onChange={(e) => setLogDate(e.target.value)}
+                aria-label="Sent date"
+              />
+              <select
+                value={logStatus}
+                onChange={(e) => setLogStatus(e.target.value as "sent" | "approved")}
+                aria-label="Status"
+              >
+                <option value="sent">Sent</option>
+                <option value="approved">Approved</option>
+              </select>
+              <button type="submit" className="btn btn-sm" disabled={logging}>
+                {logging ? "Saving…" : "Log"}
+              </button>
+            </div>
+            {logError ? <p className="lh-error">{logError}</p> : null}
+          </form>
+        </div>
       </section>
 
       <section className="lh-card">

@@ -14526,6 +14526,62 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   color: var(--text-body);
 }
 
+.lh-quota-tools {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lh-quota-tools .lh-field input {
+  max-width: 120px;
+}
+
+.lh-log-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lh-log-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.lh-log-form > input[type="text"] {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  max-width: 320px;
+  background: var(--bg);
+}
+
+.lh-log-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lh-log-row input[type="date"],
+.lh-log-row select {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--bg);
+}
+
 .lh-subhead {
   margin: 16px 0 8px;
   font-size: 11px;
