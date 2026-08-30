@@ -121,13 +121,35 @@ test("email analytics rankings", async (t) => {
     ts
   );
 
-  const dashboard = stats.buildEmailAnalyticsDashboard();
+  const dashboard = stats.buildEmailAnalyticsDashboard(180);
   assert.equal(dashboard.totals.sends, 3);
   assert.equal(dashboard.topSubjects.length, 2);
   assert.equal(dashboard.topSubjects[0]?.subject, "Your summer deal is here");
   assert.equal(dashboard.topSubjects.some((r) => r.subject.includes("100%")), false);
   assert.equal(dashboard.clients[0]?.clientName, "Alpha Co");
   assert.equal(dashboard.trends.length, 2);
+  assert.equal(dashboard.periodDays, 180);
+
+  // Old June send drops out of a 30-day window when "now" is late July.
+  const july = stats.buildEmailAnalyticsDashboard(30);
+  assert.equal(july.periodDays, 30);
+  assert.ok(july.totals.sends <= 2);
+});
+
+test("period helpers", async () => {
+  const stats = await import("../src/lib/ghl-email-stats");
+  assert.equal(stats.parseEmailAnalyticsPeriod("60"), 60);
+  assert.equal(stats.parseEmailAnalyticsPeriod("nope"), 90);
+  assert.equal(stats.minDeliveredForPeriod(30), 25);
+  assert.equal(stats.minDeliveredForPeriod(180), 50);
+  assert.equal(
+    stats.inPeriod("2026-07-01T12:00:00.000Z", 30, new Date("2026-07-15T12:00:00.000Z")),
+    true
+  );
+  assert.equal(
+    stats.inPeriod("2026-05-01T12:00:00.000Z", 30, new Date("2026-07-15T12:00:00.000Z")),
+    false
+  );
 });
 
 test("subjectKey normalises whitespace", async () => {

@@ -19,10 +19,24 @@ import { ghlRequest, isGhlConfigured } from "./ghl";
 import { listRevClients } from "./revenue";
 
 const CONCURRENCY = 4;
-const MAX_CAMPAIGNS_PER_LOCATION = 40;
 const PAGE_SIZE = 20;
-const LOOKBACK_DAYS = 180;
-const MIN_DELIVERED_FOR_RANK = 50;
+/** How far back sync pulls from GHL — six months. */
+export const SYNC_LOOKBACK_DAYS = 180;
+const MAX_CAMPAIGNS_PER_LOCATION = 100;
+const MAX_BULK_PER_LOCATION = 60;
+
+/** Dashboard window options (days). */
+export const EMAIL_ANALYTICS_PERIODS = [30, 60, 90, 180] as const;
+export type EmailAnalyticsPeriod = (typeof EMAIL_ANALYTICS_PERIODS)[number];
+
+export const EMAIL_ANALYTICS_PERIOD_LABELS: Record<EmailAnalyticsPeriod, string> = {
+  30: "30 days",
+  60: "60 days",
+  90: "90 days",
+  180: "6 months",
+};
+
+const DEFAULT_PERIOD: EmailAnalyticsPeriod = 90;
 
 export type GhlEmailSource = "email-campaigns" | "bulk-actions";
 
@@ -114,6 +128,9 @@ export interface MonthTrendRow {
 export interface EmailAnalyticsDashboard {
   configured: boolean;
   lastSyncedAt: string | null;
+  periodDays: EmailAnalyticsPeriod;
+  periodLabel: string;
+  range: { start: string; end: string };
   totals: {
     sends: number;
     clients: number;
@@ -157,10 +174,44 @@ function rate(part: number, whole: number): number {
   return (part / whole) * 100;
 }
 
-function lookbackCutoffIso(): string {
+export function parseEmailAnalyticsPeriod(v: unknown): EmailAnalyticsPeriod {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  if (EMAIL_ANALYTICS_PERIODS.includes(n as EmailAnalyticsPeriod)) {
+    return n as EmailAnalyticsPeriod;
+  }
+  return DEFAULT_PERIOD;
+}
+
+export function cutoffIsoForDays(days: number): string {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() - LOOKBACK_DAYS);
+  d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString();
+}
+
+export function minDeliveredForPeriod(days: EmailAnalyticsPeriod): number {
+  if (days <= 30) return 25;
+  if (days <= 60) return 35;
+  if (days <= 90) return 40;
+  return 50;
+}
+
+function lookbackCutoffIso(): string {
+  return cutoffIsoForDays(SYNC_LOOKBACK_DAYS);
+}
+
+export function inPeriod(sentAt: string, periodDays: number, now = new Date()): boolean {
+  if (!sentAt) return true;
+  const t = Date.parse(sentAt);
+  if (Number.isNaN(t)) return true;
+  const start = now.getTime() - periodDays * 86_400_000;
+  return t >= start && t <= now.getTime();
+}
+
+export function filterSendsByPeriod(
+  sends: EmailSendView[],
+  periodDays: EmailAnalyticsPeriod
+): EmailSendView[] {
+  return sends.filter((s) => inPeriod(s.sentAt, periodDays));
 }
 
 function monthKey(iso: string): string {
@@ -226,7 +277,10 @@ function pickSentAt(raw: Record<string, unknown>): string {
   );
 }
 
-async function listSentEmailCampaigns(locationId: string): Promise<ListedCampaign[]> {
+async function listSentEmailCampaigns(
+  locationId: string,
+  cutoffIso: string
+): Promise<ListedCampaign[]> {
   const out: ListedCampaign[] = [];
   let offset = 0;
   while (out.length < MAX_CAMPAIGNS_PER_LOCATION) {
@@ -243,9 +297,15 @@ async function listSentEmailCampaigns(locationId: string): Promise<ListedCampaig
     });
     const batch = res.campaigns || [];
     if (!batch.length) break;
+    let sawOlder = false;
     for (const raw of batch) {
       const id = str(raw.id);
       if (!id) continue;
+      const sentAt = pickSentAt(raw);
+      if (sentAt && sentAt < cutoffIso) {
+        sawOlder = true;
+        continue;
+      }
       out.push({
         id,
         sourceId: str(raw.sourceId) || id,
@@ -253,22 +313,26 @@ async function listSentEmailCampaigns(locationId: string): Promise<ListedCampaig
         subject: pickSubject(raw),
         previewText: str(raw.previewText),
         status: str(raw.status) || "sent",
-        sentAt: pickSentAt(raw),
+        sentAt,
         source: "email-campaigns",
       });
       if (out.length >= MAX_CAMPAIGNS_PER_LOCATION) break;
     }
     offset += batch.length;
-    if (batch.length < PAGE_SIZE) break;
+    if (batch.length < PAGE_SIZE || sawOlder) break;
     if (typeof res.total === "number" && offset >= res.total) break;
   }
   return out;
 }
 
-async function listCompletedBulkActions(locationId: string): Promise<ListedCampaign[]> {
+async function listCompletedBulkActions(
+  locationId: string,
+  cutoffIso: string
+): Promise<ListedCampaign[]> {
   const out: ListedCampaign[] = [];
   let offset = 0;
-  while (out.length < Math.floor(MAX_CAMPAIGNS_PER_LOCATION / 2)) {
+  const dateFrom = cutoffIso.slice(0, 10);
+  while (out.length < MAX_BULK_PER_LOCATION) {
     const res = await ghlRequest<{
       campaigns?: Array<Record<string, unknown>>;
       total?: number;
@@ -278,6 +342,7 @@ async function listCompletedBulkActions(locationId: string): Promise<ListedCampa
         limit: PAGE_SIZE,
         offset,
         status: "complete",
+        dateFrom,
       },
     });
     const batch = res.campaigns || [];
@@ -295,7 +360,7 @@ async function listCompletedBulkActions(locationId: string): Promise<ListedCampa
         sentAt: pickSentAt(raw),
         source: "bulk-actions",
       });
-      if (out.length >= Math.floor(MAX_CAMPAIGNS_PER_LOCATION / 2)) break;
+      if (out.length >= MAX_BULK_PER_LOCATION) break;
     }
     offset += batch.length;
     if (batch.length < PAGE_SIZE) break;
@@ -360,33 +425,56 @@ async function fetchCampaignStats(
   }
 }
 
-/** Local calendar subjects for a client, used when GHL list payloads omit subject. */
-function localSubjectsFor(clientId: string | null): Array<{ subject: string; date: string; title: string }> {
+/** Calendar + review-package subjects, for backfilling GHL rows that omit subject. */
+function localSubjectsFor(clientId: string | null): Array<{ subject: string; date: string; title: string; previewText: string }> {
   if (!clientId) return [];
-  return getDb()
+  const db = getDb();
+  const calendar = db
     .prepare(
-      `SELECT subject, send_date AS date, title
+      `SELECT subject, send_date AS date, title, COALESCE(preview_text, '') AS previewText
          FROM scheduled_sends
         WHERE client_id = ?
           AND TRIM(COALESCE(subject, '')) <> ''
         ORDER BY send_date DESC`
     )
-    .all(clientId) as Array<{ subject: string; date: string; title: string }>;
+    .all(clientId) as Array<{ subject: string; date: string; title: string; previewText: string }>;
+
+  const review = db
+    .prepare(
+      `SELECT s.subject, SUBSTR(s.created_at, 1, 10) AS date, c.title,
+              COALESCE(s.preview_text, '') AS previewText
+         FROM email_subjects s
+         JOIN campaigns c ON c.id = s.campaign_id
+        WHERE c.client_id = ?
+          AND c.archived_at IS NULL
+          AND TRIM(COALESCE(s.subject, '')) <> ''
+        ORDER BY s.created_at DESC`
+    )
+    .all(clientId) as Array<{ subject: string; date: string; title: string; previewText: string }>;
+
+  return [...calendar, ...review];
 }
 
 function matchLocalSubject(
   campaign: ListedCampaign,
-  locals: Array<{ subject: string; date: string; title: string }>
-): string {
-  if (campaign.subject) return campaign.subject;
+  locals: Array<{ subject: string; date: string; title: string; previewText: string }>
+): { subject: string; previewText: string } {
+  if (campaign.subject) {
+    return { subject: campaign.subject, previewText: campaign.previewText };
+  }
   const day = (campaign.sentAt || "").slice(0, 10);
   if (day) {
     const onDay = locals.filter((l) => l.date === day);
-    if (onDay.length === 1) return onDay[0].subject;
+    if (onDay.length === 1) {
+      return { subject: onDay[0].subject, previewText: onDay[0].previewText || campaign.previewText };
+    }
   }
   const name = campaign.name.toLowerCase();
   const byTitle = locals.find((l) => l.title && name.includes(l.title.toLowerCase()));
-  return byTitle?.subject || "";
+  if (byTitle) {
+    return { subject: byTitle.subject, previewText: byTitle.previewText || campaign.previewText };
+  }
+  return { subject: "", previewText: campaign.previewText };
 }
 
 /* ----------------------------------------------------------------- store */
@@ -483,8 +571,8 @@ async function syncLocation(args: {
   const { locationId, clientId, clientName, cutoff } = args;
   try {
     const [emails, bulks] = await Promise.all([
-      listSentEmailCampaigns(locationId),
-      listCompletedBulkActions(locationId).catch(() => [] as ListedCampaign[]),
+      listSentEmailCampaigns(locationId, cutoff),
+      listCompletedBulkActions(locationId, cutoff).catch(() => [] as ListedCampaign[]),
     ]);
     const locals = localSubjectsFor(clientId);
     const candidates = [...emails, ...bulks].filter((c) => {
@@ -496,8 +584,11 @@ async function syncLocation(args: {
       const stats = await fetchCampaignStats(locationId, campaign.source, campaign.sourceId);
       if (!stats || (stats.delivered <= 0 && stats.sent <= 0)) return false;
 
-      let subject = matchLocalSubject(campaign, locals);
+      let subject = campaign.subject;
       let previewText = campaign.previewText;
+      const local = matchLocalSubject(campaign, locals);
+      subject = subject || local.subject;
+      previewText = previewText || local.previewText;
       if (!subject && campaign.source === "email-campaigns") {
         const detail = await fetchCampaignDetail(locationId, campaign.id);
         if (detail) {
@@ -641,7 +732,7 @@ export function subjectKey(subject: string): string {
  */
 export function rankSubjects(
   sends: EmailSendView[],
-  minDelivered = MIN_DELIVERED_FOR_RANK
+  minDelivered = 50
 ): SubjectLeaderboardRow[] {
   const groups = new Map<
     string,
@@ -795,20 +886,29 @@ export function monthTrends(sends: EmailSendView[]): MonthTrendRow[] {
     .sort((a, b) => (a.month < b.month ? -1 : 1));
 }
 
-export function buildEmailAnalyticsDashboard(): EmailAnalyticsDashboard {
+export function buildEmailAnalyticsDashboard(
+  periodDays: EmailAnalyticsPeriod = DEFAULT_PERIOD
+): EmailAnalyticsDashboard {
   const clients = listRevClients(false);
   const linkedLocations = clients.filter((c) => (c.ghl_location_id || "").trim()).length;
   const unlinkedClients = clients.length - linkedLocations;
-  const rows = listCachedEmailSends().map(toView);
-  const rankedSubjects = rankSubjects(rows);
+  const allRows = listCachedEmailSends().map(toView);
+  const rows = filterSendsByPeriod(allRows, periodDays);
+  const minDelivered = minDeliveredForPeriod(periodDays);
+  const rankedSubjects = rankSubjects(rows, minDelivered);
   const delivered = rows.reduce((n, r) => n + r.delivered, 0);
   const opened = rows.reduce((n, r) => n + r.opened, 0);
   const clicked = rows.reduce((n, r) => n + r.clicked, 0);
   const replied = rows.reduce((n, r) => n + r.replied, 0);
+  const rangeStart = cutoffIsoForDays(periodDays).slice(0, 10);
+  const rangeEnd = new Date().toISOString().slice(0, 10);
 
   return {
     configured: isGhlConfigured(),
     lastSyncedAt: lastEmailStatsSyncAt(),
+    periodDays,
+    periodLabel: EMAIL_ANALYTICS_PERIOD_LABELS[periodDays],
+    range: { start: rangeStart, end: rangeEnd },
     totals: {
       sends: rows.length,
       clients: new Set(rows.map((r) => r.clientId || r.clientName)).size,

@@ -4,6 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+const PERIODS = [
+  { days: 30, label: "30 days" },
+  { days: 60, label: "60 days" },
+  { days: 90, label: "90 days" },
+  { days: 180, label: "6 months" },
+] as const;
+
+type PeriodDays = (typeof PERIODS)[number]["days"];
+
 type Trend = {
   month: string;
   sends: number;
@@ -49,6 +58,9 @@ type SendRow = {
 type Dashboard = {
   configured: boolean;
   lastSyncedAt: string | null;
+  periodDays: PeriodDays;
+  periodLabel: string;
+  range: { start: string; end: string };
   totals: {
     sends: number;
     clients: number;
@@ -129,6 +141,7 @@ function TrendChart({ trends }: { trends: Trend[] }) {
 
 export default function EmailAnalyticsPage() {
   const router = useRouter();
+  const [period, setPeriod] = useState<PeriodDays>(90);
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
@@ -136,9 +149,9 @@ export default function EmailAnalyticsPage() {
   const [clientFilter, setClientFilter] = useState("");
   const [q, setQ] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (days: PeriodDays) => {
     try {
-      const res = await fetch("/api/email-analytics");
+      const res = await fetch(`/api/email-analytics?period=${days}`);
       if (res.status === 401) {
         router.push("/login");
         return;
@@ -155,14 +168,14 @@ export default function EmailAnalyticsPage() {
   }, [router]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(period);
+  }, [load, period]);
 
   async function sync() {
     setSyncing(true);
     setSyncNote("");
     try {
-      const res = await fetch("/api/email-analytics/sync", { method: "POST" });
+      const res = await fetch(`/api/email-analytics/sync?period=${period}`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as {
         sync?: SyncResult;
         dashboard?: Dashboard;
@@ -183,7 +196,7 @@ export default function EmailAnalyticsPage() {
           ? ` ${sync.failures.length} location${sync.failures.length === 1 ? "" : "s"} failed.`
           : "";
       setSyncNote(
-        `Synced ${sync.campaignsUpserted} send${sync.campaignsUpserted === 1 ? "" : "s"} across ${sync.locationsScanned} location${sync.locationsScanned === 1 ? "" : "s"}.${failBit}`
+        `Synced ${sync.campaignsUpserted} send${sync.campaignsUpserted === 1 ? "" : "s"} (6 months) across ${sync.locationsScanned} location${sync.locationsScanned === 1 ? "" : "s"}.${failBit}`
       );
     } catch {
       setSyncNote("Sync failed.");
@@ -231,12 +244,12 @@ export default function EmailAnalyticsPage() {
           <h1>Email analytics</h1>
           <p className="ea-sub">
             Subject lines that landed, who is actually engaging, and how opens are trending —
-            pulled from GHL sends across linked clients.
+            sliced by 30, 60, 90 days or six months from synced GHL sends.
           </p>
         </div>
         <div className="ea-bar-right">
           <button type="button" className="btn btn-secondary" disabled={syncing} onClick={() => void sync()}>
-            {syncing ? "Syncing…" : "Sync from GHL"}
+            {syncing ? "Syncing…" : "Sync 6 months from GHL"}
           </button>
           <Link href="/admin/lifecycle" className="btn btn-ghost">
             Lifecycle
@@ -260,10 +273,28 @@ export default function EmailAnalyticsPage() {
         {syncNote ? <span className="ea-sync-note">{syncNote}</span> : null}
       </div>
 
+      <div className="ea-periods" role="tablist" aria-label="Report period">
+        {PERIODS.map((p) => (
+          <button
+            key={p.days}
+            type="button"
+            role="tab"
+            aria-selected={period === p.days}
+            className={`ea-period${period === p.days ? " on" : ""}`}
+            onClick={() => setPeriod(p.days)}
+          >
+            {p.label}
+          </button>
+        ))}
+        <span className="ea-period-range">
+          {prettyDate(data.range.start)} – {prettyDate(data.range.end)}
+        </span>
+      </div>
+
       <section className="ea-readouts">
         <div className="ea-readout">
           <b>{data.totals.sends.toLocaleString()}</b>
-          <span>sends cached</span>
+          <span>sends in window</span>
         </div>
         <div className="ea-readout">
           <b>{pct(data.totals.openRate)}</b>
@@ -291,7 +322,9 @@ export default function EmailAnalyticsPage() {
         <section className="ea-panel ea-panel-wide">
           <div className="ea-panel-head">
             <h2>Open rate trend</h2>
-            <p>Monthly open (tall) and click (short) rates across synced sends.</p>
+            <p>
+              Monthly open (tall) and click (short) rates for the last {data.periodLabel}.
+            </p>
           </div>
           <TrendChart trends={data.trends} />
         </section>
@@ -299,7 +332,10 @@ export default function EmailAnalyticsPage() {
         <section className="ea-panel">
           <div className="ea-panel-head">
             <h2>Subject lines that worked</h2>
-            <p>Ranked by open rate · at least 50 delivered so tiny tests cannot steal the top.</p>
+            <p>
+              Ranked by open rate in this window · sample floor scales with period length so
+              short windows still surface real winners.
+            </p>
           </div>
           {data.topSubjects.length === 0 ? (
             <p className="ea-empty">No ranked subjects yet. Sync sends that include a subject line.</p>
@@ -359,7 +395,7 @@ export default function EmailAnalyticsPage() {
         <section className="ea-panel ea-panel-wide">
           <div className="ea-panel-head">
             <h2>Who is really engaged</h2>
-            <p>Clients ranked by open rate on synced GHL sends.</p>
+            <p>Clients ranked by open rate on GHL sends in the last {data.periodLabel}.</p>
           </div>
           {data.clients.length === 0 ? (
             <p className="ea-empty">No client engagement yet.</p>
@@ -404,7 +440,7 @@ export default function EmailAnalyticsPage() {
         <section className="ea-panel ea-panel-wide">
           <div className="ea-panel-head">
             <h2>Recent sends</h2>
-            <p>Individual GHL campaigns and bulk actions in the cache.</p>
+            <p>Individual GHL campaigns and bulk actions in the last {data.periodLabel}.</p>
           </div>
           <div className="ea-filters">
             <input
