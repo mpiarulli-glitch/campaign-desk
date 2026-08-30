@@ -64,6 +64,7 @@ function greeting(): string {
 const HUB_LAUNCH: { href: string; title: string; desc: string; icon: string }[] = [
   { href: "/admin/clients", title: "Clients", desc: "Accounts, health & control rooms", icon: "clients" },
   { href: "/admin/ads", title: "Ads", desc: "Weekly pass: gaps, spend caps & tracking", icon: "ads" },
+  { href: "/admin/email", title: "Email analytics", desc: "GHL opens, subjects & engagement", icon: "chart" },
   { href: "/admin/campaigns", title: "Campaigns", desc: "Review packages & approvals", icon: "mail" },
   { href: "/admin/calendar", title: "Calendar", desc: "What's going out and when", icon: "calendar" },
   { href: "/admin/production", title: "Production", desc: "Shoots & scheduling", icon: "video" },
