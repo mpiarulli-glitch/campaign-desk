@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { reviseEmailWithGrok, continueRevisionWithGrok } from "@/lib/ai-revise";
 import type { ChatMessage } from "@/lib/ai-revise";
+import { quotedFeedback } from "@/lib/copy-quote";
 import {
   getCampaignById,
   getEmailById,
@@ -133,7 +134,9 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  const feedbackText = feedbackOverride || comment.body;
+  const feedbackText = feedbackOverride
+    ? feedbackOverride
+    : quotedFeedback(comment.quote_text, comment.body);
   const authorText = feedbackOverride ? "Multiple reviewers (all open feedback)" : comment.author_name;
 
   try {

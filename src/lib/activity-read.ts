@@ -14,6 +14,7 @@ export type ActivityFeedItem = {
   actor: string | null;
   body: string | null;
   comment_type: "general" | "inline" | null;
+  quote_text?: string | null;
   email_title: string | null;
   resolved: number | null;
   star_rating: number | null;

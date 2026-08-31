@@ -1037,6 +1037,8 @@ export function addComment(input: {
   type: "general" | "inline";
   pinX?: number | null;
   pinY?: number | null;
+  quoteText?: string | null;
+  quoteOrdinal?: number | null;
   channel?: ReviewChannel;
 }): Comment {
   const db = getDb();
@@ -1049,10 +1051,21 @@ export function addComment(input: {
     emailId = first?.id || null;
   }
 
+  const quoteText =
+    input.type === "inline" && typeof input.quoteText === "string"
+      ? input.quoteText.trim() || null
+      : null;
+  const quoteOrdinal =
+    quoteText && typeof input.quoteOrdinal === "number" && input.quoteOrdinal >= 0
+      ? Math.floor(input.quoteOrdinal)
+      : quoteText
+        ? 0
+        : null;
+
   db.prepare(
     `INSERT INTO comments
-      (id, campaign_id, email_id, author_name, body, type, pin_x, pin_y, resolved, channel, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      (id, campaign_id, email_id, author_name, body, type, pin_x, pin_y, quote_text, quote_ordinal, resolved, channel, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     id,
     input.campaignId,
@@ -1062,6 +1075,8 @@ export function addComment(input: {
     input.type,
     input.type === "inline" ? (input.pinX ?? null) : null,
     input.type === "inline" ? (input.pinY ?? null) : null,
+    quoteText,
+    quoteOrdinal,
     input.channel || "internal",
     ts
   );
@@ -1513,6 +1528,7 @@ export interface ActivityItem {
   actor: string | null;
   body: string | null;
   comment_type: CommentType | null;
+  quote_text: string | null;
   email_title: string | null;
   resolved: number | null;
   star_rating: number | null;
@@ -1540,6 +1556,7 @@ export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
            c.author_name AS actor,
            c.body AS body,
            c.type AS comment_type,
+           c.quote_text AS quote_text,
            e.title AS email_title,
            c.resolved AS resolved,
            NULL AS star_rating,
@@ -1562,6 +1579,7 @@ export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
            cam.approved_by AS actor,
            NULL AS body,
            NULL AS comment_type,
+           NULL AS quote_text,
            NULL AS email_title,
            NULL AS resolved,
            cam.star_rating AS star_rating,

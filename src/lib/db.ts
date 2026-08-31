@@ -193,6 +193,8 @@ export interface Comment {
   type: CommentType;
   pin_x: number | null;
   pin_y: number | null;
+  quote_text: string | null;
+  quote_ordinal: number | null;
   resolved: number;
   channel: ReviewChannel;
   created_at: string;
@@ -1249,6 +1251,8 @@ export function getDb(): Database.Database {
       type TEXT NOT NULL DEFAULT 'general',
       pin_x REAL,
       pin_y REAL,
+      quote_text TEXT,
+      quote_ordinal INTEGER,
       resolved INTEGER NOT NULL DEFAULT 0,
       channel TEXT NOT NULL DEFAULT 'internal',
       created_at TEXT NOT NULL,
@@ -2418,6 +2422,12 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE comments ADD COLUMN channel TEXT NOT NULL DEFAULT 'internal'`
     );
+  }
+  if (!commentCols.includes("quote_text")) {
+    database.exec(`ALTER TABLE comments ADD COLUMN quote_text TEXT`);
+  }
+  if (!commentCols.includes("quote_ordinal")) {
+    database.exec(`ALTER TABLE comments ADD COLUMN quote_ordinal INTEGER`);
   }
 
   const versionCols = tableColumns(database, "campaign_versions");

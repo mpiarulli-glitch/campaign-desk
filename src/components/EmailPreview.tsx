@@ -9,11 +9,22 @@ import {
   measureEmailContentWidth,
   measurePreviewDocumentHeight,
 } from "@/lib/email-preview";
+import {
+  QUOTE_MARK_ATTR,
+  applyQuoteMarks,
+  isCopyQuote,
+  quoteFromSelection,
+  selectionViewportRect,
+  type CopyQuote,
+  type QuoteMark,
+} from "@/lib/copy-quote";
 
 export type PinComment = {
   id: string;
   pin_x: number | null;
   pin_y: number | null;
+  quote_text?: string | null;
+  quote_ordinal?: number | null;
   resolved: number;
   body?: string;
 };
@@ -47,7 +58,40 @@ type Props = {
   onEditsChange?: (edits: PendingEdit[]) => void;
   // Prev/next across the rest of the package, shown in the device bar.
   packageNav?: PackageNav;
+  // A passage the reviewer has selected but not yet submitted.
+  pendingQuote?: CopyQuote | null;
+  // When set, selecting copy in the preview offers a Comment button.
+  onSelectQuote?: (quote: CopyQuote) => void;
 };
+
+const QUOTE_STYLE = `
+  html, body, body *{
+    -webkit-user-select: text !important;
+    user-select: text !important;
+  }
+  mark[${QUOTE_MARK_ATTR}]{
+    background: rgba(0, 212, 232, 0.38);
+    color: inherit;
+    padding: 0 1px;
+    cursor: pointer;
+    border-radius: 2px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  mark[${QUOTE_MARK_ATTR}].is-active{
+    background: rgba(0, 212, 232, 0.72);
+    outline: 2px solid #04808d;
+    outline-offset: 1px;
+  }
+  mark[${QUOTE_MARK_ATTR}].is-resolved{
+    background: rgba(148, 163, 184, 0.4);
+  }
+  mark[${QUOTE_MARK_ATTR}].is-pending{
+    background: rgba(37, 99, 235, 0.28);
+    outline: 2px dashed #2563eb;
+    outline-offset: 1px;
+  }
+`;
 
 // A single run of text the reviewer has changed. `ordinal` counts occurrences
 // of the original text across the document in reading order, which is what
@@ -145,17 +189,29 @@ export function EmailPreview({
   editing = false,
   onEditsChange,
   packageNav,
+  pendingQuote = null,
+  onSelectQuote,
 }: Props) {
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const frozenHeightRef = useRef<number | null>(null);
   const lastFitRef = useRef(1);
+  const onSelectQuoteRef = useRef(onSelectQuote);
+  onSelectQuoteRef.current = onSelectQuote;
+  const onSelectPinRef = useRef(onSelectPin);
+  onSelectPinRef.current = onSelectPin;
   const [height, setHeight] = useState(700);
   const [ready, setReady] = useState(false);
   const [hoverHref, setHoverHref] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [fitScale, setFitScale] = useState(1);
   const [fitContentWidth, setFitContentWidth] = useState(MOBILE_PREVIEW_WIDTH);
+  const [quotePopover, setQuotePopover] = useState<{
+    quote: CopyQuote;
+    top: number;
+    left: number;
+  } | null>(null);
 
   // When not placing a pin, let hovers/clicks reach the email so links are
   // hoverable and clickable. In pin mode the overlay captures placement clicks.
@@ -386,6 +442,149 @@ export function EmailPreview({
     };
   }, [editing, srcDoc, ready, interactive, onEditsChange]);
 
+  const quoteMarks = useMemo((): QuoteMark[] => {
+    const saved = pins.filter(isCopyQuote);
+    const marks: QuoteMark[] = saved.map((p, i) => ({
+      id: p.id,
+      text: p.quote_text || "",
+      ordinal: p.quote_ordinal ?? 0,
+      resolved: Boolean(p.resolved),
+      active: activePinId === p.id,
+      number: i + 1,
+    }));
+    if (pendingQuote?.text) {
+      marks.push({
+        id: "pending",
+        text: pendingQuote.text,
+        ordinal: pendingQuote.ordinal,
+        pending: true,
+      });
+    }
+    return marks;
+  }, [pins, activePinId, pendingQuote]);
+
+  const quoteSignature = quoteMarks
+    .map(
+      (m) =>
+        `${m.id}:${m.text}:${m.ordinal}:${m.resolved ? 1 : 0}:${m.active ? 1 : 0}:${m.pending ? 1 : 0}`
+    )
+    .join("|");
+  const quoteMarksRef = useRef(quoteMarks);
+  quoteMarksRef.current = quoteMarks;
+
+  // Paint highlight marks inside the preview. Injected <mark>s never go back
+  // into stored HTML; they are a visual overlay on the live DOM.
+  useEffect(() => {
+    if (!ready || editing) return;
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!doc?.body) return;
+
+    let style = doc.getElementById("cd-quote-style");
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = "cd-quote-style";
+      style.textContent = QUOTE_STYLE;
+      doc.head?.appendChild(style);
+    }
+
+    applyQuoteMarks(doc.body, quoteMarksRef.current);
+
+    const onMarkClick = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const mark = target?.closest?.(`mark[${QUOTE_MARK_ATTR}]`);
+      const id = mark?.getAttribute(QUOTE_MARK_ATTR);
+      if (!id || id === "pending") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onSelectPinRef.current?.(id);
+    };
+    doc.addEventListener("click", onMarkClick, true);
+
+    const activeId = quoteMarksRef.current.find((m) => m.active)?.id;
+    if (activeId) {
+      const active = doc.querySelector(
+        `mark[${QUOTE_MARK_ATTR}="${CSS.escape(activeId)}"]`
+      );
+      active?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+
+    return () => {
+      doc.removeEventListener("click", onMarkClick, true);
+    };
+  }, [quoteSignature, ready, editing, srcDoc]);
+
+  const canSelectQuote = Boolean(onSelectQuote) && !pinMode && !editing;
+
+  // Select copy → a Comment button next to the selection. The quote is
+  // snapshotted on mouseup so clicking the button still has the passage after
+  // the iframe selection collapses.
+  useEffect(() => {
+    if (!ready || !canSelectQuote) {
+      setQuotePopover(null);
+      return;
+    }
+    const iframeEl = iframeRef.current;
+    const canvasEl = canvasRef.current;
+    const previewDoc = iframeEl?.contentDocument;
+    const root = previewDoc?.body;
+    if (!iframeEl || !canvasEl || !previewDoc || !root) return;
+    const iframe: HTMLIFrameElement = iframeEl;
+    const canvas: HTMLDivElement = canvasEl;
+    const doc: Document = previewDoc;
+    const body: HTMLElement = root;
+
+    function placePopover(quote: CopyQuote, rect: DOMRect) {
+      const iframeBox = iframe.getBoundingClientRect();
+      const canvasBox = canvas.getBoundingClientRect();
+      const scale = fitScale !== 1 ? fitScale : 1;
+      const selBottom = iframeBox.top - canvasBox.top + (rect.bottom + 8) * scale;
+      const selTop = iframeBox.top - canvasBox.top + rect.top * scale - 44;
+      const top =
+        selBottom + 40 > canvasBox.height && selTop > 0 ? selTop : selBottom;
+      const left = Math.max(
+        72,
+        Math.min(
+          canvasBox.width - 72,
+          iframeBox.left - canvasBox.left + (rect.left + rect.width / 2) * scale
+        )
+      );
+      setQuotePopover({ quote, top, left });
+    }
+
+    function readSelection() {
+      const sel = doc.getSelection();
+      const quote = quoteFromSelection(body, sel);
+      const rect = selectionViewportRect(sel);
+      if (!quote || !rect) {
+        setQuotePopover(null);
+        return;
+      }
+      placePopover(quote, rect);
+    }
+
+    const onMouseUp = () => {
+      requestAnimationFrame(readSelection);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setQuotePopover(null);
+        doc.getSelection()?.removeAllRanges();
+        return;
+      }
+      requestAnimationFrame(readSelection);
+    };
+
+    doc.addEventListener("mouseup", onMouseUp);
+    doc.addEventListener("touchend", onMouseUp);
+    doc.addEventListener("keyup", onKeyUp);
+    return () => {
+      doc.removeEventListener("mouseup", onMouseUp);
+      doc.removeEventListener("touchend", onMouseUp);
+      doc.removeEventListener("keyup", onKeyUp);
+    };
+  }, [ready, canSelectQuote, srcDoc, fitScale]);
+
   // Interactive frames report their own height via postMessage. Match the
   // message to this instance's iframe so multiple previews on one page (e.g.
   // the admin "Current" vs "AI version" split) don't cross wires.
@@ -541,6 +740,7 @@ export function EmailPreview({
         </div>
       ) : null}
       <div
+        ref={canvasRef}
         className={`preview-canvas ${interactive ? "interactive" : ""} ${
           ready ? "is-ready" : "is-loading"
         }${device === "mobile" ? " is-mobile" : ""}`}
@@ -608,6 +808,31 @@ export function EmailPreview({
               ))
             : null}
         </div>
+        {quotePopover ? (
+          <div
+            className="quote-popover"
+            style={{ top: quotePopover.top, left: quotePopover.left }}
+          >
+            <button
+              type="button"
+              className="quote-popover-btn"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onSelectQuoteRef.current?.(quotePopover.quote);
+                setQuotePopover(null);
+                try {
+                  iframeRef.current?.contentDocument
+                    ?.getSelection()
+                    ?.removeAllRanges();
+                } catch {
+                  // ignore
+                }
+              }}
+            >
+              Comment on this
+            </button>
+          </div>
+        ) : null}
       </div>
       {hoverHref ? (
         <div className="link-hover-bar" title={hoverHref}>

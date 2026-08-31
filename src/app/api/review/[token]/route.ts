@@ -21,6 +21,7 @@ import {
 } from "@/lib/campaigns";
 import type { Campaign, ReviewChannel } from "@/lib/db";
 import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
+import { MAX_QUOTE_CHARS, quotedFeedback } from "@/lib/copy-quote";
 import { notifyClientFeedback } from "@/lib/notify";
 import { statusAfterReviewLinkView } from "@/lib/campaign-status";
 
@@ -172,6 +173,8 @@ export async function GET(_request: Request, { params }: Params) {
         type: c.type,
         pin_x: c.pin_x,
         pin_y: c.pin_y,
+        quote_text: c.quote_text,
+        quote_ordinal: c.quote_ordinal,
         resolved: c.resolved,
         created_at: c.created_at,
         attachments: c.attachments,
@@ -345,7 +348,16 @@ export async function POST(request: Request, { params }: Params) {
   const text = typeof body.body === "string" ? body.body.trim() : "";
   const authorName =
     typeof body.authorName === "string" ? body.authorName : "Reviewer";
-  const type = body.type === "inline" ? "inline" : "general";
+  const quoteText =
+    typeof body.quoteText === "string"
+      ? body.quoteText.trim().slice(0, MAX_QUOTE_CHARS)
+      : "";
+  const quoteOrdinal =
+    typeof body.quoteOrdinal === "number" && Number.isFinite(body.quoteOrdinal)
+      ? Math.max(0, Math.floor(body.quoteOrdinal))
+      : 0;
+  const type =
+    body.type === "inline" || quoteText ? "inline" : "general";
   const pinX = typeof body.pinX === "number" ? body.pinX : null;
   const pinY = typeof body.pinY === "number" ? body.pinY : null;
   const emailId = typeof body.emailId === "string" ? body.emailId : null;
@@ -358,9 +370,9 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  if (type === "inline" && (pinX === null || pinY === null)) {
+  if (type === "inline" && !quoteText && (pinX === null || pinY === null)) {
     return NextResponse.json(
-      { error: "Inline comments need pin coordinates" },
+      { error: "Highlight a passage of copy, or drop a pin, before commenting" },
       { status: 400 }
     );
   }
@@ -383,6 +395,8 @@ export async function POST(request: Request, { params }: Params) {
     type,
     pinX,
     pinY,
+    quoteText: quoteText || null,
+    quoteOrdinal: quoteText ? quoteOrdinal : null,
     channel,
   });
 
@@ -401,11 +415,13 @@ export async function POST(request: Request, { params }: Params) {
     campaignTitle: campaign.title,
     clientName: campaign.client_name,
     authorName,
-    body:
+    body: quotedFeedback(
+      quoteText || null,
       text ||
-      (images.length === 1
-        ? "(image attached)"
-        : `(${images.length} images attached)`),
+        (images.length === 1
+          ? "(image attached)"
+          : `(${images.length} images attached)`)
+    ),
     emailTitle: targetEmail.title,
   });
 

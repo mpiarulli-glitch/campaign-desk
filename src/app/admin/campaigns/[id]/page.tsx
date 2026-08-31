@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmailPreview, type PendingEdit } from "@/components/EmailPreview";
 import { applyTextEdits } from "@/lib/inline-edit";
 import { EmailLinks } from "@/components/EmailLinks";
+import { isCopyQuote, quotedFeedback } from "@/lib/copy-quote";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   OPERATOR_STATUS_OPTIONS,
@@ -69,6 +70,8 @@ type Comment = {
   type: "general" | "inline";
   pin_x: number | null;
   pin_y: number | null;
+  quote_text: string | null;
+  quote_ordinal: number | null;
   resolved: number;
   channel: "internal" | "external";
   created_at: string;
@@ -880,7 +883,14 @@ export default function AdminCampaignPage() {
   );
 
   const inlinePins = useMemo(
-    () => emailComments.filter((c) => c.type === "inline"),
+    () =>
+      emailComments.filter(
+        (c) => c.type === "inline" && c.pin_x !== null && c.pin_y !== null
+      ),
+    [emailComments]
+  );
+  const quoteComments = useMemo(
+    () => emailComments.filter(isCopyQuote),
     [emailComments]
   );
 
@@ -1236,7 +1246,7 @@ export default function AdminCampaignPage() {
       originalHtml: data.originalHtml,
       currentHtml: data.revisedHtml,
       messages: [
-        { role: "user", content: comment.body },
+        { role: "user", content: quotedFeedback(comment.quote_text, comment.body) },
         { role: "assistant", content: data.revisedHtml },
       ],
       model: data.model,
@@ -1249,7 +1259,7 @@ export default function AdminCampaignPage() {
     if (unresolved.length === 0) return;
 
     const combinedFeedback = unresolved
-      .map((c) => `${c.body} (from ${c.author_name})`)
+      .map((c) => `${quotedFeedback(c.quote_text, c.body)} (from ${c.author_name})`)
       .join("\n\n");
 
     setAiLoadingCommentId("all");
@@ -2630,7 +2640,7 @@ export default function AdminCampaignPage() {
               <EmailPreview
                 key={`${activeDoc.html.length}-${previewNonce}`}
                 html={activeDoc.html}
-                pins={inlinePins}
+                pins={emailComments}
                 activePinId={activePinId}
                 onSelectPin={setActivePinId}
                 interactive={activeDoc.interactive}
@@ -2745,12 +2755,20 @@ export default function AdminCampaignPage() {
                       className={`comment-card ${c.resolved ? "resolved" : ""} ${
                         activePinId === c.id ? "active" : ""
                       }`}
-                      onClick={() => c.type === "inline" && setActivePinId(c.id)}
+                      onClick={() =>
+                        (c.type === "inline" || isCopyQuote(c)) &&
+                        setActivePinId(c.id)
+                      }
                     >
                       <div className="comment-head">
                         <span>
                           {c.author_name}
-                          {c.type === "inline"
+                          {isCopyQuote(c)
+                            ? ` · Highlight ${
+                                quoteComments.findIndex((q) => q.id === c.id) +
+                                1
+                              }`
+                            : c.type === "inline"
                             ? ` · Pin ${
                                 inlinePins.findIndex((p) => p.id === c.id) + 1
                               }`
@@ -2762,6 +2780,11 @@ export default function AdminCampaignPage() {
                         </span>
                         <span>{new Date(c.created_at).toLocaleString()}</span>
                       </div>
+                      {isCopyQuote(c) ? (
+                        <blockquote className="comment-quote">
+                          {c.quote_text}
+                        </blockquote>
+                      ) : null}
                       {c.body ? (
                         <div className="comment-body">{c.body}</div>
                       ) : null}

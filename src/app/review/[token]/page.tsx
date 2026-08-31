@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
 import { EmailPreview } from "@/components/EmailPreview";
@@ -14,6 +14,7 @@ import {
   type BodyFormat,
 } from "@/lib/asset-kinds";
 import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
+import { isCopyQuote, type CopyQuote } from "@/lib/copy-quote";
 
 type Attachment = {
   id: string;
@@ -38,6 +39,8 @@ type Comment = {
   type: "general" | "inline";
   pin_x: number | null;
   pin_y: number | null;
+  quote_text: string | null;
+  quote_ordinal: number | null;
   resolved: number;
   created_at: string;
   attachments?: Attachment[];
@@ -166,6 +169,7 @@ export default function ReviewPage() {
   const [pendingPin, setPendingPin] = useState<{ x: number; y: number } | null>(
     null
   );
+  const [pendingQuote, setPendingQuote] = useState<CopyQuote | null>(null);
   const [activePinId, setActivePinId] = useState<string | null>(null);
   // Page-level notices cover the link itself and the approve actions, which
   // live at the top of the page. Form-level notices stay next to the compose
@@ -182,6 +186,7 @@ export default function ReviewPage() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -300,7 +305,15 @@ export default function ReviewPage() {
   );
 
   const inlinePins = useMemo(
-    () => emailComments.filter((c) => c.type === "inline"),
+    () =>
+      emailComments.filter(
+        (c) => c.type === "inline" && c.pin_x !== null && c.pin_y !== null
+      ),
+    [emailComments]
+  );
+
+  const quoteComments = useMemo(
+    () => emailComments.filter(isCopyQuote),
     [emailComments]
   );
 
@@ -308,6 +321,7 @@ export default function ReviewPage() {
     setActiveEmailId(emailId);
     setActivePinId(null);
     setPendingPin(null);
+    setPendingQuote(null);
     setMode("general");
   }
 
@@ -405,9 +419,11 @@ export default function ReviewPage() {
       body: JSON.stringify({
         authorName: name,
         body,
-        type: mode === "pin" ? "inline" : "general",
+        type: pendingQuote || mode === "pin" ? "inline" : "general",
         pinX: pendingPin?.x,
         pinY: pendingPin?.y,
+        quoteText: pendingQuote?.text,
+        quoteOrdinal: pendingQuote?.ordinal,
         emailId: activeEmail.id,
         images: images.map((i) => ({
           mime: i.mime,
@@ -428,6 +444,7 @@ export default function ReviewPage() {
 
     setBody("");
     setPendingPin(null);
+    setPendingQuote(null);
     setImages([]);
     setFormMessage("Feedback sent. Thank you.");
     load(activeEmail.id, { silent: true });
@@ -753,7 +770,10 @@ export default function ReviewPage() {
                   <button
                     type="button"
                     className={mode === "pin" ? "active" : ""}
-                    onClick={() => setMode("pin")}
+                    onClick={() => {
+                      setMode("pin");
+                      setPendingQuote(null);
+                    }}
                   >
                     Pin on {itemNoun}
                   </button>
@@ -764,7 +784,13 @@ export default function ReviewPage() {
                       ? "Pin placed. Write your note on the right."
                       : `Click anywhere on the ${itemNoun} to drop a pin.`}
                   </span>
-                ) : null}
+                ) : (
+                  <span className={`rv-hint ${pendingQuote ? "is-ready" : ""}`}>
+                    {pendingQuote
+                      ? "Passage highlighted. Write your note on the right."
+                      : "Select any copy in the preview to comment on that line."}
+                  </span>
+                )}
               </div>
             ) : null}
 
@@ -772,7 +798,7 @@ export default function ReviewPage() {
               html={activeDoc.html}
               interactive={activeDoc.interactive}
               pins={[
-                ...inlinePins,
+                ...emailComments,
                 ...(pendingPin
                   ? [
                       {
@@ -789,6 +815,18 @@ export default function ReviewPage() {
               pinMode={mode === "pin" && !locked}
               onPlacePin={(x, y) => setPendingPin({ x, y })}
               onSelectPin={setActivePinId}
+              pendingQuote={pendingQuote}
+              onSelectQuote={
+                locked
+                  ? undefined
+                  : (quote) => {
+                      setPendingQuote(quote);
+                      setPendingPin(null);
+                      setMode("general");
+                      setActivePinId(null);
+                      requestAnimationFrame(() => bodyRef.current?.focus());
+                    }
+              }
               packageNav={
                 emails.length > 1
                   ? {
@@ -852,12 +890,31 @@ export default function ReviewPage() {
               <form className="card card-pad stack" onSubmit={submitComment}>
                 <div>
                   <h2 className="h2">
-                    {mode === "pin" ? "Pinned feedback" : "General feedback"}
+                    {pendingQuote
+                      ? "Comment on this copy"
+                      : mode === "pin"
+                        ? "Pinned feedback"
+                        : "General feedback"}
                   </h2>
                   <p className="rv-form-sub">
                     Commenting on <strong>{activeEmail.title}</strong>
                   </p>
                 </div>
+
+                {pendingQuote ? (
+                  <div className="comment-quote-pending">
+                    <blockquote className="comment-quote">
+                      {pendingQuote.text}
+                    </blockquote>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setPendingQuote(null)}
+                    >
+                      Clear highlight
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="field">
                   <label htmlFor="name">Your name</label>
@@ -873,10 +930,13 @@ export default function ReviewPage() {
                   <label htmlFor="body">Comment</label>
                   <textarea
                     id="body"
+                    ref={bodyRef}
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     placeholder={
-                      mode === "pin"
+                      pendingQuote
+                        ? "What should change in this copy?"
+                        : mode === "pin"
                         ? "What should change at this spot?"
                         : "Overall thoughts, tone, offer, CTA..."
                     }
@@ -956,9 +1016,12 @@ export default function ReviewPage() {
                 <div className="comment-list">
                   {emailComments.map((c) => {
                     const pinNumber =
-                      c.type === "inline"
+                      c.type === "inline" && c.pin_x !== null
                         ? inlinePins.findIndex((p) => p.id === c.id) + 1
                         : 0;
+                    const quoteNumber = isCopyQuote(c)
+                      ? quoteComments.findIndex((q) => q.id === c.id) + 1
+                      : 0;
                     return (
                       <div
                         key={c.id}
@@ -966,7 +1029,8 @@ export default function ReviewPage() {
                           activePinId === c.id ? "active" : ""
                         } ${c.type === "inline" ? "is-pinned" : ""}`}
                         onClick={() =>
-                          c.type === "inline" && setActivePinId(c.id)
+                          (c.type === "inline" || isCopyQuote(c)) &&
+                          setActivePinId(c.id)
                         }
                       >
                         <div className="rv-comment-head">
@@ -983,6 +1047,10 @@ export default function ReviewPage() {
                           </span>
                           {c.resolved ? (
                             <span className="rv-chip is-resolved">Resolved</span>
+                          ) : isCopyQuote(c) ? (
+                            <span className="rv-chip is-quote">
+                              Highlight {quoteNumber}
+                            </span>
                           ) : c.type === "inline" ? (
                             <span className="rv-chip is-pin">
                               Pin {pinNumber}
@@ -991,6 +1059,12 @@ export default function ReviewPage() {
                             <span className="rv-chip">General</span>
                           )}
                         </div>
+
+                        {isCopyQuote(c) ? (
+                          <blockquote className="comment-quote">
+                            {c.quote_text}
+                          </blockquote>
+                        ) : null}
 
                         {c.body ? (
                           <div className="comment-body">{c.body}</div>

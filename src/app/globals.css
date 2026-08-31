@@ -1710,6 +1710,31 @@ button {
   transform: scale(1.1);
 }
 
+.quote-popover {
+  position: absolute;
+  z-index: 8;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.quote-popover-btn {
+  border: 0;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 8px 12px;
+  border-radius: 999px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.quote-popover-btn:hover {
+  background: #1a1d24;
+}
+
 .comment-list {
   display: flex;
   flex-direction: column;
@@ -1749,6 +1774,31 @@ button {
   line-height: 1.55;
   font-size: 14px;
   color: var(--text-body);
+}
+
+.comment-quote {
+  margin: 8px 0 10px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-body);
+  font-style: italic;
+  border-radius: 0 6px 6px 0;
+  white-space: pre-wrap;
+}
+
+.comment-quote-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.comment-quote-pending .comment-quote {
+  margin: 0;
+  width: 100%;
 }
 
 .empty {
@@ -10285,6 +10335,12 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 }
 
 .rv-chip.is-pin {
+  background: var(--bg-tint);
+  border-color: rgba(0, 212, 232, 0.4);
+  color: var(--accent-ink);
+}
+
+.rv-chip.is-quote {
   background: var(--bg-tint);
   border-color: rgba(0, 212, 232, 0.4);
   color: var(--accent-ink);

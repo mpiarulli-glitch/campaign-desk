@@ -14,6 +14,7 @@ type ActivityItem = {
   actor: string | null;
   body: string | null;
   comment_type: "general" | "inline" | null;
+  quote_text?: string | null;
   email_title: string | null;
   resolved: number | null;
   star_rating: number | null;
@@ -189,6 +190,15 @@ export default function ActivityPage() {
                     </span>
                   </div>
 
+                  {item.kind === "feedback" && item.quote_text ? (
+                    <blockquote
+                      className="comment-quote"
+                      style={{ marginTop: 8 }}
+                    >
+                      {item.quote_text}
+                    </blockquote>
+                  ) : null}
+
                   {item.kind === "feedback" && item.body ? (
                     <div
                       className="comment-body"
@@ -204,7 +214,9 @@ export default function ActivityPage() {
                       style={{ marginTop: 6, fontSize: 12 }}
                     >
                       {item.email_title ? `${item.email_title} · ` : ""}
-                      {item.comment_type === "inline"
+                      {item.comment_type === "inline" && item.quote_text
+                        ? "Highlighted copy"
+                        : item.comment_type === "inline"
                         ? "Pinned comment"
                         : "General comment"}
                       {item.resolved ? " · Resolved" : " · Open"}
