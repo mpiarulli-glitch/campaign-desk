@@ -171,7 +171,6 @@ export default function CalendarPage() {
   const [showAll, setShowAll] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [filter, setFilter] = useState<string>("all");
-  const [clientQuery, setClientQuery] = useState("All clients");
   const [view, setView] = useState<"calendar" | "list">("list");
   const [typeFilter, setTypeFilter] = useState<CalendarTypeKey[]>([]);
   const [statusFilter, setStatusFilter] = useState<CalendarStatusKey[]>([]);
@@ -359,14 +358,8 @@ export default function CalendarPage() {
   );
 
   useEffect(() => {
-    if (filter === "all") {
-      setClientQuery("All clients");
-      setNotesOnly(false);
-      return;
-    }
-    const selected = clients.find((c) => c.id === filter);
-    if (selected) setClientQuery(selected.name);
-  }, [filter, clients]);
+    if (filter === "all") setNotesOnly(false);
+  }, [filter]);
 
   const viewedMonth = `${year}-${pad(month + 1)}`;
   const clientName = clients.find((c) => c.id === filter)?.name || "this client";
@@ -412,20 +405,6 @@ export default function CalendarPage() {
   function goToday() {
     setYear(now.getFullYear());
     setMonth(now.getMonth());
-  }
-
-  function applyClientQuery(raw: string) {
-    const q = raw.trim();
-    if (!q || q.toLowerCase() === "all clients") {
-      setFilter("all");
-      setClientQuery("All clients");
-      return;
-    }
-    const exact = clients.find((c) => c.name.toLowerCase() === q.toLowerCase());
-    if (exact) {
-      setFilter(exact.id);
-      setClientQuery(exact.name);
-    }
   }
 
   // Filtering to a client and then clicking a day means that client, so the
@@ -579,31 +558,19 @@ export default function CalendarPage() {
             <h1 className="h1">Campaign calendar</h1>
           </div>
           <div className="row">
-            <input
+            <select
               className="select-clean cal-client-search"
-              list="calendar-client-options"
-              value={clientQuery}
-              onChange={(e) => {
-                const v = e.target.value;
-                setClientQuery(v);
-                if (!v.trim()) setFilter("all");
-              }}
-              onBlur={() => applyClientQuery(clientQuery)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  applyClientQuery(clientQuery);
-                }
-              }}
-              placeholder="Type a client name"
-              aria-label="Search clients"
-            />
-            <datalist id="calendar-client-options">
-              <option value="All clients" />
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Filter by client"
+            >
+              <option value="all">All clients</option>
               {clients.map((c) => (
-                <option key={c.id} value={c.name} />
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
-            </datalist>
+            </select>
             <div className="cal-nav">
               <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>
               <span className="cal-month">{MONTHS[month]} {year}</span>
