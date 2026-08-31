@@ -590,6 +590,7 @@ function ClientDetail({
         <span className={`lh-pace is-${client.pace}`}>{client.paceLabel}</span>
       </header>
 
+      <div className="lh-detail-layout">
       <section className="lh-card lh-quota">
         {client.quota > 0 ? (
           <>
@@ -669,14 +670,7 @@ function ClientDetail({
         </div>
       </section>
 
-      <EmailAnalyticsPanel
-        key={client.id}
-        clientId={client.id}
-        memberIds={client.memberIds || []}
-        ghlLinked={Boolean(client.ghlLinked)}
-      />
-
-      <section className="lh-card">
+      <section className="lh-card lh-month-card">
         <div className="lh-card-head">
           <h3>This month</h3>
           <span className="lh-card-links">
@@ -711,7 +705,7 @@ function ClientDetail({
         ) : null}
       </section>
 
-      <section className="lh-card">
+      <section className="lh-card lh-launch-card">
         <div className="lh-card-head">
           <h3>Launch</h3>
           {!client.launch.started && !launching ? (
@@ -791,6 +785,14 @@ function ClientDetail({
           </p>
         )}
       </section>
+
+      <EmailAnalyticsPanel
+        key={client.id}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
+        ghlLinked={Boolean(client.ghlLinked)}
+      />
+      </div>
     </div>
   );
 }

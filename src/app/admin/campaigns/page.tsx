@@ -36,11 +36,66 @@ const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
 type View = "all" | "folders";
 type GroupBy = "client" | "month";
 type StatusFilter = "all" | OperatorCampaignStatus;
+type DatePreset = "any" | "7d" | "30d" | "90d" | "month" | "custom";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
   ...OPERATOR_STATUS_OPTIONS,
 ];
+
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: "any", label: "Any time" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
+  { value: "month", label: "This month" },
+  { value: "custom", label: "Custom" },
+];
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function campaignUpdatedYmd(c: CampaignRow): string {
+  return ymdLocal(new Date(c.updated_at));
+}
+
+/** Inclusive YYYY-MM-DD bounds for the date filter. Null means unbounded. */
+function resolveDateBounds(
+  preset: DatePreset,
+  from: string,
+  to: string,
+  now = new Date()
+): { start: string | null; end: string | null } {
+  const end = ymdLocal(now);
+  if (preset === "any") return { start: null, end: null };
+  if (preset === "custom") {
+    const start = from.trim() || null;
+    const customEnd = to.trim() || null;
+    if (!start && !customEnd) return { start: null, end: null };
+    return { start, end: customEnd };
+  }
+  if (preset === "month") {
+    return { start: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`, end };
+  }
+  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
+  const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+  return { start: ymdLocal(startDate), end };
+}
+
+function matchesDateFilter(
+  c: CampaignRow,
+  bounds: { start: string | null; end: string | null }
+): boolean {
+  if (!bounds.start && !bounds.end) return true;
+  const day = campaignUpdatedYmd(c);
+  if (bounds.start && day < bounds.start) return false;
+  if (bounds.end && day > bounds.end) return false;
+  return true;
+}
 
 // Grouped by the month the campaign was created/sent, not by approval date,
 // so pending and in-review campaigns land in a folder too.
@@ -227,12 +282,18 @@ export default function AdminPage() {
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [datePreset, setDatePreset] = useState<DatePreset>("any");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const dateBounds = resolveDateBounds(datePreset, dateFrom, dateTo);
+  const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
   const visible =
     statusFilter === "all"
-      ? campaigns
-      : campaigns.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
+      ? dated
+      : dated.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
+  const dateActive = Boolean(dateBounds.start || dateBounds.end);
 
   function toggleFolder(key: string) {
     setOpenFolders((prev) => {
@@ -338,8 +399,8 @@ export default function AdminPage() {
           {STATUS_FILTERS.map((sf) => {
             const count =
               sf.value === "all"
-                ? campaigns.length
-                : campaigns.filter((c) =>
+                ? dated.length
+                : dated.filter((c) =>
                     matchesCampaignStatusFilter(c, sf.value)
                   ).length;
             return (
@@ -353,6 +414,44 @@ export default function AdminPage() {
               </button>
             );
           })}
+        </div>
+
+        <div className="campaign-date-filter">
+          <span className="campaign-date-label">Updated</span>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {DATE_PRESETS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                className={`preview-device-btn ${datePreset === p.value ? "active" : ""}`}
+                onClick={() => setDatePreset(p.value)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {datePreset === "custom" ? (
+            <div className="campaign-date-custom">
+              <label>
+                <span>From</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </label>
+              <label>
+                <span>To</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
 
         <div className="dashboard-grid">
@@ -424,8 +523,23 @@ export default function AdminPage() {
                 <p>
                   No{" "}
                   {STATUS_FILTERS.find((sf) => sf.value === statusFilter)?.label.toLowerCase()}{" "}
-                  campaigns.
+                  campaigns
+                  {dateActive ? " in that date range" : ""}.
                 </p>
+                {dateActive ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ marginTop: 12 }}
+                    onClick={() => {
+                      setDatePreset("any");
+                      setDateFrom("");
+                      setDateTo("");
+                    }}
+                  >
+                    Clear date filter
+                  </button>
+                ) : null}
               </div>
             ) : view === "all" ? (
               <div className="campaign-list">

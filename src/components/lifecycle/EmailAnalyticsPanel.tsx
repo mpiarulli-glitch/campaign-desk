@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AnalyticsPreset,
   ClientEmailAnalytics,
 } from "@/lib/ghl-email-analytics";
+import { buildEmailRecommendations } from "@/lib/email-analytics-tips";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
   { id: "1m", label: "1 mo" },
@@ -23,7 +24,11 @@ function fmtPct(n: number): string {
 }
 
 function prettyRange(start: string, end: string): string {
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  };
   const a = new Date(`${start}T12:00:00`).toLocaleDateString("en-US", opts);
   const b = new Date(`${end}T12:00:00`).toLocaleDateString("en-US", opts);
   return `${a} – ${b}`;
@@ -44,6 +49,11 @@ export function EmailAnalyticsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<ClientEmailAnalytics | null>(null);
+
+  const tips = useMemo(
+    () => (data ? buildEmailRecommendations(data) : []),
+    [data]
+  );
 
   const pull = useCallback(async () => {
     if (!ghlLinked) return;
@@ -88,7 +98,7 @@ export function EmailAnalyticsPanel({
 
   if (!ghlLinked) {
     return (
-      <section className="lh-card">
+      <section className="lh-card lh-analytics">
         <div className="lh-card-head">
           <h3>Email analytics</h3>
         </div>
@@ -168,81 +178,104 @@ export function EmailAnalyticsPanel({
       ) : null}
 
       {data && totals ? (
-        <>
-          <p className="lh-analytics-window">{prettyRange(data.start, data.end)}</p>
-          <div className="lh-metrics">
-            <div className="lh-metric">
-              <b>{fmt(totals.campaigns)}</b>
-              <span>campaigns</span>
+        <div className="lh-analytics-body">
+          <div className="lh-analytics-main">
+            <p className="lh-analytics-window">{prettyRange(data.start, data.end)}</p>
+            <div className="lh-metrics">
+              <div className="lh-metric">
+                <b>{fmt(totals.campaigns)}</b>
+                <span>campaigns</span>
+              </div>
+              <div className="lh-metric">
+                <b>{fmt(totals.sent)}</b>
+                <span>sent</span>
+              </div>
+              <div className="lh-metric">
+                <b>{fmt(totals.opened)}</b>
+                <span>opens</span>
+              </div>
+              <div className="lh-metric">
+                <b>{fmtPct(totals.openRate)}</b>
+                <span>open rate</span>
+              </div>
+              <div className="lh-metric">
+                <b>{fmt(totals.clicked)}</b>
+                <span>clicks</span>
+              </div>
+              <div className="lh-metric">
+                <b>{fmtPct(totals.clickRate)}</b>
+                <span>click rate</span>
+              </div>
+              <div className="lh-metric">
+                <b>
+                  {data.appointments === null ? "—" : fmt(data.appointments)}
+                </b>
+                <span>appointments</span>
+              </div>
             </div>
-            <div className="lh-metric">
-              <b>{fmt(totals.sent)}</b>
-              <span>sent</span>
-            </div>
-            <div className="lh-metric">
-              <b>{fmt(totals.opened)}</b>
-              <span>opens</span>
-            </div>
-            <div className="lh-metric">
-              <b>{fmtPct(totals.openRate)}</b>
-              <span>open rate</span>
-            </div>
-            <div className="lh-metric">
-              <b>{fmt(totals.clicked)}</b>
-              <span>clicks</span>
-            </div>
-            <div className="lh-metric">
-              <b>{fmtPct(totals.clickRate)}</b>
-              <span>click rate</span>
-            </div>
-            <div className="lh-metric">
-              <b>
-                {data.appointments === null ? "—" : fmt(data.appointments)}
-              </b>
-              <span>appointments</span>
-            </div>
-          </div>
-          {data.appointmentsError ? (
-            <p className="lh-card-note">Appointments: {data.appointmentsError}</p>
-          ) : null}
+            {data.appointmentsError ? (
+              <p className="lh-card-note">Appointments: {data.appointmentsError}</p>
+            ) : null}
 
-          {data.campaigns.length === 0 ? (
-            <p className="lh-card-note">No GHL campaigns found in that window.</p>
-          ) : (
-            <div className="lh-analytics-table-wrap">
-              <table className="lh-analytics-table">
-                <thead>
-                  <tr>
-                    <th>Campaign</th>
-                    <th>Sent</th>
-                    <th>Opens</th>
-                    <th>Clicks</th>
-                    <th>Open %</th>
-                    <th>Click %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.campaigns.map((c) => (
-                    <tr key={c.id || c.bulkRequestId || c.name}>
-                      <td>
-                        <div className="lh-analytics-name">{c.name}</div>
-                        <div className="lh-analytics-meta">
-                          {c.sentOn || "—"}
-                          {c.statsAvailable ? "" : " · no stats yet"}
-                        </div>
-                      </td>
-                      <td>{fmt(c.sent)}</td>
-                      <td>{fmt(c.opened)}</td>
-                      <td>{fmt(c.clicked)}</td>
-                      <td>{fmtPct(c.openRate)}</td>
-                      <td>{fmtPct(c.clickRate)}</td>
+            {data.campaigns.length === 0 ? (
+              <p className="lh-card-note">No GHL campaigns found in that window.</p>
+            ) : (
+              <div className="lh-analytics-table-wrap">
+                <table className="lh-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Campaign</th>
+                      <th>Subject line</th>
+                      <th>Sent</th>
+                      <th>Opens</th>
+                      <th>Clicks</th>
+                      <th>Open %</th>
+                      <th>Click %</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+                  </thead>
+                  <tbody>
+                    {data.campaigns.map((c) => (
+                      <tr key={c.id || c.bulkRequestId || c.name}>
+                        <td>
+                          <div className="lh-analytics-name">{c.name}</div>
+                          <div className="lh-analytics-meta">
+                            {c.sentOn || "—"}
+                            {c.statsAvailable ? "" : " · no stats yet"}
+                          </div>
+                        </td>
+                        <td className="lh-analytics-subject">
+                          {c.subject?.trim() || "—"}
+                        </td>
+                        <td>{fmt(c.sent)}</td>
+                        <td>{fmt(c.opened)}</td>
+                        <td>{fmt(c.clicked)}</td>
+                        <td>{fmtPct(c.openRate)}</td>
+                        <td>{fmtPct(c.clickRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {tips.length > 0 ? (
+            <aside className="lh-recs" aria-label="Recommendations for next month">
+              <h4>Next month</h4>
+              <p className="lh-recs-lead">
+                Based on this window’s sends, opens, clicks, and appointments.
+              </p>
+              <ul className="lh-recs-list">
+                {tips.map((tip) => (
+                  <li key={tip.id} className={`lh-rec is-${tip.tone}`}>
+                    <strong>{tip.title}</strong>
+                    <span>{tip.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );
