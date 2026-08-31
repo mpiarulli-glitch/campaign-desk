@@ -14324,6 +14324,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   grid-column: 1 / -1;
 }
 
+.lh-detail-layout > .lh-linkedin {
+  grid-column: 1 / -1;
+}
+
 .lh-detail-layout > .lh-analytics {
   grid-column: 1 / -1;
 }
@@ -14341,6 +14345,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   .lh-detail-layout > .lh-month-card,
   .lh-detail-layout > .lh-launch-card,
   .lh-detail-layout > .lh-workflows,
+  .lh-detail-layout > .lh-linkedin,
   .lh-detail-layout > .lh-analytics {
     grid-column: 1 / -1;
   }
@@ -14808,6 +14813,40 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .lh-analytics .lh-card-head {
   margin-bottom: 12px;
+}
+
+.lh-linkedin .lh-card-head {
+  margin-bottom: 12px;
+}
+
+.lh-li-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.lh-li-status.is-running {
+  color: #15803d;
+}
+
+.lh-li-status.is-needs-work,
+.lh-li-status.is-seat-down {
+  color: #b45309;
+}
+
+.lh-li-status.is-watch {
+  color: #a16207;
+}
+
+.lh-li-status.is-off {
+  color: var(--text-muted);
+}
+
+.lh-analytics-table tr.is-off td {
+  color: var(--text-muted);
 }
 
 .lh-range {

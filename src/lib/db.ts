@@ -2077,6 +2077,7 @@ export function getDb(): Database.Database {
       response_rate REAL NOT NULL DEFAULT 0,
       open_rate REAL NOT NULL DEFAULT 0,
       connections_requested INTEGER NOT NULL DEFAULT 0,
+      accepted INTEGER NOT NULL DEFAULT 0,
       messages_sent INTEGER NOT NULL DEFAULT 0,
       replies INTEGER NOT NULL DEFAULT 0,
       total_leads INTEGER NOT NULL DEFAULT 0,
@@ -3019,6 +3020,15 @@ function migrate(database: Database.Database) {
       campaign.updated_at
     );
     updateCommentEmail.run(emailId, campaign.id);
+  }
+
+  // Needed to turn Skylead lifetime counters into 30/60/90-day windows on the
+  // Lifecycle client page. Older rows stay at 0 until the next sweep writes.
+  const lcStatsCols = tableColumns(database, "lifecycle_campaign_stats");
+  if (lcStatsCols.length && !lcStatsCols.includes("accepted")) {
+    database.exec(
+      `ALTER TABLE lifecycle_campaign_stats ADD COLUMN accepted INTEGER NOT NULL DEFAULT 0`
+    );
   }
 }
 

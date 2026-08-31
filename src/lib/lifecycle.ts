@@ -108,13 +108,14 @@ export function recordSweepStats(data: SkyleadSweep): number {
   const stmt = db.prepare(
     `INSERT INTO lifecycle_campaign_stats
        (skylead_campaign_id, captured_on, acceptance_rate, response_rate, open_rate,
-        connections_requested, messages_sent, replies, total_leads, remaining_leads, captured_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        connections_requested, accepted, messages_sent, replies, total_leads, remaining_leads, captured_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(skylead_campaign_id, captured_on) DO UPDATE SET
        acceptance_rate = excluded.acceptance_rate,
        response_rate = excluded.response_rate,
        open_rate = excluded.open_rate,
        connections_requested = excluded.connections_requested,
+       accepted = excluded.accepted,
        messages_sent = excluded.messages_sent,
        replies = excluded.replies,
        total_leads = excluded.total_leads,
@@ -134,6 +135,7 @@ export function recordSweepStats(data: SkyleadSweep): number {
         c.stats.responseRate,
         c.stats.openRate,
         c.stats.connectionsRequested,
+        c.stats.connectionRequestsAccepted,
         c.stats.messagesSent,
         c.stats.connectionReplies,
         c.stats.totalLeads,

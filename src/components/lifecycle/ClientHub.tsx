@@ -13,6 +13,7 @@ import {
 import { hasOwnerToolsAccess } from "@/lib/people";
 import { EmailAnalyticsPanel } from "./EmailAnalyticsPanel";
 import { ClientWorkflowsPanel } from "./ClientWorkflowsPanel";
+import { LinkedInAnalyticsPanel } from "./LinkedInAnalyticsPanel";
 
 type HubWorkKind = "campaign" | "automation";
 
@@ -825,6 +826,12 @@ function ClientDetail({
         clientId={client.id}
         memberIds={client.memberIds || []}
         ghlLinked={Boolean(client.ghlLinked)}
+      />
+
+      <LinkedInAnalyticsPanel
+        key={`li-${client.id}`}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
       />
 
       <EmailAnalyticsPanel
