@@ -1225,6 +1225,21 @@ export function listCommentsWithAttachments(
   }));
 }
 
+export function getCommentById(id: string): Comment | null {
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM comments WHERE id = ?`)
+      .get(id) as Comment | undefined) || null
+  );
+}
+
+export function deleteComment(commentId: string): boolean {
+  const result = getDb()
+    .prepare(`DELETE FROM comments WHERE id = ?`)
+    .run(commentId);
+  return result.changes > 0;
+}
+
 export function setCommentResolved(
   commentId: string,
   resolved: boolean
@@ -1234,11 +1249,7 @@ export function setCommentResolved(
     resolved ? 1 : 0,
     commentId
   );
-  return (
-    (db
-      .prepare(`SELECT * FROM comments WHERE id = ?`)
-      .get(commentId) as Comment | undefined) || null
-  );
+  return getCommentById(commentId);
 }
 
 export function resolveAllComments(campaignId: string): number {

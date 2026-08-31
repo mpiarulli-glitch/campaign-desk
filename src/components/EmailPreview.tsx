@@ -27,6 +27,15 @@ export type PinComment = {
   quote_ordinal?: number | null;
   resolved: number;
   body?: string;
+  author_name?: string;
+};
+
+export type InlineFeedbackPayload = {
+  body: string;
+  authorName: string;
+  pinX?: number;
+  pinY?: number;
+  quote?: CopyQuote;
 };
 
 export type PackageNavItem = {
@@ -58,10 +67,13 @@ type Props = {
   onEditsChange?: (edits: PendingEdit[]) => void;
   // Prev/next across the rest of the package, shown in the device bar.
   packageNav?: PackageNav;
-  // A passage the reviewer has selected but not yet submitted.
-  pendingQuote?: CopyQuote | null;
-  // When set, selecting copy in the preview offers a Comment button.
-  onSelectQuote?: (quote: CopyQuote) => void;
+  // Name field shared with the approve box on the review link.
+  authorName?: string;
+  onAuthorNameChange?: (name: string) => void;
+  // When set, selecting copy or dropping a pin opens a compose popup here.
+  onSubmitInline?: (payload: InlineFeedbackPayload) => Promise<boolean>;
+  // Delete a pin or highlight from the hover tip.
+  onDeleteComment?: (id: string) => void;
 };
 
 const QUOTE_STYLE = `
@@ -178,6 +190,21 @@ async function waitForImages(doc: Document): Promise<void> {
   );
 }
 
+type ComposeState = {
+  kind: "quote" | "pin";
+  top: number;
+  left: number;
+  quote?: CopyQuote;
+  pinX?: number;
+  pinY?: number;
+};
+
+type TipState = {
+  top: number;
+  left: number;
+  comment: PinComment;
+};
+
 export function EmailPreview({
   html,
   pins = [],
@@ -189,29 +216,33 @@ export function EmailPreview({
   editing = false,
   onEditsChange,
   packageNav,
-  pendingQuote = null,
-  onSelectQuote,
+  authorName = "",
+  onAuthorNameChange,
+  onSubmitInline,
+  onDeleteComment,
 }: Props) {
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const frozenHeightRef = useRef<number | null>(null);
   const lastFitRef = useRef(1);
-  const onSelectQuoteRef = useRef(onSelectQuote);
-  onSelectQuoteRef.current = onSelectQuote;
   const onSelectPinRef = useRef(onSelectPin);
   onSelectPinRef.current = onSelectPin;
+  const tipHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
   const [height, setHeight] = useState(700);
   const [ready, setReady] = useState(false);
   const [hoverHref, setHoverHref] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [fitScale, setFitScale] = useState(1);
   const [fitContentWidth, setFitContentWidth] = useState(MOBILE_PREVIEW_WIDTH);
-  const [quotePopover, setQuotePopover] = useState<{
-    quote: CopyQuote;
-    top: number;
-    left: number;
-  } | null>(null);
+  const [compose, setCompose] = useState<ComposeState | null>(null);
+  const [composeBody, setComposeBody] = useState("");
+  const [composeError, setComposeError] = useState("");
+  const [composeBusy, setComposeBusy] = useState(false);
+  const [tip, setTip] = useState<TipState | null>(null);
+  const composeTextRef = useRef<HTMLTextAreaElement>(null);
 
   // When not placing a pin, let hovers/clicks reach the email so links are
   // hoverable and clickable. In pin mode the overlay captures placement clicks.
@@ -452,16 +483,16 @@ export function EmailPreview({
       active: activePinId === p.id,
       number: i + 1,
     }));
-    if (pendingQuote?.text) {
+    if (compose?.kind === "quote" && compose.quote?.text) {
       marks.push({
         id: "pending",
-        text: pendingQuote.text,
-        ordinal: pendingQuote.ordinal,
+        text: compose.quote.text,
+        ordinal: compose.quote.ordinal,
         pending: true,
       });
     }
     return marks;
-  }, [pins, activePinId, pendingQuote]);
+  }, [pins, activePinId, compose]);
 
   const quoteSignature = quoteMarks
     .map(
@@ -490,6 +521,34 @@ export function EmailPreview({
 
     applyQuoteMarks(doc.body, quoteMarksRef.current);
 
+    const mapRectToCanvas = (rect: DOMRect) => {
+      const iframe = iframeRef.current;
+      const canvas = canvasRef.current;
+      if (!iframe || !canvas) return null;
+      const iframeBox = iframe.getBoundingClientRect();
+      const canvasBox = canvas.getBoundingClientRect();
+      const scale = fitScale !== 1 ? fitScale : 1;
+      return {
+        top: iframeBox.top - canvasBox.top + (rect.bottom + 8) * scale,
+        left: Math.max(
+          140,
+          Math.min(
+            canvasBox.width - 140,
+            iframeBox.left - canvasBox.left + (rect.left + rect.width / 2) * scale
+          )
+        ),
+      };
+    };
+
+    const showTipForId = (id: string, rect: DOMRect) => {
+      const comment = pinsRef.current.find((p) => p.id === id);
+      if (!comment?.body) return;
+      const pos = mapRectToCanvas(rect);
+      if (!pos) return;
+      if (tipHideTimer.current) clearTimeout(tipHideTimer.current);
+      setTip({ ...pos, comment });
+    };
+
     const onMarkClick = (e: MouseEvent) => {
       const target = e.target as Element | null;
       const mark = target?.closest?.(`mark[${QUOTE_MARK_ATTR}]`);
@@ -499,7 +558,23 @@ export function EmailPreview({
       e.stopPropagation();
       onSelectPinRef.current?.(id);
     };
+    const onMarkOver = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const mark = target?.closest?.(
+        `mark[${QUOTE_MARK_ATTR}]`
+      ) as HTMLElement | null;
+      const id = mark?.getAttribute(QUOTE_MARK_ATTR);
+      if (!mark || !id || id === "pending") return;
+      showTipForId(id, mark.getBoundingClientRect());
+    };
+    const onMarkOut = (e: MouseEvent) => {
+      const related = e.relatedTarget as Element | null;
+      if (related?.closest?.(`mark[${QUOTE_MARK_ATTR}]`)) return;
+      tipHideTimer.current = setTimeout(() => setTip(null), 180);
+    };
     doc.addEventListener("click", onMarkClick, true);
+    doc.addEventListener("mouseover", onMarkOver);
+    doc.addEventListener("mouseout", onMarkOut);
 
     const activeId = quoteMarksRef.current.find((m) => m.active)?.id;
     if (activeId) {
@@ -511,19 +586,16 @@ export function EmailPreview({
 
     return () => {
       doc.removeEventListener("click", onMarkClick, true);
+      doc.removeEventListener("mouseover", onMarkOver);
+      doc.removeEventListener("mouseout", onMarkOut);
     };
-  }, [quoteSignature, ready, editing, srcDoc]);
+  }, [quoteSignature, ready, editing, srcDoc, fitScale]);
 
-  const canSelectQuote = Boolean(onSelectQuote) && !pinMode && !editing;
+  const canCompose = Boolean(onSubmitInline) && !editing;
 
-  // Select copy → a Comment button next to the selection. The quote is
-  // snapshotted on mouseup so clicking the button still has the passage after
-  // the iframe selection collapses.
+  // Select copy → open a compose card right next to the passage.
   useEffect(() => {
-    if (!ready || !canSelectQuote) {
-      setQuotePopover(null);
-      return;
-    }
+    if (!ready || !canCompose || pinMode) return;
     const iframeEl = iframeRef.current;
     const canvasEl = canvasRef.current;
     const previewDoc = iframeEl?.contentDocument;
@@ -534,33 +606,38 @@ export function EmailPreview({
     const doc: Document = previewDoc;
     const body: HTMLElement = root;
 
-    function placePopover(quote: CopyQuote, rect: DOMRect) {
+    function openQuoteCompose(quote: CopyQuote, rect: DOMRect) {
       const iframeBox = iframe.getBoundingClientRect();
       const canvasBox = canvas.getBoundingClientRect();
       const scale = fitScale !== 1 ? fitScale : 1;
-      const selBottom = iframeBox.top - canvasBox.top + (rect.bottom + 8) * scale;
-      const selTop = iframeBox.top - canvasBox.top + rect.top * scale - 44;
-      const top =
-        selBottom + 40 > canvasBox.height && selTop > 0 ? selTop : selBottom;
+      const cardH = 220;
+      const preferred =
+        iframeBox.top - canvasBox.top + (rect.bottom + 10) * scale;
+      const maxTop = Math.max(
+        8,
+        canvasBox.height - Math.min(cardH, canvasBox.height)
+      );
+      const top = Math.max(8, Math.min(maxTop, preferred));
       const left = Math.max(
-        72,
+        150,
         Math.min(
-          canvasBox.width - 72,
+          canvasBox.width - 150,
           iframeBox.left - canvasBox.left + (rect.left + rect.width / 2) * scale
         )
       );
-      setQuotePopover({ quote, top, left });
+      setCompose({ kind: "quote", quote, top, left });
+      setComposeBody("");
+      setComposeError("");
+      requestAnimationFrame(() => composeTextRef.current?.focus());
     }
 
     function readSelection() {
       const sel = doc.getSelection();
       const quote = quoteFromSelection(body, sel);
       const rect = selectionViewportRect(sel);
-      if (!quote || !rect) {
-        setQuotePopover(null);
-        return;
-      }
-      placePopover(quote, rect);
+      if (!quote || !rect) return;
+      openQuoteCompose(quote, rect);
+      sel?.removeAllRanges();
     }
 
     const onMouseUp = () => {
@@ -568,11 +645,9 @@ export function EmailPreview({
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setQuotePopover(null);
+        setCompose(null);
         doc.getSelection()?.removeAllRanges();
-        return;
       }
-      requestAnimationFrame(readSelection);
     };
 
     doc.addEventListener("mouseup", onMouseUp);
@@ -583,7 +658,7 @@ export function EmailPreview({
       doc.removeEventListener("touchend", onMouseUp);
       doc.removeEventListener("keyup", onKeyUp);
     };
-  }, [ready, canSelectQuote, srcDoc, fitScale]);
+  }, [ready, canCompose, pinMode, srcDoc, fitScale]);
 
   // Interactive frames report their own height via postMessage. Match the
   // message to this instance's iframe so multiple previews on one page (e.g.
@@ -629,28 +704,88 @@ export function EmailPreview({
   }, [fitScale, fitContentWidth, device, interactive, freezeHeight]);
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!pinMode || !onPlacePin || !ready) return;
+    if (!pinMode || !ready) return;
 
     const layer = pinLayerRef.current;
-    if (!layer) return;
+    const canvas = canvasRef.current;
+    if (!layer || !canvas) return;
 
     // Use offset dimensions (stable layout size), not viewport-clamped rect height
     const width = layer.offsetWidth || 1;
     const heightPx = layer.offsetHeight || frozenHeightRef.current || 1;
     const rect = layer.getBoundingClientRect();
+    const canvasBox = canvas.getBoundingClientRect();
 
-    const x = ((e.clientX - rect.left) / width) * 100;
-    const y = ((e.clientY - rect.top) / heightPx) * 100;
-
-    onPlacePin(
-      Math.min(100, Math.max(0, Number(x.toFixed(3)))),
-      Math.min(100, Math.max(0, Number(y.toFixed(3))))
+    const x = Math.min(
+      100,
+      Math.max(0, Number((((e.clientX - rect.left) / width) * 100).toFixed(3)))
     );
+    const y = Math.min(
+      100,
+      Math.max(0, Number((((e.clientY - rect.top) / heightPx) * 100).toFixed(3)))
+    );
+
+    onPlacePin?.(x, y);
+
+    if (onSubmitInline) {
+      const cardH = 220;
+      const preferred = e.clientY - canvasBox.top + 12;
+      const maxTop = Math.max(8, canvasBox.height - Math.min(cardH, canvasBox.height));
+      const top = Math.max(8, Math.min(maxTop, preferred));
+      const left = Math.max(
+        150,
+        Math.min(canvasBox.width - 150, e.clientX - canvasBox.left)
+      );
+      setCompose({ kind: "pin", pinX: x, pinY: y, top, left });
+      setComposeBody("");
+      setComposeError("");
+      requestAnimationFrame(() => composeTextRef.current?.focus());
+    }
   }
 
-  const inlinePins = pins.filter(
-    (p) => p.pin_x !== null && p.pin_y !== null
-  );
+  function closeCompose() {
+    setCompose(null);
+    setComposeBody("");
+    setComposeError("");
+  }
+
+  async function submitCompose() {
+    if (!compose || !onSubmitInline) return;
+    const text = composeBody.trim();
+    if (!text) {
+      setComposeError("Write a short note.");
+      return;
+    }
+    const name = authorName.trim() || "Reviewer";
+    setComposeBusy(true);
+    setComposeError("");
+    const ok = await onSubmitInline({
+      body: text,
+      authorName: name,
+      pinX: compose.pinX,
+      pinY: compose.pinY,
+      quote: compose.quote,
+    });
+    setComposeBusy(false);
+    if (ok !== false) closeCompose();
+  }
+
+  const inlinePins = [
+    ...pins.filter((p) => p.pin_x !== null && p.pin_y !== null),
+    ...(compose?.kind === "pin" &&
+    compose.pinX != null &&
+    compose.pinY != null
+      ? [
+          {
+            id: "pending",
+            pin_x: compose.pinX,
+            pin_y: compose.pinY,
+            resolved: 0,
+            body: "New pin",
+          } satisfies PinComment,
+        ]
+      : []),
+  ];
 
   const packageItems = packageNav?.items ?? [];
   const showPackageNav = packageItems.length > 1;
@@ -743,7 +878,9 @@ export function EmailPreview({
         ref={canvasRef}
         className={`preview-canvas ${interactive ? "interactive" : ""} ${
           ready ? "is-ready" : "is-loading"
-        }${device === "mobile" ? " is-mobile" : ""}`}
+        }${device === "mobile" ? " is-mobile" : ""}${
+          compose || tip ? " has-overlay" : ""
+        }`}
         style={{
           height: device === "mobile" ? Math.round(height * fitScale) : height,
           width: device === "mobile" ? MOBILE_PREVIEW_WIDTH : undefined,
@@ -788,14 +925,36 @@ export function EmailPreview({
                   type="button"
                   className={`pin ${pin.resolved ? "resolved" : ""} ${
                     activePinId === pin.id ? "active" : ""
-                  }`}
+                  } ${pin.id === "pending" ? "is-pending" : ""}`}
                   style={{
                     left: `${pin.pin_x}%`,
                     top: `${pin.pin_y}%`,
                   }}
-                  title={pin.body || `Comment ${index + 1}`}
+                  onMouseEnter={(e) => {
+                    if (pin.id === "pending" || !pin.body) return;
+                    if (tipHideTimer.current) clearTimeout(tipHideTimer.current);
+                    const canvas = canvasRef.current;
+                    if (!canvas) return;
+                    const canvasBox = canvas.getBoundingClientRect();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setTip({
+                      top: r.bottom - canvasBox.top + 8,
+                      left: Math.max(
+                        140,
+                        Math.min(
+                          canvasBox.width - 140,
+                          r.left - canvasBox.left + r.width / 2
+                        )
+                      ),
+                      comment: pin,
+                    });
+                  }}
+                  onMouseLeave={() => {
+                    tipHideTimer.current = setTimeout(() => setTip(null), 180);
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (pin.id === "pending") return;
                     onSelectPin?.(pin.id);
                   }}
                   aria-label={`Gorilla pin ${index + 1}`}
@@ -803,34 +962,110 @@ export function EmailPreview({
                   <span className="pin-face" aria-hidden="true">
                     🦍
                   </span>
-                  <span className="pin-num">{index + 1}</span>
+                  <span className="pin-num">
+                    {pin.id === "pending" ? "+" : index + 1}
+                  </span>
                 </button>
               ))
             : null}
         </div>
-        {quotePopover ? (
+        {compose ? (
           <div
-            className="quote-popover"
-            style={{ top: quotePopover.top, left: quotePopover.left }}
+            className="feedback-compose"
+            style={{ top: compose.top, left: compose.left }}
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              className="quote-popover-btn"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onSelectQuoteRef.current?.(quotePopover.quote);
-                setQuotePopover(null);
-                try {
-                  iframeRef.current?.contentDocument
-                    ?.getSelection()
-                    ?.removeAllRanges();
-                } catch {
-                  // ignore
-                }
-              }}
-            >
-              Comment on this
-            </button>
+            <div className="feedback-compose-head">
+              <strong>
+                {compose.kind === "pin" ? "Pinned note" : "Note on this copy"}
+              </strong>
+              <button
+                type="button"
+                className="feedback-compose-x"
+                onClick={closeCompose}
+                aria-label="Cancel"
+              >
+                ×
+              </button>
+            </div>
+            {compose.quote?.text ? (
+              <blockquote className="feedback-compose-quote">
+                {compose.quote.text}
+              </blockquote>
+            ) : null}
+            <input
+              className="feedback-compose-name"
+              value={authorName}
+              onChange={(e) => onAuthorNameChange?.(e.target.value)}
+              placeholder="Your name"
+            />
+            <textarea
+              ref={composeTextRef}
+              className="feedback-compose-body"
+              value={composeBody}
+              onChange={(e) => setComposeBody(e.target.value)}
+              placeholder={
+                compose.kind === "pin"
+                  ? "What should change at this spot?"
+                  : "What should change in this copy?"
+              }
+              rows={3}
+            />
+            {composeError ? (
+              <p className="feedback-compose-error">{composeError}</p>
+            ) : null}
+            <div className="feedback-compose-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={closeCompose}
+                disabled={composeBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => void submitCompose()}
+                disabled={composeBusy}
+              >
+                {composeBusy ? "Sending..." : "Send"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {tip && !compose ? (
+          <div
+            className="feedback-tip"
+            style={{ top: tip.top, left: tip.left }}
+            onMouseEnter={() => {
+              if (tipHideTimer.current) clearTimeout(tipHideTimer.current);
+            }}
+            onMouseLeave={() => {
+              tipHideTimer.current = setTimeout(() => setTip(null), 120);
+            }}
+          >
+            <div className="feedback-tip-author">
+              {tip.comment.author_name || "Reviewer"}
+            </div>
+            {tip.comment.quote_text ? (
+              <blockquote className="feedback-tip-quote">
+                {tip.comment.quote_text}
+              </blockquote>
+            ) : null}
+            <div className="feedback-tip-body">{tip.comment.body}</div>
+            {onDeleteComment && tip.comment.id !== "pending" ? (
+              <button
+                type="button"
+                className="feedback-tip-delete"
+                onClick={() => {
+                  onDeleteComment(tip.comment.id);
+                  setTip(null);
+                }}
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

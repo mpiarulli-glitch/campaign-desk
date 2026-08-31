@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import {
   addReply,
+  deleteComment,
   getCampaignById,
+  getCommentById,
   listComments,
   listCommentsWithAttachments,
   setCommentResolved,
@@ -52,6 +54,35 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   return NextResponse.json({ comment });
+}
+
+export async function DELETE(request: Request, { params }: Params) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const campaign = getCampaignById(id);
+  if (!campaign) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const commentId = typeof body.commentId === "string" ? body.commentId : "";
+  if (!commentId) {
+    return NextResponse.json(
+      { error: "commentId is required" },
+      { status: 400 }
+    );
+  }
+
+  const comment = getCommentById(commentId);
+  if (!comment || comment.campaign_id !== id) {
+    return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+  }
+
+  deleteComment(commentId);
+  return NextResponse.json({ ok: true, deletedId: commentId });
 }
 
 // Admin posts a reply to a comment.

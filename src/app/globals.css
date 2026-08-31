@@ -1085,6 +1085,11 @@ button {
   overflow: hidden;
 }
 
+.preview-canvas.has-overlay {
+  overflow: visible;
+  z-index: 4;
+}
+
 .preview-canvas.is-mobile {
   max-width: 100%;
   background: #fff;
@@ -1710,29 +1715,145 @@ button {
   transform: scale(1.1);
 }
 
-.quote-popover {
+.feedback-compose {
   position: absolute;
-  z-index: 8;
+  z-index: 12;
+  width: min(300px, calc(100% - 24px));
   transform: translateX(-50%);
   pointer-events: auto;
+  /* Light card on purpose so it reads on top of dark email chrome and
+     dark app chrome — the old black pill was invisible against both. */
+  background: #ffffff;
+  color: #0e1116;
+  border: 1px solid rgba(0, 212, 232, 0.65);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.quote-popover-btn {
+.feedback-compose-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.feedback-compose-x {
   border: 0;
-  background: var(--ink);
-  color: var(--on-ink);
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  padding: 8px 12px;
-  border-radius: 999px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  background: transparent;
+  color: #737b89;
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
-  white-space: nowrap;
+  padding: 0 2px;
 }
 
-.quote-popover-btn:hover {
-  background: #1a1d24;
+.feedback-compose-quote {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-body);
+  border-radius: 0 6px 6px 0;
+  max-height: 72px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.feedback-compose-name,
+.feedback-compose-body {
+  width: 100%;
+  border: 1px solid #d4d9e2;
+  border-radius: 8px;
+  background: #f3f5f8;
+  color: #0e1116;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.feedback-compose-body {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.feedback-compose-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.feedback-compose-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.feedback-tip {
+  position: absolute;
+  z-index: 11;
+  width: min(260px, calc(100% - 24px));
+  transform: translateX(-50%);
+  pointer-events: auto;
+  background: #ffffff;
+  color: #0e1116;
+  border: 1px solid rgba(0, 212, 232, 0.55);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  padding: 10px 12px;
+}
+
+.feedback-tip-author {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e1116;
+  margin-bottom: 4px;
+}
+
+.feedback-tip-quote {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-body);
+  border-radius: 0 6px 6px 0;
+  max-height: 56px;
+  overflow: auto;
+}
+
+.feedback-tip-body {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4a5262;
+  white-space: pre-wrap;
+}
+
+.feedback-tip-delete {
+  margin-top: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.feedback-tip-delete:hover {
+  text-decoration: underline;
+}
+
+.pin.is-pending {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
 }
 
 .comment-list {

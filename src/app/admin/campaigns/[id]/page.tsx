@@ -2643,6 +2643,17 @@ export default function AdminCampaignPage() {
                 pins={emailComments}
                 activePinId={activePinId}
                 onSelectPin={setActivePinId}
+                onDeleteComment={async (commentId) => {
+                  const res = await fetch(`/api/campaigns/${id}/comments`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ commentId }),
+                  });
+                  if (res.ok) {
+                    if (activePinId === commentId) setActivePinId(null);
+                    load(activeEmailId);
+                  }
+                }}
                 interactive={activeDoc.interactive}
                 editing={editingCopy}
                 onEditsChange={setPendingEdits}
@@ -2902,6 +2913,27 @@ export default function AdminCampaignPage() {
                           }}
                         >
                           {c.resolved ? "Reopen" : "Mark done"}
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!confirm("Delete this feedback?")) return;
+                            const res = await fetch(
+                              `/api/campaigns/${id}/comments`,
+                              {
+                                method: "DELETE",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ commentId: c.id }),
+                              }
+                            );
+                            if (res.ok) {
+                              if (activePinId === c.id) setActivePinId(null);
+                              load(activeEmailId);
+                            }
+                          }}
+                        >
+                          Delete
                         </button>
                       </div>
                     </div>

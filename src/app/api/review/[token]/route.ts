@@ -3,8 +3,10 @@ import {
   addComment,
   addCommentAttachment,
   addReply,
+  deleteComment,
   getCampaignByAnyToken,
   getCampaignById,
+  getCommentById,
   listCommentsWithAttachments,
   listEmails,
   listEmailsWithSubjects,
@@ -303,6 +305,26 @@ export async function POST(request: Request, { params }: Params) {
       campaign: publicCampaign(fresh, channel),
       message: "Approval undone. You can leave feedback again.",
     });
+  }
+
+  // Delete a pin or highlight the reviewer left. Allowed while feedback is
+  // still open so a misplaced pin can be undone without emailing the team.
+  if (typeof body.deleteComment === "string" && body.deleteComment.trim()) {
+    if (!reviewAcceptsViewerAction(campaign, channel)) {
+      return NextResponse.json(
+        { error: "This campaign is approved and no longer accepting changes." },
+        { status: 403 }
+      );
+    }
+    const target = getCommentById(body.deleteComment);
+    if (!target || target.campaign_id !== campaign.id) {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+    if (channel === "external" && target.channel !== "external") {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+    deleteComment(target.id);
+    return NextResponse.json({ ok: true, deletedId: target.id });
   }
 
   // Replying to an existing comment (allowed even after approval, so the

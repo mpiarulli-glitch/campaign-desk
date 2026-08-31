@@ -1,9 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
-import { EmailPreview } from "@/components/EmailPreview";
+import {
+  EmailPreview,
+  type InlineFeedbackPayload,
+} from "@/components/EmailPreview";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AutomationMap } from "@/components/AutomationMap";
@@ -14,7 +17,7 @@ import {
   type BodyFormat,
 } from "@/lib/asset-kinds";
 import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
-import { isCopyQuote, type CopyQuote } from "@/lib/copy-quote";
+import { isCopyQuote } from "@/lib/copy-quote";
 
 type Attachment = {
   id: string;
@@ -166,10 +169,6 @@ export default function ReviewPage() {
   const [authorName, setAuthorName] = useState("");
   const [body, setBody] = useState("");
   const [mode, setMode] = useState<"general" | "pin">("general");
-  const [pendingPin, setPendingPin] = useState<{ x: number; y: number } | null>(
-    null
-  );
-  const [pendingQuote, setPendingQuote] = useState<CopyQuote | null>(null);
   const [activePinId, setActivePinId] = useState<string | null>(null);
   // Page-level notices cover the link itself and the approve actions, which
   // live at the top of the page. Form-level notices stay next to the compose
@@ -186,7 +185,6 @@ export default function ReviewPage() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -320,8 +318,6 @@ export default function ReviewPage() {
   function selectEmail(emailId: string) {
     setActiveEmailId(emailId);
     setActivePinId(null);
-    setPendingPin(null);
-    setPendingQuote(null);
     setMode("general");
   }
 
@@ -398,12 +394,6 @@ export default function ReviewPage() {
     setFormError("");
     setFormMessage("");
 
-    if (mode === "pin" && !pendingPin) {
-      setFormError("Click on the email to place a pin first.");
-      setSubmitting(false);
-      return;
-    }
-
     if (!body.trim() && images.length === 0) {
       setFormError("Add a comment or attach an image.");
       setSubmitting(false);
@@ -419,11 +409,7 @@ export default function ReviewPage() {
       body: JSON.stringify({
         authorName: name,
         body,
-        type: pendingQuote || mode === "pin" ? "inline" : "general",
-        pinX: pendingPin?.x,
-        pinY: pendingPin?.y,
-        quoteText: pendingQuote?.text,
-        quoteOrdinal: pendingQuote?.ordinal,
+        type: "general",
         emailId: activeEmail.id,
         images: images.map((i) => ({
           mime: i.mime,
@@ -443,11 +429,58 @@ export default function ReviewPage() {
     }
 
     setBody("");
-    setPendingPin(null);
-    setPendingQuote(null);
     setImages([]);
     setFormMessage("Feedback sent. Thank you.");
     load(activeEmail.id, { silent: true });
+  }
+
+  async function submitInline(payload: InlineFeedbackPayload): Promise<boolean> {
+    if (!activeEmail) return false;
+    setFormError("");
+    setFormMessage("");
+    localStorage.setItem("cd_reviewer_name", payload.authorName);
+    setAuthorName(payload.authorName);
+
+    const res = await fetch(`/api/review/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        authorName: payload.authorName,
+        body: payload.body,
+        type: "inline",
+        pinX: payload.pinX,
+        pinY: payload.pinY,
+        quoteText: payload.quote?.text,
+        quoteOrdinal: payload.quote?.ordinal,
+        emailId: activeEmail.id,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setFormError(data.error || "Could not post comment.");
+      return false;
+    }
+
+    setFormMessage("Feedback sent. Thank you.");
+    load(activeEmail.id, { silent: true });
+    return true;
+  }
+
+  async function deleteFeedback(commentId: string) {
+    setFormError("");
+    const res = await fetch(`/api/review/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deleteComment: commentId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setFormError(data.error || "Could not delete that note.");
+      return;
+    }
+    if (activePinId === commentId) setActivePinId(null);
+    load(activeEmailId, { silent: true });
   }
 
   async function approveEmail() {
@@ -760,73 +793,37 @@ export default function ReviewPage() {
                   <button
                     type="button"
                     className={mode === "general" ? "active" : ""}
-                    onClick={() => {
-                      setMode("general");
-                      setPendingPin(null);
-                    }}
+                    onClick={() => setMode("general")}
                   >
-                    General comment
+                    Highlight copy
                   </button>
                   <button
                     type="button"
                     className={mode === "pin" ? "active" : ""}
-                    onClick={() => {
-                      setMode("pin");
-                      setPendingQuote(null);
-                    }}
+                    onClick={() => setMode("pin")}
                   >
                     Pin on {itemNoun}
                   </button>
                 </div>
-                {mode === "pin" ? (
-                  <span className={`rv-hint ${pendingPin ? "is-ready" : ""}`}>
-                    {pendingPin
-                      ? "Pin placed. Write your note on the right."
-                      : `Click anywhere on the ${itemNoun} to drop a pin.`}
-                  </span>
-                ) : (
-                  <span className={`rv-hint ${pendingQuote ? "is-ready" : ""}`}>
-                    {pendingQuote
-                      ? "Passage highlighted. Write your note on the right."
-                      : "Select any copy in the preview to comment on that line."}
-                  </span>
-                )}
+                <span className="rv-hint">
+                  {mode === "pin"
+                    ? `Click anywhere on the ${itemNoun} — a note box opens there.`
+                    : "Select any copy — a note box opens on that line."}
+                </span>
               </div>
             ) : null}
 
             <EmailPreview
               html={activeDoc.html}
               interactive={activeDoc.interactive}
-              pins={[
-                ...emailComments,
-                ...(pendingPin
-                  ? [
-                      {
-                        id: "pending",
-                        pin_x: pendingPin.x,
-                        pin_y: pendingPin.y,
-                        resolved: 0,
-                        body: "New pin",
-                      },
-                    ]
-                  : []),
-              ]}
+              pins={emailComments}
               activePinId={activePinId}
               pinMode={mode === "pin" && !locked}
-              onPlacePin={(x, y) => setPendingPin({ x, y })}
               onSelectPin={setActivePinId}
-              pendingQuote={pendingQuote}
-              onSelectQuote={
-                locked
-                  ? undefined
-                  : (quote) => {
-                      setPendingQuote(quote);
-                      setPendingPin(null);
-                      setMode("general");
-                      setActivePinId(null);
-                      requestAnimationFrame(() => bodyRef.current?.focus());
-                    }
-              }
+              authorName={authorName}
+              onAuthorNameChange={setAuthorName}
+              onSubmitInline={locked ? undefined : submitInline}
+              onDeleteComment={locked ? undefined : deleteFeedback}
               packageNav={
                 emails.length > 1
                   ? {
@@ -889,32 +886,12 @@ export default function ReviewPage() {
             {!locked ? (
               <form className="card card-pad stack" onSubmit={submitComment}>
                 <div>
-                  <h2 className="h2">
-                    {pendingQuote
-                      ? "Comment on this copy"
-                      : mode === "pin"
-                        ? "Pinned feedback"
-                        : "General feedback"}
-                  </h2>
+                  <h2 className="h2">General feedback</h2>
                   <p className="rv-form-sub">
-                    Commenting on <strong>{activeEmail.title}</strong>
+                    Overall thoughts on <strong>{activeEmail.title}</strong>.
+                    For a specific line, select it in the preview.
                   </p>
                 </div>
-
-                {pendingQuote ? (
-                  <div className="comment-quote-pending">
-                    <blockquote className="comment-quote">
-                      {pendingQuote.text}
-                    </blockquote>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => setPendingQuote(null)}
-                    >
-                      Clear highlight
-                    </button>
-                  </div>
-                ) : null}
 
                 <div className="field">
                   <label htmlFor="name">Your name</label>
@@ -930,16 +907,9 @@ export default function ReviewPage() {
                   <label htmlFor="body">Comment</label>
                   <textarea
                     id="body"
-                    ref={bodyRef}
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
-                    placeholder={
-                      pendingQuote
-                        ? "What should change in this copy?"
-                        : mode === "pin"
-                        ? "What should change at this spot?"
-                        : "Overall thoughts, tone, offer, CTA..."
-                    }
+                    placeholder="Overall thoughts, tone, offer, CTA..."
                   />
                 </div>
 
@@ -1140,6 +1110,15 @@ export default function ReviewPage() {
                             >
                               {replyingId === c.id ? "..." : "Reply"}
                             </button>
+                            {c.type === "inline" ? (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => deleteFeedback(c.id)}
+                              >
+                                Delete
+                              </button>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
