@@ -147,6 +147,8 @@ export interface HubClient {
   pipelineLabel: string;
   launchDate: string | null;
   platform: EmailPlatform | null;
+  /** True when this hub card (or a group member) has a GHL location id. */
+  ghlLinked: boolean;
   nextSend: HubSend | null;
   sends: HubSend[];
   campaigns: HubCampaign[];
@@ -539,7 +541,8 @@ function toHubClient(
   launch: HubLaunchTodo[],
   launchDate: string | null,
   platform: EmailPlatform | null,
-  rev: RevClient | null
+  rev: RevClient | null,
+  ghlLinked: boolean
 ): HubClient {
   const dayOfMonth = Number(today.slice(8, 10));
   const pace = contractPace(group.quota, group.delivered, dayOfMonth, daysInPeriod(period));
@@ -558,6 +561,7 @@ function toHubClient(
     pipelineLabel: PIPELINE_LABEL[group.primary.columnKey] || group.primary.columnKey,
     launchDate,
     platform,
+    ghlLinked,
     nextSend: upcoming[0] || null,
     sends,
     campaigns,
@@ -609,6 +613,9 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
         group.memberIds.map((id) => meta.get(id)?.launchDate).find(Boolean) ?? null;
       const platform =
         group.memberIds.map((id) => meta.get(id)?.platform).find(Boolean) ?? null;
+      const ghlLinked = group.memberIds.some((id) =>
+        Boolean((revById.get(id)?.ghl_location_id || "").trim())
+      );
       return toHubClient(
         group,
         today,
@@ -618,7 +625,8 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
         collectForIds(launch, group.memberIds),
         launchDate,
         platform,
-        revById.get(group.primary.clientId) ?? null
+        revById.get(group.primary.clientId) ?? null,
+        ghlLinked
       );
     })
     .sort((a, b) => sortKey(a) - sortKey(b) || a.name.localeCompare(b.name));

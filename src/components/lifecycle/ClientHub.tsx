@@ -11,6 +11,7 @@ import {
   type PaceStatus,
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
+import { EmailAnalyticsPanel } from "./EmailAnalyticsPanel";
 
 type HubWorkKind = "campaign" | "automation";
 
@@ -63,6 +64,7 @@ type HubClient = {
   pipelineLabel: string;
   launchDate: string | null;
   platform: EmailPlatform | null;
+  ghlLinked: boolean;
   nextSend: HubSend | null;
   sends: HubSend[];
   campaigns: HubCampaign[];
@@ -666,6 +668,13 @@ function ClientDetail({
           </form>
         </div>
       </section>
+
+      <EmailAnalyticsPanel
+        key={client.id}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
+        ghlLinked={Boolean(client.ghlLinked)}
+      />
 
       <section className="lh-card">
         <div className="lh-card-head">
