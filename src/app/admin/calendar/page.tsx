@@ -565,11 +565,13 @@ export default function CalendarPage() {
               aria-label="Filter by client"
             >
               <option value="all">All clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {[...clients]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
             </select>
             <div className="cal-nav">
               <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>

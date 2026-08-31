@@ -2732,6 +2732,15 @@ button {
 }
 .cal-client-search {
   min-width: 220px;
+  max-width: 280px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239aa0a6' d='M1.2 1.2 6 6l4.8-4.8 1.2 1.2L6 8.4.0 2.4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
 }
 .cal-nav-btn {
   width: 32px;
