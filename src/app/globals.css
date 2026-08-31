@@ -2733,14 +2733,86 @@ button {
 .cal-client-search {
   min-width: 220px;
   max-width: 280px;
+}
+
+/* Searchable client picker (calendar header and anywhere else outside Forecast). */
+.client-combo {
+  position: relative;
+  min-width: 0;
+}
+.client-combo > input {
+  width: 100%;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 36px 10px 12px;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: inherit;
+}
+.client-combo > input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.client-combo-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 12px;
+  height: 8px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239aa0a6' d='M1 1.5L6 6.5L11 1.5' stroke='%239aa0a6' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 12px 8px no-repeat;
+}
+.client-combo-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lift);
+}
+.client-combo-list li {
+  margin: 0;
+}
+.client-combo-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 7px;
   cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 36px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239aa0a6' d='M1.2 1.2 6 6l4.8-4.8 1.2 1.2L6 8.4.0 2.4z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px 8px;
+  white-space: nowrap;
+}
+.client-combo-item.is-active {
+  background: var(--bg-tint);
+  color: var(--accent-ink);
+}
+.client-combo-item.is-picked {
+  font-weight: 600;
+}
+.client-combo-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .cal-nav-btn {
   width: 32px;

@@ -8,6 +8,7 @@ import {
   CalendarTypeFilter,
   CalendarViewToggle,
 } from "@/components/CalendarTypeFilter";
+import { ClientCombobox } from "@/components/ClientCombobox";
 import {
   sendMatchesStatusFilter,
   type CalendarStatusKey,
@@ -558,21 +559,15 @@ export default function CalendarPage() {
             <h1 className="h1">Campaign calendar</h1>
           </div>
           <div className="row">
-            <select
-              className="select-clean cal-client-search"
+            <ClientCombobox
+              className="cal-client-search"
+              clients={clients}
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              aria-label="Filter by client"
-            >
-              <option value="all">All clients</option>
-              {[...clients]
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-            </select>
+              onChange={setFilter}
+              allOption={{ id: "all", label: "All clients" }}
+              ariaLabel="Filter by client"
+              placeholder="Search clients"
+            />
             <div className="cal-nav">
               <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>
               <span className="cal-month">{MONTHS[month]} {year}</span>
