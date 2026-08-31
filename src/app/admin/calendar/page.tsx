@@ -191,6 +191,7 @@ export default function CalendarPage() {
   } | null>(null);
   const [planCopied, setPlanCopied] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   // The selected client's editorial footprint across all time, which is what
   // tells "this client has no calendar" apart from "this month happens to be
   // empty". Null while no single client is selected.
@@ -292,6 +293,45 @@ export default function CalendarPage() {
       body: JSON.stringify({ action }),
     });
     loadPlan();
+  }
+
+  async function clearEditorial() {
+    if (filter === "all" || !summary || summary.total <= 0 || clearing) return;
+    const name = clients.find((c) => c.id === filter)?.name || "this client";
+    const count = summary.total;
+    if (
+      !confirm(
+        `Clear ${name}'s editorial calendar?\n\nThis removes ${count} planned send${count === 1 ? "" : "s"}. Production shoots and anything scheduled from the Campaigns tab stay.`
+      )
+    ) {
+      return;
+    }
+    if (
+      !confirm(
+        `Really clear ${name}'s editorial calendar?\n\nThis cannot be undone. Productions and campaign-tab schedules will not be deleted.`
+      )
+    ) {
+      return;
+    }
+    setClearing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/calendar/clear", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: filter, confirm: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not clear the calendar.");
+        return;
+      }
+      await Promise.all([load(), loadSummary(), loadPlan()]);
+    } catch {
+      setError("Could not clear the calendar.");
+    } finally {
+      setClearing(false);
+    }
   }
 
   const byDay = useMemo(() => {
@@ -516,6 +556,15 @@ export default function CalendarPage() {
             <button className="btn btn-secondary btn-sm" onClick={() => setImporting(true)}>
               Import CSV
             </button>
+            {filter !== "all" && summary && summary.total > 0 ? (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => void clearEditorial()}
+                disabled={clearing}
+              >
+                {clearing ? "Clearing…" : "Clear calendar"}
+              </button>
+            ) : null}
             <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>
               Add send
             </button>

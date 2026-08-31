@@ -1,5 +1,9 @@
 import { nanoid } from "nanoid";
-import { HAS_PRODUCTION_BRIEF_SQL } from "./production-brief";
+import {
+  HAS_PRODUCTION_BRIEF_SQL,
+  hasProductionBriefSql,
+} from "./production-brief";
+import { clearApproval } from "./plan";
 import {
   getDb,
   nowIso,
@@ -394,4 +398,73 @@ export function updateSend(
 
 export function deleteSend(id: string): boolean {
   return getDb().prepare(`DELETE FROM scheduled_sends WHERE id = ?`).run(id).changes > 0;
+}
+
+/**
+ * Wipe one client's editorial plan without touching productions or campaign-tab
+ * schedules.
+ *
+ * Productions are excluded by the same rule as replace-range import. Rows linked
+ * from campaigns.scheduled_send_id stay so a send set on the Campaigns tab is not
+ * erased. Campaign status and scheduled_send_at are never edited here.
+ */
+export function clearEditorialCalendar(clientId: string): {
+  deleted: number;
+  keptForCampaigns: number;
+  keptProductions: number;
+  approvalCleared: boolean;
+} {
+  if (!clientId.trim()) {
+    return {
+      deleted: 0,
+      keptForCampaigns: 0,
+      keptProductions: 0,
+      approvalCleared: false,
+    };
+  }
+
+  const db = getDb();
+  const editorialOnSend = `s.requested_by_client = 0 AND NOT ${hasProductionBriefSql("s")}`;
+
+  const keptProductions = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM scheduled_sends
+         WHERE client_id = ? AND cancelled_at IS NULL AND ${PRODUCTION_PREDICATE}`
+      )
+      .get(clientId) as { n: number }
+  ).n;
+
+  const keptForCampaigns = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM scheduled_sends s
+         WHERE s.client_id = ?
+           AND ${editorialOnSend}
+           AND EXISTS (
+             SELECT 1 FROM campaigns c
+             WHERE c.scheduled_send_id = s.id
+           )`
+      )
+      .get(clientId) as { n: number }
+  ).n;
+
+  const deleted = db
+    .prepare(
+      `DELETE FROM scheduled_sends
+       WHERE id IN (
+         SELECT s.id FROM scheduled_sends s
+         WHERE s.client_id = ?
+           AND ${editorialOnSend}
+           AND NOT EXISTS (
+             SELECT 1 FROM campaigns c
+             WHERE c.scheduled_send_id = s.id
+           )
+       )`
+    )
+    .run(clientId).changes;
+
+  const approvalCleared = deleted > 0 ? clearApproval(clientId) : false;
+
+  return { deleted, keptForCampaigns, keptProductions, approvalCleared };
 }
