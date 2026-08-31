@@ -12,6 +12,7 @@ import {
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
 import { EmailAnalyticsPanel } from "./EmailAnalyticsPanel";
+import { ClientWorkflowsPanel } from "./ClientWorkflowsPanel";
 
 type HubWorkKind = "campaign" | "automation";
 
@@ -350,12 +351,16 @@ function AddClientForm({
   onAdded: (clientId: string) => void;
 }) {
   const [clientId, setClientId] = useState("");
+  const [mode, setMode] = useState<"launch" | "automations">("launch");
   const [launchDate, setLaunchDate] = useState(today);
   const [platform, setPlatform] = useState<EmailPlatform | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const preview = previewLaunchTodos(launchDate);
-  const canSubmit = Boolean(clientId && launchDate && platform && preview.length && !busy);
+  const preview = mode === "launch" ? previewLaunchTodos(launchDate) : [];
+  const canSubmit =
+    mode === "automations"
+      ? Boolean(clientId && !busy)
+      : Boolean(clientId && launchDate && platform && preview.length && !busy);
 
   if (available.length === 0) return null;
 
@@ -368,7 +373,11 @@ function AddClientForm({
       const res = await fetch("/api/lifecycle/hub", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, launchDate, platform }),
+        body: JSON.stringify(
+          mode === "automations"
+            ? { clientId, mode: "automations" }
+            : { clientId, mode: "launch", launchDate, platform }
+        ),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -387,6 +396,22 @@ function AddClientForm({
   return (
     <form className="lh-add" onSubmit={(e) => void submit(e)}>
       <p className="lh-add-label">Add a client</p>
+      <div className="lh-add-modes">
+        <button
+          type="button"
+          className={`lh-add-mode ${mode === "launch" ? "on" : ""}`}
+          onClick={() => setMode("launch")}
+        >
+          Campaign launch
+        </button>
+        <button
+          type="button"
+          className={`lh-add-mode ${mode === "automations" ? "on" : ""}`}
+          onClick={() => setMode("automations")}
+        >
+          Automations only
+        </button>
+      </div>
       <select value={clientId} onChange={(e) => setClientId(e.target.value)} required>
         <option value="">Pick a client…</option>
         {available.map((c) => (
@@ -395,29 +420,38 @@ function AddClientForm({
           </option>
         ))}
       </select>
-      <label className="lh-field">
-        <span>Launch date</span>
-        <input
-          type="date"
-          required
-          value={launchDate}
-          onChange={(e) => setLaunchDate(e.target.value)}
-        />
-      </label>
-      <label className="lh-field">
-        <span>Platform</span>
-        <PlatformSelect value={platform} onChange={setPlatform} />
-      </label>
-      {clientId && preview.length ? (
-        <ul className="lh-preview">
-          {preview.map((item) => (
-            <li key={item.title}>
-              <span>{item.title}</span>
-              <span>{prettyDate(item.dueDate)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {mode === "launch" ? (
+        <>
+          <label className="lh-field">
+            <span>Launch date</span>
+            <input
+              type="date"
+              required
+              value={launchDate}
+              onChange={(e) => setLaunchDate(e.target.value)}
+            />
+          </label>
+          <label className="lh-field">
+            <span>Platform</span>
+            <PlatformSelect value={platform} onChange={setPlatform} />
+          </label>
+          {clientId && preview.length ? (
+            <ul className="lh-preview">
+              {preview.map((item) => (
+                <li key={item.title}>
+                  <span>{item.title}</span>
+                  <span>{prettyDate(item.dueDate)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : (
+        <p className="lh-card-note lh-add-hint">
+          Adds them to Lifecycle without launch to-dos. Open the client to pull live GHL
+          workflows.
+        </p>
+      )}
       {error ? <p className="lh-error">{error}</p> : null}
       <button type="submit" className="btn btn-sm" disabled={!canSubmit}>
         {busy ? "Adding…" : "Add"}
@@ -785,6 +819,13 @@ function ClientDetail({
           </p>
         )}
       </section>
+
+      <ClientWorkflowsPanel
+        key={`wf-${client.id}`}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
+        ghlLinked={Boolean(client.ghlLinked)}
+      />
 
       <EmailAnalyticsPanel
         key={client.id}

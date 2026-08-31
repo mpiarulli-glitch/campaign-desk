@@ -16,19 +16,30 @@ export async function POST(request: Request) {
   }
   const body = await request.json().catch(() => ({}));
   const clientId = typeof body.clientId === "string" ? body.clientId : "";
+  const mode = body.mode === "automations" ? "automations" : "launch";
   const launchDate = typeof body.launchDate === "string" ? body.launchDate : "";
   const platform = isEmailPlatform(body.platform) ? body.platform : null;
   if (!clientId) {
     return NextResponse.json({ error: "Pick a client." }, { status: 400 });
   }
-  if (!isYmd(launchDate)) {
-    return NextResponse.json({ error: "Pick a launch date." }, { status: 400 });
+
+  if (mode === "launch") {
+    if (!isYmd(launchDate)) {
+      return NextResponse.json({ error: "Pick a launch date." }, { status: 400 });
+    }
+    if (!platform) {
+      return NextResponse.json({ error: "Pick a platform." }, { status: 400 });
+    }
   }
-  if (!platform) {
-    return NextResponse.json({ error: "Pick a platform." }, { status: 400 });
-  }
+
   const session = await getSession();
-  const result = addClientToHub(clientId, launchDate, session?.person || "michael", undefined, platform);
+  const result = addClientToHub(
+    clientId,
+    mode === "automations" ? null : launchDate,
+    session?.person || "michael",
+    undefined,
+    mode === "automations" ? null : platform
+  );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

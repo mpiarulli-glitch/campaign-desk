@@ -45,6 +45,38 @@ test("adding a client to the hub requires a launch date and platform", async (t)
   assert.equal(client.launch.total, 3);
 });
 
+test("automations-only clients join the hub without launch to-dos", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-auto-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    )
+    .run("cl_auto", "Flow Co", 0, now, now);
+
+  assert.deepEqual(hub.addClientToHub("cl_auto", null, "michael"), { ok: true });
+
+  const snapshot = hub.buildLifecycleHub();
+  const client = snapshot.clients.find((c) => c.id === "cl_auto");
+  assert.ok(client);
+  assert.equal(client.launch.started, false);
+  assert.equal(client.launch.total, 0);
+  assert.equal(client.quota, 0);
+  assert.match(client.description, /Automations account/);
+});
+
 test("hub shows sent campaigns and calendar sends, and skips automation quota", async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-sent-"));
   const originalCwd = process.cwd();

@@ -256,6 +256,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [addingClientId, setAddingClientId] = useState("");
+  const [addingMode, setAddingMode] = useState<"launch" | "automations">("launch");
   const [addingLaunchDate, setAddingLaunchDate] = useState("");
   const [addingPlatform, setAddingPlatform] = useState<EmailPlatform | "">("");
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
@@ -398,18 +399,24 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   }, [load, period]);
 
   async function addCard() {
-    if (!addingClientId || !addingLaunchDate || !addingPlatform) return;
+    if (!addingClientId) return;
+    if (addingMode === "launch" && (!addingLaunchDate || !addingPlatform)) return;
     const wanted = addingClientId;
     setError("");
     const res = await fetch("/api/lifecycle/board", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId: wanted,
-        period,
-        launchDate: addingLaunchDate,
-        platform: addingPlatform,
-      }),
+      body: JSON.stringify(
+        addingMode === "automations"
+          ? { clientId: wanted, period, mode: "automations" }
+          : {
+              clientId: wanted,
+              period,
+              mode: "launch",
+              launchDate: addingLaunchDate,
+              platform: addingPlatform,
+            }
+      ),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -498,6 +505,16 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
           ) : (
             <>
               <select
+                value={addingMode}
+                onChange={(e) =>
+                  setAddingMode(e.target.value === "automations" ? "automations" : "launch")
+                }
+                aria-label="Add mode"
+              >
+                <option value="launch">Campaign launch</option>
+                <option value="automations">Automations only</option>
+              </select>
+              <select
                 value={addingClientId}
                 onChange={(e) => setAddingClientId(e.target.value)}
               >
@@ -506,29 +523,36 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              <input
-                type="date"
-                value={addingLaunchDate}
-                onChange={(e) => setAddingLaunchDate(e.target.value)}
-                aria-label="Launch date"
-                required
-              />
-              <select
-                value={addingPlatform}
-                onChange={(e) => setAddingPlatform((e.target.value as EmailPlatform) || "")}
-                aria-label="Platform"
-                required
-              >
-                <option value="">Platform…</option>
-                {EMAIL_PLATFORMS.map((p) => (
-                  <option key={p.slug} value={p.slug}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              {addingMode === "launch" ? (
+                <>
+                  <input
+                    type="date"
+                    value={addingLaunchDate}
+                    onChange={(e) => setAddingLaunchDate(e.target.value)}
+                    aria-label="Launch date"
+                    required
+                  />
+                  <select
+                    value={addingPlatform}
+                    onChange={(e) => setAddingPlatform((e.target.value as EmailPlatform) || "")}
+                    aria-label="Platform"
+                    required
+                  >
+                    <option value="">Platform…</option>
+                    {EMAIL_PLATFORMS.map((p) => (
+                      <option key={p.slug} value={p.slug}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
               <button
                 className="hud-btn"
-                disabled={!addingClientId || !addingLaunchDate || !addingPlatform}
+                disabled={
+                  !addingClientId ||
+                  (addingMode === "launch" && (!addingLaunchDate || !addingPlatform))
+                }
                 onClick={addCard}
               >
                 Add

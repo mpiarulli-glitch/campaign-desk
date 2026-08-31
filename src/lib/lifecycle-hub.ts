@@ -86,6 +86,9 @@ function hubDescription(input: {
   if (input.launchOpen > 0) {
     return `Launching — ${input.launchOpen} of ${input.launchTotal} onboarding to-dos open.`;
   }
+  if (input.launchTotal === 0) {
+    return "Automations account — check live GoHighLevel workflows on the detail page.";
+  }
   return "No monthly campaign quota on file. All current periods are caught up.";
 }
 
@@ -705,18 +708,31 @@ export function createLaunchTodos(
 
 export function addClientToHub(
   clientId: string,
-  launchDate: string,
+  launchDate: string | null | undefined,
   createdBy = "michael",
   period?: string,
   platform?: EmailPlatform | null
 ): { ok: true } | { ok: false; error: string } {
   if (!getRevClient(clientId)) return { ok: false, error: "Unknown client." };
-  if (!isYmd(launchDate)) return { ok: false, error: "Pick a launch date." };
-  if (!isEmailPlatform(platform)) return { ok: false, error: "Pick a platform." };
+
+  const date = typeof launchDate === "string" ? launchDate.trim() : "";
+  const wantsLaunch = Boolean(date);
+  if (wantsLaunch && !isYmd(date)) {
+    return { ok: false, error: "Pick a launch date." };
+  }
+  if (wantsLaunch && !isEmailPlatform(platform)) {
+    return { ok: false, error: "Pick a platform." };
+  }
+
   if (!addBoardCard(clientId, period || currentPeriod())) {
     return { ok: false, error: "Could not add that client." };
   }
-  createLaunchTodos(clientId, launchDate, createdBy, platform);
+
+  // Automations-only: board card only — no launch checklist. Campaign launches
+  // still get the calendar / first-campaigns / automations to-dos.
+  if (wantsLaunch && platform) {
+    createLaunchTodos(clientId, date, createdBy, platform);
+  }
   return { ok: true };
 }
 

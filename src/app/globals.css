@@ -14320,6 +14320,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   grid-column: span 4;
 }
 
+.lh-detail-layout > .lh-workflows {
+  grid-column: 1 / -1;
+}
+
 .lh-detail-layout > .lh-analytics {
   grid-column: 1 / -1;
 }
@@ -14336,6 +14340,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   .lh-detail-layout > .lh-quota,
   .lh-detail-layout > .lh-month-card,
   .lh-detail-layout > .lh-launch-card,
+  .lh-detail-layout > .lh-workflows,
   .lh-detail-layout > .lh-analytics {
     grid-column: 1 / -1;
   }
@@ -14434,6 +14439,94 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.lh-add-modes {
+  display: flex;
+  gap: 4px;
+}
+
+.lh-add-mode {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lh-add-mode.on {
+  border-color: var(--accent, #2563eb);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent, #2563eb) 12%, var(--bg));
+}
+
+.lh-add-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.lh-workflows-summary {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.lh-workflows-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lh-workflows-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px 14px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.lh-wf-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lh-wf-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lh-wf-status.is-live {
+  color: #15803d;
+}
+
+.lh-workflows-list li.is-off .lh-wf-name {
+  color: var(--text-muted);
+}
+
+.lh-wf-updated {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .lh-workflows-list li {
+    grid-template-columns: 1fr auto;
+  }
+  .lh-wf-updated {
+    grid-column: 1 / -1;
+  }
 }
 
 .lh-add select,
