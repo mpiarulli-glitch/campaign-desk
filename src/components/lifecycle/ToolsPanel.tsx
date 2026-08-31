@@ -93,6 +93,111 @@ function fmtWhen(iso: string): string {
 
 type LocationRef = { id: string; name: string; mapped: boolean };
 
+function ManualLinkForm({
+  clients,
+  locations,
+  busy,
+  onLinked,
+  onError,
+  setBusy,
+}: {
+  clients: Array<{ id: string; name: string }>;
+  locations: Array<{ id: string; name: string }>;
+  busy: boolean;
+  onLinked: (message: string) => void;
+  onError: (message: string) => void;
+  setBusy: (on: boolean) => void;
+}) {
+  const [clientId, setClientId] = useState("");
+  const [locationId, setLocationId] = useState("");
+
+  async function submit() {
+    if (!clientId || !locationId) return;
+    setBusy(true);
+    onError("");
+    try {
+      const res = await fetch("/api/lifecycle/ghl-tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "apply-links",
+          links: [{ clientId, locationId }],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        onError(
+          typeof data.error === "string" ? data.error : "Linking failed."
+        );
+        return;
+      }
+      if (data.skipped?.length) {
+        onError(data.skipped.join(" · "));
+        return;
+      }
+      const name = clients.find((c) => c.id === clientId)?.name || "Client";
+      onLinked(`Linked ${name}.`);
+      setClientId("");
+      setLocationId("");
+    } catch {
+      onError("Network error. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (locations.length === 0) {
+    return (
+      <p className="lc-tool-note">
+        Every free GoHighLevel subaccount is already spoken for. Unlink one on the
+        client record first, or check the account report for what is mapped.
+      </p>
+    );
+  }
+
+  return (
+    <div className="lc-tool-manual-form">
+      <select
+        value={clientId}
+        disabled={busy}
+        onChange={(e) => setClientId(e.target.value)}
+        aria-label="Client business"
+      >
+        <option value="">Client business…</option>
+        {clients.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <select
+        value={locationId}
+        disabled={busy}
+        onChange={(e) => setLocationId(e.target.value)}
+        aria-label="GoHighLevel subaccount"
+      >
+        <option value="">GHL subaccount…</option>
+        {locations
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+      </select>
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={busy || !clientId || !locationId}
+        onClick={() => void submit()}
+      >
+        {busy ? "Linking…" : "Link"}
+      </button>
+    </div>
+  );
+}
+
 export function ToolsPanel() {
   const [running, setRunning] = useState<Tool>(null);
   const [error, setError] = useState("");
@@ -304,7 +409,7 @@ export function ToolsPanel() {
             <p>
               A client only counts as mapped once its record here carries a GoHighLevel
               location ID. Most do not, which is why the account report reads mostly
-              unmapped. This matches them up by name.
+              unmapped. This matches them up by name, and lets you pair the rest by hand.
             </p>
           </div>
           <button className="btn btn-sm" disabled={running !== null} onClick={() => run("links")}>
@@ -325,7 +430,7 @@ export function ToolsPanel() {
             {links.proposals.length === 0 ? (
               <p className="lc-tool-note">
                 No unlinked client name matched a subaccount name closely enough to
-                suggest. Those need doing by hand on the client record.
+                suggest. Use the manual pair below for the rest.
               </p>
             ) : (
               <>
@@ -375,9 +480,24 @@ export function ToolsPanel() {
             )}
 
             {links.unmatchedClients.length ? (
-              <p className="lc-tool-note">
-                No match for: {links.unmatchedClients.map((c) => c.name).join(", ")}
-              </p>
+              <div className="lc-tool-manual">
+                <p className="lc-tool-note" style={{ marginBottom: 10 }}>
+                  No automatic match for {links.unmatchedClients.length} client
+                  {links.unmatchedClients.length === 1 ? "" : "s"}. Pair them to a
+                  GoHighLevel subaccount here:
+                </p>
+                <ManualLinkForm
+                  clients={links.unmatchedClients}
+                  locations={links.unmatchedLocations}
+                  busy={running !== null}
+                  onLinked={(msg) => {
+                    setMessage(msg);
+                    void run("links");
+                  }}
+                  onError={setError}
+                  setBusy={(on) => setRunning(on ? "links" : null)}
+                />
+              </div>
             ) : null}
           </>
         ) : null}

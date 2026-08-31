@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SequenceView } from "./SequenceView";
 import type { ClientRef, LinkedInCampaignRow, LinkedInSection } from "./types";
 
@@ -35,16 +35,41 @@ function CampaignCard({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
+
+  const clientOptions = useMemo(() => {
+    const q = clientFilter.trim().toLowerCase();
+    const list = q
+      ? clients.filter((c) => c.name.toLowerCase().includes(q))
+      : clients;
+    // Keep the current assignment visible even if the filter would hide it.
+    if (row.clientId && !list.some((c) => c.id === row.clientId)) {
+      const current = clients.find((c) => c.id === row.clientId);
+      if (current) return [current, ...list];
+    }
+    return list;
+  }, [clientFilter, clients, row.clientId]);
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
+    setError("");
     try {
-      await fetch(`/api/lifecycle/campaigns/${row.id}`, {
+      const res = await fetch(`/api/lifecycle/campaigns/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string" ? data.error : "Could not save that."
+        );
+        return;
+      }
       onChanged();
+    } catch {
+      setError("Network error — try again.");
     } finally {
       setBusy(false);
     }
@@ -83,24 +108,40 @@ function CampaignCard({
         </ul>
       ) : null}
 
+      <div className="hud-camp-assign">
+        <label className="hud-field">
+          <span>Business</span>
+          <input
+            type="search"
+            value={clientFilter}
+            disabled={busy}
+            placeholder="Filter businesses…"
+            onChange={(e) => setClientFilter(e.target.value)}
+            aria-label="Filter businesses"
+          />
+        </label>
+        <label className="hud-field">
+          <span>Assign to</span>
+          <select
+            value={row.clientId ?? ""}
+            disabled={busy}
+            onChange={(e) => void patch({ clientId: e.target.value || null })}
+          >
+            <option value="">Unassigned</option>
+            {clientOptions.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {error ? <p className="hud-err">{error}</p> : null}
+
       {open ? <SequenceView campaignId={row.id} /> : null}
 
       {open ? (
         <div className="hud-camp-edit">
-          <label className="hud-field">
-            <span>Client</span>
-            <select
-              value={row.clientId ?? ""}
-              disabled={busy}
-              onChange={(e) => patch({ clientId: e.target.value || null })}
-            >
-              <option value="">Unassigned</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </label>
-
           <label className="hud-field">
             <span>Refresh interval (days)</span>
             <input
@@ -111,19 +152,23 @@ function CampaignCard({
               disabled={busy}
               onBlur={(e) => {
                 const raw = e.target.value.trim();
-                patch({ refreshIntervalDays: raw === "" ? null : Number(raw) });
+                void patch({ refreshIntervalDays: raw === "" ? null : Number(raw) });
               }}
             />
           </label>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="hud-btn" disabled={busy} onClick={() => patch({ markRefreshed: true })}>
+            <button
+              className="hud-btn"
+              disabled={busy}
+              onClick={() => void patch({ markRefreshed: true })}
+            >
               Mark refreshed
             </button>
             <button
               className="hud-btn hud-btn-quiet"
               disabled={busy}
-              onClick={() => patch({ muted: !row.verdict.muted })}
+              onClick={() => void patch({ muted: !row.verdict.muted })}
             >
               {row.verdict.muted ? "Unmute" : "Mute"}
             </button>

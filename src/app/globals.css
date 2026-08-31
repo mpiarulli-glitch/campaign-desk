@@ -13813,6 +13813,31 @@ button.am-node:hover .am-edit-cue,
   color: var(--text-muted);
 }
 
+.lc-tool-manual {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.lc-tool-manual-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lc-tool-manual-form select {
+  min-width: 180px;
+  flex: 1 1 200px;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+}
+
 .lc-tool-foot {
   display: flex;
   align-items: flex-end;
