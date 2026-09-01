@@ -2170,6 +2170,41 @@ export function getDb(): Database.Database {
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
     );
 
+    -- Per-send email performance pulled from GoHighLevel. GHL owns the live
+    -- numbers; this table is a cache so the Email analytics dashboard can
+    -- rank subject lines and chart trends without hitting the API on every
+    -- page load. Unique on (location_id, source, source_id).
+    CREATE TABLE IF NOT EXISTS ghl_email_sends (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      client_name TEXT NOT NULL DEFAULT '',
+      location_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      campaign_name TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL DEFAULT '',
+      preview_text TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '',
+      sent_at TEXT NOT NULL DEFAULT '',
+      sent INTEGER NOT NULL DEFAULT 0,
+      delivered INTEGER NOT NULL DEFAULT 0,
+      opened INTEGER NOT NULL DEFAULT 0,
+      clicked INTEGER NOT NULL DEFAULT 0,
+      unsubscribed INTEGER NOT NULL DEFAULT 0,
+      complained INTEGER NOT NULL DEFAULT 0,
+      bounced INTEGER NOT NULL DEFAULT 0,
+      replied INTEGER NOT NULL DEFAULT 0,
+      open_rate REAL NOT NULL DEFAULT 0,
+      click_rate REAL NOT NULL DEFAULT 0,
+      synced_at TEXT NOT NULL,
+      UNIQUE (location_id, source, source_id),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ghl_email_client ON ghl_email_sends(client_id);
+    CREATE INDEX IF NOT EXISTS idx_ghl_email_sent_at ON ghl_email_sends(sent_at);
+    CREATE INDEX IF NOT EXISTS idx_ghl_email_open_rate ON ghl_email_sends(open_rate);
+
     -- Login accounts. The roster itself still lives in code (admin-people.ts,
     -- people.ts) because client components import it at module scope; this
     -- table owns credentials and identity only, and is seeded from those
