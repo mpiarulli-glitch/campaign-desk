@@ -36,6 +36,7 @@ import { notifyCampaignRemoved } from "@/lib/notify";
 import {
   coercePresentation,
   coerceTriggerKind,
+  coerceTriggerFormFormat,
 } from "@/lib/automation-map";
 
 type Params = { params: Promise<{ id: string }> };
@@ -253,6 +254,19 @@ export async function PATCH(request: Request, { params }: Params) {
     triggerKind:
       body.triggerKind !== undefined
         ? coerceTriggerKind(body.triggerKind)
+        : undefined,
+    triggerFormFormat:
+      body.triggerFormFormat !== undefined
+        ? coerceTriggerFormFormat(body.triggerFormFormat)
+        : undefined,
+    triggerFormHtml:
+      typeof body.triggerFormHtml === "string"
+        ? body.triggerFormHtml
+        : undefined,
+    triggerFormMediaUrl:
+      body.triggerFormMediaUrl === null ||
+      typeof body.triggerFormMediaUrl === "string"
+        ? body.triggerFormMediaUrl
         : undefined,
   });
 

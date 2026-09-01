@@ -5,9 +5,11 @@ import { kindLabel, type AssetKind } from "@/lib/asset-kinds";
 import {
   atLabel,
   buildAutomationTree,
+  coerceTriggerFormFormat,
   coerceTriggerKind,
   conditionKindLabel,
   delayToMs,
+  hasTriggerForm,
   splitDelay,
   triggerKindLabel,
   CONDITION_KINDS,
@@ -20,6 +22,7 @@ import {
   type FlowStepRecord,
   type FlowStepType,
   type FlowTreeNode,
+  type TriggerFormFormat,
   type TriggerKind,
 } from "@/lib/automation-map";
 
@@ -137,13 +140,22 @@ export type FlowInsertAt = {
   prepend?: boolean;
 };
 
-export type TriggerDraft = { kind: TriggerKind; label: string };
+export type TriggerDraft = {
+  kind: TriggerKind;
+  label: string;
+  formFormat: TriggerFormFormat;
+  formHtml: string;
+  formMediaUrl: string;
+};
 export type WaitDraft = { delayMs: number };
 export type ConditionDraft = { kind: ConditionKind; label: string };
 
 type Props = {
   triggerLabel?: string | null;
   triggerKind?: string | null;
+  triggerFormFormat?: string | null;
+  triggerFormHtml?: string | null;
+  triggerFormMediaUrl?: string | null;
   emails: AutomationEmail[];
   steps?: FlowStepRecord[] | null;
   selectedId?: string | null;
@@ -722,29 +734,94 @@ function Step({
   );
 }
 
+function TriggerFormPreview({
+  format,
+  html,
+  mediaUrl,
+}: {
+  format: TriggerFormFormat;
+  html: string;
+  mediaUrl: string;
+}) {
+  if (format === "image" && mediaUrl.trim()) {
+    return (
+      <div className="am-trigger-form-preview">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={mediaUrl} alt="Opt-in form" />
+      </div>
+    );
+  }
+  if (format === "html" && html.trim()) {
+    return (
+      <div className="am-trigger-form-preview">
+        <iframe
+          title="Opt-in form preview"
+          sandbox="allow-same-origin allow-forms allow-scripts"
+          srcDoc={html}
+        />
+      </div>
+    );
+  }
+  return null;
+}
+
 function TriggerNode({
   kind,
   label,
+  formFormat,
+  formHtml,
+  formMediaUrl,
   editable,
   busy,
   onSaveTrigger,
 }: {
   kind: TriggerKind;
   label: string;
+  formFormat: TriggerFormFormat;
+  formHtml: string;
+  formMediaUrl: string;
   editable: boolean;
   busy?: boolean;
   onSaveTrigger?: (draft: TriggerDraft) => void;
 }) {
   const canEdit = editable && !!onSaveTrigger;
   const [open, setOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [kindDraft, setKindDraft] = useState<TriggerKind>(kind);
   const [labelDraft, setLabelDraft] = useState(label);
+  const [formFormatDraft, setFormFormatDraft] =
+    useState<TriggerFormFormat>(formFormat);
+  const [formHtmlDraft, setFormHtmlDraft] = useState(formHtml);
+  const [formMediaDraft, setFormMediaDraft] = useState(formMediaUrl);
   useEffect(() => {
     setKindDraft(kind);
     setLabelDraft(label);
-  }, [kind, label]);
+    setFormFormatDraft(formFormat);
+    setFormHtmlDraft(formHtml);
+    setFormMediaDraft(formMediaUrl);
+  }, [kind, label, formFormat, formHtml, formMediaUrl]);
 
-  const dirty = kindDraft !== kind || labelDraft.trim() !== label.trim();
+  const dirty =
+    kindDraft !== kind ||
+    labelDraft.trim() !== label.trim() ||
+    formFormatDraft !== formFormat ||
+    formHtmlDraft !== formHtml ||
+    formMediaDraft !== formMediaUrl;
+  const formAttached = hasTriggerForm(formFormat, formHtml, formMediaUrl);
+
+  async function onFormFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => setFormMediaDraft(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  }
+
+  function resetDraft() {
+    setKindDraft(kind);
+    setLabelDraft(label);
+    setFormFormatDraft(formFormat);
+    setFormHtmlDraft(formHtml);
+    setFormMediaDraft(formMediaUrl);
+  }
 
   if (!canEdit || !open) {
     return (
@@ -755,18 +832,40 @@ function TriggerNode({
         <div className="am-node-copy">
           <span className="am-kicker">Trigger · {triggerKindLabel(kind)}</span>
           <strong>{label}</strong>
+          {formAttached ? (
+            <span className="am-trigger-form-badge">Opt-in form attached</span>
+          ) : null}
+          {formAttached && previewOpen ? (
+            <TriggerFormPreview
+              format={formFormat}
+              html={formHtml}
+              mediaUrl={formMediaUrl}
+            />
+          ) : null}
         </div>
-        {canEdit ? (
-          <span className="am-node-side">
+        <span className="am-node-side">
+          {formAttached ? (
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => setOpen(true)}
+              onClick={() => setPreviewOpen((v) => !v)}
+            >
+              {previewOpen ? "Hide form" : "View form"}
+            </button>
+          ) : null}
+          {canEdit ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setPreviewOpen(false);
+                setOpen(true);
+              }}
             >
               Edit trigger
             </button>
-          </span>
-        ) : null}
+          ) : null}
+        </span>
       </div>
     );
   }
@@ -799,13 +898,93 @@ function TriggerNode({
             onChange={(e) => setLabelDraft(e.target.value)}
           />
         </div>
+
+        <div className="am-trigger-form">
+          <span className="am-trigger-form-label">Opt-in form</span>
+          <p className="am-trigger-form-hint">
+            Attach the form people use to opt in — paste HTML or upload a
+            screenshot. Shown on this map for the team and on the review link.
+          </p>
+          <div className="tabs am-trigger-form-tabs">
+            {(
+              [
+                { value: "", label: "None" },
+                { value: "html", label: "HTML" },
+                { value: "image", label: "Image" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.value || "none"}
+                type="button"
+                className={`tab ${formFormatDraft === opt.value ? "active" : ""}`}
+                disabled={busy}
+                onClick={() => setFormFormatDraft(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {formFormatDraft === "html" ? (
+            <textarea
+              className="am-trigger-form-html"
+              value={formHtmlDraft}
+              disabled={busy}
+              aria-label="Opt-in form HTML"
+              placeholder="Paste the full HTML of the opt-in / pop-up form"
+              onChange={(e) => setFormHtmlDraft(e.target.value)}
+            />
+          ) : null}
+
+          {formFormatDraft === "image" ? (
+            <div className="am-trigger-form-image">
+              <input
+                value={formMediaDraft.startsWith("data:") ? "" : formMediaDraft}
+                disabled={busy}
+                aria-label="Opt-in form image URL"
+                placeholder="https://... (or upload a file below)"
+                onChange={(e) => setFormMediaDraft(e.target.value)}
+              />
+              <label className="btn btn-secondary btn-sm">
+                {formMediaDraft.startsWith("data:")
+                  ? "Image loaded — replace"
+                  : "Upload image"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  disabled={busy}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) await onFormFile(file);
+                  }}
+                />
+              </label>
+              {formMediaDraft.trim() ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="am-trigger-form-thumb"
+                  src={formMediaDraft}
+                  alt="Opt-in form preview"
+                />
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
         <div className="am-edit-actions">
           <button
             type="button"
             className="btn btn-sm"
             disabled={busy || !dirty}
             onClick={() => {
-              onSaveTrigger?.({ kind: kindDraft, label: labelDraft });
+              onSaveTrigger?.({
+                kind: kindDraft,
+                label: labelDraft,
+                formFormat: formFormatDraft,
+                formHtml: formHtmlDraft,
+                formMediaUrl: formMediaDraft,
+              });
               setOpen(false);
             }}
           >
@@ -816,8 +995,7 @@ function TriggerNode({
             className="btn btn-ghost btn-sm"
             disabled={busy}
             onClick={() => {
-              setKindDraft(kind);
-              setLabelDraft(label);
+              resetDraft();
               setOpen(false);
             }}
           >
@@ -832,6 +1010,9 @@ function TriggerNode({
 export function AutomationMap({
   triggerLabel,
   triggerKind,
+  triggerFormFormat,
+  triggerFormHtml,
+  triggerFormMediaUrl,
   emails,
   steps,
   selectedId,
@@ -849,6 +1030,9 @@ export function AutomationMap({
 }: Props) {
   const tree = buildAutomationTree({ triggerLabel, triggerKind, emails, steps });
   const kind = coerceTriggerKind(triggerKind);
+  const formFormat = coerceTriggerFormFormat(triggerFormFormat);
+  const formHtml = triggerFormHtml || "";
+  const formMediaUrl = triggerFormMediaUrl || "";
   const schedule = showSchedule ?? editable;
 
   return (
@@ -856,6 +1040,9 @@ export function AutomationMap({
       <TriggerNode
         kind={kind}
         label={tree.trigger.label}
+        formFormat={formFormat}
+        formHtml={formHtml}
+        formMediaUrl={formMediaUrl}
         editable={editable}
         busy={busy}
         onSaveTrigger={onSaveTrigger}

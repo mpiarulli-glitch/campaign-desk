@@ -16,6 +16,7 @@ import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
 import {
   coercePresentation,
   coerceTriggerKind,
+  coerceTriggerFormFormat,
 } from "@/lib/automation-map";
 
 export async function GET(request: Request) {
@@ -68,6 +69,13 @@ export async function POST(request: Request) {
   const triggerLabel =
     typeof body.triggerLabel === "string" ? body.triggerLabel : "";
   const triggerKind = coerceTriggerKind(body.triggerKind);
+  const triggerFormFormat = coerceTriggerFormFormat(body.triggerFormFormat);
+  const triggerFormHtml =
+    typeof body.triggerFormHtml === "string" ? body.triggerFormHtml : "";
+  const triggerFormMediaUrl =
+    typeof body.triggerFormMediaUrl === "string"
+      ? body.triggerFormMediaUrl
+      : "";
   const kind = coerceKind(body.kind);
   const bodyFormat = coerceFormat(kind, body.bodyFormat);
   const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : "";
@@ -106,6 +114,9 @@ export async function POST(request: Request) {
     presentation,
     triggerLabel,
     triggerKind,
+    triggerFormFormat,
+    triggerFormHtml,
+    triggerFormMediaUrl,
   });
 
   return NextResponse.json({ campaign }, { status: 201 });

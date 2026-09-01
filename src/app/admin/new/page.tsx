@@ -12,8 +12,10 @@ import {
 } from "@/lib/asset-kinds";
 import {
   TRIGGER_KINDS,
+  coerceTriggerFormFormat,
   coerceTriggerKind,
   type Presentation,
+  type TriggerFormFormat,
   type TriggerKind,
 } from "@/lib/automation-map";
 
@@ -37,6 +39,10 @@ export default function NewCampaignPage() {
   const [presentation, setPresentation] = useState<Presentation>("package");
   const [triggerKind, setTriggerKind] = useState<TriggerKind>("tag");
   const [triggerLabel, setTriggerLabel] = useState("");
+  const [triggerFormFormat, setTriggerFormFormat] =
+    useState<TriggerFormFormat>("");
+  const [triggerFormHtml, setTriggerFormHtml] = useState("");
+  const [triggerFormMediaUrl, setTriggerFormMediaUrl] = useState("");
 
   useEffect(() => {
     fetch("/api/revenue/clients")
@@ -74,6 +80,16 @@ export default function NewCampaignPage() {
         presentation,
         triggerKind,
         triggerLabel,
+        triggerFormFormat:
+          presentation === "automation" ? triggerFormFormat : "",
+        triggerFormHtml:
+          presentation === "automation" && triggerFormFormat === "html"
+            ? triggerFormHtml
+            : "",
+        triggerFormMediaUrl:
+          presentation === "automation" && triggerFormFormat === "image"
+            ? triggerFormMediaUrl
+            : "",
       }),
     });
 
@@ -160,6 +176,71 @@ export default function NewCampaignPage() {
                   onChange={(e) => setTriggerLabel(e.target.value)}
                   placeholder="Tag added: New patient"
                 />
+              </div>
+              <div className="field" style={{ gridColumn: "1 / -1" }}>
+                <label>Opt-in form (optional)</label>
+                <p className="muted" style={{ margin: "4px 0 8px", fontSize: 13 }}>
+                  Attach the form people use to opt in — HTML or a screenshot.
+                </p>
+                <div className="tabs" style={{ marginBottom: 8 }}>
+                  {(
+                    [
+                      { value: "", label: "None" },
+                      { value: "html", label: "HTML" },
+                      { value: "image", label: "Image" },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.value || "none"}
+                      type="button"
+                      className={`tab ${triggerFormFormat === opt.value ? "active" : ""}`}
+                      onClick={() =>
+                        setTriggerFormFormat(coerceTriggerFormFormat(opt.value))
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {triggerFormFormat === "html" ? (
+                  <textarea
+                    value={triggerFormHtml}
+                    onChange={(e) => setTriggerFormHtml(e.target.value)}
+                    placeholder="Paste the full HTML of the opt-in / pop-up form"
+                    style={{ minHeight: 140, fontFamily: "var(--mono)", fontSize: 12 }}
+                  />
+                ) : null}
+                {triggerFormFormat === "image" ? (
+                  <div className="stack" style={{ gap: 8 }}>
+                    <input
+                      value={
+                        triggerFormMediaUrl.startsWith("data:")
+                          ? ""
+                          : triggerFormMediaUrl
+                      }
+                      onChange={(e) => setTriggerFormMediaUrl(e.target.value)}
+                      placeholder="https://... (or upload a file below)"
+                    />
+                    <label className="btn btn-secondary btn-sm" style={{ width: "fit-content" }}>
+                      {triggerFormMediaUrl.startsWith("data:")
+                        ? "Image loaded — replace"
+                        : "Upload image"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () =>
+                            setTriggerFormMediaUrl(String(reader.result || ""));
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

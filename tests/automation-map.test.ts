@@ -4,9 +4,11 @@ import {
   atLabel,
   buildAutomationTree,
   coercePresentation,
+  coerceTriggerFormFormat,
   coerceTriggerKind,
   delayLabel,
   delayToMs,
+  hasTriggerForm,
   splitDelay,
   summarizeFlow,
 } from "../src/lib/automation-map";
@@ -17,6 +19,17 @@ test("presentation and trigger kind coerce to known values", () => {
   assert.equal(coercePresentation("nope"), "package");
   assert.equal(coerceTriggerKind("tag"), "tag");
   assert.equal(coerceTriggerKind("mystery"), "custom");
+});
+
+test("trigger form format coerces and detects attached content", () => {
+  assert.equal(coerceTriggerFormFormat("html"), "html");
+  assert.equal(coerceTriggerFormFormat("image"), "image");
+  assert.equal(coerceTriggerFormFormat("pdf"), "");
+  assert.equal(hasTriggerForm("html", "<form></form>", null), true);
+  assert.equal(hasTriggerForm("html", "   ", null), false);
+  assert.equal(hasTriggerForm("image", "", "https://cdn.example/form.png"), true);
+  assert.equal(hasTriggerForm("image", "", ""), false);
+  assert.equal(hasTriggerForm("", "<form></form>", "https://x"), false);
 });
 
 test("delay labels read the way a client would say them", () => {

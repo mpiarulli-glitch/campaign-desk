@@ -120,6 +120,12 @@ export interface Campaign {
   presentation: "package" | "automation";
   trigger_label: string;
   trigger_kind: string;
+  // Optional opt-in form attached to the automation trigger: paste HTML or
+  // upload a screenshot so the team and client can see what people fill out.
+  // format is "" | "html" | "image".
+  trigger_form_format: string;
+  trigger_form_html: string;
+  trigger_form_media_url: string | null;
   /** 1 when this row was logged from the board for work done outside Campaign Desk. */
   logged_off_app: number;
   // When status is scheduled, the Pacific send instant (UTC ISO). Cron flips
@@ -2380,6 +2386,21 @@ function migrate(database: Database.Database) {
   if (!campaignCols.includes("trigger_kind")) {
     database.exec(
       `ALTER TABLE campaigns ADD COLUMN trigger_kind TEXT NOT NULL DEFAULT 'custom'`
+    );
+  }
+  if (!campaignCols.includes("trigger_form_format")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN trigger_form_format TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (!campaignCols.includes("trigger_form_html")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN trigger_form_html TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (!campaignCols.includes("trigger_form_media_url")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN trigger_form_media_url TEXT`
     );
   }
   if (!campaignCols.includes("logged_off_app")) {

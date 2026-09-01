@@ -105,6 +105,9 @@ function publicCampaign(campaign: Campaign, viewer: ReviewChannel) {
     presentation: campaign.presentation,
     trigger_label: campaign.trigger_label,
     trigger_kind: campaign.trigger_kind,
+    trigger_form_format: campaign.trigger_form_format || "",
+    trigger_form_html: campaign.trigger_form_html || "",
+    trigger_form_media_url: campaign.trigger_form_media_url || null,
   };
 }
 

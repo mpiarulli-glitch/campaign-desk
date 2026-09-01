@@ -7,6 +7,9 @@ export type Presentation = "package" | "automation";
 
 export type TriggerKind = "tag" | "form" | "purchase" | "date" | "custom";
 
+/** How the optional opt-in form on a trigger is stored. Empty = none attached. */
+export type TriggerFormFormat = "" | "html" | "image";
+
 export const TRIGGER_KINDS: { value: TriggerKind; label: string }[] = [
   { value: "tag", label: "Tag added" },
   { value: "form", label: "Form submitted" },
@@ -27,6 +30,22 @@ export function coerceTriggerKind(value: unknown): TriggerKind {
   return typeof value === "string" && TRIGGER_KIND_SET.has(value as TriggerKind)
     ? (value as TriggerKind)
     : "custom";
+}
+
+export function coerceTriggerFormFormat(value: unknown): TriggerFormFormat {
+  return value === "html" || value === "image" ? value : "";
+}
+
+/** True when the trigger has a viewable opt-in form (HTML body or image URL). */
+export function hasTriggerForm(
+  format: unknown,
+  html?: string | null,
+  mediaUrl?: string | null
+): boolean {
+  const f = coerceTriggerFormFormat(format);
+  if (f === "html") return !!(html || "").trim();
+  if (f === "image") return !!(mediaUrl || "").trim();
+  return false;
 }
 
 export function triggerKindLabel(kind: TriggerKind): string {

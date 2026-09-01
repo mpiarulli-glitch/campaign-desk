@@ -187,6 +187,9 @@ type Campaign = {
   presentation?: Presentation;
   trigger_label?: string;
   trigger_kind?: string;
+  trigger_form_format?: string;
+  trigger_form_html?: string;
+  trigger_form_media_url?: string | null;
   scheduled_send_at?: string | null;
   scheduled_send_id?: string | null;
   suggested_send?: SuggestedSend | null;
@@ -741,6 +744,9 @@ export default function AdminCampaignPage() {
       body: JSON.stringify({
         triggerLabel: draft.label,
         triggerKind: draft.kind,
+        triggerFormFormat: draft.formFormat,
+        triggerFormHtml: draft.formHtml,
+        triggerFormMediaUrl: draft.formMediaUrl,
       }),
     });
     setSavingTrigger(false);
@@ -1698,6 +1704,9 @@ export default function AdminCampaignPage() {
               <AutomationMap
                 triggerLabel={campaign.trigger_label}
                 triggerKind={campaign.trigger_kind}
+                triggerFormFormat={campaign.trigger_form_format}
+                triggerFormHtml={campaign.trigger_form_html}
+                triggerFormMediaUrl={campaign.trigger_form_media_url}
                 emails={emails.map((email) => ({
                   id: email.id,
                   title: email.title,

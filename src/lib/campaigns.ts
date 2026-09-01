@@ -25,11 +25,13 @@ import {
 import {
   coercePresentation,
   coerceTriggerKind,
+  coerceTriggerFormFormat,
   coerceFlowStepType,
   coerceFlowBranch,
   coerceConditionKind,
   type Presentation,
   type TriggerKind,
+  type TriggerFormFormat,
   type FlowStepType,
   type FlowBranch,
   type ConditionKind,
@@ -84,6 +86,9 @@ export function createCampaign(input: {
   presentation?: Presentation;
   triggerLabel?: string;
   triggerKind?: TriggerKind;
+  triggerFormFormat?: TriggerFormFormat;
+  triggerFormHtml?: string;
+  triggerFormMediaUrl?: string | null;
 }): Campaign {
   const db = getDb();
   const id = nanoid(12);
@@ -97,11 +102,18 @@ export function createCampaign(input: {
   const presentation = coercePresentation(input.presentation);
   const triggerKind = coerceTriggerKind(input.triggerKind);
   const triggerLabel = (input.triggerLabel || "").trim();
+  const triggerFormFormat = coerceTriggerFormFormat(input.triggerFormFormat);
+  const triggerFormHtml =
+    triggerFormFormat === "html" ? (input.triggerFormHtml || "").trim() : "";
+  const triggerFormMediaUrl =
+    triggerFormFormat === "image"
+      ? (input.triggerFormMediaUrl || "").trim() || null
+      : null;
 
   db.prepare(
     `INSERT INTO campaigns
-      (id, title, client_name, client_id, description, audience, html_content, status, magic_token, external_token, presentation, trigger_label, trigger_kind, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`
+      (id, title, client_name, client_id, description, audience, html_content, status, magic_token, external_token, presentation, trigger_label, trigger_kind, trigger_form_format, trigger_form_html, trigger_form_media_url, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.title.trim(),
@@ -115,6 +127,9 @@ export function createCampaign(input: {
     presentation,
     triggerLabel,
     triggerKind,
+    triggerFormFormat,
+    triggerFormHtml,
+    triggerFormMediaUrl,
     ts,
     ts
   );
@@ -544,6 +559,9 @@ export function updateCampaign(
     presentation?: Presentation;
     triggerLabel?: string;
     triggerKind?: TriggerKind;
+    triggerFormFormat?: TriggerFormFormat;
+    triggerFormHtml?: string;
+    triggerFormMediaUrl?: string | null;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
@@ -566,6 +584,24 @@ export function updateCampaign(
   const triggerKind = coerceTriggerKind(
     updates.triggerKind ?? existing.trigger_kind
   );
+  const triggerFormFormat = coerceTriggerFormFormat(
+    updates.triggerFormFormat !== undefined
+      ? updates.triggerFormFormat
+      : existing.trigger_form_format
+  );
+  const triggerFormHtml =
+    updates.triggerFormHtml !== undefined
+      ? updates.triggerFormHtml.trim()
+      : existing.trigger_form_html || "";
+  const triggerFormMediaUrl =
+    updates.triggerFormMediaUrl !== undefined
+      ? (updates.triggerFormMediaUrl || "").trim() || null
+      : existing.trigger_form_media_url;
+  // Clearing the format also clears stored payload so a stale screenshot/HTML
+  // does not resurface if someone re-enables the same format later by accident.
+  const storedFormHtml = triggerFormFormat === "html" ? triggerFormHtml : "";
+  const storedFormMediaUrl =
+    triggerFormFormat === "image" ? triggerFormMediaUrl : null;
   const status = updates.status ?? existing.status;
   const approvedAt =
     updates.approvedAt !== undefined ? updates.approvedAt : existing.approved_at;
@@ -580,7 +616,7 @@ export function updateCampaign(
 
   db.prepare(
     `UPDATE campaigns
-     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, presentation = ?, trigger_label = ?, trigger_kind = ?, status = ?, approved_at = ?, approved_by = ?, approved_channel = ?,
+     SET title = ?, client_name = ?, client_id = ?, description = ?, audience = ?, presentation = ?, trigger_label = ?, trigger_kind = ?, trigger_form_format = ?, trigger_form_html = ?, trigger_form_media_url = ?, status = ?, approved_at = ?, approved_by = ?, approved_channel = ?,
          basecamp_card_id = CASE WHEN ? THEN NULL ELSE basecamp_card_id END,
          basecamp_card_url = CASE WHEN ? THEN NULL ELSE basecamp_card_url END,
          basecamp_approval_revision = CASE WHEN ? THEN NULL ELSE basecamp_approval_revision END,
@@ -600,6 +636,9 @@ export function updateCampaign(
     presentation,
     triggerLabel,
     triggerKind,
+    triggerFormFormat,
+    storedFormHtml,
+    storedFormMediaUrl,
     status,
     approvedAt,
     approvedBy,

@@ -150,6 +150,9 @@ type Campaign = {
   presentation?: string;
   trigger_label?: string;
   trigger_kind?: string;
+  trigger_form_format?: string;
+  trigger_form_html?: string;
+  trigger_form_media_url?: string | null;
   internally_approved?: boolean;
 };
 
@@ -597,6 +600,9 @@ export default function ReviewPage() {
             <AutomationMap
               triggerLabel={campaign.trigger_label}
               triggerKind={campaign.trigger_kind}
+              triggerFormFormat={campaign.trigger_form_format}
+              triggerFormHtml={campaign.trigger_form_html}
+              triggerFormMediaUrl={campaign.trigger_form_media_url}
               emails={emails.map((email) => ({
                 id: email.id,
                 title: email.title,
