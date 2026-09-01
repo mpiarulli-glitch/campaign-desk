@@ -3,16 +3,18 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "path";
 
-test("the person forecast page keeps Today, List, and Calendar — not Week", () => {
+test("the person forecast page keeps Today, List, Calendar, and Tasks — not Week", () => {
   const src = fs.readFileSync(
     path.join("src/app/admin/forecast/[person]/page.tsx"),
     "utf8"
   );
 
-  assert.match(src, /type View = "today" \| "list" \| "calendar"/);
+  assert.match(src, /type View = "today" \| "list" \| "calendar" \| "tasks"/);
   assert.match(src, />\s*Today\s*</);
   assert.match(src, />\s*List\s*</);
   assert.match(src, />\s*Calendar\s*</);
+  assert.match(src, />\s*Tasks\s*/);
+  assert.match(src, /ForecastTasksPanel/);
   assert.doesNotMatch(src, /setView\("week"\)/);
   assert.doesNotMatch(src, />\s*Week\s*</);
   assert.doesNotMatch(src, /ops-planner/);
@@ -22,7 +24,7 @@ test("the person forecast page keeps Today, List, and Calendar — not Week", ()
   assert.match(src, /parseForecastView\(searchParams\.get\("view"\)/);
   assert.match(
     src,
-    /if \(raw === "today" \|\| raw === "list" \|\| raw === "calendar"\) return raw;/
+    /if \(raw === "today" \|\| raw === "list" \|\| raw === "calendar" \|\| raw === "tasks"\)/
   );
 });
 

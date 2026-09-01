@@ -9,6 +9,7 @@ import {
   ForecastSubtaskButton,
   ForecastSubtasks,
 } from "@/components/ForecastSubtasks";
+import { ForecastTasksPanel } from "@/components/ForecastTasksPanel";
 import {
   TASK_COLORS,
   normalizeTaskColor,
@@ -1114,13 +1115,15 @@ function SlotPopover({
   );
 }
 
-type View = "today" | "list" | "calendar";
+type View = "today" | "list" | "calendar" | "tasks";
 
 // The old Week day-column board is gone. Bookmarks with ?view=week (or
 // anything unrecognised) land on the same default as a fresh visit: Today
 // for this week, List when looking at another week.
 function parseForecastView(raw: string | null, weekStart: string): View {
-  if (raw === "today" || raw === "list" || raw === "calendar") return raw;
+  if (raw === "today" || raw === "list" || raw === "calendar" || raw === "tasks") {
+    return raw;
+  }
   return isCurrentWeek(weekStart) ? "today" : "list";
 }
 
@@ -1236,6 +1239,10 @@ export default function PersonForecastPage() {
     assignments: [],
     reason: null,
   });
+  // Tasks view: which assignment is mid complete / mid schedule, so the row
+  // can disable its controls without locking the whole list.
+  const [tasksBusyId, setTasksBusyId] = useState<string | null>(null);
+  const [tasksSchedulingId, setTasksSchedulingId] = useState<string | null>(null);
 
   function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
@@ -1590,6 +1597,22 @@ export default function PersonForecastPage() {
       const list = map.get(t.task_date) || [];
       list.push(t);
       map.set(t.task_date, list);
+    }
+    return map;
+  }, [data]);
+
+  // Tasks view: which Basecamp recordings are already booked this week, so
+  // Schedule can become "On forecast" and the checkbox can drive the row.
+  const forecastTaskByRecording = useMemo(() => {
+    const map = new Map<string, { id: string; completed: boolean; taskDate: string }>();
+    for (const t of data?.tasks || []) {
+      const recording = t.basecamp_step_id || t.basecamp_todo_id;
+      if (!recording) continue;
+      map.set(recording, {
+        id: t.id,
+        completed: Boolean(t.completed),
+        taskDate: t.task_date,
+      });
     }
     return map;
   }, [data]);
@@ -2008,6 +2031,58 @@ export default function PersonForecastPage() {
     // Booked work should leave the assigned list rather than sit there inviting a
     // second booking.
     void loadAssigned();
+  }
+
+  // Tasks view: complete a Basecamp assignment. If it already sits on this
+  // week's forecast, reuse the row toggle so the log-time prompt still fires.
+  async function completeAssignedTask(todo: QueueTodo, completed: boolean) {
+    const linked = (data?.tasks || []).find((t) => {
+      if (todo.kind === "step") return t.basecamp_step_id === todo.id;
+      return t.basecamp_todo_id === todo.id && !t.basecamp_step_id;
+    });
+    if (linked) {
+      if (Boolean(linked.completed) === completed) return;
+      await toggleCompleted(linked);
+      if (completed) void loadAssigned();
+      return;
+    }
+
+    setTasksBusyId(todo.id);
+    // Optimistic: drop a completed item from the list so the checkbox feels
+    // instant. A failure puts it back via loadAssigned.
+    if (completed) {
+      setAssigned((a) => ({
+        ...a,
+        assignments: a.assignments.filter((x) => x.id !== todo.id),
+      }));
+    }
+    const res = await fetch("/api/forecast/assignments/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person,
+        projectId: todo.projectId,
+        id: todo.id,
+        kind: todo.kind || "todo",
+        completed,
+      }),
+    });
+    setTasksBusyId(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not update that Basecamp task.");
+      void loadAssigned();
+      return;
+    }
+    setError("");
+    void loadAssigned();
+    load(week, { silent: true });
+  }
+
+  async function scheduleAssignedTask(todo: QueueTodo, date: string) {
+    setTasksSchedulingId(todo.id);
+    await bookTodo(todo, date, "");
+    setTasksSchedulingId(null);
   }
 
   // One drop handler for the whole grid: move the row that was dragged, or book
@@ -2972,9 +3047,14 @@ export default function PersonForecastPage() {
             <h1 className="ops-title">{data?.label || person}</h1>
             {/* The calendar explains itself — a grid of hours with a queue beside
                 it does not need a sentence telling you to add work to it. */}
-            {view === "calendar" ? null : (
+            {view === "calendar" || view === "tasks" ? null : (
               <p className="ops-sub">Add what you expect to work on each day this week.</p>
             )}
+            {view === "tasks" ? (
+              <p className="ops-sub">
+                Everything Basecamp has assigned to you. Check one off, or schedule it onto this week.
+              </p>
+            ) : null}
           </div>
           <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
             <div className="view-toggle">
@@ -2986,6 +3066,12 @@ export default function PersonForecastPage() {
               </button>
               <button className={`view-toggle-btn ${view === "calendar" ? "is-on" : ""}`} onClick={() => setView("calendar")}>
                 Calendar
+              </button>
+              <button className={`view-toggle-btn ${view === "tasks" ? "is-on" : ""}`} onClick={() => setView("tasks")}>
+                Tasks
+                {!assigned.loading && assigned.assignments.length > 0 ? (
+                  <span className="fc-tasks-tab-count">{assigned.assignments.length}</span>
+                ) : null}
               </button>
             </div>
             {view === "calendar" && !loading && progress.total > 0 ? (
@@ -3056,7 +3142,7 @@ export default function PersonForecastPage() {
             ) : null}
             {/* Both syncs live in the queue sidebar on the calendar, next to the
                 pickers they actually feed, rather than up here in the chrome. */}
-            {view === "calendar" ? null : (
+            {view === "calendar" || view === "tasks" ? null : (
               <>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -3119,7 +3205,7 @@ export default function PersonForecastPage() {
           </p>
         ) : null}
 
-        {!loading && progress.total > 0 && view !== "calendar" ? (
+        {!loading && progress.total > 0 && view !== "calendar" && view !== "tasks" ? (
           <div
             className={`fc-gauge ${gauge.over ? "is-over" : ""} ${gauge.clear ? "is-clear" : ""}`}
           >
@@ -3548,6 +3634,22 @@ export default function PersonForecastPage() {
             ) : null}
             </div>
           </div>
+        ) : view === "tasks" ? (
+          <ForecastTasksPanel
+            assigned={assigned}
+            today={today}
+            days={days.map((ymd) => ({
+              ymd,
+              label: `${dayName(ymd).slice(0, 3)} ${dayShortDate(ymd)}`,
+            }))}
+            bookedIds={bookedRecordingIds(data?.tasks || [])}
+            forecastTaskByRecording={forecastTaskByRecording}
+            busyId={tasksBusyId}
+            schedulingId={tasksSchedulingId}
+            onComplete={(todo, completed) => void completeAssignedTask(todo, completed)}
+            onSchedule={(todo, date) => void scheduleAssignedTask(todo, date)}
+            onRefresh={() => void loadAssigned()}
+          />
         ) : (
           <div>
             <AssignedStrip />
