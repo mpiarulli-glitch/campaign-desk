@@ -57,6 +57,29 @@ function textOf(row: AssignmentRaw): string {
   return (row.content || row.title || "").trim();
 }
 
+// Basecamp project templates leave square-bracket placeholders until someone
+// renames them — "[Business Name]", "[Client]", and friends. Those are not
+// real work; the Tasks view / planner should not surface them.
+const TEMPLATE_PLACEHOLDER = /\[[A-Za-z][^\]]*\]/;
+// Shared "Department To-Do's Library" (and similar) projects are the template
+// source itself — every card there is still a blank to copy from, not assigned
+// client work.
+const TEMPLATE_LIBRARY_PROJECT = /to-?do'?s?\s+library|\btemplate\b/i;
+
+/**
+ * True when the text still carries a template placeholder like [Business Name].
+ */
+export function hasTemplatePlaceholder(text: string | null | undefined): boolean {
+  return TEMPLATE_PLACEHOLDER.test((text || "").trim());
+}
+
+/**
+ * True when the Basecamp project is a shared template / to-do library.
+ */
+export function isTemplateLibraryProject(name: string | null | undefined): boolean {
+  return TEMPLATE_LIBRARY_PROJECT.test((name || "").trim());
+}
+
 /**
  * Flatten the payload into a pickable list: every open assignment, each with any
  * open subtasks immediately after it.
@@ -64,6 +87,9 @@ function textOf(row: AssignmentRaw): string {
  * Completed items are dropped at both levels — this backs a "what should I be
  * doing" list, and a done parent's open subtasks are still worth showing, which
  * is why the child walk does not depend on the parent surviving.
+ *
+ * Template leftovers (titles / projects that still say [Business Name]) are
+ * dropped too, including every subtask under a placeholder parent.
  */
 export function shapeAssignments(payload: AssignmentsPayload): BcAssignment[] {
   const rows = [...(payload.priorities || []), ...(payload.non_priorities || [])];
@@ -79,8 +105,15 @@ export function shapeAssignments(payload: AssignmentsPayload): BcAssignment[] {
     const title = textOf(row);
     const projectName = row.bucket?.name || "";
     const list = (row.parent?.title || "").trim();
+    // A placeholder parent/project, or a shared to-do library project, means
+    // this is still template material — its checklist steps are not either.
+    const template =
+      isTemplateLibraryProject(projectName) ||
+      hasTemplatePlaceholder(title) ||
+      hasTemplatePlaceholder(projectName) ||
+      hasTemplatePlaceholder(list);
 
-    if (title && !row.completed) {
+    if (title && !row.completed && !template) {
       out.push({
         id: String(row.id),
         title,
@@ -93,11 +126,14 @@ export function shapeAssignments(payload: AssignmentsPayload): BcAssignment[] {
       });
     }
 
+    if (template) continue;
+
     for (const child of row.children || []) {
       if (child.completed) continue;
       if (kindOf(child.type || "") !== "step") continue;
       const childTitle = textOf(child);
       if (!childTitle) continue;
+      if (hasTemplatePlaceholder(childTitle)) continue;
       out.push({
         id: String(child.id),
         title: childTitle,

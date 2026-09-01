@@ -43,7 +43,7 @@ test("card-table cards are assignments too", () => {
       {
         id: 10080337974,
         type: "card",
-        content: "[Business Name]",
+        content: "JG Seamless Gutters launch",
         completed: false,
         bucket: { id: 48019705, name: "JG Seamless Gutters" },
         parent: { id: 10080337972, title: "Empire Blueprint: Internal Brief" },
@@ -61,7 +61,7 @@ test("subtasks follow their parent and inherit its context", () => {
       {
         id: 10080337974,
         type: "card",
-        content: "[Business Name]",
+        content: "JG Seamless Gutters launch",
         due_on: "2026-09-01",
         completed: false,
         bucket: { id: 48019705, name: "JG Seamless Gutters" },
@@ -75,14 +75,73 @@ test("subtasks follow their parent and inherit its context", () => {
   });
   assert.deepEqual(
     out.map((a) => `${a.kind}:${a.title}`),
-    ["card:[Business Name]", "step:Gather Data / Analytics"]
+    ["card:JG Seamless Gutters launch", "step:Gather Data / Analytics"]
   );
   const step = out[1];
   assert.equal(step.parentId, "10080337974");
-  assert.equal(step.parentTitle, "[Business Name]");
+  assert.equal(step.parentTitle, "JG Seamless Gutters launch");
   // No date of its own, so it falls due when its parent does.
   assert.equal(step.dueOn, "2026-09-01");
   assert.equal(step.projectId, "48019705");
+});
+
+test("template placeholders like [Business Name] are left out with their steps", () => {
+  const out = shapeAssignments({
+    non_priorities: [
+      {
+        id: 10080337974,
+        type: "card",
+        content: "[Business Name]",
+        due_on: "2026-09-01",
+        completed: false,
+        bucket: { id: 48019705, name: "Some Client Project" },
+        parent: { id: 1, title: "Empire Blueprint: Internal Brief" },
+        children: [
+          { id: 10080337991, type: "step", content: "Gather Data / Analytics", completed: false },
+          { id: 10080338011, type: "step", content: "Build Strategy", completed: false },
+        ],
+      },
+      {
+        id: 99,
+        type: "todo",
+        content: "Real client work",
+        completed: false,
+        bucket: { id: 1, name: "Top Notch Auto" },
+        parent: { id: 2, title: "Email" },
+      },
+    ],
+  });
+  assert.deepEqual(
+    out.map((a) => `${a.kind}:${a.title}`),
+    ["todo:Real client work"]
+  );
+});
+
+test("shared to-do library projects are left out even without placeholders", () => {
+  const out = shapeAssignments({
+    non_priorities: [
+      {
+        id: 10,
+        type: "todo",
+        content: "Build Editorial Calendar",
+        completed: false,
+        bucket: { id: 48019705, name: "Department To-Do's Library" },
+        parent: { id: 1, title: "Internal Onboarding" },
+      },
+      {
+        id: 11,
+        type: "todo",
+        content: "Weekly Email",
+        completed: false,
+        bucket: { id: 2, name: "Top Notch Auto" },
+        parent: { id: 3, title: "Strategy / Client Comms" },
+      },
+    ],
+  });
+  assert.deepEqual(
+    out.map((a) => a.title),
+    ["Weekly Email"]
+  );
 });
 
 test("priorities are listed ahead of everything else", () => {
