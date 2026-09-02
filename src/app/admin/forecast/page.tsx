@@ -88,7 +88,7 @@ export default function ForecastDashboardPage() {
       <div className="ops-page">
         <div className="ops-page-head">
           <div>
-            <p className="ops-eyebrow">Team capacity</p>
+            <p className="ops-eyebrow empire-mark">Time to build empires</p>
             <h1 className="ops-title">Weekly forecast</h1>
             <p className="ops-sub">
               What everyone expects to work on this week, against a 40-hour week.
@@ -98,12 +98,10 @@ export default function ForecastDashboardPage() {
           <div className="ops-weeknav">
             <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
             <strong>{weekLabel(week)}</strong>
+            {loading && people.length > 0 ? <span className="ops-weeknav-busy">Updating…</span> : null}
             <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
             {!isCurrentWeek(week) ? (
-              <button
-                style={{ width: "auto", padding: "0 10px", fontSize: 12, fontWeight: 600 }}
-                onClick={() => setWeek(currentWeek())}
-              >
+              <button className="ops-weeknav-reset" onClick={() => setWeek(currentWeek())}>
                 This week
               </button>
             ) : null}
@@ -138,15 +136,15 @@ export default function ForecastDashboardPage() {
             </div>
             <div className="mood-summary-legend">
               <span>
-                <i style={{ background: "var(--success)" }} /> On target · {buckets.target} (
+                <i style={{ background: "var(--success)" }} /> On target <em>80–100%</em> · {buckets.target} (
                 {bucketPct(buckets.target)}%)
               </span>
               <span>
-                <i style={{ background: "var(--warning)" }} /> Under-allocated · {buckets.under} (
+                <i style={{ background: "var(--warning)" }} /> Under-allocated <em>&lt;80%</em> · {buckets.under} (
                 {bucketPct(buckets.under)}%)
               </span>
               <span>
-                <i style={{ background: "var(--danger)" }} /> Over-allocated · {buckets.over} (
+                <i style={{ background: "var(--danger)" }} /> Over-allocated <em>&gt;100%</em> · {buckets.over} (
                 {bucketPct(buckets.over)}%)
               </span>
             </div>
@@ -154,33 +152,18 @@ export default function ForecastDashboardPage() {
         ) : null}
 
         <div className="color-legend">
-          <div className="color-legend-group">
-            <span className="color-legend-group-label">Allocation</span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> On target (80–100%)
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> Under-allocated (&lt;80%)
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> Over-allocated (&gt;100%)
-            </span>
-          </div>
-          <div className="color-legend-group">
-            <span className="color-legend-group-label">Task priority mix</span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> Urgent
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> Important
-            </span>
-            <span className="color-legend-item">
-              <i className="color-legend-dot" style={{ background: "var(--success)" }} /> Flexible
-            </span>
-          </div>
+          <span className="color-legend-group-label">Task priority mix</span>
+          <span className="color-legend-item">
+            <i className="color-legend-dot" style={{ background: "var(--danger)" }} /> Urgent
+          </span>
+          <span className="color-legend-item">
+            <i className="color-legend-dot" style={{ background: "var(--warning)" }} /> Important
+          </span>
+          <span className="color-legend-item">
+            <i className="color-legend-dot" style={{ background: "var(--success)" }} /> Flexible
+          </span>
         </div>
 
-        {loading ? <p className="muted" style={{ marginTop: 0 }}>Updating…</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
         {loading && people.length === 0 ? (

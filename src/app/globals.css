@@ -4431,6 +4431,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   --ops-bg: #fafafa;
   --ops-border: #e8e8ea;
   --ops-border-soft: #f0f0f1;
+  --ops-head: var(--font-poppins), Poppins, "Helvetica Neue", Arial, sans-serif;
   min-height: 100vh;
   background: var(--ops-bg);
 }
@@ -4488,10 +4489,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   margin: 0 0 6px;
 }
 .ops-title {
-  font-family: var(--font-head);
+  font-family: var(--ops-head);
   font-size: 27px;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  /* Poppins is geometric and sits wider than Space Grotesk, so it needs a
+     little more negative tracking to hold the same optical width. */
+  letter-spacing: -0.025em;
   margin: 0;
 }
 .ops-sub {
@@ -4564,8 +4567,10 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   border-bottom: 1px solid var(--ops-border-soft);
 }
 .ops-panel-head h2 {
+  font-family: var(--ops-head);
   font-size: 14.5px;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 .ops-panel-head a {
@@ -4693,7 +4698,18 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   cursor: pointer;
   font-size: 14px;
 }
-.ops-weeknav strong { font-size: 13.5px; }
+.ops-weeknav strong { font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.ops-weeknav button.ops-weeknav-reset {
+  width: auto;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-body);
+}
+.ops-weeknav-busy {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
 
 /* Forecast portal: real week-view planner */
 /* ============================================================ forecast board
@@ -4981,6 +4997,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .mood-summary-total-pct {
   font-family: var(--font-head);
+  font-variant-numeric: tabular-nums;
   font-size: 32px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -4988,6 +5005,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .mood-summary-total-label {
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
   line-height: 1.4;
 }
@@ -5019,6 +5037,12 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+}
+.mood-summary-legend em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-muted);
+  opacity: 0.75;
 }
 .mood-summary-legend i {
   width: 8px;
@@ -5079,6 +5103,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
   align-items: baseline;
   font-size: 12px;
   gap: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 .mood-card-priority {
@@ -5109,13 +5134,14 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
    priority colors) and the person forecast page (priority colors). */
 .color-legend {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 8px 16px;
   background: var(--bg-elevated);
   border: 1px solid var(--ops-border);
   border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 20px;
+  padding: 10px 16px;
+  margin-bottom: 18px;
 }
 .color-legend-group {
   display: flex;
@@ -5125,6 +5151,7 @@ select.snap-status-select.status-not_started { background: #f1f3f5; }
 }
 .color-legend-group-label {
   font-size: 11px;
+  margin-right: 2px;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
