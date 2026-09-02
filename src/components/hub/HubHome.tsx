@@ -67,7 +67,7 @@ export function HubHome({
   return (
     <div>
       <div className="hq-hero">
-        <p className="ops-eyebrow">Team HQ</p>
+        <p className="ops-eyebrow empire-mark">BUILD YOUR EMPIRE</p>
         <h1>{greeting()}{firstName ? `, ${firstName}` : ""}.</h1>
         <p>
           The team&apos;s home base.{" "}

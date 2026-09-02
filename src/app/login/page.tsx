@@ -189,7 +189,7 @@ export default function LoginPage() {
       <form className="card login-card stack" onSubmit={onSubmit}>
         <Brand />
         <div>
-          <p className="eyebrow">Internal tool</p>
+          <p className="eyebrow empire-mark">BUILD YOUR EMPIRE</p>
           <h1>Sign in</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Pick your name and use your own password. If you have not set one
