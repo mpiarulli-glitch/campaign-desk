@@ -7838,6 +7838,62 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   background: var(--accent);
 }
 .ops-list-row + .ops-list-row { margin-top: 6px; }
+
+/* Column headers above the list rows. Desktop only: under 721px the row
+   reflows into stacked bands and there are no columns left to head. */
+.ops-list-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Mirrors .ops-list-row's 12px padding, plus its 3px left rail on the left
+     and 1px border on the right, so labels sit over the fields not the rail. */
+  padding: 2px 13px 7px 15px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* These copies exist only to reserve the width their real counterparts take up
+   in a row. Nothing here is interactive or announced. */
+.ops-list-head .ops-row-handle,
+.ops-list-head input[type="checkbox"],
+.ops-list-head .fc-colordot,
+.ops-list-head .ops-row-actions {
+  visibility: hidden;
+}
+.ops-list-head .ops-row-handle {
+  min-height: 0;
+  height: 12px;
+  align-self: center;
+}
+.ops-list-head-client {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.ops-list-head-task {
+  flex: 2 1 240px;
+  min-width: 0;
+}
+/* One cell covering the start time and the hours field together: 118px of time
+   input, the 10px gap, then the ~52px hours field and its "h". Right-aligned
+   so the label lands over the hours number, which is the forecast figure that
+   feeds the week. The start time underneath is deliberately left unlabelled. */
+.ops-list-head-hours {
+  flex: none;
+  width: 180px;
+  text-align: right;
+}
+
+/* The row is flex-wrap, and it breaks onto a second line well before the 720px
+   mobile rules take over: 1080px with the usual controls, 1090px once a row
+   carries a running timer and a logged-hours label. A wrapped row and a
+   wrapped header do not line up, so the header only appears above that, with
+   headroom for labels longer than the ones measured. */
+@media (max-width: 1139px) {
+  .ops-list-head { display: none; }
+}
 .ops-list-row input.client {
   flex: 1 1 150px;
   min-width: 0;

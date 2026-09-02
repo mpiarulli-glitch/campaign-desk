@@ -1127,6 +1127,63 @@ function parseForecastView(raw: string | null, weekStart: string): View {
   return isCurrentWeek(weekStart) ? "today" : "list";
 }
 
+/**
+ * Column headers for the list rows.
+ *
+ * The row is a flex line rather than a grid, so its two flexible columns
+ * (client and task) only line up with these labels if the header carries
+ * siblings of the same width on either side of them. That is why the
+ * right-hand controls are mirrored here as inert copies instead of being left
+ * out: without them the freed space goes to client and task, and every label
+ * slides right. The copies reuse the real control classes so they keep pace if
+ * that CSS moves.
+ *
+ * They cannot follow the labels, though. A task with time on the Basecamp
+ * timesheet reads "0.8h logged" where this reads "Log time", and runs a little
+ * wider. Rows like that already sit slightly out of step with each other for
+ * the same reason, so the header follows the common case.
+ *
+ * Only Client, Task and Forecasted Time get a label. The start time stays bare
+ * on purpose: it is there to place the task on the calendar tab, not to be
+ * read down the column.
+ */
+function ListColumnHeaders() {
+  return (
+    <div className="ops-list-head" aria-hidden="true">
+      <span className="ops-row-handle" />
+      <input type="checkbox" tabIndex={-1} disabled />
+      <span className="ops-list-head-client">Client</span>
+      <span className="ops-list-head-task">Task</span>
+      <span className="ops-list-head-hours">Forecasted Time</span>
+      <div className="fc-colordot">
+        <button type="button" className="fc-swatch is-on" tabIndex={-1} disabled />
+      </div>
+      <span className="ops-row-actions">
+        <button type="button" className="fc-timer-btn" tabIndex={-1} disabled>
+          <span className="fc-timer-icon" />
+          Start task
+        </button>
+        <div className="fc-move">
+          <button type="button" className="fc-log-pill" tabIndex={-1} disabled>
+            Log time
+          </button>
+        </div>
+        <button type="button" className="fc-subtask-btn" tabIndex={-1} disabled>
+          Subtask
+        </button>
+        <div className="fc-move">
+          <button type="button" className="fc-move-btn" tabIndex={-1} disabled>
+            Move
+          </button>
+        </div>
+        <button type="button" className="ops-row-remove" tabIndex={-1} disabled>
+          &times;
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export default function PersonForecastPage() {
   const router = useRouter();
   const { person } = useParams<{ person: string }>();
@@ -3329,6 +3386,7 @@ export default function PersonForecastPage() {
                   </div>
                 </div>
 
+                {tasks.length > 0 ? <ListColumnHeaders /> : null}
                 {tasks.length === 0 ? (
                   <p className="muted" style={{ margin: "4px 0 14px" }}>
                     {dragId ? "Drop here to move it to today." : "Nothing planned for today yet. Add your first task below."}
@@ -3670,6 +3728,7 @@ export default function PersonForecastPage() {
                     <span className="muted">{dayHours || 0}h</span>
                   </div>
 
+                  {tasks.length > 0 ? <ListColumnHeaders /> : null}
                   {tasks.length === 0 ? (
                     <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>
                       {dragId ? "Drop here to move it to this day." : "Nothing planned yet."}
