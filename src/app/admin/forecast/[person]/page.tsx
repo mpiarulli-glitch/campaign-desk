@@ -707,27 +707,6 @@ function eventHint(draft: Draft, state: EventState | undefined): string {
   }.`;
 }
 
-function StartTimeField({
-  task,
-  onSave,
-}: {
-  task: Task;
-  onSave: (task: Task, value: string) => void;
-}) {
-  return (
-    <input
-      type="time"
-      key={`${task.id}-start-${task.start_time || ""}`}
-      defaultValue={task.start_time || ""}
-      onBlur={(e) => onSave(task, e.target.value)}
-      onMouseDown={(e) => e.stopPropagation()}
-      aria-label="Start time"
-      title="Start time (optional)"
-      className="ops-time"
-    />
-  );
-}
-
 function AddTaskForm({
   draft,
   patch,
@@ -3427,7 +3406,6 @@ export default function PersonForecastPage() {
                           title={isForecastMeeting(t) ? "Booked from a Basecamp meeting" : t.basecamp_todo_id ? "Linked to a Basecamp todo" : undefined}
                           style={{ textDecoration: t.completed ? "line-through" : "none", opacity: t.completed ? 0.6 : 1 }}
                         />
-                        <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
                         <div className="row" style={{ gap: 2 }}>
                           <input
                             key={`${t.id}-hours`}
@@ -3773,7 +3751,6 @@ export default function PersonForecastPage() {
                               opacity: t.completed ? 0.6 : 1,
                             }}
                           />
-                          <StartTimeField task={t} onSave={(task, value) => saveField(task, "start_time", value)} />
                           <div className="row" style={{ gap: 2 }}>
                             <input
                               key={`${t.id}-hours`}

@@ -7876,22 +7876,21 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   flex: 2 1 240px;
   min-width: 0;
 }
-/* One cell covering the start time and the hours field together: 118px of time
-   input, the 10px gap, then the ~52px hours field and its "h". Right-aligned
-   so the label lands over the hours number, which is the forecast figure that
-   feeds the week. The start time underneath is deliberately left unlabelled. */
+/* Sits over the hours field and its "h" (42px input + 2px gap + the glyph).
+   Right-aligned so the label ends where the number does, and allowed to run
+   left into the gap rather than widening the column. */
 .ops-list-head-hours {
   flex: none;
-  width: 180px;
+  width: 52px;
   text-align: right;
 }
 
 /* The row is flex-wrap, and it breaks onto a second line well before the 720px
-   mobile rules take over: 1080px with the usual controls, 1090px once a row
+   mobile rules take over: 950px with the usual controls, 960px once a row
    carries a running timer and a logged-hours label. A wrapped row and a
    wrapped header do not line up, so the header only appears above that, with
    headroom for labels longer than the ones measured. */
-@media (max-width: 1139px) {
+@media (max-width: 1009px) {
   .ops-list-head { display: none; }
 }
 .ops-list-row input.client {
