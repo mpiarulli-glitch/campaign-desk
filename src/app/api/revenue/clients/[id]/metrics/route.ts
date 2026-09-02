@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can, isAdminAuthenticated } from "@/lib/auth";
 import {
   deleteMetric,
   getRevClient,
@@ -24,7 +24,7 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -58,7 +58,7 @@ export async function POST(request: Request, { params }: Params) {
 }
 
 export async function DELETE(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

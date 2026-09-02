@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated } from "@/lib/auth";
+import { can, getSession } from "@/lib/auth";
 import { addClientToHub, buildLifecycleHub } from "@/lib/lifecycle-hub";
 import { isEmailPlatform, isYmd } from "@/lib/email-launch";
 
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   return NextResponse.json(buildLifecycleHub());
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

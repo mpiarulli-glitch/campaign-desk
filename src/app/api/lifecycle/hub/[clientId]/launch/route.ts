@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated } from "@/lib/auth";
+import { can, getSession } from "@/lib/auth";
 import { createLaunchTodos, setClientEmailPlatform } from "@/lib/lifecycle-hub";
 import { isEmailPlatform, isYmd } from "@/lib/email-launch";
 import { getRevClient } from "@/lib/revenue";
@@ -8,7 +8,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const { clientId } = await params;

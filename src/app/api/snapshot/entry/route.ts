@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated, sessionActor } from "@/lib/auth";
+import { can, sessionActor } from "@/lib/auth";
 import { upsertEntry } from "@/lib/snapshot";
 import { isYmd } from "@/lib/snapshot-entry-date";
 
@@ -7,7 +7,7 @@ const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 const optStr = (v: unknown) => (typeof v === "string" ? v : undefined);
 
 export async function POST(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

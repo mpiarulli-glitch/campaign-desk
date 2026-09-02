@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { getEntry, getIndex, getSwipeFile, setRead } from "@/lib/knowledge";
 
 /**
@@ -11,7 +11,7 @@ import { getEntry, getIndex, getSwipeFile, setRead } from "@/lib/knowledge";
  *   PATCH { slug, read }    mark an issue read or unread
  */
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const params = new URL(request.url).searchParams;
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { getSession, isWorkflowAuthenticated } from "@/lib/auth";
+import { can, getSession } from "@/lib/auth";
 import { createBoard, listBoards } from "@/lib/whiteboard";
 import { teamLabel } from "@/lib/team";
 
 export async function GET() {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ boards: listBoards() });
 }
 
 export async function POST(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const session = await getSession();

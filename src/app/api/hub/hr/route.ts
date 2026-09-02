@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated, isWorkflowAuthenticated } from "@/lib/auth";
+import { can, getSession, isAdminWithAccess } from "@/lib/auth";
 import { createHrIssue, listHrIssues } from "@/lib/hub";
 
 // Only admins can read HR issues. Submitting is open to any team member.
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminWithAccess("page.hub"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   return NextResponse.json({ issues: listHrIssues() });
 }
 
 export async function POST(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.hub"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const session = await getSession();

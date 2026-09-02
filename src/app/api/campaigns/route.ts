@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  isAdminOrSyncAuthenticated,
-  isBlogScopedSession,
-  isCampaignsReadAuthenticated,
-} from "@/lib/auth";
+import { canOrSync, isBlogScopedSession, isCampaignsReadAuthenticated } from "@/lib/auth";
 import {
   createCampaign,
   listCampaigns,
@@ -49,7 +45,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

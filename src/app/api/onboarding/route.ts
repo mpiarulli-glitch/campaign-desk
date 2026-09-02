@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated, getSession } from "@/lib/auth";
+import { can, getSession } from "@/lib/auth";
 import { teamLabel } from "@/lib/team";
 import {
   ALL_STAGES,
@@ -13,7 +13,7 @@ import {
 } from "@/lib/ghl-opportunities";
 
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.onboarding"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const cards = listOnboardingProspects();
@@ -79,7 +79,7 @@ export async function GET() {
 // pipeline only holds post-signature deals), so this lands at "Agreement
 // Signed" immediately rather than "Triage".
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.onboarding"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

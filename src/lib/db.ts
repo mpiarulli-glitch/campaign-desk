@@ -59,6 +59,22 @@ export interface User {
   updated_at: string;
 }
 
+/* One row of the access matrix the owner edits on /admin/access. */
+export interface UserAccessRow {
+  person: string;
+  capability: string;
+  allowed: number;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface UserForecastAccessRow {
+  person: string;
+  subject: string;
+  updated_at: string;
+  updated_by: string;
+}
+
 export type CampaignStatus =
   | "draft"
   | "internal_review"
@@ -2261,6 +2277,40 @@ export function getDb(): Database.Database {
       connected_at TEXT NOT NULL,
       last_error TEXT,
       last_pulled_at TEXT NOT NULL DEFAULT ''
+    );
+
+    /* Per-person access overrides.
+
+       Absence is the normal state. A person with no rows here gets exactly the
+       access their role always gave them (see defaultAllowed in ./access), so
+       this table only ever records a decision the owner actually made. That
+       keeps the shipped defaults readable in code rather than smeared across
+       rows nobody remembers writing.
+
+       allowed is 0 or 1 rather than a delete-on-off, because "the owner turned
+       this off" and "the owner never said" have to stay different: the first
+       must beat a permissive default, the second must follow it. */
+    CREATE TABLE IF NOT EXISTS user_access (
+      person TEXT NOT NULL,
+      capability TEXT NOT NULL,
+      allowed INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (person, capability)
+    );
+
+    /* Whose forecast a person may open, one row per pairing.
+
+       Separate from user_access because the answer is a set of people, not a
+       yes or no, and the roster it points at changes. subject '*' means every
+       person, which is what an admin has always had; an empty set means their
+       own only. */
+    CREATE TABLE IF NOT EXISTS user_forecast_access (
+      person TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (person, subject)
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite

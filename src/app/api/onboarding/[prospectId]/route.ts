@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { isValidStage, moveProspectStage, removeProspect } from "@/lib/onboarding";
 
 type Params = { params: Promise<{ prospectId: string }> };
 
 // Drag-and-drop lands here: moves a prospect to a different column.
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.onboarding"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { prospectId } = await params;
@@ -20,7 +20,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.onboarding"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { prospectId } = await params;

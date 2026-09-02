@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { addWin, getAccount } from "@/lib/snapshot";
 
 export async function POST(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

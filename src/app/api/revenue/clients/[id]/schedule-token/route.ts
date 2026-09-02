@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can, isAdminAuthenticated } from "@/lib/auth";
 import { rotateScheduleToken, getOrCreateScheduleToken } from "@/lib/cadence";
 
 type Params = { params: Promise<{ id: string }> };
@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 // Rotates the token, invalidating any previously shared schedule link.
 export async function POST(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

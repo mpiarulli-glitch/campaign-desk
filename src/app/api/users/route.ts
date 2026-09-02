@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAppUrl, isOwner } from "@/lib/auth";
+import { can, getAppUrl } from "@/lib/auth";
 import { OWNER_SLUG } from "@/lib/people";
 import {
   clearPassword,
@@ -18,7 +18,7 @@ import { hasConnection } from "@/lib/basecamp-identity";
 // accounts, since that would let them grant themselves or others access.
 
 async function requireOwner() {
-  return (await isOwner())
+  return (await can("tool.accounts"))
     ? null
     : NextResponse.json({ error: "Owner access required" }, { status: 403 });
 }

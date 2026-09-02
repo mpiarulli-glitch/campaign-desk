@@ -17010,3 +17010,142 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   }
 }
 
+/* --- Permissions (/admin/access) -----------------------------------------
+   Two columns: the roster on the left, the person's matrix on the right. The
+   left column stops being a column under the breakpoint and becomes a plain
+   list above the panels, which is the only sane order on a phone. */
+
+.acc-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.acc-people { position: sticky; top: 16px; }
+
+.acc-detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.acc-detail .ops-panel + .ops-panel { margin-top: 0; }
+
+.acc-person {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 11px 16px;
+  border: none;
+  border-left: 3px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font);
+  color: inherit;
+}
+.acc-person + .acc-person { border-top: 1px solid var(--border); }
+.acc-person:hover { background: var(--pill-bg, rgba(0, 0, 0, 0.03)); }
+.acc-person.is-on {
+  border-left-color: var(--accent);
+  background: var(--pill-bg, rgba(0, 0, 0, 0.04));
+}
+.acc-person-name { font-size: 13px; font-weight: 600; }
+.acc-person-meta { font-size: 11px; color: var(--muted); }
+
+.acc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 18px;
+  flex-wrap: wrap;
+}
+.acc-row + .acc-row { border-top: 1px solid var(--border); }
+.acc-row.is-fixed { opacity: 0.62; }
+.acc-row-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.acc-row-copy strong { font-size: 13px; }
+.acc-row-copy .muted { font-size: 12px; line-height: 1.5; }
+
+.acc-locked { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* Three states, not a switch: Default, Allow, Deny. A two-position switch
+   cannot say "nobody has decided", which is the state most rows are in. */
+.acc-tri {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  flex: none;
+}
+.acc-tri-btn {
+  border: none;
+  background: var(--surface, transparent);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.acc-tri-btn + .acc-tri-btn { border-left: 1px solid var(--border); }
+.acc-tri-btn:hover:not(:disabled) { color: var(--text); }
+.acc-tri-btn:disabled { cursor: default; opacity: 0.6; }
+
+/* Default is the state most rows are in, so it is selected quietly. Only a
+   deliberate Allow or Deny gets colour, which puts the owner's eye on the
+   handful of exceptions instead of on twenty identical bright pills. */
+.acc-tri-btn.is-set {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+.acc-tri-btn.is-yes { background: #15803d; color: #ffffff; }
+.acc-tri-btn.is-no { background: #b91c1c; color: #ffffff; }
+
+/* What this person can actually do, which is the question the row answers.
+   `set by you` marks the rows that are not simply following the role. */
+.acc-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex: none;
+  min-width: 74px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+.acc-state.is-yes { color: #16a34a; }
+.acc-state.is-no { color: var(--muted); }
+.acc-state em { font-size: 10px; font-weight: 500; font-style: normal; color: var(--muted); }
+
+.acc-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.acc-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface, transparent);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 13px;
+  cursor: pointer;
+}
+.acc-chip:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.acc-chip:disabled { cursor: default; }
+.acc-chip.is-on { background: var(--pill-bg); color: var(--pill-text); border-color: transparent; }
+
+@media (max-width: 900px) {
+  .acc-layout { grid-template-columns: minmax(0, 1fr); }
+  .acc-people { position: static; }
+  /* The row wraps to three stacked lines here, so the state reads as a label
+     under the copy rather than floating half-indented on its own line. */
+  .acc-row { align-items: flex-start; row-gap: 8px; }
+  .acc-state {
+    align-items: flex-start;
+    text-align: left;
+    min-width: 0;
+    flex: 1 1 100%;
+    flex-direction: row;
+    gap: 8px;
+  }
+  .acc-state em::before { content: "· "; }
+}

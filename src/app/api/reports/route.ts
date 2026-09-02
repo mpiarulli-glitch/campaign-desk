@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import {
   REPORTS,
   buildReport,
@@ -13,7 +13,7 @@ import {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.reports"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated } from "@/lib/auth";
+import { can, getSession } from "@/lib/auth";
 import { createRevClient, listRevClientCards, listRevClients } from "@/lib/revenue";
 import type { BusinessModel } from "@/lib/db";
 
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isValidAdminPerson } from "@/lib/admin-people";
 import { isValidPerson } from "@/lib/people";
 import {
+  can,
   createAdminImpersonationSession,
   createForecastImpersonationSession,
   createSession,
@@ -9,8 +10,10 @@ import {
 } from "@/lib/auth";
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (session?.role !== "admin" || session.person !== null) {
+  // The owner, plus anyone the owner has granted tool.impersonate. Returning to
+  // your own session (DELETE below) stays open to any admin, since it only ever
+  // narrows access.
+  if (!(await can("tool.impersonate"))) {
     return NextResponse.json({ error: "Owner access required" }, { status: 401 });
   }
 

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { listActivity } from "@/lib/campaigns";
 
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.activity"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

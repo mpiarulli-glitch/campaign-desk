@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { clearSession, getSession, login } from "@/lib/auth";
+import { accessSubject, clearSession, getSession, login } from "@/lib/auth";
+import { resolveAll, visiblePages } from "@/lib/access";
 import { forecastGoogleEnabled } from "@/lib/forecast-google";
 import { OWNER_SLUG } from "@/lib/people";
 import { hasOwnPassword } from "@/lib/users";
@@ -14,8 +15,20 @@ export async function GET() {
   // second factor nor the Basecamp connection is theirs to set up.
   const own = Boolean(session) && !session?.impersonating && slug ? slug : null;
   const setup = own ? setupStateFor(own) : null;
+  // The sidebar and every in-app "can they do this" check read these two, so
+  // the answer the shell renders is the same one the routes enforce rather than
+  // a second copy of the rules living in the client bundle.
+  const who = await accessSubject();
+  const pages = who ? visiblePages(who) : [];
+  const capabilities: Record<string, boolean> = {};
+  if (who) {
+    for (const cap of resolveAll(who)) capabilities[cap.key] = cap.allowed;
+  }
+
   return NextResponse.json({
     authenticated: Boolean(session),
+    pages: pages.map((p) => ({ key: p.key, href: p.href, label: p.label, icon: p.icon })),
+    capabilities,
     role: session?.role || null,
     person: session?.person || null,
     owner,

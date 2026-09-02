@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import {
   answerLead,
   deleteLead,
@@ -16,7 +16,7 @@ const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Team-side edit. `converted` is normally the client's to set from the shared
 // link, but the team can fill it in here for a client who answered on a call.
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

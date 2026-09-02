@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { createNote, listNotes } from "@/lib/lifecycle";
 
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const clientId = new URL(request.url).searchParams.get("clientId") || undefined;
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

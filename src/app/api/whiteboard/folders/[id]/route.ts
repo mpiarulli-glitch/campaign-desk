@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { deleteFolder, renameFolder } from "@/lib/whiteboard";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -17,7 +17,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
 // Deleting a folder never deletes its boards — they fall back to unfiled.
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

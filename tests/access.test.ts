@@ -145,16 +145,32 @@ test("the ads page and APIs use the ads allowlist, not owner-only tools", () => 
   assert.doesNotMatch(layout, /isOwnerToolsAuthenticated/);
 });
 
-test("the app shell hides calendar unless the owner is signed in", () => {
+test("the app shell no longer decides the nav for itself", () => {
+  // Which pages somebody can see moved to src/lib/access.ts, resolved per
+  // session by /api/auth. This used to assert the shell's own filters by name;
+  // asserting them now would pin the rules back into the client bundle, which
+  // is the thing that let the sidebar and the route gates disagree.
+  //
+  // Calendar being owner-only and Ads following ADS_DASHBOARD_PEOPLE are still
+  // guaranteed, now as behaviour rather than as source text: see
+  // tests/user-access.test.ts, "the calendar is an owner tool" and "Ads follows
+  // ADS_DASHBOARD_PEOPLE". hasOwnerToolsAccess and hasAdsDashboardAccess are
+  // what defaultAllowed reads, so the lists below stay the source of truth.
   const shell = fs.readFileSync(
     path.join("src/components/AppShell.tsx"),
     "utf8"
   );
-  assert.match(shell, /hasOwnerToolsAccess/);
-  assert.match(shell, /canSeeOwnerTools/);
-  assert.match(shell, /item\.href === "\/admin\/calendar" && !canSeeOwnerTools/);
-  assert.match(shell, /hasAdsDashboardAccess/);
-  assert.match(shell, /item\.href === "\/admin\/ads" && !canSeeAds/);
+  assert.match(shell, /session\.pages\.map/, "the sidebar must come from the server");
+  assert.doesNotMatch(shell, /const ADMIN_NAV/, "no nav array in the shell");
+  assert.doesNotMatch(shell, /const FORECAST_NAV/, "no nav array in the shell");
+  assert.doesNotMatch(shell, /canSeeOwnerTools/, "no access rule in the shell");
+  assert.doesNotMatch(shell, /canSeeAds/, "no access rule in the shell");
+
+  // The registry, and only the registry, carries the page list.
+  const access = fs.readFileSync(path.join("src/lib/access.ts"), "utf8");
+  assert.match(access, /hasOwnerToolsAccess/);
+  assert.match(access, /hasAdsDashboardAccess/);
+  assert.match(access, /hasProductionAccess/);
 });
 
 test("the SEO team is abel and carlos, and only them", () => {

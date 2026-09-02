@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated, isWorkflowAuthenticated } from "@/lib/auth";
+import { can, isAdminWithAccess } from "@/lib/auth";
 import { getRevClient, updateRevClient } from "@/lib/revenue";
 import { listLeads, listWins } from "@/lib/snapshot";
 import {
@@ -14,7 +14,7 @@ import {
 // The Client Services Hub dashboard: one row per active client with this week's
 // ask and how far it got.
 export async function GET(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.client_services"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const url = new URL(request.url);
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 // because both are outward-facing: one emails a client, the other stops them
 // being contacted at all.
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminWithAccess("page.client_services"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

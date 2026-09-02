@@ -1,11 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  isAdminOrSyncAuthenticated,
-  isCampaignsReadAuthenticated,
-  reviewUrl,
-  sessionActor,
-  sessionUserSlug,
-} from "@/lib/auth";
+import { canOrSync, isAdminOrSyncAuthenticated, isCampaignsReadAuthenticated, reviewUrl, sessionActor, sessionUserSlug } from "@/lib/auth";
 import { actorLabel } from "@/lib/people";
 import {
   deleteCampaign,
@@ -99,7 +93,7 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -297,7 +291,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(request: Request, { params }: Params) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { getBoard, getChangesSince } from "@/lib/whiteboard";
 
 type Params = { params: Promise<{ id: string }> };
 
 // Poll target: records changed since the client's cursor, plus a new cursor.
 export async function GET(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

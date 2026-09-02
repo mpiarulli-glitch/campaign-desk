@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
+import { can, sessionTeam } from "@/lib/auth";
 import { getVisibleSnapshotAccount, listWins, metricsSeries, weekData } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -7,7 +7,7 @@ const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

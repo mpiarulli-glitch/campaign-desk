@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { runProspectAction } from "@/lib/onboarding";
 
 type Params = { params: Promise<{ prospectId: string; actionKey: string }> };
@@ -8,7 +8,7 @@ type Params = { params: Promise<{ prospectId: string; actionKey: string }> };
 // Basecamp project, send the welcome email, add the client to Basecamp,
 // notify the team, request the strategy meeting.
 export async function POST(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.onboarding"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { prospectId, actionKey } = await params;

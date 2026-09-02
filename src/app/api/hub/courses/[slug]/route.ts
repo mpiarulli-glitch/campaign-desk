@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { getCourse } from "@/lib/courses";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.hub"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { slug } = await params;

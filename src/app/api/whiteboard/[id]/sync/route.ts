@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { applyChanges, getBoard, type WireRecord } from "@/lib/whiteboard";
 
 type Params = { params: Promise<{ id: string }> };
 
 // A client pushes only the records it changed (and ids it removed).
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

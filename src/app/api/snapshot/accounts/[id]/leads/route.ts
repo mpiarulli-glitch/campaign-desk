@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { addLead, getAccount, listLeads, type LeadSource } from "@/lib/snapshot";
 
 type Params = { params: Promise<{ id: string }> };
@@ -9,7 +9,7 @@ const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Leads for an account. ?week=YYYY-MM-DD narrows to that week; omitting it
 // (or passing week=all) returns every lead.
 export async function GET(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

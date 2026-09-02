@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated, sessionTeam } from "@/lib/auth";
+import { can, sessionTeam } from "@/lib/auth";
 import { createDeliverable, getVisibleSnapshotAccount, listDeliverables } from "@/lib/snapshot";
 import type { CadenceUnit } from "@/lib/db";
 
@@ -9,7 +9,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

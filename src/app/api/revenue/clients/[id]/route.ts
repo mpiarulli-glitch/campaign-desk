@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can, isAdminAuthenticated } from "@/lib/auth";
 import {
   aggregate,
   deleteRevClient,
@@ -47,7 +47,7 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -135,7 +135,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated, isWorkflowAuthenticated } from "@/lib/auth";
+import { can, isAdminWithAccess } from "@/lib/auth";
 import { listCourses, upsertCourseWithLessons } from "@/lib/courses";
 
 export async function GET() {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.hub"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ courses: listCourses() });
@@ -12,7 +12,7 @@ export async function GET() {
 // Rebuilds a course from a full payload (course + lessons), keyed by slug.
 // Admin-only. Lets a seed script push course content to the live app over HTTP.
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminWithAccess("page.hub"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

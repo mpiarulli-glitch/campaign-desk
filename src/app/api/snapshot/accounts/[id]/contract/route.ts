@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isAdminWithAccess } from "@/lib/auth";
 import { getVisibleSnapshotAccount } from "@/lib/snapshot";
 import { updateRevClient } from "@/lib/revenue";
 import {
@@ -27,7 +27,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * scope of work gets in when it lives in an email rather than a PDF.
  */
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminWithAccess("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -116,7 +116,7 @@ export async function POST(request: Request, { params }: Params) {
  * what the parser first guessed.
  */
 export async function PUT(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminWithAccess("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

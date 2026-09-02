@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { campaignHistory, upsertCampaignMeta } from "@/lib/lifecycle";
 import { clearSkyleadCache } from "@/lib/skylead";
 
@@ -9,7 +9,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const { id } = await params;
@@ -52,7 +52,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const { id } = await params;

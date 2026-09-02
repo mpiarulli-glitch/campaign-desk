@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminOrSyncAuthenticated } from "@/lib/auth";
+import { canOrSync } from "@/lib/auth";
 import {
   addEmail,
   deleteEmail,
@@ -14,7 +14,7 @@ import { coerceKind, coerceFormat, isBodyFormat } from "@/lib/asset-kinds";
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: Params) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -32,7 +32,7 @@ export async function GET(request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -85,7 +85,7 @@ export async function POST(request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -124,7 +124,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(request: Request, { params }: Params) {
-  if (!(await isAdminOrSyncAuthenticated(request))) {
+  if (!(await canOrSync(request, "tool.campaign_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { removeClientLogoFiles, saveClientLogo } from "@/lib/client-logos";
 import { getRevClient, updateRevClient } from "@/lib/revenue";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.client_edit"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

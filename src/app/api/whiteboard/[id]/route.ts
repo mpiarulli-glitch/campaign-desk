@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { deleteBoard, getAllRecords, getBoard, moveBoardToFolder } from "@/lib/whiteboard";
 
 type Params = { params: Promise<{ id: string }> };
 
 // Initial load: the board plus its full live record set and a sync cursor.
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -20,7 +20,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 // Move a board into a folder, or clear it back to unfiled with folderId: null.
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -36,7 +36,7 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.whiteboard"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

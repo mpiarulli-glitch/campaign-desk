@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { upsertMetric } from "@/lib/revenue";
 import {
   deleteRevenueReport,
@@ -23,7 +23,7 @@ function findReport(id: string) {
 // what a client typed to the numbers our ROI reporting runs on, which is the
 // point: it takes a person deciding the figure is right.
 export async function POST(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -43,7 +43,7 @@ export async function POST(_request: Request, { params }: Params) {
 
 // Dismiss a report without taking the number.
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

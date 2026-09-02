@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { reviseEmailWithGrok, continueRevisionWithGrok } from "@/lib/ai-revise";
 import type { ChatMessage } from "@/lib/ai-revise";
 import { quotedFeedback } from "@/lib/copy-quote";
@@ -15,7 +15,7 @@ import {
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("tool.ai_revise"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

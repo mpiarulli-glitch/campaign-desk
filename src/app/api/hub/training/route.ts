@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { getSession, isAdminAuthenticated, isWorkflowAuthenticated } from "@/lib/auth";
+import { can, getSession, isAdminWithAccess } from "@/lib/auth";
 import { createTraining, listTraining } from "@/lib/hub";
 
 export async function GET() {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("page.hub"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ posts: listTraining() });
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminWithAccess("page.hub"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const session = await getSession();

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession, isWorkflowAuthenticated } from "@/lib/auth";
+import { can, getSession } from "@/lib/auth";
 import { listMessages, postMessage } from "@/lib/chat";
 import { teamLabel } from "@/lib/team";
 
@@ -14,7 +14,7 @@ function validRoom(room: string): boolean {
 }
 
 export async function GET(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("tool.chat"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const room = new URL(request.url).searchParams.get("room") || "";
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isWorkflowAuthenticated())) {
+  if (!(await can("tool.chat"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const session = await getSession();

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { doesCampaignWork, entryLevelPeople, hasAdsDashboardAccess, hasOwnerToolsAccess, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
+import { entryLevelPeople, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
 import { TimerDock } from "./TimerDock";
 import { ActivityBell } from "./ActivityBell";
@@ -28,44 +28,25 @@ type Session = {
   impersonating: boolean;
   mustSetPassword: boolean;
   forecastGoogle: boolean;
+  // The sidebar, already resolved against this person's permissions by
+  // /api/auth. Empty until that response lands, which is deliberate: guessing
+  // the nav from the role would flash links somebody is not allowed to open.
+  pages: NavItem[];
+  capabilities: Record<string, boolean>;
 };
 
 type NavItem = { href: string; label: string; icon: keyof typeof ICONS };
 
-// Sunset (2026-07-31), hidden from every role including the owner: Revenue and
-// the in-app To-dos. Their routes now redirect to Home. The /api/revenue
-// endpoints stay put, because /api/revenue/clients is the client registry the
-// rest of the app reads from and is not a revenue feature. Forecast to-dos are
-// a separate, still-live feature backed by Basecamp.
-const ADMIN_NAV: NavItem[] = [
-  { href: "/admin", label: "Home", icon: "home" },
-  { href: "/admin/clients", label: "Clients", icon: "clients" },
-  { href: "/admin/campaigns", label: "Campaigns", icon: "mail" },
-  // Admin-only: aggregates every client's approvals, outreach and economics.
-  { href: "/admin/lifecycle", label: "Lifecycle", icon: "funnel" },
-  { href: "/admin/ads", label: "Ads", icon: "ads" },
-  { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
-  // Production is spliced in below for the people on PRODUCTION_ACCESS only, so
-  // it is deliberately absent here.
-  { href: "/admin/hub", label: "MEG Team Hub", icon: "users" },
-  { href: "/admin/onboarding", label: "Onboarding", icon: "check" },
-  { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
-  { href: "/admin/client-services", label: "Client Services", icon: "ring" },
-  // Aggregates across every client and person, so admin nav only.
-  { href: "/admin/reports", label: "Reports", icon: "note" },
-  { href: "/admin/activity", label: "Activity", icon: "activity" },
-];
-
-// Whiteboard is open to every role. Its API already authorised both admin and
-// forecast sessions (isWorkflowAuthenticated) and neither page has a role check,
-// so only the sidebar link was missing.
-const FORECAST_NAV: NavItem[] = [
-  { href: "/admin", label: "Home", icon: "home" },
-  { href: "/admin/hub", label: "MEG Team Hub", icon: "users" },
-  { href: "/admin/calendar", label: "Calendar", icon: "calendar" },
-  { href: "/admin/whiteboard", label: "Whiteboard", icon: "board" },
-  { href: "/admin/client-services", label: "Client Services", icon: "ring" },
-];
+// The nav is no longer built here. Which pages a person can see is one answer,
+// owned by src/lib/access.ts and resolved per session by /api/auth, so the
+// sidebar and the route gates can never disagree. The owner edits it on
+// /admin/access.
+//
+// Still true and still enforced there: Revenue and the in-app To-dos were
+// sunset on 2026-07-31 and are absent from the registry entirely, so no toggle
+// can bring them back. Snapshots is in the registry without an href, so it
+// stays gateable without returning to the sidebar that Client Services
+// replaced.
 
 const ICONS = {
   home: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
@@ -108,7 +89,7 @@ function initials(label: string): string {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false, forecastGoogle: false });
+  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false, forecastGoogle: false, pages: [], capabilities: {} });
   const [menuOpen, setMenuOpen] = useState(false);
   // Mobile nav drawer. Above the breakpoint the sidebar is always in the layout
   // and this class does nothing, so desktop is unaffected either way.
@@ -155,7 +136,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (on && d?.authenticated) {
-          setSession({ role: d.role, person: d.person || null, owner: Boolean(d.owner), impersonating: Boolean(d.impersonating), mustSetPassword: Boolean(d.mustSetPassword), forecastGoogle: Boolean(d.forecastGoogle) });
+          setSession({
+            role: d.role,
+            person: d.person || null,
+            owner: Boolean(d.owner),
+            impersonating: Boolean(d.impersonating),
+            mustSetPassword: Boolean(d.mustSetPassword),
+            forecastGoogle: Boolean(d.forecastGoogle),
+            // Only pages whose icon is one this shell can actually draw, so a
+            // capability added to the registry without an icon degrades to
+            // being absent rather than to a crash.
+            pages: Array.isArray(d.pages)
+              ? d.pages
+                  .filter((p: NavItem) => p?.href && p?.icon && p.icon in ICONS)
+                  .map((p: NavItem) => ({ href: p.href, label: p.label, icon: p.icon }))
+              : [],
+            capabilities: d.capabilities && typeof d.capabilities === "object" ? d.capabilities : {},
+          });
         }
       })
       .catch(() => {});
@@ -184,71 +181,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  // Forecast is per-person, so its href depends on the session and it can't live
-  // in the static arrays above. Team members get it second, since it's their
-  // daily view; admins get it grouped with the other team tools.
+  // Forecast is the one page whose href depends on who is looking, so the
+  // registry's generic /admin/forecast is swapped for their own week here.
+  // Everything else comes through exactly as the server resolved it.
   const forecastHref =
     session.person && isValidPerson(session.person)
       ? `/admin/forecast/${session.person}`
       : "/admin/forecast";
-  const forecastItem: NavItem = {
-    href: forecastHref,
-    label: "Forecast",
-    icon: "forecast",
-  };
 
-  // Production scheduling is on an explicit person list, so it is spliced in for
-  // both roles rather than being implied by being an admin. The owner's session
-  // carries a null person, hence the separate check.
-  const productionItem: NavItem = {
-    href: "/admin/production",
-    label: "Production",
-    icon: "video",
-  };
-  const canSeeProduction =
-    session.owner || (Boolean(session.person) && hasProductionAccess(session.person!));
-  const canSeeOwnerTools = hasOwnerToolsAccess(session);
-  const canSeeAds = hasAdsDashboardAccess(session);
-  const adsItem: NavItem = { href: "/admin/ads", label: "Ads", icon: "ads" };
+  const items: NavItem[] = session.pages.map((item) =>
+    item.href === "/admin/forecast" ? { ...item, href: forecastHref } : item
+  );
 
-  // Campaign features follow TEAM_FOCUS. Someone with a narrowed focus that
-  // still includes campaign work (the SEO side) gets Campaigns even on the
-  // forecast role; someone with an empty focus (the web team) loses the campaign
-  // pages entirely, Calendar included, since it is the campaign calendar.
-  const ownsCampaignWork = session.owner || doesCampaignWork(session.person);
-  const focusedOnCampaigns = campaignKindFor(session.person) !== null;
-  const campaignsItem: NavItem = {
-    href: "/admin/campaigns",
-    label: "Campaigns",
-    icon: "mail",
-  };
-
-  const items: NavItem[] = session.role === "forecast"
-    ? [
-        FORECAST_NAV[0],
-        forecastItem,
-        ...(focusedOnCampaigns ? [campaignsItem] : []),
-        ...(canSeeAds ? [adsItem] : []),
-        ...FORECAST_NAV.slice(1).filter(
-          (item) =>
-            item.href !== "/admin/calendar" || canSeeOwnerTools
-        ),
-        ...(canSeeProduction ? [productionItem] : []),
-      ]
-    : ADMIN_NAV.flatMap((item) => {
-        if (item.href === "/admin/calendar" && !canSeeOwnerTools) {
-          return [];
-        }
-        if (item.href === "/admin/ads" && !canSeeAds) {
-          return [];
-        }
-        if (!ownsCampaignWork && item.href === "/admin/campaigns") {
-          return [];
-        }
-        return item.href === "/admin/hub"
-          ? [...(canSeeProduction ? [productionItem] : []), forecastItem, item]
-          : [item];
-      });
+  const can = (key: string) => Boolean(session.capabilities[key]);
 
   const meLabel = session.person
     ? (ADMIN_PEOPLE.find((p) => p.slug === session.person)?.label ||
@@ -402,15 +347,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <Svg name="calendar" />Google Calendar
                     </Link>
                   )}
-                  {session.owner ? (
+                  {session.owner || can("tool.accounts") ? (
                     <Link href="/admin/users" className="app-menu-i" onClick={() => setMenuOpen(false)}>
                       <Svg name="clients" />Accounts
+                    </Link>
+                  ) : null}
+                  {session.owner ? (
+                    <Link href="/admin/access" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="gear" />Permissions
                     </Link>
                   ) : null}
 
                   <div className="app-menu-div" />
 
-                  {session.owner ? (
+                  {session.owner || can("tool.impersonate") ? (
                     <div className="app-menu-viewas">
                       <label htmlFor="app-view-as"><Svg name="eye" /> View as</label>
                       <select id="app-view-as" value="" disabled={switching} onChange={(e) => {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { isGhlConfigured, listLocations } from "@/lib/ghl";
 import { listRevClients, updateRevClient } from "@/lib/revenue";
 import {
@@ -29,7 +29,7 @@ function mappedLocationIds(): Set<string> {
 }
 
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isGhlConfigured()) {
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isGhlConfigured()) {

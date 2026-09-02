@@ -2,10 +2,16 @@ import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { isValidAdminPerson } from "./admin-people";
 import {
+  allows,
+  canSeeForecastOf,
+  forecastVisibility,
+  visiblePages,
+  FORECAST_ALL,
+  type AccessSubject,
+  type Capability,
+} from "./access";
+import {
   campaignKindFor,
-  doesCampaignWork,
-  hasAdsDashboardAccess,
-  hasProductionAccess,
   isValidPerson,
   OWNER_SLUG,
   personTeam,
@@ -432,18 +438,55 @@ export async function isBlogScopedSession(): Promise<boolean> {
   return campaignKindFor(await sessionFocusSlug()) === "blog";
 }
 
-// Who may READ the campaigns list and open a campaign: admins, plus anyone whose
-// team focus includes campaign work. Abel is forecast-role, so without this he
-// could not reach campaigns at all; Roy has an empty focus, so he is kept out
-// even though he is otherwise an ordinary user.
-// Creating and editing campaigns stays on isAdminAuthenticated.
+// Who may READ the campaigns list and open a campaign. The default is unchanged
+// (admins, plus anyone whose team focus includes campaign work: Abel is
+// user-role and would otherwise be shut out, Roy has an empty focus and is kept
+// out), but the owner can now flip it per person on /admin/access.
+// Creating and editing campaigns is tool.campaign_edit.
 export async function isCampaignsReadAuthenticated(): Promise<boolean> {
+  return can("page.campaigns");
+}
+
+/* ---------------------------------------------------------------------------
+   Per-person access
+   ---------------------------------------------------------------------------
+   Everything below reads the matrix in ./access, which layers the owner's
+   toggles on /admin/access over the role defaults. The gate functions kept
+   their old names so every route that already calls one picks this up without
+   being edited.
+   ------------------------------------------------------------------------- */
+
+/** The current session as ./access wants it, or null when signed out. */
+export async function accessSubject(): Promise<AccessSubject | null> {
   const session = await getSession();
-  if (!session) return false;
-  if (session.role === "admin" && session.person === null) return true;
-  if (!doesCampaignWork(session.person)) return false;
-  if (session.role === "admin") return true;
-  return campaignKindFor(session.person) !== null;
+  if (!session) return null;
+  const owner = session.role === "admin" && session.person === null;
+  return {
+    role: session.role,
+    person: session.person,
+    owner,
+    impersonating: session.impersonating,
+  };
+}
+
+/** True when the signed in session holds one capability. Fails closed. */
+export async function can(key: string): Promise<boolean> {
+  const who = await accessSubject();
+  return who ? allows(who, key) : false;
+}
+
+/** The sidebar, resolved server side, in registry order. */
+export async function sessionPages(): Promise<Capability[]> {
+  const who = await accessSubject();
+  return who ? visiblePages(who) : [];
+}
+
+/** Whose forecast this session may open: a list of slugs, or every person. */
+export async function sessionForecastSubjects(): Promise<
+  string[] | typeof FORECAST_ALL
+> {
+  const who = await accessSubject();
+  return who ? forecastVisibility(who) : [];
 }
 
 async function setSessionCookie(payload: string): Promise<void> {
@@ -567,6 +610,19 @@ export async function isAdminOrSyncAuthenticated(request: Request): Promise<bool
 }
 
 /**
+ * One capability, or the sync token.
+ *
+ * The campaign-desk-sync CLI writes campaigns over a bearer token and has no
+ * session at all, so a plain capability check would lock the tooling out. The
+ * token is a deploy secret rather than a person, and is not something the
+ * permissions page can take away.
+ */
+export async function canOrSync(request: Request, key: string): Promise<boolean> {
+  if (syncTokenMatches(request)) return true;
+  return can(key);
+}
+
+/**
  * Owner-only tools, or a trusted machine carrying the sync token.
  *
  * Deliberately not isAdminOrSyncAuthenticated: the campaign calendar is
@@ -581,13 +637,35 @@ export async function isOwnerToolsOrSyncAuthenticated(
   return isOwnerToolsAuthenticated();
 }
 
+/**
+ * Whether this session may read a forecast, and whose.
+ *
+ * With no argument the question is only "is somebody signed in", which is what
+ * the team wide endpoints ask. With a person it is a visibility check: admins
+ * still see everyone by default and a user still sees only themselves, but the
+ * owner can hand one person a named subset on /admin/access, which is why this
+ * no longer waves every admin through.
+ */
 export async function isForecastAuthenticated(
   person?: string
 ): Promise<boolean> {
-  const session = await getSession();
-  if (session?.role === "admin") return true;
-  if (session?.role !== "forecast") return false;
-  return person ? session.person === person : true;
+  const who = await accessSubject();
+  if (!who) return false;
+  if (!person) return true;
+  return canSeeForecastOf(who, person);
+}
+
+/**
+ * An admin-only operation that lives inside a page both roles can reach.
+ *
+ * Snapshots, Client Services and the Team Hub are the cases: everybody opens
+ * them, but only admins may write parts of them. Substituting the page
+ * capability alone would hand those writes to every user, and leaving the plain
+ * admin check alone would let an admin whose page is switched off keep writing
+ * through the API. Both halves have to hold.
+ */
+export async function isAdminWithAccess(key: string): Promise<boolean> {
+  return (await isAdminAuthenticated()) && (await can(key));
 }
 
 export async function isWorkflowAuthenticated(): Promise<boolean> {
@@ -595,37 +673,24 @@ export async function isWorkflowAuthenticated(): Promise<boolean> {
   return session?.role === "admin" || session?.role === "forecast";
 }
 
-// Production scheduling is gated on an explicit person list (PRODUCTION_ACCESS
-// in ./people), not on role. Being an admin is no longer enough: the SEO-side
-// admins have no reason to see the shoot schedule. The owner always passes.
+// Production scheduling. The default is still the explicit PRODUCTION_ACCESS
+// list in ./people rather than role, so an SEO-side admin does not see the shoot
+// schedule; the owner can add or remove somebody on /admin/access without
+// editing that list. The owner always passes.
 export async function isProductionAuthenticated(): Promise<boolean> {
-  const session = await getSession();
-  if (!session) return false;
-  // Owner session carries a null person.
-  if (session.role === "admin" && session.person === null) return true;
-  return Boolean(session.person) && hasProductionAccess(session.person!);
+  return can("page.production");
 }
 
-// Campaign calendar. Owner-only — see hasOwnerToolsAccess in ./people for
-// the matching client-side nav check.
+// Campaign calendar. Still owner-only by default — hasOwnerToolsAccess in
+// ./people is what page.calendar reads — but grantable per person now.
 export async function isOwnerToolsAuthenticated(): Promise<boolean> {
-  const session = await getSession();
-  if (!session || session.impersonating) return false;
-  if (session.role !== "admin") return false;
-  return session.person === null || session.person === OWNER_SLUG;
+  return can("page.calendar");
 }
 
-// Weekly ads dashboard — owner plus ADS_DASHBOARD_PEOPLE. See
-// hasAdsDashboardAccess in ./people for the matching nav check.
+// Weekly ads dashboard. The default is still owner plus ADS_DASHBOARD_PEOPLE,
+// read through hasAdsDashboardAccess by page.ads, and now grantable per person.
 export async function isAdsDashboardAuthenticated(): Promise<boolean> {
-  const session = await getSession();
-  if (!session) return false;
-  return hasAdsDashboardAccess({
-    role: session.role,
-    person: session.person,
-    owner: session.role === "admin" && session.person === null,
-    impersonating: session.impersonating,
-  });
+  return can("page.ads");
 }
 
 export function getAppUrl(): string {

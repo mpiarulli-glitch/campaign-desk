@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { isGhlConfigured } from "@/lib/ghl";
 import {
   pullClientEmailAnalytics,
@@ -23,7 +23,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  if (!(await isAdminAuthenticated())) {
+  if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   if (!isGhlConfigured()) {
