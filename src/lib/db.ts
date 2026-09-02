@@ -2176,6 +2176,23 @@ export function getDb(): Database.Database {
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
     );
 
+    -- Monthly paid-media numbers, typed in by the team. There is no Google Ads
+    -- API here — this is the pass log next to the setup checklist.
+    CREATE TABLE IF NOT EXISTS ads_analytics (
+      client_id TEXT NOT NULL,
+      period TEXT NOT NULL,
+      spend REAL,
+      impressions INTEGER,
+      clicks INTEGER,
+      conversions INTEGER,
+      leads INTEGER,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (client_id, period),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
     -- Login accounts. The roster itself still lives in code (admin-people.ts,
     -- people.ts) because client components import it at module scope; this
     -- table owns credentials and identity only, and is seeded from those

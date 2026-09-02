@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MoodAvatar, MOOD_LABEL, moodForPct } from "@/components/MoodAvatar";
 import { AssignTodoPanel } from "@/components/AssignTodoPanel";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { PEOPLE, personLabel } from "@/lib/people";
+import { ADS_DASHBOARD_PEOPLE, PEOPLE, personLabel } from "@/lib/people";
 import { currentWeek, weekLabel } from "@/lib/week";
 
 type PersonSummary = {
@@ -378,6 +378,33 @@ export function LeadershipHome({ person }: { person: string }) {
               </div>
 
               <div>
+                {(ADS_DASHBOARD_PEOPLE as readonly string[]).includes(person) ? (
+                  <Link className="hub-tile" href="/admin/ads" style={{ marginBottom: 18 }}>
+                    <span className="hub-tile-ico" aria-hidden>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 11v2a1 1 0 0 0 1 1h2l6 6V4L6 10H4a1 1 0 0 0-1 1z" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                        <path d="M18.07 5.93a9 9 0 0 1 0 12.14" />
+                      </svg>
+                    </span>
+                    <span className="hub-tile-body">
+                      <span className="hub-tile-title">Ads</span>
+                      <span className="hub-tile-desc">
+                        Weekly pass: gaps, spend caps & tracking
+                      </span>
+                    </span>
+                    <span className="hub-tile-go" aria-hidden>
+                      →
+                    </span>
+                  </Link>
+                ) : null}
                 <Link className="hub-tile lead-cs-tile" href="/admin/client-services">
                   <span className="hub-tile-ico" aria-hidden>
                     <svg

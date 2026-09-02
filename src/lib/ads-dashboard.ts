@@ -20,6 +20,7 @@ import {
   parseTracking,
   sortAdsRows,
   trackingScore,
+  type AdsAnalyticsMonth,
   type AdsChannel,
   type AdsClientRow,
   type AdsDashboard,
@@ -28,8 +29,9 @@ import {
   type NurtureStatus,
   type TrackingMap,
 } from "./ads";
+import { normalizeMetricPeriod } from "./metric-period";
 
-export type { AdsClientRow, AdsDashboard };
+export type { AdsClientRow, AdsDashboard, AdsAnalyticsMonth };
 
 export interface AdsAccountRecord {
   client_id: string;
@@ -456,4 +458,145 @@ export function upsertAdsAccount(
   );
 
   return buildAdsRow(clientId);
+}
+
+export interface AdsAnalyticsRecord {
+  client_id: string;
+  period: string;
+  spend: number | null;
+  impressions: number | null;
+  clicks: number | null;
+  conversions: number | null;
+  leads: number | null;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function asNullableNumber(value: unknown): number | null | undefined {
+  if (value === null || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() === "") return null;
+  if (typeof value === "string" && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+function asNullableInt(value: unknown): number | null | undefined {
+  const n = asNullableNumber(value);
+  if (n === undefined) return undefined;
+  if (n === null) return null;
+  if (!Number.isInteger(n)) return undefined;
+  return n;
+}
+
+export interface AdsAnalyticsPatch {
+  period: string;
+  spend?: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+  conversions?: number | null;
+  leads?: number | null;
+  notes?: string;
+}
+
+export function parseAdsAnalyticsPatch(
+  body: unknown
+): AdsAnalyticsPatch | { error: string } {
+  if (!body || typeof body !== "object") return { error: "Invalid body" };
+  const b = body as Record<string, unknown>;
+  const period =
+    typeof b.period === "string" ? normalizeMetricPeriod(b.period) : "";
+  if (!period) return { error: "Invalid period" };
+  const patch: AdsAnalyticsPatch = { period };
+  if ("spend" in b) {
+    const v = asNullableNumber(b.spend);
+    if (v === undefined || (v != null && v < 0)) return { error: "Invalid spend" };
+    patch.spend = v;
+  }
+  for (const key of ["impressions", "clicks", "conversions", "leads"] as const) {
+    if (!(key in b)) continue;
+    const v = asNullableInt(b[key]);
+    if (v === undefined || (v != null && v < 0)) return { error: `Invalid ${key}` };
+    patch[key] = v;
+  }
+  if ("notes" in b) {
+    const v = asText(b.notes);
+    if (v === undefined) return { error: "Invalid notes" };
+    patch.notes = v;
+  }
+  return patch;
+}
+
+function analyticsFromRecord(row: AdsAnalyticsRecord): AdsAnalyticsMonth {
+  return {
+    period: row.period,
+    spend: row.spend,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    conversions: row.conversions,
+    leads: row.leads,
+    notes: row.notes,
+  };
+}
+
+export function listAdsAnalytics(clientId: string): AdsAnalyticsMonth[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT * FROM ads_analytics WHERE client_id = ? ORDER BY period DESC`
+      )
+      .all(clientId) as AdsAnalyticsRecord[]
+  ).map(analyticsFromRecord);
+}
+
+export function upsertAdsAnalytics(
+  clientId: string,
+  patch: AdsAnalyticsPatch
+): AdsAnalyticsMonth | null {
+  if (!buildAdsRow(clientId)) return null;
+  const db = getDb();
+  const now = nowIso();
+  const existing = db
+    .prepare(`SELECT * FROM ads_analytics WHERE client_id = ? AND period = ?`)
+    .get(clientId, patch.period) as AdsAnalyticsRecord | undefined;
+  const next: AdsAnalyticsRecord = {
+    client_id: clientId,
+    period: patch.period,
+    spend: "spend" in patch ? (patch.spend ?? null) : (existing?.spend ?? null),
+    impressions:
+      "impressions" in patch ? (patch.impressions ?? null) : (existing?.impressions ?? null),
+    clicks: "clicks" in patch ? (patch.clicks ?? null) : (existing?.clicks ?? null),
+    conversions:
+      "conversions" in patch ? (patch.conversions ?? null) : (existing?.conversions ?? null),
+    leads: "leads" in patch ? (patch.leads ?? null) : (existing?.leads ?? null),
+    notes: patch.notes ?? existing?.notes ?? "",
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  };
+  db.prepare(
+    `INSERT INTO ads_analytics (
+       client_id, period, spend, impressions, clicks, conversions, leads, notes,
+       created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(client_id, period) DO UPDATE SET
+       spend = excluded.spend,
+       impressions = excluded.impressions,
+       clicks = excluded.clicks,
+       conversions = excluded.conversions,
+       leads = excluded.leads,
+       notes = excluded.notes,
+       updated_at = excluded.updated_at`
+  ).run(
+    next.client_id,
+    next.period,
+    next.spend,
+    next.impressions,
+    next.clicks,
+    next.conversions,
+    next.leads,
+    next.notes,
+    next.created_at,
+    next.updated_at
+  );
+  return analyticsFromRecord(next);
 }

@@ -7,6 +7,8 @@ import {
   adsBoardLane,
   adsDashboardCounts,
   adsPassSummary,
+  adsSetupSteps,
+  adsAnalyticsRates,
   canMarkReviewedOnRow,
   compareAdsRows,
   computeGaps,
@@ -315,4 +317,73 @@ test("dashboard lists every active client and upserts a snapshot", async (t) => 
 
   assert.equal(ads.upsertAdsAccount("missing", { status: "off" }), null);
   assert.deepEqual(ads.parseAdsPatch({ status: "running" }), { error: "Invalid ads status" });
+
+  const month = ads.upsertAdsAnalytics("cl_acme", {
+    period: "2026-09",
+    spend: 1800,
+    impressions: 10000,
+    clicks: 250,
+    conversions: 20,
+    leads: 12,
+    notes: "Search + LSA",
+  });
+  assert.equal(month?.clicks, 250);
+  const listed = ads.listAdsAnalytics("cl_acme");
+  assert.equal(listed.length, 1);
+  const rates = adsAnalyticsRates(listed[0]);
+  assert.equal(rates.ctr, 2.5);
+  assert.equal(rates.cpl, 150);
+  assert.deepEqual(ads.parseAdsAnalyticsPatch({ period: "Sept 2026", spend: 10 }), {
+    period: "2026-09",
+    spend: 10,
+  });
+});
+
+test("setup steps track the original ads editor checklist", () => {
+  const blank = adsSetupSteps({
+    status: "unknown",
+    monthlySpendLimit: null,
+    googleCustomerId: "",
+    channels: [],
+    landingPageUrl: "",
+    tracking: emptyTracking(),
+    trackingDone: 0,
+    trackingTotal: 6,
+    leadMagnet: "unknown",
+    nurtureStatus: "unknown",
+    conversionAction: "",
+  });
+  assert.equal(blank.every((s) => !s.done), true);
+
+  const tracking = emptyTracking();
+  tracking.gtm = "yes";
+  tracking.ga4 = "yes";
+  tracking.google_ads_tag = "yes";
+  tracking.form_tracking = "yes";
+  const done = adsSetupSteps({
+    status: "active",
+    monthlySpendLimit: 2000,
+    googleCustomerId: "123",
+    channels: ["pmax"],
+    landingPageUrl: "https://acme.test/quote",
+    tracking,
+    trackingDone: 4,
+    trackingTotal: 6,
+    leadMagnet: "form",
+    nurtureStatus: "live",
+    conversionAction: "Form submit",
+  });
+  assert.equal(done.every((s) => s.done), true);
+});
+
+test("ads cards link to a client setup page", () => {
+  const board = fs.readFileSync(path.join("src/app/admin/ads/page.tsx"), "utf8");
+  const detail = fs.readFileSync(
+    path.join("src/app/admin/ads/[clientId]/page.tsx"),
+    "utf8"
+  );
+  assert.match(board, /href=\{`\/admin\/ads\/\$\{row\.clientId\}`\}/);
+  assert.match(detail, /Setup steps/);
+  assert.match(detail, /Analytics/);
+  assert.match(detail, /TRACKING_ITEMS/);
 });

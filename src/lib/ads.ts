@@ -640,6 +640,137 @@ export interface AdsClientRow {
   updatedAt: string | null;
 }
 
+export interface AdsSetupStep {
+  key: string;
+  title: string;
+  hint: string;
+  done: boolean;
+}
+
+export function adsSetupSteps(row: {
+  status: AdsStatus;
+  monthlySpendLimit: number | null;
+  googleCustomerId: string;
+  channels: AdsChannel[];
+  landingPageUrl: string;
+  tracking: TrackingMap;
+  trackingDone: number;
+  trackingTotal: number;
+  leadMagnet: LeadMagnet;
+  nurtureStatus: NurtureStatus;
+  conversionAction: string;
+}): AdsSetupStep[] {
+  const plan = trackingPlan(row.channels);
+  const requiredDone =
+    plan.required.length === 0 ||
+    plan.required.every((key) => row.tracking[key] === "yes");
+  return [
+    {
+      key: "status",
+      title: "Ads status",
+      hint: "Whether paid media is on, paused, or off for this account.",
+      done: row.status !== "unknown",
+    },
+    {
+      key: "budget",
+      title: "Spend limit and account ID",
+      hint: "Monthly cap and the Google Ads customer ID, if you have one.",
+      done: row.monthlySpendLimit != null || row.status === "off",
+    },
+    {
+      key: "channels",
+      title: "Campaign types",
+      hint: "Search, PMax, Local Services, Meta, and the rest.",
+      done: row.channels.length > 0 || row.status === "off",
+    },
+    {
+      key: "landing",
+      title: "Landing page",
+      hint: "Where the ads send people.",
+      done: Boolean(row.landingPageUrl.trim()) || row.status === "off",
+    },
+    {
+      key: "tracking",
+      title: "Tracking",
+      hint: "GTM, GA4, conversion tags, and the rest of the checklist.",
+      done: requiredDone || row.status === "off",
+    },
+    {
+      key: "funnel",
+      title: "Lead magnet and nurture",
+      hint: "What the click becomes, and whether a series follows it.",
+      done:
+        (row.leadMagnet !== "unknown" && row.nurtureStatus !== "unknown") ||
+        row.status === "off",
+    },
+    {
+      key: "conversion",
+      title: "Conversion and offer",
+      hint: "Name the conversion action and the offer the ads sell.",
+      done: Boolean(row.conversionAction.trim()) || row.status === "off",
+    },
+  ];
+}
+
+export interface AdsAnalyticsMonth {
+  period: string;
+  spend: number | null;
+  impressions: number | null;
+  clicks: number | null;
+  conversions: number | null;
+  leads: number | null;
+  notes: string;
+}
+
+export function emptyAdsAnalytics(period: string): AdsAnalyticsMonth {
+  return {
+    period,
+    spend: null,
+    impressions: null,
+    clicks: null,
+    conversions: null,
+    leads: null,
+    notes: "",
+  };
+}
+
+export function adsAnalyticsRates(row: AdsAnalyticsMonth): {
+  ctr: number | null;
+  cpc: number | null;
+  cpl: number | null;
+  cpa: number | null;
+  convRate: number | null;
+} {
+  const impressions = row.impressions;
+  const clicks = row.clicks;
+  const spend = row.spend;
+  const leads = row.leads;
+  const conversions = row.conversions;
+  return {
+    ctr:
+      impressions && impressions > 0 && clicks != null
+        ? (clicks / impressions) * 100
+        : null,
+    cpc: spend != null && clicks && clicks > 0 ? spend / clicks : null,
+    cpl: spend != null && leads && leads > 0 ? spend / leads : null,
+    cpa: spend != null && conversions && conversions > 0 ? spend / conversions : null,
+    convRate:
+      clicks && clicks > 0 && conversions != null
+        ? (conversions / clicks) * 100
+        : null,
+  };
+}
+
+export function currentAdsPeriod(now = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function formatAdsRate(value: number | null, kind: "pct" | "money"): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (kind === "pct") return `${value.toFixed(value >= 10 ? 0 : 1)}%`;
+  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
 export interface AdsDashboard {
   counts: {
     total: number;

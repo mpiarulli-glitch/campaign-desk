@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { isOwnerToolsAuthenticated } from "@/lib/auth";
+import { isAdsDashboardAuthenticated } from "@/lib/auth";
 import { buildAdsDashboard } from "@/lib/ads-dashboard";
 
 export async function GET() {
-  if (!(await isOwnerToolsAuthenticated())) {
+  if (!(await isAdsDashboardAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json(buildAdsDashboard());

@@ -4,32 +4,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ADS_CHANNELS,
-  ADS_STATUSES,
-  LEAD_MAGNETS,
-  NURTURE_STATUSES,
   adsBoardLane,
   adsDashboardCounts,
   adsPassSummary,
   adsStatusLabel,
   canMarkReviewedOnRow,
-  cycleTracking,
   formatSpend,
   landingHost,
-  landingHref,
   reviewSignal,
   reviewSignalLabel,
   sortAdsRows,
-  trackingItemLabel,
-  trackingPlan,
   type AdsBoardLane,
-  type AdsChannel,
   type AdsClientRow,
   type AdsDashboard,
-  type AdsStatus,
-  type LeadMagnet,
-  type NurtureStatus,
-  type TrackingKey,
 } from "@/lib/ads";
 
 type Filter =
@@ -108,7 +95,6 @@ export default function AdsDashboardPage() {
   const [denied, setDenied] = useState(false);
   const [filter, setFilter] = useState<Filter>("attention");
   const [query, setQuery] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -304,9 +290,7 @@ export default function AdsDashboardPage() {
                     key={row.clientId}
                     row={row}
                     lane={group.lane}
-                    open={openId === row.clientId}
                     saving={savingId === row.clientId}
-                    onToggle={() => setOpenId(openId === row.clientId ? null : row.clientId)}
                     onPatch={(body) => void patch(row.clientId, body)}
                   />
                 ))}
@@ -359,471 +343,78 @@ function StatusPill({
 function PassRow({
   row,
   lane,
-  open,
   saving,
-  onToggle,
   onPatch,
 }: {
   row: AdsClientRow;
   lane: AdsBoardLane;
-  open: boolean;
   saving: boolean;
-  onToggle: () => void;
   onPatch: (body: Record<string, unknown>) => void;
 }) {
-  const href = landingHref(row.landingPageUrl);
   const host = landingHost(row.landingPageUrl);
   const signal = reviewSignal(row.lastReviewedAt);
-  const running = row.status === "active" || row.status === "paused";
-  const showQuick = lane !== "ok" || open;
-  const showDetails = running || open;
   const checkIn = canMarkReviewedOnRow(row.gaps);
   const shownGaps = row.gaps.slice(0, 4);
   const extra = row.gaps.length - shownGaps.length;
 
   return (
-    <article className={`ads-pass-row is-${lane} ${open ? "is-open" : ""} ${saving ? "is-saving" : ""}`}>
-      <div className="ads-pass-top">
-        <div className="ads-pass-who">
-          <ClientMark name={row.name} logoUrl={row.logoUrl} />
-          <div>
-            <div className="ads-pass-name-row">
-              <span className="ads-client-name">{row.name}</span>
-              <span className={`ads-status is-${row.status}`}>{adsStatusLabel(row.status)}</span>
+    <article className={`ads-pass-row is-${lane} ${saving ? "is-saving" : ""}`}>
+      <Link href={`/admin/ads/${row.clientId}`} className="ads-pass-card">
+        <div className="ads-pass-top">
+          <div className="ads-pass-who">
+            <ClientMark name={row.name} logoUrl={row.logoUrl} />
+            <div>
+              <div className="ads-pass-name-row">
+                <span className="ads-client-name">{row.name}</span>
+                <span className={`ads-status is-${row.status}`}>{adsStatusLabel(row.status)}</span>
+              </div>
+              <span className="ads-client-meta">
+                {row.accountManager || "No AM"}
+                {lane === "ok" ? (
+                  <>
+                    {" · "}
+                    {formatSpend(row.monthlySpendLimit)}
+                    {host ? ` · ${row.landingPageLabel || host}` : ""}
+                  </>
+                ) : null}
+              </span>
             </div>
-            <span className="ads-client-meta">
-              {row.accountManager || "No AM"}
-              {lane === "ok" ? (
-                <>
-                  {" · "}
-                  {formatSpend(row.monthlySpendLimit)}
-                  {host ? ` · ${row.landingPageLabel || host}` : ""}
-                </>
-              ) : null}
-            </span>
           </div>
-        </div>
-        <div className="ads-pass-actions">
           <span className={`ads-review is-${signal.kind}`}>{reviewSignalLabel(signal)}</span>
-          {checkIn ? (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              disabled={saving}
-              onClick={() => onPatch({ markReviewed: true })}
-            >
-              Mark reviewed
-            </button>
-          ) : null}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onToggle} aria-expanded={open}>
-            {open ? "Less" : lane === "ok" ? "Edit" : "More"}
-          </button>
         </div>
-      </div>
 
-      {row.ready && lane !== "ok" ? <span className="ads-gap is-ready">Funnel ready · review due</span> : null}
+        {row.ready && lane !== "ok" ? <span className="ads-gap is-ready">Funnel ready · review due</span> : null}
 
-      {shownGaps.length ? (
-        <div className="ads-gaps ads-pass-gaps">
-          {shownGaps.map((g) => (
-            <span key={g.key} className={`ads-gap is-${g.severity}`}>
-              {g.label}
-            </span>
-          ))}
-          {extra > 0 ? <span className="ads-gap is-more">+{extra}</span> : null}
-        </div>
-      ) : row.ready ? (
-        <div className="ads-gaps ads-pass-gaps">
-          <span className="ads-gap is-ready">Ready</span>
-        </div>
-      ) : null}
-
-      {showQuick ? (
-        <QuickFields row={row} href={href} showDetails={showDetails} onPatch={onPatch} />
-      ) : null}
-
-      {open ? <ExtraEditor row={row} saving={saving} href={href} onPatch={onPatch} /> : null}
-    </article>
-  );
-}
-
-function QuickFields({
-  row,
-  href,
-  showDetails,
-  onPatch,
-}: {
-  row: AdsClientRow;
-  href: string | null;
-  showDetails: boolean;
-  onPatch: (body: Record<string, unknown>) => void;
-}) {
-  const plan = trackingPlan(row.channels);
-  const trackKeys = [...plan.required, ...plan.recommended.filter((key) => row.tracking[key] !== "yes")];
-
-  function toggleChannel(channel: AdsChannel) {
-    const next = row.channels.includes(channel)
-      ? row.channels.filter((c) => c !== channel)
-      : [...row.channels, channel];
-    onPatch({ channels: next });
-  }
-
-  return (
-    <div className={`ads-quick ${showDetails ? "" : "is-status-only"}`}>
-      <div className="field ads-status-field">
-        <label>Ads status</label>
-        <div className="ads-seg">
-          {ADS_STATUSES.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              className={row.status === s.value ? "on" : ""}
-              aria-pressed={row.status === s.value}
-              onClick={() => onPatch({ status: s.value as AdsStatus })}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {!showDetails ? (
-        <p className="ads-hint ads-quick-span">
-          Set Active or Paused to fill spend, landing page, and tracking on this row. Off takes them off the weekly list.
-        </p>
-      ) : null}
-      {showDetails ? (
-        <>
-          <div className="field">
-            <label htmlFor={`ads-spend-${row.clientId}`}>Spend limit</label>
-            <SpendInput
-              id={`ads-spend-${row.clientId}`}
-              value={row.monthlySpendLimit}
-              onCommit={(next) => onPatch({ monthlySpendLimit: next })}
-            />
+        {shownGaps.length ? (
+          <div className="ads-gaps ads-pass-gaps">
+            {shownGaps.map((g) => (
+              <span key={g.key} className={`ads-gap is-${g.severity}`}>
+                {g.label}
+              </span>
+            ))}
+            {extra > 0 ? <span className="ads-gap is-more">+{extra}</span> : null}
           </div>
-      <div className="field ads-quick-landing">
-        <label htmlFor={`ads-landing-${row.clientId}`}>Landing page</label>
-        <span className="ads-landing-edit">
-          <LandingInput
-            id={`ads-landing-${row.clientId}`}
-            value={row.landingPageUrl}
-            onCommit={(next) => onPatch({ landingPageUrl: next })}
-          />
-          {href ? (
-            <a className="ads-link" href={href} target="_blank" rel="noreferrer">
-              Open
-            </a>
-          ) : null}
-        </span>
-      </div>
-
-      <div className="field ads-quick-span">
-        <label>Campaign types</label>
-        <div className="ads-channel-toggles">
-          {ADS_CHANNELS.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              className={row.channels.includes(c.value) ? "on" : ""}
-              aria-pressed={row.channels.includes(c.value)}
-              onClick={() => toggleChannel(c.value)}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="ads-quick-pair">
-        <div className="field">
-          <label htmlFor={`ads-magnet-${row.clientId}`}>Lead magnet</label>
-          <select
-            id={`ads-magnet-${row.clientId}`}
-            value={row.leadMagnet}
-            onChange={(e) => onPatch({ leadMagnet: e.target.value as LeadMagnet })}
-          >
-            {LEAD_MAGNETS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={`ads-nurture-${row.clientId}`}>Nurture</label>
-          <select
-            id={`ads-nurture-${row.clientId}`}
-            value={row.nurtureStatus}
-            onChange={(e) => onPatch({ nurtureStatus: e.target.value as NurtureStatus })}
-          >
-            {NURTURE_STATUSES.map((n) => (
-              <option key={n.value} value={n.value}>
-                {n.label}
-              </option>
-            ))}
-          </select>
-          {row.nurtureSource === "detected" && row.nurtureDetectedLabel ? (
-            <span className="ads-hint">Found: {row.nurtureDetectedLabel}</span>
-          ) : null}
-        </div>
-      </div>
-      <div className="field ads-quick-span">
-        <label>
-          Tracking {row.trackingDone}/{row.trackingTotal}
-        </label>
-        <div className="ads-quick-track">
-          {trackKeys.map((key) => {
-            const state = row.tracking[key];
-            const required = plan.required.includes(key);
-            return (
-              <button
-                key={key}
-                type="button"
-                className={`ads-track-item is-${state} ${required ? "is-required" : ""}`}
-                aria-pressed={state === "yes"}
-                aria-label={`${trackingItemLabel(key)}: ${state === "yes" ? "yes" : state === "no" ? "no" : "not set"}`}
-                onClick={() =>
-                  onPatch({
-                    tracking: { [key]: cycleTracking(state) } as Record<TrackingKey, string>,
-                  })
-                }
-              >
-                <span className="ads-track-mark" aria-hidden="true">
-                  {state === "yes" ? "✓" : state === "no" ? "×" : "·"}
-                </span>
-                <span>{trackingItemLabel(key, true)}</span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="ads-hint">Click to cycle Not set → Yes → No. Required tags are outlined until they are Yes.</p>
-      </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function ExtraEditor({
-  row,
-  saving,
-  href,
-  onPatch,
-}: {
-  row: AdsClientRow;
-  saving: boolean;
-  href: string | null;
-  onPatch: (body: Record<string, unknown>) => void;
-}) {
-  const [cid, setCid] = useState(row.googleCustomerId);
-  const [landingLabel, setLandingLabel] = useState(row.landingPageLabel);
-  const [magnetNotes, setMagnetNotes] = useState(row.leadMagnetNotes);
-  const [nurtureNotes, setNurtureNotes] = useState(row.nurtureNotes);
-  const [conversion, setConversion] = useState(row.conversionAction);
-  const [offer, setOffer] = useState(row.offer);
-  const [notes, setNotes] = useState(row.notes);
-
-  useEffect(() => {
-    setCid(row.googleCustomerId);
-    setLandingLabel(row.landingPageLabel);
-    setMagnetNotes(row.leadMagnetNotes);
-    setNurtureNotes(row.nurtureNotes);
-    setConversion(row.conversionAction);
-    setOffer(row.offer);
-    setNotes(row.notes);
-  }, [row.clientId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const plan = trackingPlan(row.channels);
-  const extraTrack = plan.recommended.filter((key) => row.tracking[key] === "yes");
-
-  return (
-    <div className="ads-editor">
-      <div className="ads-editor-head">
-        <Link className="ads-client-link" href={`/admin/clients/${row.clientId}`}>
-          Open client
-        </Link>
-        {href ? (
-          <a className="ads-client-link" href={href} target="_blank" rel="noreferrer">
-            Open landing page
-          </a>
+        ) : row.ready ? (
+          <div className="ads-gaps ads-pass-gaps">
+            <span className="ads-gap is-ready">Ready</span>
+          </div>
         ) : null}
-        <span className="muted">{saving ? "Saving…" : row.saved ? "Saved snapshot" : "Not saved yet"}</span>
-        {!canMarkReviewedOnRow(row.gaps) ? (
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPatch({ markReviewed: true })}>
+      </Link>
+      <div className="ads-pass-actions ads-pass-card-actions">
+        {checkIn ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={saving}
+            onClick={() => onPatch({ markReviewed: true })}
+          >
             Mark reviewed
           </button>
         ) : null}
+        <Link href={`/admin/ads/${row.clientId}`} className="btn btn-ghost btn-sm">
+          Open
+        </Link>
       </div>
-
-      <div className="ads-editor-grid">
-        <label className="field">
-          Landing page name
-          <input
-            value={landingLabel}
-            onChange={(e) => setLandingLabel(e.target.value)}
-            onBlur={() => {
-              if (landingLabel.trim() === row.landingPageLabel) return;
-              onPatch({ landingPageLabel: landingLabel });
-            }}
-            placeholder="Quote form, offer page…"
-          />
-        </label>
-        <label className="field">
-          Google Ads customer ID
-          <input
-            value={cid}
-            onChange={(e) => setCid(e.target.value)}
-            onBlur={() => {
-              if (cid.trim() === row.googleCustomerId) return;
-              onPatch({ googleCustomerId: cid });
-            }}
-            placeholder="123-456-7890"
-          />
-        </label>
-        <label className="field">
-          Conversion action
-          <input
-            value={conversion}
-            onChange={(e) => setConversion(e.target.value)}
-            onBlur={() => {
-              if (conversion.trim() === row.conversionAction) return;
-              onPatch({ conversionAction: conversion });
-            }}
-            placeholder="Form submit, booked call…"
-          />
-        </label>
-        <label className="field">
-          Offer
-          <input
-            value={offer}
-            onChange={(e) => setOffer(e.target.value)}
-            onBlur={() => {
-              if (offer.trim() === row.offer) return;
-              onPatch({ offer: offer });
-            }}
-            placeholder="Free estimate, $50 off…"
-          />
-        </label>
-        <label className="field">
-          Lead magnet notes
-          <input
-            value={magnetNotes}
-            onChange={(e) => setMagnetNotes(e.target.value)}
-            onBlur={() => {
-              if (magnetNotes.trim() === row.leadMagnetNotes) return;
-              onPatch({ leadMagnetNotes: magnetNotes });
-            }}
-          />
-        </label>
-        <label className="field">
-          Nurture notes
-          <input
-            value={nurtureNotes}
-            onChange={(e) => setNurtureNotes(e.target.value)}
-            onBlur={() => {
-              if (nurtureNotes.trim() === row.nurtureNotes) return;
-              onPatch({ nurtureNotes: nurtureNotes });
-            }}
-          />
-        </label>
-      </div>
-
-      {extraTrack.length ? (
-        <div className="field">
-          <label>Recommended tracking (on)</label>
-          <div className="ads-quick-track">
-            {extraTrack.map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={`ads-track-item is-${row.tracking[key]}`}
-                onClick={() =>
-                  onPatch({
-                    tracking: { [key]: cycleTracking(row.tracking[key]) } as Record<TrackingKey, string>,
-                  })
-                }
-              >
-                <span className="ads-track-mark" aria-hidden="true">
-                  ✓
-                </span>
-                <span>{trackingItemLabel(key, true)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <label className="field">
-        Notes
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          onBlur={() => {
-            if (notes.trim() === row.notes) return;
-            onPatch({ notes });
-          }}
-          rows={2}
-        />
-      </label>
-    </div>
-  );
-}
-
-function SpendInput({
-  id,
-  value,
-  onCommit,
-}: {
-  id?: string;
-  value: number | null;
-  onCommit: (next: number | null) => void;
-}) {
-  const [text, setText] = useState(value == null ? "" : String(value));
-  useEffect(() => {
-    setText(value == null ? "" : String(value));
-  }, [value]);
-  return (
-    <input
-      id={id}
-      type="number"
-      min={0}
-      step={50}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        const next = text.trim() === "" ? null : Number(text);
-        if (next === value) return;
-        if (next != null && !Number.isFinite(next)) return;
-        onCommit(next);
-      }}
-      placeholder="e.g. 2500"
-    />
-  );
-}
-
-function LandingInput({
-  id,
-  value,
-  onCommit,
-}: {
-  id?: string;
-  value: string;
-  onCommit: (next: string) => void;
-}) {
-  const [text, setText] = useState(value);
-  useEffect(() => {
-    setText(value);
-  }, [value]);
-  return (
-    <input
-      id={id}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        if (text.trim() === value) return;
-        onCommit(text);
-      }}
-      placeholder="https://"
-    />
+    </article>
   );
 }

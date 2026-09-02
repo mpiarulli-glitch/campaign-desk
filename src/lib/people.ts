@@ -246,9 +246,9 @@ export function hasProductionAccess(slug: string): boolean {
 }
 
 /**
- * Campaign calendar and weekly ads are owner-only tools. The owner session
- * (null person) and Michael's named admin login both pass; impersonating does
- * not, so "view as Cassidy" matches what Cassidy would see.
+ * Campaign calendar is an owner-only tool. The owner session (null person) and
+ * Michael's named admin login both pass; impersonating does not, so "view as
+ * Cassidy" matches what Cassidy would see.
  */
 export function hasOwnerToolsAccess(session: {
   role: "admin" | "forecast" | null;
@@ -259,6 +259,35 @@ export function hasOwnerToolsAccess(session: {
   if (!session || session.impersonating) return false;
   if (session.role !== "admin") return false;
   return Boolean(session.owner) || session.person === OWNER_SLUG;
+}
+
+/**
+ * Weekly ads dashboard. Owner plus the paid-media / leadership people who
+ * run the pass. Impersonating follows the person being viewed, so "view as
+ * Jerald" shows Ads and "view as Cassidy" does not.
+ */
+export const ADS_DASHBOARD_PEOPLE = [
+  "mike_hines",
+  "jerald",
+  "kyle_morris",
+] as const;
+
+export function hasAdsDashboardAccess(session: {
+  role: "admin" | "forecast" | null;
+  person: string | null;
+  owner?: boolean;
+  impersonating?: boolean;
+} | null): boolean {
+  if (!session) return false;
+  if (session.role !== "admin" && session.role !== "forecast") return false;
+  const slug = session.person;
+  const ownerSession =
+    !session.impersonating &&
+    session.role === "admin" &&
+    (Boolean(session.owner) || slug === OWNER_SLUG || slug === null);
+  if (ownerSession) return true;
+  if (slug === OWNER_SLUG) return true;
+  return Boolean(slug) && (ADS_DASHBOARD_PEOPLE as readonly string[]).includes(slug!);
 }
 
 /**

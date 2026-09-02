@@ -4,6 +4,7 @@ import { isValidAdminPerson } from "./admin-people";
 import {
   campaignKindFor,
   doesCampaignWork,
+  hasAdsDashboardAccess,
   hasProductionAccess,
   isValidPerson,
   OWNER_SLUG,
@@ -565,6 +566,21 @@ export async function isAdminOrSyncAuthenticated(request: Request): Promise<bool
   return isAdminAuthenticated();
 }
 
+/**
+ * Owner-only tools, or a trusted machine carrying the sync token.
+ *
+ * Deliberately not isAdminOrSyncAuthenticated: the campaign calendar is
+ * owner-only for people (see isOwnerToolsAuthenticated), and widening it to
+ * every admin session would hand the SEO-side admins a calendar they have no
+ * reason to see. The token is the only thing this adds.
+ */
+export async function isOwnerToolsOrSyncAuthenticated(
+  request: Request
+): Promise<boolean> {
+  if (syncTokenMatches(request)) return true;
+  return isOwnerToolsAuthenticated();
+}
+
 export async function isForecastAuthenticated(
   person?: string
 ): Promise<boolean> {
@@ -590,13 +606,26 @@ export async function isProductionAuthenticated(): Promise<boolean> {
   return Boolean(session.person) && hasProductionAccess(session.person!);
 }
 
-// Campaign calendar and weekly ads. Owner-only — see hasOwnerToolsAccess in
-// ./people for the matching client-side nav check.
+// Campaign calendar. Owner-only — see hasOwnerToolsAccess in ./people for
+// the matching client-side nav check.
 export async function isOwnerToolsAuthenticated(): Promise<boolean> {
   const session = await getSession();
   if (!session || session.impersonating) return false;
   if (session.role !== "admin") return false;
   return session.person === null || session.person === OWNER_SLUG;
+}
+
+// Weekly ads dashboard — owner plus ADS_DASHBOARD_PEOPLE. See
+// hasAdsDashboardAccess in ./people for the matching nav check.
+export async function isAdsDashboardAuthenticated(): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  return hasAdsDashboardAccess({
+    role: session.role,
+    person: session.person,
+    owner: session.role === "admin" && session.person === null,
+    impersonating: session.impersonating,
+  });
 }
 
 export function getAppUrl(): string {

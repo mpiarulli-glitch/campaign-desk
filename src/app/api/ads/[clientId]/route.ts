@@ -1,12 +1,27 @@
 import { NextResponse } from "next/server";
-import { isOwnerToolsAuthenticated } from "@/lib/auth";
-import { parseAdsPatch, upsertAdsAccount } from "@/lib/ads-dashboard";
+import { isAdsDashboardAuthenticated } from "@/lib/auth";
+import { buildAdsRow, listAdsAnalytics, parseAdsPatch, upsertAdsAccount } from "@/lib/ads-dashboard";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ clientId: string }> }
+) {
+  if (!(await isAdsDashboardAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { clientId } = await params;
+  const row = clientId ? buildAdsRow(clientId) : null;
+  if (!row) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
+  return NextResponse.json({ row, analytics: listAdsAnalytics(clientId) });
+}
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  if (!(await isOwnerToolsAuthenticated())) {
+  if (!(await isAdsDashboardAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { clientId } = await params;

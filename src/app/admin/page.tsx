@@ -9,7 +9,7 @@ import { FailuresPanel } from "@/components/FailuresPanel";
 import { LeadershipHome } from "@/components/LeadershipHome";
 import { AssignTodoPanel } from "@/components/AssignTodoPanel";
 import { operatorStatusLabel } from "@/lib/campaign-status";
-import { usesLeadershipHome, hasOwnerToolsAccess } from "@/lib/people";
+import { usesLeadershipHome, hasAdsDashboardAccess, hasOwnerToolsAccess } from "@/lib/people";
 import { currentWeek } from "@/lib/week";
 
 type Attention = {
@@ -128,12 +128,9 @@ export default function AdminHomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSeeOwnerTools = hasOwnerToolsAccess({
-    role,
-    person,
-    owner,
-    impersonating,
-  });
+  const session = { role, person, owner, impersonating };
+  const canSeeOwnerTools = hasOwnerToolsAccess(session);
+  const canSeeAds = hasAdsDashboardAccess(session);
 
   if (checkingRole) {
     return (
@@ -147,10 +144,16 @@ export default function AdminHomePage() {
   if (person && usesLeadershipHome(person)) {
     return <LeadershipHome person={person} />;
   }
-  return <AdminHome canSeeOwnerTools={canSeeOwnerTools} />;
+  return <AdminHome canSeeOwnerTools={canSeeOwnerTools} canSeeAds={canSeeAds} />;
 }
 
-function AdminHome({ canSeeOwnerTools }: { canSeeOwnerTools: boolean }) {
+function AdminHome({
+  canSeeOwnerTools,
+  canSeeAds,
+}: {
+  canSeeOwnerTools: boolean;
+  canSeeAds: boolean;
+}) {
   const router = useRouter();
   const [s, setS] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -243,11 +246,11 @@ function AdminHome({ canSeeOwnerTools }: { canSeeOwnerTools: boolean }) {
             </div>
 
             <div className="hub-launch">
-              {HUB_LAUNCH.filter(
-                (l) =>
-                  canSeeOwnerTools ||
-                  (l.href !== "/admin/calendar" && l.href !== "/admin/ads")
-              ).map((l) => (
+              {HUB_LAUNCH.filter((l) => {
+                if (l.href === "/admin/calendar") return canSeeOwnerTools;
+                if (l.href === "/admin/ads") return canSeeAds;
+                return true;
+              }).map((l) => (
                 <Link key={l.href} className="hub-tile" href={l.href}>
                   <span className="hub-tile-ico"><LaunchIcon name={l.icon} /></span>
                   <span className="hub-tile-body">
@@ -395,6 +398,7 @@ function allocationColor(pct: number): string {
 function TeamMemberHome() {
   const router = useRouter();
   const [person, setPerson] = useState<string | null>(null);
+  const [canSeeAds, setCanSeeAds] = useState(false);
   const [canProduction, setCanProduction] = useState(false);
   const [forecast, setForecast] = useState<ForecastData | null>(null);
   const [behind, setBehind] = useState<ClientBehind[]>([]);
@@ -412,6 +416,14 @@ function TeamMemberHome() {
           return;
         }
         setPerson(auth.person);
+        setCanSeeAds(
+          hasAdsDashboardAccess({
+            role: auth.role,
+            person: auth.person || null,
+            owner: Boolean(auth.owner),
+            impersonating: Boolean(auth.impersonating),
+          })
+        );
 
         const week = currentWeek();
         const [fRes, bRes] = await Promise.all([
@@ -481,6 +493,19 @@ function TeamMemberHome() {
                 </Link>
               ) : null}
             </div>
+
+            {canSeeAds ? (
+              <div className="hub-launch">
+                <Link className="hub-tile" href="/admin/ads">
+                  <span className="hub-tile-ico"><LaunchIcon name="ads" /></span>
+                  <span className="hub-tile-body">
+                    <span className="hub-tile-title">Ads</span>
+                    <span className="hub-tile-desc">Weekly pass: gaps, spend caps & tracking</span>
+                  </span>
+                  <span className="hub-tile-go" aria-hidden="true">→</span>
+                </Link>
+              </div>
+            ) : null}
 
             <div className="ops-grid">
               <div>

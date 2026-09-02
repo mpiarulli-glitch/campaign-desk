@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { hasOwnerToolsAccess } from "@/lib/people";
+import { hasAdsDashboardAccess, hasOwnerToolsAccess } from "@/lib/people";
 
 type Hit = {
   kind: "client" | "campaign";
@@ -13,7 +13,7 @@ type Hit = {
 };
 
 // Static destinations always offered so the palette doubles as quick-nav even
-// with an empty query. Calendar and Ads are owner-only and spliced in below.
+// with an empty query. Calendar stays owner-only; Ads is a smaller allowlist.
 const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-home", title: "Home", subtitle: "Dashboard", href: "/admin" },
   { kind: "client", id: "nav-campaigns", title: "Campaigns", subtitle: "All campaigns", href: "/admin/campaigns" },
@@ -22,10 +22,20 @@ const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-clients", title: "Clients", subtitle: "All clients", href: "/admin/clients" },
 ];
 
-const OWNER_QUICK_LINKS: Hit[] = [
-  { kind: "client", id: "nav-calendar", title: "Calendar", subtitle: "Send calendar", href: "/admin/calendar" },
-  { kind: "client", id: "nav-ads", title: "Ads", subtitle: "Paid media dashboard", href: "/admin/ads" },
-];
+const ADS_QUICK_LINK: Hit = {
+  kind: "client",
+  id: "nav-ads",
+  title: "Ads",
+  subtitle: "Paid media dashboard",
+  href: "/admin/ads",
+};
+const CALENDAR_QUICK_LINK: Hit = {
+  kind: "client",
+  id: "nav-calendar",
+  title: "Calendar",
+  subtitle: "Send calendar",
+  href: "/admin/calendar",
+};
 
 function quickLinksForSession(session: {
   role: "admin" | "forecast" | null;
@@ -33,11 +43,14 @@ function quickLinksForSession(session: {
   owner?: boolean;
   impersonating?: boolean;
 } | null): Hit[] {
-  if (!hasOwnerToolsAccess(session)) return BASE_QUICK_LINKS;
+  const extras: Hit[] = [];
+  if (hasAdsDashboardAccess(session)) extras.push(ADS_QUICK_LINK);
+  if (hasOwnerToolsAccess(session)) extras.push(CALENDAR_QUICK_LINK);
+  if (extras.length === 0) return BASE_QUICK_LINKS;
   return [
     BASE_QUICK_LINKS[0],
     BASE_QUICK_LINKS[1],
-    ...OWNER_QUICK_LINKS,
+    ...extras,
     ...BASE_QUICK_LINKS.slice(2),
   ];
 }

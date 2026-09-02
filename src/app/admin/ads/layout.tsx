@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
-import { isOwnerToolsAuthenticated } from "@/lib/auth";
+import { isAdsDashboardAuthenticated } from "@/lib/auth";
 
 export default async function AdsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  if (!(await isOwnerToolsAuthenticated())) {
+  if (!(await isAdsDashboardAuthenticated())) {
     redirect("/admin");
   }
   return children;

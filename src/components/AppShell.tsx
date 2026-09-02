@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { doesCampaignWork, entryLevelPeople, hasOwnerToolsAccess, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
+import { doesCampaignWork, entryLevelPeople, hasAdsDashboardAccess, hasOwnerToolsAccess, hasProductionAccess, campaignKindFor, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
 import { TimerDock } from "./TimerDock";
 import { ActivityBell } from "./ActivityBell";
@@ -208,6 +208,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const canSeeProduction =
     session.owner || (Boolean(session.person) && hasProductionAccess(session.person!));
   const canSeeOwnerTools = hasOwnerToolsAccess(session);
+  const canSeeAds = hasAdsDashboardAccess(session);
+  const adsItem: NavItem = { href: "/admin/ads", label: "Ads", icon: "ads" };
 
   // Campaign features follow TEAM_FOCUS. Someone with a narrowed focus that
   // still includes campaign work (the SEO side) gets Campaigns even on the
@@ -226,6 +228,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         FORECAST_NAV[0],
         forecastItem,
         ...(focusedOnCampaigns ? [campaignsItem] : []),
+        ...(canSeeAds ? [adsItem] : []),
         ...FORECAST_NAV.slice(1).filter(
           (item) =>
             item.href !== "/admin/calendar" || canSeeOwnerTools
@@ -233,10 +236,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ...(canSeeProduction ? [productionItem] : []),
       ]
     : ADMIN_NAV.flatMap((item) => {
-        if (
-          (item.href === "/admin/calendar" || item.href === "/admin/ads") &&
-          !canSeeOwnerTools
-        ) {
+        if (item.href === "/admin/calendar" && !canSeeOwnerTools) {
+          return [];
+        }
+        if (item.href === "/admin/ads" && !canSeeAds) {
           return [];
         }
         if (!ownsCampaignWork && item.href === "/admin/campaigns") {
