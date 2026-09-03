@@ -27,6 +27,9 @@ test("internal review todo copy mentions the AM and only the review link", () =>
     "Review Krak Boba Oceanside: Krak Boba Oceanside Post-Launch Email + SMS Sequence"
   );
   assert.match(content.description, /@Cassidy, please review this campaign internally/);
+  assert.match(content.description, /What I'm looking for in this pass/);
+  assert.match(content.description, /Is this on brand/);
+  assert.match(content.description, /How to review in the app/);
   assert.match(content.description, /Internal review link/);
   assert.match(content.description, /https:\/\/desk\.example\/review\/internal-token/);
   assert.match(content.description, /CC: @Sylvia/);
@@ -39,6 +42,13 @@ test("internal review note starts from a plaintext template the sender can edit"
     reviewUrl: "https://desk.example/review/internal-token",
   });
   assert.match(text, /^@Cassidy, please review this campaign internally/);
+  assert.match(text, /What I'm looking for in this pass:/);
+  assert.match(text, /Is this on brand\?/);
+  assert.match(text, /Are the offers I've included appropriate\?/);
+  assert.match(text, /Does this align with the overall strategy\?/);
+  assert.match(text, /How to review in the app:/);
+  assert.match(text, /Approve and notify email team/);
+  assert.match(text, /at the top of the page/);
   assert.match(text, /Internal review link:\nhttps:\/\/desk\.example\/review\/internal-token/);
   assert.match(text, /CC: @Sylvia/);
   assert.equal(
