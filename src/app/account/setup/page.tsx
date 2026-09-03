@@ -186,7 +186,7 @@ function Setup() {
               type="button"
               className="btn"
               onClick={() => {
-                router.push("/admin");
+                router.push("/admin/hub");
                 router.refresh();
               }}
             >

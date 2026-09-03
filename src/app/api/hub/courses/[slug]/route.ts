@@ -6,7 +6,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  if (!(await can("page.hub"))) {
+  if (!(await can("page.home"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { slug } = await params;

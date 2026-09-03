@@ -61,9 +61,8 @@ export default function LoginPage() {
     } else if (data.setupComplete === false) {
       router.push("/account/setup");
     } else {
-      // Forecast users land on the board; /admin/forecast itself bounces
-      // anyone who can only see themselves to their own week.
-      router.push(data.role === "forecast" ? "/admin/forecast" : "/admin");
+      // Everyone lands on the Team Hub; Forecast is still one click away.
+      router.push("/admin/hub");
     }
     router.refresh();
   }

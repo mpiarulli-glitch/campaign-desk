@@ -132,7 +132,6 @@ test("per-person access", async (t) => {
     for (const key of [
       "page.home",
       "page.forecast",
-      "page.hub",
       "page.whiteboard",
       "page.client_services",
     ]) {
@@ -246,7 +245,7 @@ test("per-person access", async (t) => {
     assert.equal(clients.byDefault, false);
     assert.equal(clients.overridden, true);
 
-    const hub = rows.find((r) => r.key === "page.hub")!;
+    const hub = rows.find((r) => r.key === "page.home")!;
     assert.equal(hub.allowed, true);
     assert.equal(hub.overridden, false);
   });
@@ -265,12 +264,13 @@ test("per-person access", async (t) => {
 
   await t.test("visiblePages is the sidebar, in registry order", () => {
     const pages = access.visiblePages(roy).map((p) => p.href);
-    assert.deepEqual(pages.slice(0, 2), ["/admin", "/admin/forecast"]);
+    assert.deepEqual(pages.slice(0, 2), ["/admin/hub", "/admin/forecast"]);
     assert.ok(!pages.includes("/admin/campaigns"), "roy does no campaign work");
     assert.ok(!pages.includes("/admin/production"));
     assert.ok(!pages.includes("/admin/calendar"), "the calendar is owner-only");
     assert.ok(pages.includes("/admin/whiteboard"));
     assert.ok(pages.includes("/admin/client-services"));
+    assert.ok(!pages.includes("/admin"), "old dashboard is no longer a nav item");
 
     // Every page with an href, and nothing without one.
     const ownerPages = access.visiblePages(owner).map((p) => p.href);

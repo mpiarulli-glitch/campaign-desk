@@ -79,7 +79,7 @@ function BasecampAccount() {
               {blocked}
             </p>
           </div>
-          <a className="btn" href="/admin">
+          <a className="btn" href="/admin/hub">
             Back to Campaign Desk
           </a>
         </div>
@@ -160,7 +160,7 @@ function BasecampAccount() {
           </>
         )}
 
-        <a className="muted" href="/admin" style={{ fontSize: 13 }}>
+        <a className="muted" href="/admin/hub" style={{ fontSize: 13 }}>
           Back to Campaign Desk
         </a>
       </div>

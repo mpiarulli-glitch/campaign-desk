@@ -19,7 +19,7 @@ export default function SecurityPage() {
         <a className="muted" href="/account/password" style={{ fontSize: 13 }}>
           Change your password
         </a>
-        <a className="muted" href="/admin" style={{ fontSize: 13 }}>
+        <a className="muted" href="/admin/hub" style={{ fontSize: 13 }}>
           Back to Campaign Desk
         </a>
       </div>

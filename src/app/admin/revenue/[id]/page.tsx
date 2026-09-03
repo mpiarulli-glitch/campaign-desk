@@ -9,5 +9,5 @@ import { redirect } from "next/navigation";
 // editing and the scheduling-link copy moved to /admin/production before this
 // was retired, so those are covered.
 export default function RetiredRevenueClientPage() {
-  redirect("/admin");
+  redirect("/admin/hub");
 }

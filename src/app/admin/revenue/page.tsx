@@ -8,5 +8,5 @@ import { redirect } from "next/navigation";
 // (production, calendar, campaigns, snapshots, forecast, add-client) rather than
 // a revenue feature. Deleting it would take most of the app with it.
 export default function RetiredRevenuePage() {
-  redirect("/admin");
+  redirect("/admin/hub");
 }

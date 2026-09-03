@@ -226,7 +226,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : "Owner";
 
   function isActive(href: string): boolean {
-    if (href === "/admin") return pathname === "/admin";
+    if (href === "/admin/hub") {
+      return (
+        pathname === "/admin/hub" ||
+        pathname.startsWith("/admin/hub/") ||
+        pathname.startsWith("/admin/courses/")
+      );
+    }
     return pathname === href || pathname.startsWith(href + "/");
   }
 
@@ -241,14 +247,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ person, role }),
     });
-    if (res.ok) { window.location.assign(role === "forecast" ? "/admin/forecast" : "/admin"); return; }
+    if (res.ok) { window.location.assign("/admin/hub"); return; }
     setSwitching(false);
   }
   async function returnToOwner() {
     if (switching) return;
     setSwitching(true);
     const res = await fetch("/api/auth/impersonate", { method: "DELETE" });
-    if (res.ok) { window.location.assign("/admin"); return; }
+    if (res.ok) { window.location.assign("/admin/hub"); return; }
     setSwitching(false);
   }
 
@@ -268,7 +274,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Two marks, one shown at a time: the full wordmark needs the expanded
             sidebar's width, and the square mark carries the brand when it's
             collapsed to 56px, where a 4:1 wordmark would be illegible. */}
-        <Link href="/admin" className="side-brand" title="BUILD YOUR EMPIRE">
+        <Link href="/admin/hub" className="side-brand" title="BUILD YOUR EMPIRE">
           <span className="side-mark" aria-hidden="true">M</span>
           <span className="side-brand-copy">
             {/* eslint-disable-next-line @next/next/no-img-element */}

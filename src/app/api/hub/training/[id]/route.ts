@@ -6,7 +6,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminWithAccess("page.hub"))) {
+  if (!(await isAdminWithAccess("page.home"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const { id } = await params;

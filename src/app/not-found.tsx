@@ -13,7 +13,7 @@ export default function NotFound() {
             reset, or mistyped.
           </p>
         </div>
-        <Link className="btn" href="/admin">Back to dashboard</Link>
+        <Link className="btn" href="/admin/hub">Back to Team Hub</Link>
       </div>
     </div>
   );

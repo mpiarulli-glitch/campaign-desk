@@ -19,12 +19,12 @@ import { accessSubject } from "./auth";
 export async function requirePage(capability: string): Promise<void> {
   const who = await accessSubject();
   if (!who) redirect("/login");
-  if (!allows(who, capability)) redirect("/admin");
+  if (!allows(who, capability)) redirect("/admin/hub");
 }
 
 /** Refuse a page unless this is the owner. */
 export async function requireOwnerPage(): Promise<void> {
   const who = await accessSubject();
   if (!who) redirect("/login");
-  if (!who.owner) redirect("/admin");
+  if (!who.owner) redirect("/admin/hub");
 }

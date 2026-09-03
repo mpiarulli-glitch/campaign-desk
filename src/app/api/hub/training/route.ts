@@ -3,14 +3,14 @@ import { can, getSession, isAdminWithAccess } from "@/lib/auth";
 import { createTraining, listTraining } from "@/lib/hub";
 
 export async function GET() {
-  if (!(await can("page.hub"))) {
+  if (!(await can("page.home"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json({ posts: listTraining() });
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminWithAccess("page.hub"))) {
+  if (!(await isAdminWithAccess("page.home"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   const session = await getSession();

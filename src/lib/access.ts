@@ -72,18 +72,18 @@ export type Capability = {
    ---------------------------------------------------------------------------
    Listed in the order the admin sidebar renders them, since this array is now
    what builds it. One knock-on: a user-role person used to get Production at
-   the very bottom of their sidebar and now gets it above the Team Hub, in the
-   same slot an admin sees it.
+   the very bottom of their sidebar and now gets it above Forecast, in the
+   same slot an admin sees it. MEG Team Hub is Home and always first.
    ------------------------------------------------------------------------- */
 
 export const PAGES: Capability[] = [
   {
     key: "page.home",
-    label: "Home",
+    label: "MEG Team Hub",
     group: "page",
-    href: "/admin",
-    icon: "home",
-    blurb: "Where every sign in lands. Always on.",
+    href: "/admin/hub",
+    icon: "users",
+    blurb: "SOPs, training, HR and team sentiment. Where every sign in lands.",
     fixed: true,
   },
   {
@@ -142,14 +142,6 @@ export const PAGES: Capability[] = [
     href: "/admin/forecast",
     icon: "forecast",
     blurb: "Their own week of work and hours.",
-  },
-  {
-    key: "page.hub",
-    label: "MEG Team Hub",
-    group: "page",
-    href: "/admin/hub",
-    icon: "users",
-    blurb: "SOPs, training, HR and team sentiment.",
   },
   {
     key: "page.onboarding",
@@ -352,8 +344,7 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
       if (!ownsCampaignWork) return false;
       return admin || focusedOnCampaigns;
 
-    // Open to both roles today.
-    case "page.hub":
+    // Open to both roles today. Team Hub itself is page.home (always on).
     case "page.whiteboard":
     case "page.client_services":
     case "page.snapshot":

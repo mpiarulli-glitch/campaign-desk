@@ -4,14 +4,14 @@ import { createHrIssue, listHrIssues } from "@/lib/hub";
 
 // Only admins can read HR issues. Submitting is open to any team member.
 export async function GET() {
-  if (!(await isAdminWithAccess("page.hub"))) {
+  if (!(await isAdminWithAccess("page.home"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
   return NextResponse.json({ issues: listHrIssues() });
 }
 
 export async function POST(request: Request) {
-  if (!(await can("page.hub"))) {
+  if (!(await can("page.home"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const session = await getSession();

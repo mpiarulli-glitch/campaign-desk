@@ -21,7 +21,7 @@ export default function GlobalError({
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button className="btn" onClick={() => reset()}>Try again</button>
-          <a className="btn btn-secondary" href="/admin">Back to dashboard</a>
+          <a className="btn btn-secondary" href="/admin/hub">Back to Team Hub</a>
         </div>
       </div>
     </div>

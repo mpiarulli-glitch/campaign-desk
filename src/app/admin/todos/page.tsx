@@ -7,5 +7,5 @@ import { redirect } from "next/navigation";
 // Forecast to-dos are a separate, still-live feature backed by Basecamp, at
 // /admin/forecast. The Team Hub keeps its own to-do panel.
 export default function RetiredTodosPage() {
-  redirect("/admin");
+  redirect("/admin/hub");
 }

@@ -83,7 +83,7 @@ export default function ChangePasswordPage() {
               {blocked}
             </p>
           </div>
-          <a className="btn" href="/admin">
+          <a className="btn" href="/admin/hub">
             Back to Campaign Desk
           </a>
         </div>
@@ -156,7 +156,7 @@ export default function ChangePasswordPage() {
         <button className="btn" type="submit" disabled={saving}>
           {saving ? "Saving..." : info.hasPassword ? "Change password" : "Set password"}
         </button>
-        <a className="muted" href="/admin" style={{ fontSize: 13 }}>
+        <a className="muted" href="/admin/hub" style={{ fontSize: 13 }}>
           Back to Campaign Desk
         </a>
       </form>

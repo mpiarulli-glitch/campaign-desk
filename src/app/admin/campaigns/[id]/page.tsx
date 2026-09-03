@@ -1501,7 +1501,7 @@ export default function AdminCampaignPage() {
   async function removeCampaign() {
     if (!confirm("Delete this campaign and all feedback?")) return;
     const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
-    if (res.ok) router.push("/admin");
+    if (res.ok) router.push("/admin/hub");
   }
 
   if (error && !campaign) {

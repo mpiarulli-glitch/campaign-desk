@@ -15,7 +15,7 @@ type Hit = {
 // Static destinations always offered so the palette doubles as quick-nav even
 // with an empty query. Calendar stays owner-only; Ads is a smaller allowlist.
 const BASE_QUICK_LINKS: Hit[] = [
-  { kind: "client", id: "nav-home", title: "Home", subtitle: "Dashboard", href: "/admin" },
+  { kind: "client", id: "nav-home", title: "MEG Team Hub", subtitle: "Home", href: "/admin/hub" },
   { kind: "client", id: "nav-campaigns", title: "Campaigns", subtitle: "All campaigns", href: "/admin/campaigns" },
   { kind: "client", id: "nav-production", title: "Production", subtitle: "Scheduler", href: "/admin/production" },
   { kind: "client", id: "nav-forecast", title: "Forecast", subtitle: "Team allocation", href: "/admin/forecast" },

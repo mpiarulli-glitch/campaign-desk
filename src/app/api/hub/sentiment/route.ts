@@ -3,13 +3,13 @@ import { can, getSession, isAdminWithAccess } from "@/lib/auth";
 import { currentMonth, getMyCheckin, listCheckins, upsertCheckin } from "@/lib/hub";
 
 export async function GET(request: Request) {
-  if (!(await can("page.hub"))) {
+  if (!(await can("page.home"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const session = await getSession();
   const month = new URL(request.url).searchParams.get("month") || currentMonth();
   const mine = session?.person ? getMyCheckin(session.person, month) : null;
-  const isAdmin = await isAdminWithAccess("page.hub");
+  const isAdmin = await isAdminWithAccess("page.home");
   return NextResponse.json({
     month,
     mine,

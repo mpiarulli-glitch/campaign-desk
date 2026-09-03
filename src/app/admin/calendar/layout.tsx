@@ -7,7 +7,7 @@ export default async function CalendarLayout({
   children: React.ReactNode;
 }) {
   if (!(await isOwnerToolsAuthenticated())) {
-    redirect("/admin");
+    redirect("/admin/hub");
   }
   return children;
 }

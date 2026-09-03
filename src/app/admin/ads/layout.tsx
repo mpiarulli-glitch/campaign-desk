@@ -7,7 +7,7 @@ export default async function AdsLayout({
   children: React.ReactNode;
 }) {
   if (!(await isAdsDashboardAuthenticated())) {
-    redirect("/admin");
+    redirect("/admin/hub");
   }
   return children;
 }
