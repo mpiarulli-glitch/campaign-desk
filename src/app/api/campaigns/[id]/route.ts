@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
-import { canOrSync, isAdminOrSyncAuthenticated, isCampaignsReadAuthenticated, reviewUrl, sessionActor, sessionUserSlug } from "@/lib/auth";
+import {
+  canOrSync,
+  isAdminOrSyncAuthenticated,
+  isCampaignsReadAuthenticated,
+  reviewUrl,
+  sessionActor,
+  sessionCampaignKind,
+  sessionUserSlug,
+} from "@/lib/auth";
 import { actorLabel } from "@/lib/people";
 import {
   deleteCampaign,
   getCampaignById,
+  campaignHasKind,
   listCommentsWithAttachments,
   listVersions,
   listEmails,
@@ -61,11 +70,12 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Deliberately no kind check here. Team focus is a default view, not a wall:
-  // the calendar has a "See all" toggle, so blocking a direct link would mean
-  // showing someone a campaign they then could not open. Who may reach campaigns
-  // at all is decided by isCampaignsReadAuthenticated above, which is what keeps
-  // the web team (empty focus) out entirely.
+  // Kind-scoped sessions cannot open a campaign that has none of that kind,
+  // including by pasting a URL. The owner sets the scope on /admin/access.
+  const kindScope = await sessionCampaignKind();
+  if (kindScope && !campaignHasKind(id, kindScope)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const emails = listEmailsWithSubjects(id).map((e) => ({
     ...e,

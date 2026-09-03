@@ -1,19 +1,26 @@
 import { NextResponse } from "next/server";
 import { isOwner, sessionActor } from "@/lib/auth";
 import {
+  CAMPAIGN_KIND_CHOICES,
   FORECAST_ALL,
+  campaignKindStored,
+  clearCampaignKind,
   clearForecastSubjects,
   clearOverrides,
+  effectiveCampaignKind,
   forecastRoster,
   forecastSubjectsFor,
   forecastVisibility,
   isGrantable,
   manageableAccounts,
   resolveAll,
+  setCampaignKind,
   setForecastSubjects,
   setOverride,
   subjectFor,
+  type CampaignKindChoice,
 } from "@/lib/access";
+import { campaignKindFor } from "@/lib/people";
 import { getUser } from "@/lib/users";
 
 // Owner only, for the same reason /api/users is: anyone who can edit the access
@@ -28,6 +35,8 @@ function payloadFor(slug: string) {
   const who = subjectFor(slug);
   const stored = forecastSubjectsFor(slug);
   const visible = forecastVisibility(who);
+  const kindStored = campaignKindStored(slug);
+  const kindEffective = effectiveCampaignKind(who);
   return {
     person: slug,
     role: who.role,
@@ -39,6 +48,15 @@ function payloadFor(slug: string) {
       stored,
       everyone: visible === FORECAST_ALL,
       subjects: visible === FORECAST_ALL ? [] : visible,
+    },
+    campaigns: {
+      // null = still on the TEAM_FOCUS default (blog for SEO, all otherwise).
+      stored: kindStored,
+      // What the list actually filters to right now. null means every kind.
+      effective: kindEffective,
+      // Role default, so the Default button can say what it would do.
+      byDefault: campaignKindFor(slug),
+      choices: CAMPAIGN_KIND_CHOICES,
     },
   };
 }
@@ -119,9 +137,29 @@ export async function POST(request: Request) {
         clearForecastSubjects(person);
         break;
 
+      case "set_campaign_kind": {
+        const kind = body.kind;
+        if (kind === null) {
+          clearCampaignKind(person);
+        } else if (
+          kind === "all" ||
+          kind === "blog" ||
+          kind === "interactive"
+        ) {
+          setCampaignKind(person, kind as CampaignKindChoice, by);
+        } else {
+          return NextResponse.json(
+            { error: "Pick All, Blog posts, or Forms / quizzes." },
+            { status: 400 }
+          );
+        }
+        break;
+      }
+
       case "reset": {
         clearOverrides(person);
         clearForecastSubjects(person);
+        clearCampaignKind(person);
         break;
       }
 

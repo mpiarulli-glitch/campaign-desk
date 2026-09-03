@@ -206,8 +206,8 @@ export function listArchivedCampaigns(): Campaign[] {
  *
  * The kind lives on campaign_emails, not on the campaign, because one review
  * package can mix an email with a blog post. A campaign therefore counts as a
- * blog campaign if any of its items is one. Used to scope the list for the SEO
- * side of the team.
+ * blog campaign if any of its items is one. Used to scope the list for SEO
+ * (blogs), forms/quizzes, or whatever the owner picked on /admin/access.
  */
 export function listCampaignsWithKind(
   kind: EmailKind,

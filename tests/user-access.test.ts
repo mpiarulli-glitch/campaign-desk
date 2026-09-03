@@ -365,4 +365,41 @@ test("per-person access", async (t) => {
     assert.ok(roster.includes("lana"));
     assert.ok(roster.every((s) => typeof s === "string" && s.length > 0));
   });
+
+  /* ------------------------------------------------------- campaign kinds */
+
+  await t.test("campaign kind defaults follow TEAM_FOCUS", () => {
+    assert.equal(access.campaignKindStored("roy"), null);
+    assert.equal(access.effectiveCampaignKind(roy), null);
+    assert.equal(access.effectiveCampaignKind(abel), "blog");
+    assert.equal(access.effectiveCampaignKind(jack), null);
+    assert.equal(access.effectiveCampaignKind(owner), null);
+  });
+
+  await t.test("the owner can pin Roy to forms and quizzes only", () => {
+    access.setCampaignKind("roy", "interactive", "michael");
+    assert.equal(access.campaignKindStored("roy"), "interactive");
+    assert.equal(access.effectiveCampaignKind(roy), "interactive");
+    // The page is still off until they Allow Campaigns; kind only filters.
+    assert.equal(access.allows(roy, "page.campaigns"), false);
+    access.setOverride("roy", "page.campaigns", true, "michael");
+    assert.equal(access.allows(roy, "page.campaigns"), true);
+    access.clearOverrides("roy");
+    access.clearCampaignKind("roy");
+  });
+
+  await t.test("all clears a blog default, and clear goes back to it", () => {
+    assert.equal(access.effectiveCampaignKind(abel), "blog");
+    access.setCampaignKind("abel", "all", "michael");
+    assert.equal(access.effectiveCampaignKind(abel), null);
+    access.clearCampaignKind("abel");
+    assert.equal(access.effectiveCampaignKind(abel), "blog");
+  });
+
+  await t.test("an unknown campaign kind is refused on write", () => {
+    assert.throws(
+      () => access.setCampaignKind("roy", "email" as "blog", "michael"),
+      /Unknown campaign kind/
+    );
+  });
 });

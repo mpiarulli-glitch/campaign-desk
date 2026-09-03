@@ -23,7 +23,13 @@
    matter so the two cannot drift silently.
    ------------------------------------------------------------------------- */
 
-import { getDb, nowIso, type UserAccessRow, type UserForecastAccessRow } from "./db";
+import {
+  getDb,
+  nowIso,
+  type UserAccessRow,
+  type UserCampaignKindRow,
+  type UserForecastAccessRow,
+} from "./db";
 import { ADMIN_PEOPLE } from "./admin-people";
 import {
   PEOPLE,
@@ -34,6 +40,7 @@ import {
   hasOwnerToolsAccess,
   hasProductionAccess,
   personLabel,
+  type CampaignKindScope,
 } from "./people";
 
 export type CapabilityGroup = "page" | "tool";
@@ -93,7 +100,8 @@ export const PAGES: Capability[] = [
     group: "page",
     href: "/admin/campaigns",
     icon: "mail",
-    blurb: "Review packages and their approvals.",
+    blurb:
+      "Review packages and their approvals. Narrow which kinds below once this is on.",
   },
   {
     key: "page.lifecycle",
@@ -559,6 +567,88 @@ export function forecastVisibility(who: AccessSubject): string[] | typeof FORECA
 export function canSeeForecastOf(who: AccessSubject, subject: string): boolean {
   const visible = forecastVisibility(who);
   return visible === FORECAST_ALL || visible.includes(subject);
+}
+
+/* ---------------------------------------------------------- campaign kinds */
+
+/** Stored choice on /admin/access. 'all' means every kind; null means default. */
+export type CampaignKindChoice = "all" | CampaignKindScope;
+
+export const CAMPAIGN_KIND_CHOICES: Array<{
+  value: CampaignKindChoice;
+  label: string;
+  blurb: string;
+}> = [
+  {
+    value: "all",
+    label: "All campaigns",
+    blurb: "Every review package, of every kind.",
+  },
+  {
+    value: "blog",
+    label: "Blog posts only",
+    blurb: "Packages that contain a blog post.",
+  },
+  {
+    value: "interactive",
+    label: "Forms / quizzes only",
+    blurb: "Packages that contain a form or quiz.",
+  },
+];
+
+function isCampaignKindChoice(value: unknown): value is CampaignKindChoice {
+  return value === "all" || value === "blog" || value === "interactive";
+}
+
+/**
+ * The owner's stored campaign-kind choice, or null when they have never set one
+ * (so the person still follows campaignKindFor / TEAM_FOCUS).
+ */
+export function campaignKindStored(person: string): CampaignKindChoice | null {
+  const row = getDb()
+    .prepare(`SELECT * FROM user_campaign_kind WHERE person = ?`)
+    .get(person) as UserCampaignKindRow | undefined;
+  if (!row || !isCampaignKindChoice(row.kind)) return null;
+  return row.kind;
+}
+
+export function setCampaignKind(
+  person: string,
+  kind: CampaignKindChoice,
+  by: string
+): void {
+  if (person === OWNER_SLUG) throw new Error("The owner's access cannot be changed.");
+  if (!isCampaignKindChoice(kind)) throw new Error("Unknown campaign kind.");
+  getDb()
+    .prepare(
+      `INSERT INTO user_campaign_kind (person, kind, updated_at, updated_by)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(person) DO UPDATE SET
+         kind = excluded.kind,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`
+    )
+    .run(person, kind, nowIso(), by);
+}
+
+export function clearCampaignKind(person: string): void {
+  getDb().prepare(`DELETE FROM user_campaign_kind WHERE person = ?`).run(person);
+}
+
+/**
+ * Effective list filter for Campaigns.
+ *
+ * null means unrestricted. A stored 'all' also means unrestricted. Otherwise
+ * the stored kind wins over the TEAM_FOCUS default (blog for the SEO pair).
+ */
+export function effectiveCampaignKind(
+  who: AccessSubject
+): CampaignKindScope | null {
+  if (who.owner || !who.person) return null;
+  const stored = campaignKindStored(who.person);
+  if (stored === "all") return null;
+  if (stored === "blog" || stored === "interactive") return stored;
+  return campaignKindFor(who.person);
 }
 
 /* ------------------------------------------------------------------ roster */

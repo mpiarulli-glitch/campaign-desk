@@ -4,6 +4,7 @@ import { isValidAdminPerson } from "./admin-people";
 import {
   allows,
   canSeeForecastOf,
+  effectiveCampaignKind,
   forecastVisibility,
   visiblePages,
   FORECAST_ALL,
@@ -11,10 +12,10 @@ import {
   type Capability,
 } from "./access";
 import {
-  campaignKindFor,
   isValidPerson,
   OWNER_SLUG,
   personTeam,
+  type CampaignKindScope,
   type Team,
 } from "./people";
 import {
@@ -432,10 +433,16 @@ export async function sessionTeam(): Promise<Team | null> {
   return personTeam(session.person);
 }
 
-// True when the campaigns list and any campaign opened should be limited to blog
-// assets, i.e. the person's whole focus is blog work.
+// Asset kind the campaigns list should be limited to, or null for every kind.
+// Reads the /admin/access choice when the owner set one, else TEAM_FOCUS.
+export async function sessionCampaignKind(): Promise<CampaignKindScope | null> {
+  const who = await accessSubject();
+  return who ? effectiveCampaignKind(who) : null;
+}
+
+// True when the campaigns list should be limited to blog assets.
 export async function isBlogScopedSession(): Promise<boolean> {
-  return campaignKindFor(await sessionFocusSlug()) === "blog";
+  return (await sessionCampaignKind()) === "blog";
 }
 
 // Who may READ the campaigns list and open a campaign. The default is unchanged

@@ -75,6 +75,15 @@ export interface UserForecastAccessRow {
   updated_by: string;
 }
 
+/** Which review-package kinds a person may open from Campaigns. */
+export interface UserCampaignKindRow {
+  person: string;
+  // 'all' | 'blog' | 'interactive'
+  kind: string;
+  updated_at: string;
+  updated_by: string;
+}
+
 export type CampaignStatus =
   | "draft"
   | "internal_review"
@@ -2311,6 +2320,18 @@ export function getDb(): Database.Database {
       updated_at TEXT NOT NULL,
       updated_by TEXT NOT NULL DEFAULT '',
       PRIMARY KEY (person, subject)
+    );
+
+    /* Which kinds of review package a person sees on Campaigns.
+
+       Absence means follow the role default (TEAM_FOCUS / campaignKindFor).
+       kind 'all' means every asset kind; 'blog' and 'interactive' narrow the
+       list the same way the SEO and form/quiz scopes do. */
+    CREATE TABLE IF NOT EXISTS user_campaign_kind (
+      person TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT ''
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite

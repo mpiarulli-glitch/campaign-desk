@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { canOrSync, isBlogScopedSession, isCampaignsReadAuthenticated } from "@/lib/auth";
+import {
+  canOrSync,
+  isCampaignsReadAuthenticated,
+  sessionCampaignKind,
+} from "@/lib/auth";
 import {
   createCampaign,
   listCampaigns,
@@ -16,8 +20,8 @@ import {
 } from "@/lib/automation-map";
 
 export async function GET(request: Request) {
-  // Read is open to admins and to the SEO-side people; the list they get back is
-  // filtered to blogs below.
+  // Read follows page.campaigns. The list is filtered to the session's campaign
+  // kind scope when the owner set one (or TEAM_FOCUS defaults to blogs).
   if (!(await isCampaignsReadAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -25,11 +29,9 @@ export async function GET(request: Request) {
   const archived =
     new URL(request.url).searchParams.get("archived") === "1";
 
-  // The SEO side of the team works on blog content only, so their list is
-  // filtered to campaigns containing a blog item rather than every client email.
-  const blogOnly = await isBlogScopedSession();
-  const source = blogOnly
-    ? listCampaignsWithKind("blog", { archived })
+  const kindScope = await sessionCampaignKind();
+  const source = kindScope
+    ? listCampaignsWithKind(kindScope, { archived })
     : archived
       ? listArchivedCampaigns()
       : listCampaigns();
@@ -41,7 +43,7 @@ export async function GET(request: Request) {
     review_path: `/review/${c.magic_token}`,
   }));
 
-  return NextResponse.json({ campaigns, scope: blogOnly ? "blog" : "all" });
+  return NextResponse.json({ campaigns, scope: kindScope || "all" });
 }
 
 export async function POST(request: Request) {

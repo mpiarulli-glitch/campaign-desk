@@ -22,6 +22,8 @@ type Cap = {
   overridden: boolean;
 };
 
+type CampaignKindChoice = "all" | "blog" | "interactive";
+
 type Detail = {
   person: string;
   role: "admin" | "forecast";
@@ -30,6 +32,12 @@ type Detail = {
     stored: string[] | null;
     everyone: boolean;
     subjects: string[];
+  };
+  campaigns: {
+    stored: CampaignKindChoice | null;
+    effective: "blog" | "interactive" | null;
+    byDefault: "blog" | "interactive" | null;
+    choices: Array<{ value: CampaignKindChoice; label: string; blurb: string }>;
   };
 };
 
@@ -278,6 +286,14 @@ export default function AccessPage() {
                   </div>
                 </div>
 
+                <CampaignKindPanel
+                  detail={detail}
+                  busy={busy}
+                  onSet={(kind) =>
+                    post({ action: "set_campaign_kind", kind }, "ck")
+                  }
+                />
+
                 <ForecastPanel
                   detail={detail}
                   roster={roster}
@@ -296,7 +312,8 @@ export default function AccessPage() {
         <p className="muted" style={{ marginTop: 16, lineHeight: 1.6 }}>
           Turning a page off hides it from their sidebar and refuses the route
           behind it, so a saved link stops working too. Their own forecast week
-          is never taken away, since nothing is protected by hiding it.
+          is never taken away, since nothing is protected by hiding it. Campaign
+          kind narrows the packages inside Campaigns once that page is visible.
         </p>
       </div>
     </div>
@@ -375,6 +392,99 @@ function CapRow({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------- campaign kinds */
+
+function CampaignKindPanel({
+  detail,
+  busy,
+  onSet,
+}: {
+  detail: Detail;
+  busy: string;
+  onSet: (kind: CampaignKindChoice | null) => void;
+}) {
+  const campaignsOn = detail.capabilities.some(
+    (c) => c.key === "page.campaigns" && c.allowed
+  );
+  const { stored, effective, byDefault, choices } = detail.campaigns;
+  const mode: "default" | CampaignKindChoice =
+    stored === null ? "default" : stored;
+  const working = busy === "ck";
+
+  const defaultLabel = byDefault === "blog"
+    ? "Blog posts only"
+    : byDefault === "interactive"
+      ? "Forms / quizzes only"
+      : "All campaigns";
+
+  const effectiveLabel =
+    effective === "blog"
+      ? "Blog posts only"
+      : effective === "interactive"
+        ? "Forms / quizzes only"
+        : "All campaigns";
+
+  return (
+    <div className="ops-panel">
+      <div className="ops-panel-head">
+        <h2>Which campaigns they see</h2>
+      </div>
+      <div className="ops-panel-body">
+        {!campaignsOn ? (
+          <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+            Turn on the Campaigns page above first. This only narrows what
+            shows inside that list.
+          </p>
+        ) : (
+          <>
+            <div
+              className="acc-tri"
+              role="group"
+              aria-label="Campaign kinds"
+              style={{ marginBottom: 14, flexWrap: "wrap" }}
+            >
+              <button
+                type="button"
+                className={`acc-tri-btn ${mode === "default" ? "is-set" : ""}`}
+                aria-pressed={mode === "default"}
+                disabled={working}
+                onClick={() => onSet(null)}
+                title={`Follow their role default, which is ${defaultLabel}`}
+              >
+                Default
+              </button>
+              {choices.map((choice) => (
+                <button
+                  key={choice.value}
+                  type="button"
+                  className={`acc-tri-btn ${mode === choice.value ? "is-yes" : ""}`}
+                  aria-pressed={mode === choice.value}
+                  disabled={working}
+                  onClick={() => onSet(choice.value)}
+                  title={choice.blurb}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+              {mode === "default"
+                ? `Following the role default: ${defaultLabel}.`
+                : `Showing ${effectiveLabel}. Packages of other kinds stay hidden, including by direct link.`}
+              {stored ? (
+                <>
+                  {" "}
+                  <em>set by you</em>
+                </>
+              ) : null}
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }

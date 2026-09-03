@@ -97,9 +97,12 @@ export function doesCampaignWork(slug: string | null): boolean {
   return focus === null || focus.length > 0;
 }
 
-// Campaign review packages are tagged with AssetKind, not AssetType, so the
-// blog overlap is mapped explicitly. Returns null when nothing is restricted.
-export function campaignKindFor(slug: string | null): "blog" | null {
+// Role-default campaign kind scope from TEAM_FOCUS. The owner can override
+// this per person on /admin/access (see effectiveCampaignKind in ./access).
+// Returns null when the list is unrestricted.
+export type CampaignKindScope = "blog" | "interactive";
+
+export function campaignKindFor(slug: string | null): CampaignKindScope | null {
   const focus = teamFocus(slug);
   if (!focus) return null;
   return focus.length === 1 && focus[0] === "blog_post" ? "blog" : null;
