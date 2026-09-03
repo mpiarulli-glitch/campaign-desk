@@ -28,6 +28,9 @@ type Session = {
   impersonating: boolean;
   mustSetPassword: boolean;
   forecastGoogle: boolean;
+  // Whose weeks this session may open. Used so the Forecast sidebar link
+  // stays on the team board when someone (Roy) can see a teammate too.
+  forecastSubjects: "*" | Array<{ slug: string; label: string }>;
   // The sidebar, already resolved against this person's permissions by
   // /api/auth. Empty until that response lands, which is deliberate: guessing
   // the nav from the role would flash links somebody is not allowed to open.
@@ -89,7 +92,17 @@ function initials(label: string): string {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<Session>({ role: null, person: null, owner: false, impersonating: false, mustSetPassword: false, forecastGoogle: false, pages: [], capabilities: {} });
+  const [session, setSession] = useState<Session>({
+    role: null,
+    person: null,
+    owner: false,
+    impersonating: false,
+    mustSetPassword: false,
+    forecastGoogle: false,
+    forecastSubjects: [],
+    pages: [],
+    capabilities: {},
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   // Mobile nav drawer. Above the breakpoint the sidebar is always in the layout
   // and this class does nothing, so desktop is unaffected either way.
@@ -143,6 +156,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             impersonating: Boolean(d.impersonating),
             mustSetPassword: Boolean(d.mustSetPassword),
             forecastGoogle: Boolean(d.forecastGoogle),
+            forecastSubjects:
+              d.forecastSubjects === "*"
+                ? "*"
+                : Array.isArray(d.forecastSubjects)
+                  ? d.forecastSubjects
+                  : [],
             // Only pages whose icon is one this shell can actually draw, so a
             // capability added to the registry without an icon degrades to
             // being absent rather than to a crash.
@@ -181,13 +200,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  // Forecast is the one page whose href depends on who is looking, so the
-  // registry's generic /admin/forecast is swapped for their own week here.
-  // Everything else comes through exactly as the server resolved it.
-  const forecastHref =
-    session.person && isValidPerson(session.person)
-      ? `/admin/forecast/${session.person}`
-      : "/admin/forecast";
+  // Forecast is the one page whose href depends on who is looking. People who
+  // can only see themselves go straight to their week; anyone granted a
+  // teammate (or the whole roster) keeps the team board at /admin/forecast.
+  const subjects = session.forecastSubjects;
+  const onlyOwnForecast =
+    Boolean(session.person) &&
+    isValidPerson(session.person!) &&
+    Array.isArray(subjects) &&
+    subjects.length === 1 &&
+    subjects[0]?.slug === session.person;
+  const forecastHref = onlyOwnForecast
+    ? `/admin/forecast/${session.person}`
+    : "/admin/forecast";
 
   const items: NavItem[] = session.pages.map((item) =>
     item.href === "/admin/forecast" ? { ...item, href: forecastHref } : item
@@ -216,7 +241,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ person, role }),
     });
-    if (res.ok) { window.location.assign(role === "forecast" ? `/admin/forecast/${person}` : "/admin"); return; }
+    if (res.ok) { window.location.assign(role === "forecast" ? "/admin/forecast" : "/admin"); return; }
     setSwitching(false);
   }
   async function returnToOwner() {

@@ -61,11 +61,9 @@ export default function LoginPage() {
     } else if (data.setupComplete === false) {
       router.push("/account/setup");
     } else {
-      router.push(
-        data.role === "forecast" && data.person
-          ? `/admin/forecast/${data.person}`
-          : "/admin"
-      );
+      // Forecast users land on the board; /admin/forecast itself bounces
+      // anyone who can only see themselves to their own week.
+      router.push(data.role === "forecast" ? "/admin/forecast" : "/admin");
     }
     router.refresh();
   }
