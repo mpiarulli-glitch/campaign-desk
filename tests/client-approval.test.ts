@@ -21,10 +21,13 @@ test("client approval message uses the approved template without subject lines",
   assert.match(text, /Here's what to check:/);
   assert.match(text, /Copy: does the messaging reflect your brand/);
   assert.match(text, /Review the Vitatherapy Welcome Series:/);
+  assert.match(text, /How to approve in the app:/);
+  assert.match(text, /Approve and notify email team/);
+  assert.match(text, /reply on this Basecamp card/);
   assert.match(text, /one round of revisions per campaign/);
-  assert.match(text, /reply with "Approved"/);
   assert.match(text, /CC: @Sylvia/);
   assert.doesNotMatch(text, /subject line/i);
+  assert.doesNotMatch(text, /reply with "Approved"/);
 });
 
 test("Basecamp HTML escapes account data and links the external review", () => {
@@ -39,8 +42,12 @@ test("Basecamp HTML escapes account data and links the external review", () => {
     html,
     /https:\/\/example\.com\/review\?client=&quot;vita&quot;/
   );
+  assert.match(html, /How to approve in the app/);
+  assert.match(html, /Approve and notify email team/);
+  assert.match(html, /reply on this Basecamp card/);
   assert.match(html, /CC: @Sylvia/);
   assert.doesNotMatch(html, /<Admin>/);
+  assert.doesNotMatch(html, /reply with <strong>"Approved"/);
 });
 
 test("approval revision key changes only when campaign content changes", () => {
@@ -146,12 +153,15 @@ test("review follow-up asks the client to look, and mentions them when it can", 
   const text = clientReviewFollowupText(input);
   assert.match(text, /^Hi Katie,/);
   assert.match(text, /still waiting on review/);
-  assert.match(text, /reply with "Approved"/);
+  assert.match(text, /Approve and notify email team/);
+  assert.match(text, /reply on this Basecamp card/);
   assert.match(text, /Review the Vitatherapy Welcome Series:/);
   assert.doesNotMatch(text, /still hasn't/);
+  assert.doesNotMatch(text, /reply with "Approved"/);
 
   const html = clientReviewFollowupHtml(input, '<bc-attachment sgid="abc"></bc-attachment>');
   assert.match(html, /Hi <bc-attachment sgid="abc"><\/bc-attachment>,/);
   assert.doesNotMatch(html, /Hi Katie,/);
   assert.match(html, /href="https:\/\/campaign-desk\.example\/review\/client-token"/);
+  assert.match(html, /Approve and notify email team/);
 });

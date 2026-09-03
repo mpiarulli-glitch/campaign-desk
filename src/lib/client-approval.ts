@@ -46,9 +46,15 @@ Preview Link:
 
 Review the ${input.campaignTitle}: ${input.previewUrl}
 
-One quick note: we accommodate one round of revisions per campaign, so please compile all your feedback before replying. That way we can turn everything around in one pass.
+How to approve in the app:
 
-To move forward, just reply with "Approved" or send over your feedback. Let us know if you have any questions.
+1. Open the preview link above.
+2. Review each ${input.isAutomation ? "email in the automation" : "item in the package"}. Leave comments on anything that needs a change.
+3. When everything looks good, type your full name at the bottom of the page and click "Approve and notify email team".
+
+One quick note: we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.
+
+After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep scheduling moving.
 
 Looking forward to hearing from you!
 
@@ -160,20 +166,32 @@ export function clientApprovalMessageHtml(
     "<p><strong>Preview Link:</strong></p>",
     `<p><a href="${url}">Review the ${title}</a></p>`,
   ].join(BC_BLANK_LINE);
+  const howTo = [
+    "<p><strong>How to approve in the app:</strong></p>",
+    [
+      "<ol>",
+      `<li>Open the preview link above.</li>`,
+      `<li>Review each ${
+        input.isAutomation ? "email in the automation" : "item in the package"
+      }. Leave comments on anything that needs a change.</li>`,
+      `<li>When everything looks good, type your full name at the bottom of the page and click <strong>Approve and notify email team</strong>.</li>`,
+      "</ol>",
+    ].join(""),
+  ].join(BC_BLANK_LINE);
   const close = [
-    "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before replying. That way we can turn everything around in one pass.</p>",
-    '<p>To move forward, just reply with <strong>"Approved"</strong> or send over your feedback. Let us know if you have any questions.</p>',
+    "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.</p>",
+    "<p>After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep scheduling moving.</p>",
     "<p>Looking forward to hearing from you!</p>",
     sylviaCcHtml(ccMention),
   ].join(BC_BLANK_LINE);
-  return [intro, checklist, preview, close].join("<hr>");
+  return [intro, checklist, preview, howTo, close].join("<hr>");
 }
 
 export function clientReviewFollowupText(input: ClientApprovalMessageInput): string {
   const name = firstName(input.clientContactName);
   return `Hi ${name},
 
-Just a friendly follow-up — your ${input.campaignTitle} is still waiting on review. When you have a moment, please take a look and reply with "Approved" or your feedback so we can keep things moving.
+Just a friendly follow-up — your ${input.campaignTitle} is still waiting on review. When you have a moment, please open the preview link, review everything, then type your full name and click "Approve and notify email team". After you approve in the app, reply on this Basecamp card to let us know.
 
 Review the ${input.campaignTitle}: ${input.previewUrl}`;
 }
@@ -202,7 +220,7 @@ export function clientReviewFollowupHtml(
   const url = escapeHtml(input.previewUrl);
   return [
     `<p>Hi ${name},</p>`,
-    `<p>Just a friendly follow-up — your ${title} is still waiting on review. When you have a moment, please take a look and reply with <strong>"Approved"</strong> or your feedback so we can keep things moving.</p>`,
+    `<p>Just a friendly follow-up — your ${title} is still waiting on review. When you have a moment, please open the preview link, review everything, then type your full name and click <strong>Approve and notify email team</strong>. After you approve in the app, reply on this Basecamp card to let us know.</p>`,
     `<p><a href="${url}">Review the ${title}</a></p>`,
   ].join(BC_BLANK_LINE);
 }
