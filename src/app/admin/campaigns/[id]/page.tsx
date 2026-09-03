@@ -1562,11 +1562,8 @@ export default function AdminCampaignPage() {
         </Link>
       </div>
 
-      <main className="container container-wide stack">
-        <div
-          className="row"
-          style={{ justifyContent: "space-between", alignItems: "flex-start" }}
-        >
+      <main className="container container-wide stack cd-pkg">
+        <div className="cd-pkg-hero">
           <div>
             <p className="eyebrow">
               {isAutomation ? "Automation" : "Review package"}
@@ -1624,12 +1621,7 @@ export default function AdminCampaignPage() {
               </p>
             ) : null}
           </div>
-          <div className="toolbar">
-            {canMarkRevisionDone ? (
-              <button className="btn" onClick={markRevisionDone} disabled={saving}>
-                {saving ? "Saving..." : "Mark revision done"}
-              </button>
-            ) : null}
+          <div className="toolbar cd-pkg-tools">
             <select
               value={operatorStatusValue(status, campaign.approved_channel)}
               onChange={(e) => onStatusChoice(e.target.value)}
@@ -1753,7 +1745,7 @@ export default function AdminCampaignPage() {
           </div>
         )}
 
-        <div className="card card-pad stack">
+        <div className="card card-pad stack cd-pkg-items">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <strong>{isAutomation ? "Emails in this automation" : "Items in this package"}</strong>
             <button
@@ -1868,550 +1860,8 @@ export default function AdminCampaignPage() {
           ) : null}
         </div>
 
-        {isApproved ? (
-          <div className="card card-pad approve-card is-approved">
-            <strong>
-              {internallyApproved
-                ? "This package is approved internally."
-                : "This package is approved."}
-            </strong>
-            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-              {campaign.approved_by
-                ? internallyApproved
-                  ? `Approved internally by ${campaign.approved_by}. `
-                  : `Approved by ${campaign.approved_by}. `
-                : ""}
-              {internallyApproved
-                ? "Client review is still open. Pick Approved after the client signs off, or change the status dropdown to reopen internal work."
-                : "Feedback is closed. Change the status dropdown if you need to reopen it."}
-            </p>
-          </div>
-        ) : canMarkRevisionDone ? (
-          <div className="card next-steps-bar">
-            <div className="next-steps-copy">
-              <strong>Next step</strong>
-              <span className="muted">
-                Resolve open feedback and send it back for review.
-              </span>
-            </div>
-            <div className="row next-steps-actions">
-              <button
-                className="btn"
-                onClick={markRevisionDone}
-                disabled={saving}
-                title={
-                  status === "needs_revisions_internal"
-                    ? `Marks all open feedback resolved and sets status to ${operatorStatusLabel("internal_review")} so the account manager can check the update.`
-                    : `Marks all open feedback resolved and sets status to ${operatorStatusLabel("in_review")} so the client can check the update.`
-                }
-              >
-                {saving ? "Saving..." : "Mark revision done"}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="card review-links-card">
-          <div className="review-links-head">
-            <h2 className="h2">Review links</h2>
-            <p className="muted">
-              Send the link yourself, or push it to Basecamp for sign-off.
-            </p>
-          </div>
-
-          <div className="review-link-grid">
-            <div className="review-link-row">
-              <div className="review-link-top">
-                <span className="review-link-label">
-                  Internal <span className="muted">· boss / team</span>
-                </span>
-                <button className="btn btn-secondary btn-sm" onClick={copyLink}>
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <div className="copy-box">
-                <code>{campaign.review_url}</code>
-              </div>
-            </div>
-
-            <div className="review-link-row">
-              <div className="review-link-top">
-                <span className="review-link-label">
-                  External <span className="muted">· client</span>
-                </span>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={copyExternalLink}
-                >
-                  {copiedExternal ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <div className="copy-box">
-                <code>{campaign.external_review_url}</code>
-              </div>
-            </div>
-          </div>
-
-          <div className="bc-panel">
-            <div className="bc-head">
-              <div className="bc-head-copy">
-                <span className="review-link-label">
-                  Internal review{" "}
-                  <span className="muted">· account manager</span>
-                </span>
-                {internalReview ? (
-                  <span
-                    className={`bc-state ${
-                      internalReview.ready ? "is-ready" : "is-blocked"
-                    }`}
-                  >
-                    {internalReview.ready
-                      ? internalReview.todoUrl || internalReview.deskTodoId
-                        ? "Sent"
-                        : "Ready to send"
-                      : "Setup needed"}
-                  </span>
-                ) : (
-                  <span className="bc-state">Checking...</span>
-                )}
-              </div>
-              <div className="bc-head-actions">
-                {internalReview?.todoUrl ? (
-                  <a
-                    className="btn btn-secondary btn-sm"
-                    href={internalReview.todoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open to-do
-                  </a>
-                ) : null}
-                {internalReview?.todoUrl || internalReview?.deskTodoId ? (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={sendInternalFollowup}
-                    disabled={sendingInternalFollowup || !internalReview.todoId}
-                  >
-                    {sendingInternalFollowup
-                      ? "Sending…"
-                      : internalReview.assigneeName
-                        ? `Follow-up with ${internalReview.assigneeName.split(" ")[0]}`
-                        : "Follow-up with reviewer"}
-                  </button>
-                ) : null}
-                <button
-                  className={`btn btn-sm ${
-                    internalReview?.todoUrl || internalReview?.deskTodoId
-                      ? "btn-secondary"
-                      : ""
-                  }`}
-                  onClick={sendInternalReview}
-                  disabled={
-                    !internalReview?.ready ||
-                    sendingInternalReview ||
-                    !internalReviewerId
-                  }
-                >
-                  {sendingInternalReview
-                    ? "Sending..."
-                    : internalReview?.todoUrl || internalReview?.deskTodoId
-                      ? "Resend for internal review"
-                      : "Send campaign for internal review"}
-                </button>
-              </div>
-            </div>
-            <div className="bc-form">
-              <div className="bc-form-row">
-                <div className="field">
-                  <label htmlFor="internal-reviewer">Account manager</label>
-                  <select
-                    id="internal-reviewer"
-                    value={internalReviewerId}
-                    onChange={(e) =>
-                      setInternalReviewerId(
-                        e.target.value ? Number(e.target.value) : ""
-                      )
-                    }
-                    disabled={!internalReview?.people.length}
-                  >
-                    <option value="">
-                      {internalReview?.people.length
-                        ? "Pick who should review..."
-                        : internalReview?.peopleReason ||
-                          "No project roster available"}
-                    </option>
-                    {(internalReview?.people || []).map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.name}
-                        {internalReview?.accountManager &&
-                        person.id === internalReview.defaultReviewerId
-                          ? " · account manager"
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="internal-review-due">Due date</label>
-                  <input
-                    id="internal-review-due"
-                    type="date"
-                    value={internalReviewDueOn}
-                    onChange={(e) => setInternalReviewDueOn(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="field">
-                <div className="bc-label-row">
-                  <label htmlFor="internal-review-message">To-do note</label>
-                  {internalReview?.message &&
-                  withoutInternalReviewGreeting(internalReviewMessage) !==
-                    withoutInternalReviewGreeting(internalReview.message) ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => {
-                        const name =
-                          internalReview.people.find(
-                            (person) => person.id === internalReviewerId
-                          )?.name || "";
-                        setInternalReviewMessage(
-                          withInternalReviewGreeting(internalReview.message, name)
-                        );
-                      }}
-                    >
-                      Restore template
-                    </button>
-                  ) : null}
-                </div>
-                <textarea
-                  id="internal-review-message"
-                  className="bc-message"
-                  value={internalReviewMessage}
-                  onChange={(e) => setInternalReviewMessage(e.target.value)}
-                  rows={8}
-                  disabled={sendingInternalReview}
-                />
-                <span className="field-hint">
-                  Starts from the usual template. Add a note, change a line, or
-                  leave it as-is. This is what goes on the Basecamp to-do.
-                </span>
-              </div>
-              <p className="field-hint" style={{ margin: 0 }}>
-                {internalReview?.deskTodoId || internalReview?.todoUrl
-                  ? [
-                      internalReview.assigneeName
-                        ? `Assigned to ${internalReview.assigneeName}`
-                        : "Internal review to-do sent",
-                      internalReview.dueDate
-                        ? `due ${internalReview.dueDate}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") +
-                    ". Follow-up comments on that Basecamp to-do. Does not mark the campaign client-approved."
-                  : "Creates a Basecamp to-do assigned to them with the internal review link and this due date. Does not mark the campaign client-approved."}
-              </p>
-            </div>
-            {internalReview && !internalReview.ready ? (
-              <div className="bc-facts">
-                <p className="bc-fact">
-                  {internalReview.missing.includes("Basecamp connection")
-                    ? "Basecamp isn't connected. Connect it before sending for internal review."
-                    : internalReview.missing.length
-                      ? `Setup needed: ${internalReview.missing.join(", ")}.`
-                      : internalReview.peopleReason ||
-                        "Pick an account manager once the project roster loads."}
-                </p>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="bc-panel">
-            <div className="bc-head">
-              <div className="bc-head-copy">
-                <span className="review-link-label">
-                  Basecamp{" "}
-                  <span className="muted">· client approval workflow</span>
-                </span>
-                {basecampApproval ? (
-                  <span
-                    className={`bc-state ${
-                      basecampApproval.ready ? "is-ready" : "is-blocked"
-                    }`}
-                  >
-                    {basecampApproval.ready
-                      ? basecampApproval.cardUrl
-                        ? "Sent"
-                        : "Ready to send"
-                      : "Setup needed"}
-                  </span>
-                ) : (
-                  <span className="bc-state">Checking...</span>
-                )}
-              </div>
-              <div className="bc-head-actions">
-                {confirmingBasecampApproval && !sendingBasecampApproval ? (
-                  <>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setConfirmingBasecampApproval(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button className="btn btn-sm" onClick={sendBasecampApproval}>
-                      {basecampApproval?.cardUrl
-                        ? "Yes, resend it"
-                        : "Yes, send it"}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {basecampApproval?.cardUrl ? (
-                      <FollowUpButton
-                        campaignId={id}
-                        className="btn btn-secondary btn-sm"
-                        followupCount={basecampApproval.followupCount || 0}
-                        onDone={(recipient, nextCount) => {
-                          setMessage(
-                            `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
-                          );
-                          setBasecampApproval((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  followupCount:
-                                    typeof nextCount === "number"
-                                      ? nextCount
-                                      : (prev.followupCount || 0) + 1,
-                                  followupLastAt: new Date().toISOString(),
-                                }
-                              : prev
-                          );
-                          void loadBasecampApproval();
-                        }}
-                        onError={(err) => setError(err)}
-                      />
-                    ) : null}
-                    <button
-                      className={`btn btn-sm ${
-                        basecampApproval?.cardUrl ? "btn-secondary" : ""
-                      }`}
-                      onClick={() => setConfirmingBasecampApproval(true)}
-                      disabled={
-                        !basecampApproval?.ready || sendingBasecampApproval
-                      }
-                    >
-                      {sendingBasecampApproval
-                        ? "Sending..."
-                        : basecampApproval?.cardUrl
-                          ? basecampApproval.alreadySent
-                            ? "Resend approval"
-                            : "Send updated approval"
-                          : "Send approval"}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {basecampApproval?.ready && !sendingBasecampApproval ? (
-              <div className="bc-form">
-                <div className="bc-form-row">
-                  <div className="field">
-                    <label htmlFor="bc-recipient">Send to</label>
-                    <select
-                      id="bc-recipient"
-                      value={approvalRecipientId}
-                      onChange={(e) =>
-                        setApprovalRecipientId(
-                          e.target.value ? Number(e.target.value) : ""
-                        )
-                      }
-                      disabled={!basecampApproval.people.length}
-                    >
-                      <option value="">
-                        {basecampApproval.people.length
-                          ? "Pick a person..."
-                          : basecampApproval.peopleReason ||
-                            "No project roster available"}
-                      </option>
-                      {basecampApproval.people.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {person.name}
-                          {person.isClient ? "" : " (our team)"}
-                          {person.mentionable ? "" : " (cannot be mentioned)"}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="bc-due">Due date</label>
-                    <input
-                      id="bc-due"
-                      type="date"
-                      value={approvalDueOn}
-                      onChange={(e) => setApprovalDueOn(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="field">
-                  <div className="bc-label-row">
-                    <label htmlFor="bc-message">Approval message</label>
-                    {basecampApproval.message &&
-                    withoutApprovalGreeting(approvalMessage) !==
-                      withoutApprovalGreeting(basecampApproval.message) ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => {
-                          const name =
-                            basecampApproval.people.find(
-                              (person) => person.id === approvalRecipientId
-                            )?.name || "";
-                          setApprovalMessage(
-                            withApprovalGreeting(
-                              basecampApproval.message,
-                              name
-                            )
-                          );
-                        }}
-                      >
-                        Restore template
-                      </button>
-                    ) : null}
-                  </div>
-                  <textarea
-                    id="bc-message"
-                    className="bc-message"
-                    value={approvalMessage}
-                    onChange={(e) => setApprovalMessage(e.target.value)}
-                    rows={12}
-                  />
-                  <span className="field-hint">
-                    Starts from the usual template. Add a note, change a line, or
-                    leave it as-is.
-                  </span>
-                </div>
-
-                {basecampApproval.people.length > 1 ? (
-                  <details className="bc-assign">
-                    <summary>
-                      Also assign
-                      {approvalAssigneeIds.length
-                        ? ` (${approvalAssigneeIds.length})`
-                        : ""}
-                    </summary>
-                    <div className="bc-assign-list">
-                      {basecampApproval.people
-                        .filter((person) => person.id !== approvalRecipientId)
-                        .map((person) => (
-                          <label key={person.id} className="bc-assign-item">
-                            <input
-                              type="checkbox"
-                              checked={approvalAssigneeIds.includes(person.id)}
-                              onChange={(e) =>
-                                setApprovalAssigneeIds((current) =>
-                                  e.target.checked
-                                    ? [...current, person.id]
-                                    : current.filter((pid) => pid !== person.id)
-                                )
-                              }
-                            />
-                            <span>
-                              {person.name}
-                              {person.isClient ? "" : " (our team)"}
-                            </span>
-                          </label>
-                        ))}
-                    </div>
-                  </details>
-                ) : null}
-              </div>
-            ) : null}
-
-            {confirmingBasecampApproval && !sendingBasecampApproval ? (
-              <p className="bc-confirm">
-                {basecampApproval?.cardUrl ? "Resend" : "Send"} this approval
-                {approvalRecipientName ? ` to ${approvalRecipientName}` : ""}
-                {approvalAssigneeIds.length
-                  ? `, assign ${approvalAssigneeIds.length} more`
-                  : ""}
-                {approvalDueOn ? `, due ${approvalDueOn}` : ""} and move its
-                Deliverables card to Needs Approval?
-              </p>
-            ) : null}
-
-            {basecampApproval ? (
-              <div className="bc-facts">
-                <p className="bc-fact">
-                  {basecampApproval.ready
-                    ? `Sends to ${approvalRecipientName || "whoever you pick above"} and moves the Deliverables card to Needs Approval.`
-                    : basecampApproval.missing.includes("Basecamp project")
-                      ? `No Basecamp project on ${
-                          basecampApproval.clientName || "this client"
-                        } yet. Even if you have sent approvals for them before, this campaign’s account record needs the Growth OS project linked.`
-                      : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
-                </p>
-                {basecampApproval.lastSentAt ? (
-                  <p className="bc-fact">
-                    Last sent{" "}
-                    {new Date(basecampApproval.lastSentAt).toLocaleString()}.
-                  </p>
-                ) : null}
-                {basecampApproval.followupCount > 0 ? (
-                  <p className="bc-fact am-followup-status">
-                    Followed up {basecampApproval.followupCount}×
-                    {basecampApproval.followupLastAt
-                      ? ` · last ${new Date(
-                          basecampApproval.followupLastAt
-                        ).toLocaleString()}`
-                      : ""}
-                  </p>
-                ) : basecampApproval.cardUrl ? (
-                  <p className="bc-fact">No follow-ups sent yet.</p>
-                ) : null}
-                {!basecampApproval.ready &&
-                basecampApproval.missing.includes("Basecamp project") ? (
-                  <div className="bc-fact-actions">
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void matchBasecampProject()}
-                      disabled={matchingBasecamp}
-                    >
-                      {matchingBasecamp
-                        ? "Matching..."
-                        : "Match Basecamp project"}
-                    </button>
-                    {basecampApproval.clientId ? (
-                      <Link className="btn btn-secondary btn-sm" href="/admin/production">
-                        Open production clients
-                      </Link>
-                    ) : null}
-                  </div>
-                ) : null}
-                {basecampApproval.cardUrl ? (
-                  <p className="bc-fact">
-                    <a
-                      href={basecampApproval.cardUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open Basecamp Deliverables card
-                    </a>
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="bc-facts">
-                <p className="bc-fact">Checking Basecamp setup...</p>
-              </div>
-            )}
-          </div>
-        </div>
-
+        <div className="cd-pkg-work">
+          <div className="cd-pkg-editor">
         {message ? <p className="success">{message}</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
@@ -3057,6 +2507,557 @@ export default function AdminCampaignPage() {
             )}
           </div>
         ) : null}
+          </div>
+          <aside className="cd-pkg-review">
+        {isApproved ? (
+          <div className="card card-pad approve-card is-approved">
+            <strong>
+              {internallyApproved
+                ? "This package is approved internally."
+                : "This package is approved."}
+            </strong>
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+              {campaign.approved_by
+                ? internallyApproved
+                  ? `Approved internally by ${campaign.approved_by}. `
+                  : `Approved by ${campaign.approved_by}. `
+                : ""}
+              {internallyApproved
+                ? "Client review is still open. Pick Approved after the client signs off, or change the status dropdown to reopen internal work."
+                : "Feedback is closed. Change the status dropdown if you need to reopen it."}
+            </p>
+          </div>
+        ) : canMarkRevisionDone ? (
+          <div className="card next-steps-bar">
+            <div className="next-steps-copy">
+              <strong>Next step</strong>
+              <span className="muted">
+                Resolve open feedback and send it back for review.
+              </span>
+            </div>
+            <div className="row next-steps-actions">
+              <button
+                className="btn"
+                onClick={markRevisionDone}
+                disabled={saving}
+                title={
+                  status === "needs_revisions_internal"
+                    ? `Marks all open feedback resolved and sets status to ${operatorStatusLabel("internal_review")} so the account manager can check the update.`
+                    : `Marks all open feedback resolved and sets status to ${operatorStatusLabel("in_review")} so the client can check the update.`
+                }
+              >
+                {saving ? "Saving..." : "Mark revision done"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="card review-links-card">
+          <div className="review-links-head">
+            <h2 className="h2">Send for review</h2>
+            <p className="muted">
+              Copy a link, or send it through Basecamp.
+            </p>
+          </div>
+
+          <div className="review-link-grid">
+            <div className="review-link-row">
+              <div className="review-link-top">
+                <span className="review-link-label">
+                  Internal <span className="muted">· boss / team</span>
+                </span>
+                <button className="btn btn-secondary btn-sm" onClick={copyLink}>
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="copy-box">
+                <code>{campaign.review_url}</code>
+              </div>
+            </div>
+
+            <div className="review-link-row">
+              <div className="review-link-top">
+                <span className="review-link-label">
+                  External <span className="muted">· client</span>
+                </span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={copyExternalLink}
+                >
+                  {copiedExternal ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="copy-box">
+                <code>{campaign.external_review_url}</code>
+              </div>
+            </div>
+          </div>
+
+          <div className="cd-pkg-flows">
+          <div className="bc-panel">
+            <div className="bc-head">
+              <div className="bc-head-copy">
+                <span className="review-link-label">
+                  Internal review{" "}
+                  <span className="muted">· account manager</span>
+                </span>
+                {internalReview ? (
+                  <span
+                    className={`bc-state ${
+                      internalReview.ready ? "is-ready" : "is-blocked"
+                    }`}
+                  >
+                    {internalReview.ready
+                      ? internalReview.todoUrl || internalReview.deskTodoId
+                        ? "Sent"
+                        : "Ready to send"
+                      : "Setup needed"}
+                  </span>
+                ) : (
+                  <span className="bc-state">Checking...</span>
+                )}
+              </div>
+              <div className="bc-head-actions">
+                {internalReview?.todoUrl ? (
+                  <a
+                    className="btn btn-secondary btn-sm"
+                    href={internalReview.todoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open to-do
+                  </a>
+                ) : null}
+                {internalReview?.todoUrl || internalReview?.deskTodoId ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={sendInternalFollowup}
+                    disabled={sendingInternalFollowup || !internalReview.todoId}
+                  >
+                    {sendingInternalFollowup
+                      ? "Sending…"
+                      : internalReview.assigneeName
+                        ? `Follow-up with ${internalReview.assigneeName.split(" ")[0]}`
+                        : "Follow-up with reviewer"}
+                  </button>
+                ) : null}
+                <button
+                  className={`btn btn-sm ${
+                    internalReview?.todoUrl || internalReview?.deskTodoId
+                      ? "btn-secondary"
+                      : ""
+                  }`}
+                  onClick={sendInternalReview}
+                  disabled={
+                    !internalReview?.ready ||
+                    sendingInternalReview ||
+                    !internalReviewerId
+                  }
+                >
+                  {sendingInternalReview
+                    ? "Sending..."
+                    : internalReview?.todoUrl || internalReview?.deskTodoId
+                      ? "Resend for internal review"
+                      : "Send campaign for internal review"}
+                </button>
+              </div>
+            </div>
+            <div className="bc-form">
+              <div className="bc-form-row">
+                <div className="field">
+                  <label htmlFor="internal-reviewer">Account manager</label>
+                  <select
+                    id="internal-reviewer"
+                    value={internalReviewerId}
+                    onChange={(e) =>
+                      setInternalReviewerId(
+                        e.target.value ? Number(e.target.value) : ""
+                      )
+                    }
+                    disabled={!internalReview?.people.length}
+                  >
+                    <option value="">
+                      {internalReview?.people.length
+                        ? "Pick who should review..."
+                        : internalReview?.peopleReason ||
+                          "No project roster available"}
+                    </option>
+                    {(internalReview?.people || []).map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
+                        {internalReview?.accountManager &&
+                        person.id === internalReview.defaultReviewerId
+                          ? " · account manager"
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="internal-review-due">Due date</label>
+                  <input
+                    id="internal-review-due"
+                    type="date"
+                    value={internalReviewDueOn}
+                    onChange={(e) => setInternalReviewDueOn(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <div className="bc-label-row">
+                  <label htmlFor="internal-review-message">To-do note</label>
+                  {internalReview?.message &&
+                  withoutInternalReviewGreeting(internalReviewMessage) !==
+                    withoutInternalReviewGreeting(internalReview.message) ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        const name =
+                          internalReview.people.find(
+                            (person) => person.id === internalReviewerId
+                          )?.name || "";
+                        setInternalReviewMessage(
+                          withInternalReviewGreeting(internalReview.message, name)
+                        );
+                      }}
+                    >
+                      Restore template
+                    </button>
+                  ) : null}
+                </div>
+                <textarea
+                  id="internal-review-message"
+                  className="bc-message"
+                  value={internalReviewMessage}
+                  onChange={(e) => setInternalReviewMessage(e.target.value)}
+                  rows={5}
+                  disabled={sendingInternalReview}
+                />
+                <span className="field-hint">
+                  Starts from the usual template. Add a note, change a line, or
+                  leave it as-is. This is what goes on the Basecamp to-do.
+                </span>
+              </div>
+              <p className="field-hint" style={{ margin: 0 }}>
+                {internalReview?.deskTodoId || internalReview?.todoUrl
+                  ? [
+                      internalReview.assigneeName
+                        ? `Assigned to ${internalReview.assigneeName}`
+                        : "Internal review to-do sent",
+                      internalReview.dueDate
+                        ? `due ${internalReview.dueDate}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") +
+                    ". Follow-up comments on that Basecamp to-do. Does not mark the campaign client-approved."
+                  : "Creates a Basecamp to-do assigned to them with the internal review link and this due date. Does not mark the campaign client-approved."}
+              </p>
+            </div>
+            {internalReview && !internalReview.ready ? (
+              <div className="bc-facts">
+                <p className="bc-fact">
+                  {internalReview.missing.includes("Basecamp connection")
+                    ? "Basecamp isn't connected. Connect it before sending for internal review."
+                    : internalReview.missing.length
+                      ? `Setup needed: ${internalReview.missing.join(", ")}.`
+                      : internalReview.peopleReason ||
+                        "Pick an account manager once the project roster loads."}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="bc-panel">
+            <div className="bc-head">
+              <div className="bc-head-copy">
+                <span className="review-link-label">
+                  Basecamp{" "}
+                  <span className="muted">· client approval workflow</span>
+                </span>
+                {basecampApproval ? (
+                  <span
+                    className={`bc-state ${
+                      basecampApproval.ready ? "is-ready" : "is-blocked"
+                    }`}
+                  >
+                    {basecampApproval.ready
+                      ? basecampApproval.cardUrl
+                        ? "Sent"
+                        : "Ready to send"
+                      : "Setup needed"}
+                  </span>
+                ) : (
+                  <span className="bc-state">Checking...</span>
+                )}
+              </div>
+              <div className="bc-head-actions">
+                {confirmingBasecampApproval && !sendingBasecampApproval ? (
+                  <>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setConfirmingBasecampApproval(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button className="btn btn-sm" onClick={sendBasecampApproval}>
+                      {basecampApproval?.cardUrl
+                        ? "Yes, resend it"
+                        : "Yes, send it"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {basecampApproval?.cardUrl ? (
+                      <FollowUpButton
+                        campaignId={id}
+                        className="btn btn-secondary btn-sm"
+                        followupCount={basecampApproval.followupCount || 0}
+                        onDone={(recipient, nextCount) => {
+                          setMessage(
+                            `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
+                          );
+                          setBasecampApproval((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  followupCount:
+                                    typeof nextCount === "number"
+                                      ? nextCount
+                                      : (prev.followupCount || 0) + 1,
+                                  followupLastAt: new Date().toISOString(),
+                                }
+                              : prev
+                          );
+                          void loadBasecampApproval();
+                        }}
+                        onError={(err) => setError(err)}
+                      />
+                    ) : null}
+                    <button
+                      className={`btn btn-sm ${
+                        basecampApproval?.cardUrl ? "btn-secondary" : ""
+                      }`}
+                      onClick={() => setConfirmingBasecampApproval(true)}
+                      disabled={
+                        !basecampApproval?.ready || sendingBasecampApproval
+                      }
+                    >
+                      {sendingBasecampApproval
+                        ? "Sending..."
+                        : basecampApproval?.cardUrl
+                          ? basecampApproval.alreadySent
+                            ? "Resend approval"
+                            : "Send updated approval"
+                          : "Send approval"}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {basecampApproval?.ready && !sendingBasecampApproval ? (
+              <div className="bc-form">
+                <div className="bc-form-row">
+                  <div className="field">
+                    <label htmlFor="bc-recipient">Send to</label>
+                    <select
+                      id="bc-recipient"
+                      value={approvalRecipientId}
+                      onChange={(e) =>
+                        setApprovalRecipientId(
+                          e.target.value ? Number(e.target.value) : ""
+                        )
+                      }
+                      disabled={!basecampApproval.people.length}
+                    >
+                      <option value="">
+                        {basecampApproval.people.length
+                          ? "Pick a person..."
+                          : basecampApproval.peopleReason ||
+                            "No project roster available"}
+                      </option>
+                      {basecampApproval.people.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.name}
+                          {person.isClient ? "" : " (our team)"}
+                          {person.mentionable ? "" : " (cannot be mentioned)"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="bc-due">Due date</label>
+                    <input
+                      id="bc-due"
+                      type="date"
+                      value={approvalDueOn}
+                      onChange={(e) => setApprovalDueOn(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <div className="bc-label-row">
+                    <label htmlFor="bc-message">Approval message</label>
+                    {basecampApproval.message &&
+                    withoutApprovalGreeting(approvalMessage) !==
+                      withoutApprovalGreeting(basecampApproval.message) ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          const name =
+                            basecampApproval.people.find(
+                              (person) => person.id === approvalRecipientId
+                            )?.name || "";
+                          setApprovalMessage(
+                            withApprovalGreeting(
+                              basecampApproval.message,
+                              name
+                            )
+                          );
+                        }}
+                      >
+                        Restore template
+                      </button>
+                    ) : null}
+                  </div>
+                  <textarea
+                    id="bc-message"
+                    className="bc-message"
+                    value={approvalMessage}
+                    onChange={(e) => setApprovalMessage(e.target.value)}
+                    rows={6}
+                  />
+                  <span className="field-hint">
+                    Starts from the usual template. Add a note, change a line, or
+                    leave it as-is.
+                  </span>
+                </div>
+
+                {basecampApproval.people.length > 1 ? (
+                  <details className="bc-assign">
+                    <summary>
+                      Also assign
+                      {approvalAssigneeIds.length
+                        ? ` (${approvalAssigneeIds.length})`
+                        : ""}
+                    </summary>
+                    <div className="bc-assign-list">
+                      {basecampApproval.people
+                        .filter((person) => person.id !== approvalRecipientId)
+                        .map((person) => (
+                          <label key={person.id} className="bc-assign-item">
+                            <input
+                              type="checkbox"
+                              checked={approvalAssigneeIds.includes(person.id)}
+                              onChange={(e) =>
+                                setApprovalAssigneeIds((current) =>
+                                  e.target.checked
+                                    ? [...current, person.id]
+                                    : current.filter((pid) => pid !== person.id)
+                                )
+                              }
+                            />
+                            <span>
+                              {person.name}
+                              {person.isClient ? "" : " (our team)"}
+                            </span>
+                          </label>
+                        ))}
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+
+            {confirmingBasecampApproval && !sendingBasecampApproval ? (
+              <p className="bc-confirm">
+                {basecampApproval?.cardUrl ? "Resend" : "Send"} this approval
+                {approvalRecipientName ? ` to ${approvalRecipientName}` : ""}
+                {approvalAssigneeIds.length
+                  ? `, assign ${approvalAssigneeIds.length} more`
+                  : ""}
+                {approvalDueOn ? `, due ${approvalDueOn}` : ""} and move its
+                Deliverables card to Needs Approval?
+              </p>
+            ) : null}
+
+            {basecampApproval ? (
+              <div className="bc-facts">
+                <p className="bc-fact">
+                  {basecampApproval.ready
+                    ? `Sends to ${approvalRecipientName || "whoever you pick above"} and moves the Deliverables card to Needs Approval.`
+                    : basecampApproval.missing.includes("Basecamp project")
+                      ? `No Basecamp project on ${
+                          basecampApproval.clientName || "this client"
+                        } yet. Even if you have sent approvals for them before, this campaign’s account record needs the Growth OS project linked.`
+                      : `Setup needed: ${basecampApproval.missing.join(", ")}.`}
+                </p>
+                {basecampApproval.lastSentAt ? (
+                  <p className="bc-fact">
+                    Last sent{" "}
+                    {new Date(basecampApproval.lastSentAt).toLocaleString()}.
+                  </p>
+                ) : null}
+                {basecampApproval.followupCount > 0 ? (
+                  <p className="bc-fact am-followup-status">
+                    Followed up {basecampApproval.followupCount}×
+                    {basecampApproval.followupLastAt
+                      ? ` · last ${new Date(
+                          basecampApproval.followupLastAt
+                        ).toLocaleString()}`
+                      : ""}
+                  </p>
+                ) : basecampApproval.cardUrl ? (
+                  <p className="bc-fact">No follow-ups sent yet.</p>
+                ) : null}
+                {!basecampApproval.ready &&
+                basecampApproval.missing.includes("Basecamp project") ? (
+                  <div className="bc-fact-actions">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void matchBasecampProject()}
+                      disabled={matchingBasecamp}
+                    >
+                      {matchingBasecamp
+                        ? "Matching..."
+                        : "Match Basecamp project"}
+                    </button>
+                    {basecampApproval.clientId ? (
+                      <Link className="btn btn-secondary btn-sm" href="/admin/production">
+                        Open production clients
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
+                {basecampApproval.cardUrl ? (
+                  <p className="bc-fact">
+                    <a
+                      href={basecampApproval.cardUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open Basecamp Deliverables card
+                    </a>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="bc-facts">
+                <p className="bc-fact">Checking Basecamp setup...</p>
+              </div>
+            )}
+          </div>
+          </div>
+        </div>
+
+          </aside>
+        </div>
+
       </main>
       {schedulePromptOpen ? (
         <div
