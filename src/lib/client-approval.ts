@@ -50,7 +50,7 @@ How to approve in the app:
 
 1. Open the preview link above.
 2. Review each ${input.isAutomation ? "email in the automation" : "item in the package"}. Leave comments on anything that needs a change.
-3. When everything looks good, type your full name at the bottom of the page and click "Approve and notify email team".
+3. When everything looks good, type your full name at the top of the page and click "Approve and notify email team".
 
 One quick note: we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.
 
@@ -174,7 +174,7 @@ export function clientApprovalMessageHtml(
       `<li>Review each ${
         input.isAutomation ? "email in the automation" : "item in the package"
       }. Leave comments on anything that needs a change.</li>`,
-      `<li>When everything looks good, type your full name at the bottom of the page and click <strong>Approve and notify email team</strong>.</li>`,
+      `<li>When everything looks good, type your full name at the top of the page and click <strong>Approve and notify email team</strong>.</li>`,
       "</ol>",
     ].join(""),
   ].join(BC_BLANK_LINE);
