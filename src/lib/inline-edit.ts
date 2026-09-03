@@ -202,3 +202,44 @@ export function applyTextEdits(html: string, edits: TextEdit[]): EditOutcome {
     outlookCopiesUpdated,
   };
 }
+
+/**
+ * Put a preview body's HTML back into the stored email without touching the
+ * <head>. Used when the reviewer rewrote structure (new lines, replaced
+ * images) — those cannot be expressed as text-run splices.
+ */
+export function replaceBodyInnerHtml(
+  sourceHtml: string,
+  bodyInnerHtml: string
+): string {
+  const bodyOpen = sourceHtml.match(/<body\b[^>]*>/i);
+  if (bodyOpen && bodyOpen.index != null) {
+    const start = bodyOpen.index + bodyOpen[0].length;
+    const close = sourceHtml.slice(start).search(/<\/body>/i);
+    if (close !== -1) {
+      return (
+        sourceHtml.slice(0, start) + bodyInnerHtml + sourceHtml.slice(start + close)
+      );
+    }
+  }
+  // Fragment emails are the body. Keep whatever the preview produced.
+  return bodyInnerHtml;
+}
+
+/** Strip the chrome the live editor paints onto the preview DOM before save. */
+export function stripPreviewEditChrome(root: ParentNode): void {
+  const nodes =
+    "querySelectorAll" in root
+      ? root.querySelectorAll("[data-cd-editable], [data-cd-img-edit]")
+      : [];
+  for (const node of Array.from(nodes)) {
+    node.removeAttribute("data-cd-editable");
+    node.removeAttribute("contenteditable");
+    node.removeAttribute("data-cd-img-edit");
+  }
+  if ("getElementById" in root && typeof root.getElementById === "function") {
+    root.getElementById("cd-edit-style")?.remove();
+  } else if ("querySelector" in root) {
+    root.querySelector("#cd-edit-style")?.remove();
+  }
+}

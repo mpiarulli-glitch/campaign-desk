@@ -2361,6 +2361,32 @@ button {
   color: var(--warning-ink);
 }
 
+.bc-panel.is-collapsed {
+  gap: 0;
+}
+
+.bc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bc-toggle:hover .review-link-label {
+  color: var(--accent-ink);
+}
+
+.bc-toggle-chevron {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
 /* Capped to a readable measure. At full container width the message box became
    a slab wider than any sentence anyone types into it. */
 .bc-form {

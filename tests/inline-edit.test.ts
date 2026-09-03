@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyTextEdits } from "../src/lib/inline-edit";
+import { applyTextEdits, replaceBodyInnerHtml } from "../src/lib/inline-edit";
 
 // Shaped like the real thing: full document, a <head> whose media queries are
 // the only reason the email works on a phone, and a VML button whose label is
@@ -259,4 +259,22 @@ test("copy the source writes as entities", async (t) => {
       `<td>Visit The&nbsp;Showroom</td><td>Book A&nbsp;Visit</td>`
     );
   });
+});
+
+test("replacing the preview body keeps the document head", () => {
+  const source = `<!DOCTYPE html><html><head><style>.x{color:red}</style></head><body><p>Hi</p></body></html>`;
+  const out = replaceBodyInnerHtml(
+    source,
+    `<p>Hi<br>there</p><img src="data:image/png;base64,xx" alt="">`
+  );
+  assert.match(out, /<!DOCTYPE html>/);
+  assert.match(out, /\.x\{color:red\}/);
+  assert.match(out, /Hi<br>there/);
+  assert.match(out, /data:image\/png;base64,xx/);
+  assert.doesNotMatch(out, /<p>Hi<\/p>/);
+});
+
+test("fragment emails are replaced wholesale", () => {
+  const out = replaceBodyInnerHtml(`<p>Old</p>`, `<p>New<br>line</p>`);
+  assert.equal(out, `<p>New<br>line</p>`);
 });

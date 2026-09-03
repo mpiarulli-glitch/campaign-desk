@@ -3,8 +3,8 @@
 import { PushToGhl } from "@/components/PushToGhl";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { EmailPreview, type PendingEdit } from "@/components/EmailPreview";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { EmailPreview, type EmailEditHandle, type PendingEdit } from "@/components/EmailPreview";
 import { applyTextEdits } from "@/lib/inline-edit";
 import { EmailLinks } from "@/components/EmailLinks";
 import { isCopyQuote, quotedFeedback } from "@/lib/copy-quote";
@@ -312,6 +312,8 @@ export default function AdminCampaignPage() {
   const [activePinId, setActivePinId] = useState<string | null>(null);
   const [editingCopy, setEditingCopy] = useState(false);
   const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
+  const [editDirty, setEditDirty] = useState(false);
+  const emailEditRef = useRef<EmailEditHandle>(null);
   // Bumped to remount the preview and throw away edits on discard.
   const [previewNonce, setPreviewNonce] = useState(0);
   const [htmlDraft, setHtmlDraft] = useState("");
@@ -384,6 +386,10 @@ export default function AdminCampaignPage() {
   const [internalReviewMessage, setInternalReviewMessage] = useState("");
   const [sendingInternalReview, setSendingInternalReview] = useState(false);
   const [sendingInternalFollowup, setSendingInternalFollowup] = useState(false);
+  // Send forms stay collapsed until needed — the status chip and action
+  // buttons stay visible on the header row.
+  const [internalSendOpen, setInternalSendOpen] = useState(false);
+  const [clientSendOpen, setClientSendOpen] = useState(false);
   const [schedulePromptOpen, setSchedulePromptOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("09:00");
@@ -1120,23 +1126,71 @@ export default function AdminCampaignPage() {
     if (ok) setSchedulePromptOpen(false);
   }
 
-  // Copy edited straight in the preview. The edits name text runs rather than
-  // markup, and applyTextEdits splices them into the stored source, so the
-  // <head>, the media queries, and the Outlook conditionals come back
-  // untouched. It saves through the same endpoint as a pasted revision, so an
-  // inline edit lands in Versions and can be reverted like any other.
+  // Copy / images edited in the preview. Prefer the live body merge so new
+  // lines and replaced images survive; fall back to text-run splicing only
+  // when the preview handle is unavailable.
   async function saveInlineEdits() {
-    if (!activeEmail || pendingEdits.length === 0) return;
+    if (!activeEmail) return;
+    const hasChanges =
+      editDirty ||
+      pendingEdits.length > 0 ||
+      Boolean(emailEditRef.current?.isDirty());
+    if (!hasChanges) return;
     setSaving(true);
     setMessage("");
     setError("");
 
-    const result = applyTextEdits(activeDoc.html, pendingEdits);
-    if (result.applied === 0) {
+    let nextHtml =
+      emailEditRef.current?.getEditedHtml(activeDoc.html) || null;
+    let versionNoteText = "Inline email edit";
+
+    if (!nextHtml || nextHtml === activeDoc.html) {
+      if (pendingEdits.length === 0) {
+        setSaving(false);
+        setError("Nothing to save yet. Change some copy or an image first.");
+        return;
+      }
+      const result = applyTextEdits(activeDoc.html, pendingEdits);
+      if (result.applied === 0) {
+        setSaving(false);
+        setError(
+          "Could not place those edits back in the HTML, so nothing was saved. Edit the HTML directly instead."
+        );
+        return;
+      }
+      nextHtml = result.html;
+      versionNoteText = `Inline copy edit (${result.applied} change${
+        result.applied === 1 ? "" : "s"
+      })`;
+      const outlook = result.outlookCopiesUpdated
+        ? ` Outlook button copy updated too.`
+        : "";
+      const missed = result.skipped.length
+        ? ` ${result.skipped.length} change could not be placed and was left out.`
+        : "";
+      const res = await fetch(`/api/campaigns/${id}/emails`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emailId: activeEmail.id,
+          htmlContent: nextHtml,
+          versionNote: versionNoteText,
+        }),
+      });
       setSaving(false);
-      setError(
-        "Could not place those edits back in the HTML, so nothing was saved. Edit the HTML directly instead."
+      if (!res.ok) {
+        setError("Could not save the copy change.");
+        return;
+      }
+      setPendingEdits([]);
+      setEditDirty(false);
+      setEditingCopy(false);
+      setMessage(
+        `Saved ${result.applied} copy change${
+          result.applied === 1 ? "" : "s"
+        }.${outlook}${missed}`
       );
+      load(activeEmail.id);
       return;
     }
 
@@ -1145,36 +1199,26 @@ export default function AdminCampaignPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         emailId: activeEmail.id,
-        htmlContent: result.html,
-        versionNote: `Inline copy edit (${result.applied} change${
-          result.applied === 1 ? "" : "s"
-        })`,
+        htmlContent: nextHtml,
+        versionNote: versionNoteText,
       }),
     });
     setSaving(false);
     if (!res.ok) {
-      setError("Could not save the copy change.");
+      setError("Could not save the email edit.");
       return;
     }
 
-    const outlook = result.outlookCopiesUpdated
-      ? ` Outlook button copy updated too.`
-      : "";
-    const missed = result.skipped.length
-      ? ` ${result.skipped.length} change could not be placed and was left out.`
-      : "";
     setPendingEdits([]);
+    setEditDirty(false);
     setEditingCopy(false);
-    setMessage(
-      `Saved ${result.applied} copy change${
-        result.applied === 1 ? "" : "s"
-      }.${outlook}${missed}`
-    );
+    setMessage("Saved email edits.");
     load(activeEmail.id);
   }
 
   function discardInlineEdits() {
     setPendingEdits([]);
+    setEditDirty(false);
     setEditingCopy(false);
     // Remounting the preview throws away the edited DOM and re-renders from the
     // saved HTML, which is what makes Discard actually discard.
@@ -2052,19 +2096,22 @@ export default function AdminCampaignPage() {
                 ) : editingCopy ? (
                     <>
                       <span className="copy-edit-hint">
-                        {pendingEdits.length === 0
-                          ? "Click any text in the email and type over it."
-                          : `${pendingEdits.length} change${
-                              pendingEdits.length === 1 ? "" : "s"
-                            } ready to save.`}
+                        {!editDirty && pendingEdits.length === 0
+                          ? "Click text to rewrite · Enter for a new line · click an image to replace it."
+                          : "Unsaved edits in the preview — save when you are done."}
                       </span>
                       <div className="row" style={{ gap: 8 }}>
                         <button
                           className="btn btn-sm"
                           onClick={saveInlineEdits}
-                          disabled={saving || pendingEdits.length === 0}
+                          disabled={
+                            saving ||
+                            (!editDirty &&
+                              pendingEdits.length === 0 &&
+                              !emailEditRef.current?.isDirty())
+                          }
                         >
-                          {saving ? "Saving..." : "Save copy changes"}
+                          {saving ? "Saving..." : "Save email edits"}
                         </button>
                         <button
                           className="btn btn-secondary btn-sm"
@@ -2078,25 +2125,30 @@ export default function AdminCampaignPage() {
                   ) : (
                     <>
                       <span className="copy-edit-hint">
-                        Change wording without opening the HTML.
+                        Rewrite copy, break lines, or replace images in the preview.
                       </span>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => setEditingCopy(true)}
+                        onClick={() => {
+                          setEditDirty(false);
+                          setPendingEdits([]);
+                          setEditingCopy(true);
+                        }}
                         disabled={isClientApproved}
                         title={
                           isClientApproved
-                            ? "This package is approved. Reopen it to edit copy."
+                            ? "This package is approved. Reopen it to edit."
                             : undefined
                         }
                       >
-                        Edit copy
+                        Edit email
                       </button>
                     </>
                   )}
                 <CopyHtmlButton html={activeDoc.html} />
               </div>
               <EmailPreview
+                ref={emailEditRef}
                 key={`${activeDoc.html.length}-${previewNonce}`}
                 html={activeDoc.html}
                 pins={emailComments}
@@ -2116,6 +2168,7 @@ export default function AdminCampaignPage() {
                 interactive={activeDoc.interactive}
                 editing={editingCopy}
                 onEditsChange={setPendingEdits}
+                onDirtyChange={setEditDirty}
                 packageNav={
                   emails.length > 1
                     ? {
@@ -2594,13 +2647,23 @@ export default function AdminCampaignPage() {
           </div>
 
           <div className="cd-pkg-flows">
-          <div className="bc-panel">
+          <div className={`bc-panel ${internalSendOpen ? "is-open" : "is-collapsed"}`}>
             <div className="bc-head">
               <div className="bc-head-copy">
-                <span className="review-link-label">
-                  Internal review{" "}
-                  <span className="muted">· account manager</span>
-                </span>
+                <button
+                  type="button"
+                  className="bc-toggle"
+                  aria-expanded={internalSendOpen}
+                  onClick={() => setInternalSendOpen((v) => !v)}
+                >
+                  <span className="review-link-label">
+                    Internal review{" "}
+                    <span className="muted">· account manager</span>
+                  </span>
+                  <span className="bc-toggle-chevron" aria-hidden="true">
+                    {internalSendOpen ? "▾" : "▸"}
+                  </span>
+                </button>
                 {internalReview ? (
                   <span
                     className={`bc-state ${
@@ -2648,7 +2711,10 @@ export default function AdminCampaignPage() {
                       ? "btn-secondary"
                       : ""
                   }`}
-                  onClick={sendInternalReview}
+                  onClick={() => {
+                    setInternalSendOpen(true);
+                    void sendInternalReview();
+                  }}
                   disabled={
                     !internalReview?.ready ||
                     sendingInternalReview ||
@@ -2663,6 +2729,8 @@ export default function AdminCampaignPage() {
                 </button>
               </div>
             </div>
+            {internalSendOpen ? (
+            <>
             <div className="bc-form">
               <div className="bc-form-row">
                 <div className="field">
@@ -2768,15 +2836,27 @@ export default function AdminCampaignPage() {
                 </p>
               </div>
             ) : null}
+            </>
+            ) : null}
           </div>
 
-          <div className="bc-panel">
+          <div className={`bc-panel ${clientSendOpen ? "is-open" : "is-collapsed"}`}>
             <div className="bc-head">
               <div className="bc-head-copy">
-                <span className="review-link-label">
-                  Basecamp{" "}
-                  <span className="muted">· client approval workflow</span>
-                </span>
+                <button
+                  type="button"
+                  className="bc-toggle"
+                  aria-expanded={clientSendOpen}
+                  onClick={() => setClientSendOpen((v) => !v)}
+                >
+                  <span className="review-link-label">
+                    Basecamp{" "}
+                    <span className="muted">· client approval workflow</span>
+                  </span>
+                  <span className="bc-toggle-chevron" aria-hidden="true">
+                    {clientSendOpen ? "▾" : "▸"}
+                  </span>
+                </button>
                 {basecampApproval ? (
                   <span
                     className={`bc-state ${
@@ -2840,7 +2920,10 @@ export default function AdminCampaignPage() {
                       className={`btn btn-sm ${
                         basecampApproval?.cardUrl ? "btn-secondary" : ""
                       }`}
-                      onClick={() => setConfirmingBasecampApproval(true)}
+                      onClick={() => {
+                        setClientSendOpen(true);
+                        setConfirmingBasecampApproval(true);
+                      }}
                       disabled={
                         !basecampApproval?.ready || sendingBasecampApproval
                       }
@@ -2858,6 +2941,8 @@ export default function AdminCampaignPage() {
               </div>
             </div>
 
+            {clientSendOpen ? (
+            <>
             {basecampApproval?.ready && !sendingBasecampApproval ? (
               <div className="bc-form">
                 <div className="bc-form-row">
@@ -3051,6 +3136,8 @@ export default function AdminCampaignPage() {
                 <p className="bc-fact">Checking Basecamp setup...</p>
               </div>
             )}
+            </>
+            ) : null}
           </div>
           </div>
         </div>

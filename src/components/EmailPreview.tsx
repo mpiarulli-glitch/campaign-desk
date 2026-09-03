@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import { adjacentPackageId } from "@/lib/email-package";
 import {
   MOBILE_PREVIEW_WIDTH,
@@ -9,6 +9,10 @@ import {
   measureEmailContentWidth,
   measurePreviewDocumentHeight,
 } from "@/lib/email-preview";
+import {
+  replaceBodyInnerHtml,
+  stripPreviewEditChrome,
+} from "@/lib/inline-edit";
 import {
   QUOTE_MARK_ATTR,
   applyQuoteMarks,
@@ -74,6 +78,15 @@ type Props = {
   onSubmitInline?: (payload: InlineFeedbackPayload) => Promise<boolean>;
   // Delete a pin or highlight from the hover tip.
   onDeleteComment?: (id: string) => void;
+  // Fired whenever the live editor has unsaved text or image changes.
+  onDirtyChange?: (dirty: boolean) => void;
+};
+
+/** Imperative save API for the live email editor on the campaign desk. */
+export type EmailEditHandle = {
+  /** Build saved HTML from the live preview, preserving the source <head>. */
+  getEditedHtml: (sourceHtml: string) => string | null;
+  isDirty: () => boolean;
 };
 
 const QUOTE_STYLE = `
@@ -205,7 +218,8 @@ type TipState = {
   comment: PinComment;
 };
 
-export function EmailPreview({
+export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPreview(
+  {
   html,
   pins = [],
   activePinId,
@@ -220,7 +234,10 @@ export function EmailPreview({
   onAuthorNameChange,
   onSubmitInline,
   onDeleteComment,
-}: Props) {
+  onDirtyChange,
+},
+  ref
+) {
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -371,11 +388,51 @@ export function EmailPreview({
     };
   }, [srcDoc, freezeHeight, interactive]);
 
-  // Copy editing. The preview is a same-origin srcDoc frame, so the text in it
-  // can be made editable in place and read back. What is read back is only the
-  // text: the source HTML is spliced by applyTextEdits rather than
-  // re-serialised from this DOM, because this DOM has already lost the parts of
-  // a full document that matter most (the <head> and its media queries).
+  // Copy + image editing. Text can be rewritten in place; Enter inserts a
+  // real <br> (so lines actually break in the email); images open a file
+  // picker. Save walks the live body back into the stored HTML so structure
+  // changes survive — text-run splicing alone cannot express a new line or a
+  // replaced src.
+  const dirtyRef = useRef(false);
+  const markDirty = useCallback(
+    (edits: PendingEdit[] = []) => {
+      dirtyRef.current = true;
+      onEditsChange?.(edits);
+      onDirtyChange?.(true);
+    },
+    [onEditsChange, onDirtyChange]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      isDirty: () => dirtyRef.current,
+      getEditedHtml: (sourceHtml: string) => {
+        const iframe = iframeRef.current;
+        const doc = iframe?.contentDocument;
+        if (!doc?.body) return null;
+        const clone = doc.body.cloneNode(true) as HTMLElement;
+        stripPreviewEditChrome(clone);
+        // Quote marks and compose chrome are review-only.
+        for (const mark of Array.from(
+          clone.querySelectorAll(`mark[${QUOTE_MARK_ATTR}]`)
+        )) {
+          const parent = mark.parentNode;
+          if (!parent) continue;
+          while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+          parent.removeChild(mark);
+        }
+        return replaceBodyInnerHtml(sourceHtml, clone.innerHTML);
+      },
+    }),
+    []
+  );
+
+  useEffect(() => {
+    dirtyRef.current = false;
+    onDirtyChange?.(false);
+  }, [srcDoc, editing, onDirtyChange]);
+
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe || interactive) return;
@@ -388,12 +445,13 @@ export function EmailPreview({
         host.removeAttribute("contenteditable");
         host.removeAttribute("data-cd-editable");
       }
+      for (const img of Array.from(doc.querySelectorAll("img[data-cd-img-edit]"))) {
+        img.removeAttribute("data-cd-img-edit");
+      }
+      doc.getElementById("cd-edit-style")?.remove();
       return;
     }
 
-    // The text every run started as, and how many identical runs came before
-    // it. Captured once on entering edit mode so the ordinals stay fixed even
-    // as the reviewer types one of them into a duplicate of another.
     const baseline = new Map<HTMLElement, { text: string; ordinal: number }[]>();
     const seen = new Map<string, number>();
     const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
@@ -411,14 +469,19 @@ export function EmailPreview({
 
     const hosts = [...baseline.keys()];
     for (const host of hosts) {
-      // plaintext-only keeps the browser from dropping <span style> and <div>
-      // into table markup that has to survive Outlook. Where it is unsupported
-      // the attribute falls back to plain contentEditable.
-      host.setAttribute("contenteditable", "plaintext-only");
-      if (host.contentEditable !== "plaintext-only") {
-        host.setAttribute("contenteditable", "true");
-      }
+      // true (not plaintext-only) so Enter can insert a <br>. We still block
+      // rich paste below so Outlook-hostile <div>/<p> do not land in tables.
+      host.setAttribute("contenteditable", "true");
       host.setAttribute("data-cd-editable", "");
+    }
+
+    for (const img of Array.from(doc.images || [])) {
+      // Spacers and tracking pixels are not worth offering as replacements.
+      if ((img.width && img.width <= 4) || (img.height && img.height <= 4)) {
+        continue;
+      }
+      img.setAttribute("data-cd-img-edit", "");
+      img.style.cursor = "pointer";
     }
 
     const style = doc.createElement("style");
@@ -427,10 +490,12 @@ export function EmailPreview({
       [data-cd-editable]{outline:1px dashed rgba(37,99,235,.45);outline-offset:2px;cursor:text;}
       [data-cd-editable]:hover{outline-color:rgba(37,99,235,.9);background:rgba(37,99,235,.06);}
       [data-cd-editable]:focus{outline:2px solid #2563eb;outline-offset:2px;background:rgba(37,99,235,.08);}
+      img[data-cd-img-edit]{outline:1px dashed rgba(37,99,235,.45);outline-offset:2px;}
+      img[data-cd-img-edit]:hover{outline:2px solid #2563eb;outline-offset:2px;filter:brightness(0.97);}
     `;
     doc.head?.appendChild(style);
 
-    const collect = () => {
+    const collectTextEdits = (): PendingEdit[] => {
       const edits: PendingEdit[] = [];
       for (const [host, runs] of baseline) {
         const current: string[] = [];
@@ -439,9 +504,6 @@ export function EmailPreview({
           const t = n.nodeValue || "";
           if (t.trim()) current.push(t);
         }
-        // A run count that no longer matches means typing merged or split the
-        // text nodes, and pairing them off by position would put copy in the
-        // wrong place. Those are left out rather than guessed at.
         if (current.length !== runs.length) continue;
         runs.forEach((run, i) => {
           if (current[i] !== run.text) {
@@ -453,25 +515,96 @@ export function EmailPreview({
           }
         });
       }
-      onEditsChange?.(edits);
+      return edits;
     };
 
-    doc.addEventListener("input", collect);
-    // Typing changes how tall the email is, so the frame has to follow.
-    const onInput = () =>
+    const onInput = () => {
+      markDirty(collectTextEdits());
       setHeight(measurePreviewDocumentHeight(doc, iframe));
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest?.("[data-cd-editable]")) return;
+      e.preventDefault();
+      // insertLineBreak keeps the caret in the same cell and yields a real
+      // <br>, which is what email clients render as a new line.
+      doc.execCommand("insertLineBreak");
+      onInput();
+    };
+
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest?.("[data-cd-editable]")) return;
+      e.preventDefault();
+      const text = e.clipboardData?.getData("text/plain") || "";
+      doc.execCommand("insertText", false, text);
+      onInput();
+    };
+
+    const fileInput = doc.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+    doc.body.appendChild(fileInput);
+    let pendingImg: HTMLImageElement | null = null;
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      const img = pendingImg;
+      pendingImg = null;
+      fileInput.value = "";
+      if (!file || !img) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || "");
+        if (!dataUrl) return;
+        img.setAttribute("src", dataUrl);
+        img.removeAttribute("srcset");
+        markDirty(collectTextEdits());
+        setHeight(measurePreviewDocumentHeight(doc, iframe));
+      };
+      reader.readAsDataURL(file);
+    });
+
+    const onClick = (e: MouseEvent) => {
+      const img = (e.target as Element | null)?.closest?.(
+        "img[data-cd-img-edit]"
+      ) as HTMLImageElement | null;
+      if (!img) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pendingImg = img;
+      fileInput.click();
+    };
+
     doc.addEventListener("input", onInput);
+    doc.addEventListener("keydown", onKeyDown);
+    doc.addEventListener("paste", onPaste);
+    doc.addEventListener("click", onClick);
 
     return () => {
-      doc.removeEventListener("input", collect);
       doc.removeEventListener("input", onInput);
+      doc.removeEventListener("keydown", onKeyDown);
+      doc.removeEventListener("paste", onPaste);
+      doc.removeEventListener("click", onClick);
+      fileInput.remove();
       doc.getElementById("cd-edit-style")?.remove();
       for (const host of hosts) {
         host.removeAttribute("contenteditable");
         host.removeAttribute("data-cd-editable");
       }
+      for (const img of Array.from(
+        doc.querySelectorAll("img[data-cd-img-edit]")
+      ) as HTMLImageElement[]) {
+        img.removeAttribute("data-cd-img-edit");
+        img.style.cursor = "";
+      }
     };
-  }, [editing, srcDoc, ready, interactive, onEditsChange]);
+  }, [editing, srcDoc, ready, interactive, markDirty]);
 
   const quoteMarks = useMemo((): QuoteMark[] => {
     const saved = pins.filter(isCopyQuote);
@@ -1079,4 +1212,4 @@ export function EmailPreview({
       ) : null}
     </div>
   );
-}
+});
