@@ -1177,7 +1177,11 @@ export default function PersonForecastPage() {
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [addingFor, setAddingFor] = useState<string | null>(null);
-  const [role, setRole] = useState<"admin" | "forecast" | null>(null);
+  // Whose weeks this session may open. "*" or more than one slug means they
+  // get the team board link and a person switcher (Roy seeing Saqib, etc.).
+  const [forecastSubjects, setForecastSubjects] = useState<
+    "*" | Array<{ slug: string; label: string }>
+  >([]);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
@@ -1349,7 +1353,12 @@ export default function PersonForecastPage() {
     fetch("/api/auth")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.authenticated) setRole(data.role);
+        if (!data?.authenticated) return;
+        if (data.forecastSubjects === "*") {
+          setForecastSubjects("*");
+        } else if (Array.isArray(data.forecastSubjects)) {
+          setForecastSubjects(data.forecastSubjects);
+        }
       })
       .catch(() => {});
   }, []);
@@ -3068,10 +3077,20 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  const canSeeTeamBoard =
+    forecastSubjects === "*" ||
+    (Array.isArray(forecastSubjects) && forecastSubjects.length > 1);
+  const switcherPeople =
+    forecastSubjects === "*"
+      ? []
+      : Array.isArray(forecastSubjects)
+        ? forecastSubjects
+        : [];
+
   return (
     <div className="ops-scope">
       <div className="page-actions">
-        {role === "admin" ? (
+        {canSeeTeamBoard ? (
           <Link className="btn btn-ghost btn-sm" href="/admin/forecast">All forecasts</Link>
         ) : null}
       </div>
@@ -3081,6 +3100,19 @@ export default function PersonForecastPage() {
           <div>
             <p className="ops-eyebrow">Weekly forecast</p>
             <h1 className="ops-title">{data?.label || person}</h1>
+            {switcherPeople.length > 1 ? (
+              <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                {switcherPeople.map((p) => (
+                  <Link
+                    key={p.slug}
+                    href={`/admin/forecast/${p.slug}?week=${week}`}
+                    className={`preview-device-btn ${p.slug === person ? "active" : ""}`}
+                  >
+                    {p.label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
             {/* The calendar explains itself — a grid of hours with a queue beside
                 it does not need a sentence telling you to add work to it. */}
             {view === "calendar" || view === "tasks" ? null : (

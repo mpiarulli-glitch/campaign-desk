@@ -51,7 +51,17 @@ export default function ForecastDashboardPage() {
     const auth = await fetch("/api/auth");
     if (auth.ok) {
       const session = await auth.json();
-      if (session.role === "forecast" && session.person) {
+      // Only bounce a user-role login to their own week when that is the only
+      // forecast they may open. Someone granted a teammate (or everyone) stays
+      // on this board so they can click into the other weeks.
+      const subjects = session.forecastSubjects;
+      const onlyOwn =
+        session.role === "forecast" &&
+        session.person &&
+        Array.isArray(subjects) &&
+        subjects.length === 1 &&
+        subjects[0]?.slug === session.person;
+      if (onlyOwn) {
         router.push(`/admin/forecast/${session.person}?week=${w}`);
         return;
       }

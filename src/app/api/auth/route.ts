@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import { accessSubject, clearSession, getSession, login } from "@/lib/auth";
-import { resolveAll, visiblePages } from "@/lib/access";
+import {
+  accessSubject,
+  clearSession,
+  getSession,
+  login,
+  sessionForecastSubjects,
+} from "@/lib/auth";
+import { FORECAST_ALL, resolveAll, visiblePages } from "@/lib/access";
 import { forecastGoogleEnabled } from "@/lib/forecast-google";
-import { OWNER_SLUG } from "@/lib/people";
+import { OWNER_SLUG, personLabel } from "@/lib/people";
 import { hasOwnPassword } from "@/lib/users";
 import { setupStateFor } from "@/lib/setup";
 import { clientKey, loginAllowed, loginFailed, loginSucceeded } from "@/lib/rate-limit";
@@ -24,11 +30,20 @@ export async function GET() {
   if (who) {
     for (const cap of resolveAll(who)) capabilities[cap.key] = cap.allowed;
   }
+  // Whose weeks this session may open. "*" means the whole roster; otherwise a
+  // short list. The forecast UI uses this so a user granted a teammate (Roy →
+  // Saqib) is not bounced straight to their own week forever.
+  const forecastVisible = await sessionForecastSubjects();
+  const forecastSubjects =
+    forecastVisible === FORECAST_ALL
+      ? FORECAST_ALL
+      : forecastVisible.map((s) => ({ slug: s, label: personLabel(s) }));
 
   return NextResponse.json({
     authenticated: Boolean(session),
     pages: pages.map((p) => ({ key: p.key, href: p.href, label: p.label, icon: p.icon })),
     capabilities,
+    forecastSubjects,
     role: session?.role || null,
     person: session?.person || null,
     owner,
