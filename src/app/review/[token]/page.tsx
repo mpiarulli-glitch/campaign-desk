@@ -13,6 +13,7 @@ import { AutomationMap } from "@/components/AutomationMap";
 import {
   renderAssetDoc,
   kindNoun,
+  kindUsesSubjects,
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
@@ -845,7 +846,9 @@ export default function ReviewPage() {
               }
             />
 
-            {activeEmail.subjects && activeEmail.subjects.length > 0 ? (
+            {kindUsesSubjects(activeEmail.kind ?? "email") &&
+            activeEmail.subjects &&
+            activeEmail.subjects.length > 0 ? (
               <div className="card card-pad stack">
                 <div>
                   <h2 className="h2">Pick a subject line</h2>

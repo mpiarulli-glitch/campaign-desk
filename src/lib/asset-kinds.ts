@@ -152,6 +152,53 @@ export function kindDeliverableLabel(kind: AssetKind): string {
   return KIND_DELIVERABLE_LABEL[coerceKind(kind)];
 }
 
+/** Email and cold email use subject lines + preview text; other kinds do not. */
+export function kindUsesSubjects(kind: AssetKind): boolean {
+  const k = coerceKind(kind);
+  return k === "email" || k === "cold_email";
+}
+
+/** Singular/plural count phrase for a single asset kind ("1 LinkedIn message"). */
+export function kindCountLabel(kind: AssetKind, count: number): string {
+  const n = Math.max(0, Math.floor(count));
+  switch (coerceKind(kind)) {
+    case "email":
+      return n === 1 ? "1 email" : `${n} emails`;
+    case "cold_email":
+      return n === 1 ? "1 cold email" : `${n} cold emails`;
+    case "linkedin":
+      return n === 1 ? "1 LinkedIn message" : `${n} LinkedIn messages`;
+    case "sms":
+      return n === 1 ? "1 text message" : `${n} text messages`;
+    case "interactive":
+      return n === 1 ? "1 form/quiz" : `${n} forms/quizzes`;
+    case "blog":
+      return n === 1 ? "1 blog post" : `${n} blog posts`;
+    case "copydeck":
+      return n === 1 ? "1 copy deck" : `${n} copy decks`;
+    case "mockup":
+      return n === 1 ? "1 mock-up" : `${n} mock-ups`;
+  }
+}
+
+/**
+ * Count label for a package's items. Homogeneous packages use that kind's
+ * noun; mixed packages fall back to "item(s)"; automations use "step(s)".
+ */
+export function packageItemCountLabel(
+  kinds: Array<AssetKind | null | undefined>,
+  opts?: { automation?: boolean }
+): string {
+  const count = kinds.length;
+  if (opts?.automation) {
+    return count === 1 ? "1 step" : `${count} steps`;
+  }
+  if (count === 0) return "0 items";
+  const distinct = Array.from(new Set(kinds.map(coerceKind)));
+  if (distinct.length === 1) return kindCountLabel(distinct[0]!, count);
+  return count === 1 ? "1 item" : `${count} items`;
+}
+
 /**
  * Basecamp Deliverables card title: "<asset type> - <campaign title>".
  *

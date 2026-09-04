@@ -23,6 +23,8 @@ import {
   renderAssetDoc,
   kindLabel,
   kindNoun,
+  kindUsesSubjects,
+  packageItemCountLabel,
   coerceFormat,
   type AssetKind,
   type BodyFormat,
@@ -1615,9 +1617,11 @@ export default function AdminCampaignPage() {
             </p>
             <h1 className="h1">{campaign.title}</h1>
             <p className="muted" style={{ margin: "8px 0 0" }}>
-              {emails.length} {isAutomation ? "step" : "email"}
-              {emails.length === 1 ? "" : isAutomation ? "s" : "s"} · Updated{" "}
-              {new Date(campaign.updated_at).toLocaleString()}
+              {packageItemCountLabel(
+                emails.map((e) => e.kind),
+                { automation: isAutomation }
+              )}{" "}
+              · Updated {new Date(campaign.updated_at).toLocaleString()}
             </p>
             <div
               className="row"
@@ -1827,16 +1831,20 @@ export default function AdminCampaignPage() {
                     ) : null}
                   </button>
                   <div className="email-tab-tooltip">
-                    <div className="email-tab-tooltip-row">
-                      <div className="email-tab-tooltip-label">Subject</div>
-                      <div>{subject?.subject || "Not set yet"}</div>
-                    </div>
-                    <div className="email-tab-tooltip-row">
-                      <div className="email-tab-tooltip-label">
-                        Preview text
-                      </div>
-                      <div>{subject?.preview_text || "Not set yet"}</div>
-                    </div>
+                    {kindUsesSubjects(email.kind ?? "email") ? (
+                      <>
+                        <div className="email-tab-tooltip-row">
+                          <div className="email-tab-tooltip-label">Subject</div>
+                          <div>{subject?.subject || "Not set yet"}</div>
+                        </div>
+                        <div className="email-tab-tooltip-row">
+                          <div className="email-tab-tooltip-label">
+                            Preview text
+                          </div>
+                          <div>{subject?.preview_text || "Not set yet"}</div>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="email-tab-tooltip-row">
                       <div className="email-tab-tooltip-label">Purpose</div>
                       <div>{email.purpose || "Not set yet"}</div>
@@ -2001,10 +2009,8 @@ export default function AdminCampaignPage() {
         {tab === "feedback" ? (
           <div className="split-review">
             <div className="stack">
-              {/* Above the email, not below it. Subject and preview text are the
-                  first thing a client judges and the first thing they pick, and
-                  they were sitting under a full email render that can be several
-                  screens tall. */}
+              {/* Above the preview. Subject/preview only apply to email kinds. */}
+              {kindUsesSubjects(activeEmail.kind ?? "email") ? (
               <div className="card card-pad stack">
                 <h2 className="h2" style={{ margin: 0 }}>
                   Subject lines & preview text
@@ -2088,6 +2094,7 @@ export default function AdminCampaignPage() {
                   </button>
                 </div>
               </div>
+              ) : null}
               <div className="card card-pad row copy-edit-bar">
                 {activeDoc.interactive ? (
                   <span className="copy-edit-hint">
@@ -2111,7 +2118,11 @@ export default function AdminCampaignPage() {
                               !emailEditRef.current?.isDirty())
                           }
                         >
-                          {saving ? "Saving..." : "Save email edits"}
+                          {saving
+                            ? "Saving..."
+                            : kindUsesSubjects(activeEmail.kind ?? "email")
+                              ? "Save email edits"
+                              : "Save edits"}
                         </button>
                         <button
                           className="btn btn-secondary btn-sm"
@@ -2141,7 +2152,9 @@ export default function AdminCampaignPage() {
                             : undefined
                         }
                       >
-                        Edit email
+                        {kindUsesSubjects(activeEmail.kind ?? "email")
+                          ? "Edit email"
+                          : `Edit ${kindNoun(activeEmail.kind ?? "email")}`}
                       </button>
                     </>
                   )}
@@ -2192,7 +2205,7 @@ export default function AdminCampaignPage() {
                 <textarea
                   value={purposeDraft}
                   onChange={(e) => setPurposeDraft(e.target.value)}
-                  placeholder="What is this specific email trying to do?"
+                  placeholder={`What is this specific ${kindNoun(activeEmail.kind ?? "email")} trying to do?`}
                   style={{ minHeight: 70 }}
                 />
                 <div className="row">

@@ -10,6 +10,7 @@ import {
   matchesCampaignStatusFilter,
   type OperatorCampaignStatus,
 } from "@/lib/campaign-status";
+import { packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
 
 type CampaignRow = {
   id: string;
@@ -22,6 +23,7 @@ type CampaignRow = {
   approved_at: string | null;
   open_comments: number;
   email_count?: number;
+  email_kinds?: AssetKind[];
   magic_token: string;
   archived_at?: string | null;
   presentation?: string;
@@ -215,15 +217,12 @@ function CampaignCard({
           {c.presentation === "automation" ? "Automation · " : ""}
           {c.client_name ? `${c.client_name} · ` : ""}
           {c.email_count
-            ? `${c.email_count} ${
-                c.presentation === "automation"
-                  ? c.email_count === 1
-                    ? "step"
-                    : "steps"
-                  : c.email_count === 1
-                    ? "email"
-                    : "emails"
-              } · `
+            ? `${packageItemCountLabel(
+                c.email_kinds?.length
+                  ? c.email_kinds
+                  : Array.from({ length: c.email_count }, () => "email" as AssetKind),
+                { automation: c.presentation === "automation" }
+              )} · `
             : ""}
           Updated {new Date(c.updated_at).toLocaleString()}
           {c.open_comments > 0

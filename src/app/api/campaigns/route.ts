@@ -11,6 +11,7 @@ import {
   listCampaignsWithKind,
   countOpenComments,
   countEmails,
+  listEmailKinds,
 } from "@/lib/campaigns";
 import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
 import {
@@ -40,6 +41,7 @@ export async function GET(request: Request) {
     ...c,
     open_comments: countOpenComments(c.id),
     email_count: countEmails(c.id),
+    email_kinds: listEmailKinds(c.id),
     review_path: `/review/${c.magic_token}`,
   }));
 

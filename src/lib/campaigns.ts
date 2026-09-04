@@ -1566,6 +1566,18 @@ export function countEmails(campaignId: string): number {
   return row.count;
 }
 
+/** Ordered kinds for every item in a package (used for count labels). */
+export function listEmailKinds(campaignId: string): AssetKind[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT kind FROM campaign_emails
+       WHERE campaign_id = ?
+       ORDER BY sort_order ASC, created_at ASC`
+    )
+    .all(campaignId) as Array<{ kind: string }>;
+  return rows.map((r) => coerceKind(r.kind));
+}
+
 export type ActivityKind = "feedback" | "approved";
 
 export interface ActivityItem {
