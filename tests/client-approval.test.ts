@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   campaignApprovalRevisionKey,
+  approvalChannelForAssets,
   clientApprovalMessageHtml,
   clientApprovalMessageHtmlFromText,
   clientApprovalMessageText,
@@ -164,4 +165,55 @@ test("review follow-up asks the client to look, and mentions them when it can", 
   assert.doesNotMatch(html, /Hi Katie,/);
   assert.match(html, /href="https:\/\/campaign-desk\.example\/review\/client-token"/);
   assert.match(html, /Approve and notify email team/);
+});
+
+test("only a LinkedIn-only package uses the outreach approval note", () => {
+  assert.equal(approvalChannelForAssets(["linkedin"]), "linkedin");
+  assert.equal(approvalChannelForAssets(["linkedin", "linkedin"]), "linkedin");
+  assert.equal(approvalChannelForAssets(["email"]), "email");
+  assert.equal(approvalChannelForAssets(["linkedin", "email"]), "email");
+  assert.equal(approvalChannelForAssets([]), "email");
+});
+
+test("LinkedIn outreach approval copy is not the email checklist", () => {
+  const linkedin = {
+    ...input,
+    campaignTitle: "Estate Referral Outreach",
+    channel: "linkedin" as const,
+  };
+  const text = clientApprovalMessageText(linkedin);
+  assert.match(text, /^Hi Katie,/);
+  assert.match(text, /LinkedIn outreach is ready for review/);
+  assert.match(text, /How to read this:/);
+  assert.match(text, /Targeting: are we reaching the right people/);
+  assert.match(text, /Connection request:/);
+  assert.match(text, /Connect your LinkedIn account/);
+  assert.match(text, /Empire Leads/);
+  assert.match(text, /5 to 8 a day/);
+  assert.match(text, /15 to 20 a day/);
+  assert.match(text, /respond within 24 hours/);
+  assert.match(text, /widget\/bookings\/michael-piarullis-calendar/);
+  assert.match(text, /CC: @Sylvia/);
+  assert.doesNotMatch(text, /CTAs: are the calls to action/);
+  assert.doesNotMatch(text, /Imagery: do the visuals/);
+  assert.doesNotMatch(text, /keep scheduling moving/);
+
+  const html = clientApprovalMessageHtml(linkedin);
+  assert.match(html, /LinkedIn outreach is ready for review/);
+  assert.match(html, /How to read this:/);
+  assert.match(html, /Grab a time on my calendar here/);
+  assert.match(
+    html,
+    /href="https:\/\/api\.leadconnectorhq\.com\/widget\/bookings\/michael-piarullis-calendar"/
+  );
+  assert.match(html, /Responses are yours to manage/);
+  assert.doesNotMatch(html, /calls to action/);
+  assert.doesNotMatch(html, /Imagery/);
+});
+
+test("LinkedIn review follow-up talks about outreach, not email packaging", () => {
+  const text = clientReviewFollowupText({ ...input, channel: "linkedin" });
+  assert.match(text, /LinkedIn outreach is still waiting on review/);
+  assert.match(text, /the idea, the targeting, and the messages/);
+  assert.doesNotMatch(text, /review everything, then type/);
 });

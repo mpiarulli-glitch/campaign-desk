@@ -10,8 +10,8 @@ import {
   hasConnection,
   mentionHtml,
 } from "@/lib/basecamp";
-import { getCampaignById, recordBasecampFollowUp } from "@/lib/campaigns";
-import { clientReviewFollowupHtml } from "@/lib/client-approval";
+import { getCampaignById, listEmails, recordBasecampFollowUp } from "@/lib/campaigns";
+import { approvalChannelForAssets, clientReviewFollowupHtml } from "@/lib/client-approval";
 import { recordFailure, clearFailure } from "@/lib/failures";
 import { markClientFollowUpSent } from "@/lib/lifecycle-board";
 import { resolveCampaignClient } from "@/lib/campaign-card-sync";
@@ -74,6 +74,9 @@ export async function POST(_request: Request, { params }: Params) {
       clientContactName: recipient.name || client.contact_name || client.name,
       campaignTitle: campaign.title,
       previewUrl: reviewUrl(campaign.external_token),
+      channel: approvalChannelForAssets(
+        listEmails(campaign.id).map((email) => email.kind)
+      ),
     },
     mentionHtml(recipient)
   );

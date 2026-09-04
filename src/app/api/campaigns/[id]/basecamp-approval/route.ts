@@ -20,6 +20,7 @@ import {
 import {
   campaignApprovalRevisionKey,
   APPROVAL_MESSAGE_MAX_CHARS,
+  approvalChannelForAssets,
   clientApprovalMessageHtml,
   clientApprovalMessageHtmlFromText,
   clientApprovalMessageText,
@@ -47,6 +48,7 @@ function approvalState(id: string) {
     campaignTitle: campaign.title,
     previewUrl,
     isAutomation: campaign.presentation === "automation",
+    channel: approvalChannelForAssets(emails.map((email) => email.kind)),
   };
 
   // A missing contact is deliberately not listed. The send form picks the
