@@ -77,7 +77,9 @@ export function AssetContentFields({
                 ? "Full HTML of the form or quiz (scripts run in preview)"
                 : kind === "cold_email"
                   ? "Paste the cold email HTML"
-                  : "Paste the full HTML"
+                  : kind === "linkedin"
+                    ? "Paste the LinkedIn outreach HTML"
+                    : "Paste the full HTML"
             }
             style={{ minHeight: 200, fontFamily: "var(--mono)", fontSize: 12 }}
             required
@@ -92,29 +94,21 @@ export function AssetContentFields({
             id="assetContent"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder={
-              kind === "linkedin"
-                ? "Type the LinkedIn connection note or outreach message."
-                : "Type the text message exactly as it should send."
-            }
+            placeholder="Type the text message exactly as it should send."
             style={{ minHeight: 120, fontSize: 15, lineHeight: 1.5 }}
             required
           />
-          {kind === "sms" ? (
-            <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-              {content.length} character{content.length === 1 ? "" : "s"} ·{" "}
-              {content.length === 0
-                ? 0
-                : content.length <= 160
-                  ? 1
-                  : Math.ceil(content.length / 153)}{" "}
-              segment{content.length > 160 || content.length === 0 ? "s" : ""}
-            </p>
-          ) : (
-            <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-              {content.length} character{content.length === 1 ? "" : "s"}
-            </p>
-          )}
+          {/* Each 160 characters bills as another segment, so the writer needs
+              to see the count while they write, not after they send. */}
+          <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+            {content.length} character{content.length === 1 ? "" : "s"} ·{" "}
+            {content.length === 0
+              ? 0
+              : content.length <= 160
+                ? 1
+                : Math.ceil(content.length / 153)}{" "}
+            segment{content.length > 160 || content.length === 0 ? "s" : ""}
+          </p>
         </div>
       ) : null}
 
