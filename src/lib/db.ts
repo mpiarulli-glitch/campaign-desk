@@ -106,6 +106,8 @@ export interface SocialBatch {
   status: SocialBatchStatus;
   created_by: string;
   qa_assignee: string;
+  qa_by: string | null;
+  qa_at: string | null;
   qa_todo_id: string | null;
   qa_todo_url: string | null;
   qa_project_id: string | null;
@@ -113,9 +115,25 @@ export interface SocialBatch {
   approved_by: string | null;
   approved_by_slug: string | null;
   signoff_step_id: string | null;
+  issue_tag: string;
+  issue_note: string;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type SocialQaReviewDecision = "approved" | "rejected";
+
+export interface SocialQaReview {
+  id: string;
+  batch_id: string;
+  decision: SocialQaReviewDecision;
+  author_slug: string;
+  author_name: string;
+  feedback: string;
+  checklist_json: string;
+  bc_comment_url: string | null;
+  created_at: string;
 }
 
 export interface SocialPost {
@@ -2386,6 +2404,8 @@ export function getDb(): Database.Database {
       status TEXT NOT NULL DEFAULT 'draft',
       created_by TEXT NOT NULL DEFAULT '',
       qa_assignee TEXT NOT NULL DEFAULT '',
+      qa_by TEXT,
+      qa_at TEXT,
       qa_todo_id TEXT,
       qa_todo_url TEXT,
       qa_project_id TEXT,
@@ -2393,6 +2413,8 @@ export function getDb(): Database.Database {
       approved_by TEXT,
       approved_by_slug TEXT,
       signoff_step_id TEXT,
+      issue_tag TEXT NOT NULL DEFAULT '',
+      issue_note TEXT NOT NULL DEFAULT '',
       archived_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -2422,6 +2444,20 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_social_posts_batch ON social_posts(batch_id);
     CREATE INDEX IF NOT EXISTS idx_social_posts_issue ON social_posts(issue_tag);
+
+    CREATE TABLE IF NOT EXISTS social_qa_reviews (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      author_slug TEXT NOT NULL DEFAULT '',
+      author_name TEXT NOT NULL DEFAULT '',
+      feedback TEXT NOT NULL DEFAULT '',
+      checklist_json TEXT NOT NULL DEFAULT '{}',
+      bc_comment_url TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (batch_id) REFERENCES social_batches(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_qa_reviews_batch ON social_qa_reviews(batch_id);
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite
       ON users(invite_token) WHERE invite_token IS NOT NULL;
@@ -3238,6 +3274,40 @@ function migrate(database: Database.Database) {
       `ALTER TABLE lifecycle_campaign_stats ADD COLUMN accepted INTEGER NOT NULL DEFAULT 0`
     );
   }
+
+  const socialBatchCols = tableColumns(database, "social_batches");
+  if (socialBatchCols.length && !socialBatchCols.includes("issue_tag")) {
+    database.exec(
+      `ALTER TABLE social_batches ADD COLUMN issue_tag TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (socialBatchCols.length && !socialBatchCols.includes("issue_note")) {
+    database.exec(
+      `ALTER TABLE social_batches ADD COLUMN issue_note TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (socialBatchCols.length && !socialBatchCols.includes("qa_by")) {
+    database.exec(`ALTER TABLE social_batches ADD COLUMN qa_by TEXT`);
+  }
+  if (socialBatchCols.length && !socialBatchCols.includes("qa_at")) {
+    database.exec(`ALTER TABLE social_batches ADD COLUMN qa_at TEXT`);
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS social_qa_reviews (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      author_slug TEXT NOT NULL DEFAULT '',
+      author_name TEXT NOT NULL DEFAULT '',
+      feedback TEXT NOT NULL DEFAULT '',
+      checklist_json TEXT NOT NULL DEFAULT '{}',
+      bc_comment_url TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (batch_id) REFERENCES social_batches(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_qa_reviews_batch ON social_qa_reviews(batch_id);
+  `);
 }
 
 // Insert a login row for every person in the code roster who does not have one

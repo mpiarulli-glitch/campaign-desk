@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { isSocialQaAuthenticated, sessionActor } from "@/lib/auth";
-import { createSocialBatch, listSocialBatches } from "@/lib/social-qa";
+import { isSocialQaAuthenticated, sessionActor, sessionUserSlug } from "@/lib/auth";
+import { asPerson, hasConnection, SERVICE } from "@/lib/basecamp";
+import {
+  createSocialBatch,
+  getSocialBatch,
+  listSocialBatches,
+  sendSocialBatchForQa,
+} from "@/lib/social-qa";
 
 export async function GET(request: Request) {
   if (!(await isSocialQaAuthenticated())) {
@@ -20,16 +26,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Title is required." }, { status: 400 });
   }
   const createdBy = await sessionActor();
-  const posts = Array.isArray(body.posts)
-    ? body.posts
-        .filter((p: { title?: unknown }) => typeof p?.title === "string" && p.title.trim())
-        .map((p: { title: string; channel?: string; goLiveOn?: string; createdBy?: string }) => ({
-          title: p.title,
-          channel: typeof p.channel === "string" ? p.channel : "",
-          goLiveOn: typeof p.goLiveOn === "string" ? p.goLiveOn : null,
-          createdBy: typeof p.createdBy === "string" ? p.createdBy : createdBy,
-        }))
-    : [];
   const batch = createSocialBatch({
     title,
     clientName: typeof body.clientName === "string" ? body.clientName : "",
@@ -37,7 +33,36 @@ export async function POST(request: Request) {
     sproutUrl: typeof body.sproutUrl === "string" ? body.sproutUrl : "",
     notes: typeof body.notes === "string" ? body.notes : "",
     createdBy,
-    posts,
   });
+
+  const sendForReview = body.sendForReview === true;
+  const reviewerSlug =
+    typeof body.reviewerSlug === "string" ? body.reviewerSlug.trim() : "";
+  const dueOn =
+    typeof body.dueOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.dueOn.trim())
+      ? body.dueOn.trim()
+      : null;
+
+  if (sendForReview) {
+    const sender = await sessionUserSlug();
+    const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
+    const sent = await sendSocialBatchForQa({
+      batchId: batch.id,
+      reviewerSlug,
+      dueOn,
+      identity,
+    });
+    if (!sent.ok) {
+      return NextResponse.json(
+        { batch: getSocialBatch(batch.id), error: sent.error },
+        { status: 201 }
+      );
+    }
+    return NextResponse.json(
+      { batch: getSocialBatch(batch.id), sent },
+      { status: 201 }
+    );
+  }
+
   return NextResponse.json({ batch }, { status: 201 });
 }

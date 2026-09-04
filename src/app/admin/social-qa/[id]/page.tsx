@@ -1,69 +1,68 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { PEOPLE, actorLabel } from "@/lib/people";
+import { actorLabel } from "@/lib/people";
 import {
-  SOCIAL_CHANNELS,
   SOCIAL_ISSUE_TAGS,
+  SOCIAL_QA_CHECKLIST,
   SOCIAL_QA_STATUS_LABELS,
+  emptySocialQaChecklist,
+  socialQaChecklistComplete,
+  type SocialQaChecklistState,
 } from "@/lib/social-qa-meta";
 
 type Batch = {
   id: string;
   title: string;
   client_name: string;
-  client_id: string | null;
   sprout_url: string;
   notes: string;
   status: string;
   created_by: string;
   created_by_label?: string;
   qa_assignee: string;
+  qa_by: string | null;
+  qa_by_label?: string | null;
+  qa_at: string | null;
   qa_todo_url: string | null;
   approved_at: string | null;
   approved_by: string | null;
   archived_at: string | null;
-};
-
-type Post = {
-  id: string;
-  title: string;
-  channel: string;
-  go_live_on: string | null;
-  created_by: string;
-  created_by_label?: string;
-  qa_by: string | null;
-  qa_by_label?: string | null;
-  qa_at: string | null;
-  signed_off_by: string | null;
-  signed_off_at: string | null;
   issue_tag: string;
   issue_note: string;
 };
 
-type QaPerson = { id: number; name: string };
+type Review = {
+  id: string;
+  decision: "approved" | "rejected";
+  author_name: string;
+  feedback: string;
+  created_at: string;
+  bc_comment_url: string | null;
+};
+
 type QaState = {
   ready: boolean;
   missing: string[];
-  people: QaPerson[];
+  assignees: Array<{ slug: string; label: string }>;
+  defaultReviewerSlug: string;
   peopleReason: string;
-  defaultReviewerId: number | null;
   todoUrl: string | null;
   message: string;
 };
 
 type RevClientOption = { id: string; name: string };
 
-const CREATORS = [
-  ...ADMIN_PEOPLE.map((p) => ({ slug: p.slug, label: p.label })),
-  ...PEOPLE.filter((p) => !ADMIN_PEOPLE.some((a) => a.slug === p.slug)).map((p) => ({
-    slug: p.slug,
-    label: p.label,
-  })),
-];
+function tomorrowYmd(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function SocialStatusBadge({ status }: { status: string }) {
   const label =
@@ -74,18 +73,20 @@ function SocialStatusBadge({ status }: { status: string }) {
 export default function SocialBatchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [batch, setBatch] = useState<Batch | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [clients, setClients] = useState<RevClientOption[]>([]);
   const [qa, setQa] = useState<QaState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
-  const [reviewerId, setReviewerId] = useState<number>(0);
-  const [dueOn, setDueOn] = useState("");
+  const [reviewerSlug, setReviewerSlug] = useState("");
+  const [dueOn, setDueOn] = useState(tomorrowYmd);
   const [qaMessage, setQaMessage] = useState("");
   const [signName, setSignName] = useState("");
-  const [newTitle, setNewTitle] = useState("");
+  const [checklist, setChecklist] = useState<SocialQaChecklistState>(emptySocialQaChecklist);
+  const [feedback, setFeedback] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/social-qa/${id}`);
@@ -99,7 +100,7 @@ export default function SocialBatchPage() {
     }
     const data = await res.json();
     setBatch(data.batch);
-    setPosts(data.posts || []);
+    setReviews(data.reviews || []);
   }, [id, router]);
 
   const loadQa = useCallback(async () => {
@@ -107,8 +108,8 @@ export default function SocialBatchPage() {
     if (!res.ok) return;
     const data = await res.json();
     setQa(data);
-    if (data.defaultReviewerId) {
-      setReviewerId((current) => current || data.defaultReviewerId);
+    if (data.defaultReviewerSlug) {
+      setReviewerSlug((current) => current || data.defaultReviewerSlug);
     }
     if (data.message) {
       setQaMessage((current) => current || data.message);
@@ -116,6 +117,8 @@ export default function SocialBatchPage() {
   }, [id]);
 
   useEffect(() => {
+    const fromCreate = searchParams.get("error");
+    if (fromCreate) setError(fromCreate);
     void load();
     void loadQa();
     fetch("/api/revenue/clients")
@@ -123,7 +126,7 @@ export default function SocialBatchPage() {
       .then((d) => {
         if (d) setClients(d.clients.map((c: RevClientOption) => ({ id: c.id, name: c.name })));
       });
-  }, [load, loadQa]);
+  }, [load, loadQa, searchParams]);
 
   async function saveBatch(patch: Record<string, unknown>) {
     setBusy("save");
@@ -141,39 +144,6 @@ export default function SocialBatchPage() {
     await load();
   }
 
-  async function patchPost(postId: string, patch: Record<string, unknown>) {
-    const res = await fetch(`/api/social-qa/${id}/posts/${postId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not update that post.");
-      return;
-    }
-    await load();
-  }
-
-  async function addPost() {
-    const title = newTitle.trim();
-    if (!title) return;
-    setBusy("add");
-    const res = await fetch(`/api/social-qa/${id}/posts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, createdBy: batch?.created_by || "" }),
-    });
-    setBusy("");
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not add the post.");
-      return;
-    }
-    setNewTitle("");
-    await load();
-  }
-
   async function sendQa() {
     setBusy("qa");
     setError("");
@@ -181,7 +151,7 @@ export default function SocialBatchPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        reviewerId,
+        reviewerSlug,
         dueOn: dueOn || null,
         message: qaMessage,
       }),
@@ -197,26 +167,34 @@ export default function SocialBatchPage() {
     await loadQa();
   }
 
-  async function signOff() {
-    setBusy("sign");
+  async function submitReview(approved: boolean) {
+    setBusy(approved ? "sign" : "reject");
     setError("");
     const res = await fetch(`/api/social-qa/${id}/sign-off`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approvedBy: signName }),
+      body: JSON.stringify({
+        approved,
+        reviewedBy: signName,
+        checklist,
+        feedback,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy("");
     if (!res.ok) {
-      setError(data.error || "Could not sign off.");
+      setError(data.error || (approved ? "Could not approve." : "Could not send feedback."));
       return;
     }
     setNotice(
       data.warning ||
-        "Signed off. If a QA to-do exists, a checked subtask was added under it."
+        (approved
+          ? "Approved. A note was left on the Basecamp to-do."
+          : "Sent back with feedback. A note was left on the Basecamp to-do.")
     );
-    setSignName("");
+    if (!approved) setFeedback("");
     await load();
+    await loadQa();
   }
 
   if (!batch && !error) return <div className="container muted">Loading…</div>;
@@ -228,8 +206,6 @@ export default function SocialBatchPage() {
       </div>
     );
   }
-
-  const openIssues = posts.filter((p) => p.issue_tag).length;
 
   return (
     <div className="app-shell">
@@ -280,7 +256,12 @@ export default function SocialBatchPage() {
               style={{ flex: 1, minWidth: 220 }}
             />
             {batch.sprout_url ? (
-              <a className="btn btn-secondary btn-sm" href={batch.sprout_url} target="_blank" rel="noreferrer">
+              <a
+                className="btn btn-secondary btn-sm"
+                href={batch.sprout_url}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Open Sprout
               </a>
             ) : null}
@@ -294,6 +275,11 @@ export default function SocialBatchPage() {
           />
           <div className="muted" style={{ fontSize: 13 }}>
             Created by {batch.created_by_label || actorLabel(batch.created_by) || "unknown"}
+            {batch.qa_by
+              ? ` · QA’d by ${batch.qa_by_label || actorLabel(batch.qa_by)}`
+              : batch.qa_assignee
+                ? ` · Assigned to ${batch.qa_assignee}`
+                : ""}
             {batch.approved_by
               ? ` · Signed off by ${batch.approved_by}${
                   batch.approved_at
@@ -304,175 +290,72 @@ export default function SocialBatchPage() {
           </div>
         </div>
 
-        <div className="card" style={{ overflow: "auto" }}>
-          <table className="social-sheet">
-            <thead>
-              <tr>
-                <th>Post / creative</th>
-                <th>Channel</th>
-                <th>Go live</th>
-                <th>Created by</th>
-                <th>QA</th>
-                <th>Signed off</th>
-                <th>Issue</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {posts.map((post) => (
-                <tr key={post.id} className={post.issue_tag ? "social-sheet-issue" : undefined}>
-                  <td>
-                    <input
-                      value={post.title}
-                      onChange={(e) =>
-                        setPosts((rows) =>
-                          rows.map((r) => (r.id === post.id ? { ...r, title: e.target.value } : r))
-                        )
-                      }
-                      onBlur={() => patchPost(post.id, { title: post.title })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      value={post.channel}
-                      onChange={(e) => patchPost(post.id, { channel: e.target.value })}
-                    >
-                      <option value="">—</option>
-                      {SOCIAL_CHANNELS.map((ch) => (
-                        <option key={ch} value={ch}>
-                          {ch}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      type="date"
-                      value={post.go_live_on || ""}
-                      onChange={(e) => patchPost(post.id, { goLiveOn: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      value={post.created_by}
-                      onChange={(e) => patchPost(post.id, { createdBy: e.target.value })}
-                    >
-                      {CREATORS.map((p) => (
-                        <option key={p.slug} value={p.slug}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    {post.qa_at ? (
-                      <div>
-                        {post.qa_by_label || actorLabel(post.qa_by || "") || "QA’d"}
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => patchPost(post.id, { clearQa: true })}
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => patchPost(post.id, { markQa: true })}
-                      >
-                        Mark QA’d
-                      </button>
-                    )}
-                  </td>
-                  <td>
-                    {post.signed_off_by
-                      ? `${post.signed_off_by}${
-                          post.signed_off_at
-                            ? ` · ${new Date(post.signed_off_at).toLocaleDateString()}`
-                            : ""
-                        }`
-                      : "—"}
-                  </td>
-                  <td>
-                    <select
-                      value={post.issue_tag}
-                      onChange={(e) => patchPost(post.id, { issueTag: e.target.value })}
-                    >
-                      <option value="">None</option>
-                      {SOCIAL_ISSUE_TAGS.map((t) => (
-                        <option key={t.value} value={t.value}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                    {post.issue_tag ? (
-                      <input
-                        value={post.issue_note}
-                        onChange={(e) =>
-                          setPosts((rows) =>
-                            rows.map((r) =>
-                              r.id === post.id ? { ...r, issue_note: e.target.value } : r
-                            )
-                          )
-                        }
-                        onBlur={() => patchPost(post.id, { issueNote: post.issue_note })}
-                        placeholder="What was wrong"
-                        style={{ marginTop: 6 }}
-                      />
-                    ) : null}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={async () => {
-                        await fetch(`/api/social-qa/${id}/posts/${post.id}`, {
-                          method: "DELETE",
-                        });
-                        await load();
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="row card-pad" style={{ gap: 8 }}>
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Add a post"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void addPost();
-                }
-              }}
-            />
-            <button
-              type="button"
-              className="btn"
-              disabled={busy === "add"}
-              onClick={() => void addPost()}
-            >
-              Add
-            </button>
+        <div className="card card-pad stack">
+          <h2 className="h2">QA check</h2>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            Review the Sprout queue as a whole. Flag the batch if something is wrong, or
+            mark it QA’d when it looks clean.
+          </p>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {batch.qa_at ? (
+              <>
+                <span>
+                  QA’d
+                  {batch.qa_by_label || batch.qa_by
+                    ? ` by ${batch.qa_by_label || actorLabel(batch.qa_by || "")}`
+                    : ""}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => saveBatch({ clearQa: true })}
+                >
+                  Clear
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => saveBatch({ markQa: true })}
+              >
+                Mark QA’d
+              </button>
+            )}
           </div>
+          <label htmlFor="sq-issue">Issue (if sending back)</label>
+          <select
+            id="sq-issue"
+            value={batch.issue_tag}
+            onChange={(e) => saveBatch({ issueTag: e.target.value })}
+          >
+            <option value="">None</option>
+            {SOCIAL_ISSUE_TAGS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          {batch.issue_tag ? (
+            <input
+              value={batch.issue_note}
+              onChange={(e) => setBatch({ ...batch, issue_note: e.target.value })}
+              onBlur={() => saveBatch({ issueNote: batch.issue_note })}
+              placeholder="What was wrong in this queue"
+            />
+          ) : null}
         </div>
 
         <div className="row" style={{ gap: 16, alignItems: "stretch", flexWrap: "wrap" }}>
           <div className="card card-pad stack" style={{ flex: 1, minWidth: 280 }}>
-            <h2 className="h2">Send for QA</h2>
+            <h2 className="h2">Assign for review</h2>
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Creates a Basecamp to-do on the Social QA list and assigns your colleague.
+              Assign a colleague. That creates a Basecamp to-do on the Social QA list,
+              due on the date you pick, with a link back here and to Sprout.
             </p>
             {qa?.todoUrl ? (
               <a href={qa.todoUrl} target="_blank" rel="noreferrer">
-                Open current QA to-do
+                Open current review to-do
               </a>
             ) : null}
             {qa && !qa.ready ? (
@@ -480,16 +363,16 @@ export default function SocialBatchPage() {
                 Missing: {qa.missing.join(", ") || qa.peopleReason}
               </p>
             ) : null}
-            <label htmlFor="sq-reviewer">Teammate</label>
+            <label htmlFor="sq-reviewer">Assign to</label>
             <select
               id="sq-reviewer"
-              value={reviewerId || ""}
-              onChange={(e) => setReviewerId(Number(e.target.value))}
+              value={reviewerSlug}
+              onChange={(e) => setReviewerSlug(e.target.value)}
             >
-              <option value="">Pick someone</option>
-              {(qa?.people || []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+              <option value="">Pick a teammate</option>
+              {(qa?.assignees || []).map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.label}
                 </option>
               ))}
             </select>
@@ -510,27 +393,44 @@ export default function SocialBatchPage() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={busy === "qa" || !reviewerId}
+              disabled={busy === "qa" || !reviewerSlug || !dueOn}
               onClick={() => void sendQa()}
             >
-              {busy === "qa" ? "Sending…" : "Send for QA"}
+              {busy === "qa" ? "Sending…" : "Assign and create to-do"}
             </button>
           </div>
 
           <div className="card card-pad stack" style={{ flex: 1, minWidth: 280 }}>
-            <h2 className="h2">Sign off</h2>
+            <h2 className="h2">Review and approve</h2>
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Type your name. That stamps every post and checks off a Basecamp subtask
-              under the QA to-do: “{signName.trim() || "Your name"} has reviewed and
-              approved this batch of social.”
+              Work the checklist. Approve posts a note on the Basecamp to-do from you:
+              “I have reviewed and approved this work from a QA standpoint.” If it is
+              not ready, leave feedback instead — that note goes on the to-do and stays
+              on this page.
             </p>
-            {openIssues ? (
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                {openIssues} flagged {openIssues === 1 ? "post needs" : "posts need"} to
-                be cleared before sign-off.
-              </p>
-            ) : null}
+            {SOCIAL_QA_CHECKLIST.map((item) => (
+              <label
+                key={item.key}
+                className="row"
+                style={{ gap: 8, alignItems: "flex-start" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checklist[item.key]}
+                  disabled={batch.status === "approved"}
+                  onChange={(e) =>
+                    setChecklist((current) => ({
+                      ...current,
+                      [item.key]: e.target.checked,
+                    }))
+                  }
+                />
+                <span>{item.label}</span>
+              </label>
+            ))}
+            <label htmlFor="sq-sign-name">Your name</label>
             <input
+              id="sq-sign-name"
               value={signName}
               onChange={(e) => setSignName(e.target.value)}
               placeholder="Your full name"
@@ -539,11 +439,63 @@ export default function SocialBatchPage() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={busy === "sign" || batch.status === "approved" || !signName.trim()}
-              onClick={() => void signOff()}
+              disabled={
+                busy === "sign" ||
+                batch.status === "approved" ||
+                !signName.trim() ||
+                !socialQaChecklistComplete(checklist)
+              }
+              onClick={() => void submitReview(true)}
             >
-              {batch.status === "approved" ? "Already signed off" : "Approve this batch"}
+              {batch.status === "approved" ? "Already approved" : "Approve this batch"}
             </button>
+            <label htmlFor="sq-feedback">If you do not approve, leave feedback</label>
+            <textarea
+              id="sq-feedback"
+              rows={4}
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="What needs to change before this can go out"
+              disabled={batch.status === "approved"}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={
+                busy === "reject" ||
+                batch.status === "approved" ||
+                !signName.trim() ||
+                feedback.trim().length < 2
+              }
+              onClick={() => void submitReview(false)}
+            >
+              {busy === "reject" ? "Sending…" : "Do not approve — send feedback"}
+            </button>
+            {reviews.length ? (
+              <div className="stack" style={{ gap: 8 }}>
+                <h3 className="h2" style={{ fontSize: 15, margin: 0 }}>
+                  Review notes
+                </h3>
+                {reviews.map((review) => (
+                  <div key={review.id} className="muted" style={{ fontSize: 13 }}>
+                    <strong>
+                      {review.decision === "approved" ? "Approved" : "Not approved"}
+                    </strong>
+                    {` · ${review.author_name} · ${new Date(review.created_at).toLocaleString()}`}
+                    {review.feedback ? (
+                      <p style={{ margin: "6px 0 0", color: "inherit" }}>{review.feedback}</p>
+                    ) : null}
+                    {review.bc_comment_url ? (
+                      <div>
+                        <a href={review.bc_comment_url} target="_blank" rel="noreferrer">
+                          Basecamp note
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost btn-sm"

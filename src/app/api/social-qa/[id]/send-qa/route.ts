@@ -25,13 +25,11 @@ export async function POST(request: Request, { params }: Params) {
   }
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const reviewerId =
-    Number.isInteger(body.reviewerId) && body.reviewerId > 0
-      ? (body.reviewerId as number)
-      : 0;
-  if (!reviewerId) {
+  const reviewerSlug =
+    typeof body.reviewerSlug === "string" ? body.reviewerSlug.trim() : "";
+  if (!reviewerSlug) {
     return NextResponse.json(
-      { error: "Pick the teammate who should QA this batch." },
+      { error: "Pick the teammate who should review this batch." },
       { status: 400 }
     );
   }
@@ -54,7 +52,7 @@ export async function POST(request: Request, { params }: Params) {
   const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
   const result = await sendSocialBatchForQa({
     batchId: id,
-    reviewerId,
+    reviewerSlug,
     dueOn,
     identity,
     message,

@@ -18,91 +18,137 @@ test("social QA tracker", async (t) => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  await t.test("a batch stores the sprout link, creator, and post rows", () => {
+  await t.test("a batch stores the sprout link and who created it", () => {
     const batch = qa.createSocialBatch({
       title: "Humble Somm — week of Sep 8",
       clientName: "Humble Somm",
       sproutUrl: "https://app.sproutsocial.com/messages/compose",
       createdBy: "randi",
-      posts: [
-        { title: "Patio cocktail reel", channel: "Instagram", createdBy: "randi" },
-        { title: "Story set", channel: "Instagram", createdBy: "lana" },
-      ],
     });
     assert.equal(batch.status, "draft");
     assert.equal(batch.sprout_url.includes("sproutsocial"), true);
     assert.equal(batch.created_by, "randi");
-    const posts = qa.listSocialPosts(batch.id);
-    assert.equal(posts.length, 2);
-    assert.equal(posts[0].created_by, "randi");
-    assert.equal(posts[1].created_by, "lana");
+    assert.equal(qa.listSocialPosts(batch.id).length, 0);
   });
 
   await t.test("flagging an issue during QA sends the batch back", () => {
     const batch = qa.createSocialBatch({
       title: "Cisco week",
       createdBy: "randi",
-      posts: [{ title: "Carousel", createdBy: "randi" }],
     });
     qa.updateSocialBatch(batch.id, { status: "in_qa" });
-    const post = qa.listSocialPosts(batch.id)[0];
-    qa.updateSocialPost(post.id, { issueTag: "typo", issueNote: "wrong price in caption" });
+    qa.updateSocialBatch(batch.id, { issueTag: "typo", issueNote: "wrong price in caption" });
     assert.equal(qa.getSocialBatch(batch.id)?.status, "needs_revisions");
-    assert.equal(qa.listSocialIssueRows().some((row) => row.post_id === post.id), true);
+    assert.equal(qa.listSocialIssueRows().some((row) => row.batch_id === batch.id), true);
     assert.ok(qa.socialIssueCounts().some((row) => row.tag === "typo" && row.count >= 1));
   });
 
-  await t.test("sign-off is refused while a post is still flagged", async () => {
+  await t.test("approve is refused until the QA checklist is complete", async () => {
     const batch = qa.createSocialBatch({
       title: "Blocked batch",
       createdBy: "randi",
-      posts: [{ title: "Post", createdBy: "randi" }],
     });
-    const post = qa.listSocialPosts(batch.id)[0];
-    qa.updateSocialPost(post.id, { issueTag: "wrong_date" });
     const result = await qa.signOffSocialBatch({
       batchId: batch.id,
       approvedBy: "Lana Verrecchio",
       actorSlug: "lana",
     });
     assert.equal(result.ok, false);
-    if (!result.ok) assert.match(result.error, /flagged/);
+    if (!result.ok) assert.match(result.error, /checklist/);
   });
 
-  await t.test("sign-off stamps creator, QA, and named approval on every row", async () => {
+  await t.test("sign-off stamps who created, QA’d, and approved the batch", async () => {
     const batch = qa.createSocialBatch({
       title: "Clean batch",
       createdBy: "randi",
-      posts: [
-        { title: "Reel", createdBy: "randi" },
-        { title: "Static", createdBy: "lana" },
-      ],
     });
-    const [first] = qa.listSocialPosts(batch.id);
-    qa.updateSocialPost(first.id, { qaBy: "lana" });
+    qa.updateSocialBatch(batch.id, { qaBy: "lana" });
     const result = await qa.signOffSocialBatch({
       batchId: batch.id,
       approvedBy: "Lana Verrecchio",
       actorSlug: "lana",
+      checklist: { spelling: true, links: true, meg_standard: true },
     });
     assert.equal(result.ok, true);
     const signed = qa.getSocialBatch(batch.id)!;
     assert.equal(signed.status, "approved");
     assert.equal(signed.approved_by, "Lana Verrecchio");
     assert.equal(signed.approved_by_slug, "lana");
-    for (const post of qa.listSocialPosts(batch.id)) {
-      assert.equal(post.signed_off_by, "Lana Verrecchio");
-      assert.ok(post.signed_off_at);
-      assert.ok(post.qa_by);
-    }
+    assert.equal(signed.created_by, "randi");
+    assert.equal(signed.qa_by, "lana");
+    const notes = qa.listSocialQaReviews(batch.id);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].decision, "approved");
   });
 
-  await t.test("the default QA reviewer is the other social teammate", () => {
+  await t.test("not approving stores feedback on the batch", async () => {
+    const batch = qa.createSocialBatch({
+      title: "Needs work",
+      createdBy: "randi",
+    });
+    const noNote = await qa.reviewSocialBatch({
+      batchId: batch.id,
+      approved: false,
+      reviewedBy: "Lana Verrecchio",
+      actorSlug: "lana",
+      feedback: "",
+    });
+    assert.equal(noNote.ok, false);
+    const result = await qa.reviewSocialBatch({
+      batchId: batch.id,
+      approved: false,
+      reviewedBy: "Lana Verrecchio",
+      actorSlug: "lana",
+      feedback: "Fix the offer dates in the carousel.",
+    });
+    assert.equal(result.ok, true);
+    const sent = qa.getSocialBatch(batch.id)!;
+    assert.equal(sent.status, "needs_revisions");
+    assert.equal(sent.issue_note, "Fix the offer dates in the carousel.");
+    const notes = qa.listSocialQaReviews(batch.id);
+    assert.equal(notes[0].decision, "rejected");
+    assert.match(notes[0].feedback, /offer dates/);
+    assert.match(
+      qa.socialQaApproveCommentHtml({
+        name: "Lana Verrecchio",
+        checklist: { spelling: true, links: true, meg_standard: true },
+      }),
+      /QA standpoint/
+    );
+  });
+
+  await t.test("the default QA reviewer is the other social teammate", async () => {
+    const { defaultSocialQaAssignee } = await import("../src/lib/people");
+    assert.equal(defaultSocialQaAssignee("randi"), "lana");
+    assert.equal(defaultSocialQaAssignee("lana"), "randi");
+    assert.equal(defaultSocialQaAssignee("michael"), "lana");
     const people = [
       { id: 1, name: "Randi Example", email: "randi@x.com", isClient: false },
       { id: 2, name: "Lana Verrecchio", email: "lana@x.com", isClient: false },
     ];
     assert.equal(qa.pickDefaultSocialQaReviewer(people, "randi")?.id, 2);
     assert.equal(qa.pickDefaultSocialQaReviewer(people, "lana")?.id, 1);
+  });
+
+  await t.test("sending for review requires a teammate and due date", async () => {
+    const batch = qa.createSocialBatch({
+      title: "Needs a reviewer",
+      clientName: "Humble Somm",
+      sproutUrl: "https://app.sproutsocial.com/messages/compose",
+      createdBy: "randi",
+    });
+    const noPerson = await qa.sendSocialBatchForQa({
+      batchId: batch.id,
+      reviewerSlug: "",
+      dueOn: "2026-09-08",
+    });
+    assert.equal(noPerson.ok, false);
+    const noDue = await qa.sendSocialBatchForQa({
+      batchId: batch.id,
+      reviewerSlug: "lana",
+      dueOn: "",
+    });
+    assert.equal(noDue.ok, false);
+    if (!noDue.ok) assert.match(noDue.error, /due date/i);
   });
 });

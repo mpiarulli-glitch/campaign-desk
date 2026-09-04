@@ -13,10 +13,11 @@ type SocialBatchRow = {
   title: string;
   client_name: string;
   status: string;
-  post_count: number;
-  issue_count: number;
+  created_by: string;
   qa_assignee: string;
+  qa_by: string | null;
   approved_by: string | null;
+  issue_tag: string;
 };
 
 type IssueCount = { tag: string; label: string; count: number };
@@ -27,9 +28,6 @@ type IssueRow = {
   client_name: string;
   batch_id: string;
   batch_title: string;
-  post_title: string;
-  post_id: string;
-  updated_at: string;
 };
 
 function SocialStatusBadge({ status }: { status: string }) {
@@ -123,11 +121,11 @@ export default function SocialQaPage() {
             <div>
               <h1 className="h1">Issue patterns</h1>
               <p className="muted" style={{ margin: "6px 0 0" }}>
-                Flagged posts across every batch, so you can see what keeps coming back.
+                Flagged batches, so you can see what keeps coming back.
               </p>
             </div>
             {counts.length === 0 ? (
-              <div className="card card-pad muted">No flagged posts yet.</div>
+              <div className="card card-pad muted">No flagged batches yet.</div>
             ) : (
               <>
                 <div className="social-issue-grid">
@@ -145,7 +143,6 @@ export default function SocialQaPage() {
                     <thead>
                       <tr>
                         <th>Issue</th>
-                        <th>Post</th>
                         <th>Client</th>
                         <th>Created by</th>
                         <th>Batch</th>
@@ -153,9 +150,8 @@ export default function SocialQaPage() {
                     </thead>
                     <tbody>
                       {issueRows.map((row) => (
-                        <tr key={row.post_id}>
+                        <tr key={row.batch_id}>
                           <td>{row.label}</td>
-                          <td>{row.post_title}</td>
                           <td>{row.client_name || "—"}</td>
                           <td>{actorLabel(row.created_by) || row.created_by}</td>
                           <td>
@@ -176,7 +172,7 @@ export default function SocialQaPage() {
             <div>
               <h1 className="h1">Social QA</h1>
               <p className="muted" style={{ margin: "6px 0 0" }}>
-                Log each post, send a colleague the Sprout queue, and keep a named sign-off.
+                Log a Sprout queue, send a colleague to QA it, and keep a named sign-off.
               </p>
             </div>
 
@@ -249,10 +245,8 @@ export default function SocialQaPage() {
                       <h3>{b.title}</h3>
                       <div className="muted" style={{ fontSize: 13 }}>
                         {b.client_name || "No client"}
-                        {b.post_count
-                          ? ` · ${b.post_count} post${b.post_count === 1 ? "" : "s"}`
-                          : ""}
-                        {b.issue_count ? ` · ${b.issue_count} flagged` : ""}
+                        {` · Created by ${actorLabel(b.created_by) || b.created_by || "unknown"}`}
+                        {b.issue_tag ? " · Flagged" : ""}
                         {b.qa_assignee ? ` · QA: ${b.qa_assignee}` : ""}
                         {b.approved_by ? ` · Signed off: ${b.approved_by}` : ""}
                       </div>

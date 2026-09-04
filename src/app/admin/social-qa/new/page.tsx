@@ -3,25 +3,21 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ADMIN_PEOPLE } from "@/lib/admin-people";
-import { PEOPLE } from "@/lib/people";
-import { SOCIAL_CHANNELS } from "@/lib/social-qa-meta";
+import {
+  defaultSocialQaAssignee,
+  socialQaAssigneeOptions,
+} from "@/lib/people";
 
 type RevClientOption = { id: string; name: string };
-type DraftPost = {
-  title: string;
-  channel: string;
-  goLiveOn: string;
-  createdBy: string;
-};
 
-const CREATORS = [
-  ...ADMIN_PEOPLE.map((p) => ({ slug: p.slug, label: p.label })),
-  ...PEOPLE.filter((p) => !ADMIN_PEOPLE.some((a) => a.slug === p.slug)).map((p) => ({
-    slug: p.slug,
-    label: p.label,
-  })),
-];
+function tomorrowYmd(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 export default function NewSocialBatchPage() {
   const router = useRouter();
@@ -30,11 +26,11 @@ export default function NewSocialBatchPage() {
   const [clientName, setClientName] = useState("");
   const [sproutUrl, setSproutUrl] = useState("");
   const [notes, setNotes] = useState("");
-  const [posts, setPosts] = useState<DraftPost[]>([
-    { title: "", channel: "Instagram", goLiveOn: "", createdBy: "" },
-  ]);
+  const [reviewerSlug, setReviewerSlug] = useState("lana");
+  const [dueOn, setDueOn] = useState(tomorrowYmd);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"draft" | "send" | "">("");
+  const assignees = socialQaAssigneeOptions();
 
   useEffect(() => {
     fetch("/api/revenue/clients")
@@ -46,17 +42,12 @@ export default function NewSocialBatchPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         const slug = d?.owner ? "michael" : d?.person || "";
-        if (slug) {
-          setPosts((rows) =>
-            rows.map((row) => (row.createdBy ? row : { ...row, createdBy: slug }))
-          );
-        }
+        if (slug) setReviewerSlug(defaultSocialQaAssignee(slug));
       });
   }, []);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setLoading(true);
+  async function submit(sendForReview: boolean) {
+    setLoading(sendForReview ? "send" : "draft");
     setError("");
     const res = await fetch("/api/social-qa", {
       method: "POST",
@@ -69,21 +60,34 @@ export default function NewSocialBatchPage() {
             ?.id || null,
         sproutUrl,
         notes,
-        posts: posts.filter((p) => p.title.trim()),
+        sendForReview,
+        reviewerSlug,
+        dueOn,
       }),
     });
     if (res.status === 401) {
       router.push("/login");
       return;
     }
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       setError(data.error || "Could not create the batch.");
-      setLoading(false);
+      setLoading("");
       return;
     }
-    const data = await res.json();
-    router.push(`/admin/social-qa/${data.batch.id}`);
+    const id = data.batch?.id;
+    if (!id) {
+      setError("Could not create the batch.");
+      setLoading("");
+      return;
+    }
+    const q = data.error ? `?error=${encodeURIComponent(data.error)}` : "";
+    router.push(`/admin/social-qa/${id}${q}`);
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    await submit(true);
   }
 
   return (
@@ -102,7 +106,8 @@ export default function NewSocialBatchPage() {
           <div>
             <h1 className="h1">New social batch</h1>
             <p className="muted" style={{ margin: "6px 0 0" }}>
-              Paste the Sprout link, log the posts, then send a teammate to QA.
+              Paste the Sprout queue, assign a teammate, and a Basecamp to-do is created
+              for them to review it.
             </p>
           </div>
           {error ? <div className="banner banner-danger">{error}</div> : null}
@@ -124,6 +129,7 @@ export default function NewSocialBatchPage() {
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
               placeholder="Start typing a client"
+              required
             />
             <datalist id="sq-clients">
               {clients.map((c) => (
@@ -139,6 +145,32 @@ export default function NewSocialBatchPage() {
               value={sproutUrl}
               onChange={(e) => setSproutUrl(e.target.value)}
               placeholder="https://app.sproutsocial.com/..."
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="sq-reviewer">Assign to</label>
+            <select
+              id="sq-reviewer"
+              value={reviewerSlug}
+              onChange={(e) => setReviewerSlug(e.target.value)}
+              required
+            >
+              {assignees.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="sq-due">Due date</label>
+            <input
+              id="sq-due"
+              type="date"
+              value={dueOn}
+              onChange={(e) => setDueOn(e.target.value)}
+              required
             />
           </div>
           <div className="field">
@@ -150,92 +182,19 @@ export default function NewSocialBatchPage() {
               rows={3}
             />
           </div>
-          <div>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <label>Posts</label>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() =>
-                  setPosts((rows) => [
-                    ...rows,
-                    {
-                      title: "",
-                      channel: "Instagram",
-                      goLiveOn: "",
-                      createdBy: rows[0]?.createdBy || "",
-                    },
-                  ])
-                }
-              >
-                Add post
-              </button>
-            </div>
-            <div className="stack" style={{ gap: 10, marginTop: 8 }}>
-              {posts.map((post, i) => (
-                <div key={i} className="card card-pad stack" style={{ gap: 8 }}>
-                  <input
-                    value={post.title}
-                    onChange={(e) =>
-                      setPosts((rows) =>
-                        rows.map((r, idx) => (idx === i ? { ...r, title: e.target.value } : r))
-                      )
-                    }
-                    placeholder="Reel — patio cocktail"
-                  />
-                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <select
-                      value={post.channel}
-                      onChange={(e) =>
-                        setPosts((rows) =>
-                          rows.map((r, idx) =>
-                            idx === i ? { ...r, channel: e.target.value } : r
-                          )
-                        )
-                      }
-                    >
-                      {SOCIAL_CHANNELS.map((ch) => (
-                        <option key={ch} value={ch}>
-                          {ch}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="date"
-                      value={post.goLiveOn}
-                      onChange={(e) =>
-                        setPosts((rows) =>
-                          rows.map((r, idx) =>
-                            idx === i ? { ...r, goLiveOn: e.target.value } : r
-                          )
-                        )
-                      }
-                    />
-                    <select
-                      value={post.createdBy}
-                      onChange={(e) =>
-                        setPosts((rows) =>
-                          rows.map((r, idx) =>
-                            idx === i ? { ...r, createdBy: e.target.value } : r
-                          )
-                        )
-                      }
-                    >
-                      <option value="">Created by</option>
-                      {CREATORS.map((p) => (
-                        <option key={p.slug} value={p.slug}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn-primary" type="submit" disabled={Boolean(loading)}>
+              {loading === "send" ? "Sending…" : "Create and send for review"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              disabled={Boolean(loading)}
+              onClick={() => void submit(false)}
+            >
+              {loading === "draft" ? "Saving…" : "Save draft"}
+            </button>
           </div>
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? "Saving…" : "Create batch"}
-          </button>
         </form>
       </main>
     </div>

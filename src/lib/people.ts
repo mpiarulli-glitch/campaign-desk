@@ -306,6 +306,23 @@ export function hasSocialQaAccess(session: {
   return Boolean(slug) && (SOCIAL_QA_PEOPLE as readonly string[]).includes(slug!);
 }
 
+export function socialQaAssigneeOptions(): Array<{ slug: string; label: string }> {
+  return SOCIAL_QA_PEOPLE.filter((slug) => slug !== OWNER_SLUG).map((slug) => ({
+    slug,
+    label:
+      PEOPLE.find((p) => p.slug === slug)?.label ||
+      ADMIN_PEOPLE.find((p) => p.slug === slug)?.label ||
+      slug,
+  }));
+}
+
+export function defaultSocialQaAssignee(createdBySlug: string): string {
+  const slug = createdBySlug.split(":")[0];
+  if (slug === "randi") return "lana";
+  if (slug === "lana") return "randi";
+  return "lana";
+}
+
 export function hasAdsDashboardAccess(session: {
   role: "admin" | "forecast" | null;
   person: string | null;
@@ -365,6 +382,8 @@ export const ACCOUNT_MANAGER_BASECAMP_NAME: Record<string, string> = {
   cassidy: "Cassidy Merideth",
   luis: "Luis Romero",
   sylvia: "Sylvia Artiga",
+  randi: "Randi",
+  lana: "Lana Verrecchio",
 };
 
 // Basecamp display name used when CC'ing Sylvia on review notes. Same mapping

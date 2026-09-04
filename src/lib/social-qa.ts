@@ -3,6 +3,7 @@ import {
   SERVICE,
   SOCIAL_QA_TODOLIST_NAME,
   basecampConnected,
+  commentOnCard,
   completeTodoStep,
   createAssignedTodo,
   createTodoStep,
@@ -11,7 +12,14 @@ import {
   type BcIdentity,
   type BcPerson,
 } from "./basecamp";
-import { getDb, nowIso, type SocialBatch, type SocialBatchStatus, type SocialPost } from "./db";
+import {
+  getDb,
+  nowIso,
+  type SocialBatch,
+  type SocialBatchStatus,
+  type SocialPost,
+  type SocialQaReview,
+} from "./db";
 import { recordFailure } from "./failures";
 import {
   INTERNAL_REVIEW_MESSAGE_MAX_CHARS,
@@ -19,29 +27,39 @@ import {
   internalReviewTodoHtmlFromText,
   parseInternalReviewDueOn,
   pickDefaultInternalReviewer,
-  teamPeopleForInternalReview,
   type InternalReviewPerson,
 } from "./internal-review";
+import { pickAssigneeOnRoster } from "./assign-todo";
 import { adminSocialBatchUrl } from "./auth";
+import {
+  defaultSocialQaAssignee,
+  isValidPerson,
+  personLabel,
+  socialQaAssigneeOptions,
+} from "./people";
 import { getRevClient, listRevClients } from "./revenue";
 import {
+  SOCIAL_QA_CHECKLIST,
   isSocialBatchStatus,
   isSocialIssueTag,
   issueTagLabel,
+  socialQaChecklistComplete,
 } from "./social-qa-meta";
-import { slugForName } from "./team";
 import { createTodo } from "./todos";
 
 export {
   SOCIAL_QA_STATUSES,
   SOCIAL_QA_STATUS_LABELS,
+  SOCIAL_QA_CHECKLIST,
   SOCIAL_CHANNELS,
   SOCIAL_ISSUE_TAGS,
   isSocialBatchStatus,
   isSocialIssueTag,
   issueTagLabel,
+  socialQaChecklistComplete,
+  emptySocialQaChecklist,
 } from "./social-qa-meta";
-export type { SocialIssueTag } from "./social-qa-meta";
+export type { SocialIssueTag, SocialQaChecklistState } from "./social-qa-meta";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -65,22 +83,14 @@ function resolveClient(batch: Pick<SocialBatch, "client_id" | "client_name">) {
   return listRevClients(true).find((c) => clientNameKey(c.name) === name) || null;
 }
 
-export type SocialBatchRow = SocialBatch & {
-  post_count: number;
-  issue_count: number;
-  qa_count: number;
-};
+export type SocialBatchRow = SocialBatch;
 
 export function listSocialBatches(archived = false): SocialBatchRow[] {
   return getDb()
     .prepare(
-      `SELECT b.*,
-              (SELECT COUNT(*) FROM social_posts p WHERE p.batch_id = b.id) AS post_count,
-              (SELECT COUNT(*) FROM social_posts p WHERE p.batch_id = b.id AND p.issue_tag != '') AS issue_count,
-              (SELECT COUNT(*) FROM social_posts p WHERE p.batch_id = b.id AND p.qa_at IS NOT NULL) AS qa_count
-         FROM social_batches b
-        WHERE ${archived ? "b.archived_at IS NOT NULL" : "b.archived_at IS NULL"}
-        ORDER BY b.updated_at DESC`
+      `SELECT * FROM social_batches
+        WHERE ${archived ? "archived_at IS NOT NULL" : "archived_at IS NULL"}
+        ORDER BY updated_at DESC`
     )
     .all() as SocialBatchRow[];
 }
@@ -116,12 +126,6 @@ export function createSocialBatch(input: {
   sproutUrl?: string;
   notes?: string;
   createdBy: string;
-  posts?: Array<{
-    title: string;
-    channel?: string;
-    goLiveOn?: string | null;
-    createdBy?: string;
-  }>;
 }): SocialBatch {
   const db = getDb();
   const id = nanoid(12);
@@ -131,8 +135,8 @@ export function createSocialBatch(input: {
   db.prepare(
     `INSERT INTO social_batches
       (id, title, client_name, client_id, sprout_url, notes, status, created_by,
-       qa_assignee, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, '', ?, ?)`
+       qa_assignee, issue_tag, issue_note, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, '', '', '', ?, ?)`
   ).run(
     id,
     input.title.trim(),
@@ -144,18 +148,6 @@ export function createSocialBatch(input: {
     ts,
     ts
   );
-  const posts = input.posts || [];
-  posts.forEach((post, index) => {
-    const title = post.title.trim();
-    if (!title) return;
-    insertPost(id, {
-      title,
-      channel: post.channel || "",
-      goLiveOn: post.goLiveOn ?? null,
-      createdBy: post.createdBy || input.createdBy,
-      sortOrder: index,
-    });
-  });
   return getSocialBatch(id)!;
 }
 
@@ -169,6 +161,10 @@ export function updateSocialBatch(
     notes?: string;
     status?: SocialBatchStatus;
     archived?: boolean;
+    issueTag?: string;
+    issueNote?: string;
+    qaBy?: string | null;
+    clearQa?: boolean;
   }
 ): SocialBatch | null {
   const current = getSocialBatch(id);
@@ -191,10 +187,34 @@ export function updateSocialBatch(
       : patch.archived
         ? current.archived_at || ts
         : null;
+  const issueTag =
+    patch.issueTag === undefined
+      ? current.issue_tag
+      : patch.issueTag === "" || isSocialIssueTag(patch.issueTag)
+        ? patch.issueTag
+        : current.issue_tag;
+  let status =
+    patch.status && isSocialBatchStatus(patch.status) ? patch.status : current.status;
+  if (patch.issueTag !== undefined && issueTag && status === "in_qa") {
+    status = "needs_revisions";
+  }
+  if (patch.issueTag === "" && status === "needs_revisions") {
+    status = "in_qa";
+  }
+  let qaBy = current.qa_by;
+  let qaAt = current.qa_at;
+  if (patch.clearQa) {
+    qaBy = null;
+    qaAt = null;
+  } else if (patch.qaBy) {
+    qaBy = patch.qaBy;
+    qaAt = ts;
+  }
   db.prepare(
     `UPDATE social_batches
         SET title = ?, client_name = ?, client_id = ?, sprout_url = ?, notes = ?,
-            status = ?, archived_at = ?, updated_at = ?
+            status = ?, archived_at = ?, issue_tag = ?, issue_note = ?,
+            qa_by = ?, qa_at = ?, updated_at = ?
       WHERE id = ?`
   ).run(
     patch.title !== undefined ? patch.title.trim() : current.title,
@@ -202,8 +222,12 @@ export function updateSocialBatch(
     clientId,
     patch.sproutUrl !== undefined ? patch.sproutUrl.trim() : current.sprout_url,
     patch.notes !== undefined ? patch.notes.trim() : current.notes,
-    patch.status && isSocialBatchStatus(patch.status) ? patch.status : current.status,
+    status,
     archivedAt,
+    issueTag,
+    patch.issueNote !== undefined ? patch.issueNote.trim() : current.issue_note,
+    qaBy,
+    qaAt,
     ts,
     id
   );
@@ -345,25 +369,21 @@ export function deleteSocialPost(id: string): boolean {
 export type SocialIssueStat = {
   tag: string;
   label: string;
-  count: number;
   created_by: string;
   client_name: string;
   batch_id: string;
   batch_title: string;
-  post_title: string;
-  post_id: string;
   updated_at: string;
 };
 
 export function listSocialIssueRows(): SocialIssueStat[] {
   const rows = getDb()
     .prepare(
-      `SELECT p.issue_tag AS tag, p.created_by, p.title AS post_title, p.id AS post_id,
-              p.updated_at, b.id AS batch_id, b.title AS batch_title, b.client_name
-         FROM social_posts p
-         JOIN social_batches b ON b.id = p.batch_id
-        WHERE p.issue_tag != ''
-        ORDER BY p.updated_at DESC`
+      `SELECT issue_tag AS tag, created_by, client_name, id AS batch_id,
+              title AS batch_title, updated_at
+         FROM social_batches
+        WHERE issue_tag != ''
+        ORDER BY updated_at DESC`
     )
     .all() as Array<Omit<SocialIssueStat, "label">>;
   return rows.map((row) => ({ ...row, label: issueTagLabel(row.tag) }));
@@ -373,7 +393,7 @@ export function socialIssueCounts(): Array<{ tag: string; label: string; count: 
   const rows = getDb()
     .prepare(
       `SELECT issue_tag AS tag, COUNT(*) AS count
-         FROM social_posts
+         FROM social_batches
         WHERE issue_tag != ''
         GROUP BY issue_tag
         ORDER BY count DESC, issue_tag ASC`
@@ -412,7 +432,7 @@ export function socialQaTodoMessageText(input: {
     `${greeting}, please QA this batch of social posts and sign it off in Campaign Desk.`,
     "",
     "Check for typos, wrong dates, off-brand creative, and caption mismatches.",
-    "Flag anything that needs a fix on the row, then type your name and approve the batch when it is clean.",
+    "Open the batch in Campaign Desk, check the Sprout queue, and type your name to approve when it is clean.",
     "",
     "Campaign Desk:",
     input.deskUrl,
@@ -425,9 +445,9 @@ export async function socialQaState(batchId: string): Promise<
       ready: boolean;
       missing: string[];
       clientName: string;
-      people: InternalReviewPerson[];
+      assignees: Array<{ slug: string; label: string }>;
+      defaultReviewerSlug: string;
       peopleReason: string;
-      defaultReviewerId: number | null;
       todoUrl: string | null;
       todoId: string | null;
       message: string;
@@ -443,33 +463,24 @@ export async function socialQaState(batchId: string): Promise<
   if (!basecampConnected()) missing.push("Basecamp connection");
   if (!batch.sprout_url.trim()) missing.push("Sprout Social link");
 
-  let people: InternalReviewPerson[] = [];
   let peopleReason = "";
-  if (client?.basecamp_project_id && basecampConnected()) {
-    try {
-      const roster = await getProjectPeopleForMention(client.basecamp_project_id);
-      people = teamPeopleForInternalReview(roster);
-      if (!people.length) {
-        peopleReason =
-          "Nobody from our team is on that Basecamp project, so there is no one to assign.";
-      }
-    } catch {
-      peopleReason = "Could not load the Basecamp project roster.";
-    }
+  if (client && !client.basecamp_project_id) {
+    peopleReason = "This client needs a Basecamp project before a review to-do can be assigned.";
   }
 
-  const defaultReviewer = pickDefaultSocialQaReviewer(people, batch.created_by.split(":")[0] || "");
+  const defaultReviewerSlug = defaultSocialQaAssignee(batch.created_by);
+  const reviewerName = personLabel(defaultReviewerSlug);
   return {
-    ready: missing.length === 0 && people.length > 0,
+    ready: missing.length === 0,
     missing,
     clientName: client?.name || batch.client_name || "",
-    people,
+    assignees: socialQaAssigneeOptions(),
+    defaultReviewerSlug,
     peopleReason,
-    defaultReviewerId: defaultReviewer?.id ?? null,
     todoUrl: batch.qa_todo_url,
     todoId: batch.qa_todo_id,
     message: socialQaTodoMessageText({
-      reviewerName: defaultReviewer?.name || "",
+      reviewerName,
       deskUrl: adminSocialBatchUrl(batch.id),
       sproutUrl: batch.sprout_url,
     }),
@@ -478,7 +489,7 @@ export async function socialQaState(batchId: string): Promise<
 
 export async function sendSocialBatchForQa(input: {
   batchId: string;
-  reviewerId: number;
+  reviewerSlug: string;
   dueOn?: string | null;
   identity?: BcIdentity;
   message?: string | null;
@@ -495,10 +506,18 @@ export async function sendSocialBatchForQa(input: {
 > {
   const batch = getSocialBatch(input.batchId);
   if (!batch) return { ok: false, error: "Not found", status: 404 };
+  const reviewerSlug = input.reviewerSlug.trim();
+  if (!isValidPerson(reviewerSlug)) {
+    return { ok: false, error: "Pick the teammate who should review this batch.", status: 400 };
+  }
+  const dueOn = parseInternalReviewDueOn(input.dueOn);
+  if (!dueOn) {
+    return { ok: false, error: "Pick a due date for the review to-do.", status: 400 };
+  }
   if (!basecampConnected()) {
     return {
       ok: false,
-      error: "Basecamp isn't connected. Connect it before sending for QA.",
+      error: "Basecamp isn't connected. Connect it before assigning a review to-do.",
       status: 400,
     };
   }
@@ -511,7 +530,7 @@ export async function sendSocialBatchForQa(input: {
     };
   }
   if (!batch.sprout_url.trim()) {
-    return { ok: false, error: "Add the Sprout Social link before sending for QA.", status: 400 };
+    return { ok: false, error: "Add the Sprout Social link before sending for review.", status: 400 };
   }
 
   const identity = input.identity ?? SERVICE;
@@ -525,10 +544,13 @@ export async function sendSocialBatchForQa(input: {
       status: 502,
     };
   }
-  const team = teamPeopleForInternalReview(roster);
-  const reviewer = team.find((person) => person.id === input.reviewerId);
+  const reviewer = pickAssigneeOnRoster(roster, reviewerSlug);
   if (!reviewer) {
-    return { ok: false, error: "Pick a teammate on this Basecamp project.", status: 400 };
+    return {
+      ok: false,
+      error: `${personLabel(reviewerSlug)} isn't on this client's Basecamp project, so the to-do can't be assigned.`,
+      status: 400,
+    };
   }
   const reviewerPerson = roster.find((person) => person.id === reviewer.id);
   const deskUrl = adminSocialBatchUrl(batch.id);
@@ -543,12 +565,10 @@ export async function sendSocialBatchForQa(input: {
     reviewerPerson || {
       id: reviewer.id,
       name: reviewer.name,
-      attachable_sgid: reviewer.attachableSgid,
     }
   );
   const who = (batch.client_name || client.name).trim();
-  const title = `QA ${who ? `${who}: ` : ""}${batch.title}`.slice(0, 999);
-  const dueOn = parseInternalReviewDueOn(input.dueOn);
+  const title = `Review social: ${who ? `${who} — ` : ""}${batch.title}`.slice(0, 999);
   const created = await createAssignedTodo({
     projectId: client.basecamp_project_id,
     title,
@@ -575,7 +595,7 @@ export async function sendSocialBatchForQa(input: {
         WHERE id = ?`
     )
     .run(
-      reviewer.name,
+      personLabel(reviewerSlug),
       created.todoId,
       created.todoUrl,
       client.basecamp_project_id,
@@ -583,23 +603,19 @@ export async function sendSocialBatchForQa(input: {
       batch.id
     );
 
-  const assigneeSlug =
-    slugForName(reviewer.name) || slugForName(reviewer.name.split(/\s+/)[0] || "");
-  if (assigneeSlug) {
-    createTodo({
-      title,
-      notes: ["Social QA", deskUrl, created.todoUrl].join("\n"),
-      clientId: batch.client_id || client.id,
-      assignee: assigneeSlug,
-      dueDate: dueOn,
-      source: "social_qa",
-      listName: SOCIAL_QA_TODOLIST_NAME,
-    });
-  }
+  createTodo({
+    title,
+    notes: ["Social QA", deskUrl, created.todoUrl].join("\n"),
+    clientId: batch.client_id || client.id,
+    assignee: reviewerSlug,
+    dueDate: dueOn,
+    source: "social_qa",
+    listName: SOCIAL_QA_TODOLIST_NAME,
+  });
 
   return {
     ok: true,
-    reviewerName: reviewer.name,
+    reviewerName: personLabel(reviewerSlug),
     todoId: created.todoId,
     todoUrl: created.todoUrl,
     status: "in_qa",
@@ -607,11 +623,142 @@ export async function sendSocialBatchForQa(input: {
   };
 }
 
+export function listSocialQaReviews(batchId: string): SocialQaReview[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM social_qa_reviews WHERE batch_id = ? ORDER BY created_at ASC`
+    )
+    .all(batchId) as SocialQaReview[];
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function checklistFromInput(
+  raw: unknown
+): Record<string, boolean> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, boolean> = {};
+  for (const item of SOCIAL_QA_CHECKLIST) {
+    out[item.key] = (raw as Record<string, unknown>)[item.key] === true;
+  }
+  return out;
+}
+
+export function socialQaApproveCommentHtml(input: {
+  name: string;
+  checklist: Record<string, boolean>;
+}): string {
+  const items = SOCIAL_QA_CHECKLIST.map(
+    (item) => `<li>${escapeHtml(item.label)}</li>`
+  ).join("");
+  return (
+    `<p>I have reviewed and approved this work from a QA standpoint.</p>` +
+    `<p>${escapeHtml(input.name)} completed:</p>` +
+    `<ul>${items}</ul>`
+  );
+}
+
+export function socialQaRejectCommentHtml(input: {
+  name: string;
+  feedback: string;
+}): string {
+  const feedback = escapeHtml(input.feedback).replace(/\n/g, "<br>");
+  return (
+    `<p>I have reviewed this batch and it is not approved yet.</p>` +
+    `<p>${escapeHtml(input.name)} left this feedback:</p>` +
+    `<p>${feedback}</p>`
+  );
+}
+
+async function postQaReviewComment(input: {
+  batch: SocialBatch;
+  html: string;
+  identity: BcIdentity;
+}): Promise<{ url: string | null; warning?: string }> {
+  const projectId = (input.batch.qa_project_id || "").trim();
+  const todoId = (input.batch.qa_todo_id || "").trim();
+  if (!projectId || !todoId) {
+    return {
+      url: null,
+      warning: "Saved in Campaign Desk. There is no Social QA to-do to comment on yet.",
+    };
+  }
+  const posted = await commentOnCard(projectId, todoId, input.html, input.identity);
+  if (!posted.ok) {
+    return {
+      url: null,
+      warning: "Saved in Campaign Desk, but Basecamp did not get the review note.",
+    };
+  }
+  return { url: posted.url || null };
+}
+
+function insertQaReview(input: {
+  batchId: string;
+  decision: "approved" | "rejected";
+  authorSlug: string;
+  authorName: string;
+  feedback: string;
+  checklist: Record<string, boolean>;
+  bcCommentUrl: string | null;
+}): SocialQaReview {
+  const id = nanoid(12);
+  const ts = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO social_qa_reviews
+        (id, batch_id, decision, author_slug, author_name, feedback, checklist_json,
+         bc_comment_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.batchId,
+      input.decision,
+      input.authorSlug,
+      input.authorName,
+      input.feedback,
+      JSON.stringify(input.checklist),
+      input.bcCommentUrl,
+      ts
+    );
+  return getDb().prepare(`SELECT * FROM social_qa_reviews WHERE id = ?`).get(id) as SocialQaReview;
+}
+
 export async function signOffSocialBatch(input: {
   batchId: string;
   approvedBy: string;
   actorSlug: string;
   identity?: BcIdentity;
+  checklist?: Record<string, boolean> | unknown;
+}): Promise<
+  | { ok: true; batch: SocialBatch; warning?: string }
+  | { ok: false; error: string; status: number }
+> {
+  return reviewSocialBatch({
+    batchId: input.batchId,
+    approved: true,
+    reviewedBy: input.approvedBy,
+    actorSlug: input.actorSlug,
+    identity: input.identity,
+    checklist: input.checklist,
+  });
+}
+
+export async function reviewSocialBatch(input: {
+  batchId: string;
+  approved: boolean;
+  reviewedBy: string;
+  actorSlug: string;
+  identity?: BcIdentity;
+  checklist?: Record<string, boolean> | unknown;
+  feedback?: string | null;
 }): Promise<
   | { ok: true; batch: SocialBatch; warning?: string }
   | { ok: false; error: string; status: number }
@@ -621,72 +768,121 @@ export async function signOffSocialBatch(input: {
   if (batch.status === "approved") {
     return { ok: false, error: "This batch is already signed off.", status: 400 };
   }
-  const name = input.approvedBy.trim();
+  const name = input.reviewedBy.trim();
   if (name.length < 2) {
-    return { ok: false, error: "Type your name to sign this batch off.", status: 400 };
+    return { ok: false, error: "Type your name to record this review.", status: 400 };
   }
-  const openIssues = listSocialPosts(batch.id).filter((p) => p.issue_tag);
-  if (openIssues.length) {
+  const checklist = checklistFromInput(input.checklist);
+  const identity = input.identity ?? SERVICE;
+
+  if (input.approved) {
+    if (!socialQaChecklistComplete(checklist)) {
+      return {
+        ok: false,
+        error: "Complete the QA checklist before approving this batch.",
+        status: 400,
+      };
+    }
+
+    const ts = nowIso();
+    let stepId = batch.signoff_step_id;
+    const posted = await postQaReviewComment({
+      batch,
+      html: socialQaApproveCommentHtml({ name, checklist }),
+      identity,
+    });
+    let warning = posted.warning;
+
+    const projectId = (batch.qa_project_id || "").trim();
+    const todoId = (batch.qa_todo_id || "").trim();
+    if (projectId && todoId) {
+      const stepTitle = `${name} has reviewed and approved this batch of social`.slice(0, 999);
+      const created = await createTodoStep(projectId, todoId, stepTitle, identity);
+      if (created.ok && created.id) {
+        stepId = created.id;
+        const completed = await completeTodoStep(projectId, created.id, "on", identity);
+        if (!completed.ok) {
+          warning =
+            warning ||
+            "Signed off here, but Basecamp did not check off the subtask.";
+          recordFailure({
+            kind: "basecamp_todo",
+            subject: batch.client_name || batch.title,
+            detail: completed.error || "complete step failed",
+            hint: "Open the Social QA to-do in Basecamp and check the sign-off subtask.",
+          });
+        }
+      }
+    }
+
+    getDb()
+      .prepare(
+        `UPDATE social_batches
+            SET status = 'approved', approved_at = ?, approved_by = ?, approved_by_slug = ?,
+                signoff_step_id = ?, qa_by = COALESCE(qa_by, ?), qa_at = COALESCE(qa_at, ?),
+                issue_tag = '', issue_note = '', updated_at = ?
+          WHERE id = ?`
+      )
+      .run(ts, name, input.actorSlug, stepId, input.actorSlug, ts, ts, batch.id);
+
+    insertQaReview({
+      batchId: batch.id,
+      decision: "approved",
+      authorSlug: input.actorSlug,
+      authorName: name,
+      feedback: "",
+      checklist,
+      bcCommentUrl: posted.url,
+    });
+
+    return { ok: true, batch: getSocialBatch(batch.id)!, warning };
+  }
+
+  const feedback = (input.feedback || "").replace(/\r\n/g, "\n").trim();
+  if (feedback.length < 2) {
     return {
       ok: false,
-      error: `Clear or fix ${openIssues.length} flagged ${openIssues.length === 1 ? "post" : "posts"} before signing off.`,
+      error: "Leave feedback so the creator knows what to fix.",
       status: 400,
     };
   }
 
-  const ts = nowIso();
-  let stepId = batch.signoff_step_id;
-  let warning: string | undefined;
-  const projectId = (batch.qa_project_id || "").trim();
-  const todoId = (batch.qa_todo_id || "").trim();
-  if (projectId && todoId) {
-    const identity = input.identity ?? SERVICE;
-    const stepTitle = `${name} has reviewed and approved this batch of social`.slice(0, 999);
-    const created = await createTodoStep(projectId, todoId, stepTitle, identity);
-    if (created.ok && created.id) {
-      stepId = created.id;
-      const completed = await completeTodoStep(projectId, created.id, "on", identity);
-      if (!completed.ok) {
-        warning = "Signed off here, but Basecamp did not check off the subtask.";
-        recordFailure({
-          kind: "basecamp_todo",
-          subject: batch.client_name || batch.title,
-          detail: completed.error || "complete step failed",
-          hint: "Open the Social QA to-do in Basecamp and check the sign-off subtask.",
-        });
-      }
-    } else {
-      warning = "Signed off here, but Basecamp did not get the sign-off subtask.";
-      recordFailure({
-        kind: "basecamp_todo",
-        subject: batch.client_name || batch.title,
-        detail: created.error || "create step failed",
-        hint: "The batch is approved in Campaign Desk; add the checked subtask on the Social QA to-do if needed.",
-      });
-    }
+  const posted = await postQaReviewComment({
+    batch,
+    html: socialQaRejectCommentHtml({ name, feedback }),
+    identity,
+  });
+  if (posted.warning) {
+    recordFailure({
+      kind: "basecamp_todo",
+      subject: batch.client_name || batch.title,
+      detail: posted.warning,
+      hint: "The feedback is saved in Campaign Desk; add it on the Social QA to-do if needed.",
+    });
   }
 
+  const ts = nowIso();
   getDb()
     .prepare(
       `UPDATE social_batches
-          SET status = 'approved', approved_at = ?, approved_by = ?, approved_by_slug = ?,
-              signoff_step_id = ?, updated_at = ?
+          SET status = 'needs_revisions', issue_tag = CASE WHEN issue_tag = '' THEN 'other' ELSE issue_tag END,
+              issue_note = ?, qa_by = COALESCE(qa_by, ?), qa_at = COALESCE(qa_at, ?),
+              updated_at = ?
         WHERE id = ?`
     )
-    .run(ts, name, input.actorSlug, stepId, ts, batch.id);
-  getDb()
-    .prepare(
-      `UPDATE social_posts
-          SET signed_off_by = COALESCE(signed_off_by, ?),
-              signed_off_at = COALESCE(signed_off_at, ?),
-              qa_by = COALESCE(qa_by, ?),
-              qa_at = COALESCE(qa_at, ?),
-              updated_at = ?
-        WHERE batch_id = ?`
-    )
-    .run(name, ts, input.actorSlug, ts, ts, batch.id);
+    .run(feedback, input.actorSlug, ts, ts, batch.id);
 
-  return { ok: true, batch: getSocialBatch(batch.id)!, warning };
+  insertQaReview({
+    batchId: batch.id,
+    decision: "rejected",
+    authorSlug: input.actorSlug,
+    authorName: name,
+    feedback,
+    checklist,
+    bcCommentUrl: posted.url,
+  });
+
+  return { ok: true, batch: getSocialBatch(batch.id)!, warning: posted.warning };
 }
 
 export { INTERNAL_REVIEW_MESSAGE_MAX_CHARS };

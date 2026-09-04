@@ -1589,10 +1589,8 @@ export async function createScheduleCard(
   }
 }
 
-// Adds a comment to an existing card. Basecamp comments are flat and attach to
-// the parent recording, so the card id is all that's needed. Used for the
-// production scheduling follow-ups, which nudge the same card rather than
-// filling the board with duplicates.
+// Adds a comment to an existing card or to-do. Basecamp comments attach to the
+// parent recording, so the recording id is all that's needed.
 export async function commentOnCard(
   projectId: string,
   cardId: string,
@@ -1600,7 +1598,7 @@ export async function commentOnCard(
   identity: BcIdentity = SERVICE
 ): Promise<CampfireResult> {
   if (!projectId || !cardId) {
-    return { ok: false, error: "No Basecamp card to follow up on" };
+    return { ok: false, error: "No Basecamp recording to comment on" };
   }
   try {
     const res = await bc(

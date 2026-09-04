@@ -36,6 +36,28 @@ export const SOCIAL_ISSUE_TAGS = [
 
 export type SocialIssueTag = (typeof SOCIAL_ISSUE_TAGS)[number]["value"];
 
+export const SOCIAL_QA_CHECKLIST = [
+  { key: "spelling", label: "Checked for spelling errors" },
+  { key: "links", label: "Checked that all links are accurate and work" },
+  {
+    key: "meg_standard",
+    label: "Checked that everything was quality and up to the MEG Standard",
+  },
+] as const;
+
+export type SocialQaChecklistKey = (typeof SOCIAL_QA_CHECKLIST)[number]["key"];
+export type SocialQaChecklistState = Record<SocialQaChecklistKey, boolean>;
+
+export function emptySocialQaChecklist(): SocialQaChecklistState {
+  return { spelling: false, links: false, meg_standard: false };
+}
+
+export function socialQaChecklistComplete(
+  checks: Partial<Record<string, boolean>> | null | undefined
+): boolean {
+  return SOCIAL_QA_CHECKLIST.every((item) => checks?.[item.key] === true);
+}
+
 export function isSocialBatchStatus(v: unknown): v is SocialBatchStatus {
   return typeof v === "string" && SOCIAL_QA_STATUSES.includes(v as SocialBatchStatus);
 }
