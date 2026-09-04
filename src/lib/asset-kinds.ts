@@ -1,11 +1,14 @@
 // Shared, dependency-free definitions for the different kinds of work that can
-// be pushed into a review package: emails, SMS, interactive forms/quizzes, blog
-// posts, copy decks, and website mock-ups. Both server code (db, API routes)
-// and client components import from here, so this file must stay free of any
-// Node-only dependencies (no better-sqlite3, no fs).
+// be pushed into a review package: emails, cold email, LinkedIn outreach, SMS,
+// interactive forms/quizzes, blog posts, copy decks, and website mock-ups.
+// Both server code (db, API routes) and client components import from here, so
+// this file must stay free of any Node-only dependencies (no better-sqlite3,
+// no fs).
 
 export type AssetKind =
   | "email"
+  | "cold_email"
+  | "linkedin"
   | "sms"
   | "interactive"
   | "blog"
@@ -15,7 +18,7 @@ export type AssetKind =
 // How the stored content should be interpreted when rendering a preview.
 //   html     -> content is raw HTML (emails, interactive forms, HTML blogs)
 //   markdown -> content is markdown we render to styled HTML (blogs, copy decks)
-//   text     -> content is plain text shown as a phone message bubble (SMS)
+//   text     -> content is plain text (SMS phone bubble, LinkedIn outreach card)
 //   image    -> media_url points at a hosted image export (mock-ups)
 //   figma    -> media_url is a Figma link we embed as a live frame (mock-ups)
 export type BodyFormat = "html" | "markdown" | "text" | "image" | "figma";
@@ -38,6 +41,20 @@ export const ASSET_KINDS: AssetKindMeta[] = [
     noun: "email",
     formats: ["html"],
     description: "A standard HTML email.",
+  },
+  {
+    kind: "cold_email",
+    label: "Cold Email",
+    noun: "cold email",
+    formats: ["html"],
+    description: "An outbound cold email for review.",
+  },
+  {
+    kind: "linkedin",
+    label: "LinkedIn Outreach",
+    noun: "LinkedIn message",
+    formats: ["text"],
+    description: "A LinkedIn connection note or outreach message.",
   },
   {
     kind: "sms",
@@ -122,6 +139,8 @@ export function kindNoun(kind: AssetKind): string {
 // before they read the campaign name.
 const KIND_DELIVERABLE_LABEL: Record<AssetKind, string> = {
   email: "Email Campaign",
+  cold_email: "Cold Email",
+  linkedin: "LinkedIn Outreach",
   sms: "SMS Campaign",
   interactive: "Form / Quiz",
   blog: "Blog Post",
@@ -318,6 +337,21 @@ const SMS_STYLE = `
   .sms-meta{margin-top:14px;font-size:12px;color:#8a8a94;text-align:right;}
 `;
 
+// LinkedIn outreach: a message card that reads like an InMail / DM compose.
+const LINKEDIN_STYLE = `
+  .li-card{max-width:520px;margin:0 auto;padding:22px 22px 18px;background:#ffffff;
+    border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #e6e9ec;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:#191919;}
+  .li-eyebrow{margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;color:#0a66c2;}
+  .li-bubble{background:#f3f6f8;color:#191919;padding:14px 16px;border-radius:10px;
+    font-size:15px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;
+    overflow-wrap:anywhere;}
+  .li-empty{color:#8c8c8c;font-size:14px;text-align:center;padding:18px 0;}
+  .li-meta{margin-top:12px;font-size:12px;color:#666666;text-align:right;}
+`;
+
 function figmaEmbedUrl(url: string): string {
   const trimmed = (url || "").trim();
   if (!trimmed) return "";
@@ -363,6 +397,21 @@ export function renderAssetDoc(asset: RenderableAsset): {
       : `<div style="padding:40px;text-align:center;color:#999;font:15px Arial,sans-serif;">No image uploaded yet.</div>`;
     return {
       html: `<div style="max-width:900px;margin:0 auto;">${img}${caption}</div>`,
+      interactive: false,
+    };
+  }
+
+  // LinkedIn outreach: plain text in a messaging-style card.
+  if (kind === "linkedin" && format === "text") {
+    const body = content.trim();
+    const chars = body.length;
+    const bubble = body
+      ? `<div class="li-bubble">${escapeHtml(body).replace(/\n/g, "<br>")}</div>`
+      : `<div class="li-empty">No outreach message written yet.</div>`;
+    return {
+      html: `<style>${LINKEDIN_STYLE}</style><div class="li-card"><p class="li-eyebrow">LinkedIn outreach</p>${bubble}<div class="li-meta">${chars} character${
+        chars === 1 ? "" : "s"
+      }</div></div>`,
       interactive: false,
     };
   }
