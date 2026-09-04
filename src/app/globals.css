@@ -811,6 +811,56 @@ button {
   background: #eef2f6;
 }
 
+.badge-in_qa {
+  color: #007a87;
+  border-color: rgba(0, 212, 232, 0.35);
+  background: var(--bg-tint);
+}
+
+.badge-needs_revisions {
+  color: var(--warning);
+  border-color: rgba(196, 137, 0, 0.28);
+  background: var(--warning-wash);
+}
+
+.social-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.social-sheet th,
+.social-sheet td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.social-sheet th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.social-sheet input,
+.social-sheet select {
+  width: 100%;
+  min-width: 0;
+}
+
+.social-sheet .social-sheet-issue {
+  background: var(--warning-wash);
+}
+
+.social-issue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
 .comment-channel-tag {
   display: inline-flex;
   align-items: center;

@@ -18,9 +18,9 @@
 
    defaultAllowed is a transcription of the rules that were spread across
    AppShell's two nav arrays, PRODUCTION_ACCESS, ADS_DASHBOARD_PEOPLE,
-   hasOwnerToolsAccess and TEAM_FOCUS. When one of those changes, change it
-   there and mirror it here; tests/user-access.test.ts pins the pairs that
-   matter so the two cannot drift silently.
+   SOCIAL_QA_PEOPLE, hasOwnerToolsAccess and TEAM_FOCUS. When one of those
+   changes, change it there and mirror it here; tests/user-access.test.ts
+   pins the pairs that matter so the two cannot drift silently.
    ------------------------------------------------------------------------- */
 
 import {
@@ -39,6 +39,7 @@ import {
   hasAdsDashboardAccess,
   hasOwnerToolsAccess,
   hasProductionAccess,
+  hasSocialQaAccess,
   personLabel,
   type CampaignKindScope,
 } from "./people";
@@ -102,6 +103,15 @@ export const PAGES: Capability[] = [
     icon: "mail",
     blurb:
       "Review packages and their approvals. Narrow which kinds below once this is on.",
+  },
+  {
+    key: "page.social_qa",
+    label: "Social QA",
+    group: "page",
+    href: "/admin/social-qa",
+    icon: "social",
+    blurb:
+      "Social post batches, Sprout links, internal QA and named sign-off.",
   },
   {
     key: "page.lifecycle",
@@ -299,8 +309,9 @@ export function subjectFor(slug: string): AccessSubject {
  *
  * Kept in one function so the answer is the same on the server and in the
  * sidebar. The delegating calls (hasProductionAccess, hasOwnerToolsAccess,
- * hasAdsDashboardAccess, TEAM_FOCUS) are deliberate: those lists stay the
- * source of truth and this reads them rather than copying their contents.
+ * hasAdsDashboardAccess, TEAM_FOCUS, SOCIAL_QA_PEOPLE) are deliberate: those
+ * lists stay the source of truth and this reads them rather than copying
+ * their contents.
  */
 export function defaultAllowed(key: string, who: AccessSubject): boolean {
   if (who.owner) return true;
@@ -333,6 +344,9 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
 
     case "page.ads":
       return hasAdsDashboardAccess(session);
+
+    case "page.social_qa":
+      return hasSocialQaAccess(session);
 
     // The campaign calendar is an owner tool, so this is false for everybody
     // else until the owner grants it.

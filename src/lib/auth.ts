@@ -700,6 +700,10 @@ export async function isAdsDashboardAuthenticated(): Promise<boolean> {
   return can("page.ads");
 }
 
+export async function isSocialQaAuthenticated(): Promise<boolean> {
+  return can("page.social_qa");
+}
+
 export function getAppUrl(): string {
   return (
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -714,6 +718,10 @@ export function reviewUrl(magicToken: string): string {
 
 export function adminCampaignUrl(id: string): string {
   return `${getAppUrl()}/admin/campaigns/${id}`;
+}
+
+export function adminSocialBatchUrl(id: string): string {
+  return `${getAppUrl()}/admin/social-qa/${id}`;
 }
 
 export function scheduleUrl(scheduleToken: string): string {

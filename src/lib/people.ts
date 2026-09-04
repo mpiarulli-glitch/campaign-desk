@@ -275,6 +275,37 @@ export const ADS_DASHBOARD_PEOPLE = [
   "kyle_morris",
 ] as const;
 
+/**
+ * Social QA is its own page, not a Campaigns tab. The social pair does the
+ * work; owner plus a short leadership list can look back when something goes
+ * wrong. Everyone else is off until granted on /admin/access.
+ */
+export const SOCIAL_QA_PEOPLE = [
+  OWNER_SLUG,
+  "randi",
+  "lana",
+  "cassidy",
+  "sylvia",
+  "kyle_morris",
+] as const;
+
+export function hasSocialQaAccess(session: {
+  role: "admin" | "forecast" | null;
+  person: string | null;
+  owner?: boolean;
+  impersonating?: boolean;
+} | null): boolean {
+  if (!session) return false;
+  if (session.role !== "admin" && session.role !== "forecast") return false;
+  const slug = session.person;
+  const ownerSession =
+    !session.impersonating &&
+    session.role === "admin" &&
+    (Boolean(session.owner) || slug === OWNER_SLUG || slug === null);
+  if (ownerSession) return true;
+  return Boolean(slug) && (SOCIAL_QA_PEOPLE as readonly string[]).includes(slug!);
+}
+
 export function hasAdsDashboardAccess(session: {
   role: "admin" | "forecast" | null;
   person: string | null;

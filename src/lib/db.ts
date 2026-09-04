@@ -94,6 +94,48 @@ export type CampaignStatus =
   | "scheduled"
   | "sent";
 
+export type SocialBatchStatus = "draft" | "in_qa" | "needs_revisions" | "approved";
+
+export interface SocialBatch {
+  id: string;
+  title: string;
+  client_name: string;
+  client_id: string | null;
+  sprout_url: string;
+  notes: string;
+  status: SocialBatchStatus;
+  created_by: string;
+  qa_assignee: string;
+  qa_todo_id: string | null;
+  qa_todo_url: string | null;
+  qa_project_id: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  approved_by_slug: string | null;
+  signoff_step_id: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SocialPost {
+  id: string;
+  batch_id: string;
+  title: string;
+  channel: string;
+  go_live_on: string | null;
+  created_by: string;
+  qa_by: string | null;
+  qa_at: string | null;
+  signed_off_by: string | null;
+  signed_off_at: string | null;
+  issue_tag: string;
+  issue_note: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type CommentType = "general" | "inline";
 export type ReviewChannel = "internal" | "external";
 // The kind of asset in a review package. See asset-kinds.ts for the full set
@@ -2333,6 +2375,53 @@ export function getDb(): Database.Database {
       updated_at TEXT NOT NULL,
       updated_by TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS social_batches (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      client_name TEXT NOT NULL DEFAULT '',
+      client_id TEXT,
+      sprout_url TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by TEXT NOT NULL DEFAULT '',
+      qa_assignee TEXT NOT NULL DEFAULT '',
+      qa_todo_id TEXT,
+      qa_todo_url TEXT,
+      qa_project_id TEXT,
+      approved_at TEXT,
+      approved_by TEXT,
+      approved_by_slug TEXT,
+      signoff_step_id TEXT,
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_social_batches_client ON social_batches(client_id);
+    CREATE INDEX IF NOT EXISTS idx_social_batches_status ON social_batches(status);
+
+    CREATE TABLE IF NOT EXISTS social_posts (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT '',
+      go_live_on TEXT,
+      created_by TEXT NOT NULL DEFAULT '',
+      qa_by TEXT,
+      qa_at TEXT,
+      signed_off_by TEXT,
+      signed_off_at TEXT,
+      issue_tag TEXT NOT NULL DEFAULT '',
+      issue_note TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (batch_id) REFERENCES social_batches(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_social_posts_batch ON social_posts(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_social_posts_issue ON social_posts(issue_tag);
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite
       ON users(invite_token) WHERE invite_token IS NOT NULL;

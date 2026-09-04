@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkflowAuthenticated } from "@/lib/auth";
+import { can, isWorkflowAuthenticated } from "@/lib/auth";
 import { search } from "@/lib/search";
 
 export async function GET(request: Request) {
@@ -7,5 +7,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const q = new URL(request.url).searchParams.get("q") || "";
-  return NextResponse.json({ hits: search(q) });
+  const hits = (await can("page.social_qa"))
+    ? search(q)
+    : search(q).filter((hit) => hit.kind !== "social");
+  return NextResponse.json({ hits });
 }

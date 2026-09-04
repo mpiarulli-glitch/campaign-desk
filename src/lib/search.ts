@@ -1,7 +1,8 @@
 import { listRevClients } from "./revenue";
 import { listCampaigns } from "./campaigns";
+import { listSocialBatches } from "./social-qa";
 
-export type SearchKind = "client" | "campaign";
+export type SearchKind = "client" | "campaign" | "social";
 
 export interface SearchHit {
   kind: SearchKind;
@@ -45,6 +46,20 @@ export function search(query: string, limit = 12): SearchHit[] {
       subtitle: cam.client_name ? `Campaign · ${cam.client_name}` : "Campaign",
       href: `/admin/campaigns/${cam.id}`,
       rank: cam.title.toLowerCase().startsWith(q) ? 0 : 2,
+    });
+  }
+
+  for (const batch of listSocialBatches()) {
+    const hay = `${batch.title} ${batch.client_name}`.toLowerCase();
+    const i = hay.indexOf(q);
+    if (i === -1) continue;
+    hits.push({
+      kind: "social",
+      id: batch.id,
+      title: batch.title,
+      subtitle: batch.client_name ? `Social QA · ${batch.client_name}` : "Social QA",
+      href: `/admin/social-qa/${batch.id}`,
+      rank: batch.title.toLowerCase().startsWith(q) ? 0 : 2,
     });
   }
 

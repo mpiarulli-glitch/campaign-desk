@@ -1348,11 +1348,14 @@ export async function ensureForecastTodo(
 }
 
 export const CAMPAIGN_REVIEW_TODOLIST_NAME = "Campaign Review";
+export const SOCIAL_QA_TODOLIST_NAME = "Social QA";
 export const OPS_TODOLIST_NAME = "Tasks";
 
 const LIST_DESCRIPTIONS: Record<string, string> = {
   [CAMPAIGN_REVIEW_TODOLIST_NAME]:
     "Internal campaign review asks from Campaign Desk. Assigned to the account manager who should sign off before the client sees it.",
+  [SOCIAL_QA_TODOLIST_NAME]:
+    "Social post QA from Campaign Desk. Assigned to the teammate who should check the Sprout queue and sign the batch off.",
   [OPS_TODOLIST_NAME]: "Assigned from Campaign Desk.",
 };
 

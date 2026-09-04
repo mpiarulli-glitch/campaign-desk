@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { hasAdsDashboardAccess, hasOwnerToolsAccess } from "@/lib/people";
 
 type Hit = {
-  kind: "client" | "campaign";
+  kind: "client" | "campaign" | "social";
   id: string;
   title: string;
   subtitle: string;
@@ -37,15 +37,27 @@ const CALENDAR_QUICK_LINK: Hit = {
   href: "/admin/calendar",
 };
 
+const SOCIAL_QA_QUICK_LINK: Hit = {
+  kind: "social",
+  id: "nav-social-qa",
+  title: "Social QA",
+  subtitle: "Social post batches",
+  href: "/admin/social-qa",
+};
+
 function quickLinksForSession(session: {
   role: "admin" | "forecast" | null;
   person: string | null;
   owner?: boolean;
   impersonating?: boolean;
+  capabilities?: Record<string, boolean>;
 } | null): Hit[] {
   const extras: Hit[] = [];
   if (hasAdsDashboardAccess(session)) extras.push(ADS_QUICK_LINK);
   if (hasOwnerToolsAccess(session)) extras.push(CALENDAR_QUICK_LINK);
+  if (session?.capabilities?.["page.social_qa"] || session?.owner) {
+    extras.push(SOCIAL_QA_QUICK_LINK);
+  }
   if (extras.length === 0) return BASE_QUICK_LINKS;
   return [
     BASE_QUICK_LINKS[0],
@@ -75,6 +87,7 @@ export function CommandPalette() {
           person: data.person || null,
           owner: Boolean(data.owner),
           impersonating: Boolean(data.impersonating),
+          capabilities: data.capabilities || {},
         });
         setQuickLinks(links);
         setHits(links);

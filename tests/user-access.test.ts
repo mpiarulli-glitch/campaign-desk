@@ -14,7 +14,7 @@ test("per-person access", async (t) => {
   process.chdir(tmp);
 
   const access = await import("../src/lib/access");
-  const { OWNER_SLUG, ADS_DASHBOARD_PEOPLE, PRODUCTION_ACCESS } = await import(
+  const { OWNER_SLUG, ADS_DASHBOARD_PEOPLE, PRODUCTION_ACCESS, SOCIAL_QA_PEOPLE } = await import(
     "../src/lib/people"
   );
 
@@ -71,6 +71,7 @@ test("per-person access", async (t) => {
     const hrefs = access.PAGES.map((p) => p.href);
     assert.ok(hrefs.includes("/admin/ads"));
     assert.ok(hrefs.includes("/admin/client-services"));
+    assert.ok(hrefs.includes("/admin/social-qa"));
   });
 
   await t.test("fixed capabilities are not grantable", () => {
@@ -174,6 +175,21 @@ test("per-person access", async (t) => {
     assert.equal(access.allows(owner, "page.ads"), true);
   });
 
+  await t.test("Social QA follows SOCIAL_QA_PEOPLE", () => {
+    for (const slug of SOCIAL_QA_PEOPLE) {
+      if (slug === OWNER_SLUG) continue;
+      assert.equal(
+        access.allows(access.subjectFor(slug), "page.social_qa"),
+        true,
+        `${slug} is on SOCIAL_QA_PEOPLE and should have it`
+      );
+    }
+    assert.equal(access.allows(roy, "page.social_qa"), false);
+    assert.equal(access.allows(carlos, "page.social_qa"), false);
+    assert.equal(access.allows(jack, "page.social_qa"), false);
+    assert.equal(access.allows(owner, "page.social_qa"), true);
+  });
+
   await t.test("the campaign pages still follow TEAM_FOCUS", () => {
     // Roy's focus is empty: no campaigns.
     assert.equal(access.allows(roy, "page.campaigns"), false);
@@ -268,6 +284,7 @@ test("per-person access", async (t) => {
     assert.ok(!pages.includes("/admin/campaigns"), "roy does no campaign work");
     assert.ok(!pages.includes("/admin/production"));
     assert.ok(!pages.includes("/admin/calendar"), "the calendar is owner-only");
+    assert.ok(!pages.includes("/admin/social-qa"), "roy is not on the social QA list");
     assert.ok(pages.includes("/admin/whiteboard"));
     assert.ok(pages.includes("/admin/client-services"));
     assert.ok(!pages.includes("/admin"), "old dashboard is no longer a nav item");

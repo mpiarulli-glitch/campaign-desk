@@ -7,11 +7,13 @@ import {
   PRODUCTION_ACCESS,
   SEO_ONLY_PEOPLE,
   TEAM_FOCUS,
+  SOCIAL_QA_PEOPLE,
   campaignKindFor,
   doesCampaignWork,
   hasProductionAccess,
   hasOwnerToolsAccess,
   hasAdsDashboardAccess,
+  hasSocialQaAccess,
   isSeoOnly,
   isTeam,
   isSnapshotAccountManager,
@@ -132,6 +134,21 @@ test("weekly ads is open to the owner plus Mike Hines, Jerald, and Kyle Morris",
   );
 });
 
+test("Social QA is the social pair plus a short leadership lookback list", () => {
+  assert.deepEqual(
+    [...SOCIAL_QA_PEOPLE].sort(),
+    ["cassidy", "kyle_morris", "lana", "michael", "randi", "sylvia"].sort()
+  );
+  const randi = { role: "forecast" as const, person: "randi", owner: false };
+  const roy = { role: "forecast" as const, person: "roy", owner: false };
+  const carlos = { role: "admin" as const, person: "carlos", owner: false };
+  const owner = { role: "admin" as const, person: null, owner: true };
+  assert.equal(hasSocialQaAccess(randi), true);
+  assert.equal(hasSocialQaAccess(roy), false);
+  assert.equal(hasSocialQaAccess(carlos), false);
+  assert.equal(hasSocialQaAccess(owner), true);
+});
+
 test("the ads page and APIs use the ads allowlist, not owner-only tools", () => {
   const layout = fs.readFileSync(path.join("src/app/admin/ads/layout.tsx"), "utf8");
   const list = fs.readFileSync(path.join("src/app/api/ads/route.ts"), "utf8");
@@ -171,6 +188,7 @@ test("the app shell no longer decides the nav for itself", () => {
   assert.match(access, /hasOwnerToolsAccess/);
   assert.match(access, /hasAdsDashboardAccess/);
   assert.match(access, /hasProductionAccess/);
+  assert.match(access, /hasSocialQaAccess/);
 });
 
 test("the SEO team is abel and carlos, and only them", () => {
