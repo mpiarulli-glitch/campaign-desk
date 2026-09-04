@@ -423,20 +423,17 @@ export function pickDefaultSocialQaReviewer(
 export function socialQaTodoMessageText(input: {
   reviewerName?: string;
   deskUrl: string;
-  sproutUrl?: string;
 }): string {
   const first = (input.reviewerName || "").trim().split(/\s+/)[0] || "";
   const greeting = first ? `@${first}` : "Hey";
-  const sprout = (input.sproutUrl || "").trim();
   return [
-    `${greeting}, please QA this batch of social posts and sign it off in Campaign Desk.`,
+    `${greeting}, please review this social batch in Campaign Desk.`,
     "",
-    "Check for typos, wrong dates, off-brand creative, and caption mismatches.",
-    "Open the batch in Campaign Desk, check the Sprout queue, and type your name to approve when it is clean.",
+    "Open the Campaign Desk link. Review the Sprout queue from that page, then approve or send it back there.",
+    "Do not review from this to-do — there is no Sprout link here on purpose.",
     "",
     "Campaign Desk:",
     input.deskUrl,
-    ...(sprout ? ["", "Sprout:", sprout] : []),
   ].join("\n");
 }
 
@@ -482,7 +479,6 @@ export async function socialQaState(batchId: string): Promise<
     message: socialQaTodoMessageText({
       reviewerName,
       deskUrl: adminSocialBatchUrl(batch.id),
-      sproutUrl: batch.sprout_url,
     }),
   };
 }
@@ -559,7 +555,6 @@ export async function sendSocialBatchForQa(input: {
     socialQaTodoMessageText({
       reviewerName: reviewer.name,
       deskUrl,
-      sproutUrl: batch.sprout_url,
     });
   const mention = internalReviewMention(
     reviewerPerson || {

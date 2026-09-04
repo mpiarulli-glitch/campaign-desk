@@ -151,4 +151,14 @@ test("social QA tracker", async (t) => {
     assert.equal(noDue.ok, false);
     if (!noDue.ok) assert.match(noDue.error, /due date/i);
   });
+
+  await t.test("the Basecamp to-do only points at Campaign Desk", () => {
+    const text = qa.socialQaTodoMessageText({
+      reviewerName: "Lana Verrecchio",
+      deskUrl: "https://hub.marketingempiregroup.com/admin/social-qa/abc",
+    });
+    assert.match(text, /Campaign Desk/);
+    assert.match(text, /admin\/social-qa\/abc/);
+    assert.doesNotMatch(text, /sproutsocial\.com/i);
+  });
 });

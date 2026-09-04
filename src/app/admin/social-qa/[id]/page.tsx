@@ -5,7 +5,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { actorLabel } from "@/lib/people";
 import {
-  SOCIAL_ISSUE_TAGS,
   SOCIAL_QA_CHECKLIST,
   SOCIAL_QA_STATUS_LABELS,
   emptySocialQaChecklist,
@@ -50,7 +49,6 @@ type QaState = {
   defaultReviewerSlug: string;
   peopleReason: string;
   todoUrl: string | null;
-  message: string;
 };
 
 type RevClientOption = { id: string; name: string };
@@ -83,7 +81,6 @@ export default function SocialBatchPage() {
   const [busy, setBusy] = useState("");
   const [reviewerSlug, setReviewerSlug] = useState("");
   const [dueOn, setDueOn] = useState(tomorrowYmd);
-  const [qaMessage, setQaMessage] = useState("");
   const [signName, setSignName] = useState("");
   const [checklist, setChecklist] = useState<SocialQaChecklistState>(emptySocialQaChecklist);
   const [feedback, setFeedback] = useState("");
@@ -110,9 +107,6 @@ export default function SocialBatchPage() {
     setQa(data);
     if (data.defaultReviewerSlug) {
       setReviewerSlug((current) => current || data.defaultReviewerSlug);
-    }
-    if (data.message) {
-      setQaMessage((current) => current || data.message);
     }
   }, [id]);
 
@@ -153,16 +147,15 @@ export default function SocialBatchPage() {
       body: JSON.stringify({
         reviewerSlug,
         dueOn: dueOn || null,
-        message: qaMessage,
       }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy("");
     if (!res.ok) {
-      setError(data.error || "Could not send for QA.");
+      setError(data.error || "Could not assign this review.");
       return;
     }
-    setNotice(`Assigned ${data.reviewerName} on Basecamp.`);
+    setNotice(`Assigned ${data.reviewerName}. Their Basecamp to-do only links here.`);
     await load();
     await loadQa();
   }
@@ -207,6 +200,10 @@ export default function SocialBatchPage() {
     );
   }
 
+  const latestReject = [...reviews].reverse().find((r) => r.decision === "rejected");
+  const assigned = Boolean(batch.qa_todo_url || batch.qa_assignee);
+  const done = batch.status === "approved";
+
   return (
     <div className="app-shell">
       <div className="page-actions">
@@ -215,19 +212,31 @@ export default function SocialBatchPage() {
         </Link>
         <SocialStatusBadge status={batch.status} />
       </div>
-      <main className="container stack" style={{ gap: 16 }}>
+      <main className="container stack" style={{ gap: 20, maxWidth: 760 }}>
         {error ? <div className="banner banner-danger">{error}</div> : null}
         {notice ? <div className="banner">{notice}</div> : null}
 
         <div className="card card-pad stack">
-          <input
-            value={batch.title}
-            onChange={(e) => setBatch({ ...batch, title: e.target.value })}
-            onBlur={() => saveBatch({ title: batch.title })}
-            style={{ fontSize: 22, fontWeight: 650 }}
-          />
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <div>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Social QA
+            </p>
             <input
+              value={batch.title}
+              onChange={(e) => setBatch({ ...batch, title: e.target.value })}
+              onBlur={() => saveBatch({ title: batch.title })}
+              style={{ fontSize: 22, fontWeight: 650 }}
+              aria-label="Batch title"
+            />
+          </div>
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+            Review this Sprout queue here. The Basecamp to-do only sends people to this
+            page.
+          </p>
+          <div className="field">
+            <label htmlFor="sq-client">Client</label>
+            <input
+              id="sq-client"
               list="sq-clients"
               value={batch.client_name}
               onChange={(e) => setBatch({ ...batch, client_name: e.target.value })}
@@ -240,272 +249,237 @@ export default function SocialBatchPage() {
                     )?.id || null,
                 })
               }
-              placeholder="Client"
             />
             <datalist id="sq-clients">
               {clients.map((c) => (
                 <option key={c.id} value={c.name} />
               ))}
             </datalist>
-            <input
-              type="url"
-              value={batch.sprout_url}
-              onChange={(e) => setBatch({ ...batch, sprout_url: e.target.value })}
-              onBlur={() => saveBatch({ sproutUrl: batch.sprout_url })}
-              placeholder="Sprout Social link"
-              style={{ flex: 1, minWidth: 220 }}
-            />
-            {batch.sprout_url ? (
-              <a
-                className="btn btn-secondary btn-sm"
-                href={batch.sprout_url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open Sprout
-              </a>
-            ) : null}
           </div>
-          <textarea
-            value={batch.notes}
-            onChange={(e) => setBatch({ ...batch, notes: e.target.value })}
-            onBlur={() => saveBatch({ notes: batch.notes })}
-            rows={2}
-            placeholder="Notes for QA"
-          />
-          <div className="muted" style={{ fontSize: 13 }}>
+          <div className="field">
+            <label htmlFor="sq-sprout">Sprout queue (stays in Campaign Desk)</label>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <input
+                id="sq-sprout"
+                type="url"
+                value={batch.sprout_url}
+                onChange={(e) => setBatch({ ...batch, sprout_url: e.target.value })}
+                onBlur={() => saveBatch({ sproutUrl: batch.sprout_url })}
+                placeholder="https://app.sproutsocial.com/..."
+                style={{ flex: 1, minWidth: 200 }}
+              />
+              {batch.sprout_url ? (
+                <a
+                  className="btn btn-primary"
+                  href={batch.sprout_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open Sprout queue
+                </a>
+              ) : null}
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="sq-notes">Notes for the reviewer</label>
+            <textarea
+              id="sq-notes"
+              value={batch.notes}
+              onChange={(e) => setBatch({ ...batch, notes: e.target.value })}
+              onBlur={() => saveBatch({ notes: batch.notes })}
+              rows={2}
+            />
+          </div>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             Created by {batch.created_by_label || actorLabel(batch.created_by) || "unknown"}
-            {batch.qa_by
-              ? ` · QA’d by ${batch.qa_by_label || actorLabel(batch.qa_by)}`
-              : batch.qa_assignee
-                ? ` · Assigned to ${batch.qa_assignee}`
-                : ""}
+            {batch.qa_assignee ? ` · Assigned to ${batch.qa_assignee}` : ""}
             {batch.approved_by
-              ? ` · Signed off by ${batch.approved_by}${
+              ? ` · Approved by ${batch.approved_by}${
                   batch.approved_at
                     ? ` on ${new Date(batch.approved_at).toLocaleDateString()}`
                     : ""
                 }`
               : ""}
+          </p>
+        </div>
+
+        {latestReject && batch.status !== "approved" ? (
+          <div className="banner banner-danger">
+            <strong>Sent back by {latestReject.author_name}.</strong>
+            <p style={{ margin: "8px 0 0" }}>{latestReject.feedback || batch.issue_note}</p>
           </div>
+        ) : null}
+
+        <div className="card card-pad stack">
+          <h2 className="h2">1. Assign a reviewer</h2>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            They get a Basecamp to-do with a link to this page only. They open Sprout
+            from here, then approve or send it back below.
+          </p>
+          {assigned ? (
+            <p style={{ margin: 0 }}>
+              Assigned to <strong>{batch.qa_assignee || "a teammate"}</strong>
+              {qa?.todoUrl ? (
+                <>
+                  {" · "}
+                  <a href={qa.todoUrl} target="_blank" rel="noreferrer">
+                    Open Basecamp to-do
+                  </a>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+          {qa && !qa.ready ? (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Missing: {qa.missing.join(", ") || qa.peopleReason}
+            </p>
+          ) : null}
+          <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+            <div className="field" style={{ flex: 1, minWidth: 180 }}>
+              <label htmlFor="sq-reviewer">Assign to</label>
+              <select
+                id="sq-reviewer"
+                value={reviewerSlug}
+                onChange={(e) => setReviewerSlug(e.target.value)}
+              >
+                <option value="">Pick a teammate</option>
+                {(qa?.assignees || []).map((p) => (
+                  <option key={p.slug} value={p.slug}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ minWidth: 160 }}>
+              <label htmlFor="sq-due">Due</label>
+              <input
+                id="sq-due"
+                type="date"
+                value={dueOn}
+                onChange={(e) => setDueOn(e.target.value)}
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy === "qa" || !reviewerSlug || !dueOn}
+            onClick={() => void sendQa()}
+          >
+            {busy === "qa"
+              ? "Sending…"
+              : assigned
+                ? "Reassign and update to-do"
+                : "Assign and create to-do"}
+          </button>
         </div>
 
         <div className="card card-pad stack">
-          <h2 className="h2">QA check</h2>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Review the Sprout queue as a whole. Flag the batch if something is wrong, or
-            mark it QA’d when it looks clean.
-          </p>
-          <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {batch.qa_at ? (
-              <>
-                <span>
-                  QA’d
-                  {batch.qa_by_label || batch.qa_by
-                    ? ` by ${batch.qa_by_label || actorLabel(batch.qa_by || "")}`
-                    : ""}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => saveBatch({ clearQa: true })}
+          <h2 className="h2">2. Review this batch</h2>
+          {done ? (
+            <p style={{ margin: 0 }}>
+              Approved by {batch.approved_by}
+              {batch.approved_at
+                ? ` on ${new Date(batch.approved_at).toLocaleDateString()}`
+                : ""}
+              .
+            </p>
+          ) : (
+            <>
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Open the Sprout queue above. Check all three, type your name, then
+                approve — or leave feedback if it is not ready.
+              </p>
+              {SOCIAL_QA_CHECKLIST.map((item) => (
+                <label
+                  key={item.key}
+                  className="row"
+                  style={{ gap: 8, alignItems: "flex-start" }}
                 >
-                  Clear
-                </button>
-              </>
-            ) : (
+                  <input
+                    type="checkbox"
+                    checked={checklist[item.key]}
+                    onChange={(e) =>
+                      setChecklist((current) => ({
+                        ...current,
+                        [item.key]: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+              <div className="field">
+                <label htmlFor="sq-sign-name">Your name</label>
+                <input
+                  id="sq-sign-name"
+                  value={signName}
+                  onChange={(e) => setSignName(e.target.value)}
+                  placeholder="Your full name"
+                />
+              </div>
               <button
                 type="button"
-                className="btn btn-sm"
-                onClick={() => saveBatch({ markQa: true })}
+                className="btn btn-primary"
+                disabled={
+                  busy === "sign" ||
+                  !signName.trim() ||
+                  !socialQaChecklistComplete(checklist)
+                }
+                onClick={() => void submitReview(true)}
               >
-                Mark QA’d
+                {busy === "sign" ? "Saving…" : "Approve"}
               </button>
-            )}
-          </div>
-          <label htmlFor="sq-issue">Issue (if sending back)</label>
-          <select
-            id="sq-issue"
-            value={batch.issue_tag}
-            onChange={(e) => saveBatch({ issueTag: e.target.value })}
-          >
-            <option value="">None</option>
-            {SOCIAL_ISSUE_TAGS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          {batch.issue_tag ? (
-            <input
-              value={batch.issue_note}
-              onChange={(e) => setBatch({ ...batch, issue_note: e.target.value })}
-              onBlur={() => saveBatch({ issueNote: batch.issue_note })}
-              placeholder="What was wrong in this queue"
-            />
+              <div className="field">
+                <label htmlFor="sq-feedback">Not ready? Leave feedback</label>
+                <textarea
+                  id="sq-feedback"
+                  rows={4}
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  placeholder="What needs to change"
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={
+                  busy === "reject" || !signName.trim() || feedback.trim().length < 2
+                }
+                onClick={() => void submitReview(false)}
+              >
+                {busy === "reject" ? "Sending…" : "Send back with feedback"}
+              </button>
+            </>
+          )}
+          {reviews.length ? (
+            <div className="stack" style={{ gap: 8 }}>
+              <h3 className="h2" style={{ fontSize: 15, margin: 0 }}>
+                Review history
+              </h3>
+              {reviews.map((review) => (
+                <div key={review.id} className="muted" style={{ fontSize: 13 }}>
+                  <strong>
+                    {review.decision === "approved" ? "Approved" : "Sent back"}
+                  </strong>
+                  {` · ${review.author_name} · ${new Date(review.created_at).toLocaleString()}`}
+                  {review.feedback ? (
+                    <p style={{ margin: "6px 0 0", color: "inherit" }}>{review.feedback}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           ) : null}
         </div>
 
-        <div className="row" style={{ gap: 16, alignItems: "stretch", flexWrap: "wrap" }}>
-          <div className="card card-pad stack" style={{ flex: 1, minWidth: 280 }}>
-            <h2 className="h2">Assign for review</h2>
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Assign a colleague. That creates a Basecamp to-do on the Social QA list,
-              due on the date you pick, with a link back here and to Sprout.
-            </p>
-            {qa?.todoUrl ? (
-              <a href={qa.todoUrl} target="_blank" rel="noreferrer">
-                Open current review to-do
-              </a>
-            ) : null}
-            {qa && !qa.ready ? (
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                Missing: {qa.missing.join(", ") || qa.peopleReason}
-              </p>
-            ) : null}
-            <label htmlFor="sq-reviewer">Assign to</label>
-            <select
-              id="sq-reviewer"
-              value={reviewerSlug}
-              onChange={(e) => setReviewerSlug(e.target.value)}
-            >
-              <option value="">Pick a teammate</option>
-              {(qa?.assignees || []).map((p) => (
-                <option key={p.slug} value={p.slug}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="sq-due">Due date</label>
-            <input
-              id="sq-due"
-              type="date"
-              value={dueOn}
-              onChange={(e) => setDueOn(e.target.value)}
-            />
-            <label htmlFor="sq-msg">To-do note</label>
-            <textarea
-              id="sq-msg"
-              rows={6}
-              value={qaMessage}
-              onChange={(e) => setQaMessage(e.target.value)}
-            />
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy === "qa" || !reviewerSlug || !dueOn}
-              onClick={() => void sendQa()}
-            >
-              {busy === "qa" ? "Sending…" : "Assign and create to-do"}
-            </button>
-          </div>
-
-          <div className="card card-pad stack" style={{ flex: 1, minWidth: 280 }}>
-            <h2 className="h2">Review and approve</h2>
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Work the checklist. Approve posts a note on the Basecamp to-do from you:
-              “I have reviewed and approved this work from a QA standpoint.” If it is
-              not ready, leave feedback instead — that note goes on the to-do and stays
-              on this page.
-            </p>
-            {SOCIAL_QA_CHECKLIST.map((item) => (
-              <label
-                key={item.key}
-                className="row"
-                style={{ gap: 8, alignItems: "flex-start" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={checklist[item.key]}
-                  disabled={batch.status === "approved"}
-                  onChange={(e) =>
-                    setChecklist((current) => ({
-                      ...current,
-                      [item.key]: e.target.checked,
-                    }))
-                  }
-                />
-                <span>{item.label}</span>
-              </label>
-            ))}
-            <label htmlFor="sq-sign-name">Your name</label>
-            <input
-              id="sq-sign-name"
-              value={signName}
-              onChange={(e) => setSignName(e.target.value)}
-              placeholder="Your full name"
-              disabled={batch.status === "approved"}
-            />
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={
-                busy === "sign" ||
-                batch.status === "approved" ||
-                !signName.trim() ||
-                !socialQaChecklistComplete(checklist)
-              }
-              onClick={() => void submitReview(true)}
-            >
-              {batch.status === "approved" ? "Already approved" : "Approve this batch"}
-            </button>
-            <label htmlFor="sq-feedback">If you do not approve, leave feedback</label>
-            <textarea
-              id="sq-feedback"
-              rows={4}
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              placeholder="What needs to change before this can go out"
-              disabled={batch.status === "approved"}
-            />
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={
-                busy === "reject" ||
-                batch.status === "approved" ||
-                !signName.trim() ||
-                feedback.trim().length < 2
-              }
-              onClick={() => void submitReview(false)}
-            >
-              {busy === "reject" ? "Sending…" : "Do not approve — send feedback"}
-            </button>
-            {reviews.length ? (
-              <div className="stack" style={{ gap: 8 }}>
-                <h3 className="h2" style={{ fontSize: 15, margin: 0 }}>
-                  Review notes
-                </h3>
-                {reviews.map((review) => (
-                  <div key={review.id} className="muted" style={{ fontSize: 13 }}>
-                    <strong>
-                      {review.decision === "approved" ? "Approved" : "Not approved"}
-                    </strong>
-                    {` · ${review.author_name} · ${new Date(review.created_at).toLocaleString()}`}
-                    {review.feedback ? (
-                      <p style={{ margin: "6px 0 0", color: "inherit" }}>{review.feedback}</p>
-                    ) : null}
-                    {review.bc_comment_url ? (
-                      <div>
-                        <a href={review.bc_comment_url} target="_blank" rel="noreferrer">
-                          Basecamp note
-                        </a>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={busy === "save"}
-              onClick={() => saveBatch({ archived: !batch.archived_at })}
-            >
-              {batch.archived_at ? "Restore" : "Archive"}
-            </button>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={busy === "save"}
+          onClick={() => saveBatch({ archived: !batch.archived_at })}
+        >
+          {batch.archived_at ? "Restore" : "Archive"}
+        </button>
       </main>
     </div>
   );

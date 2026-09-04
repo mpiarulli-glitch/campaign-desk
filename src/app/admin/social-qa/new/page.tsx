@@ -106,8 +106,9 @@ export default function NewSocialBatchPage() {
           <div>
             <h1 className="h1">New social batch</h1>
             <p className="muted" style={{ margin: "6px 0 0" }}>
-              Paste the Sprout queue, assign a teammate, and a Basecamp to-do is created
-              for them to review it.
+              Paste the Sprout queue, assign a teammate, and they get a Basecamp
+              to-do that only links here — they review in Campaign Desk, not in
+              Basecamp.
             </p>
           </div>
           {error ? <div className="banner banner-danger">{error}</div> : null}
