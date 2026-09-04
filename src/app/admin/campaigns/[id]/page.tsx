@@ -1577,6 +1577,8 @@ export default function AdminCampaignPage() {
     basecampApproval?.recipient ||
     "";
   const isAutomation = campaign.presentation === "automation";
+  const isLinkedInPackage =
+    emails.length > 0 && emails.every((email) => email.kind === "linkedin");
   const flowSummary = (() => {
     if (!isAutomation) return "";
     const tree = buildAutomationTree({
@@ -1606,6 +1608,14 @@ export default function AdminCampaignPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
           All campaigns
         </Link>
+        {isLinkedInPackage ? (
+          <Link
+            className="btn btn-ghost btn-sm"
+            href="/admin/campaigns?kind=linkedin"
+          >
+            LinkedIn campaigns
+          </Link>
+        ) : null}
       </div>
 
       <main className="container container-wide stack cd-pkg">
@@ -2903,6 +2913,16 @@ export default function AdminCampaignPage() {
                   </>
                 ) : (
                   <>
+                    {basecampApproval?.cardUrl ? (
+                      <a
+                        className="btn btn-secondary btn-sm"
+                        href={basecampApproval.cardUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open card
+                      </a>
+                    ) : null}
                     {basecampApproval?.cardUrl ? (
                       <FollowUpButton
                         campaignId={id}

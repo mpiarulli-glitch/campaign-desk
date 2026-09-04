@@ -10,7 +10,12 @@ import {
   matchesCampaignStatusFilter,
   type OperatorCampaignStatus,
 } from "@/lib/campaign-status";
-import { packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
+import {
+  ASSET_KINDS,
+  isAssetKind,
+  packageItemCountLabel,
+  type AssetKind,
+} from "@/lib/asset-kinds";
 
 type CampaignRow = {
   id: string;
@@ -38,12 +43,26 @@ const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
 type View = "all" | "folders";
 type GroupBy = "client" | "month";
 type StatusFilter = "all" | OperatorCampaignStatus;
+type KindFilter = "all" | AssetKind;
 type DatePreset = "any" | "7d" | "30d" | "90d" | "month" | "custom";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
   ...OPERATOR_STATUS_OPTIONS,
 ];
+
+const KIND_FILTERS: { value: KindFilter; label: string }[] = [
+  { value: "all", label: "All kinds" },
+  ...ASSET_KINDS.map((k) => ({
+    value: k.kind,
+    label: k.kind === "linkedin" ? "LinkedIn" : k.label,
+  })),
+];
+
+function campaignMatchesKind(c: CampaignRow, kind: KindFilter): boolean {
+  if (kind === "all") return true;
+  return (c.email_kinds || []).includes(kind);
+}
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
   { value: "any", label: "Any time" },
@@ -281,6 +300,7 @@ export default function AdminPage() {
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -288,11 +308,15 @@ export default function AdminPage() {
 
   const dateBounds = resolveDateBounds(datePreset, dateFrom, dateTo);
   const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
+  const kinded = dated.filter((c) => campaignMatchesKind(c, kindFilter));
   const visible =
     statusFilter === "all"
-      ? dated
-      : dated.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
+      ? kinded
+      : kinded.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
   const dateActive = Boolean(dateBounds.start || dateBounds.end);
+  const kindsInList = new Set(
+    campaigns.flatMap((c) => c.email_kinds || [])
+  );
 
   function toggleFolder(key: string) {
     setOpenFolders((prev) => {
@@ -358,12 +382,15 @@ export default function AdminPage() {
     load(filter);
   }, [filter]);
 
-  // Honor a ?status= deep link (e.g. from the home dashboard tiles).
+  // Honor ?status= and ?kind= deep links (home tiles, LinkedIn campaign pages).
   useEffect(() => {
-    const s = new URLSearchParams(window.location.search).get("status");
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("status");
     if (s && STATUS_FILTERS.some((sf) => sf.value === s)) {
       setStatusFilter(s as StatusFilter);
     }
+    const k = params.get("kind");
+    if (k === "all" || isAssetKind(k)) setKindFilter(k);
   }, []);
 
   return (
@@ -398,8 +425,8 @@ export default function AdminPage() {
           {STATUS_FILTERS.map((sf) => {
             const count =
               sf.value === "all"
-                ? dated.length
-                : dated.filter((c) =>
+                ? kinded.length
+                : kinded.filter((c) =>
                     matchesCampaignStatusFilter(c, sf.value)
                   ).length;
             return (
@@ -409,6 +436,38 @@ export default function AdminPage() {
                 onClick={() => setStatusFilter(sf.value)}
               >
                 {sf.label}
+                <span className="tab-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="tabs" role="tablist" aria-label="Campaign kind">
+          {KIND_FILTERS.filter(
+            (kf) =>
+              kf.value === "all" ||
+              kf.value === "linkedin" ||
+              kindsInList.has(kf.value)
+          ).map((kf) => {
+            const count =
+              kf.value === "all"
+                ? dated.length
+                : dated.filter((c) => campaignMatchesKind(c, kf.value)).length;
+            return (
+              <button
+                key={kf.value}
+                role="tab"
+                aria-selected={kindFilter === kf.value}
+                className={`tab ${kindFilter === kf.value ? "active" : ""}`}
+                onClick={() => {
+                  setKindFilter(kf.value);
+                  const url = new URL(window.location.href);
+                  if (kf.value === "all") url.searchParams.delete("kind");
+                  else url.searchParams.set("kind", kf.value);
+                  window.history.replaceState(null, "", url);
+                }}
+              >
+                {kf.label}
                 <span className="tab-count">{count}</span>
               </button>
             );

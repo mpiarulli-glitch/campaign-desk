@@ -211,6 +211,35 @@ test("LinkedIn outreach approval copy is not the email checklist", () => {
   assert.doesNotMatch(html, /Imagery/);
 });
 
+test("campaign detail can open the Basecamp card after client approval is sent", () => {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const path = require("node:path") as typeof import("node:path");
+  const page = fs.readFileSync(
+    path.join("src/app/admin/campaigns/[id]/page.tsx"),
+    "utf8"
+  );
+  const start = page.indexOf("client approval workflow");
+  const end = page.indexOf("Open Basecamp Deliverables card");
+  assert.ok(start >= 0 && end > start);
+  const header = page.slice(start, end);
+  assert.match(header, /Open card/);
+  assert.match(header, /basecampApproval\?\.cardUrl/);
+  assert.match(header, /target="_blank"/);
+});
+
+test("campaigns list has a LinkedIn kind tab", () => {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const path = require("node:path") as typeof import("node:path");
+  const page = fs.readFileSync(
+    path.join("src/app/admin/campaigns/page.tsx"),
+    "utf8"
+  );
+  assert.match(page, /KIND_FILTERS/);
+  assert.match(page, /campaignMatchesKind/);
+  assert.match(page, /kf\.value === "linkedin"/);
+  assert.match(page, /searchParams\.set\("kind"/);
+});
+
 test("LinkedIn review follow-up talks about outreach, not email packaging", () => {
   const text = clientReviewFollowupText({ ...input, channel: "linkedin" });
   assert.match(text, /LinkedIn outreach is still waiting on review/);
