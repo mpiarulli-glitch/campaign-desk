@@ -1825,8 +1825,9 @@ export interface CardMoveResult {
 
 // Move an existing Deliverables card to Approved or Scheduled/Published. Used
 // when a campaign is approved in Campaign Desk, or when its status is marked
-// scheduled. Failures are returned to the caller so the campaign write itself
-// is never blocked on Basecamp.
+// scheduled. Approval also clears the card due date — the review deadline is
+// done. Failures are returned to the caller so the campaign write itself is
+// never blocked on Basecamp.
 export async function moveDeliverablesCard(input: {
   projectId: string;
   cardId: string;
@@ -1875,21 +1876,42 @@ export async function moveDeliverablesCard(input: {
           "The linked card is not on this project's Deliverables table, so it was left where it is.",
       };
     }
-    if (parentId === target.id) {
-      return { ok: true, columnTitle: target.title };
+
+    const alreadyThere = parentId === target.id;
+    if (!alreadyThere) {
+      const moveRes = await bc(
+        `/card_tables/cards/${input.cardId}/moves.json`,
+        {
+          method: "POST",
+          body: JSON.stringify({ column_id: target.id, position: 1 }),
+        },
+        identity
+      );
+      if (!moveRes.ok) {
+        return { ok: false, error: `Could not move the card (${moveRes.status}).` };
+      }
     }
 
-    const moveRes = await bc(
-      `/card_tables/cards/${input.cardId}/moves.json`,
-      {
-        method: "POST",
-        body: JSON.stringify({ column_id: target.id, position: 1 }),
-      },
-      identity
-    );
-    if (!moveRes.ok) {
-      return { ok: false, error: `Could not move the card (${moveRes.status}).` };
+    if (input.column === "approved") {
+      const dueRes = await bc(
+        `/card_tables/cards/${input.cardId}.json`,
+        {
+          method: "PUT",
+          body: JSON.stringify(approvalDueFields(null)),
+        },
+        identity
+      );
+      if (!dueRes.ok) {
+        return {
+          ok: false,
+          error: alreadyThere
+            ? `Could not clear the due date (${dueRes.status}).`
+            : `The card moved to Approved, but the due date could not be cleared (${dueRes.status}).`,
+          columnTitle: target.title,
+        };
+      }
     }
+
     return { ok: true, columnTitle: target.title };
   } catch (err) {
     return { ok: false, error: (err as Error).message };

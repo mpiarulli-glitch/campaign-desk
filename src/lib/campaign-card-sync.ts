@@ -1,6 +1,7 @@
 // Move a campaign's linked Deliverables card when its Campaign Desk status
 // changes. Approval and scheduling in this app should land the same card in the
 // matching Basecamp column, so the board stays truthful without a second click.
+// Approval also strips the review due date off the card.
 //
 // The campaign write always wins. A Basecamp outage is recorded as a failure
 // and never blocks the client from approving, or an admin from marking scheduled.
@@ -13,7 +14,7 @@ import {
   moveDeliverablesCard,
   type BcIdentity,
 } from "./basecamp";
-import { getCampaignById } from "./campaigns";
+import { clearCampaignBasecampDueOn, getCampaignById } from "./campaigns";
 import type { Campaign, RevClient } from "./db";
 import { recordFailure, clearFailure } from "./failures";
 import { getRevClient, listRevClients, updateRevClient } from "./revenue";
@@ -135,6 +136,7 @@ export async function syncCampaignDeliverablesCard(
       });
       return;
     }
+    if (column === "approved") clearCampaignBasecampDueOn(campaign.id);
     clearFailure("basecamp_card_move", subject);
   } catch (err) {
     recordFailure({

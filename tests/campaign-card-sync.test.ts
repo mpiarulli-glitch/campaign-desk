@@ -31,4 +31,21 @@ test("campaign card sync", async (t) => {
     await sync.syncCampaignDeliverablesCard(campaign.id, "scheduled");
     assert.equal(failures.openFailureCount(), 0);
   });
+
+  await t.test("clearing the stored due date does not drop the linked card", () => {
+    const campaign = campaigns.createCampaign({
+      title: "May newsletter",
+      htmlContent: "<p>Hello</p>",
+    });
+    campaigns.recordBasecampApproval(campaign.id, {
+      cardId: "card-1",
+      cardUrl: "https://3.basecamp.com/example/cards/1",
+      revision: "v1",
+      dueOn: "2026-09-10",
+    });
+    campaigns.clearCampaignBasecampDueOn(campaign.id);
+    const fresh = campaigns.getCampaignById(campaign.id)!;
+    assert.equal(fresh.basecamp_due_on, null);
+    assert.equal(fresh.basecamp_card_id, "card-1");
+  });
 });

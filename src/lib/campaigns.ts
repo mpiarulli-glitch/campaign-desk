@@ -985,6 +985,12 @@ export function recordBasecampApproval(
   return getCampaignById(id);
 }
 
+export function clearCampaignBasecampDueOn(id: string): void {
+  getDb()
+    .prepare(`UPDATE campaigns SET basecamp_due_on = NULL, updated_at = ? WHERE id = ?`)
+    .run(nowIso(), id);
+}
+
 export function recordInternalReviewTodo(
   id: string,
   input: { todoId?: string | null; todoUrl?: string | null }
