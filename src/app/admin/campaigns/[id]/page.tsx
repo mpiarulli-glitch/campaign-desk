@@ -1,6 +1,7 @@
 "use client";
 
 import { PushToGhl } from "@/components/PushToGhl";
+import { PushToKlaviyo } from "@/components/PushToKlaviyo";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -1784,6 +1785,7 @@ export default function AdminCampaignPage() {
           approvedChannel={campaign.approved_channel}
         />
         <PushToGhl campaignId={campaign.id} campaignTitle={campaign.title} />
+        <PushToKlaviyo campaignId={campaign.id} campaignTitle={campaign.title} />
         <Link className="btn btn-ghost btn-sm" href="/admin/campaigns">
           All campaigns
         </Link>
