@@ -60,11 +60,18 @@ type Pings = {
 function clock(iso: string): string {
   if (!iso) return "";
   try {
+    const at = new Date(iso);
+    const now = new Date();
+    const sameDay =
+      new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(at) ===
+      new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
     return new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Los_Angeles",
+      month: sameDay ? undefined : "short",
+      day: sameDay ? undefined : "numeric",
       hour: "numeric",
       minute: "2-digit",
-    }).format(new Date(iso));
+    }).format(at);
   } catch {
     return "";
   }
@@ -110,8 +117,8 @@ export function DailyNote() {
         <div className="hq-card-head">
           <span className="hq-icon"><NoteIcon /></span>
           <div>
-            <h3 className="hq-card-title">Today</h3>
-            <p className="hq-card-desc">Couldn&apos;t load the daily note.</p>
+            <h3 className="hq-card-title">Morning brief</h3>
+            <p className="hq-card-desc">Couldn&apos;t load the morning brief.</p>
           </div>
         </div>
       </div>
@@ -124,7 +131,7 @@ export function DailyNote() {
         <div className="hq-card-head">
           <span className="hq-icon"><NoteIcon /></span>
           <div>
-            <h3 className="hq-card-title">Today</h3>
+            <h3 className="hq-card-title">Morning brief</h3>
             <p className="hq-card-desc">Reading Basecamp…</p>
           </div>
         </div>
@@ -150,7 +157,7 @@ export function DailyNote() {
       <div className="hq-card-head">
         <span className="hq-icon"><NoteIcon /></span>
         <div>
-          <h3 className="hq-card-title">Today</h3>
+          <h3 className="hq-card-title">Morning brief</h3>
           <p className="hq-card-desc">
             {note.label}
             {quiet ? " · all quiet" : ` · ${count} thing${count === 1 ? "" : "s"}`}
@@ -161,7 +168,7 @@ export function DailyNote() {
 
       {quiet ? (
         <p className="muted" style={{ margin: 0 }}>
-          No client messages, ads launches, or approval moves for this Pacific day yet.
+          No new client messages, ads launches, or approval moves in the last day and a half.
         </p>
       ) : null}
 

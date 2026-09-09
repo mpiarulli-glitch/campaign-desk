@@ -67,7 +67,7 @@ test("daily note groups client posts, ads launches, and approvals for the Pacifi
 
   const db = getDb();
   const now = new Date("2026-09-09T16:20:00.000Z"); // 9:20am PDT
-  const today = "2026-09-09T18:00:00.000Z";
+  const today = "2026-09-09T15:00:00.000Z"; // 8:00am PDT, earlier this morning
   const yesterday = "2026-09-08T20:00:00.000Z";
   const ts = nowIso();
 
@@ -105,10 +105,22 @@ test("daily note groups client posts, ads launches, and approvals for the Pacifi
   msg.run(
     "p1:3",
     "Krak Boba",
-    "Old unanswered thread",
+    "Wrote last night",
     "Sam",
     yesterday,
     yesterday,
+    "",
+    1,
+    "",
+    ts
+  );
+  msg.run(
+    "p1:5",
+    "Krak Boba",
+    "Unanswered from last month",
+    "Sam",
+    "2026-08-01T18:00:00.000Z",
+    "2026-08-01T18:00:00.000Z",
     "",
     1,
     "",
@@ -157,9 +169,9 @@ test("daily note groups client posts, ads launches, and approvals for the Pacifi
     "Cisco Restaurant",
     "mt-2",
     "et-2",
-    yesterday,
-    yesterday,
-    yesterday,
+    "2026-08-01T18:00:00.000Z",
+    "2026-08-01T18:00:00.000Z",
+    "2026-08-01T18:00:00.000Z",
     "Katie Jones"
   );
 
@@ -171,7 +183,10 @@ test("daily note groups client posts, ads launches, and approvals for the Pacifi
 
   const note = hub.buildDailyNote(now);
   assert.equal(note.dayKey, "2026-09-09");
-  assert.equal(note.clientMessages.map((m) => m.title).join(), "Can we pause next week?");
+  assert.deepEqual(
+    note.clientMessages.map((m) => m.title),
+    ["Can we pause next week?", "Wrote last night"]
+  );
   assert.equal(note.clientMessages[0].awaitingReply, true);
   assert.deepEqual(
     note.adsLaunched.map((m) => m.title),
@@ -180,7 +195,11 @@ test("daily note groups client posts, ads launches, and approvals for the Pacifi
   assert.equal(note.approvals.length, 1);
   assert.match(note.approvals[0].summary, /approved September newsletter/);
   assert.equal(note.reviewComments.length, 1);
-  assert.equal(note.waiting.length, 2);
+  assert.deepEqual(
+    note.waiting.map((m) => m.title),
+    ["Can we pause next week?", "Wrote last night"]
+  );
+  assert.ok(!note.waiting.some((m) => m.title.includes("last month")));
 
   const pings = hub.pingsForDay(
     [
@@ -198,16 +217,16 @@ test("daily note groups client posts, ads launches, and approvals for the Pacifi
       {
         id: 10,
         section: "inbox",
-        title: "Old",
+        title: "Old unread ping",
         excerpt: "",
         projectName: "MEG HQ",
         actor: "Jane",
         url: "",
-        at: yesterday,
-        unread: false,
+        at: "2026-08-01T18:00:00.000Z",
+        unread: true,
       },
     ],
-    note.dayKey
+    now
   );
   assert.equal(pings.length, 1);
   assert.equal(pings[0].title, "Quick question");

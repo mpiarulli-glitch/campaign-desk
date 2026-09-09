@@ -1,8 +1,9 @@
-// Morning briefing for MEG Team Hub: Basecamp client threads, ads-launch
+// Morning brief for MEG Team Hub: recent Basecamp client threads, ads-launch
 // mentions, review-link comments, and Deliverables cards that moved to Approved.
 //
-// Reads the message cache and local campaign rows. Pings are fetched live in
-// the API route because they are per-person and cannot be shared.
+// Only the last 36 hours. Older unanswered threads belong in the messages
+// report, not at the top of the hub. Pings are fetched live in the API route
+// because they are per-person and cannot be shared.
 
 import { looksLikeAdsLaunch } from "./ads-launch";
 import { approvalActivitySummary } from "./activity-copy";
@@ -15,6 +16,8 @@ import {
 import { getDb, type BasecampClientMessage } from "./db";
 
 export const TEAM_TZ = "America/Los_Angeles";
+/** Overnight plus this morning — not the unanswered-message archive. */
+export const RECENT_MS = 36 * 3600 * 1000;
 
 export interface DailyNoteMessage {
   id: string;
@@ -107,6 +110,21 @@ export function isOnPacificDay(
   return Boolean(iso) && pacificDateKey(iso, timeZone) === dayKey;
 }
 
+export function isRecent(
+  iso: string,
+  now: Date,
+  windowMs = RECENT_MS
+): boolean {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return false;
+  const age = now.getTime() - t;
+  return age >= -60_000 && age <= windowMs;
+}
+
+function newestFirst<T extends { at: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
 function clip(text: string, n = 180): string {
   const t = text.replace(/\s+/g, " ").trim();
   if (t.length <= n) return t;
@@ -140,22 +158,26 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
   const dayKey = pacificDateKey(now);
   const cached = listCachedClientMessages();
 
-  const clientMessages = cached
-    .filter((m) => isOnPacificDay(m.last_client_at, dayKey))
-    .map(asMessage);
+  const clientMessages = newestFirst(
+    cached
+      .filter((m) => isRecent(m.last_client_at, now))
+      .map(asMessage)
+  );
 
-  const waiting = cached
-    .filter((m) => m.awaiting_reply === 1)
-    .map(asMessage);
+  const waiting = newestFirst(
+    cached
+      .filter((m) => m.awaiting_reply === 1 && isRecent(m.last_client_at, now))
+      .map(asMessage)
+  );
 
-  const adsLaunched = cached
-    .filter((m) => {
-      const blob = `${m.title} ${m.preview || ""}`;
-      return (
-        looksLikeAdsLaunch(blob) && isOnPacificDay(lastActivityAt(m), dayKey)
-      );
-    })
-    .map(asMessage);
+  const adsLaunched = newestFirst(
+    cached
+      .filter((m) => {
+        const blob = `${m.title} ${m.preview || ""}`;
+        return looksLikeAdsLaunch(blob) && isRecent(lastActivityAt(m), now);
+      })
+      .map(asMessage)
+  );
 
   const db = getDb();
   const campaigns = db
@@ -175,8 +197,9 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
     basecamp_card_url: string | null;
   }>;
 
-  const approvals: DailyNoteApproval[] = campaigns
-    .filter((c) => isOnPacificDay(c.approved_at, dayKey))
+  const approvals: DailyNoteApproval[] = newestFirst(
+    campaigns
+    .filter((c) => isRecent(c.approved_at, now))
     .map((c) => ({
       id: c.id,
       clientName: c.client_name,
@@ -192,7 +215,7 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
       href: `/admin/campaigns/${c.id}`,
       channel: c.approved_channel,
     }))
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  );
 
   const commentRows = db
     .prepare(
@@ -213,8 +236,9 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
     client_name: string;
   }>;
 
-  const reviewComments: DailyNoteComment[] = commentRows
-    .filter((c) => isOnPacificDay(c.created_at, dayKey))
+  const reviewComments: DailyNoteComment[] = newestFirst(
+    commentRows
+    .filter((c) => isRecent(c.created_at, now))
     .map((c) => ({
       id: c.id,
       clientName: c.client_name,
@@ -223,7 +247,8 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
       body: clip(c.body, 220),
       at: c.created_at,
       href: `/admin/campaigns/${c.campaign_id}`,
-    }));
+    }))
+  );
 
   return {
     dayKey,
@@ -239,10 +264,11 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
 
 const PING_SECTIONS = new Set(["pings", "mentions", "inbox"]);
 
-export function pingsForDay(readings: BcReading[], dayKey: string): DailyNotePing[] {
-  return readings
+export function pingsForDay(readings: BcReading[], now: Date): DailyNotePing[] {
+  return newestFirst(
+    readings
     .filter((r) => PING_SECTIONS.has(r.section) || r.unread)
-    .filter((r) => r.unread || isOnPacificDay(r.at, dayKey))
+    .filter((r) => isRecent(r.at, now))
     .map((r) => ({
       id: String(r.id),
       section: r.section,
@@ -253,15 +279,16 @@ export function pingsForDay(readings: BcReading[], dayKey: string): DailyNotePin
       url: r.url,
       at: r.at,
       unread: r.unread,
-    }));
+    }))
+  );
 }
 
 export async function loadDailyNotePings(person: string | null): Promise<DailyNotePings> {
   if (!person) return { items: [], reason: "no-person" };
   if (!hasConnection(person)) return { items: [], reason: "not-connected" };
   try {
-    const dayKey = pacificDateKey(new Date());
-    const items = pingsForDay(await listMyReadings(asPerson(person)), dayKey);
+    const now = new Date();
+    const items = pingsForDay(await listMyReadings(asPerson(person)), now);
     return { items, reason: "ok" };
   } catch {
     return { items: [], reason: "error" };
