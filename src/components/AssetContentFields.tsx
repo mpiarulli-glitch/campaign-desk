@@ -25,6 +25,9 @@ type Props = {
   setContent: (v: string) => void;
   media: string;
   setMedia: (v: string) => void;
+  idPrefix?: string;
+  htmlRequired?: boolean;
+  htmlLabel?: string;
 };
 
 export function AssetContentFields({
@@ -35,9 +38,15 @@ export function AssetContentFields({
   setContent,
   media,
   setMedia,
+  idPrefix = "asset",
+  htmlRequired = true,
+  htmlLabel,
 }: Props) {
   const meta = kindMeta(kind);
   const formats = meta.formats;
+  const contentId = `${idPrefix}Content`;
+  const mediaId = `${idPrefix}Media`;
+  const captionId = `${idPrefix}Caption`;
 
   async function onFile(file: File) {
     const reader = new FileReader();
@@ -67,9 +76,9 @@ export function AssetContentFields({
 
       {format === "html" ? (
         <div className="field">
-          <label htmlFor="assetContent">HTML</label>
+          <label htmlFor={contentId}>{htmlLabel || "HTML"}</label>
           <textarea
-            id="assetContent"
+            id={contentId}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder={
@@ -82,16 +91,32 @@ export function AssetContentFields({
                     : "Paste the full HTML"
             }
             style={{ minHeight: 200, fontFamily: "var(--mono)", fontSize: 12 }}
-            required
+            required={htmlRequired}
           />
+          <label className="btn btn-secondary btn-sm" style={{ width: "fit-content", marginTop: 8 }}>
+            Upload .html file
+            <input
+              type="file"
+              accept=".html,text/html"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => setContent(String(reader.result || ""));
+                reader.readAsText(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
         </div>
       ) : null}
 
       {format === "text" ? (
         <div className="field">
-          <label htmlFor="assetContent">Message</label>
+          <label htmlFor={contentId}>Message</label>
           <textarea
-            id="assetContent"
+            id={contentId}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Type the text message exactly as it should send."
@@ -114,11 +139,11 @@ export function AssetContentFields({
 
       {format === "markdown" ? (
         <div className="field">
-          <label htmlFor="assetContent">
+          <label htmlFor={contentId}>
             {kind === "copydeck" ? "Copy deck (markdown)" : "Article (markdown)"}
           </label>
           <textarea
-            id="assetContent"
+            id={contentId}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder={
@@ -133,9 +158,9 @@ export function AssetContentFields({
       {format === "image" ? (
         <>
           <div className="field">
-            <label htmlFor="assetMedia">Image URL</label>
+            <label htmlFor={mediaId}>Image URL</label>
             <input
-              id="assetMedia"
+              id={mediaId}
               value={media.startsWith("data:") ? "" : media}
               onChange={(e) => setMedia(e.target.value)}
               placeholder="https://... (or upload a file below)"
@@ -156,9 +181,9 @@ export function AssetContentFields({
             </label>
           </div>
           <div className="field">
-            <label htmlFor="assetCaption">Caption (optional)</label>
+            <label htmlFor={captionId}>Caption (optional)</label>
             <input
-              id="assetCaption"
+              id={captionId}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="e.g. Homepage hero, desktop"
@@ -170,9 +195,9 @@ export function AssetContentFields({
       {format === "figma" ? (
         <>
           <div className="field">
-            <label htmlFor="assetMedia">Figma link</label>
+            <label htmlFor={mediaId}>Figma link</label>
             <input
-              id="assetMedia"
+              id={mediaId}
               value={media}
               onChange={(e) => setMedia(e.target.value)}
               placeholder="Paste a Figma file or prototype share link"
@@ -183,9 +208,9 @@ export function AssetContentFields({
             </p>
           </div>
           <div className="field">
-            <label htmlFor="assetCaption">Caption (optional)</label>
+            <label htmlFor={captionId}>Caption (optional)</label>
             <input
-              id="assetCaption"
+              id={captionId}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="e.g. New landing page concept"

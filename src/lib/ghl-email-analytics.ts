@@ -213,6 +213,14 @@ function unwrapStats(payload: unknown): RawStats {
   return obj as RawStats;
 }
 
+export type GhlEmailSchedule = {
+  id: string;
+  name: string;
+  subject: string;
+  status: string;
+  scheduledAt: string | null;
+};
+
 async function listScheduledCampaigns(locationId: string): Promise<RawSchedule[]> {
   const result = await ghlRequest<{
     schedules?: RawSchedule[];
@@ -223,6 +231,30 @@ async function listScheduledCampaigns(locationId: string): Promise<RawSchedule[]
     params: { locationId },
   });
   return result.schedules || result.data || result.items || [];
+}
+
+function scheduleInstant(raw: RawSchedule): string | null {
+  const value = raw.scheduledAt || raw.createdAt || raw.dateAdded;
+  if (!value) return null;
+  const ms = Date.parse(value);
+  if (Number.isFinite(ms)) return new Date(ms).toISOString();
+  return null;
+}
+
+/** Scheduled (and recently sent) GHL email blasts for one subaccount. */
+export async function listLocationEmailSchedules(
+  locationId: string
+): Promise<GhlEmailSchedule[]> {
+  const rows = await listScheduledCampaigns(locationId);
+  return rows
+    .map((raw) => ({
+      id: String(raw.id || raw._id || ""),
+      name: String(raw.name || "").trim(),
+      subject: String(raw.subject || "").trim(),
+      status: String(raw.status || "").trim() || "unknown",
+      scheduledAt: scheduleInstant(raw),
+    }))
+    .filter((row) => row.id && row.name);
 }
 
 async function fetchCampaignStats(

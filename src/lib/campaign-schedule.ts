@@ -1,6 +1,7 @@
-// Scheduling a review-package campaign: the operator picks Scheduled, names a
-// Pacific date and time, and a cron sweep marks it Sent once that instant has
-// passed. Campaign status is the source of truth for the Campaigns list; a
+// Scheduling a review-package campaign: the operator picks Scheduled and names
+// a Pacific date and time for each email (or one date when the package is a
+// single send). A cron sweep marks the campaign Sent once every email instant
+// has passed. Campaign status is the source of truth for the Campaigns list; a
 // matching calendar send is reused when one already exists so the two views
 // do not invent a second send.
 
@@ -9,9 +10,11 @@ import { EDITORIAL_PREDICATE, getSend, updateSend } from "./calendar";
 import {
   clearApprovalThankYou,
   getCampaignById,
+  getEmailById,
+  listEmails,
   updateCampaign,
 } from "./campaigns";
-import { getDb, nowIso, type Campaign, type ScheduledSend } from "./db";
+import { getDb, nowIso, type Campaign, type CampaignEmail, type ScheduledSend } from "./db";
 import { parseTimeInput, zonedLocalToUtc } from "./forecast-time";
 
 export const DEFAULT_SEND_TIME = "09:00";
@@ -29,6 +32,34 @@ export type SuggestedCampaignSend = {
 export type ScheduleCampaignResult =
   | { campaign: Campaign; flippedToSent: boolean }
   | { error: string };
+
+export type EmailSendInput = {
+  id: string;
+  sendDate: string;
+  sendTime: string;
+};
+
+export function isSchedulableEmailKind(kind?: string | null): boolean {
+  const k = (kind || "email").trim() || "email";
+  return k === "email" || k === "interactive";
+}
+
+export function listSchedulableEmails(campaignId: string): CampaignEmail[] {
+  return listEmails(campaignId).filter((email) =>
+    isSchedulableEmailKind(email.kind)
+  );
+}
+
+export function setEmailScheduledAt(
+  emailId: string,
+  scheduledSendAt: string | null
+): void {
+  getDb()
+    .prepare(
+      `UPDATE campaign_emails SET scheduled_send_at = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(scheduledSendAt, nowIso(), emailId);
+}
 
 export function parseCampaignSendAt(
   sendDate: string,
@@ -148,20 +179,94 @@ export function setCampaignSchedule(
     .run(scheduledSendAt, scheduledSendId, nowIso(), campaignId);
 }
 
+function parsedEmailSends(
+  campaignId: string,
+  input: {
+    sendDate?: string;
+    sendTime?: string;
+    emails?: EmailSendInput[];
+  }
+):
+  | { error: string }
+  | {
+      rows: Array<{
+        id: string;
+        iso: string;
+        sendDate: string;
+        sendTime: string;
+      }>;
+    } {
+  const schedulable = listSchedulableEmails(campaignId);
+  const byId = new Map(schedulable.map((e) => [e.id, e]));
+  if (input.emails && input.emails.length > 0) {
+    const rows: Array<{
+      id: string;
+      iso: string;
+      sendDate: string;
+      sendTime: string;
+    }> = [];
+    for (const item of input.emails) {
+      if (!byId.has(item.id)) {
+        return { error: "That email is not in this package." };
+      }
+      const sendTime = parseTimeInput(item.sendTime);
+      const iso = parseCampaignSendAt(item.sendDate, sendTime);
+      if (!iso) {
+        return { error: "Pick a date and time for each email." };
+      }
+      rows.push({ id: item.id, iso, sendDate: item.sendDate, sendTime });
+    }
+    for (const email of schedulable) {
+      if (!rows.some((row) => row.id === email.id)) {
+        return { error: "Pick a date and time for each email." };
+      }
+    }
+    return { rows };
+  }
+
+  const sendTime = parseTimeInput(input.sendTime || "");
+  const iso = parseCampaignSendAt(input.sendDate || "", sendTime);
+  if (!iso) {
+    return { error: "Pick the date and time this campaign will send." };
+  }
+  if (schedulable.length === 0) {
+    return {
+      rows: [{ id: "", iso, sendDate: input.sendDate || "", sendTime }],
+    };
+  }
+  return {
+    rows: schedulable.map((email) => ({
+      id: email.id,
+      iso,
+      sendDate: input.sendDate || "",
+      sendTime,
+    })),
+  };
+}
+
 export function scheduleCampaign(
   campaignId: string,
-  input: { sendDate: string; sendTime: string; sendId?: string | null }
+  input: {
+    sendDate?: string;
+    sendTime?: string;
+    sendId?: string | null;
+    emails?: EmailSendInput[];
+  }
 ): ScheduleCampaignResult {
   const existing = getCampaignById(campaignId);
   if (!existing) return { error: "Not found" };
 
-  const sendTime = parseTimeInput(input.sendTime);
-  const iso = parseCampaignSendAt(input.sendDate, sendTime);
-  if (!iso) {
+  const parsed = parsedEmailSends(campaignId, input);
+  if ("error" in parsed) return parsed;
+  const { rows } = parsed;
+  if (!rows.length) {
     return { error: "Pick the date and time this campaign will send." };
   }
 
-  const past = iso <= nowIso();
+  const isos = rows.map((row) => row.iso).sort();
+  const earliest = isos[0];
+  const latest = isos[isos.length - 1];
+  const past = latest <= nowIso();
   const status = past ? "sent" : "scheduled";
   const leavingApproved = existing.status === "approved";
   if (leavingApproved) {
@@ -175,36 +280,54 @@ export function scheduleCampaign(
     approvedChannel: leavingApproved ? null : undefined,
   });
 
+  for (const row of rows) {
+    if (!row.id) continue;
+    if (!getEmailById(row.id)) continue;
+    setEmailScheduledAt(row.id, row.iso);
+  }
+
   let sendId: string | null = null;
   const requested = (input.sendId || "").trim();
   const match = requested
     ? getSend(requested)
     : findMatchingCalendarSend(existing);
+  const first = rows[0];
   if (match && !match.cancelled_at) {
     updateSend(match.id, {
-      sendDate: input.sendDate,
-      sendTime,
+      sendDate: first.sendDate,
+      sendTime: first.sendTime,
       status: past ? "sent" : "scheduled",
     });
     sendId = match.id;
   }
 
-  setCampaignSchedule(campaignId, iso, sendId);
+  setCampaignSchedule(campaignId, earliest, sendId);
   const campaign = getCampaignById(campaignId);
   if (!campaign) return { error: "Not found" };
   return { campaign, flippedToSent: past };
 }
 
+function campaignScheduleIsDue(campaign: Campaign, asOf: string): boolean {
+  const emails = listSchedulableEmails(campaign.id).filter(
+    (email) => email.scheduled_send_at
+  );
+  if (emails.length > 0) {
+    return emails.every((email) => (email.scheduled_send_at as string) <= asOf);
+  }
+  return Boolean(
+    campaign.scheduled_send_at && campaign.scheduled_send_at <= asOf
+  );
+}
+
 export function listDueScheduledCampaigns(asOf = nowIso()): Campaign[] {
-  return getDb()
+  const rows = getDb()
     .prepare(
       `SELECT * FROM campaigns
        WHERE status = 'scheduled'
-         AND scheduled_send_at IS NOT NULL
-         AND scheduled_send_at <= ?
        ORDER BY scheduled_send_at ASC, created_at ASC`
     )
-    .all(asOf) as Campaign[];
+    .all() as Campaign[];
+  return rows.filter((campaign) => campaignScheduleIsDue(campaign, asOf));
 }
 
 export function markScheduledCampaignSent(campaignId: string): Campaign | null {

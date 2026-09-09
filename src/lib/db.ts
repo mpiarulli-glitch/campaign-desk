@@ -245,6 +245,11 @@ export interface CampaignEmail {
   // Wait after the previous step (or after the trigger for the first email).
   // Only meaningful when the parent campaign is an automation.
   delay_ms: number;
+  html_content_b: string;
+  ab_hypothesis: string;
+  // Pacific send instant as UTC ISO. Packages with more than one email
+  // schedule each item, not the whole campaign as a single blast.
+  scheduled_send_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1340,6 +1345,9 @@ export function getDb(): Database.Database {
       media_url TEXT,
       purpose TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
+      html_content_b TEXT NOT NULL DEFAULT '',
+      ab_hypothesis TEXT NOT NULL DEFAULT '',
+      scheduled_send_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
@@ -2730,6 +2738,9 @@ function migrate(database: Database.Database) {
       `ALTER TABLE campaign_emails ADD COLUMN delay_ms INTEGER NOT NULL DEFAULT 0`
     );
   }
+  if (!emailCols.includes("scheduled_send_at")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN scheduled_send_at TEXT`);
+  }
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS campaign_flow_steps (
@@ -3351,6 +3362,18 @@ function migrate(database: Database.Database) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_social_batches_review_token
       ON social_batches(review_token) WHERE review_token != ''
   `);
+
+  const emailAbCols = tableColumns(database, "campaign_emails");
+  if (emailAbCols.length && !emailAbCols.includes("html_content_b")) {
+    database.exec(
+      `ALTER TABLE campaign_emails ADD COLUMN html_content_b TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (emailAbCols.length && !emailAbCols.includes("ab_hypothesis")) {
+    database.exec(
+      `ALTER TABLE campaign_emails ADD COLUMN ab_hypothesis TEXT NOT NULL DEFAULT ''`
+    );
+  }
 
   const bcMsgCols = tableColumns(database, "basecamp_client_messages");
   if (bcMsgCols.length && !bcMsgCols.includes("preview")) {

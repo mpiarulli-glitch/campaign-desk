@@ -18,6 +18,7 @@ import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
 import { APP_TIME_ZONE } from "@/lib/period";
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
+import { AbVariantBar } from "@/components/AbVariantBar";
 import {
   ASSET_KINDS,
   renderAssetDoc,
@@ -158,6 +159,9 @@ type EmailItem = {
   chosen_subject_id?: string | null;
   subjects?: SubjectOption[];
   delay_ms?: number;
+  html_content_b?: string;
+  ab_hypothesis?: string;
+  scheduled_send_at?: string | null;
 };
 
 type SuggestedSend = {
@@ -303,6 +307,16 @@ function scheduleIsPast(sendDate: string, sendTime: string): boolean {
   return Boolean(at && at.getTime() <= Date.now());
 }
 
+function isSchedulableKind(kind?: string | null): boolean {
+  const k = (kind || "email").trim() || "email";
+  return k === "email" || k === "interactive";
+}
+
+function sendLabel(iso: string): string {
+  const parts = pacificDateTimeParts(new Date(iso));
+  return `${fmtYmd(parts.date)} at ${formatTimeLabel(parts.time)} PT`;
+}
+
 export default function AdminCampaignPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -319,6 +333,9 @@ export default function AdminCampaignPage() {
   // Bumped to remount the preview and throw away edits on discard.
   const [previewNonce, setPreviewNonce] = useState(0);
   const [htmlDraft, setHtmlDraft] = useState("");
+  const [htmlDraftB, setHtmlDraftB] = useState("");
+  const [abHypothesisDraft, setAbHypothesisDraft] = useState("");
+  const [previewVariant, setPreviewVariant] = useState<"a" | "b">("a");
   const [emailTitleDraft, setEmailTitleDraft] = useState("");
   const [versionNote, setVersionNote] = useState("");
   const [status, setStatus] = useState("draft");
@@ -331,6 +348,8 @@ export default function AdminCampaignPage() {
   const [addingEmail, setAddingEmail] = useState(false);
   const [newEmailTitle, setNewEmailTitle] = useState("");
   const [newEmailHtml, setNewEmailHtml] = useState("");
+  const [newEmailHtmlB, setNewEmailHtmlB] = useState("");
+  const [newAbHypothesis, setNewAbHypothesis] = useState("");
   const [newEmailKind, setNewEmailKind] = useState<AssetKind>("email");
   const [newEmailFormat, setNewEmailFormat] = useState<BodyFormat>("html");
   const [newEmailMedia, setNewEmailMedia] = useState("");
@@ -398,6 +417,17 @@ export default function AdminCampaignPage() {
   const [scheduleSendId, setScheduleSendId] = useState("");
   const [scheduleFromCalendar, setScheduleFromCalendar] = useState(false);
   const [scheduleCalendarTitle, setScheduleCalendarTitle] = useState("");
+  const [scheduleEmailRows, setScheduleEmailRows] = useState<
+    Array<{
+      id: string;
+      title: string;
+      sendDate: string;
+      sendTime: string;
+      ghlName: string;
+    }>
+  >([]);
+  const [ghlChecking, setGhlChecking] = useState(false);
+  const [ghlHint, setGhlHint] = useState("");
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -452,6 +482,9 @@ export default function AdminCampaignPage() {
       const active = (data.emails || []).find((e: EmailItem) => e.id === nextId);
       if (active) {
         setHtmlDraft(active.html_content);
+        setHtmlDraftB(active.html_content_b || "");
+        setAbHypothesisDraft(active.ab_hypothesis || "");
+        setPreviewVariant("a");
         setEmailTitleDraft(active.title);
       }
     } catch {
@@ -648,9 +681,17 @@ export default function AdminCampaignPage() {
 
   // Rendered preview document for the active asset (blogs/decks/mock-ups get
   // turned into displayable HTML here; emails pass through unchanged).
+  const previewEmail = useMemo(() => {
+    if (!activeEmail) return null;
+    if (previewVariant === "b" && (activeEmail.html_content_b || "").trim()) {
+      return { ...activeEmail, html_content: activeEmail.html_content_b || "" };
+    }
+    return activeEmail;
+  }, [activeEmail, previewVariant]);
+
   const activeDoc = useMemo(
-    () => (activeEmail ? renderAssetDoc(activeEmail) : { html: "", interactive: false }),
-    [activeEmail]
+    () => (previewEmail ? renderAssetDoc(previewEmail) : { html: "", interactive: false }),
+    [previewEmail]
   );
 
   // The AI reviser rewrites HTML, so it only applies to HTML-backed assets
@@ -926,11 +967,46 @@ export default function AdminCampaignPage() {
     setActivePinId(null);
     setAiChat(null);
     setChatInput("");
+    setPreviewVariant("a");
+    setEditingCopy(false);
+    setPendingEdits([]);
+    setEditDirty(false);
     const email = emails.find((e) => e.id === emailId);
     if (email) {
       setHtmlDraft(email.html_content);
+      setHtmlDraftB(email.html_content_b || "");
+      setAbHypothesisDraft(email.ab_hypothesis || "");
       setEmailTitleDraft(email.title);
     }
+  }
+
+  function switchPreviewVariant(next: "a" | "b") {
+    if (
+      editingCopy &&
+      (editDirty || pendingEdits.length > 0 || emailEditRef.current?.isDirty())
+    ) {
+      setError("Save or discard edits before switching Version A and Version B.");
+      return;
+    }
+    setError("");
+    setPreviewVariant(next);
+    setEditingCopy(false);
+    setPreviewNonce((n) => n + 1);
+  }
+
+  function inlineHtmlPatch(nextHtml: string, versionNoteText: string) {
+    return previewVariant === "b"
+      ? {
+          emailId: activeEmail!.id,
+          htmlContentB: nextHtml,
+          abHypothesis: abHypothesisDraft,
+          versionNote: versionNoteText,
+        }
+      : {
+          emailId: activeEmail!.id,
+          htmlContent: nextHtml,
+          versionNote: versionNoteText,
+        };
   }
 
   async function copyLink() {
@@ -1062,7 +1138,12 @@ export default function AdminCampaignPage() {
 
   async function saveStatus(
     next: string,
-    extras?: { sendDate?: string; sendTime?: string; sendId?: string }
+    extras?: {
+      sendDate?: string;
+      sendTime?: string;
+      sendId?: string;
+      emails?: Array<{ id: string; sendDate: string; sendTime: string }>;
+    }
   ) {
     setSaving(true);
     setMessage("");
@@ -1075,6 +1156,7 @@ export default function AdminCampaignPage() {
         sendDate: extras?.sendDate,
         sendTime: extras?.sendTime,
         sendId: extras?.sendId || undefined,
+        emails: extras?.emails,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -1099,11 +1181,28 @@ export default function AdminCampaignPage() {
   function openSchedulePrompt() {
     const hint = campaign?.suggested_send;
     const fallback = pacificDateTimeParts();
-    setScheduleDate(hint?.sendDate || fallback.date);
-    setScheduleTime(hint?.sendTime || "09:00");
+    const defaultDate = hint?.sendDate || fallback.date;
+    const defaultTime = hint?.sendTime || "09:00";
+    setScheduleDate(defaultDate);
+    setScheduleTime(defaultTime);
     setScheduleSendId(hint?.sendId || "");
     setScheduleFromCalendar(hint?.source === "calendar");
     setScheduleCalendarTitle(hint?.title || "");
+    setGhlHint("");
+    setScheduleEmailRows(
+      emails.filter((email) => isSchedulableKind(email.kind)).map((email) => {
+        const parts = email.scheduled_send_at
+          ? pacificDateTimeParts(new Date(email.scheduled_send_at))
+          : null;
+        return {
+          id: email.id,
+          title: email.title,
+          sendDate: parts?.date || defaultDate,
+          sendTime: parts?.time || defaultTime,
+          ghlName: "",
+        };
+      })
+    );
     setSchedulePromptOpen(true);
   }
 
@@ -1115,7 +1214,69 @@ export default function AdminCampaignPage() {
     void saveStatus(next);
   }
 
+  async function fillFromGhl() {
+    setGhlChecking(true);
+    setGhlHint("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}/ghl-schedule`);
+    const data = await res.json().catch(() => ({}));
+    setGhlChecking(false);
+    if (!res.ok || data.ready === false) {
+      setGhlHint(data.error || "Could not read scheduled campaigns from GoHighLevel.");
+      return;
+    }
+    const matches = Array.isArray(data.matches) ? data.matches : [];
+    setScheduleEmailRows((prev) =>
+      prev.map((row) => {
+        const match = matches.find(
+          (item: { emailId?: string; sendDate?: string; sendTime?: string; ghlName?: string }) =>
+            item.emailId === row.id
+        );
+        if (!match?.sendDate) return row;
+        return {
+          ...row,
+          sendDate: match.sendDate,
+          sendTime: match.sendTime || row.sendTime,
+          ghlName: match.ghlName || "",
+        };
+      })
+    );
+    const filled = matches.filter(
+      (item: { emailId?: string; sendDate?: string }) =>
+        item.sendDate && scheduleEmailRows.some((row) => row.id === item.emailId)
+    ).length;
+    const first = matches.find(
+      (item: { emailId?: string; sendDate?: string; sendTime?: string }) =>
+        item.sendDate && item.emailId === scheduleEmailRows[0]?.id
+    );
+    if (first?.sendDate) {
+      setScheduleDate(first.sendDate);
+      if (first.sendTime) setScheduleTime(first.sendTime);
+    }
+    setGhlHint(
+      filled
+        ? `Filled ${filled} date${filled === 1 ? "" : "s"} from GoHighLevel.`
+        : "No matching scheduled campaigns in GoHighLevel. Set the dates by hand."
+    );
+  }
+
   async function confirmSchedule() {
+    if (scheduleEmailRows.length > 1) {
+      if (scheduleEmailRows.some((row) => !row.sendDate || !row.sendTime)) {
+        setError("Pick a date and time for each email.");
+        return;
+      }
+      const ok = await saveStatus("scheduled", {
+        sendId: scheduleSendId,
+        emails: scheduleEmailRows.map((row) => ({
+          id: row.id,
+          sendDate: row.sendDate,
+          sendTime: row.sendTime,
+        })),
+      });
+      if (ok) setSchedulePromptOpen(false);
+      return;
+    }
     if (!scheduleDate || !scheduleTime) {
       setError("Pick the date and time this campaign will send.");
       return;
@@ -1124,6 +1285,16 @@ export default function AdminCampaignPage() {
       sendDate: scheduleDate,
       sendTime: scheduleTime,
       sendId: scheduleSendId,
+      emails:
+        scheduleEmailRows.length === 1
+          ? [
+              {
+                id: scheduleEmailRows[0].id,
+                sendDate: scheduleDate,
+                sendTime: scheduleTime,
+              },
+            ]
+          : undefined,
     });
     if (ok) setSchedulePromptOpen(false);
   }
@@ -1174,9 +1345,7 @@ export default function AdminCampaignPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          emailId: activeEmail.id,
-          htmlContent: nextHtml,
-          versionNote: versionNoteText,
+          ...inlineHtmlPatch(nextHtml, versionNoteText),
         }),
       });
       setSaving(false);
@@ -1200,9 +1369,7 @@ export default function AdminCampaignPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        emailId: activeEmail.id,
-        htmlContent: nextHtml,
-        versionNote: versionNoteText,
+        ...inlineHtmlPatch(nextHtml, versionNoteText),
       }),
     });
     setSaving(false);
@@ -1240,12 +1407,15 @@ export default function AdminCampaignPage() {
         emailId: activeEmail.id,
         title: emailTitleDraft,
         htmlContent: htmlDraft,
+        htmlContentB: htmlDraftB,
+        abHypothesis: abHypothesisDraft,
         versionNote: versionNote || "Manual revision",
       }),
     });
     setSaving(false);
     if (!res.ok) {
-      setError("Could not save HTML.");
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save HTML.");
       return;
     }
     setVersionNote("");
@@ -1480,6 +1650,8 @@ export default function AdminCampaignPage() {
           campaign?.presentation === "automation"
             ? delayToMs(newEmailDelayAmount, newEmailDelayUnit)
             : undefined,
+        htmlContentB: newEmailHtmlB,
+        abHypothesis: newAbHypothesis,
       }),
     });
     setSaving(false);
@@ -1492,6 +1664,8 @@ export default function AdminCampaignPage() {
     setAddingEmail(false);
     setNewEmailTitle("");
     setNewEmailHtml("");
+    setNewEmailHtmlB("");
+    setNewAbHypothesis("");
     setNewEmailKind("email");
     setNewEmailFormat("html");
     setNewEmailMedia("");
@@ -1693,14 +1867,19 @@ export default function AdminCampaignPage() {
                 </option>
               ))}
             </select>
-            {status === "scheduled" && campaign.scheduled_send_at ? (
+            {status === "scheduled" ? (
               <span className="muted" style={{ fontSize: 13 }}>
-                Sends {fmtYmd(pacificDateTimeParts(new Date(campaign.scheduled_send_at)).date)}
-                {" at "}
-                {formatTimeLabel(
-                  pacificDateTimeParts(new Date(campaign.scheduled_send_at)).time
-                )}{" "}
-                PT
+                {emails.filter((email) => email.scheduled_send_at).length > 1 ? (
+                  emails
+                    .filter((email) => email.scheduled_send_at)
+                    .map((email) => (
+                      <span key={email.id} style={{ display: "block" }}>
+                        {email.title}: {sendLabel(email.scheduled_send_at as string)}
+                      </span>
+                    ))
+                ) : campaign.scheduled_send_at ? (
+                  <>Sends {sendLabel(campaign.scheduled_send_at)}</>
+                ) : null}
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
@@ -1833,6 +2012,10 @@ export default function AdminCampaignPage() {
                       {email.kind && email.kind !== "email"
                         ? ` · ${kindLabel(email.kind)}`
                         : ""}
+                      {(email.html_content_b || "").trim() ? " · A/B" : ""}
+                      {email.scheduled_send_at
+                        ? ` · ${fmtYmd(pacificDateTimeParts(new Date(email.scheduled_send_at)).date)}`
+                        : ""}
                     </span>
                     {email.open_comments > 0 ? (
                       <span className="email-tab-badge">
@@ -1859,6 +2042,18 @@ export default function AdminCampaignPage() {
                       <div className="email-tab-tooltip-label">Purpose</div>
                       <div>{email.purpose || "Not set yet"}</div>
                     </div>
+                    {email.scheduled_send_at ? (
+                      <div className="email-tab-tooltip-row">
+                        <div className="email-tab-tooltip-label">Sends</div>
+                        <div>{sendLabel(email.scheduled_send_at)}</div>
+                      </div>
+                    ) : null}
+                    {(email.html_content_b || "").trim() ? (
+                      <div className="email-tab-tooltip-row">
+                        <div className="email-tab-tooltip-label">A/B test</div>
+                        <div>{email.ab_hypothesis || "Two versions in preview"}</div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -1914,7 +2109,52 @@ export default function AdminCampaignPage() {
                 setContent={setNewEmailHtml}
                 media={newEmailMedia}
                 setMedia={setNewEmailMedia}
+                htmlLabel="Version A HTML"
               />
+              {newEmailFormat === "html" ? (
+                <div className="stack" style={{ gap: 12 }}>
+                  <div className="field">
+                    <label htmlFor="newEmailHtmlB">Version B HTML (A/B test, optional)</label>
+                    <textarea
+                      id="newEmailHtmlB"
+                      value={newEmailHtmlB}
+                      onChange={(e) => setNewEmailHtmlB(e.target.value)}
+                      placeholder="Paste or upload a second HTML version"
+                      style={{ minHeight: 160, fontFamily: "var(--mono)", fontSize: 12 }}
+                    />
+                    <label className="btn btn-secondary btn-sm" style={{ width: "fit-content", marginTop: 8 }}>
+                      Upload Version B .html
+                      <input
+                        type="file"
+                        accept=".html,text/html"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () =>
+                            setNewEmailHtmlB(String(reader.result || ""));
+                          reader.readAsText(file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="newAbHypothesis">A/B test hypothesis</label>
+                    <textarea
+                      id="newAbHypothesis"
+                      value={newAbHypothesis}
+                      onChange={(e) => setNewAbHypothesis(e.target.value)}
+                      placeholder="What are we testing? e.g. Version B leads with the offer instead of the story, so we expect a higher click-through rate."
+                      style={{ minHeight: 72 }}
+                    />
+                    <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                      Required if you upload Version B. This is included when you send internal and client approval.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? "Adding..." : isAutomation ? "Add to automation" : "Add to package"}
               </button>
@@ -2170,6 +2410,22 @@ export default function AdminCampaignPage() {
                   )}
                 <CopyHtmlButton html={activeDoc.html} />
               </div>
+              {(activeEmail.body_format ?? "html") === "html" &&
+              activeEmail.kind !== "mockup" ? (
+                (activeEmail.html_content_b || "").trim() ? (
+                  <AbVariantBar
+                    hasB
+                    variant={previewVariant}
+                    onChange={switchPreviewVariant}
+                    hypothesis={activeEmail.ab_hypothesis}
+                  />
+                ) : (
+                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                    Optional: add Version B and a hypothesis in the HTML tab to
+                    include an A/B test in internal and client approvals.
+                  </p>
+                )
+              ) : null}
               <EmailPreview
                 ref={emailEditRef}
                 key={`${activeDoc.html.length}-${previewNonce}`}
@@ -2504,14 +2760,70 @@ export default function AdminCampaignPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="html">HTML</label>
+              <label htmlFor="html">Version A HTML</label>
               <textarea
                 id="html"
                 value={htmlDraft}
                 onChange={(e) => setHtmlDraft(e.target.value)}
-                style={{ minHeight: 360, fontFamily: "var(--mono)", fontSize: 12 }}
+                style={{ minHeight: 280, fontFamily: "var(--mono)", fontSize: 12 }}
                 required
               />
+              <label className="btn btn-secondary btn-sm" style={{ width: "fit-content", marginTop: 8 }}>
+                Upload Version A .html
+                <input
+                  type="file"
+                  accept=".html,text/html"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => setHtmlDraft(String(reader.result || ""));
+                    reader.readAsText(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <div className="field">
+              <label htmlFor="htmlB">Version B HTML (A/B test)</label>
+              <textarea
+                id="htmlB"
+                value={htmlDraftB}
+                onChange={(e) => setHtmlDraftB(e.target.value)}
+                placeholder="Paste or upload a second HTML version to A/B test this email"
+                style={{ minHeight: 280, fontFamily: "var(--mono)", fontSize: 12 }}
+              />
+              <label className="btn btn-secondary btn-sm" style={{ width: "fit-content", marginTop: 8 }}>
+                Upload Version B .html
+                <input
+                  type="file"
+                  accept=".html,text/html"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => setHtmlDraftB(String(reader.result || ""));
+                    reader.readAsText(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <div className="field">
+              <label htmlFor="abHypothesis">A/B test hypothesis</label>
+              <textarea
+                id="abHypothesis"
+                value={abHypothesisDraft}
+                onChange={(e) => setAbHypothesisDraft(e.target.value)}
+                placeholder="What are we testing, and what do we expect to happen?"
+                style={{ minHeight: 72 }}
+              />
+              <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                Required when Version B is filled in. Reviewers see this on the
+                preview and in Basecamp approval notes.
+              </p>
             </div>
             <div className="row">
               <button className="btn" type="submit" disabled={saving}>
@@ -2522,7 +2834,11 @@ export default function AdminCampaignPage() {
                 type="button"
                 disabled={saving}
                 onClick={async () => {
-                  if (htmlDraft !== activeEmail.html_content) {
+                  if (
+                    htmlDraft !== activeEmail.html_content ||
+                    htmlDraftB !== (activeEmail.html_content_b || "") ||
+                    abHypothesisDraft !== (activeEmail.ab_hypothesis || "")
+                  ) {
                     setSaving(true);
                     setError("");
                     const saveRes = await fetch(`/api/campaigns/${id}/emails`, {
@@ -2532,12 +2848,15 @@ export default function AdminCampaignPage() {
                         emailId: activeEmail.id,
                         title: emailTitleDraft,
                         htmlContent: htmlDraft,
+                        htmlContentB: htmlDraftB,
+                        abHypothesis: abHypothesisDraft,
                         versionNote: versionNote || "Manual revision",
                       }),
                     });
                     setSaving(false);
                     if (!saveRes.ok) {
-                      setError("Could not save HTML.");
+                      const data = await saveRes.json().catch(() => ({}));
+                      setError(data.error || "Could not save HTML.");
                       return;
                     }
                     setVersionNote("");
@@ -3196,11 +3515,29 @@ export default function AdminCampaignPage() {
                 When does this send?
               </h2>
               <p className="muted" style={{ marginTop: 6 }}>
-                Pacific time. After this moment the campaign is marked Sent
-                automatically.
+                {scheduleEmailRows.length > 1
+                  ? "Pacific time, per email. The package stays Scheduled until the last one has sent."
+                  : "Pacific time. After this moment the campaign is marked Sent automatically."}
               </p>
             </div>
-            {scheduleFromCalendar ? (
+            {scheduleEmailRows.length > 0 ? (
+              <div className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => void fillFromGhl()}
+                  disabled={saving || ghlChecking}
+                >
+                  {ghlChecking ? "Checking GoHighLevel..." : "Check GoHighLevel"}
+                </button>
+              </div>
+            ) : null}
+            {ghlHint ? (
+              <p className="field-hint" style={{ margin: 0 }}>
+                {ghlHint}
+              </p>
+            ) : null}
+            {scheduleFromCalendar && scheduleEmailRows.length <= 1 ? (
               <p className="field-hint" style={{ margin: 0 }}>
                 This matches
                 {scheduleCalendarTitle ? (
@@ -3220,31 +3557,99 @@ export default function AdminCampaignPage() {
                 . Keep that time or change it.
               </p>
             ) : null}
-            <div className="rev-form-grid">
-              <div className="field">
-                <label htmlFor="campaign-send-date">Send date</label>
-                <input
-                  id="campaign-send-date"
-                  type="date"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  required
-                />
+            {scheduleEmailRows.length > 1 ? (
+              <div className="stack" style={{ gap: 14 }}>
+                {scheduleEmailRows.map((row) => (
+                  <div key={row.id} className="stack" style={{ gap: 8 }}>
+                    <strong style={{ fontSize: 13 }}>{row.title}</strong>
+                    {row.ghlName ? (
+                      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                        Matched GoHighLevel: {row.ghlName}
+                      </p>
+                    ) : null}
+                    <div className="rev-form-grid">
+                      <div className="field">
+                        <label htmlFor={`campaign-send-date-${row.id}`}>
+                          Send date
+                        </label>
+                        <input
+                          id={`campaign-send-date-${row.id}`}
+                          type="date"
+                          value={row.sendDate}
+                          onChange={(e) =>
+                            setScheduleEmailRows((prev) =>
+                              prev.map((item) =>
+                                item.id === row.id
+                                  ? { ...item, sendDate: e.target.value }
+                                  : item
+                              )
+                            )
+                          }
+                          required
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`campaign-send-time-${row.id}`}>
+                          Send time
+                        </label>
+                        <input
+                          id={`campaign-send-time-${row.id}`}
+                          type="time"
+                          value={row.sendTime}
+                          onChange={(e) =>
+                            setScheduleEmailRows((prev) =>
+                              prev.map((item) =>
+                                item.id === row.id
+                                  ? { ...item, sendTime: e.target.value }
+                                  : item
+                              )
+                            )
+                          }
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="field">
-                <label htmlFor="campaign-send-time">Send time</label>
-                <input
-                  id="campaign-send-time"
-                  type="time"
-                  value={scheduleTime}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                  required
-                />
+            ) : (
+              <div className="rev-form-grid">
+                <div className="field">
+                  <label htmlFor="campaign-send-date">Send date</label>
+                  <input
+                    id="campaign-send-date"
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="campaign-send-time">Send time</label>
+                  <input
+                    id="campaign-send-time"
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-            </div>
-            {scheduleDate && scheduleTime && scheduleIsPast(scheduleDate, scheduleTime) ? (
+            )}
+            {(scheduleEmailRows.length > 1
+              ? scheduleEmailRows.every(
+                  (row) =>
+                    row.sendDate &&
+                    row.sendTime &&
+                    scheduleIsPast(row.sendDate, row.sendTime)
+                )
+              : scheduleDate &&
+                scheduleTime &&
+                scheduleIsPast(scheduleDate, scheduleTime)) ? (
               <p className="field-hint" style={{ margin: 0 }}>
-                That time has already passed, so this will be marked Sent now.
+                {scheduleEmailRows.length > 1
+                  ? "Every send time has already passed, so this will be marked Sent now."
+                  : "That time has already passed, so this will be marked Sent now."}
               </p>
             ) : null}
             <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
@@ -3260,7 +3665,12 @@ export default function AdminCampaignPage() {
                 type="button"
                 className="btn"
                 onClick={() => void confirmSchedule()}
-                disabled={saving || !scheduleDate || !scheduleTime}
+                disabled={
+                  saving ||
+                  (scheduleEmailRows.length > 1
+                    ? scheduleEmailRows.some((row) => !row.sendDate || !row.sendTime)
+                    : !scheduleDate || !scheduleTime)
+                }
               >
                 {saving ? "Saving..." : "Schedule"}
               </button>

@@ -223,7 +223,31 @@ export async function PATCH(request: Request, { params }: Params) {
     const sendDate = typeof body.sendDate === "string" ? body.sendDate : "";
     const sendTime = typeof body.sendTime === "string" ? body.sendTime : "";
     const sendId = typeof body.sendId === "string" ? body.sendId : undefined;
-    const scheduled = scheduleCampaign(id, { sendDate, sendTime, sendId });
+    const emails = Array.isArray(body.emails)
+      ? body.emails
+          .map((item: unknown) => {
+            if (!item || typeof item !== "object") return null;
+            const row = item as Record<string, unknown>;
+            if (typeof row.id !== "string") return null;
+            return {
+              id: row.id,
+              sendDate: typeof row.sendDate === "string" ? row.sendDate : "",
+              sendTime: typeof row.sendTime === "string" ? row.sendTime : "",
+            };
+          })
+          .filter(
+            (
+              item: { id: string; sendDate: string; sendTime: string } | null
+            ): item is { id: string; sendDate: string; sendTime: string } =>
+              item !== null
+          )
+      : undefined;
+    const scheduled = scheduleCampaign(id, {
+      sendDate,
+      sendTime,
+      sendId,
+      emails,
+    });
     if ("error" in scheduled) {
       return NextResponse.json({ error: scheduled.error }, { status: 400 });
     }

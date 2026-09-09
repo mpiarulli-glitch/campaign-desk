@@ -195,5 +195,47 @@ test("scheduling a campaign stores a send instant and cron flips it to Sent", as
     assert.equal(row.status, "draft");
     assert.equal(row.scheduled_send_at, null);
     assert.equal(row.scheduled_send_id, null);
+    assert.equal(campaigns.listEmails(created.id)[0]?.scheduled_send_at, null);
+  });
+
+  await t.test("two emails keep the package scheduled until the last send", () => {
+    const created = campaign();
+    const first = campaigns.listEmails(created.id)[0];
+    const second = campaigns.addEmail({
+      campaignId: created.id,
+      title: "Plan Your Project",
+      htmlContent: "<p>Two</p>",
+    });
+    assert.ok(first && second);
+    const result = schedule.scheduleCampaign(created.id, {
+      emails: [
+        { id: first.id, sendDate: "2020-01-15", sendTime: "09:00" },
+        { id: second.id, sendDate: "2100-06-15", sendTime: "09:00" },
+      ],
+    });
+    assert.ok("campaign" in result);
+    if (!("campaign" in result)) return;
+    assert.equal(result.flippedToSent, false);
+    assert.equal(result.campaign.status, "scheduled");
+    assert.equal(
+      campaigns.getEmailById(first.id)?.scheduled_send_at,
+      schedule.parseCampaignSendAt("2020-01-15", "09:00")
+    );
+    assert.equal(
+      campaigns.getEmailById(second.id)?.scheduled_send_at,
+      schedule.parseCampaignSendAt("2100-06-15", "09:00")
+    );
+
+    const tooSoon = schedule.runScheduledCampaignSends({
+      asOf: "2026-09-09T20:00:00.000Z",
+    });
+    assert.equal(tooSoon.flipped.some((row) => row.id === created.id), false);
+    assert.equal(campaigns.getCampaignById(created.id)!.status, "scheduled");
+
+    const afterLast = schedule.runScheduledCampaignSends({
+      asOf: "2100-06-15T17:00:00.000Z",
+    });
+    assert.equal(afterLast.flipped.some((row) => row.id === created.id), true);
+    assert.equal(campaigns.getCampaignById(created.id)!.status, "sent");
   });
 });

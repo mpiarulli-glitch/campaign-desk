@@ -414,6 +414,8 @@ export function addEmail(input: {
   skipFlow?: boolean;
   flowParentId?: string | null;
   flowBranch?: FlowBranch;
+  htmlContentB?: string;
+  abHypothesis?: string;
 }): CampaignEmail | null {
   const campaign = getCampaignById(input.campaignId);
   if (!campaign) return null;
@@ -437,8 +439,9 @@ export function addEmail(input: {
 
   db.prepare(
     `INSERT INTO campaign_emails
-      (id, campaign_id, title, html_content, kind, body_format, media_url, delay_ms, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, campaign_id, title, html_content, kind, body_format, media_url, delay_ms,
+       html_content_b, ab_hypothesis, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.campaignId,
@@ -448,6 +451,8 @@ export function addEmail(input: {
     bodyFormat,
     mediaUrl,
     delayMs,
+    (input.htmlContentB || "").trim(),
+    (input.abHypothesis || "").trim(),
     maxRow.max_order + 1,
     ts,
     ts
@@ -480,6 +485,8 @@ export function updateEmail(
     bodyFormat?: BodyFormat;
     mediaUrl?: string | null;
     delayMs?: number;
+    htmlContentB?: string;
+    abHypothesis?: string;
   }
 ): CampaignEmail | null {
   const existing = getEmailById(emailId);
@@ -501,12 +508,32 @@ export function updateEmail(
     updates.delayMs !== undefined
       ? Math.max(0, Math.round(updates.delayMs))
       : existing.delay_ms ?? 0;
+  const htmlContentB =
+    updates.htmlContentB !== undefined
+      ? updates.htmlContentB
+      : existing.html_content_b || "";
+  const abHypothesis =
+    updates.abHypothesis !== undefined
+      ? updates.abHypothesis.trim()
+      : existing.ab_hypothesis || "";
 
   db.prepare(
     `UPDATE campaign_emails
-     SET title = ?, html_content = ?, purpose = ?, body_format = ?, media_url = ?, delay_ms = ?, updated_at = ?
+     SET title = ?, html_content = ?, purpose = ?, body_format = ?, media_url = ?, delay_ms = ?,
+         html_content_b = ?, ab_hypothesis = ?, updated_at = ?
      WHERE id = ?`
-  ).run(title, htmlContent, purpose, bodyFormat, mediaUrl, delayMs, ts, emailId);
+  ).run(
+    title,
+    htmlContent,
+    purpose,
+    bodyFormat,
+    mediaUrl,
+    delayMs,
+    htmlContentB,
+    abHypothesis,
+    ts,
+    emailId
+  );
 
   if (updates.htmlContent && updates.htmlContent !== existing.html_content) {
     db.prepare(
@@ -519,6 +546,24 @@ export function updateEmail(
       emailId,
       updates.htmlContent,
       updates.versionNote || "HTML updated",
+      ts
+    );
+  }
+
+  if (
+    updates.htmlContentB !== undefined &&
+    updates.htmlContentB !== existing.html_content_b
+  ) {
+    db.prepare(
+      `INSERT INTO campaign_versions
+        (id, campaign_id, email_id, html_content, note, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      nanoid(12),
+      existing.campaign_id,
+      emailId,
+      updates.htmlContentB,
+      updates.versionNote || "Version B updated",
       ts
     );
   }
@@ -1474,6 +1519,11 @@ export function applyOperatorCampaignStatus(
         `UPDATE campaigns
          SET scheduled_send_at = NULL, scheduled_send_id = NULL, updated_at = ?
          WHERE id = ?`
+      )
+      .run(nowIso(), campaignId);
+    getDb()
+      .prepare(
+        `UPDATE campaign_emails SET scheduled_send_at = NULL, updated_at = ? WHERE campaign_id = ?`
       )
       .run(nowIso(), campaignId);
     return getCampaignById(campaignId);

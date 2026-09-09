@@ -70,6 +70,16 @@ export async function POST(request: Request, { params }: Params) {
     typeof body.delayMs === "number" && Number.isFinite(body.delayMs)
       ? body.delayMs
       : undefined;
+  const htmlContentB =
+    typeof body.htmlContentB === "string" ? body.htmlContentB : "";
+  const abHypothesis =
+    typeof body.abHypothesis === "string" ? body.abHypothesis.trim() : "";
+  if (htmlContentB.trim() && !abHypothesis) {
+    return NextResponse.json(
+      { error: "Add the A/B test hypothesis so reviewers know what to compare." },
+      { status: 400 }
+    );
+  }
 
   const email = addEmail({
     campaignId: id,
@@ -79,6 +89,8 @@ export async function POST(request: Request, { params }: Params) {
     bodyFormat,
     mediaUrl,
     delayMs,
+    htmlContentB,
+    abHypothesis,
   });
 
   return NextResponse.json({ email }, { status: 201 });
@@ -105,6 +117,21 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Email not found" }, { status: 404 });
   }
 
+  const htmlContentB =
+    typeof body.htmlContentB === "string" ? body.htmlContentB : undefined;
+  const abHypothesis =
+    typeof body.abHypothesis === "string" ? body.abHypothesis : undefined;
+  const nextB =
+    htmlContentB !== undefined ? htmlContentB : existing.html_content_b;
+  const nextHypothesis =
+    abHypothesis !== undefined ? abHypothesis.trim() : existing.ab_hypothesis;
+  if ((nextB || "").trim() && !nextHypothesis) {
+    return NextResponse.json(
+      { error: "Add the A/B test hypothesis so reviewers know what to compare." },
+      { status: 400 }
+    );
+  }
+
   const email = updateEmail(emailId, {
     title: typeof body.title === "string" ? body.title : undefined,
     htmlContent:
@@ -118,6 +145,8 @@ export async function PATCH(request: Request, { params }: Params) {
       typeof body.delayMs === "number" && Number.isFinite(body.delayMs)
         ? body.delayMs
         : undefined,
+    htmlContentB,
+    abHypothesis,
   });
 
   return NextResponse.json({ email });
