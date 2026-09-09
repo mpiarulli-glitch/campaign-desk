@@ -1299,11 +1299,17 @@ export function getDb(): Database.Database {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-
-  db.exec(`
+  const database = new Database(dbPath);
+  try {
+    database.pragma("journal_mode = WAL");
+    database.pragma("foreign_keys = ON");
+    // CREATE TABLE IF NOT EXISTS is a no-op on existing tables, so new columns
+    // and indexes that live in this blob are not applied to a live database.
+    // Those belong in migrate() below. If a bootstrap statement fails (usually
+    // an index on a column migrate has not added yet), keep going: otherwise
+    // later ALTERs never run and the connection is cached half-initialized.
+    try {
+      database.exec(`
     CREATE TABLE IF NOT EXISTS campaigns (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -2432,8 +2438,6 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_social_batches_client ON social_batches(client_id);
     CREATE INDEX IF NOT EXISTS idx_social_batches_status ON social_batches(status);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_social_batches_review_token
-      ON social_batches(review_token) WHERE review_token != '';
 
     CREATE TABLE IF NOT EXISTS social_posts (
       id TEXT PRIMARY KEY,
@@ -2475,11 +2479,20 @@ export function getDb(): Database.Database {
       ON users(invite_token) WHERE invite_token IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
       ON users(email) WHERE email IS NOT NULL;
-  `);
-
-  migrate(db);
-  seedUsers(db);
-
+      `);
+    } catch (err) {
+      console.error(
+        "[db] Schema bootstrap failed; continuing with column migrations.",
+        err
+      );
+    }
+    migrate(database);
+    seedUsers(database);
+  } catch (err) {
+    database.close();
+    throw err;
+  }
+  db = database;
   return db;
 }
 

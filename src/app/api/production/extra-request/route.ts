@@ -66,24 +66,36 @@ export async function POST(request: Request) {
 
   const session = await getSession();
   const createdBy = session?.person ? teamLabel(session.person) : "Team";
-  const extraRequest = createExtraRequest({
-    clientId,
-    windowStart,
-    windowEnd,
-    note,
-    createdBy,
-  });
-  const token = getOrCreateScheduleToken(client.id);
-  const scheduleLink = token ? scheduleUrl(token) : "";
-  const outreach = sendOutreach
-    ? await sendExtraRequestOutreach(extraRequest, client)
-    : {
-        basecamp: { ok: false, skipped: true as const },
-        email: { ok: false, skipped: true as const },
-      };
+  try {
+    const extraRequest = createExtraRequest({
+      clientId,
+      windowStart,
+      windowEnd,
+      note,
+      createdBy,
+    });
+    const token = getOrCreateScheduleToken(client.id);
+    const scheduleLink = token ? scheduleUrl(token) : "";
+    const outreach = sendOutreach
+      ? await sendExtraRequestOutreach(extraRequest, client)
+      : {
+          basecamp: { ok: false, skipped: true as const },
+          email: { ok: false, skipped: true as const },
+        };
 
-  return NextResponse.json(
-    { request: extraRequest, outreach, scheduleUrl: scheduleLink },
-    { status: 201 }
-  );
+    return NextResponse.json(
+      { request: extraRequest, outreach, scheduleUrl: scheduleLink },
+      { status: 201 }
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "";
+    return NextResponse.json(
+      {
+        error: detail
+          ? `Could not open the scheduling window. ${detail}`
+          : "Could not open the scheduling window.",
+      },
+      { status: 500 }
+    );
+  }
 }
