@@ -5558,6 +5558,36 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   --fc-grid-line: #2e2e34;
 }
 
+/* Forecast row actions need a clearer lift off the elevated panel in dark
+   mode — same soft fill as light reads as nearly flat against #141416. */
+:root[data-theme="dark"] .ops-list-row .fc-timer-btn,
+:root[data-theme="dark"] .ops-list-row .fc-move-btn,
+:root[data-theme="dark"] .ops-list-row .fc-subtask-btn,
+:root[data-theme="dark"] .ops-list-row .fc-log-pill {
+  background: #242428;
+  border-color: #55555c;
+  color: #f0f0f2;
+}
+:root[data-theme="dark"] .ops-list-row .fc-timer-btn:hover,
+:root[data-theme="dark"] .ops-list-row .fc-move-btn:hover,
+:root[data-theme="dark"] .ops-list-row .fc-subtask-btn:hover,
+:root[data-theme="dark"] .ops-list-row .fc-subtask-btn.is-open,
+:root[data-theme="dark"] .ops-list-row .fc-log-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+:root[data-theme="dark"] .ops-list-row .fc-log-pill.is-logged {
+  background: var(--success-wash);
+  border-color: color-mix(in srgb, var(--success) 50%, var(--border-strong));
+  color: var(--success-ink);
+}
+:root[data-theme="dark"] .ops-list-row .fc-timer-btn.is-running {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+
 .ops-nav {
   display: flex;
   gap: 2px;
@@ -6619,36 +6649,38 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   gap: 5px;
   flex: none;
   padding: 3px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--text-body);
+  background: var(--bg-soft);
+  color: var(--text);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
 }
-.fc-timer-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.fc-timer-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
 .fc-timer-btn:disabled { opacity: 0.5; cursor: default; }
 .fc-timer-btn.is-compact { padding: 1px 6px; font-size: 10px; gap: 4px; }
 .fc-timer-icon {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: currentColor;
   flex: none;
+  opacity: 0.7;
 }
-.fc-timer-btn:hover .fc-timer-icon { background: var(--success); }
+.fc-timer-btn:hover .fc-timer-icon { background: var(--success); opacity: 1; }
 .fc-timer-btn.is-running {
   border-color: var(--danger);
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 8%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-elevated));
 }
 .fc-timer-btn.is-running .fc-timer-icon {
   border-radius: 1px;
   background: var(--danger);
+  opacity: 1;
 }
 
 /* Timer pills docked in the corner while something is running. Two can sit
@@ -7013,38 +7045,38 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .fc-move-btn {
   flex: none;
   padding: 3px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--text-muted);
+  background: var(--bg-soft);
+  color: var(--text);
   font-family: inherit;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   white-space: nowrap;
   cursor: pointer;
 }
-.fc-move-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.fc-move-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
 .fc-subtask-btn {
   flex: none;
   padding: 3px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--text-muted);
+  background: var(--bg-soft);
+  color: var(--text);
   font-family: inherit;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   white-space: nowrap;
   cursor: pointer;
 }
 .fc-subtask-btn:hover,
 .fc-subtask-btn.is-open {
-  border-color: var(--border-strong);
-  color: var(--text);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 .fc-move-menu {
   position: absolute;
-  z-index: 40;
+  z-index: 80;
   top: calc(100% + 6px);
   right: 0;
   min-width: 178px;
@@ -7055,7 +7087,7 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--bg-elevated);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-lift);
 }
 .fc-move-menu > button {
   display: flex;
@@ -7155,21 +7187,22 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .fc-log-pill {
   flex: none;
   padding: 3px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--text-muted);
+  background: var(--bg-soft);
+  color: var(--text);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
 }
-.fc-log-pill:hover { border-color: var(--border-strong); color: var(--text); }
+.fc-log-pill:hover { border-color: var(--accent); color: var(--accent-ink); }
 .fc-log-pill.is-logged {
-  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border-strong));
   color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--bg-elevated));
 }
 .fc-log-open {
   display: inline-flex;
@@ -8125,13 +8158,16 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
   border-radius: var(--radius);
   background: var(--bg-elevated);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  /* Visible so Move / Log menus can escape the panel. Corners stay rounded
+     via the first and last children below. */
+  overflow: visible;
 }
 .ops-list-stack .ops-list-head {
   margin: 0;
   padding: 10px 14px 8px 17px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-soft) 45%, var(--bg-elevated));
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 .ops-list-row {
   position: relative;
@@ -8147,10 +8183,25 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
   border-left: 3px solid var(--fc-rail);
   box-shadow: none;
   transition: background 0.12s ease, opacity 0.15s ease;
+  overflow: visible;
+  z-index: 0;
 }
 .ops-list-stack > .ops-task-block:first-child .ops-list-row,
 .ops-list-stack > .ops-list-head + .ops-task-block .ops-list-row {
   border-top: none;
+}
+.ops-list-stack > .ops-task-block:first-child:last-child .ops-list-row {
+  border-radius: var(--radius);
+}
+.ops-list-stack > .ops-task-block:first-child:not(:last-child) .ops-list-row {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.ops-list-stack > .ops-list-head + .ops-task-block:last-child .ops-list-row,
+.ops-list-stack > .ops-task-block:last-child .ops-list-row {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.ops-list-stack > .ops-list-head:first-child + .ops-task-block:last-child .ops-list-row {
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 .ops-list-row:hover {
   background: color-mix(in srgb, var(--bg-soft) 55%, var(--bg-elevated));
@@ -8165,6 +8216,12 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
 }
 .ops-task-block {
   position: relative;
+  overflow: visible;
+  z-index: 0;
+}
+.ops-task-block:has(.fc-move-menu),
+.ops-task-block:focus-within {
+  z-index: 6;
 }
 .ops-task-block + .ops-task-block { margin-top: 0; }
 .ops-task-block.is-drop-before::before {
@@ -8352,19 +8409,6 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
   background: var(--accent);
 }
 .ops-list-row + .ops-list-row { margin-top: 0; }
-
-/* Keep the row calm: secondary actions ease in on hover/focus. Running timers
-   stay visible so you can always stop them. */
-@media (hover: hover) and (pointer: fine) {
-  .ops-list-row .ops-row-actions > :not(.fc-timer-btn.is-running) {
-    opacity: 0.28;
-    transition: opacity 0.12s ease;
-  }
-  .ops-list-row:hover .ops-row-actions > *,
-  .ops-list-row:focus-within .ops-row-actions > * {
-    opacity: 1;
-  }
-}
 
 /* Column headers above the list rows. Desktop only: under 721px the row
    reflows into stacked bands and there are no columns left to head. */
