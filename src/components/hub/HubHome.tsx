@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DailyNote } from "@/components/hub/DailyNote";
+import { AssignTodoPanel } from "@/components/AssignTodoPanel";
 
 type Section = "resources" | "sops" | "training" | "sentiment";
 type Sop = { id: string; title: string; category: string };
@@ -82,6 +83,12 @@ export function HubHome({
 
       <div className="hq-bento">
         <DailyNote />
+
+        {isAdmin ? (
+          <div className="hq-assign span2">
+            <AssignTodoPanel />
+          </div>
+        ) : null}
 
         {/* RESOURCES */}
         <div className="hq-card t-res" style={{ cursor: "default" }}>

@@ -520,7 +520,10 @@ test("admin assign API is admin-gated and warning-only", () => {
     path.join("src/components/AssignTodoPanel.tsx"),
     "utf8"
   );
-  const adminHome = fs.readFileSync(path.join("src/app/admin/page.tsx"), "utf8");
+  const hubHome = fs.readFileSync(
+    path.join("src/components/hub/HubHome.tsx"),
+    "utf8"
+  );
   const leadership = fs.readFileSync(
     path.join("src/components/LeadershipHome.tsx"),
     "utf8"
@@ -533,8 +536,7 @@ test("admin assign API is admin-gated and warning-only", () => {
   assert.match(ui, /You'll need to notify the team|warning\.headline/);
   assert.match(ui, /onSubmit=\{openWarning\}/);
   assert.doesNotMatch(ui, /shuffle/i);
-  assert.match(adminHome, /AssignTodoPanel/);
+  assert.match(hubHome, /AssignTodoPanel/);
+  assert.match(hubHome, /isAdmin \? \(/);
   assert.match(leadership, /AssignTodoPanel/);
-  const teamHome = adminHome.slice(adminHome.indexOf("function TeamMemberHome"));
-  assert.doesNotMatch(teamHome, /AssignTodoPanel/);
 });

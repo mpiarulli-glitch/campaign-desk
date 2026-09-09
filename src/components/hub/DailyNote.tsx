@@ -96,12 +96,28 @@ function Open({ href, children }: { href: string; children: React.ReactNode }) {
   return <Link href={href}>{children}</Link>;
 }
 
+const OPEN_KEY = "cd_morning_brief_open";
+
+function loadOpen(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem(OPEN_KEY);
+    if (raw === "0") return false;
+    if (raw === "1") return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
 export function DailyNote() {
   const [note, setNote] = useState<Note | null>(null);
   const [pings, setPings] = useState<Pings | null>(null);
   const [error, setError] = useState(false);
+  const [open, setOpen] = useState(true);
 
   useEffect(() => {
+    setOpen(loadOpen());
     fetch("/api/hub/daily-note")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d: { note: Note; pings: Pings }) => {
@@ -110,6 +126,18 @@ export function DailyNote() {
       })
       .catch(() => setError(true));
   }, []);
+
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(OPEN_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   if (error) {
     return (
@@ -153,8 +181,13 @@ export function DailyNote() {
   const quiet = count === 0;
 
   return (
-    <div className="hq-card t-todo hq-note span2" style={{ cursor: "default" }}>
-      <div className="hq-card-head">
+    <div className={`hq-card t-todo hq-note span2${open ? "" : " is-collapsed"}`}>
+      <button
+        type="button"
+        className="hq-note-toggle"
+        aria-expanded={open}
+        onClick={toggle}
+      >
         <span className="hq-icon"><NoteIcon /></span>
         <div>
           <h3 className="hq-card-title">Morning brief</h3>
@@ -163,7 +196,11 @@ export function DailyNote() {
             {quiet ? " · all quiet" : ` · ${count} thing${count === 1 ? "" : "s"}`}
           </p>
         </div>
-      </div>
+        <span className="hq-arrow" aria-hidden>{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open ? (
+        <>
       <div className="hq-divider" />
 
       {quiet ? (
@@ -266,6 +303,8 @@ export function DailyNote() {
           <MessageRow key={m.id} m={m} />
         ))}
       </NoteSection>
+        </>
+      ) : null}
     </div>
   );
 }

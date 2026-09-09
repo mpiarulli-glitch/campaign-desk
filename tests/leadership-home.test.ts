@@ -32,14 +32,17 @@ test("Saqib and Jerald have forecast roster slots", () => {
   assert.ok(week.some((p) => p.person === "jerald"), "Jerald should appear in the all-team forecast");
 });
 
-test("the admin home routes leadership slugs to LeadershipHome", () => {
-  const src = fs.readFileSync(
+test("Team Hub is home, and leadership slugs still use the leadership roster", () => {
+  const adminHome = fs.readFileSync(
     path.join("src/app/admin/page.tsx"),
     "utf8"
   );
-  assert.match(src, /usesLeadershipHome/);
-  assert.match(src, /LeadershipHome/);
-  assert.match(src, /AssignTodoPanel/);
+  const hubHome = fs.readFileSync(
+    path.join("src/components/hub/HubHome.tsx"),
+    "utf8"
+  );
+  assert.match(adminHome, /redirect\("\/admin\/hub"\)/);
+  assert.match(hubHome, /AssignTodoPanel/);
   assert.equal(usesLeadershipHome("sylvia"), true);
   assert.equal(usesLeadershipHome("kyle_onstott"), true);
   assert.equal(usesLeadershipHome("luis_romero"), true);
