@@ -41,11 +41,13 @@ export function PushToKlaviyo({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [pushing, setPushing] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
+  const [keyError, setKeyError] = useState("");
   const [results, setResults] = useState<Result[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setBlocked("");
+    setKeyError("");
     setResults(null);
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/push-to-klaviyo`);
@@ -83,16 +85,16 @@ export function PushToKlaviyo({
   async function saveKey() {
     if (!apiKey.trim()) return;
     setSavingKey(true);
-    setBlocked("");
+    setKeyError("");
     const res = await fetch(`/api/campaigns/${campaignId}/push-to-klaviyo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: apiKey.trim() }),
+      body: JSON.stringify({ apiKey }),
     });
     const data = await res.json();
     setSavingKey(false);
     if (!res.ok) {
-      setBlocked(data.error || "Could not save that Klaviyo key.");
+      setKeyError(data.error || "Could not save that Klaviyo key.");
       return;
     }
     setApiKey("");
@@ -161,15 +163,18 @@ export function PushToKlaviyo({
             </div>
 
             {blocked ? <p className="error">{blocked}</p> : null}
+            {keyError ? <p className="error">{keyError}</p> : null}
 
             {loading ? <p className="muted">Checking...</p> : null}
 
             {!loading && !blocked && !hasKey ? (
               <div className="stack" style={{ gap: 10 }}>
                 <p className="muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
-                  Paste a private API key from this client&apos;s Klaviyo account
-                  (Settings → API keys). It needs Templates read and write.
-                  The key stays on this server and is reused for this client.
+                  Paste a <strong>private</strong> API key from this client&apos;s
+                  Klaviyo account (Settings → API keys). It starts with{" "}
+                  <code>pk_</code> and needs Templates read and write — not the
+                  6-character public site ID. The key stays on this server and is
+                  reused for this client.
                 </p>
                 <div className="field">
                   <label htmlFor="klaviyo-api-key">Private API key</label>
@@ -179,7 +184,10 @@ export function PushToKlaviyo({
                     autoComplete="off"
                     placeholder="pk_…"
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      if (keyError) setKeyError("");
+                    }}
                   />
                 </div>
                 <div className="pgh-foot">

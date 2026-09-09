@@ -59,12 +59,36 @@ function saveKeyMap(map: Record<string, string>): void {
     .run(KEYS_SETTING, JSON.stringify(map), nowIso());
 }
 
+export function normalizeKlaviyoApiKey(value: string): string {
+  return value
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/^Klaviyo-API-Key\s+/i, "")
+    .replace(/\s+/g, "");
+}
+
+/** 6-character public company/site ID — not usable for /api calls. */
+export function isKlaviyoPublicSiteId(value: string): boolean {
+  return /^[A-Za-z0-9]{6}$/.test(normalizeKlaviyoApiKey(value));
+}
+
 export function isKlaviyoApiKey(value: string): boolean {
-  return /^pk_[a-zA-Z0-9]{16,}$/.test(value.trim());
+  return /^pk_[A-Za-z0-9_-]{16,}$/i.test(normalizeKlaviyoApiKey(value));
+}
+
+function klaviyoKeyShapeError(value: string): string | null {
+  const trimmed = normalizeKlaviyoApiKey(value);
+  if (!trimmed) return "Paste a Klaviyo private API key first.";
+  if (isKlaviyoPublicSiteId(trimmed)) {
+    return "That's the 6-character public site ID. Create a private API key in Klaviyo → Settings → API keys. It starts with pk_.";
+  }
+  if (isKlaviyoApiKey(trimmed) || trimmed.length >= 20) return null;
+  return "That does not look like a Klaviyo private API key. It should start with pk_ — not the 6-character public site ID.";
 }
 
 export function klaviyoKeyHint(key: string): string {
-  const trimmed = key.trim();
+  const trimmed = normalizeKlaviyoApiKey(key);
   if (trimmed.length < 8) return "pk_••••";
   return `${trimmed.slice(0, 3)}••••${trimmed.slice(-4)}`;
 }
@@ -93,20 +117,19 @@ export function resolveKlaviyoApiKey(
   clientId: string,
   klaviyoAccount?: string | null
 ): string | null {
-  const stored = loadKeyMap()[clientId];
-  if (stored && isKlaviyoApiKey(stored)) return stored;
-  const account = (klaviyoAccount || "").trim();
+  const stored = normalizeKlaviyoApiKey(loadKeyMap()[clientId] || "");
+  if (stored) return stored;
+  const account = normalizeKlaviyoApiKey(klaviyoAccount || "");
   if (isKlaviyoApiKey(account)) return account;
-  const envKey = (process.env.KLAVIYO_API_KEY || "").trim();
+  const envKey = normalizeKlaviyoApiKey(process.env.KLAVIYO_API_KEY || "");
   if (isKlaviyoApiKey(envKey)) return envKey;
   return null;
 }
 
 export function setClientKlaviyoApiKey(clientId: string, apiKey: string): void {
-  const trimmed = apiKey.trim();
-  if (!isKlaviyoApiKey(trimmed)) {
-    throw new KlaviyoError("That does not look like a Klaviyo private API key (pk_…).");
-  }
+  const trimmed = normalizeKlaviyoApiKey(apiKey);
+  const shapeError = klaviyoKeyShapeError(trimmed);
+  if (shapeError) throw new KlaviyoError(shapeError);
   const map = loadKeyMap();
   map[clientId] = trimmed;
   saveKeyMap(map);
@@ -194,12 +217,12 @@ function formatKlaviyoError(status: number, body: string): string {
 }
 
 /** Confirm a private key can read templates before we store it. */
-export async function verifyKlaviyoApiKey(apiKey: string): Promise<void> {
-  const trimmed = apiKey.trim();
-  if (!isKlaviyoApiKey(trimmed)) {
-    throw new KlaviyoError("That does not look like a Klaviyo private API key (pk_…).");
-  }
+export async function verifyKlaviyoApiKey(apiKey: string): Promise<string> {
+  const trimmed = normalizeKlaviyoApiKey(apiKey);
+  const shapeError = klaviyoKeyShapeError(trimmed);
+  if (shapeError) throw new KlaviyoError(shapeError);
   await klaviyoRequest(trimmed, "GET", "/templates?page[size]=1");
+  return trimmed;
 }
 
 export async function pushKlaviyoTemplate(args: {

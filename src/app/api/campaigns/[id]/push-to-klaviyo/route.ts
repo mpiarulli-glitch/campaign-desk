@@ -82,11 +82,11 @@ export async function POST(request: Request, { params }: Params) {
 
   const body = await request.json().catch(() => ({}));
   const incomingKey =
-    typeof body.apiKey === "string" ? body.apiKey.trim() : "";
-  if (incomingKey) {
+    typeof body.apiKey === "string" ? body.apiKey : "";
+  if (incomingKey.trim()) {
     try {
-      await verifyKlaviyoApiKey(incomingKey);
-      setClientKlaviyoApiKey(r.client.id, incomingKey);
+      const verified = await verifyKlaviyoApiKey(incomingKey);
+      setClientKlaviyoApiKey(r.client.id, verified);
     } catch (err) {
       const message =
         err instanceof KlaviyoError

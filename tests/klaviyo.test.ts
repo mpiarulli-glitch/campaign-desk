@@ -6,17 +6,42 @@ import path from "node:path";
 import {
   htmlToText,
   isKlaviyoApiKey,
+  isKlaviyoPublicSiteId,
   klaviyoKeyHint,
   klaviyoTemplatePayload,
+  normalizeKlaviyoApiKey,
   templateEditorUrl,
 } from "../src/lib/klaviyo";
 
 test("isKlaviyoApiKey accepts private keys only", () => {
   assert.equal(isKlaviyoApiKey("pk_abcdefghijklmnopqrstuv"), true);
   assert.equal(isKlaviyoApiKey(" pk_abcdefghijklmnopqrstuv "), true);
+  assert.equal(
+    isKlaviyoApiKey("pk_abc123def456ghi789jkl0mno123pqrst4"),
+    true
+  );
+  assert.equal(isKlaviyoApiKey("pk_abc-def_ghi1234567890"), true);
   assert.equal(isKlaviyoApiKey("sk_abcdefghijklmnopqrstuv"), false);
   assert.equal(isKlaviyoApiKey("Ecoworkz"), false);
+  assert.equal(isKlaviyoApiKey("AbC123"), false);
   assert.equal(isKlaviyoApiKey(""), false);
+});
+
+test("normalizeKlaviyoApiKey strips paste junk", () => {
+  assert.equal(
+    normalizeKlaviyoApiKey('  "pk_abcdefghijklmnopqrstuv"  '),
+    "pk_abcdefghijklmnopqrstuv"
+  );
+  assert.equal(
+    normalizeKlaviyoApiKey("Klaviyo-API-Key pk_abcdefghijklmnopqrstuv"),
+    "pk_abcdefghijklmnopqrstuv"
+  );
+  assert.equal(
+    normalizeKlaviyoApiKey("pk_\nabcdefghijklmnopqrstuv"),
+    "pk_abcdefghijklmnopqrstuv"
+  );
+  assert.equal(isKlaviyoPublicSiteId("AbC123"), true);
+  assert.equal(isKlaviyoPublicSiteId("pk_abcdefghijklmnopqrstuv"), false);
 });
 
 test("htmlToText strips markup for the Klaviyo text version", () => {
