@@ -6,9 +6,12 @@
  * GHL's schedule list is not a clean analytics query API.
  */
 
+import { parseTimeInput, zonedLocalToUtc } from "./forecast-time";
 import { ghlRequest, GhlError } from "./ghl";
 
 const STATS_CONCURRENCY = 4;
+const SCHEDULE_TIME_ZONE =
+  process.env.APP_TIME_ZONE || "America/Los_Angeles";
 
 export type AnalyticsPreset = "1m" | "3m" | "6m" | "12m" | "custom";
 
@@ -64,10 +67,19 @@ interface RawSchedule {
   bulkRequestId?: string;
   createdAt?: string;
   updatedAt?: string;
-  scheduledAt?: string;
+  scheduledAt?: string | number;
+  scheduledTimestamp?: string | number;
   dateAdded?: string;
+  timeZone?: string;
+  timezone?: string;
   successCount?: number;
   totalCount?: number;
+  scheduleConfig?: Record<string, unknown>;
+  bulkRequestStatusInfo?: Record<string, unknown>;
+  emailMeta?: Record<string, unknown>;
+  rssConfig?: Record<string, unknown>;
+  schedule?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
 }
 
 interface RawStats {
@@ -93,7 +105,155 @@ function num(v: unknown): number {
   return 0;
 }
 
-function ymdFromUnknown(value: string | undefined): string | null {
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function ghlTimeZone(raw: Record<string, unknown>): string {
+  const nested =
+    asRecord(raw.scheduleConfig) ||
+    asRecord(raw.schedule) ||
+    asRecord(raw.rssConfig) ||
+    {};
+  for (const value of [
+    raw.timeZone,
+    raw.timezone,
+    raw.scheduledTimezone,
+    nested.timeZone,
+    nested.timezone,
+  ]) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return SCHEDULE_TIME_ZONE;
+}
+
+function parseUnixMs(value: number): string | null {
+  const ms = Math.abs(value) < 1e12 ? value * 1000 : value;
+  const d = new Date(ms);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+function parseGhlClockTime(value: string): string {
+  const trimmed = value.trim();
+  const withSeconds = trimmed.match(/^(\d{1,2}:\d{2}):\d{2}(\s*[ap]m)?$/i);
+  const raw = withSeconds ? `${withSeconds[1]}${withSeconds[2] || ""}` : trimmed;
+  return parseTimeInput(raw);
+}
+
+function parseGhlDateTime(value: unknown, timeZone: string): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return parseUnixMs(value);
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{10,13}$/.test(trimmed)) {
+    return parseUnixMs(Number(trimmed));
+  }
+  const wall = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?))?$/i
+  );
+  if (wall) {
+    const hhmm = parseGhlClockTime(wall[2] || "09:00") || "09:00";
+    const at = zonedLocalToUtc(wall[1], hhmm, timeZone);
+    if (at && Number.isFinite(at.getTime())) return at.toISOString();
+  }
+  const ms = Date.parse(trimmed);
+  if (Number.isFinite(ms)) return new Date(ms).toISOString();
+  return null;
+}
+
+function pickDateAndTime(
+  raw: Record<string, unknown>,
+  timeZone: string
+): string | null {
+  const schedule = asRecord(raw.schedule);
+  const dateCandidate = [
+    raw.scheduledDate,
+    raw.scheduleDate,
+    raw.sendDate,
+    schedule?.date,
+    schedule?.sendDate,
+  ].find((value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value));
+  const timeCandidate = [
+    raw.scheduledTime,
+    raw.sendTime,
+    schedule?.time,
+    schedule?.sendTime,
+  ].find((value) => typeof value === "string" && parseGhlClockTime(value));
+  if (typeof dateCandidate !== "string") return null;
+  const date = dateCandidate.slice(0, 10);
+  const time =
+    typeof timeCandidate === "string"
+      ? parseGhlClockTime(timeCandidate) || "09:00"
+      : "09:00";
+  const at = zonedLocalToUtc(date, time, timeZone);
+  return at && Number.isFinite(at.getTime()) ? at.toISOString() : null;
+}
+
+function firstInstant(
+  values: unknown[],
+  timeZone: string,
+  skip?: string | null
+): string | null {
+  const skipMs = skip ? Date.parse(skip) : NaN;
+  for (const value of values) {
+    const iso = parseGhlDateTime(value, timeZone);
+    if (!iso) continue;
+    if (Number.isFinite(skipMs) && Math.abs(Date.parse(iso) - skipMs) < 60_000) {
+      continue;
+    }
+    return iso;
+  }
+  return null;
+}
+
+/**
+ * Instant the blast is supposed to send — not when someone clicked Schedule.
+ * GHL's list payload often only documents createdAt; the send time lives on
+ * scheduledTimestamp / scheduleConfig.sendAt once limitedFields is off.
+ */
+export function ghlCampaignSendAt(raw: Record<string, unknown>): string | null {
+  const timeZone = ghlTimeZone(raw);
+  const created = parseGhlDateTime(
+    raw.createdAt || raw.dateAdded || raw.updatedAt,
+    timeZone
+  );
+  const scheduleConfig = asRecord(raw.scheduleConfig);
+  const bulk = asRecord(raw.bulkRequestStatusInfo);
+  const rss = asRecord(raw.rssConfig);
+  const meta = asRecord(raw.meta);
+  return (
+    firstInstant(
+      [
+        scheduleConfig?.sendAt,
+        raw.scheduledTimestamp,
+        bulk?.scheduledTimestamp,
+        bulk?.sendAt,
+        bulk?.scheduledTime,
+        raw.sendAt,
+        raw.scheduledTime,
+        rss?.firstExecutionDate,
+        raw.firstExecutionDate,
+        meta?.scheduledTimestamp,
+        meta?.sendAt,
+      ],
+      timeZone,
+      created
+    ) ||
+    pickDateAndTime(raw, timeZone) ||
+    firstInstant([raw.scheduledAt], timeZone, created)
+  );
+}
+
+function scheduleSubject(raw: RawSchedule): string {
+  const meta = asRecord(raw.emailMeta) || asRecord(raw.meta);
+  const nested = meta && typeof meta.subject === "string" ? meta.subject : "";
+  return String(raw.subject || nested || "").trim();
+}
+
+function ymdFromUnknown(value: string | undefined | null): string | null {
   if (!value) return null;
   if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
   const ms = Date.parse(value);
@@ -103,7 +263,7 @@ function ymdFromUnknown(value: string | undefined): string | null {
 
 function campaignSentOn(raw: RawSchedule): string | null {
   return (
-    ymdFromUnknown(raw.scheduledAt) ||
+    ymdFromUnknown(ghlCampaignSendAt(raw as Record<string, unknown>)) ||
     ymdFromUnknown(raw.createdAt) ||
     ymdFromUnknown(raw.dateAdded) ||
     ymdFromUnknown(raw.updatedAt)
@@ -222,23 +382,29 @@ export type GhlEmailSchedule = {
 };
 
 async function listScheduledCampaigns(locationId: string): Promise<RawSchedule[]> {
-  const result = await ghlRequest<{
-    schedules?: RawSchedule[];
-    data?: RawSchedule[];
-    items?: RawSchedule[];
-  }>("GET", "/emails/schedule", {
-    locationId,
-    params: { locationId },
-  });
-  return result.schedules || result.data || result.items || [];
-}
-
-function scheduleInstant(raw: RawSchedule): string | null {
-  const value = raw.scheduledAt || raw.createdAt || raw.dateAdded;
-  if (!value) return null;
-  const ms = Date.parse(value);
-  if (Number.isFinite(ms)) return new Date(ms).toISOString();
-  return null;
+  const rows: RawSchedule[] = [];
+  const limit = 100;
+  for (let offset = 0; offset < 500; offset += limit) {
+    const result = await ghlRequest<{
+      schedules?: RawSchedule[];
+      data?: RawSchedule[];
+      items?: RawSchedule[];
+    }>("GET", "/emails/schedule", {
+      locationId,
+      params: {
+        locationId,
+        limit,
+        offset,
+        limitedFields: false,
+        campaignsOnly: true,
+        archived: false,
+      },
+    });
+    const page = result.schedules || result.data || result.items || [];
+    rows.push(...page);
+    if (page.length < limit) break;
+  }
+  return rows;
 }
 
 /** Scheduled (and recently sent) GHL email blasts for one subaccount. */
@@ -250,9 +416,9 @@ export async function listLocationEmailSchedules(
     .map((raw) => ({
       id: String(raw.id || raw._id || ""),
       name: String(raw.name || "").trim(),
-      subject: String(raw.subject || "").trim(),
+      subject: scheduleSubject(raw),
       status: String(raw.status || "").trim() || "unknown",
-      scheduledAt: scheduleInstant(raw),
+      scheduledAt: ghlCampaignSendAt(raw as Record<string, unknown>),
     }))
     .filter((row) => row.id && row.name);
 }
@@ -295,7 +461,7 @@ function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
   return {
     id: String(raw.id || raw._id || ""),
     name: String(raw.name || "Untitled campaign"),
-    subject: String(raw.subject || ""),
+    subject: scheduleSubject(raw),
     status: String(raw.status || "unknown"),
     sentOn: campaignSentOn(raw),
     bulkRequestId: raw.bulkRequestId || null,
