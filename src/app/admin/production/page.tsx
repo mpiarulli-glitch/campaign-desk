@@ -449,8 +449,7 @@ export default function ProductionPage() {
   const [logSaving, setLogSaving] = useState(false);
   const [logError, setLogError] = useState("");
 
-  // "Ask to schedule" form: open a hand-picked window. Operator can copy the
-  // link to send themselves, or also push Basecamp card + email.
+  // "Ask to schedule" / first-invite form (row or First productions list).
   const [extraAsk, setExtraAsk] = useState<{
     clientId: string;
     windowStart: string;
@@ -464,7 +463,107 @@ export default function ProductionPage() {
   const [extraAskError, setExtraAskError] = useState("");
   const [extraAskBusyId, setExtraAskBusyId] = useState("");
 
+  // Separate: open a booking window and copy the link — no email / Basecamp.
+  const [manual, setManual] = useState<{
+    clientId: string;
+    windowStart: string;
+    windowEnd: string;
+  } | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualError, setManualError] = useState("");
+  const [manualLink, setManualLink] = useState("");
+
+  function defaultWindowDates() {
+    const start = new Date();
+    start.setDate(start.getDate() + 3);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 4);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    return { windowStart: iso(start), windowEnd: iso(end) };
+  }
+
+  function openManualSchedule(clientId = "") {
+    setLogging(null);
+    setExtraAsk(null);
+    setManualError("");
+    setManualLink("");
+    const dates = defaultWindowDates();
+    setManual({
+      clientId,
+      windowStart: dates.windowStart,
+      windowEnd: dates.windowEnd,
+    });
+  }
+
+  async function submitManualSchedule(e: FormEvent) {
+    e.preventDefault();
+    if (!manual) return;
+    if (!manual.clientId) {
+      setManualError("Pick a client.");
+      return;
+    }
+    if (!manual.windowStart || !manual.windowEnd) {
+      setManualError("Pick a start and end date.");
+      return;
+    }
+    if (manual.windowEnd < manual.windowStart) {
+      setManualError("The end date is before the start date.");
+      return;
+    }
+    setManualSaving(true);
+    setManualError("");
+    setManualLink("");
+    const res = await fetch("/api/production/extra-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: manual.clientId,
+        windowStart: manual.windowStart,
+        windowEnd: manual.windowEnd,
+        note: "",
+        sendOutreach: false,
+      }),
+    });
+    setManualSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setManualError(data.error || "Could not open the scheduling window.");
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    const scheduleUrl =
+      typeof data.scheduleUrl === "string" && data.scheduleUrl
+        ? data.scheduleUrl
+        : "";
+    const url =
+      scheduleUrl ||
+      (await (async () => {
+        const tokenRes = await fetch(
+          `/api/revenue/clients/${manual.clientId}/schedule-token`
+        );
+        if (!tokenRes.ok) return "";
+        const tokenData = await tokenRes.json();
+        return tokenData.token
+          ? `${window.location.origin}/schedule/${tokenData.token}`
+          : "";
+      })());
+    if (!url) {
+      setManualError("Window opened, but the scheduling link could not be built.");
+      load({ silent: true });
+      return;
+    }
+    setManualLink(url);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Link is shown in the form for manual copy.
+    }
+    load({ silent: true });
+  }
+
   function openLog(clientId = "") {
+    setManual(null);
+    setExtraAsk(null);
     setLogError("");
     const row = clientId ? rows.find((r) => r.client.id === clientId) : undefined;
     setLogging({
@@ -539,18 +638,16 @@ export default function ProductionPage() {
   }
 
   function openExtraAsk(clientId: string, kind: "extra" | "first" = "extra") {
+    setManual(null);
+    setLogging(null);
     setExtraAskError("");
     const row = rows.find((r) => r.client.id === clientId);
-    const start = new Date();
-    start.setDate(start.getDate() + 3);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 4);
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const dates = defaultWindowDates();
     const fromWindow = kind === "first" ? row?.window : null;
     setExtraAsk({
       clientId,
-      windowStart: fromWindow?.start || iso(start),
-      windowEnd: fromWindow?.end || iso(end),
+      windowStart: fromWindow?.start || dates.windowStart,
+      windowEnd: fromWindow?.end || dates.windowEnd,
       note: "",
       kind,
       colorWeek: row?.client.color_week || "",
@@ -908,13 +1005,17 @@ export default function ProductionPage() {
 
   const enrolled = useMemo(() => rows.filter((r) => r.client.production_enrolled), [rows]);
   const removed = useMemo(() => rows.filter((r) => !r.client.production_enrolled), [rows]);
+  // Only people already on the production roster who have never shot. Dumping
+  // every unenrolled client here turned the page into a phone book.
   const firstCandidates = useMemo(() => {
-    const neverShot = (r: Row) => !r.client.last_production_date;
-    return [
-      ...enrolled.filter((r) => (showInactive || r.client.active) && neverShot(r)),
-      ...removed.filter((r) => r.client.active && neverShot(r)),
-    ].sort((a, b) => a.client.name.localeCompare(b.client.name));
-  }, [enrolled, removed, showInactive]);
+    return enrolled
+      .filter(
+        (r) =>
+          (showInactive || r.client.active) && !r.client.last_production_date
+      )
+      .slice()
+      .sort((a, b) => a.client.name.localeCompare(b.client.name));
+  }, [enrolled, showInactive]);
   // Ordered by what needs a person: waiting on us, then due, then booked ahead,
   // then never set up. Within a group, the soonest window first.
   const BUCKET_ORDER: Record<Exclude<StatusFilter, "all">, number> = {
@@ -994,6 +1095,15 @@ export default function ProductionPage() {
         .sort((a, b) => a.client.name.localeCompare(b.client.name)),
     [enrolled]
   );
+  // Manual windows don't need cadence set — the dates you pick are the window.
+  const manualClients = useMemo(
+    () =>
+      enrolled
+        .filter((r) => showInactive || r.client.active)
+        .slice()
+        .sort((a, b) => a.client.name.localeCompare(b.client.name)),
+    [enrolled, showInactive]
+  );
   const logSelectedWindow = useMemo(
     () =>
       logging?.clientId
@@ -1025,11 +1135,12 @@ export default function ProductionPage() {
       <form
         className="stack"
         style={{ gap: 10, maxWidth: 480 }}
-        onSubmit={(e) => submitExtraAsk(e, false)}
+        onSubmit={(e) => submitExtraAsk(e, true)}
       >
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-          Set when they can pick a day, then copy the link to send yourself — or
-          also email / Basecamp them from here.
+          {first
+            ? "Set color week, cadence, and when they can book. Sends Basecamp + email with the scheduling link."
+            : "Set when they can pick a day, then send Basecamp + email."}
         </p>
         {first ? (
           <div className="rev-form-grid">
@@ -1102,17 +1213,11 @@ export default function ProductionPage() {
         {extraAskError ? <p className="error">{extraAskError}</p> : null}
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <button className="btn btn-sm" type="submit" disabled={extraAskSaving}>
-            {extraAskSaving ? "Opening..." : "Create window & copy link"}
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            type="button"
-            disabled={extraAskSaving}
-            onClick={(e) => submitExtraAsk(e as unknown as FormEvent, true)}
-          >
             {extraAskSaving
               ? "Sending..."
-              : "Create & email / Basecamp"}
+              : first
+                ? "Send first-production invite"
+                : "Send Basecamp card + email"}
           </button>
           <button
             className="btn btn-ghost btn-sm"
@@ -1122,11 +1227,6 @@ export default function ProductionPage() {
             Cancel
           </button>
         </div>
-        {linkMessage[clientId] ? (
-          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-            {linkMessage[clientId]}
-          </p>
-        ) : null}
       </form>
     );
   }
@@ -1283,7 +1383,122 @@ export default function ProductionPage() {
         {error ? <p className="error">{error}</p> : null}
 
         {isAdmin ? (
-          logging ? (
+          manual ? (
+            <form className="card card-pad stack" onSubmit={submitManualSchedule}>
+              <div>
+                <h2 className="h3" style={{ margin: 0 }}>
+                  Schedule a production manually
+                </h2>
+                <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+                  Pick the client and the dates they can book from. No email or
+                  Basecamp — you get a link to send yourself.
+                </p>
+              </div>
+              <div className="rev-form-grid">
+                <div className="field">
+                  <label htmlFor="manual-client">Client</label>
+                  <select
+                    id="manual-client"
+                    className="select-clean"
+                    value={manual.clientId}
+                    onChange={(e) =>
+                      setManual({ ...manual, clientId: e.target.value })
+                    }
+                  >
+                    <option value="">Pick a client</option>
+                    {manualClients.map((r) => (
+                      <option key={r.client.id} value={r.client.id}>
+                        {r.client.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="manual-start">They can book from</label>
+                  <input
+                    id="manual-start"
+                    type="date"
+                    value={manual.windowStart}
+                    onChange={(e) =>
+                      setManual({ ...manual, windowStart: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="manual-end">Until</label>
+                  <input
+                    id="manual-end"
+                    type="date"
+                    value={manual.windowEnd}
+                    onChange={(e) =>
+                      setManual({ ...manual, windowEnd: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              {manualError ? <p className="error">{manualError}</p> : null}
+              {manualLink ? (
+                <div className="stack" style={{ gap: 8 }}>
+                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                    Window open. Link copied — send it to the client:
+                  </p>
+                  <code
+                    style={{
+                      display: "block",
+                      padding: "10px 12px",
+                      fontSize: 13,
+                      wordBreak: "break-all",
+                      background: "var(--surface-2, #f4f4f5)",
+                      borderRadius: 6,
+                    }}
+                  >
+                    {manualLink}
+                  </code>
+                  <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(manualLink);
+                        } catch {
+                          /* shown above */
+                        }
+                      }}
+                    >
+                      Copy link again
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      onClick={() => {
+                        setManual(null);
+                        setManualLink("");
+                      }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row" style={{ gap: 10 }}>
+                  <button className="btn" type="submit" disabled={manualSaving}>
+                    {manualSaving ? "Opening..." : "Open window & copy link"}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    onClick={() => {
+                      setManual(null);
+                      setManualLink("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </form>
+          ) : logging ? (
             <form ref={logFormRef} className="card card-pad stack" onSubmit={submitLog}>
               <div>
                 <h2 className="h3" style={{ margin: 0 }}>
@@ -1475,7 +1690,10 @@ export default function ProductionPage() {
               </div>
             </form>
           ) : (
-            <div className="row" style={{ justifyContent: "flex-end" }}>
+            <div className="row" style={{ justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-sm" onClick={() => openManualSchedule()}>
+                Schedule a production manually
+              </button>
               <button className="btn btn-secondary btn-sm" onClick={() => openLog()}>
                 + Log a production
               </button>
@@ -1520,9 +1738,9 @@ export default function ProductionPage() {
           <div className="card card-pad stack">
             <strong>First productions</strong>
             <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
-              These accounts don&apos;t have a production on record yet. Invite
-              them to book their first one — the email sets expectations and
-              gets them on the cadence.
+              On the schedule, but no shoot yet. Invite them — sets expectations
+              and gets them on the cadence. For a link only, use Schedule a
+              production manually above.
             </p>
             <div className="stack" style={{ gap: 10 }}>
               {firstCandidates.map((r) => {
@@ -1534,10 +1752,9 @@ export default function ProductionPage() {
                       <div>
                         <strong>{c.name}</strong>
                         <span className="muted" style={{ marginLeft: 8 }}>
-                          {c.production_enrolled ? "On the schedule" : "Not enrolled yet"}
                           {c.color_week && c.production_cadence
-                            ? ` · ${colorLabel(c.color_week)} · ${CADENCE_LABEL[c.production_cadence]}`
-                            : " · color week and cadence still needed"}
+                            ? `${colorLabel(c.color_week)} · ${CADENCE_LABEL[c.production_cadence]}`
+                            : "color week and cadence still needed"}
                         </span>
                       </div>
                       {r.openExtraRequest?.kind === "first" ? (
@@ -2062,11 +2279,12 @@ export default function ProductionPage() {
                                   </span>
                                 ) : null}
                               </div>
-                            ) : extraAsk?.clientId === c.id ? (
-                              extraAskForm(c.id)
                             ) : (
-                              <button className="btn btn-secondary btn-sm" onClick={() => openExtraAsk(c.id)}>
-                                Ask to schedule
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => openManualSchedule(c.id)}
+                              >
+                                Schedule manually
                               </button>
                             )}
                           </div>
