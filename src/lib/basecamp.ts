@@ -717,6 +717,59 @@ export async function listProjectTodos(
   }
 }
 
+export type BcTodolist = {
+  id: string;
+  title: string;
+  setTitle: string;
+  /** "Set › List" when a project has more than one todoset page. */
+  label: string;
+};
+
+/**
+ * Open to-do lists in a project, across every enabled todoset.
+ *
+ * Used by Assign so someone can put new work on an existing list instead of
+ * always landing on "Tasks". Groups are omitted — create posts to a list id.
+ */
+export async function listProjectTodolists(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcTodolist[]> {
+  if (!projectId) return [];
+  try {
+    const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
+    if (!pr.ok) return [];
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string; title?: string; enabled?: boolean }> =
+      project.dock || [];
+    const todosets = dock.filter((d) => d.name === "todoset" && d.enabled !== false);
+    if (!todosets.length) return [];
+
+    const listsPerSet = await Promise.all(
+      todosets.map(async (set) => {
+        const setTitle = (set.title || "Todos").trim() || "Todos";
+        const lists = await bcCollection<{ id: number; title?: string; name?: string }>(
+          `/buckets/${projectId}/todosets/${set.id}/todolists.json`,
+          4,
+          identity
+        );
+        return lists.map((l) => {
+          const title = (l.title || l.name || "Todos").trim() || "Todos";
+          return {
+            id: String(l.id),
+            title,
+            setTitle,
+            label: todosets.length > 1 ? `${setTitle} › ${title}` : title,
+          };
+        });
+      })
+    );
+    return listsPerSet.flat().filter((l) => l.id);
+  } catch {
+    return [];
+  }
+}
+
 export interface PersonTodosResult {
   // Every open todo in the project, with the person's own flagged via
   // `assigned`. Callers surface the assigned ones first rather than hiding
@@ -1545,21 +1598,30 @@ export async function createAssignedTodo(input: {
   identity?: BcIdentity;
   /** Defaults to Campaign Review so internal review stays on that list. */
   listName?: string;
+  /** When set, create on this list and skip get-or-create by name. */
+  listId?: string;
 }): Promise<{ ok: true; todoId: string; todoUrl: string } | { ok: false; error: string }> {
   const identity = input.identity ?? SERVICE;
   if (!input.projectId) return { ok: false, error: "No Basecamp project set." };
   const title = input.title.trim().slice(0, 999);
   if (!title) return { ok: false, error: "To-do title is required." };
   const dueOn = (input.dueOn || "").trim();
-  const listName = (input.listName || CAMPAIGN_REVIEW_TODOLIST_NAME).trim();
+  const listId = (input.listId || "").trim();
   try {
-    const list = await getOrCreateNamedTodolist(
-      input.projectId,
-      listName,
-      identity,
-      listName.toLowerCase() === OPS_TODOLIST_NAME.toLowerCase()
-    );
-    if ("error" in list) return { ok: false, error: list.error };
+    let list: { id: string };
+    if (listId) {
+      list = { id: listId };
+    } else {
+      const listName = (input.listName || CAMPAIGN_REVIEW_TODOLIST_NAME).trim();
+      const resolved = await getOrCreateNamedTodolist(
+        input.projectId,
+        listName,
+        identity,
+        listName.toLowerCase() === OPS_TODOLIST_NAME.toLowerCase()
+      );
+      if ("error" in resolved) return { ok: false, error: resolved.error };
+      list = resolved;
+    }
     const res = await bc(
       `/buckets/${input.projectId}/todolists/${list.id}/todos.json`,
       {

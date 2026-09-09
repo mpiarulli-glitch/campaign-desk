@@ -5762,6 +5762,10 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   padding: 8px 10px;
   font-size: 13px;
 }
+.assign-list-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
 .assign-done {
   margin: 0;
   font-size: 13px;

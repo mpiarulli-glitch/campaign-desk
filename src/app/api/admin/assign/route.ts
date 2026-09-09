@@ -31,6 +31,8 @@ export async function POST(request: Request) {
   const assignee = typeof body.assignee === "string" ? body.assignee.trim() : "";
   const projectId =
     typeof body.basecampProjectId === "string" ? body.basecampProjectId.trim() : "";
+  const todolistId =
+    typeof body.todolistId === "string" ? body.todolistId.trim() : "";
 
   const slug = await sessionUserSlug();
   const result = await createOpsAssignedTodo({
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
     dueOn: dueOn || "",
     assignee,
     basecampProjectId: projectId,
+    todolistId: todolistId || undefined,
     identity: identityForAssigner(slug),
   });
   if (!result.ok) {

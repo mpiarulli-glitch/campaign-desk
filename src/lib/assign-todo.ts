@@ -5,9 +5,11 @@ import {
   createAssignedTodo,
   getProjectPeopleForMention,
   hasConnection,
+  listProjectTodolists,
   SERVICE,
   type BcIdentity,
   type BcPerson,
+  type BcTodolist,
 } from "./basecamp";
 import { listInternalProjects } from "./basecamp-clients";
 import { todayYmd } from "./cadence";
@@ -317,6 +319,26 @@ export async function listAssignProjects(
   return [...clients, ...internals].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export type AssignTodolistOption = BcTodolist;
+
+export async function listAssignTodolists(
+  basecampProjectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<AssignTodolistOption[]> {
+  const projectId = (basecampProjectId || "").trim();
+  if (!projectId || !basecampConnected()) return [];
+  return listProjectTodolists(projectId, identity);
+}
+
+/** Prefer a list named Tasks; otherwise the first list on the project. */
+export function defaultAssignTodolistId(lists: AssignTodolistOption[]): string {
+  if (!lists.length) return "";
+  const tasks = lists.find(
+    (l) => l.title.trim().toLowerCase() === OPS_TODOLIST_NAME.toLowerCase()
+  );
+  return (tasks || lists[0]).id;
+}
+
 export function pickAssigneeOnRoster(
   people: Array<Pick<BcPerson, "id" | "name" | "email_address" | "client" | "employee" | "attachable_sgid">>,
   slug: string
@@ -338,6 +360,7 @@ export async function createOpsAssignedTodo(input: {
   dueOn: string;
   assignee: string;
   basecampProjectId: string;
+  todolistId?: string;
   identity?: BcIdentity;
 }): Promise<
   | { ok: true; todoId: string; todoUrl: string; listName: string; assigneeName: string }
@@ -383,13 +406,34 @@ export async function createOpsAssignedTodo(input: {
     };
   }
 
+  const todolistId = (input.todolistId || "").trim();
+  let listName = OPS_TODOLIST_NAME;
+  if (todolistId) {
+    try {
+      const lists = await listProjectTodolists(projectId, identity);
+      const hit = lists.find((l) => l.id === todolistId);
+      if (!hit) {
+        return {
+          ok: false,
+          error: "That to-do list isn't on this Basecamp project anymore.",
+          status: 400,
+        };
+      }
+      listName = hit.title;
+    } catch {
+      // Still try to create on the id; Basecamp will reject a bad one.
+    }
+  }
+
   const created = await createAssignedTodo({
     projectId,
     title,
     assigneeIds: [assignee.id],
     dueOn,
     identity,
-    listName: OPS_TODOLIST_NAME,
+    ...(todolistId
+      ? { listId: todolistId }
+      : { listName: OPS_TODOLIST_NAME }),
   });
   if (!created.ok) {
     return { ok: false, error: created.error, status: 502 };
@@ -398,7 +442,7 @@ export async function createOpsAssignedTodo(input: {
     ok: true,
     todoId: created.todoId,
     todoUrl: created.todoUrl,
-    listName: OPS_TODOLIST_NAME,
+    listName,
     assigneeName: assignee.name,
   };
 }

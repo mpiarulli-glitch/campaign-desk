@@ -9,6 +9,12 @@ type Project = {
   basecampProjectId: string;
   internal: boolean;
 };
+type Todolist = {
+  id: string;
+  title: string;
+  setTitle: string;
+  label: string;
+};
 type Warning = { hasRoom: boolean; headline: string; detail: string };
 
 function ProjectCombobox({
@@ -138,10 +144,20 @@ function ProjectCombobox({
   );
 }
 
+function preferTasksList(lists: Todolist[]): string {
+  if (!lists.length) return "";
+  const tasks = lists.find((l) => l.title.trim().toLowerCase() === "tasks");
+  return (tasks || lists[0]).id;
+}
+
 export function AssignTodoPanel() {
   const [people, setPeople] = useState<Person[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
+  const [lists, setLists] = useState<Todolist[]>([]);
+  const [todolistId, setTodolistId] = useState("");
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState("");
   const [title, setTitle] = useState("");
   const [dueOn, setDueOn] = useState("");
   const [hours, setHours] = useState("1");
@@ -177,12 +193,75 @@ export function AssignTodoPanel() {
 
   const project = projects.find((p) => p.id === projectId);
 
+  useEffect(() => {
+    if (!project?.basecampProjectId) {
+      setLists([]);
+      setTodolistId("");
+      setListsError("");
+      setListsLoading(false);
+      return;
+    }
+    let on = true;
+    setListsLoading(true);
+    setListsError("");
+    setLists([]);
+    setTodolistId("");
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          basecampProjectId: project.basecampProjectId,
+        });
+        const res = await fetch(`/api/admin/assign/todolists?${params}`);
+        const data = await res.json().catch(() => ({}));
+        if (!on) return;
+        if (!res.ok) {
+          setListsError(data.error || "Could not load to-do lists.");
+          setLists([]);
+          setTodolistId("");
+          return;
+        }
+        const next = Array.isArray(data.lists) ? (data.lists as Todolist[]) : [];
+        setLists(next);
+        setTodolistId(preferTasksList(next));
+      } catch {
+        if (on) {
+          setListsError("Could not load to-do lists.");
+          setLists([]);
+          setTodolistId("");
+        }
+      } finally {
+        if (on) setListsLoading(false);
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, [project?.basecampProjectId]);
+
+  function pickProject(id: string) {
+    setProjectId(id);
+    setDone(null);
+    setFormError("");
+  }
+
   async function openWarning(e: React.FormEvent) {
     e.preventDefault();
     setFormError("");
     setDone(null);
     if (!project) {
       setFormError("Pick a project.");
+      return;
+    }
+    if (listsLoading) {
+      setFormError("Still loading to-do lists for that project.");
+      return;
+    }
+    if (!todolistId) {
+      setFormError(
+        listsError
+          ? "Could not load to-do lists for that project."
+          : "Pick a to-do list."
+      );
       return;
     }
     if (!title.trim()) {
@@ -223,7 +302,7 @@ export function AssignTodoPanel() {
   }
 
   async function proceed() {
-    if (!project || posting) return;
+    if (!project || posting || !todolistId) return;
     setPosting(true);
     setFormError("");
     try {
@@ -235,6 +314,7 @@ export function AssignTodoPanel() {
           dueOn,
           assignee,
           basecampProjectId: project.basecampProjectId,
+          todolistId,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -284,9 +364,37 @@ export function AssignTodoPanel() {
           <ProjectCombobox
             projects={projects}
             value={projectId}
-            onPick={setProjectId}
+            onPick={pickProject}
           />
         </div>
+        {project ? (
+          <div className="field">
+            <label htmlFor="assign-list">To-do list</label>
+            <select
+              id="assign-list"
+              value={todolistId}
+              onChange={(e) => setTodolistId(e.target.value)}
+              disabled={listsLoading || lists.length === 0}
+            >
+              {listsLoading ? (
+                <option value="">Loading lists…</option>
+              ) : lists.length === 0 ? (
+                <option value="">
+                  {listsError || "No to-do lists on this project"}
+                </option>
+              ) : (
+                lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))
+              )}
+            </select>
+            {listsError && !listsLoading ? (
+              <p className="muted assign-list-hint">{listsError}</p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="field">
           <label htmlFor="assign-title">Title</label>
           <input
@@ -332,7 +440,7 @@ export function AssignTodoPanel() {
               ))}
             </select>
           </div>
-          <button className="btn" type="submit" disabled={checking}>
+          <button className="btn" type="submit" disabled={checking || listsLoading}>
             {checking ? "Checking…" : "Assign"}
           </button>
         </div>

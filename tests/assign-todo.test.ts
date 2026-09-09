@@ -45,6 +45,23 @@ test("assign load and warning copy", async (t) => {
     assert.equal(assign.pickAssigneeOnRoster(roster, "randi")?.id, undefined);
   });
 
+  await t.test("defaultAssignTodolistId prefers Tasks then first list", () => {
+    assert.equal(assign.defaultAssignTodolistId([]), "");
+    assert.equal(
+      assign.defaultAssignTodolistId([
+        { id: "1", title: "Onboarding", setTitle: "Todos", label: "Onboarding" },
+        { id: "2", title: "Tasks", setTitle: "Todos", label: "Tasks" },
+      ]),
+      "2"
+    );
+    assert.equal(
+      assign.defaultAssignTodolistId([
+        { id: "9", title: "Client work", setTitle: "Todos", label: "Client work" },
+      ]),
+      "9"
+    );
+  });
+
   await t.test("empty forecast still has room and proceeds", () => {
     const load = assign.assignLoadForPerson({
       person: "jack",
@@ -405,7 +422,8 @@ test("assign load and warning copy", async (t) => {
   });
 
   let createdListName = "";
-  let lastTodo: { content?: string; assignee_ids?: number[]; due_on?: string } | null = null;
+  type PostedTodo = { content?: string; assignee_ids?: number[]; due_on?: string };
+  let lastTodo: PostedTodo | null = null;
   const lists = [{ id: 11, title: "To-dos" }];
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -447,8 +465,8 @@ test("assign load and warning copy", async (t) => {
       return json({ id: 22, title: createdListName });
     }
     if (url.includes("/todos.json") && method === "POST") {
-      lastTodo = JSON.parse(String(init?.body || "{}"));
-      assert.match(url, /todolists\/22\/todos/);
+      lastTodo = JSON.parse(String(init?.body || "{}")) as PostedTodo;
+      assert.match(url, /todolists\/(11|22)\/todos/);
       return json({ id: 101, app_url: "https://3.basecamp.com/todo/101" });
     }
     return json([]);
@@ -492,8 +510,25 @@ test("assign load and warning copy", async (t) => {
     assert.equal(forecast.listTasksForPersonWeek("abel", "2026-08-24").length, 0);
   });
 
+  await t.test("explicit todolistId creates on that list without making Tasks", async () => {
+    createdListName = "";
+    lastTodo = null as PostedTodo | null;
+    const result = await assign.createOpsAssignedTodo({
+      title: "On the existing list",
+      dueOn: "2026-08-28",
+      assignee: "abel",
+      basecampProjectId: "proj-9",
+      todolistId: "11",
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.listName, "To-dos");
+    assert.equal(createdListName, "");
+    assert.equal(lastTodo?.content, "On the existing list");
+  });
+
   await t.test("unknown assignee fails clearly without creating a to-do", async () => {
-    lastTodo = null;
+    lastTodo = null as PostedTodo | null;
     const result = await assign.createOpsAssignedTodo({
       title: "Should not land",
       dueOn: "2026-08-28",
