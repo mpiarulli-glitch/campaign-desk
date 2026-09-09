@@ -114,6 +114,7 @@ type OpenExtraRequest = {
   windowEnd: string;
   bcCardAt: string | null;
   emailSentAt: string | null;
+  kind: "extra" | "first";
 };
 
 type ReachoutChannel = "email" | "basecamp_card" | "basecamp_comment";
@@ -448,13 +449,16 @@ export default function ProductionPage() {
   const [logSaving, setLogSaving] = useState(false);
   const [logError, setLogError] = useState("");
 
-  // "Ask to schedule" form: reach out to a client about an extra production
-  // in a hand-picked window, via Basecamp card + email.
+  // "Ask to schedule" form: open a hand-picked window. Operator can copy the
+  // link to send themselves, or also push Basecamp card + email.
   const [extraAsk, setExtraAsk] = useState<{
     clientId: string;
     windowStart: string;
     windowEnd: string;
     note: string;
+    kind: "extra" | "first";
+    colorWeek: ColorWeek;
+    productionCadence: Cadence;
   } | null>(null);
   const [extraAskSaving, setExtraAskSaving] = useState(false);
   const [extraAskError, setExtraAskError] = useState("");
@@ -534,42 +538,88 @@ export default function ProductionPage() {
     load({ silent: true });
   }
 
-  function openExtraAsk(clientId: string) {
+  function openExtraAsk(clientId: string, kind: "extra" | "first" = "extra") {
     setExtraAskError("");
+    const row = rows.find((r) => r.client.id === clientId);
     const start = new Date();
     start.setDate(start.getDate() + 3);
     const end = new Date(start);
-    end.setDate(end.getDate() + 6);
+    end.setDate(end.getDate() + 4);
     const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const fromWindow = kind === "first" ? row?.window : null;
     setExtraAsk({
       clientId,
-      windowStart: iso(start),
-      windowEnd: iso(end),
+      windowStart: fromWindow?.start || iso(start),
+      windowEnd: fromWindow?.end || iso(end),
       note: "",
+      kind,
+      colorWeek: row?.client.color_week || "",
+      productionCadence: row?.client.production_cadence || "",
     });
   }
 
-  async function submitExtraAsk(e: FormEvent) {
+  async function submitExtraAsk(e: FormEvent, sendOutreach = false) {
     e.preventDefault();
     if (!extraAsk) return;
     if (!extraAsk.windowStart || !extraAsk.windowEnd) {
       setExtraAskError("Pick a start and end date.");
       return;
     }
+    if (extraAsk.kind === "first" && (!extraAsk.colorWeek || !extraAsk.productionCadence)) {
+      setExtraAskError("Set a color week and cadence so the schedule continues after this first shoot.");
+      return;
+    }
+    const clientId = extraAsk.clientId;
     setExtraAskSaving(true);
     setExtraAskError("");
-    const res = await fetch("/api/production/extra-request", {
+    const url =
+      extraAsk.kind === "first"
+        ? "/api/production/first-invite"
+        : "/api/production/extra-request";
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(extraAsk),
+      body: JSON.stringify({
+        clientId: extraAsk.clientId,
+        windowStart: extraAsk.windowStart,
+        windowEnd: extraAsk.windowEnd,
+        note: extraAsk.note,
+        sendOutreach,
+        ...(extraAsk.kind === "first"
+          ? {
+              colorWeek: extraAsk.colorWeek,
+              productionCadence: extraAsk.productionCadence,
+            }
+          : {}),
+      }),
     });
     setExtraAskSaving(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setExtraAskError(data.error || "Could not send the request.");
+      setExtraAskError(data.error || "Could not open the scheduling window.");
       return;
     }
+    const data = await res.json().catch(() => ({}));
     setExtraAsk(null);
+    const scheduleUrl =
+      typeof data.scheduleUrl === "string" && data.scheduleUrl
+        ? data.scheduleUrl
+        : "";
+    if (scheduleUrl) {
+      try {
+        await navigator.clipboard.writeText(scheduleUrl);
+        setLinkMessage((m) => ({
+          ...m,
+          [clientId]: sendOutreach
+            ? "Sent — link copied"
+            : "Window open — link copied",
+        }));
+      } catch {
+        setLinkMessage((m) => ({ ...m, [clientId]: scheduleUrl }));
+      }
+    } else {
+      await copyLink(clientId);
+    }
     load({ silent: true });
   }
 
@@ -858,6 +908,13 @@ export default function ProductionPage() {
 
   const enrolled = useMemo(() => rows.filter((r) => r.client.production_enrolled), [rows]);
   const removed = useMemo(() => rows.filter((r) => !r.client.production_enrolled), [rows]);
+  const firstCandidates = useMemo(() => {
+    const neverShot = (r: Row) => !r.client.last_production_date;
+    return [
+      ...enrolled.filter((r) => (showInactive || r.client.active) && neverShot(r)),
+      ...removed.filter((r) => r.client.active && neverShot(r)),
+    ].sort((a, b) => a.client.name.localeCompare(b.client.name));
+  }, [enrolled, removed, showInactive]);
   // Ordered by what needs a person: waiting on us, then due, then booked ahead,
   // then never set up. Within a group, the soonest window first.
   const BUCKET_ORDER: Record<Exclude<StatusFilter, "all">, number> = {
@@ -960,6 +1017,119 @@ export default function ProductionPage() {
     ...videographers.map((v) => ({ value: v.id, label: v.name })),
   ];
   const vidName = (id: string) => videographers.find((v) => v.id === id)?.name || "";
+
+  function extraAskForm(clientId: string) {
+    if (!extraAsk || extraAsk.clientId !== clientId) return null;
+    const first = extraAsk.kind === "first";
+    return (
+      <form
+        className="stack"
+        style={{ gap: 10, maxWidth: 480 }}
+        onSubmit={(e) => submitExtraAsk(e, false)}
+      >
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+          Set when they can pick a day, then copy the link to send yourself — or
+          also email / Basecamp them from here.
+        </p>
+        {first ? (
+          <div className="rev-form-grid">
+            <div className="field">
+              <label htmlFor={`first-color-${clientId}`}>Color week</label>
+              <select
+                id={`first-color-${clientId}`}
+                className="select-clean"
+                value={extraAsk.colorWeek}
+                onChange={(e) =>
+                  setExtraAsk({ ...extraAsk, colorWeek: e.target.value as ColorWeek })
+                }
+              >
+                {COLOR_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`first-cadence-${clientId}`}>Cadence</label>
+              <select
+                id={`first-cadence-${clientId}`}
+                className="select-clean"
+                value={extraAsk.productionCadence}
+                onChange={(e) =>
+                  setExtraAsk({ ...extraAsk, productionCadence: e.target.value as Cadence })
+                }
+              >
+                {CADENCE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ) : null}
+        <div className="rev-form-grid">
+          <div className="field">
+            <label htmlFor={`extra-start-${clientId}`}>Schedule from</label>
+            <input
+              id={`extra-start-${clientId}`}
+              type="date"
+              value={extraAsk.windowStart}
+              onChange={(e) => setExtraAsk({ ...extraAsk, windowStart: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`extra-end-${clientId}`}>Schedule until</label>
+            <input
+              id={`extra-end-${clientId}`}
+              type="date"
+              value={extraAsk.windowEnd}
+              onChange={(e) => setExtraAsk({ ...extraAsk, windowEnd: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor={`extra-note-${clientId}`}>Note (optional)</label>
+          <textarea
+            id={`extra-note-${clientId}`}
+            rows={2}
+            value={extraAsk.note}
+            onChange={(e) => setExtraAsk({ ...extraAsk, note: e.target.value })}
+            placeholder={
+              first
+                ? "Anything personal to add — we'll still explain what a production day is."
+                : "Anything to tell the client about why this one's extra."
+            }
+          />
+        </div>
+        {extraAskError ? <p className="error">{extraAskError}</p> : null}
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <button className="btn btn-sm" type="submit" disabled={extraAskSaving}>
+            {extraAskSaving ? "Opening..." : "Create window & copy link"}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            disabled={extraAskSaving}
+            onClick={(e) => submitExtraAsk(e as unknown as FormEvent, true)}
+          >
+            {extraAskSaving
+              ? "Sending..."
+              : "Create & email / Basecamp"}
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            onClick={() => setExtraAsk(null)}
+          >
+            Cancel
+          </button>
+        </div>
+        {linkMessage[clientId] ? (
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            {linkMessage[clientId]}
+          </p>
+        ) : null}
+      </form>
+    );
+  }
 
   // Renders a text/date/select input for the cell currently being edited.
   function editor(field: Field, type: "text" | "date" | "select", options?: { value: string; label: string }[]) {
@@ -1345,6 +1515,50 @@ export default function ProductionPage() {
             </button>
           ) : null}
         </div>
+
+        {isAdmin && firstCandidates.length > 0 ? (
+          <div className="card card-pad stack">
+            <strong>First productions</strong>
+            <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+              These accounts don&apos;t have a production on record yet. Invite
+              them to book their first one — the email sets expectations and
+              gets them on the cadence.
+            </p>
+            <div className="stack" style={{ gap: 10 }}>
+              {firstCandidates.map((r) => {
+                const c = r.client;
+                const asking = extraAsk?.clientId === c.id && extraAsk.kind === "first";
+                return (
+                  <div key={c.id} className="stack" style={{ gap: 8 }}>
+                    <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <strong>{c.name}</strong>
+                        <span className="muted" style={{ marginLeft: 8 }}>
+                          {c.production_enrolled ? "On the schedule" : "Not enrolled yet"}
+                          {c.color_week && c.production_cadence
+                            ? ` · ${colorLabel(c.color_week)} · ${CADENCE_LABEL[c.production_cadence]}`
+                            : " · color week and cadence still needed"}
+                        </span>
+                      </div>
+                      {r.openExtraRequest?.kind === "first" ? (
+                        <span className="pcon-pill is-warn">Invitation sent</span>
+                      ) : asking ? null : (
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          onClick={() => openExtraAsk(c.id, "first")}
+                        >
+                          Invite first production
+                        </button>
+                      )}
+                    </div>
+                    {asking ? extraAskForm(c.id) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <span className="muted">
@@ -1824,10 +2038,16 @@ export default function ProductionPage() {
                                 </span>
                                 <button
                                   className="btn btn-ghost btn-sm"
+                                  onClick={() => copyLink(c.id)}
+                                >
+                                  Copy link
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
                                   disabled={extraAskBusyId === r.openExtraRequest.id}
                                   onClick={() => resendExtraAsk(r.openExtraRequest!.id)}
                                 >
-                                  Resend
+                                  Resend email
                                 </button>
                                 <button
                                   className="btn btn-ghost btn-sm"
@@ -1836,53 +2056,14 @@ export default function ProductionPage() {
                                 >
                                   Cancel
                                 </button>
+                                {linkMessage[c.id] ? (
+                                  <span className="muted" style={{ fontSize: 12 }}>
+                                    {linkMessage[c.id]}
+                                  </span>
+                                ) : null}
                               </div>
                             ) : extraAsk?.clientId === c.id ? (
-                              <form className="stack" style={{ gap: 10, maxWidth: 420 }} onSubmit={submitExtraAsk}>
-                                <div className="rev-form-grid">
-                                  <div className="field">
-                                    <label htmlFor={`extra-start-${c.id}`}>Window start</label>
-                                    <input
-                                      id={`extra-start-${c.id}`}
-                                      type="date"
-                                      value={extraAsk.windowStart}
-                                      onChange={(e) => setExtraAsk({ ...extraAsk, windowStart: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="field">
-                                    <label htmlFor={`extra-end-${c.id}`}>Window end</label>
-                                    <input
-                                      id={`extra-end-${c.id}`}
-                                      type="date"
-                                      value={extraAsk.windowEnd}
-                                      onChange={(e) => setExtraAsk({ ...extraAsk, windowEnd: e.target.value })}
-                                    />
-                                  </div>
-                                </div>
-                                <div className="field">
-                                  <label htmlFor={`extra-note-${c.id}`}>Note (optional)</label>
-                                  <textarea
-                                    id={`extra-note-${c.id}`}
-                                    rows={2}
-                                    value={extraAsk.note}
-                                    onChange={(e) => setExtraAsk({ ...extraAsk, note: e.target.value })}
-                                    placeholder="Anything to tell the client about why this one's extra."
-                                  />
-                                </div>
-                                {extraAskError ? <p className="error">{extraAskError}</p> : null}
-                                <div className="row" style={{ gap: 10 }}>
-                                  <button className="btn btn-sm" type="submit" disabled={extraAskSaving}>
-                                    {extraAskSaving ? "Sending..." : "Send Basecamp card + email"}
-                                  </button>
-                                  <button
-                                    className="btn btn-ghost btn-sm"
-                                    type="button"
-                                    onClick={() => setExtraAsk(null)}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </form>
+                              extraAskForm(c.id)
                             ) : (
                               <button className="btn btn-secondary btn-sm" onClick={() => openExtraAsk(c.id)}>
                                 Ask to schedule

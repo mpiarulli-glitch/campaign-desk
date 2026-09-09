@@ -28,6 +28,11 @@ import {
   mentionHtml,
 } from "./basecamp";
 import { recordFailure, clearFailure } from "./failures";
+import {
+  FIRST_PRODUCTION_EXPECTATIONS,
+  firstProductionCardCopy,
+  firstProductionEmailCopy,
+} from "./first-production";
 
 function escapeHtml(text: string): string {
   return (text || "")
@@ -85,20 +90,23 @@ export function createExtraRequest(input: {
   windowEnd: string;
   note?: string;
   createdBy?: string;
+  kind?: ExtraProductionRequest["kind"];
 }): ExtraProductionRequest {
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
+  const kind = input.kind === "first" ? "first" : "extra";
   db.prepare(
     `INSERT INTO extra_production_requests
-      (id, client_id, window_start, window_end, note, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, client_id, window_start, window_end, note, kind, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.clientId,
     input.windowStart,
     input.windowEnd,
     (input.note || "").trim(),
+    kind,
     (input.createdBy || "").trim(),
     ts,
     ts
@@ -191,16 +199,28 @@ export function extraRequestCardContent(
       ? `Hi ${escapeHtml(client.contact_name.trim())},`
       : "Hi there,";
   const windowText = `${longDate(request.window_start)} to ${longDate(request.window_end)}`;
+  const first = request.kind === "first";
+  const firstCopy = first ? firstProductionCardCopy(windowText) : null;
   const note = request.note
     ? `<div>${escapeHtml(request.note)}</div><div><br></div>`
     : "";
+  const expect = first
+    ? `<div><br></div>` +
+      FIRST_PRODUCTION_EXPECTATIONS.map(
+        (line) => `<div>• ${escapeHtml(line)}</div>`
+      ).join("") +
+      `<div><br></div>`
+    : "";
+  const intro = firstCopy
+    ? firstCopy.intro
+    : `We'd like to schedule a production with you. Any weekday between <strong>${escapeHtml(windowText)}</strong> works.`;
   const body =
     `<div>${hello}</div>` +
     `<div><br></div>` +
-    `<div>We'd like to schedule a production with you. Any weekday between ` +
-    `<strong>${escapeHtml(windowText)}</strong> works.</div>` +
+    `<div>${intro}</div>` +
     `<div><br></div>` +
     note +
+    expect +
     (url
       ? `<div>Please use the link below to pick a day and a start time that ` +
         `work best for you.</div>` +
@@ -212,7 +232,10 @@ export function extraRequestCardContent(
     `card.</div>` +
     `<div><br></div>` +
     `<div>Thanks!</div>`;
-  return { title: "Let's schedule a production", body };
+  return {
+    title: firstCopy ? firstCopy.title : "Let's schedule a production",
+    body,
+  };
 }
 
 export function extraRequestEmail(
@@ -234,17 +257,29 @@ export function extraRequestEmail(
   };
   const year = request.window_start.split("-")[0];
   const windowText = `${fmtLong(request.window_start)} – ${fmtLong(request.window_end)}, ${year}`;
-  const subject = "Let's schedule a production";
-  const preheader = "We'd like to schedule a production with you.";
+  const first = request.kind === "first";
+  const firstCopy = first ? firstProductionEmailCopy(windowText) : null;
+  const subject = firstCopy?.subject || "Let's schedule a production";
+  const preheader =
+    firstCopy?.preheader || "We'd like to schedule a production with you.";
+  const headline = firstCopy?.headline || "Let’s schedule a production";
+  const intro =
+    firstCopy?.intro ||
+    "We’d like to schedule a production with you. Pick the day and time that work best.";
+  const cta = firstCopy?.cta || "Schedule my production";
   const logo =
     "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
   const noteText = request.note ? `\n${request.note}\n` : "";
+  const expectText = first
+    ? FIRST_PRODUCTION_EXPECTATIONS.map((line) => `• ${line}`).join("\n") + "\n"
+    : "";
 
   const text = [
     greeting,
     "",
-    "We'd like to schedule a production with you.",
+    intro,
     noteText,
+    expectText,
     "Pick a day and time here:",
     url,
     "",
@@ -286,9 +321,14 @@ export function extraRequestEmail(
         <tr>
           <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
             <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${company}</p>
-            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Let&rsquo;s schedule a production</h1>
+            <h1 class="h1" style="margin:0 0 18px;font-family:'Poppins',Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">${esc(headline)}</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">We&rsquo;d like to schedule a production with you. Pick the day and time that work best.${request.note ? ` ${esc(request.note)}` : ""}</p>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">${esc(intro)}${request.note ? ` ${esc(request.note)}` : ""}</p>
+            ${
+              first
+                ? `<ul style="margin:0 0 22px;padding:0 0 0 18px;font-size:15px;line-height:1.6;color:#333333;">${FIRST_PRODUCTION_EXPECTATIONS.map((line) => `<li style="margin:0 0 6px;">${esc(line)}</li>`).join("")}</ul>`
+                : ""
+            }
           </td>
         </tr>
         <tr>
@@ -308,11 +348,11 @@ export function extraRequestEmail(
             <!--[if mso]>
             <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:52px;v-text-anchor:middle;width:280px;" arcsize="12%" strokecolor="#00d4e8" fillcolor="#00d4e8">
             <w:anchorlock/>
-            <center style="color:#04333a;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Schedule my production</center>
+            <center style="color:#04333a;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">${cta}</center>
             </v:roundrect>
             <![endif]-->
             <!--[if !mso]><!-->
-            <a class="cta" href="${url}" style="background-color:#00d4e8;border-radius:6px;color:#04333a;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:52px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;">Schedule my production</a>
+            <a class="cta" href="${url}" style="background-color:#00d4e8;border-radius:6px;color:#04333a;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:52px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;">${esc(cta)}</a>
             <!--<![endif]-->
           </td>
         </tr>

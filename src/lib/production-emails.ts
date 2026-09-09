@@ -9,6 +9,10 @@
 // two accounts which one this is.
 import type { RevClient, ScheduledSend } from "./db";
 import { sendEmail } from "./email";
+import {
+  FIRST_PRODUCTION_EXPECTATIONS,
+  isFirstProductionClient,
+} from "./first-production";
 
 const LOGO =
   "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
@@ -99,28 +103,49 @@ function shell(args: {
 // Fired the moment a client submits a slot on their scheduling link.
 export async function sendProductionRequestReceived(
   client: RevClient,
-  send: ScheduledSend
+  send: ScheduledSend,
+  opts?: { first?: boolean }
 ): Promise<boolean> {
   if (!client.contact_email?.trim()) return false;
   const name = client.contact_name?.trim();
   const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
+  const first = Boolean(opts?.first) || isFirstProductionClient(client);
 
   const { subject, html, text } = shell({
-    subject: "We've got your production request",
-    preheader: `Your request for ${when} is in. Your account manager will confirm shortly.`,
+    subject: first
+      ? "We've got your first production request"
+      : "We've got your production request",
+    preheader: first
+      ? `Your first production is down for ${when}. Your account manager will confirm shortly.`
+      : `Your request for ${when} is in. Your account manager will confirm shortly.`,
     eyebrow: client.name,
-    headline: "Your request is in",
-    bodyHtml: `
+    headline: first ? "Your first production is on the calendar" : "Your request is in",
+    bodyHtml: first
+      ? `
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">This is going to be a good one. We've got you down for <strong>${esc(when)}</strong>. Your account manager will confirm shortly, then we'll send a shot list so you know exactly what to expect on the day.</p>
+      <ul style="margin:0 0 22px;padding:0 0 0 18px;font-size:15px;line-height:1.6;color:#333333;">${FIRST_PRODUCTION_EXPECTATIONS.map((line) => `<li style="margin:0 0 6px;">${esc(line)}</li>`).join("")}</ul>
+    `
+      : `
       <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
       <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Thanks for booking your next production. We've got you down for <strong>${esc(when)}</strong>. Your account manager will confirm this shortly.</p>
     `,
-    bodyText: [
-      greeting,
-      "",
-      `Thanks for booking your next production. We've got you down for ${when}.`,
-      "Your account manager will confirm this shortly.",
-    ],
+    bodyText: first
+      ? [
+          greeting,
+          "",
+          `This is going to be a good one. We've got you down for ${when}.`,
+          "Your account manager will confirm shortly, then we'll send a shot list so you know exactly what to expect on the day.",
+          "",
+          ...FIRST_PRODUCTION_EXPECTATIONS.map((line) => `• ${line}`),
+        ]
+      : [
+          greeting,
+          "",
+          `Thanks for booking your next production. We've got you down for ${when}.`,
+          "Your account manager will confirm this shortly.",
+        ],
   });
 
   return sendEmail({ to: client.contact_email, subject, html, text });
@@ -129,30 +154,53 @@ export async function sendProductionRequestReceived(
 // Fired when an admin locks a requested production in as scheduled/planned.
 export async function sendProductionConfirmed(
   client: RevClient,
-  send: ScheduledSend
+  send: ScheduledSend,
+  opts?: { first?: boolean }
 ): Promise<boolean> {
   if (!client.contact_email?.trim()) return false;
   const name = client.contact_name?.trim();
   const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
+  const first =
+    Boolean(opts?.first) ||
+    isFirstProductionClient(client) ||
+    /first production/i.test(send.title || "");
 
   const { subject, html, text } = shell({
-    subject: "Your production is confirmed",
-    preheader: `You're booked for ${when}. A shot list is on its way.`,
+    subject: first
+      ? "Your first production is confirmed"
+      : "Your production is confirmed",
+    preheader: first
+      ? `You're booked for ${when}. We'll send a shot list so you know what to expect.`
+      : `You're booked for ${when}. A shot list is on its way.`,
     eyebrow: client.name,
-    headline: "You're booked",
-    bodyHtml: `
+    headline: first ? "You're booked — let's make this one count" : "You're booked",
+    bodyHtml: first
+      ? `
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">Your first production is confirmed for <strong>${esc(when)}</strong>.</p>
+      <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Our team will send over a shot list shortly. Come ready to show us the work you're proud of — we'll take it from there.</p>
+    `
+      : `
       <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
       <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">Your production is confirmed for <strong>${esc(when)}</strong>.</p>
       <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Our team will send over a shot list shortly. We'll see you then.</p>
     `,
-    bodyText: [
-      greeting,
-      "",
-      `Your production is confirmed for ${when}.`,
-      "",
-      "Our team will send over a shot list shortly. We'll see you then.",
-    ],
+    bodyText: first
+      ? [
+          greeting,
+          "",
+          `Your first production is confirmed for ${when}.`,
+          "",
+          "Our team will send over a shot list shortly. Come ready to show us the work you're proud of — we'll take it from there.",
+        ]
+      : [
+          greeting,
+          "",
+          `Your production is confirmed for ${when}.`,
+          "",
+          "Our team will send over a shot list shortly. We'll see you then.",
+        ],
   });
 
   return sendEmail({ to: client.contact_email, subject, html, text });

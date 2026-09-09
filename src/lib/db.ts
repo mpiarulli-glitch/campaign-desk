@@ -827,6 +827,8 @@ export interface ExtraProductionRequest {
   window_start: string; // YYYY-MM-DD
   window_end: string; // YYYY-MM-DD
   note: string;
+  // extra = catch-up / ad hoc. first = onboarding their first production.
+  kind: "extra" | "first";
   created_by: string;
   bc_card_id: string | null;
   bc_card_at: string | null;
@@ -1559,6 +1561,8 @@ export function getDb(): Database.Database {
       window_start TEXT NOT NULL,
       window_end TEXT NOT NULL,
       note TEXT NOT NULL DEFAULT '',
+      -- extra = catch-up / ad hoc. first = onboarding their first production.
+      kind TEXT NOT NULL DEFAULT 'extra',
       created_by TEXT NOT NULL DEFAULT '',
       bc_card_id TEXT,
       bc_card_at TEXT,
@@ -2915,6 +2919,13 @@ function migrate(database: Database.Database) {
   if (reminderCols.length && !reminderCols.includes("bc_nudge_count")) {
     database.exec(
       `ALTER TABLE schedule_reminders ADD COLUMN bc_nudge_count INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+
+  const extraReqCols = tableColumns(database, "extra_production_requests");
+  if (extraReqCols.length && !extraReqCols.includes("kind")) {
+    database.exec(
+      `ALTER TABLE extra_production_requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'extra'`
     );
   }
 

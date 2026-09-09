@@ -98,6 +98,7 @@ export async function GET() {
             windowEnd: openExtraRequest.window_end,
             bcCardAt: openExtraRequest.bc_card_at,
             emailSentAt: openExtraRequest.email_sent_at,
+            kind: openExtraRequest.kind === "first" ? "first" : "extra",
           }
         : null,
     };

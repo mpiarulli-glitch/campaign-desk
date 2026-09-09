@@ -26,6 +26,7 @@ import {
   fulfillMatchingExtraRequest,
   listOpenExtraRequests as listOpenExtraWindows,
 } from "./extra-requests";
+import { isFirstProductionClient } from "./first-production";
 import { resolveMissedAllocatedWindow } from "./missed-production-window";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -70,7 +71,10 @@ export interface SchedulingStatus {
   // An admin-picked window inviting an extra production, if one is open and
   // its dates have not all passed. When present, the client's out-of-cycle
   // date picker is bounded to it.
-  extraWindow: { start: string; end: string; note: string } | null;
+  extraWindow: { start: string; end: string; note: string; kind: "extra" | "first" } | null;
+  // True until they have a last_production_date, so the booking page can
+  // welcome them instead of talking about their "next" shoot.
+  isFirst: boolean;
   // The window we asked them to book, after every day in it has passed and
   // they still have not. The link stays valid; the page offers a makeup
   // booking instead of those expired dates.
@@ -130,6 +134,7 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
         start: liveExtra.window_start,
         end: liveExtra.window_end,
         note: liveExtra.note,
+        kind: (liveExtra.kind === "first" ? "first" : "extra") as "extra" | "first",
       }
     : null;
   const missedWindow = resolveMissedAllocatedWindow({
@@ -210,6 +215,7 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
     extraRequests: listOpenExtraBookings(client.id),
     extraWindow,
     missedWindow,
+    isFirst: isFirstProductionClient(client) || extraWindow?.kind === "first",
   };
 }
 
@@ -489,7 +495,9 @@ export async function submitProductionBooking(
     detailsUrl: crewUrl(result.send.id),
     note,
   });
-  await sendProductionRequestReceived(result.client, result.send);
+  await sendProductionRequestReceived(result.client, result.send, {
+    first: isFirstProductionClient(result.client),
+  });
 
   return result;
 }
@@ -591,6 +599,9 @@ export async function submitOutOfCycleBooking(
   const liveInvite = listOpenExtraWindows(client.id).find(
     (req) => req.window_end >= today
   );
+  const firstInvite = listOpenExtraWindows(client.id).find(
+    (req) => req.kind === "first"
+  );
   if (
     liveInvite &&
     (date < liveInvite.window_start || date > liveInvite.window_end)
@@ -636,14 +647,19 @@ export async function submitOutOfCycleBooking(
     const send = createSend({
       clientId: currentClient.id,
       clientName: currentClient.name,
-      title: `${currentClient.name} out-of-cycle production`,
+      title:
+        firstInvite
+          ? `${currentClient.name} first production`
+          : `${currentClient.name} out-of-cycle production`,
       sendDate: date,
       sendTime: time,
       duration,
       status: "requested",
       note,
       productionBrief: JSON.stringify(brief),
-      cadenceWindowStart: null,
+      cadenceWindowStart: firstInvite
+          ? productionWindowForDate(currentClient.color_week, date)?.start || null
+          : null,
       requestedByClient: true,
     });
     return { ok: true, send, client: currentClient };
@@ -653,6 +669,9 @@ export async function submitOutOfCycleBooking(
   if (!result.ok) return result;
   fulfillMatchingExtraRequest(result.client.id, date, result.send.id);
   fulfillExpiredOpenExtraRequest(result.client.id, today, result.send.id);
+  if (firstInvite && !result.send.cadence_window_start) {
+    advanceLastProduction(result.client.id, date);
+  }
   const videographer = result.client.videographer_id
     ? listVideographers(true).find(
         (person) => person.id === result.client.videographer_id
@@ -667,9 +686,15 @@ export async function submitOutOfCycleBooking(
     sendTime: time,
     duration,
     detailsUrl: crewUrl(result.send.id),
-    note: note ? `Out-of-cycle request. ${note}` : "Out-of-cycle request.",
+    note: firstInvite
+      ? note || "First production request."
+      : note
+        ? `Out-of-cycle request. ${note}`
+        : "Out-of-cycle request.",
   });
-  await sendProductionRequestReceived(result.client, result.send);
+  await sendProductionRequestReceived(result.client, result.send, {
+    first: Boolean(firstInvite),
+  });
 
   return result;
 }

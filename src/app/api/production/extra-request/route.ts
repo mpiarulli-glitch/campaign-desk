@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getSession, isAdminAuthenticated, scheduleUrl } from "@/lib/auth";
+import { getOrCreateScheduleToken } from "@/lib/cadence";
 import { getRevClient } from "@/lib/revenue";
 import {
   createExtraRequest,
@@ -7,7 +8,6 @@ import {
   sendExtraRequestOutreach,
 } from "@/lib/extra-requests";
 import { isRealDate } from "@/lib/scheduling-rules";
-import { getSession } from "@/lib/auth";
 import { teamLabel } from "@/lib/team";
 
 // One client's history of ad hoc scheduling invitations (open, fulfilled, and
@@ -23,8 +23,9 @@ export async function GET(request: Request) {
   return NextResponse.json({ requests: listExtraRequestsForClient(clientId) });
 }
 
-// Defines a hand-picked window for a client and immediately reaches out
-// (Basecamp card + email), the same way a cadence reminder does.
+// Defines a hand-picked window for a client. By default reaches out (Basecamp
+// card + email); pass sendOutreach: false to only open the window and return
+// the scheduling link for the operator to send themselves.
 export async function POST(request: Request) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
   const windowStart = typeof body.windowStart === "string" ? body.windowStart : "";
   const windowEnd = typeof body.windowEnd === "string" ? body.windowEnd : "";
   const note = typeof body.note === "string" ? body.note.trim() : "";
+  const sendOutreach = body.sendOutreach !== false;
 
   if (!clientId) {
     return NextResponse.json({ error: "Pick a client." }, { status: 400 });
@@ -71,7 +73,17 @@ export async function POST(request: Request) {
     note,
     createdBy,
   });
-  const outreach = await sendExtraRequestOutreach(extraRequest, client);
+  const token = getOrCreateScheduleToken(client.id);
+  const scheduleLink = token ? scheduleUrl(token) : "";
+  const outreach = sendOutreach
+    ? await sendExtraRequestOutreach(extraRequest, client)
+    : {
+        basecamp: { ok: false, skipped: true as const },
+        email: { ok: false, skipped: true as const },
+      };
 
-  return NextResponse.json({ request: extraRequest, outreach }, { status: 201 });
+  return NextResponse.json(
+    { request: extraRequest, outreach, scheduleUrl: scheduleLink },
+    { status: 201 }
+  );
 }
