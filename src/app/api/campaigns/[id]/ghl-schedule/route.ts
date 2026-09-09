@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { isGhlConfigured } from "@/lib/ghl";
 import { applyExactGhlLinks } from "@/lib/ghl-links";
-import { listLocationEmailSchedules } from "@/lib/ghl-email-analytics";
+import { listLocationEmailSchedules, fillGhlSendTimes } from "@/lib/ghl-email-analytics";
 import { matchEmailsToGhlSchedules } from "@/lib/campaign-ghl-schedule";
 import {
   getCampaignById,
@@ -78,6 +78,12 @@ export async function GET(_request: Request, { params }: Params) {
       subjects: email.subjects.map((s) => s.subject).filter(Boolean),
     })),
     schedules
+  );
+  await fillGhlSendTimes(
+    locationId,
+    matched
+      .map((row) => row.schedule)
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
   );
 
   return NextResponse.json({

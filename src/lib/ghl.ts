@@ -309,6 +309,8 @@ interface RequestOptions {
   agencyLevel?: boolean;
   /** JSON request body. Needed by POST /contacts/search and the tag writes. */
   body?: unknown;
+  /** Override the Version header. Email Marketing V2 uses `v3`. */
+  version?: string;
 }
 
 export async function ghlRequest<T = unknown>(
@@ -316,7 +318,7 @@ export async function ghlRequest<T = unknown>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { locationId, params, agencyLevel = false, body } = options;
+  const { locationId, params, agencyLevel = false, body, version } = options;
 
   let token: string;
   if (agencyLevel) token = await getAgencyToken();
@@ -334,7 +336,7 @@ export async function ghlRequest<T = unknown>(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     Accept: "application/json",
-    Version: API_VERSION,
+    Version: version || API_VERSION,
   };
   if (locationId && !agencyLevel) headers["location_id"] = locationId;
 

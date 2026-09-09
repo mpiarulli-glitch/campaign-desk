@@ -1232,20 +1232,23 @@ export default function AdminCampaignPage() {
           (item: { emailId?: string; sendDate?: string; sendTime?: string; ghlName?: string }) =>
             item.emailId === row.id
         );
-        if (!match?.sendDate) return row;
+        if (!match?.ghlName && !match?.sendDate) return row;
         return {
           ...row,
-          sendDate: match.sendDate,
+          sendDate: match.sendDate || row.sendDate,
           sendTime: match.sendTime || row.sendTime,
           ghlName: match.ghlName || "",
         };
       })
     );
-    const filled = matches.filter(
-      (item: { emailId?: string; sendDate?: string }) =>
-        item.sendDate && scheduleEmailRows.some((row) => row.id === item.emailId)
+    const named = matches.filter(
+      (item: { emailId?: string; ghlName?: string | null }) =>
+        item.ghlName && scheduleEmailRows.some((row) => row.id === item.emailId)
+    );
+    const filled = named.filter(
+      (item: { sendDate?: string }) => item.sendDate
     ).length;
-    const first = matches.find(
+    const first = named.find(
       (item: { emailId?: string; sendDate?: string; sendTime?: string }) =>
         item.sendDate && item.emailId === scheduleEmailRows[0]?.id
     );
@@ -1256,7 +1259,9 @@ export default function AdminCampaignPage() {
     setGhlHint(
       filled
         ? `Filled ${filled} date${filled === 1 ? "" : "s"} from GoHighLevel.`
-        : "No matching scheduled campaigns in GoHighLevel. Set the dates by hand."
+        : named.length
+          ? "Found matching campaigns in GoHighLevel, but not a send time. Set the dates by hand."
+          : "No matching scheduled campaigns in GoHighLevel. Set the dates by hand."
     );
   }
 

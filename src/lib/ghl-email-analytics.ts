@@ -391,14 +391,7 @@ async function listScheduledCampaigns(locationId: string): Promise<RawSchedule[]
       items?: RawSchedule[];
     }>("GET", "/emails/schedule", {
       locationId,
-      params: {
-        locationId,
-        limit,
-        offset,
-        limitedFields: false,
-        campaignsOnly: true,
-        archived: false,
-      },
+      params: { locationId, limit, offset },
     });
     const page = result.schedules || result.data || result.items || [];
     rows.push(...page);
@@ -407,20 +400,126 @@ async function listScheduledCampaigns(locationId: string): Promise<RawSchedule[]
   return rows;
 }
 
+function unwrapCampaign(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+  const nested = asRecord(obj.campaign) || asRecord(obj.data) || asRecord(obj.email);
+  return nested || obj;
+}
+
+async function listV2EmailCampaigns(
+  locationId: string,
+  status: string
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  const limit = 20;
+  try {
+    for (let offset = 0; offset < 200; offset += limit) {
+      const result = await ghlRequest<{
+        campaigns?: Record<string, unknown>[];
+        data?: Record<string, unknown>[];
+      }>("GET", `/emails/locations/${locationId}/campaigns/emails`, {
+        locationId,
+        version: "v3",
+        params: { limit, offset, status },
+      });
+      const page = result.campaigns || result.data || [];
+      rows.push(...page);
+      if (page.length < limit) break;
+    }
+  } catch {
+    // Tokens without emails/campaigns.readonly still have the legacy list.
+  }
+  return rows;
+}
+
+async function fetchV2EmailCampaign(
+  locationId: string,
+  campaignId: string
+): Promise<Record<string, unknown> | null> {
+  try {
+    const result = await ghlRequest(
+      "GET",
+      `/emails/locations/${locationId}/campaigns/emails/${campaignId}`,
+      { locationId, version: "v3" }
+    );
+    return unwrapCampaign(result);
+  } catch {
+    return null;
+  }
+}
+
+function scheduleName(raw: Record<string, unknown>): string {
+  return String(raw.name || raw.title || "").trim();
+}
+
+function toScheduleRow(raw: Record<string, unknown>): GhlEmailSchedule {
+  const rec = raw as RawSchedule & Record<string, unknown>;
+  return {
+    id: String(rec.id || rec._id || ""),
+    name: scheduleName(rec),
+    subject: scheduleSubject(rec),
+    status: String(rec.status || "").trim() || "unknown",
+    scheduledAt: ghlCampaignSendAt(rec),
+  };
+}
+
+function mergeScheduleRows(lists: Record<string, unknown>[][]): GhlEmailSchedule[] {
+  const byId = new Map<string, GhlEmailSchedule>();
+  for (const list of lists) {
+    for (const raw of list) {
+      const row = toScheduleRow(raw);
+      if (!row.id) continue;
+      const prev = byId.get(row.id);
+      if (!prev) {
+        byId.set(row.id, row);
+        continue;
+      }
+      byId.set(row.id, {
+        ...prev,
+        name: row.name || prev.name,
+        subject: row.subject || prev.subject,
+        status: row.status !== "unknown" ? row.status : prev.status,
+        scheduledAt: row.scheduledAt || prev.scheduledAt,
+      });
+    }
+  }
+  return [...byId.values()].filter((row) => row.name);
+}
+
+/** Pull send timestamps onto rows that only have a name from the list APIs. */
+export async function fillGhlSendTimes(
+  locationId: string,
+  schedules: GhlEmailSchedule[]
+): Promise<void> {
+  const missing = schedules.filter((row) => row.id && !row.scheduledAt);
+  if (!missing.length) return;
+  await pooled(missing, async (row) => {
+    const detail = await fetchV2EmailCampaign(locationId, row.id);
+    if (!detail) return;
+    const sendAt = ghlCampaignSendAt(detail);
+    if (sendAt) row.scheduledAt = sendAt;
+    const subject = String(detail.subject || "").trim();
+    if (subject && !row.subject) row.subject = subject;
+    const name = scheduleName(detail);
+    if (name && !row.name) row.name = name;
+  });
+}
+
 /** Scheduled (and recently sent) GHL email blasts for one subaccount. */
 export async function listLocationEmailSchedules(
   locationId: string
 ): Promise<GhlEmailSchedule[]> {
-  const rows = await listScheduledCampaigns(locationId);
-  return rows
-    .map((raw) => ({
-      id: String(raw.id || raw._id || ""),
-      name: String(raw.name || "").trim(),
-      subject: scheduleSubject(raw),
-      status: String(raw.status || "").trim() || "unknown",
-      scheduledAt: ghlCampaignSendAt(raw as Record<string, unknown>),
-    }))
-    .filter((row) => row.id && row.name);
+  const [legacy, scheduled, processing] = await Promise.all([
+    listScheduledCampaigns(locationId),
+    listV2EmailCampaigns(locationId, "scheduled"),
+    listV2EmailCampaigns(locationId, "processing"),
+  ]);
+  return mergeScheduleRows([
+    legacy as unknown as Record<string, unknown>[],
+    scheduled,
+    processing,
+  ]);
 }
 
 async function fetchCampaignStats(
