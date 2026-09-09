@@ -4,6 +4,7 @@
 // one request per project plus one per thread, on every page load. A sweep
 // mirrors the threads into basecamp_client_messages and the report reads that.
 
+import { looksLikeAdsLaunch, stripHtml } from "./ads-launch";
 import { getDb, nowIso, type BasecampClientMessage } from "./db";
 import { basecampConnected, listProjectMessages, type BcMessageThread } from "./basecamp";
 import { listRevClients } from "./revenue";
@@ -115,8 +116,11 @@ export async function syncClientMessages(): Promise<MessageSyncResult> {
     dropped += droppedThreads;
     for (const t of threads) {
       const verdict = judgeThread(t);
-      // Threads our own people talk on among themselves aren't the point.
-      if (!verdict.clientInvolved) continue;
+      const preview = stripHtml(t.contentText || "").slice(0, 400);
+      const adsLaunch = looksLikeAdsLaunch(`${t.title} ${preview}`);
+      // Client threads are the unanswered-message report. Ads-launch posts are
+      // kept even when only our side wrote, so the hub daily note can see them.
+      if (!verdict.clientInvolved && !adsLaunch) continue;
       rows.push({
         id: `${projectId}:${t.id}`,
         project_id: projectId,
@@ -130,6 +134,7 @@ export async function syncClientMessages(): Promise<MessageSyncResult> {
         last_team_at: verdict.lastTeamAt,
         reply_count: t.replies.length,
         awaiting_reply: verdict.awaitingReply ? 1 : 0,
+        preview,
         synced_at: ts,
       });
     }
@@ -142,14 +147,15 @@ export async function syncClientMessages(): Promise<MessageSyncResult> {
     const ins = db.prepare(
       `INSERT INTO basecamp_client_messages
          (id, project_id, client_id, client_name, title, app_url, author_name,
-          created_at, last_client_at, last_team_at, reply_count, awaiting_reply, synced_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          created_at, last_client_at, last_team_at, reply_count, awaiting_reply,
+          preview, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const r of batch) {
       ins.run(
         r.id, r.project_id, r.client_id, r.client_name, r.title, r.app_url,
         r.author_name, r.created_at, r.last_client_at, r.last_team_at,
-        r.reply_count, r.awaiting_reply, r.synced_at
+        r.reply_count, r.awaiting_reply, r.preview, r.synced_at
       );
     }
   });

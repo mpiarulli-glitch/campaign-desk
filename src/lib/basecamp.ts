@@ -834,6 +834,82 @@ export async function listMyAssignments(identity: BcIdentity): Promise<BcAssignm
   }
 }
 
+export interface BcReading {
+  id: number;
+  section: string;
+  title: string;
+  excerpt: string;
+  projectName: string;
+  actor: string;
+  url: string;
+  at: string;
+  unread: boolean;
+}
+
+/**
+ * The signed-in person's Basecamp inbox: unreads plus recently read items.
+ * Must use their own token — the service account's inbox is not the team's.
+ */
+export async function listMyReadings(identity: BcIdentity): Promise<BcReading[]> {
+  try {
+    const res = await bc(
+      `/my/readings.json?limit_bubble_ups=true`,
+      undefined,
+      identity
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      unreads?: unknown;
+      reads?: unknown;
+    };
+    return shapeReadings(body);
+  } catch {
+    return [];
+  }
+}
+
+export function shapeReadings(body: {
+  unreads?: unknown;
+  reads?: unknown;
+}): BcReading[] {
+  const seen = new Set<string>();
+  const out: BcReading[] = [];
+  for (const raw of [
+    ...(Array.isArray(body.unreads) ? body.unreads : []),
+    ...(Array.isArray(body.reads) ? body.reads : []),
+  ]) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as {
+      id?: number;
+      section?: string;
+      title?: string;
+      content_excerpt?: string;
+      bucket_name?: string;
+      app_url?: string;
+      updated_at?: string;
+      created_at?: string;
+      unread_count?: number;
+      unread_at?: string | null;
+      creator?: { name?: string };
+    };
+    const id = String(r.id ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id: Number(r.id),
+      section: r.section || "inbox",
+      title: (r.title || "Update").trim(),
+      excerpt: (r.content_excerpt || "").trim(),
+      projectName: r.bucket_name || "",
+      actor: r.creator?.name || "",
+      url: r.app_url || "",
+      at: r.updated_at || r.created_at || "",
+      unread: Boolean(r.unread_at) || (r.unread_count || 0) > 0,
+    });
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------ schedule feed */
 
 export interface BcScheduleEntry {
@@ -2121,6 +2197,7 @@ export interface BcMessageThread {
   createdAt: string;
   authorName: string;
   authorIsClient: boolean;
+  contentText: string;
   // Every comment on the thread, oldest first.
   replies: Array<{ createdAt: string; authorName: string; authorIsClient: boolean }>;
 }
@@ -2173,6 +2250,7 @@ export async function listProjectMessages(
       id: number;
       subject?: string;
       title?: string;
+      content?: string;
       created_at: string;
       app_url?: string;
       comments_count?: number;
@@ -2198,8 +2276,14 @@ export async function listProjectMessages(
             ? []
             : await bcCollection<{
                 created_at: string;
+                content?: string;
                 creator?: { name?: string; client?: boolean; employee?: boolean };
               }>(`/buckets/${projectId}/recordings/${m.id}/comments.json`, pages);
+
+        const commentText = comments
+          .map((c) => c.content || "")
+          .filter(Boolean)
+          .join(" ");
 
         return {
           id: m.id,
@@ -2208,6 +2292,7 @@ export async function listProjectMessages(
           createdAt: m.created_at,
           authorName: m.creator?.name || "Unknown",
           authorIsClient: personIsClient(m.creator),
+          contentText: `${m.content || ""} ${commentText}`.trim(),
           replies: comments
             .map((c) => ({
               createdAt: c.created_at,

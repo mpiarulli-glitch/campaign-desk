@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DailyNote } from "@/components/hub/DailyNote";
 
 type Section = "resources" | "sops" | "training" | "sentiment";
 type Sop = { id: string; title: string; category: string };
@@ -80,6 +81,8 @@ export function HubHome({
       </div>
 
       <div className="hq-bento">
+        <DailyNote />
+
         {/* RESOURCES */}
         <div className="hq-card t-res" style={{ cursor: "default" }}>
           <div className="hq-card-head">

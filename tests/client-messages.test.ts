@@ -22,6 +22,7 @@ function thread(
     createdAt: at(createdAgo),
     authorName: authorIsClient ? "Client Person" : "MEG Person",
     authorIsClient,
+    contentText: "",
     replies: replies.map(([isClient, ago]) => ({
       createdAt: at(ago),
       authorName: isClient ? "Client Person" : "MEG Person",

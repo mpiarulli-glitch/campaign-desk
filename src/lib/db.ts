@@ -117,6 +117,8 @@ export interface SocialBatch {
   signoff_step_id: string | null;
   issue_tag: string;
   issue_note: string;
+  review_token: string;
+  qa_assignee_slug: string;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -462,6 +464,7 @@ export interface BasecampClientMessage {
   last_team_at: string;
   reply_count: number;
   awaiting_reply: number;
+  preview: string;
   synced_at: string;
 }
 
@@ -1814,6 +1817,7 @@ export function getDb(): Database.Database {
       last_team_at TEXT NOT NULL DEFAULT '',
       reply_count INTEGER NOT NULL DEFAULT 0,
       awaiting_reply INTEGER NOT NULL DEFAULT 0,
+      preview TEXT NOT NULL DEFAULT '',
       synced_at TEXT NOT NULL
     );
 
@@ -2415,6 +2419,8 @@ export function getDb(): Database.Database {
       signoff_step_id TEXT,
       issue_tag TEXT NOT NULL DEFAULT '',
       issue_note TEXT NOT NULL DEFAULT '',
+      review_token TEXT NOT NULL DEFAULT '',
+      qa_assignee_slug TEXT NOT NULL DEFAULT '',
       archived_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -2422,6 +2428,8 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_social_batches_client ON social_batches(client_id);
     CREATE INDEX IF NOT EXISTS idx_social_batches_status ON social_batches(status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_social_batches_review_token
+      ON social_batches(review_token) WHERE review_token != '';
 
     CREATE TABLE IF NOT EXISTS social_posts (
       id TEXT PRIMARY KEY,
@@ -3291,6 +3299,40 @@ function migrate(database: Database.Database) {
   }
   if (socialBatchCols.length && !socialBatchCols.includes("qa_at")) {
     database.exec(`ALTER TABLE social_batches ADD COLUMN qa_at TEXT`);
+  }
+  if (socialBatchCols.length && !socialBatchCols.includes("review_token")) {
+    database.exec(
+      `ALTER TABLE social_batches ADD COLUMN review_token TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (socialBatchCols.length && !socialBatchCols.includes("qa_assignee_slug")) {
+    database.exec(
+      `ALTER TABLE social_batches ADD COLUMN qa_assignee_slug TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  const missingReviewToken = database
+    .prepare(
+      `SELECT id FROM social_batches WHERE review_token IS NULL OR review_token = ''`
+    )
+    .all() as Array<{ id: string }>;
+  if (missingReviewToken.length) {
+    const setToken = database.prepare(
+      `UPDATE social_batches SET review_token = ? WHERE id = ?`
+    );
+    for (const row of missingReviewToken) {
+      setToken.run(nanoid(24), row.id);
+    }
+  }
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_social_batches_review_token
+      ON social_batches(review_token) WHERE review_token != ''
+  `);
+
+  const bcMsgCols = tableColumns(database, "basecamp_client_messages");
+  if (bcMsgCols.length && !bcMsgCols.includes("preview")) {
+    database.exec(
+      `ALTER TABLE basecamp_client_messages ADD COLUMN preview TEXT NOT NULL DEFAULT ''`
+    );
   }
 
   database.exec(`
