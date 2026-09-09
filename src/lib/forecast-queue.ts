@@ -21,6 +21,8 @@ export interface QueueTodo {
   projectId: string;
   clientId: string;
   clientName: string;
+  // Basecamp app URL when known (assignments /my feed); used to open the item.
+  appUrl?: string;
 }
 
 /**
