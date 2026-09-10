@@ -190,6 +190,8 @@ export default function SnapshotEditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [name, setName] = useState("");
+  const [launchDate, setLaunchDate] = useState<string | null>(null);
+  const [contractEnd, setContractEnd] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -289,6 +291,8 @@ export default function SnapshotEditorPage() {
       if (!res.ok) { setError("Account not found."); return; }
       const data = await res.json();
       setName(data.account.name);
+      setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
+      setContractEnd(typeof data.account.contractEnd === "string" ? data.account.contractEnd : null);
       setDeliverables(data.deliverables || []);
       setToken(data.token || null);
       setWins(data.wins || []);
@@ -300,6 +304,31 @@ export default function SnapshotEditorPage() {
       setError("Network error. Check your connection and try again.");
     }
   }, [id, router]);
+
+  async function saveLaunchDate(next: string) {
+    const value = next.trim();
+    setLaunchDate(value || null);
+    try {
+      const res = await fetch(`/api/snapshot/accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ launchDate: value || null }),
+      });
+      if (!res.ok) {
+        setError("Could not save the launch date.");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (typeof data.launchDate === "string" || data.launchDate === null) {
+        setLaunchDate(data.launchDate);
+      }
+      if (typeof data.contractEnd === "string" || data.contractEnd === null) {
+        setContractEnd(data.contractEnd);
+      }
+    } catch {
+      setError("Could not save the launch date.");
+    }
+  }
 
   // Leads are scoped to the week being viewed by default, with "All" as an
   // escape hatch — the same choice the client gets on the shared link.
@@ -642,6 +671,26 @@ export default function SnapshotEditorPage() {
           <p className="ops-eyebrow">Account snapshot</p>
           <h1 className="ops-title">{name || "Account"}</h1>
           <p className="ops-sub">{scopeLabel}</p>
+          <label className="snap-launch">
+            <span>Launch date</span>
+            <input
+              type="date"
+              value={launchDate || ""}
+              aria-label="Account launch date"
+              onChange={(e) => void saveLaunchDate(e.target.value)}
+            />
+            {contractEnd ? (
+              <span className="snap-launch-through">
+                through{" "}
+                {new Date(+contractEnd.slice(0, 4), +contractEnd.slice(5, 7) - 1, +contractEnd.slice(8, 10)).toLocaleDateString(
+                  "en-US",
+                  { month: "short", day: "numeric", year: "numeric" }
+                )}
+              </span>
+            ) : (
+              <span className="snap-launch-through">Set this so catch-up has a start</span>
+            )}
+          </label>
         </div>
         {section === "week" || section === "leads" ? (
           <div className="snap-desk-week">
@@ -797,6 +846,7 @@ export default function SnapshotEditorPage() {
                               void loadMeta();
                               void fetchWeek(week);
                             }}
+                            launchDate={launchDate}
                           />
                         ))}
                       </div>
@@ -1127,6 +1177,7 @@ function FillRow({
   onSave,
   onRetry,
   onCatchUpDone,
+  launchDate,
 }: {
   row: Row;
   viewWeek: string;
@@ -1140,6 +1191,7 @@ function FillRow({
   onSave: (patch: Partial<Row>) => void;
   onRetry: () => void;
   onCatchUpDone: () => void;
+  launchDate: string | null;
 }) {
   const chip = ownershipChip(row);
   const hint = fillPeriodHint({
@@ -1237,6 +1289,7 @@ function FillRow({
           deliverableId={row.deliverable_id}
           kind={row.kind}
           cadenceUnit={row.cadence_unit}
+          launchDate={launchDate}
           onDone={onCatchUpDone}
         />
       ) : null}

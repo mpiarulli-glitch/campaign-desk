@@ -17429,6 +17429,28 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   max-width: 640px;
 }
 
+.snap-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.snap-launch span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.snap-launch-through {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
 .snap-desk-week {
   display: flex;
   align-items: center;
@@ -17589,6 +17611,16 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   background: var(--text);
   border-color: var(--text);
   color: var(--bg-elevated);
+}
+.snap-chip-wide {
+  min-width: 0;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.snap-catchup-need-launch {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 .snap-chip-unit {
   font-size: 13px;

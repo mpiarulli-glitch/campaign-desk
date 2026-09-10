@@ -39,7 +39,7 @@ import {
   periodStartFor,
   weekOfYmd,
 } from "./snapshot-entry-date";
-import { catchUpPeriods } from "./snapshot-catchup";
+import { catchUpPeriods, resolveSnapshotLaunchDate, addCalendarMonths } from "./snapshot-catchup";
 
 export {
   defaultLoggedForDate,
@@ -242,6 +242,39 @@ export function getAccountByToken(token: string): RevClient | null {
       .prepare(`SELECT * FROM rev_clients WHERE snapshot_token = ?`)
       .get(token) as RevClient | undefined) || null
   );
+}
+
+export function snapshotLaunchDateFor(account: RevClient): string | null {
+  return resolveSnapshotLaunchDate(account);
+}
+
+export function setSnapshotLaunchDate(
+  clientId: string,
+  launchDate: string | null,
+  opts?: { contractMonths?: number }
+): { launchDate: string | null; contractStart: string | null; contractEnd: string | null } | null {
+  const acct = getAccount(clientId);
+  if (!acct) return null;
+  const value = launchDate && /^\d{4}-\d{2}-\d{2}$/.test(launchDate) ? launchDate : null;
+  const months =
+    typeof opts?.contractMonths === "number" && opts.contractMonths > 0
+      ? Math.floor(opts.contractMonths)
+      : 0;
+  const contractStart = value && months ? value : acct.contract_start;
+  const contractEnd = value && months ? addCalendarMonths(value, months) : acct.contract_end;
+  getDb()
+    .prepare(
+      `UPDATE rev_clients
+          SET snapshot_launch_date = ?, contract_start = ?, contract_end = ?, updated_at = ?
+        WHERE id = ?`
+    )
+    .run(value, contractStart, contractEnd, nowIso(), clientId);
+  const next = getAccount(clientId)!;
+  return {
+    launchDate: snapshotLaunchDateFor(next),
+    contractStart: next.contract_start,
+    contractEnd: next.contract_end,
+  };
 }
 
 /* -------------------------------------------------------- deliverables */
@@ -809,12 +842,15 @@ export function catchUpDeliverable(input: {
   if (kind === "one_time") return { ok: false, error: "one_time" };
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const today = input.today ?? todayYmd();
+  const account = getAccount(deliverable.client_id);
+  const launchYmd = account ? snapshotLaunchDateFor(account) : null;
   const periods = catchUpPeriods({
     kind,
     unit,
     fromYmd: input.from,
     toYmd: input.to,
     today,
+    launchYmd,
   });
   if (periods.length === 0) return { ok: false, error: "empty_range" };
 

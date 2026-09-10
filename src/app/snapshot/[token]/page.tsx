@@ -156,6 +156,7 @@ function hasUpdate(r: Row, viewWeek: string): boolean {
 export default function SnapshotClientPage() {
   const { token } = useParams<{ token: string }>();
   const [accountName, setAccountName] = useState("");
+  const [launchDate, setLaunchDate] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [overview, setOverview] = useState<Overview[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
@@ -196,6 +197,7 @@ export default function SnapshotClientPage() {
         if (res.ok) {
           const data = await res.json();
           setAccountName(data.account.name);
+          setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
           setRows(data.rows || []);
           setOverview(data.overview || []);
           setWins(data.wins || []);
@@ -344,7 +346,7 @@ export default function SnapshotClientPage() {
             {/* Hero */}
             <div className="snap-head-row">
               <div className="hq-hero" style={{ marginBottom: 0 }}>
-                <p className="ops-eyebrow">Weekly snapshot · Week of {weekLabel(week)}{isCurrentWeek(week) ? " · current" : ""}</p>
+                <p className="ops-eyebrow">Weekly snapshot · Week of {weekLabel(week)}{isCurrentWeek(week) ? " · current" : ""}{launchDate ? ` · launched ${ymdLabel(launchDate)}` : ""}</p>
                 <h1>{accountName || "Account snapshot"}</h1>
                 <p>
                   <b>{glance.delivered}</b> delivered this week, <b>{glance.active}</b> in progress

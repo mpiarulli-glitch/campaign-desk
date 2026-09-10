@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import {
   CATCH_UP_MONTH_CHOICES,
+  catchUpFromDate,
   catchUpPeriodLabel,
   catchUpPeriods,
-  firstDayMonthsBack,
 } from "@/lib/snapshot-catchup";
 import type { CadenceUnit, DeliverableKind } from "@/lib/db";
 
@@ -14,24 +14,38 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function launchLabel(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+type Span = "launch" | (typeof CATCH_UP_MONTH_CHOICES)[number];
+
 export function SnapshotCatchUp({
   deliverableId,
   kind,
   cadenceUnit,
+  launchDate,
   onDone,
 }: {
   deliverableId: string;
   kind: DeliverableKind;
   cadenceUnit: CadenceUnit;
+  launchDate: string | null;
   onDone: () => void;
 }) {
-  const [months, setMonths] = useState(4);
+  const [span, setSpan] = useState<Span>(launchDate ? "launch" : 4);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ marked: number; skipped: number } | null>(null);
 
   const today = todayYmd();
-  const from = firstDayMonthsBack(months, today);
+  const from = catchUpFromDate(span, today, launchDate);
   const periods = useMemo(
     () =>
       catchUpPeriods({
@@ -40,8 +54,9 @@ export function SnapshotCatchUp({
         fromYmd: from,
         toYmd: today,
         today,
+        launchYmd: launchDate,
       }),
-    [kind, cadenceUnit, from, today]
+    [kind, cadenceUnit, from, today, launchDate]
   );
 
   if (kind === "one_time") return null;
@@ -88,17 +103,39 @@ export function SnapshotCatchUp({
 
   return (
     <div className="snap-catchup-panel">
+      {!launchDate ? (
+        <p className="snap-catchup-need-launch">
+          Set the launch date at the top of this page so catch-up starts when the
+          account actually went live.
+        </p>
+      ) : (
+        <p className="snap-catchup-need-launch">Won&apos;t go before launch · {launchLabel(launchDate)}</p>
+      )}
       <p className="snap-catchup-label">How far back?</p>
       <div className="snap-chip-row" role="radiogroup" aria-label="Months to catch up">
+        {launchDate ? (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={span === "launch"}
+            className={`snap-chip snap-chip-wide ${span === "launch" ? "is-on" : ""}`}
+            onClick={() => {
+              setSpan("launch");
+              setResult(null);
+            }}
+          >
+            Since launch
+          </button>
+        ) : null}
         {CATCH_UP_MONTH_CHOICES.map((n) => (
           <button
             key={n}
             type="button"
             role="radio"
-            aria-checked={months === n}
-            className={`snap-chip ${months === n ? "is-on" : ""}`}
+            aria-checked={span === n}
+            className={`snap-chip ${span === n ? "is-on" : ""}`}
             onClick={() => {
-              setMonths(n);
+              setSpan(n);
               setResult(null);
             }}
           >

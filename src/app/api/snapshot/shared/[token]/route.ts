@@ -6,6 +6,7 @@ import {
   listWins,
   metricsSeries,
   revenueAsk,
+  snapshotLaunchDateFor,
   weekBounds,
   weekData,
   weeksWithLeads,
@@ -33,7 +34,11 @@ export async function GET(request: Request, { params }: Params) {
   // lead we've ever logged for the account.
   const allLeads = params_.get("leads") === "all";
   return NextResponse.json({
-    account: { name: account.name },
+    account: {
+      name: account.name,
+      launchDate: snapshotLaunchDateFor(account),
+      contractEnd: account.contract_end || null,
+    },
     week,
     // Internal authorship is stripped here. The client-facing report is signed by
     // the agency, and which staff member typed a status is not theirs to read.

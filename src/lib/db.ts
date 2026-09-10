@@ -350,6 +350,10 @@ export interface RevClient {
   monthly_cost: number;
   ltv: number | null;
   snapshot_token: string | null;
+  // When this account went live for snapshot / contracted work. Catch-up
+  // never marks periods before this date. Falls back to lifecycle launch or
+  // contract start when unset (see resolveSnapshotLaunchDate).
+  snapshot_launch_date: string | null;
   // Share token for the client-facing editorial-plan approval page.
   calendar_token: string | null;
   // When/who last approved the shared editorial calendar (client side).
@@ -1428,6 +1432,7 @@ export function getDb(): Database.Database {
       monthly_cost REAL NOT NULL DEFAULT 0,
       ltv REAL,
       snapshot_token TEXT,
+      snapshot_launch_date TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       monthly_email_quota INTEGER NOT NULL DEFAULT 0,
       lifecycle_launch_date TEXT,
@@ -2829,6 +2834,9 @@ function migrate(database: Database.Database) {
   }
   if (revClientCols.length && !revClientCols.includes("lifecycle_launch_date")) {
     database.exec(`ALTER TABLE rev_clients ADD COLUMN lifecycle_launch_date TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("snapshot_launch_date")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN snapshot_launch_date TEXT`);
   }
   if (revClientCols.length && !revClientCols.includes("lifecycle_email_platform")) {
     database.exec(

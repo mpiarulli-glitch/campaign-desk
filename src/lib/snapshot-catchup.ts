@@ -15,13 +15,15 @@ export type CatchUpPeriod = {
 export function clampCatchUpRange(
   fromYmd: string,
   toYmd: string,
-  today: string
+  today: string,
+  launchYmd?: string | null
 ): { from: string; to: string } | null {
   if (!YMD.test(fromYmd) || !YMD.test(toYmd) || !YMD.test(today)) return null;
   let from = fromYmd;
   let to = toYmd;
   if (from > to) [from, to] = [to, from];
   if (to > today) to = today;
+  if (launchYmd && YMD.test(launchYmd) && from < launchYmd) from = launchYmd;
   if (from > to) return null;
   return { from, to };
 }
@@ -49,10 +51,11 @@ export function catchUpPeriods(input: {
   fromYmd: string;
   toYmd: string;
   today?: string;
+  launchYmd?: string | null;
 }): CatchUpPeriod[] {
   if (input.kind === "one_time") return [];
   const today = input.today ?? input.toYmd;
-  const range = clampCatchUpRange(input.fromYmd, input.toYmd, today);
+  const range = clampCatchUpRange(input.fromYmd, input.toYmd, today, input.launchYmd);
   if (!range) return [];
 
   const out: CatchUpPeriod[] = [];
@@ -99,4 +102,44 @@ export function catchUpSummary(unit: CadenceUnit, periods: CatchUpPeriod[]): str
   }
   const noun = unit === "quarterly" ? "quarters" : "months";
   return `${periods.length} ${noun} (${first} – ${last})`;
+}
+
+const LAUNCH_YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Snapshot launch date, then lifecycle launch, then contract start. */
+export function resolveSnapshotLaunchDate(account: {
+  snapshot_launch_date?: string | null;
+  lifecycle_launch_date?: string | null;
+  contract_start?: string | null;
+}): string | null {
+  for (const v of [account.snapshot_launch_date, account.lifecycle_launch_date, account.contract_start]) {
+    if (v && LAUNCH_YMD.test(v)) return v;
+  }
+  return null;
+}
+
+export function catchUpFromDate(
+  months: number | "launch",
+  today: string,
+  launchYmd?: string | null
+): string {
+  const from =
+    months === "launch" && launchYmd && LAUNCH_YMD.test(launchYmd)
+      ? launchYmd
+      : firstDayMonthsBack(typeof months === "number" ? months : 4, today);
+  if (launchYmd && LAUNCH_YMD.test(launchYmd) && from < launchYmd) return launchYmd;
+  return from;
+}
+
+/** Calendar months later, keeping the day when it exists in that month. */
+export function addCalendarMonths(ymd: string, months: number): string {
+  if (!LAUNCH_YMD.test(ymd)) return ymd;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const last = new Date(y, m - 1 + months + 1, 0).getDate();
+  const day = Math.min(d, last);
+  const dt = new Date(y, m - 1 + months, day);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }

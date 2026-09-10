@@ -4,16 +4,25 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  addCalendarMonths,
+  catchUpFromDate,
   catchUpPeriodLabel,
   catchUpPeriods,
   catchUpSummary,
   firstDayMonthsBack,
+  resolveSnapshotLaunchDate,
 } from "../src/lib/snapshot-catchup";
 
 test("firstDayMonthsBack counts the current month", () => {
   assert.equal(firstDayMonthsBack(4, "2026-09-10"), "2026-06-01");
   assert.equal(firstDayMonthsBack(1, "2026-09-10"), "2026-09-01");
   assert.equal(firstDayMonthsBack(3, "2026-02-03"), "2025-12-01");
+});
+
+test("addCalendarMonths keeps the day", () => {
+  assert.equal(addCalendarMonths("2026-06-04", 12), "2027-06-04");
+  assert.equal(addCalendarMonths("2026-07-20", 6), "2027-01-20");
+  assert.equal(addCalendarMonths("2024-07-19", 6), "2025-01-19");
 });
 
 test("monthly catch-up is one period per month, not per meeting", () => {
@@ -42,6 +51,42 @@ test("weekly catch-up lists each due week", () => {
   assert.deepEqual(
     periods.map((p) => p.periodStart),
     ["2026-08-10", "2026-08-17", "2026-08-24"]
+  );
+});
+
+test("catch-up does not start before launch", () => {
+  const periods = catchUpPeriods({
+    kind: "recurring",
+    unit: "monthly",
+    fromYmd: "2026-01-01",
+    toYmd: "2026-09-10",
+    today: "2026-09-10",
+    launchYmd: "2026-07-15",
+  });
+  assert.deepEqual(
+    periods.map((p) => p.periodStart),
+    ["2026-07-01", "2026-08-01", "2026-09-01"]
+  );
+  assert.equal(catchUpFromDate(6, "2026-09-10", "2026-07-15"), "2026-07-15");
+  assert.equal(catchUpFromDate("launch", "2026-09-10", "2026-07-15"), "2026-07-15");
+});
+
+test("resolveSnapshotLaunchDate prefers snapshot then lifecycle then contract", () => {
+  assert.equal(
+    resolveSnapshotLaunchDate({
+      snapshot_launch_date: "2026-06-01",
+      lifecycle_launch_date: "2026-01-01",
+      contract_start: "2025-12-01",
+    }),
+    "2026-06-01"
+  );
+  assert.equal(
+    resolveSnapshotLaunchDate({
+      snapshot_launch_date: null,
+      lifecycle_launch_date: "2026-03-10",
+      contract_start: "2025-12-01",
+    }),
+    "2026-03-10"
   );
 });
 
