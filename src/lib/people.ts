@@ -117,11 +117,18 @@ export function campaignKindFor(slug: string | null): CampaignKindScope | null {
 
    Specialists (a slug in PERSON_TEAM) default to their own work. Account
    managers are an explicit list (SNAPSHOT_ACCOUNT_MANAGERS): they see every
-   row, with strategy and account work sorted to the top. Untagged rows are
-   classified from their category/name rather than shown to every specialist
-   — see snapshot-fill.ts.
+   row, with Client Services (strategy, brand, production) sorted to the
+   top. Untagged rows are classified from their category/name rather than
+   shown to every specialist — see snapshot-fill.ts.
    ------------------------------------------------------------------------- */
-export type Team = "email" | "seo" | "social" | "web" | "onboarding" | "client_services";
+export type Team =
+  | "email"
+  | "seo"
+  | "social"
+  | "web"
+  | "onboarding"
+  | "client_services"
+  | "ads";
 
 export const TEAMS: Array<{ slug: Team; label: string }> = [
   { slug: "email", label: "Email" },
@@ -130,6 +137,7 @@ export const TEAMS: Array<{ slug: Team; label: string }> = [
   { slug: "web", label: "Web" },
   { slug: "onboarding", label: "Onboarding" },
   { slug: "client_services", label: "Client Services" },
+  { slug: "ads", label: "Ads" },
 ];
 
 export function isTeam(v: unknown): v is Team {
@@ -159,6 +167,7 @@ export function teamLabelFor(slug: string): string {
  *   luis_romero  onboarding
  *   cassidy      client_services
  *   kyle_morris  client_services
+ *   mike_hines   ads
  */
 export const PERSON_TEAM: Record<string, Team> = {
   michael: "email",
@@ -171,9 +180,10 @@ export const PERSON_TEAM: Record<string, Team> = {
   luis_romero: "onboarding",
   cassidy: "client_services",
   kyle_morris: "client_services",
+  mike_hines: "ads",
 };
 
-/** Cassidy and Kyle Morris: every deliverable, strategy/account rows first. */
+/** Cassidy and Kyle Morris: every deliverable, Client Services rows first. */
 export const SNAPSHOT_ACCOUNT_MANAGERS = ["cassidy", "kyle_morris"] as const;
 
 export function isSnapshotAccountManager(slug: string | null): boolean {

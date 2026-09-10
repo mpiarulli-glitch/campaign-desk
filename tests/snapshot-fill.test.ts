@@ -54,7 +54,19 @@ test("untagged rows are classified from category and name", () => {
   );
   assert.equal(
     inferDeliverableOwnership({ team: "", category: "Production", name: "Monthly video shoot" }),
-    "social"
+    "client_services"
+  );
+  assert.equal(
+    inferDeliverableOwnership({ team: "", category: "Creative", name: "Brand positioning" }),
+    "client_services"
+  );
+  assert.equal(
+    inferDeliverableOwnership({ team: "", category: "Paid Media", name: "Google ads" }),
+    "ads"
+  );
+  assert.equal(
+    inferDeliverableOwnership({ team: "", category: "", name: "Meta ads management" }),
+    "ads"
   );
   assert.equal(
     inferDeliverableOwnership({ team: "", category: "Onboarding", name: "Kickoff call" }),
@@ -66,11 +78,23 @@ test("untagged rows are classified from category and name", () => {
   );
   assert.equal(
     inferDeliverableOwnership({ team: "", category: "Strategy", name: "Quarterly review" }),
-    "strategy"
+    "client_services"
+  );
+  assert.equal(
+    inferDeliverableOwnership({ team: "", category: "Strategy & Planning", name: "Account planning" }),
+    "client_services"
   );
   assert.equal(
     inferDeliverableOwnership({ team: "", category: "Reporting", name: "Performance review" }),
-    "strategy"
+    "client_services"
+  );
+  assert.equal(
+    inferDeliverableOwnership({ team: "email", category: "Strategy", name: "Monthly strategy meeting" }),
+    "client_services"
+  );
+  assert.equal(
+    inferDeliverableOwnership({ team: "social", category: "Production", name: "Video shoot" }),
+    "client_services"
   );
 });
 
@@ -104,6 +128,13 @@ test("specialists only see their own work, inferred or tagged", () => {
   assert.equal(deliverableVisibleTo(email, "seo"), false);
   assert.equal(deliverableVisibleTo(strategy, "seo"), false);
   assert.equal(deliverableVisibleTo(strategy, "email"), false);
+  assert.equal(deliverableVisibleTo(strategy, "client_services"), true);
+  const production = { team: "", category: "Production", name: "Monthly video shoot" };
+  const ads = { team: "", category: "Paid Media", name: "Google ads" };
+  assert.equal(deliverableVisibleTo(production, "social"), false);
+  assert.equal(deliverableVisibleTo(production, "client_services"), true);
+  assert.equal(deliverableVisibleTo(ads, "ads"), true);
+  assert.equal(deliverableVisibleTo(ads, "client_services"), false);
   const onboard = { team: "", category: "Onboarding", name: "Kickoff call" };
   assert.equal(deliverableVisibleTo(onboard, "onboarding"), true);
   assert.equal(deliverableVisibleTo(onboard, "email"), false);
@@ -113,7 +144,7 @@ test("specialists only see their own work, inferred or tagged", () => {
   assert.equal(deliverableVisibleTo(mystery, null), true);
 });
 
-test("account managers see strategy first, then mysteries, then specialist work", () => {
+test("account managers see Client Services first, then mysteries, then specialist work", () => {
   const rows = [
     { team: "email", category: "Email", name: "Broadcasts" },
     { team: "", category: "Ops", name: "Mystery task" },
@@ -149,6 +180,10 @@ test("visibleFillRows combines specialist filter and AM sort", () => {
     ["Broadcasts"]
   );
   assert.deepEqual(
+    visibleFillRows(rows, "client_services").map((r) => r.name),
+    ["Account planning"]
+  );
+  assert.deepEqual(
     visibleFillRows(rows, null, { accountManager: true }).map((r) => r.name),
     ["Account planning", "Broadcasts", "Reels"]
   );
@@ -167,6 +202,7 @@ test("the stated roster drives focus, AM sort, and See all", () => {
   const saqib = { role: "forecast" as const, person: "saqib", owner: false };
   const luis = { role: "admin" as const, person: "luis_romero", owner: false };
   const jack = { role: "forecast" as const, person: "jack", owner: false };
+  const mike = { role: "forecast" as const, person: "mike_hines", owner: false };
 
   assert.equal(fillFocusTeam(owner), "email");
   assert.equal(fillIsAccountManager(owner), false);
@@ -184,6 +220,10 @@ test("the stated roster drives focus, AM sort, and See all", () => {
 
   assert.equal(fillFocusTeam(kyle), "client_services");
   assert.equal(fillIsAccountManager(kyle), true);
+
+  assert.equal(fillFocusTeam(mike), "ads");
+  assert.equal(fillIsAccountManager(mike), false);
+  assert.equal(fillCanSeeAll(mike), false);
 
   assert.equal(fillFocusTeam(carlos), "seo");
   assert.equal(fillIsAccountManager(carlos), false);

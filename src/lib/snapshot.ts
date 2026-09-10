@@ -284,10 +284,9 @@ export function setSnapshotLaunchDate(
  *
  * `team` narrows the list to what that specialist owns. Untagged rows are
  * classified from category/name (see snapshot-fill): a blank team on "Blog
- * posts" is still SEO work, and a blank team on "Quarterly review" is
- * strategy that only the unscoped (account manager / See all) list shows.
- * Pass no team to see all of them, which is what account managers and the
- * owner get from the API.
+ * posts" is still SEO work, and strategy / brand / production are Client
+ * Services while ads are Ads. Pass no team to see all of them, which is what
+ * account managers and the owner get from the API.
  */
 export function listDeliverables(
   clientId: string,

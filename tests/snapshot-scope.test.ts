@@ -55,12 +55,12 @@ test("weekly snapshot scoped to a team", async (t) => {
     clientId: "cl_1", category: "Web", name: "Landing page updates", cadence: "as needed",
   });
 
-  await t.test("SEO sees SEO work, not strategy or another team's untagged rows", () => {
+  await t.test("SEO sees SEO work, not Client Services or another team's untagged rows", () => {
     const names = snapshot.listDeliverables("cl_1", { team: "seo" }).map((d) => d.name).sort();
     assert.deepEqual(names, ["Blog posts"]);
   });
 
-  await t.test("social sees social media and video, not LinkedIn outreach or blogs", () => {
+  await t.test("social sees social media posts, not video production or LinkedIn outreach", () => {
     const names = snapshot.listDeliverables("cl_1", { team: "social" }).map((d) => d.name).sort();
     assert.deepEqual(names, ["Instagram posts"]);
   });
@@ -70,11 +70,34 @@ test("weekly snapshot scoped to a team", async (t) => {
     assert.deepEqual(names, ["Appointment reminders", "Broadcast emails", "LinkedIn outreach"]);
   });
 
+  await t.test("strategy, brand, and production land on Client Services; ads on Ads", () => {
+    snapshot.createDeliverable({
+      clientId: "cl_1", category: "Production", name: "Monthly video shoot", cadence: "",
+    });
+    snapshot.createDeliverable({
+      clientId: "cl_1", category: "Creative", name: "Brand kit", cadence: "",
+    });
+    snapshot.createDeliverable({
+      clientId: "cl_1", category: "Paid Media", name: "Google ads", cadence: "",
+    });
+    const cs = snapshot.listDeliverables("cl_1", { team: "client_services" }).map((d) => d.name).sort();
+    assert.deepEqual(cs, [
+      "Brand kit",
+      "Monthly video shoot",
+      "Quarterly review",
+    ]);
+    const ads = snapshot.listDeliverables("cl_1", { team: "ads" }).map((d) => d.name);
+    assert.deepEqual(ads, ["Google ads"]);
+    assert.ok(
+      !snapshot.listDeliverables("cl_1", { team: "social" }).some((d) => d.name === "Monthly video shoot")
+    );
+  });
+
   await t.test("strategy and untagged mysteries stay on the unscoped AM list", () => {
     const all = snapshot.listDeliverables("cl_1").map((d) => d.name);
     assert.ok(all.includes("Quarterly review"));
     assert.ok(all.includes("Mystery task"));
-    assert.equal(snapshot.listDeliverables("cl_1", { team: null }).length, 9);
+    assert.equal(snapshot.listDeliverables("cl_1", { team: null }).length, 12);
     const web = snapshot.listDeliverables("cl_1", { team: "web" }).map((d) => d.name);
     assert.deepEqual(web, ["Landing page updates"]);
     const onboard = snapshot.listDeliverables("cl_1", { team: "onboarding" }).map((d) => d.name);

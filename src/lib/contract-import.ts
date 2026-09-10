@@ -42,11 +42,11 @@ const CATEGORY_RULES: Array<{
   { test: /\b(client services?|account management|account manager)\b/i, category: "Client Services", team: "client_services" },
   { test: new RegExp(`\\b(social|instagram|facebook|tiktok|linkedin|reel${S}|stor(?:y|ies)|post${S}|community management)\\b`, "i"), category: "Social", team: "social" },
   { test: new RegExp(`\\b(website${S}|web ?site${S}|landing page${S}|webpage${S}|wordpress|shopify|hosting|web design|web dev)\\b`, "i"), category: "Web", team: "web" },
-  { test: new RegExp(`\\b(video${S}|photo${S}|shoot${S}|production${S}|videograph\\w*|content capture)\\b`, "i"), category: "Production", team: "social" },
-  { test: /\b(ads?|advertising|ppc|paid|google ads|meta ads|adwords)\b/i, category: "Paid Media", team: "" },
-  { test: new RegExp(`\\b(report${S}|analytics|dashboard${S}|kpi${S})\\b`, "i"), category: "Reporting", team: "" },
-  { test: new RegExp(`\\b(strategy|strategic|consult\\w*|meeting${S}|call${S}|review session${S}|planning)\\b`, "i"), category: "Strategy", team: "" },
-  { test: new RegExp(`\\b(brand\\w*|logo${S}|design${S}|creative|graphic${S})\\b`, "i"), category: "Creative", team: "" },
+  { test: new RegExp(`\\b(video${S}|photo${S}|shoot${S}|production${S}|videograph\\w*|content capture)\\b`, "i"), category: "Production", team: "client_services" },
+  { test: /\b(ads?|advertising|ppc|paid|google ads|meta ads|adwords)\b/i, category: "Paid Media", team: "ads" },
+  { test: new RegExp(`\\b(report${S}|analytics|dashboard${S}|kpi${S})\\b`, "i"), category: "Reporting", team: "client_services" },
+  { test: new RegExp(`\\b(strategy|strategic|consult\\w*|meeting${S}|call${S}|review session${S}|planning)\\b`, "i"), category: "Strategy", team: "client_services" },
+  { test: new RegExp(`\\b(brand\\w*|logo${S}|design${S}|creative|graphic${S})\\b`, "i"), category: "Creative", team: "client_services" },
 ];
 
 function classify(text: string): { category: string; team: string } {

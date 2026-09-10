@@ -13,20 +13,22 @@ import {
 
 // How the team-side weekly snapshot decides what to put in front of someone.
 //
-// The stored `team` column is the source of truth when it is set. A lot of
-// existing rows are still blank, so category + name are read as a fallback:
-// "Blog posts" is SEO work even if nobody tagged it, and "LinkedIn outreach"
-// is email work even though a bare "LinkedIn" would look like social.
+// The stored `team` column is the source of truth when it is set, except
+// Client Services fill work (strategy, brand, video production) and Ads
+// (paid media): those always go to their department on the weekly fill list,
+// even if another team was stored. Untagged rows otherwise fall back to
+// category + name: "Blog posts" is SEO even if nobody tagged it, and
+// "LinkedIn outreach" is email even though a bare "LinkedIn" would look like
+// social.
 //
-// Specialists only see their own work. Strategy / account rows, and anything
-// we cannot place, go to account managers — they are the people who would
-// otherwise fill a hole nobody else can see. That is the only remaining
-// fail-open: an untagged mystery is visible on the unscoped (AM / See all)
-// list, not on every specialist's list.
+// Specialists only see their own work. Untagged mysteries go to account
+// managers — they are the people who would otherwise fill a hole nobody else
+// can see. That is the only remaining fail-open: a mystery is visible on the
+// unscoped (AM / See all) list, not on every specialist's list.
 
 export type FillStatus = SnapshotStatus;
 
-export type FillOwnership = Team | "strategy" | "unknown";
+export type FillOwnership = Team | "unknown";
 
 export type FillLane = "overdue" | "todo" | "done";
 
@@ -147,14 +149,44 @@ function haystack(row: FillNamed): string {
   return `${row.category} ${row.name}`.trim().toLowerCase();
 }
 
+/** Categories Client Services always fills on the weekly snapshot. */
+function clientServicesFillCategory(category: string): boolean {
+  const c = category.trim().toLowerCase();
+  return (
+    c === "strategy" ||
+    c === "planning" ||
+    /^strategy\s*(&|and)\s*(planning|client)$/.test(c) ||
+    c === "brand" ||
+    c === "creative" ||
+    /^brand\b/.test(c) ||
+    c === "production" ||
+    /^video\b/.test(c)
+  );
+}
+
+/** Categories Mike Hines / Ads always fills on the weekly snapshot. */
+function adsFillCategory(category: string): boolean {
+  const c = category.trim().toLowerCase();
+  return (
+    c === "paid media" ||
+    c === "paid ads" ||
+    c === "ads" ||
+    /^paid\b/.test(c)
+  );
+}
+
 /**
  * Who owns this row for the fill list.
  *
- * A stored team always wins. Untagged rows are classified from the words in
- * the category and name, matching how contract import already files work.
- * LinkedIn outreach is email (CRM / sequences); LinkedIn posts stay social.
+ * Strategy, brand, and video production are always Client Services. Ads /
+ * paid media are always Ads (Mike Hines). Otherwise a stored team wins.
+ * Untagged rows are classified from the words in the category and name,
+ * matching how contract import already files work. LinkedIn outreach is
+ * email (CRM / sequences); LinkedIn posts stay social.
  */
 export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
+  if (clientServicesFillCategory(row.category)) return "client_services";
+  if (adsFillCategory(row.category)) return "ads";
   if (isTeam(row.team) && row.team) return row.team;
 
   const text = haystack(row);
@@ -194,9 +226,35 @@ export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
   }
 
   if (
-    /\b(video|reel|tiktok|instagram|facebook|social|carousel|production|videograph|photo shoot|content capture)\b/.test(
+    /\b(strateg|account|qbr|quarterly review|planning|consult|am call|client call|reporting|performance review)\b/.test(
       text
-    ) ||
+    )
+  ) {
+    return "client_services";
+  }
+
+  if (/\b(brand|logo|creative|graphic design|branding)\b/.test(text)) {
+    return "client_services";
+  }
+
+  if (
+    /\b(video|production|videograph|photo shoots?|content capture|camera shoot)\b/.test(
+      text
+    )
+  ) {
+    return "client_services";
+  }
+
+  if (
+    /\b(ads?|advertising|ppc|paid media|paid ads|google ads|meta ads|adwords)\b/.test(
+      text
+    )
+  ) {
+    return "ads";
+  }
+
+  if (
+    /\b(reel|tiktok|instagram|facebook|social|carousel)\b/.test(text) ||
     /\blinkedin\b/.test(text)
   ) {
     return "social";
@@ -210,14 +268,6 @@ export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
     return "web";
   }
 
-  if (
-    /\b(strateg|account|qbr|quarterly review|planning|consult|am call|client call|reporting|performance review)\b/.test(
-      text
-    )
-  ) {
-    return "strategy";
-  }
-
   return "unknown";
 }
 
@@ -226,8 +276,8 @@ export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
  *
  * `viewerTeam` null means unscoped: account managers, See all, and the owner
  * looking at the whole account. Specialists only get rows whose stored or
- * inferred owner is their team — not strategy, not another team's untagged
- * work, not a mystery row. Those stay on the AM list so they are still filled.
+ * inferred owner is their team — not another team's untagged work, not a
+ * mystery row. Mysteries stay on the AM list so they are still filled.
  */
 export function deliverableVisibleTo(row: FillNamed, viewerTeam: Team | null): boolean {
   if (!viewerTeam) return true;
@@ -235,13 +285,13 @@ export function deliverableVisibleTo(row: FillNamed, viewerTeam: Team | null): b
 }
 
 /**
- * Account-manager ordering: strategy / account work they fill themselves
+ * Account-manager ordering: Client Services (strategy, brand, production)
  * first, then untagged mysteries, then everyone else's specialist rows.
  * Stable for equal keys so an existing sort_order is preserved.
  */
 export function amSortKey(row: FillNamed): number {
   const ownership = inferDeliverableOwnership(row);
-  if (ownership === "strategy") return 0;
+  if (ownership === "client_services") return 0;
   if (ownership === "unknown") return 1;
   return 2;
 }

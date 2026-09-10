@@ -377,6 +377,7 @@ test("peopleWithoutTeam lists roster members with no specialist team", () => {
     "luis_romero",
     "cassidy",
     "kyle_morris",
+    "mike_hines",
   ]) {
     assert.ok(!gaps.includes(slug), `${slug} has a specialist team`);
   }
@@ -392,6 +393,7 @@ test("every team slug on a person is a real team", () => {
 test("isTeam rejects anything not on the list", () => {
   assert.equal(isTeam("onboarding"), true);
   assert.equal(isTeam("client_services"), true);
+  assert.equal(isTeam("ads"), true);
   assert.equal(isTeam("email"), true);
   assert.equal(isTeam("seo"), true);
   assert.equal(isTeam(""), false);

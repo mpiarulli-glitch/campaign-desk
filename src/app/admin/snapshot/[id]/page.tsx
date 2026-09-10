@@ -178,7 +178,6 @@ function relativeTime(iso: string): string {
 function ownershipChip(row: { team: string; category: string; name: string }): string | null {
   const ownership = inferDeliverableOwnership(row);
   if (ownership === "unknown") return null;
-  if (ownership === "strategy") return "Strategy";
   return teamLabelFor(ownership);
 }
 
