@@ -41,7 +41,10 @@ type Section = "week" | "leads" | "wins" | "metrics" | "setup" | "client";
 
 const LANE_COPY: Record<FillLane, { title: string; hint: string }> = {
   overdue: { title: "Overdue", hint: "Log it or finish it." },
-  todo: { title: "Open", hint: "Tap Done when this period happened." },
+  todo: {
+    title: "Open",
+    hint: "This week, this month, this quarter, and one-time setup that is not finished yet.",
+  },
   done: { title: "Logged", hint: "Already recorded for this period." },
 };
 
@@ -90,13 +93,6 @@ type Contract = {
   onTrack: boolean;
   label: string;
 };
-
-function contractColor(c: Contract): string {
-  if (c.totalCount === 0) return "var(--text-muted)";
-  if (c.pct >= 90) return "var(--success)";
-  if (c.pct >= 60) return "var(--warning)";
-  return "var(--danger)";
-}
 
 function groupSeries(rows: MetricRow[]): MetricSeries[] {
   const map = new Map<string, MetricSeries>();
@@ -726,23 +722,13 @@ export default function SnapshotEditorPage() {
           {counts.total > 0 ? (
             <div className={`ads-pass-banner ${counts.attention === 0 ? "is-clear" : "is-work"}`}>
               <p className="ads-pass-banner-line">{passLine}</p>
+              {counts.attention > 0 ? (
+                <p className="ads-pass-banner-hint">
+                  This list is current work and unfinished setup. It is not the last-period
+                  score.
+                </p>
+              ) : null}
             </div>
-          ) : null}
-
-          {contract && isAdmin ? (
-            <p className="snap-desk-contract">
-              Contract fulfillment{" "}
-              <strong style={{ color: contractColor(contract) }}>
-                {contract.totalCount > 0 ? `${contract.pct}%` : "—"}
-              </strong>
-              <span className="muted">
-                {" "}
-                {contract.totalCount > 0
-                  ? `${contract.doneCount} of ${contract.totalCount} landed last period.`
-                  : "Nothing due long enough to score yet."}
-                {contract.inFlightCount > 0 ? ` ${contract.inFlightCount} still in this period.` : ""}
-              </span>
-            </p>
           ) : null}
 
           {pendingRev.length > 0 ? (
@@ -1026,6 +1012,18 @@ export default function SnapshotEditorPage() {
           ) : null}
           <div className="card card-pad stack">
             <strong>Deliverables</strong>
+            {contract && isAdmin ? (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Last closed period (recurring only)
+                {contract.totalCount > 0
+                  ? `: ${contract.pct}% · ${contract.doneCount} of ${contract.totalCount} landed.`
+                  : ": nothing due long enough to score yet."}
+                {contract.inFlightCount > 0
+                  ? ` ${contract.inFlightCount} still in the current week/month/quarter.`
+                  : ""}{" "}
+                One-time setup is not in that number.
+              </p>
+            ) : null}
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
               Leave team blank for strategy or account work. Specialists only see rows
               tagged or named for their team.

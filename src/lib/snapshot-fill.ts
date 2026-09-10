@@ -103,7 +103,7 @@ export function fillPassSummary(
   }
   if (counts.todo) {
     bits.push(
-      `${counts.todo} still need${counts.todo === 1 ? "s" : ""} an update`
+      `${counts.todo} on this list still need${counts.todo === 1 ? "s" : ""} Done`
     );
   }
   return bits.join(" · ");

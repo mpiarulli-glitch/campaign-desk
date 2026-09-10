@@ -220,7 +220,7 @@ test("fill counts and the weekly pass copy", () => {
   assert.equal(fillLane(rows[4], overdue), "done"); // shared counts as logged
   assert.equal(fillLane(rows[5], overdue), "done");
   assert.equal(fillLane(rows[6], overdue), "done");
-  assert.equal(fillPassSummary(counts, true), "1 overdue · 2 still need an update");
+  assert.equal(fillPassSummary(counts, true), "1 overdue · 2 on this list still need Done");
   assert.deepEqual(
     filterFillRows(rows, "todo", overdue).map((r) => r.deliverable_id),
     ["a", "b", "c"]
