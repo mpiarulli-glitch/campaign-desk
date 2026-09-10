@@ -31,6 +31,12 @@ const CATEGORY_RULES: Array<{
   category: string;
   team: "" | Team;
 }> = [
+  // Specific scope lines before broader channel headings.
+  { test: /\bcookies?(?:\s+(?:empire|tracking))?|\bcookie\s+tracking|\btracking\s+cookies?\b/i, category: "Web", team: "web" },
+  { test: /\b(?:ai\s+)?chatbots?|\bbooking\s+bots?\b/i, category: "Web", team: "web" },
+  { test: /\bproof\s*(&|and)\s*authority|\be-?e-?a-?t\b/i, category: "Proof & Authority", team: "client_services" },
+  { test: /\bretention\b/i, category: "Retention", team: "email" },
+  { test: /\breview\s+generat|\breviews?\s*(&|and)\s*reputat|\breputation\s+manage|\breputation\b/i, category: "Reviews & Reputation", team: "email" },
   { test: new RegExp(`\\b(email${S}|newsletter${S}|broadcast${S}|klaviyo|mailchimp|e-?blast${S}|drip|lifecycle)\\b`, "i"), category: "Email", team: "email" },
   { test: /\b(sms|text messages?|texts?)\b/i, category: "SMS", team: "email" },
   { test: new RegExp(`\\b(crm|automation${S}|workflow${S}|pipeline${S}|nurture|go ?high ?level|ghl|flow${S})\\b`, "i"), category: "CRM & Automation", team: "email" },

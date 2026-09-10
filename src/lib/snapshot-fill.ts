@@ -160,7 +160,10 @@ export function clientServicesFillCategory(category: string): boolean {
     c === "creative" ||
     /^brand\b/.test(c) ||
     c === "production" ||
-    /^video\b/.test(c)
+    /^video\b/.test(c) ||
+    c === "proof & authority" ||
+    /^proof\b/.test(c) ||
+    /proof.*authority|authority.*proof/.test(c)
   );
 }
 
@@ -176,22 +179,77 @@ export function adsFillCategory(category: string): boolean {
   );
 }
 
+/** Retention / reviews / reputation — lifecycle work Michael fills (email). */
+export function emailLifecycleFillCategory(category: string): boolean {
+  const c = category.trim().toLowerCase();
+  return (
+    c === "retention" ||
+    /^retention\b/.test(c) ||
+    c === "lifecycle" ||
+    /^lifecycle\b/.test(c) ||
+    c === "reviews" ||
+    /^reviews?\b/.test(c) ||
+    /\breputation\b/.test(c) ||
+    /reviews?\s*(&|and)\s*reputat/.test(c)
+  );
+}
+
 /**
- * Team forced by category alone (strategy/brand/production → Client Services,
- * ads → Ads). Empty when the category does not force a department.
+ * Name/category phrases that always own a department, even over a stored team.
+ * Cookie tracking + AI chatbots → Web; proof & authority → Client Services;
+ * retention / reviews / reputation → Email (lifecycle).
  */
-export function forcedDepartmentTeam(category: string): Team | "" {
-  if (clientServicesFillCategory(category)) return "client_services";
-  if (adsFillCategory(category)) return "ads";
-  return "";
+function forcedOwnershipFromText(text: string): Team | null {
+  const t = text.trim().toLowerCase();
+  if (!t) return null;
+  if (
+    /\bcookies?(?:\s+(?:empire|tracking))?\b/.test(t) ||
+    /\bcookie\s+tracking\b/.test(t) ||
+    /\btracking\s+cookies?\b/.test(t)
+  ) {
+    return "web";
+  }
+  if (/\b(?:ai\s+)?chatbots?\b/.test(t) || /\bbooking\s+bots?\b/.test(t)) {
+    return "web";
+  }
+  if (
+    /\bproof\s*(&|and)\s*authority\b/.test(t) ||
+    /\be-?e-?a-?t\b/.test(t)
+  ) {
+    return "client_services";
+  }
+  if (
+    /\bretention\b/.test(t) ||
+    /\breview\s+generat/.test(t) ||
+    /\breputation\s+manage/.test(t) ||
+    /\breviews?\s*(&|and)\s*reputat/.test(t) ||
+    /\breputation\b/.test(t)
+  ) {
+    return "email";
+  }
+  return null;
+}
+
+/**
+ * Team forced by category/name (strategy/brand/production/proof → Client
+ * Services, ads → Ads, retention → Email, cookies/chatbots → Web).
+ */
+export function forcedDepartmentTeam(category: string, name = ""): Team | "" {
+  return (
+    forcedOwnershipFromText(`${category} ${name}`) ||
+    (clientServicesFillCategory(category) ? "client_services" : "") ||
+    (adsFillCategory(category) ? "ads" : "") ||
+    (emailLifecycleFillCategory(category) ? "email" : "") ||
+    ""
+  );
 }
 
 /**
  * Team slug to store on a deliverable.
  *
- * Strategy / brand / production and ads categories always resolve to their
- * department. Otherwise a stored team wins; blank rows fall back to name
- * inference. Mysteries stay blank.
+ * Strategy / brand / production / proof and ads / retention / cookies always
+ * resolve to their department. Otherwise a stored team wins; blank rows fall
+ * back to name inference. Mysteries stay blank.
  */
 export function teamToStore(row: FillNamed): Team | "" {
   const ownership = inferDeliverableOwnership(row);
@@ -201,15 +259,18 @@ export function teamToStore(row: FillNamed): Team | "" {
 /**
  * Who owns this row for the fill list.
  *
- * Strategy, brand, and video production are always Client Services. Ads /
- * paid media are always Ads (Mike Hines). Otherwise a stored team wins.
- * Untagged rows are classified from the words in the category and name,
- * matching how contract import already files work. LinkedIn outreach is
- * email (CRM / sequences); LinkedIn posts stay social.
+ * Cookie tracking and AI chatbots are Web. Proof & authority is Client
+ * Services. Retention, review generation, and reputation are Email
+ * (lifecycle). Strategy, brand, and video production are Client Services.
+ * Ads are Ads (Mike Hines). Otherwise a stored team wins. Untagged rows are
+ * classified from category and name.
  */
 export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
+  const forced = forcedOwnershipFromText(haystack(row));
+  if (forced) return forced;
   if (clientServicesFillCategory(row.category)) return "client_services";
   if (adsFillCategory(row.category)) return "ads";
+  if (emailLifecycleFillCategory(row.category)) return "email";
   if (isTeam(row.team) && row.team) return row.team;
 
   const text = haystack(row);

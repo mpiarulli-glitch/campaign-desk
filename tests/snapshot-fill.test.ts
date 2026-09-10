@@ -38,6 +38,38 @@ test("teamToStore tags strategy as Client Services and ads as Ads", () => {
     teamToStore({ team: "", category: "Ops", name: "Mystery task" }),
     ""
   );
+  assert.equal(
+    teamToStore({ team: "", category: "", name: "Cookie Empire Tracking - Daily" }),
+    "web"
+  );
+  assert.equal(
+    teamToStore({ team: "email", category: "", name: "AI Chatbot / Booking Bot" }),
+    "web"
+  );
+  assert.equal(
+    teamToStore({ team: "", category: "Proof & Authority", name: "Monthly proof posts" }),
+    "client_services"
+  );
+  assert.equal(
+    teamToStore({ team: "social", category: "", name: "Proof & Authority building" }),
+    "client_services"
+  );
+  assert.equal(
+    teamToStore({ team: "", category: "Retention", name: "Win-back sequence" }),
+    "email"
+  );
+  assert.equal(
+    teamToStore({ team: "seo", category: "", name: "Retention email flows" }),
+    "email"
+  );
+  assert.equal(
+    teamToStore({ team: "", category: "REVIEWS & REPUTATION", name: "Review generation" }),
+    "email"
+  );
+  assert.equal(
+    teamToStore({ team: "social", category: "", name: "Reputation management" }),
+    "email"
+  );
 });
 
 test("inferDeliverableOwnership reads the stored team first", () => {

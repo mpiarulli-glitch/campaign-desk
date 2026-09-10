@@ -398,7 +398,7 @@ export function updateDeliverable(
   if (updates.team !== undefined) {
     // Explicit team edit: strategy/ads categories still force their department;
     // clearing to blank otherwise stays Unassigned.
-    const forced = forcedDepartmentTeam(category);
+    const forced = forcedDepartmentTeam(category, name);
     if (forced) team = forced;
     else if (isTeam(updates.team)) team = updates.team;
     else team = "";

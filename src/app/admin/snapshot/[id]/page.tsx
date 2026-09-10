@@ -1018,8 +1018,10 @@ export default function SnapshotEditorPage() {
               </p>
             ) : null}
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Strategy, brand, and video production are Client Services; ads are
-              Ads. Specialists only see rows tagged or named for their team.
+              Strategy, brand, proof &amp; authority, and video are Client Services;
+              cookies and AI chatbots are Web; retention, reviews, and reputation
+              are Email (lifecycle); ads are Ads. Specialists only see rows tagged
+              or named for their team.
             </p>
             {deliverables.length === 0 ? (
               <p className="muted" style={{ margin: 0, fontSize: 13 }}>None yet. Add the contracted deliverables below.</p>
