@@ -10,7 +10,6 @@ import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import {
   defaultLoggedForDate,
   loggedForTargetsOtherPeriod,
-  weekOfYmd,
 } from "@/lib/snapshot-entry-date";
 import { snapshotAuthorLabel, TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
@@ -538,15 +537,10 @@ export default function SnapshotEditorPage() {
   }
 
   function loggedForForRow(delivId: string): string {
+    // Prefer an explicit date the user picked. Otherwise stamp new activity to
+    // today-in-this-week so monthly/quarterly progress shows on the client view
+    // for this week instead of staying filed under the 1st of the month.
     if (loggedForByRow[delivId]) return loggedForByRow[delivId];
-    const row = rows.find((r) => r.deliverable_id === delivId);
-    if (row?.week_start) {
-      const created = (row.created_at || "").slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(created) && weekOfYmd(created) === row.week_start) {
-        return created;
-      }
-      return row.week_start;
-    }
     return defaultLoggedForDate(week);
   }
 

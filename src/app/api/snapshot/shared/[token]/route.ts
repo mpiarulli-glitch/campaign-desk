@@ -40,11 +40,10 @@ export async function GET(request: Request, { params }: Params) {
       contractEnd: account.contract_end || null,
     },
     week,
-    // Internal authorship is stripped here. The client-facing report is signed by
-    // the agency, and which staff member typed a status is not theirs to read.
-    rows: rows.map(({ logged_by, updated_at, ...row }) => {
+    // Authorship stays internal. updated_at is kept so "this week's work" can
+    // see monthly rows that were progressed this week but filed under the 1st.
+    rows: rows.map(({ logged_by, ...row }) => {
       void logged_by;
-      void updated_at;
       return row;
     }),
     overview: deliverableOverview(account.id),

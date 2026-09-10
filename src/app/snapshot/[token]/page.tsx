@@ -38,6 +38,7 @@ type Row = {
   kind?: "recurring" | "one_time";
   week_start: string;
   created_at?: string;
+  updated_at?: string;
   status: Status;
   work_done: string;
   next_steps: string;

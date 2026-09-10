@@ -115,7 +115,54 @@ test("this week's work ignores one-off setups logged in earlier weeks", () => {
       "2026-09-08"
     ),
     false,
-    "restamped older row is not this week"
+    "restamped older row with no touch this week is not this week"
+  );
+  assert.equal(
+    isThisWeeksWork(
+      {
+        week_start: "2026-09-08",
+        created_at: "2026-08-28T00:00:00.000Z",
+        updated_at: "2026-09-10T19:00:00.000Z",
+        kind: "recurring",
+        status: "in_progress",
+        work_done: "SEO pass",
+      },
+      "2026-09-08"
+    ),
+    true,
+    "restamped older row touched this week counts"
+  );
+  assert.equal(
+    isThisWeeksWork(
+      {
+        week_start: "2026-09-01",
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-09-10T19:00:00.000Z",
+        kind: "recurring",
+        status: "in_progress",
+        work_done: "",
+        next_steps: "",
+        notes: "",
+      },
+      "2026-09-08"
+    ),
+    true,
+    "monthly row filed under the 1st still shows when progressed this week"
+  );
+  assert.equal(
+    isThisWeeksWork(
+      {
+        week_start: "2026-08-01",
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-09-10T19:00:00.000Z",
+        kind: "recurring",
+        status: "completed",
+        work_done: "Done in August",
+      },
+      "2026-09-08"
+    ),
+    false,
+    "prior-month row bumped today is not this week's work"
   );
   assert.equal(
     isThisWeeksWork(

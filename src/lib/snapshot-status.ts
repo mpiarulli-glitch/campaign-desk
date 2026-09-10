@@ -1,5 +1,7 @@
 /** Snapshot deliverable entry statuses — shared by fill desk, backfill, and client view. */
 
+import { addWeeks } from "./week";
+
 export type SnapshotStatus =
   | "not_started"
   | "in_progress"
@@ -167,28 +169,54 @@ export function snapshotStatusLabel(status: SnapshotStatus): string {
 }
 
 /**
- * Client "this week's work" — only rows actually filed on the week being viewed.
- * A one-off setup belongs here the week it was done (new account), then it
- * stays on the contract list in later weeks.
+ * Client "this week's work" — rows the team actually moved on during the
+ * week being viewed.
+ *
+ * Weekly rows are filed under that Monday. Monthly/quarterly rows are often
+ * filed under the 1st of the month, so a status change this week still counts
+ * when `updated_at` falls in the viewed week and the entry is for that month.
  */
-export function isThisWeeksWork(row: {
-  week_start?: string | null;
-  created_at?: string | null;
-  kind?: string | null;
-  status: string;
-  work_done?: string | null;
-  next_steps?: string | null;
-  notes?: string | null;
-}, viewWeek: string): boolean {
-  if (!row.week_start || row.week_start !== viewWeek) return false;
-  const created = (row.created_at || "").slice(0, 10);
-  // A row that already existed before this week, then got restamped onto
-  // this week's Monday, is not this week's work.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(created) && created < viewWeek) return false;
-  return (
+export function isThisWeeksWork(
+  row: {
+    week_start?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    kind?: string | null;
+    status: string;
+    work_done?: string | null;
+    next_steps?: string | null;
+    notes?: string | null;
+  },
+  viewWeek: string
+): boolean {
+  const hasSignal =
     row.status !== "not_started" ||
     !!(row.work_done || "").trim() ||
     !!(row.next_steps || "").trim() ||
-    !!(row.notes || "").trim()
-  );
+    !!(row.notes || "").trim();
+  if (!hasSignal || !row.week_start) return false;
+
+  const updated = (row.updated_at || "").slice(0, 10);
+  const updatedThisWeek =
+    /^\d{4}-\d{2}-\d{2}$/.test(updated) &&
+    updated >= viewWeek &&
+    updated < addWeeks(viewWeek, 1);
+
+  if (row.week_start === viewWeek) {
+    const created = (row.created_at || "").slice(0, 10);
+    // A row that already existed before this week, then got restamped onto
+    // this week's Monday, only counts when it was really touched this week.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(created) && created < viewWeek) {
+      return updatedThisWeek;
+    }
+    return true;
+  }
+
+  // Monthly/quarterly progress filed under the 1st (or another day in-month)
+  // but updated during the week the client is reading.
+  if (updatedThisWeek && row.week_start.slice(0, 7) === viewWeek.slice(0, 7)) {
+    return true;
+  }
+
+  return false;
 }
