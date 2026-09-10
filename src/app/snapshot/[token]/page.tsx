@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
-import { isSnapshotContractMet, snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
+import { isSnapshotContractMet, isThisWeeksWork, snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
@@ -35,6 +35,7 @@ type Row = {
   category: string;
   name: string;
   cadence: string;
+  week_start: string;
   status: Status;
   work_done: string;
   next_steps: string;
@@ -146,13 +147,8 @@ function groupByCategory(rows: Row[]): [string, Row[]][] {
   return Array.from(map.entries());
 }
 
-function hasUpdate(r: Row): boolean {
-  return (
-    r.status !== "not_started" ||
-    !!r.work_done.trim() ||
-    !!r.next_steps.trim() ||
-    !!r.notes.trim()
-  );
+function hasUpdate(r: Row, viewWeek: string): boolean {
+  return isThisWeeksWork(r, viewWeek);
 }
 
 export default function SnapshotClientPage() {
@@ -266,7 +262,7 @@ export default function SnapshotClientPage() {
     }
   }
 
-  const updatedRows = useMemo(() => rows.filter(hasUpdate), [rows]);
+  const updatedRows = useMemo(() => rows.filter((r) => hasUpdate(r, week)), [rows, week]);
 
   // At-a-glance figures for the report header.
   const glance = useMemo(() => {
@@ -546,7 +542,7 @@ export default function SnapshotClientPage() {
               ) : (
                 <div className="stack" style={{ gap: 18 }}>
                   {grouped.map(([category, catRows]) => {
-                    const updated = catRows.filter(hasUpdate);
+                    const updated = catRows.filter((r) => hasUpdate(r, week));
                     if (updated.length === 0) return null;
                     return (
                       <div key={category} className="snap-group">

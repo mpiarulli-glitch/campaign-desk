@@ -5,6 +5,7 @@ import {
   coalesceEntryStatus,
   inferContractMetFromNotes,
   isSnapshotContractMet,
+  isThisWeeksWork,
   normSnapshotStatus,
   SNAPSHOT_BEHIND_DONE_STATUSES,
   SNAPSHOT_FILL_OPEN_STATUSES,
@@ -80,4 +81,27 @@ test("notes can lift a forgotten status to met contract", () => {
   assert.equal(coalesceEntryStatus("in_progress", "Scheduled out until the 17th", ""), "scheduled");
   assert.equal(coalesceEntryStatus("approved", "still working", ""), "approved");
   assert.equal(coalesceEntryStatus("canceled", "Posted anyway", ""), "canceled");
+});
+
+test("this week's work ignores one-off setups logged in earlier weeks", () => {
+  const july = {
+    week_start: "2026-07-13",
+    status: "completed",
+    work_done: "Automations live",
+    next_steps: "",
+    notes: "",
+  };
+  assert.equal(isThisWeeksWork(july, "2026-09-08"), false);
+  assert.equal(isThisWeeksWork(july, "2026-07-13"), true);
+  assert.equal(
+    isThisWeeksWork({ week_start: "", status: "completed", work_done: "x" }, "2026-09-08"),
+    false
+  );
+  assert.equal(
+    isThisWeeksWork(
+      { week_start: "2026-09-08", status: "in_progress", work_done: "SEO pass" },
+      "2026-09-08"
+    ),
+    true
+  );
 });

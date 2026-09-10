@@ -165,3 +165,23 @@ export function normSnapshotStatus(v: unknown): SnapshotStatus {
 export function snapshotStatusLabel(status: SnapshotStatus): string {
   return SNAPSHOT_STATUSES.find((s) => s.value === status)?.label ?? status;
 }
+
+/**
+ * Client "this week's work" — only rows actually filed on the week being viewed.
+ * One-off setups from months ago stay completed on the contract list, not here.
+ */
+export function isThisWeeksWork(row: {
+  week_start?: string | null;
+  status: string;
+  work_done?: string | null;
+  next_steps?: string | null;
+  notes?: string | null;
+}, viewWeek: string): boolean {
+  if (!row.week_start || row.week_start !== viewWeek) return false;
+  return (
+    row.status !== "not_started" ||
+    !!(row.work_done || "").trim() ||
+    !!(row.next_steps || "").trim() ||
+    !!(row.notes || "").trim()
+  );
+}
