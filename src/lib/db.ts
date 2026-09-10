@@ -7,7 +7,7 @@ import { ADMIN_PEOPLE } from "./admin-people";
 import { PEOPLE, OWNER_SLUG } from "./people";
 import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
-import { addWeeks } from "./week";
+import { addWeeks, mondayOf } from "./week";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -3072,6 +3072,39 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE snapshot_entries ADD COLUMN logged_by TEXT NOT NULL DEFAULT ''`
     );
+  }
+
+  // One-time (and other) rows that got restamped onto a later week when someone
+  // viewed this week. Put them back on the week the row was first written.
+  if (snapEntryCols.length) {
+    const flag = database
+      .prepare(`SELECT value FROM app_settings WHERE key = 'snapshot_restore_entry_week_from_created'`)
+      .get() as { value: string } | undefined;
+    if (!flag) {
+      const stamp = new Date().toISOString();
+      const rows = database
+        .prepare(
+          `SELECT id, week_start, created_at FROM snapshot_entries`
+        )
+        .all() as Array<{ id: string; week_start: string; created_at: string }>;
+      const upd = database.prepare(
+        `UPDATE snapshot_entries SET week_start = ?, updated_at = ? WHERE id = ?`
+      );
+      for (const row of rows) {
+        const origin = mondayOf(new Date(row.created_at));
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(origin) || origin >= row.week_start) continue;
+        try {
+          upd.run(origin, stamp, row.id);
+        } catch {
+          // UNIQUE (deliverable_id, week_start)
+        }
+      }
+      database
+        .prepare(
+          `INSERT INTO app_settings (key, value, updated_at) VALUES (?, '1', ?)`
+        )
+        .run("snapshot_restore_entry_week_from_created", stamp);
+    }
   }
 
   // Do not infer "completed" from notes. That stamped done onto weeks that only

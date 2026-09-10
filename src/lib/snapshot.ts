@@ -406,6 +406,9 @@ export interface WeekRow {
   cadence_unit: CadenceUnit;
   due_date: string | null;
   period_start: string;
+  /** Monday the matching entry is filed under. Empty when nobody has logged yet. */
+  week_start: string;
+  created_at: string;
   status: SnapshotStatus;
   work_done: string;
   next_steps: string;
@@ -453,7 +456,7 @@ export function weekData(
   );
   if (!deliverables.length) return [];
 
-  const FIELDS = `status, work_done, next_steps, notes, logged_by, updated_at`;
+  const FIELDS = `week_start, created_at, status, work_done, next_steps, notes, logged_by, updated_at`;
   const exactStmt = getDb().prepare(
     `SELECT ${FIELDS} FROM snapshot_entries
      WHERE deliverable_id = ? AND week_start = ?`
@@ -478,6 +481,8 @@ export function weekData(
     const cadence_unit = normCadenceUnit(d.cadence_unit);
     let e:
       | {
+          week_start: string;
+          created_at: string;
           status: SnapshotStatus;
           work_done: string;
           next_steps: string;
@@ -509,6 +514,8 @@ export function weekData(
       cadence_unit,
       due_date: d.due_date || null,
       period_start,
+      week_start: e?.week_start ?? "",
+      created_at: e?.created_at ?? "",
       status: e?.status ?? "not_started",
       work_done: e?.work_done ?? "",
       next_steps: e?.next_steps ?? "",
@@ -667,6 +674,7 @@ export function upsertEntry(input: {
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const isOneTime = kind === "one_time";
   const periodKeyed = !isOneTime && unit !== "weekly";
+  const explicitLoggedFor = Boolean(input.loggedFor && input.loggedFor.trim());
   const anchor = (input.loggedFor || input.weekStart).trim();
   let writeKey = weekOfYmd(anchor);
   // Mondays of the week that contains the 1st can fall in the prior month.
@@ -715,9 +723,9 @@ export function upsertEntry(input: {
       }
     | undefined;
 
-  // Saving from an earlier week (a next-steps blur, a scroll-back) must not
-  // pull a later-week Complete onto that earlier week.
-  if (existing && existing.week_start > writeKey) writeKey = existing.week_start;
+  // Viewing a later week to edit notes must not restamp a July setup as
+  // "logged for today". Only an explicit Logged-for date moves the row.
+  if (existing && !explicitLoggedFor) writeKey = existing.week_start;
 
   const merged = {
     status: normStatus(input.status ?? existing?.status ?? "not_started"),

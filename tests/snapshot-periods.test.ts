@@ -120,7 +120,7 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       .prepare(`SELECT week_start FROM snapshot_entries WHERE deliverable_id = ?`)
       .all(d.id) as Array<{ week_start: string }>;
     assert.equal(rows.length, 1, "a monthly deliverable has one entry per month");
-    assert.equal(rows[0].week_start, WEEK_4, "filed under the week it was last logged");
+    assert.equal(rows[0].week_start, WEEK_1, "stays on the week it was first logged");
   });
 
   await t.test("a weekly deliverable still gets one entry per week", () => {
@@ -187,6 +187,19 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
     assert.equal(week1.status, "not_started");
     const week3 = snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!;
     assert.equal(week3.status, "completed");
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: WEEK_4,
+      status: "completed",
+      workDone: "Installed",
+    });
+    const stored = getDb()
+      .prepare(`SELECT week_start FROM snapshot_entries WHERE deliverable_id = ?`)
+      .get(d.id) as { week_start: string };
+    assert.equal(stored.week_start, WEEK_3, "later-week save does not restamp a one-off");
+    const later = snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(later.status, "completed");
+    assert.equal(later.week_start, WEEK_3);
   });
 });
 

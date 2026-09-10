@@ -9,6 +9,7 @@ import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import {
   defaultLoggedForDate,
   loggedForTargetsOtherPeriod,
+  weekOfYmd,
 } from "@/lib/snapshot-entry-date";
 import { actorLabel, TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
@@ -143,6 +144,8 @@ type Row = {
   cadence_unit: CadenceUnit;
   due_date: string | null;
   period_start: string;
+  week_start: string;
+  created_at: string;
   status: Status;
   work_done: string;
   next_steps: string;
@@ -459,7 +462,7 @@ export default function SnapshotEditorPage() {
         body: JSON.stringify({
           deliverableId: delivId,
           weekStart: week,
-          loggedFor: loggedFor !== defaultLoggedForDate(week) ? loggedFor : undefined,
+          loggedFor,
           status: patch.status,
           workDone: patch.work_done,
           nextSteps: patch.next_steps,
@@ -506,7 +509,16 @@ export default function SnapshotEditorPage() {
   }
 
   function loggedForForRow(delivId: string): string {
-    return loggedForByRow[delivId] ?? defaultLoggedForDate(week);
+    if (loggedForByRow[delivId]) return loggedForByRow[delivId];
+    const row = rows.find((r) => r.deliverable_id === delivId);
+    if (row?.week_start) {
+      const created = (row.created_at || "").slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(created) && weekOfYmd(created) === row.week_start) {
+        return created;
+      }
+      return row.week_start;
+    }
+    return defaultLoggedForDate(week);
   }
 
   function setLoggedFor(delivId: string, loggedFor: string) {
