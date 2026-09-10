@@ -16047,6 +16047,26 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   max-width: 120px;
 }
 
+.lh-quota-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lh-checklist-form > textarea {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  max-width: 320px;
+  min-height: 88px;
+  resize: vertical;
+  background: var(--bg);
+}
+
 .lh-log-form {
   display: flex;
   flex-direction: column;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   addCalendarDays,
+  automationPace,
   campaignCountsTowardQuota,
   campaignReachedClient,
   contractPace,
@@ -10,6 +11,7 @@ import {
   lastYmdOfPeriod,
   previewLaunchTodos,
   sameLifecycleAccount,
+  splitChecklistTitles,
   weekdayOnOrAfter,
 } from "../src/lib/email-launch";
 
@@ -19,6 +21,26 @@ test("automation packages and welcome series do not count toward quota", () => {
   assert.equal(campaignCountsTowardQuota("package", "Our Watch Welcome Series V2"), false);
   assert.equal(campaignCountsTowardQuota("package", "First Look Automation"), false);
   assert.equal(campaignCountsTowardQuota("package", "Browse Return Flow"), false);
+});
+
+test("pasted automation titles split into unique names", () => {
+  assert.deepEqual(splitChecklistTitles("Welcome series\nAbandoned cart\n"), [
+    "Welcome series",
+    "Abandoned cart",
+  ]);
+  assert.deepEqual(splitChecklistTitles(["Welcome series", "welcome series", " Review request "]), [
+    "Welcome series",
+    "Review request",
+  ]);
+});
+
+test("automation lists are owed until every item is done", () => {
+  assert.equal(automationPace(0, 0).status, "no_quota");
+  assert.equal(automationPace(3, 0).status, "behind");
+  assert.equal(automationPace(3, 0).remaining, 3);
+  assert.equal(automationPace(3, 0).label, "3 automations owed");
+  assert.equal(automationPace(3, 2).label, "1 automation owed");
+  assert.equal(automationPace(3, 3).status, "met");
 });
 
 test("quota ticks at client approval, not internal review", () => {

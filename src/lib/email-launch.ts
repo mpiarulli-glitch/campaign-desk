@@ -8,6 +8,26 @@
 export const EMAIL_LAUNCH_SOURCE = "email_launch";
 export const EMAIL_LAUNCH_LIST = "Email launch";
 
+/** Extra contracted items on the hub, beyond the monthly campaign-email quota. */
+export const LIFECYCLE_DELIVERABLE_SOURCE = "lifecycle_deliverable";
+export const LIFECYCLE_DELIVERABLE_LIST = "Lifecycle deliverables";
+
+/** Automations still owed on this account — checked off when the work is done. */
+export const LIFECYCLE_AUTOMATION_SOURCE = "lifecycle_automation";
+export const LIFECYCLE_AUTOMATION_LIST = "Lifecycle automations";
+
+export type HubChecklistKind = "deliverable" | "automation";
+
+export function hubChecklistMeta(kind: HubChecklistKind): {
+  source: string;
+  listName: string;
+} {
+  if (kind === "deliverable") {
+    return { source: LIFECYCLE_DELIVERABLE_SOURCE, listName: LIFECYCLE_DELIVERABLE_LIST };
+  }
+  return { source: LIFECYCLE_AUTOMATION_SOURCE, listName: LIFECYCLE_AUTOMATION_LIST };
+}
+
 export const EMAIL_PLATFORMS = [
   { slug: "ghl", label: "GHL" },
   { slug: "klaviyo", label: "Klaviyo" },
@@ -26,6 +46,22 @@ export function isEmailPlatform(value: unknown): value is EmailPlatform {
 
 export function emailPlatformLabel(slug: string | null | undefined): string {
   return EMAIL_PLATFORMS.find((p) => p.slug === slug)?.label || "";
+}
+
+/** Split a pasted list of automations or deliverables into unique titles. */
+export function splitChecklistTitles(raw: string | string[] | null | undefined): string[] {
+  const parts = Array.isArray(raw) ? raw : String(raw || "").split(/[\n\r]+/);
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const part of parts) {
+    const title = part.trim();
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    titles.push(title);
+  }
+  return titles;
 }
 
 /**
@@ -187,6 +223,25 @@ export function contractPace(
     return { status: "on_track", remaining, label: "On track" };
   }
   return { status: "behind", remaining, label: "Behind" };
+}
+
+/**
+ * Contracted automations are a set list, not monthly volume. Open items stay
+ * owed until they are checked off.
+ */
+export function automationPace(total: number, done: number): PaceResult {
+  if (total <= 0) {
+    return { status: "no_quota", remaining: 0, label: "No quota set" };
+  }
+  const remaining = Math.max(0, total - done);
+  if (remaining === 0) {
+    return { status: "met", remaining: 0, label: "Automations met" };
+  }
+  return {
+    status: "behind",
+    remaining,
+    label: remaining === 1 ? "1 automation owed" : `${remaining} automations owed`,
+  };
 }
 
 export const PACE_RANK: Record<PaceStatus, number> = {

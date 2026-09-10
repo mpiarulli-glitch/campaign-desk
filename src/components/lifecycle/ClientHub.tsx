@@ -12,6 +12,7 @@ import {
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
 import { EmailAnalyticsPanel } from "./EmailAnalyticsPanel";
+import { ChecklistBlock } from "./ChecklistBlock";
 import { ClientWorkflowsPanel } from "./ClientWorkflowsPanel";
 import { LinkedInAnalyticsPanel } from "./LinkedInAnalyticsPanel";
 
@@ -82,6 +83,8 @@ type HubClient = {
     total: number;
     todos: HubLaunchTodo[];
   };
+  deliverables: HubLaunchTodo[];
+  automations: HubLaunchTodo[];
 };
 
 const AVATAR_COLORS = [
@@ -142,6 +145,11 @@ function matchesClient(c: HubClient, id: string): boolean {
 
 function metricLabel(c: HubClient): string {
   if (c.quota > 0) return `${c.delivered} of ${c.quota}`;
+  const autos = c.automations || [];
+  if (autos.length > 0) {
+    const done = autos.filter((a) => a.status === "done").length;
+    return `${done} of ${autos.length}`;
+  }
   if (c.campaigns.length === 1) return "1 Campaign";
   if (c.campaigns.length > 1) return `${c.campaigns.length} Campaigns`;
   return "No quota";
@@ -483,8 +491,14 @@ function ClientDetail({
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
   const [quotaError, setQuotaError] = useState("");
-  const pct =
+  const automations = client.automations || [];
+  const automationDone = automations.filter((a) => a.status === "done").length;
+  const emailPct =
     client.quota > 0 ? Math.min(100, Math.round((client.delivered / client.quota) * 100)) : 0;
+  const automationPct =
+    automations.length > 0
+      ? Math.min(100, Math.round((automationDone / automations.length) * 100))
+      : 0;
 
   useEffect(() => {
     setQuotaDraft(String(client.quota || ""));
@@ -627,6 +641,9 @@ function ClientDetail({
 
       <div className="lh-detail-layout">
       <section className="lh-card lh-quota">
+        <div className="lh-card-head">
+          <h3>Deliverables</h3>
+        </div>
         {client.quota > 0 ? (
           <>
             <p className="lh-quota-num">
@@ -635,7 +652,7 @@ function ClientDetail({
             </p>
             <p className="lh-quota-label">campaign emails sent for client approval</p>
             <div className={`lh-bar is-${client.pace}`}>
-              <div className="lh-bar-fill" style={{ width: `${pct}%` }} />
+              <div className="lh-bar-fill" style={{ width: `${emailPct}%` }} />
             </div>
             <p className="lh-card-note">
               {client.pace === "met"
@@ -644,16 +661,40 @@ function ClientDetail({
                   ? "1 campaign email still owed. Counted once sent to the client for approval."
                   : `${client.remaining} campaign emails still owed. Counted once sent to the client for approval.`}
             </p>
+            {automations.length > 0 ? (
+              <p className="lh-card-note">
+                {automationDone} of {automations.length} contracted automations set up.
+              </p>
+            ) : null}
+          </>
+        ) : automations.length > 0 ? (
+          <>
+            <p className="lh-quota-num">
+              <strong>{automationDone}</strong>
+              <span> of {automations.length}</span>
+            </p>
+            <p className="lh-quota-label">contracted automations set up</p>
+            <div className={`lh-bar is-${client.pace}`}>
+              <div className="lh-bar-fill" style={{ width: `${automationPct}%` }} />
+            </div>
+            <p className="lh-card-note">
+              {automationDone === automations.length
+                ? "All contracted automations are set up. Check them off as they go live."
+                : automations.length - automationDone === 1
+                  ? "1 automation still owed. Check it off when it’s live."
+                  : `${automations.length - automationDone} automations still owed. Check them off when they’re live.`}
+            </p>
           </>
         ) : (
           <p className="lh-card-note">
-            No monthly campaign quota on file. Automations still show in the list.
+            No monthly campaign quota. Add the automations this account is contracted for, or set
+            emails per month.
           </p>
         )}
 
         <div className="lh-quota-tools">
           <label className="lh-field">
-            <span>Contracted /mo</span>
+            <span>Campaign emails /mo</span>
             <input
               type="number"
               min={0}
@@ -671,6 +712,34 @@ function ClientDetail({
             />
           </label>
           {quotaError ? <p className="lh-error">{quotaError}</p> : null}
+          {client.quota > 0 ? (
+            <p className="lh-card-note">
+              Set this to 0 if the account is moving from monthly sends to a set list of automations.
+            </p>
+          ) : null}
+
+          <div className="lh-quota-block">
+            <span className="lh-log-label">Automations to set up</span>
+            <ChecklistBlock
+              items={automations}
+              empty="Add each automation this account is contracted for — welcome series, abandoned cart, and so on. Paste one per line."
+              addLabel="Add automations"
+              placeholder={"Welcome series\nAbandoned cart\nReview request"}
+              kind="automation"
+              clientId={client.id}
+              onChanged={onChanged}
+            />
+          </div>
+
+          <ChecklistBlock
+            items={client.deliverables || []}
+            empty="Add LinkedIn, SMS, landing pages, or other contracted work."
+            addLabel="Add deliverable"
+            placeholder="e.g. LinkedIn campaigns"
+            kind="deliverable"
+            clientId={client.id}
+            onChanged={onChanged}
+          />
 
           <form className="lh-log-form" onSubmit={(e) => void submitLog(e)}>
             <span className="lh-log-label">Log campaign</span>

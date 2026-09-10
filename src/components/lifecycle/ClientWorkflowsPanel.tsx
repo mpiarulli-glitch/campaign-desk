@@ -84,7 +84,7 @@ export function ClientWorkflowsPanel({
   return (
     <section className="lh-card lh-workflows">
       <div className="lh-card-head">
-        <h3>Automations</h3>
+        <h3>Live workflows</h3>
         {ghlLinked ? (
           <button
             type="button"
@@ -103,11 +103,18 @@ export function ClientWorkflowsPanel({
           account.
         </p>
       ) : error ? (
-        <p className="lh-error">{error}</p>
+        <>
+          <h4 className="lh-subhead">Live in GoHighLevel</h4>
+          <p className="lh-error">{error}</p>
+        </>
       ) : loading && !data ? (
-        <p className="lh-card-note">Pulling workflows from GoHighLevel…</p>
+        <>
+          <h4 className="lh-subhead">Live in GoHighLevel</h4>
+          <p className="lh-card-note">Pulling workflows from GoHighLevel…</p>
+        </>
       ) : data ? (
         <>
+          <h4 className="lh-subhead">Live in GoHighLevel</h4>
           <p className="lh-workflows-summary">
             <strong>{data.live}</strong> live
             <span className="muted"> · {data.total} total</span>

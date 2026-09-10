@@ -10,18 +10,24 @@ import { getDb, nowIso } from "./db";
 import {
   EMAIL_LAUNCH_LIST,
   EMAIL_LAUNCH_SOURCE,
+  LIFECYCLE_AUTOMATION_SOURCE,
+  LIFECYCLE_DELIVERABLE_SOURCE,
   PACE_RANK,
   PIPELINE_LABEL,
   calendarSendIsAutomation,
   campaignCountsTowardQuota,
   campaignReachedClient,
+  automationPace,
   contractPace,
   daysInPeriod,
+  hubChecklistMeta,
   isEmailPlatform,
   isYmd,
   previewLaunchTodos,
   sameLifecycleAccount,
+  splitChecklistTitles,
   type EmailPlatform,
+  type HubChecklistKind,
   type PaceStatus,
 } from "./email-launch";
 import {
@@ -65,6 +71,8 @@ function hubDescription(input: {
   pace: PaceStatus;
   launchOpen: number;
   launchTotal: number;
+  automationTotal: number;
+  automationRemaining: number;
 }): string {
   if (input.quota > 0) {
     const base =
@@ -83,11 +91,19 @@ function hubDescription(input: {
     }
     return `${base} On track against contract.`;
   }
+  if (input.automationTotal > 0) {
+    if (input.automationRemaining === 0) {
+      return "All contracted automations are set up.";
+    }
+    return input.automationRemaining === 1
+      ? "1 contracted automation still owed."
+      : `${input.automationRemaining} contracted automations still owed.`;
+  }
   if (input.launchOpen > 0) {
     return `Launching — ${input.launchOpen} of ${input.launchTotal} onboarding to-dos open.`;
   }
   if (input.launchTotal === 0) {
-    return "Automations account — check live GoHighLevel workflows on the detail page.";
+    return "Automations account — add the workflows you still owe, then check them off when they’re live.";
   }
   return "No monthly campaign quota on file. All current periods are caught up.";
 }
@@ -167,6 +183,10 @@ export interface HubClient {
     total: number;
     todos: HubLaunchTodo[];
   };
+  /** Extra contracted items besides campaign emails. */
+  deliverables: HubLaunchTodo[];
+  /** Automations still owed; check off when complete. */
+  automations: HubLaunchTodo[];
 }
 
 export interface LifecycleHub {
@@ -270,15 +290,15 @@ function groupByClient<T extends { clientId: string }>(rows: T[]): Map<string, T
   return map;
 }
 
-function launchTodosByClient(clientIds: string[]): Map<string, HubLaunchTodo[]> {
+function todosBySource(clientIds: string[], source: string): Map<string, HubLaunchTodo[]> {
   if (!clientIds.length) return new Map();
   const rows = getDb()
     .prepare(
       `SELECT id, client_id, title, due_date, status FROM todos
         WHERE source = ? AND client_id IN (${clientIds.map(() => "?").join(",")})
-        ORDER BY (due_date IS NULL) ASC, due_date ASC, created_at ASC`
+        ORDER BY status ASC, (due_date IS NULL) ASC, due_date ASC, created_at ASC`
     )
-    .all(EMAIL_LAUNCH_SOURCE, ...clientIds) as Array<{
+    .all(source, ...clientIds) as Array<{
     id: string;
     client_id: string | null;
     title: string;
@@ -296,6 +316,10 @@ function launchTodosByClient(clientIds: string[]): Map<string, HubLaunchTodo[]> 
         status: r.status === "done" ? ("done" as const) : ("open" as const),
       }))
   );
+}
+
+function launchTodosByClient(clientIds: string[]): Map<string, HubLaunchTodo[]> {
+  return todosBySource(clientIds, EMAIL_LAUNCH_SOURCE);
 }
 
 function sendsByClient(
@@ -545,10 +569,18 @@ function toHubClient(
   launchDate: string | null,
   platform: EmailPlatform | null,
   rev: RevClient | null,
-  ghlLinked: boolean
+  ghlLinked: boolean,
+  deliverables: HubLaunchTodo[],
+  automations: HubLaunchTodo[]
 ): HubClient {
   const dayOfMonth = Number(today.slice(8, 10));
-  const pace = contractPace(group.quota, group.delivered, dayOfMonth, daysInPeriod(period));
+  const automationTotal = automations.length;
+  const automationDone = automations.filter((t) => t.status === "done").length;
+  const automationRemaining = automationTotal - automationDone;
+  const pace =
+    group.quota > 0
+      ? contractPace(group.quota, group.delivered, dayOfMonth, daysInPeriod(period))
+      : automationPace(automationTotal, automationDone);
   const upcoming = sends.filter((s) => s.status !== "sent" && s.date >= today);
   const launchOpen = launch.filter((t) => t.status === "open").length;
   const status: "active" | "behind" = pace.status === "behind" ? "behind" : "active";
@@ -579,6 +611,8 @@ function toHubClient(
       pace: pace.status,
       launchOpen,
       launchTotal: launch.length,
+      automationTotal,
+      automationRemaining,
     }),
     status,
     launch: {
@@ -587,6 +621,8 @@ function toHubClient(
       total: launch.length,
       todos: launch,
     },
+    deliverables,
+    automations,
   };
 }
 
@@ -603,6 +639,8 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
   const sends = sendsByClient(clientIds, idToName, start, end);
   const campaigns = campaignsByClient(clientIds, idToName, period);
   const launch = launchTodosByClient(clientIds);
+  const extraDeliverables = todosBySource(clientIds, LIFECYCLE_DELIVERABLE_SOURCE);
+  const automationTodos = todosBySource(clientIds, LIFECYCLE_AUTOMATION_SOURCE);
   const meta = launchMetaByClient(clientIds);
   const revById = new Map(listRevClients(true).map((c) => [c.id, c]));
   const onBoard = new Set(clientIds);
@@ -629,7 +667,9 @@ export function buildLifecycleHub(now = new Date()): LifecycleHub {
         launchDate,
         platform,
         revById.get(group.primary.clientId) ?? null,
-        ghlLinked
+        ghlLinked,
+        collectForIds(extraDeliverables, group.memberIds),
+        collectForIds(automationTodos, group.memberIds)
       );
     })
     .sort((a, b) => sortKey(a) - sortKey(b) || a.name.localeCompare(b.name));
@@ -734,6 +774,53 @@ export function addClientToHub(
     createLaunchTodos(clientId, date, createdBy, platform);
   }
   return { ok: true };
+}
+
+/**
+ * Extra deliverables or automations owed on a hub client. Checked off when
+ * the work is done; does not change the monthly campaign-email quota.
+ */
+export function addHubChecklistItem(
+  clientId: string,
+  kind: HubChecklistKind,
+  title: string,
+  createdBy = "michael"
+): { ok: true; item: HubLaunchTodo } | { ok: false; error: string } {
+  const result = addHubChecklistItems(clientId, kind, [title], createdBy);
+  if (!result.ok) return result;
+  const item = result.items[0];
+  if (!item) return { ok: false, error: "Add a name." };
+  return { ok: true, item };
+}
+
+export function addHubChecklistItems(
+  clientId: string,
+  kind: HubChecklistKind,
+  titles: string | string[],
+  createdBy = "michael"
+): { ok: true; items: HubLaunchTodo[] } | { ok: false; error: string } {
+  if (!getRevClient(clientId)) return { ok: false, error: "Unknown client." };
+  const list = splitChecklistTitles(titles);
+  if (!list.length) return { ok: false, error: "Add a name." };
+  const meta = hubChecklistMeta(kind);
+  const items = list.map((title) => {
+    const todo = createTodo({
+      title,
+      clientId,
+      assignee: createdBy,
+      priority: "important",
+      source: meta.source,
+      listName: meta.listName,
+      createdBy,
+    });
+    return {
+      id: todo.id,
+      title: todo.title,
+      dueDate: todo.due_date,
+      status: (todo.status === "done" ? "done" : "open") as HubLaunchTodo["status"],
+    };
+  });
+  return { ok: true, items };
 }
 
 /**

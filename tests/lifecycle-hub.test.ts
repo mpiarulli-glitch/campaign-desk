@@ -323,3 +323,95 @@ test("hub can adjust quota and log an off-app campaign", async (t) => {
   assert.equal(row.status, "sent");
 });
 
+test("hub extra deliverables and automations can be added and listed", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-check-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    )
+    .run("cl_check", "Check Co", 8, now, now);
+
+  assert.deepEqual(hub.addClientToHub("cl_check", null, "michael"), { ok: true });
+  assert.equal(hub.addHubChecklistItem("cl_check", "deliverable", "   ").ok, false);
+  const deliv = hub.addHubChecklistItem("cl_check", "deliverable", "LinkedIn campaigns");
+  const auto = hub.addHubChecklistItem("cl_check", "automation", "Abandoned cart");
+  assert.equal(deliv.ok, true);
+  assert.equal(auto.ok, true);
+
+  const snapshot = hub.buildLifecycleHub();
+  const client = snapshot.clients.find((c) => c.id === "cl_check");
+  assert.ok(client);
+  assert.equal(client.deliverables.length, 1);
+  assert.equal(client.deliverables[0].title, "LinkedIn campaigns");
+  assert.equal(client.deliverables[0].status, "open");
+  assert.equal(client.automations.length, 1);
+  assert.equal(client.automations[0].title, "Abandoned cart");
+});
+
+test("automations-only hub clients track a set list as the deliverable", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-auto-list-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const todos = await import("../src/lib/todos");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    )
+    .run("cl_flows", "12 Volt Power", 0, now, now);
+
+  assert.deepEqual(hub.addClientToHub("cl_flows", null, "michael"), { ok: true });
+  const added = hub.addHubChecklistItems(
+    "cl_flows",
+    "automation",
+    "Welcome series\nAbandoned cart\nWelcome series"
+  );
+  assert.equal(added.ok, true);
+  if (!added.ok) return;
+  assert.equal(added.items.length, 2);
+
+  let snapshot = hub.buildLifecycleHub();
+  let client = snapshot.clients.find((c) => c.id === "cl_flows");
+  assert.ok(client);
+  assert.equal(client.quota, 0);
+  assert.equal(client.automations.length, 2);
+  assert.equal(client.remaining, 2);
+  assert.equal(client.pace, "behind");
+  assert.equal(client.paceLabel, "2 automations owed");
+  assert.match(client.description, /2 contracted automations still owed/);
+
+  todos.updateTodo(added.items[0].id, { status: "done" });
+  todos.updateTodo(added.items[1].id, { status: "done" });
+
+  snapshot = hub.buildLifecycleHub();
+  client = snapshot.clients.find((c) => c.id === "cl_flows");
+  assert.ok(client);
+  assert.equal(client.pace, "met");
+  assert.equal(client.remaining, 0);
+  assert.equal(client.paceLabel, "Automations met");
+  assert.match(client.description, /All contracted automations are set up/);
+});
+
