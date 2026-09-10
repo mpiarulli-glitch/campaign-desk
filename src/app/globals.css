@@ -3375,8 +3375,55 @@ button {
 .snap-card-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.snap-done-btn {
+  appearance: none;
+  border: 0;
+  background: var(--success);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.snap-done-btn:hover {
+  filter: brightness(0.96);
+}
+
+.snap-done-mark {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--success-ink);
+  background: var(--success-wash);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.snap-catchup-toggle {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px 4px;
+  white-space: nowrap;
+}
+.snap-catchup-toggle:hover,
+.snap-catchup-toggle.is-on {
+  color: var(--text);
 }
 .snap-save {
   display: inline-flex;
@@ -3460,6 +3507,7 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+  margin-top: 12px;
 }
 .snap-fields label {
   display: flex;
@@ -17386,13 +17434,18 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 6px 4px 4px;
 }
 
 .snap-desk-week-label {
   font-weight: 650;
-  font-size: 14px;
+  font-size: 13px;
   min-width: 11ch;
   text-align: center;
+  padding: 0 6px;
 }
 
 .snap-desk-contract {
@@ -17480,6 +17533,109 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   gap: 8px;
 }
 
+.snap-catchup {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.snap-catchup-panel {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.snap-catchup-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snap-chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.snap-chip {
+  appearance: none;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.snap-chip.is-on {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg-elevated);
+}
+.snap-chip-unit {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.snap-catchup-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.snap-period-chip {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-body);
+  background: var(--bg-soft);
+  border-radius: 8px;
+  padding: 5px 9px;
+}
+
+.snap-catchup-range {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-body);
+}
+
+.snap-desk-week .btn {
+  border-radius: 999px;
+}
+
+.snap-logged-for-field {
+  grid-column: 1 / -1;
+  max-width: 220px;
+}
+.snap-logged-for-field input[type="date"] {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
 .snap-desk-row {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -17491,8 +17647,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   box-shadow: inset 3px 0 0 var(--danger);
 }
 
-.snap-desk-row.is-open {
-  box-shadow: var(--shadow);
+.snap-desk-row.is-met {
+  opacity: 0.92;
 }
 
 .snap-desk-row-top {
@@ -17548,6 +17704,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   .snap-desk { width: calc(100% - 32px); }
   .snap-desk-stats { grid-template-columns: repeat(2, 1fr); }
   .snap-desk-row-top { flex-direction: column; }
+  .snap-card-actions { justify-content: flex-start; }
   .snap-setup-card { grid-template-columns: 1fr 1fr; }
 }
 

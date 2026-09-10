@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
+import { SnapshotCatchUp } from "@/components/SnapshotCatchUp";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import {
@@ -13,7 +14,11 @@ import {
 } from "@/lib/snapshot-entry-date";
 import { actorLabel, TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
-import { SNAPSHOT_STATUSES, type SnapshotStatus } from "@/lib/snapshot-status";
+import {
+  isSnapshotContractMet,
+  SNAPSHOT_STATUSES,
+  type SnapshotStatus,
+} from "@/lib/snapshot-status";
 import {
   fillCanSeeAll,
   fillCounts,
@@ -35,9 +40,9 @@ import {
 type Section = "week" | "leads" | "wins" | "metrics" | "setup" | "client";
 
 const LANE_COPY: Record<FillLane, { title: string; hint: string }> = {
-  overdue: { title: "Overdue", hint: "Past due. Log a status or finish it." },
-  todo: { title: "Needs an update", hint: "Not started, in progress, or scheduled this period." },
-  done: { title: "Logged", hint: "Completed, sent for approval, shared, approved, or canceled." },
+  overdue: { title: "Overdue", hint: "Log it or finish it." },
+  todo: { title: "Open", hint: "Tap Done when this period happened." },
+  done: { title: "Logged", hint: "Already recorded for this period." },
 };
 
 type Win = { id: string; body: string; happened_on: string };
@@ -616,9 +621,11 @@ export default function SnapshotEditorPage() {
     <div className="ops-page snap-desk">
       <div className="page-actions">
         <Link className="btn btn-ghost btn-sm" href="/admin/client-services">All accounts</Link>
-        <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}/backfill`}>
-          6-month backfill
-        </Link>
+        {isAdmin ? (
+          <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}/backfill`}>
+            6-month backfill
+          </Link>
+        ) : null}
         {canSeeAll ? (
           <button
             type="button"
@@ -634,10 +641,7 @@ export default function SnapshotEditorPage() {
         <div>
           <p className="ops-eyebrow">Account snapshot</p>
           <h1 className="ops-title">{name || "Account"}</h1>
-          <p className="ops-sub">
-            {scopeLabel}. Weekly items need a status every week; monthly and quarterly
-            ones keep their status until the next period starts.
-          </p>
+          <p className="ops-sub">{scopeLabel}</p>
         </div>
         {section === "week" || section === "leads" ? (
           <div className="snap-desk-week">
@@ -673,15 +677,10 @@ export default function SnapshotEditorPage() {
           {counts.total > 0 ? (
             <div className={`ads-pass-banner ${counts.attention === 0 ? "is-clear" : "is-work"}`}>
               <p className="ads-pass-banner-line">{passLine}</p>
-              <p className="ads-pass-banner-hint">
-                {counts.attention === 0
-                  ? "Open All if you want to revisit logged work."
-                  : "Work overdue first, then anything still open. Status saves on change; notes save when you leave the field."}
-              </p>
             </div>
           ) : null}
 
-          {contract ? (
+          {contract && isAdmin ? (
             <p className="snap-desk-contract">
               Contract fulfillment{" "}
               <strong style={{ color: contractColor(contract) }}>
@@ -794,6 +793,10 @@ export default function SnapshotEditorPage() {
                             onLoggedForChange={(d) => setLoggedFor(r.deliverable_id, d)}
                             onSave={(patch) => void saveEntry(r.deliverable_id, patch)}
                             onRetry={() => void retryEntry(r.deliverable_id)}
+                            onCatchUpDone={() => {
+                              void loadMeta();
+                              void fetchWeek(week);
+                            }}
                           />
                         ))}
                       </div>
@@ -1123,6 +1126,7 @@ function FillRow({
   onLoggedForChange,
   onSave,
   onRetry,
+  onCatchUpDone,
 }: {
   row: Row;
   viewWeek: string;
@@ -1135,6 +1139,7 @@ function FillRow({
   onLoggedForChange: (loggedFor: string) => void;
   onSave: (patch: Partial<Row>) => void;
   onRetry: () => void;
+  onCatchUpDone: () => void;
 }) {
   const chip = ownershipChip(row);
   const hint = fillPeriodHint({
@@ -1150,8 +1155,10 @@ function FillRow({
     viewWeek,
     loggedFor,
   });
+  const [catchUpOpen, setCatchUpOpen] = useState(false);
+  const met = isSnapshotContractMet(row.status);
   return (
-    <div className={`snap-desk-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""}`}>
+    <div className={`snap-desk-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
       <div className="snap-desk-row-top">
         <button type="button" className="snap-desk-row-main" onClick={onToggle}>
           <span className="snap-name">
@@ -1180,16 +1187,20 @@ function FillRow({
               <button type="button" className="link-button" onClick={onRetry}>Retry</button>
             </span>
           ) : null}
-          <label className="snap-logged-for">
-            <span className="snap-logged-for-label">Logged for</span>
-            <input
-              type="date"
-              value={loggedFor}
-              aria-label="Logged for date"
-              title="When this work actually happened"
-              onChange={(e) => onLoggedForChange(e.target.value)}
-            />
-          </label>
+          {met ? (
+            <span className="snap-done-mark">Done</span>
+          ) : (
+            <button
+              type="button"
+              className="snap-done-btn"
+              onClick={() => {
+                onPatch({ status: "completed" });
+                onSave({ status: "completed" });
+              }}
+            >
+              Done
+            </button>
+          )}
           <select
             className={`snap-status-select status-${row.status}`}
             value={row.status}
@@ -1204,12 +1215,30 @@ function FillRow({
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
+          {row.kind === "recurring" ? (
+            <button
+              type="button"
+              className={`snap-catchup-toggle ${catchUpOpen ? "is-on" : ""}`}
+              aria-expanded={catchUpOpen}
+              onClick={() => setCatchUpOpen((v) => !v)}
+            >
+              Catch up
+            </button>
+          ) : null}
         </div>
       </div>
       {backdateOther ? (
         <p className="snap-backdate-hint">
           Saves to the period containing {loggedFor}, not the week on screen.
         </p>
+      ) : null}
+      {catchUpOpen ? (
+        <SnapshotCatchUp
+          deliverableId={row.deliverable_id}
+          kind={row.kind}
+          cadenceUnit={row.cadence_unit}
+          onDone={onCatchUpDone}
+        />
       ) : null}
       {open ? (
         <div className="snap-fields">
@@ -1238,6 +1267,16 @@ function FillRow({
               onChange={(e) => onPatch({ notes: e.target.value })}
               onBlur={(e) => onSave({ notes: e.target.value })}
               placeholder="Anything the client should know"
+            />
+          </label>
+          <label className="snap-logged-for snap-logged-for-field">
+            <span>Logged for</span>
+            <input
+              type="date"
+              value={loggedFor}
+              aria-label="Logged for date"
+              title="When this work actually happened"
+              onChange={(e) => onLoggedForChange(e.target.value)}
             />
           </label>
         </div>

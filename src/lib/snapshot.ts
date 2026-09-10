@@ -39,6 +39,7 @@ import {
   periodStartFor,
   weekOfYmd,
 } from "./snapshot-entry-date";
+import { catchUpPeriods } from "./snapshot-catchup";
 
 export {
   defaultLoggedForDate,
@@ -776,6 +777,92 @@ export function upsertEntry(input: {
     clientId: deliverable.client_id,
     loggedBy: merged.logged_by,
     updatedAt: ts,
+  };
+}
+
+export type CatchUpResult =
+  | { ok: false; error: "not_found" | "one_time" | "empty_range" }
+  | {
+      ok: true;
+      clientId: string;
+      marked: number;
+      skipped: number;
+      periods: Array<{ periodStart: string; action: "marked" | "skipped" }>;
+    };
+
+/**
+ * Mark every due period in a date range completed. Monthly volume (4 meetings,
+ * 8 hours, etc.) is still one row per month — this does not invent extra
+ * meeting rows. Periods already completed, shared, approved, scheduled, or
+ * canceled are left alone.
+ */
+export function catchUpDeliverable(input: {
+  deliverableId: string;
+  from: string;
+  to: string;
+  today?: string;
+  loggedBy?: string;
+}): CatchUpResult {
+  const deliverable = getDeliverable(input.deliverableId);
+  if (!deliverable) return { ok: false, error: "not_found" };
+  const kind = normKind(deliverable.kind);
+  if (kind === "one_time") return { ok: false, error: "one_time" };
+  const unit = normCadenceUnit(deliverable.cadence_unit);
+  const today = input.today ?? todayYmd();
+  const periods = catchUpPeriods({
+    kind,
+    unit,
+    fromYmd: input.from,
+    toYmd: input.to,
+    today,
+  });
+  if (periods.length === 0) return { ok: false, error: "empty_range" };
+
+  const db = getDb();
+  const first = periods[0].periodStart;
+  const lastEnd = periodEndExclusiveFor(unit, periods[periods.length - 1].periodStart);
+  const existing = db
+    .prepare(
+      `SELECT week_start, status FROM snapshot_entries
+       WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?`
+    )
+    .all(input.deliverableId, first, lastEnd) as Array<{
+    week_start: string;
+    status: string;
+  }>;
+
+  const doneInPeriod = (periodStart: string): boolean => {
+    const end = periodEndExclusiveFor(unit, periodStart);
+    return existing.some(
+      (e) =>
+        e.week_start >= periodStart &&
+        e.week_start < end &&
+        SNAPSHOT_BEHIND_DONE_STATUSES.includes(normStatus(e.status))
+    );
+  };
+
+  const results: Array<{ periodStart: string; action: "marked" | "skipped" }> = [];
+  for (const p of periods) {
+    if (doneInPeriod(p.periodStart)) {
+      results.push({ periodStart: p.periodStart, action: "skipped" });
+      continue;
+    }
+    upsertEntry({
+      deliverableId: input.deliverableId,
+      weekStart: weekOfYmd(p.loggedFor),
+      loggedFor: p.loggedFor,
+      status: "completed",
+      loggedBy: input.loggedBy,
+    });
+    results.push({ periodStart: p.periodStart, action: "marked" });
+  }
+
+  return {
+    ok: true,
+    clientId: deliverable.client_id,
+    marked: results.filter((r) => r.action === "marked").length,
+    skipped: results.filter((r) => r.action === "skipped").length,
+    periods: results,
   };
 }
 
