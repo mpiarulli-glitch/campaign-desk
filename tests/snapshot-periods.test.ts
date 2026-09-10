@@ -194,7 +194,7 @@ test("contract fulfillment does not call an open period a miss", async (t) => {
   // makes it eligible to be judged late.
   const olderDeliverable = (clientId: string, name: string, unit: "monthly" | "quarterly") => {
     const d = snapshot.createDeliverable({
-      clientId, category: "Email", name, cadence: "", cadenceUnit: unit,
+      clientId, category: "Email", name, cadence: unit === "monthly" ? "Monthly" : "Quarterly", cadenceUnit: unit,
     });
     getDb()
       .prepare(`UPDATE snapshot_deliverables SET created_at = ? WHERE id = ?`)
@@ -227,7 +227,7 @@ test("contract fulfillment does not call an open period a miss", async (t) => {
     // Added today, so its first month is still running and there is no fact yet
     // about whether it will be delivered.
     snapshot.createDeliverable({
-      clientId: id, category: "Email", name: "Brand new", cadence: "", cadenceUnit: "monthly",
+      clientId: id, category: "Email", name: "Brand new", cadence: "Monthly", cadenceUnit: "monthly",
     });
 
     const status = snapshot.contractStatus(id);

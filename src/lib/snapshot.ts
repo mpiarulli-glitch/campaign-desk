@@ -3,6 +3,7 @@ import { isTeam } from "./people";
 import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
 import { deliverableVisibleTo } from "./snapshot-fill";
 import { isSnapshotAllowlisted } from "./snapshot-allowlist";
+import { inferDeliverableCadenceLabel, inferDeliverableKind } from "./snapshot-kind";
 import {
   coalesceEntryStatus,
   isSnapshotContractMet,
@@ -298,6 +299,7 @@ export function createDeliverable(input: {
       `SELECT COALESCE(MAX(sort_order), -1) AS m FROM snapshot_deliverables WHERE client_id = ?`
     )
     .get(input.clientId) as { m: number };
+  const kind = inferDeliverableKind(input.name, input.cadence, input.kind);
   db.prepare(
     `INSERT INTO snapshot_deliverables
       (id, client_id, category, team, name, cadence, kind, cadence_unit, due_date, sort_order, active, created_at, updated_at)
@@ -308,8 +310,8 @@ export function createDeliverable(input: {
     input.category.trim(),
     isTeam(input.team) ? input.team : "",
     input.name.trim(),
-    input.cadence.trim(),
-    normKind(input.kind),
+    inferDeliverableCadenceLabel(input.name, input.cadence.trim(), kind),
+    kind,
     normCadenceUnit(input.cadenceUnit),
     input.dueDate || null,
     max.m + 1,
@@ -344,6 +346,14 @@ export function updateDeliverable(
 ): SnapshotDeliverable | null {
   const existing = getDeliverable(id);
   if (!existing) return null;
+  const name = updates.name?.trim() ?? existing.name;
+  const rawCadence = updates.cadence?.trim() ?? existing.cadence;
+  const kind = inferDeliverableKind(
+    name,
+    rawCadence,
+    updates.kind ? normKind(updates.kind) : existing.kind
+  );
+  const cadence = inferDeliverableCadenceLabel(name, rawCadence, kind);
   getDb()
     .prepare(
       `UPDATE snapshot_deliverables
@@ -358,9 +368,9 @@ export function updateDeliverable(
         : isTeam(updates.team)
           ? updates.team
           : "",
-      updates.name?.trim() ?? existing.name,
-      updates.cadence?.trim() ?? existing.cadence,
-      updates.kind ? normKind(updates.kind) : existing.kind,
+      name,
+      cadence,
+      kind,
       updates.cadenceUnit ? normCadenceUnit(updates.cadenceUnit) : existing.cadence_unit,
       updates.dueDate !== undefined ? updates.dueDate || null : existing.due_date,
       updates.sortOrder ?? existing.sort_order,

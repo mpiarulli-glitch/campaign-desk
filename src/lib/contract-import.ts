@@ -13,6 +13,7 @@
 
 import { getDb } from "./db";
 import { isTeam, type Team } from "./people";
+import { isExplicitlyRecurring } from "./snapshot-kind";
 import { createDeliverable, type CadenceUnit, type DeliverableKind } from "./snapshot";
 
 /* ------------------------------------------------------------ categories */
@@ -86,11 +87,21 @@ const BARE_RECURRING = /\b(ongoing|continuous|as needed|throughout|recurring)\b/
 /**
  * Read the cadence out of one scope line.
  *
- * Returns monthly as the fallback because a monthly retainer is what these
- * contracts are, and monthly is also the least punishing guess: the behind
- * report only flags a monthly item once the month is actually over.
+ * Returns one-time unless the line actually says the work repeats
+ * (monthly, weekly, quarterly, ongoing, hours/month, and the like).
  */
 export function parseCadence(line: string): Cadence {
+  const parsed = parseCadenceRaw(line);
+  if (!isExplicitlyRecurring(line, parsed.cadence)) {
+    return {
+      ...parsed,
+      kind: "one_time",
+    };
+  }
+  return { ...parsed, kind: "recurring" };
+}
+
+function parseCadenceRaw(line: string): Cadence {
   const text = line.toLowerCase();
 
   // "4 per month", "2x/mo", "8 a month", "4 blog posts per month"

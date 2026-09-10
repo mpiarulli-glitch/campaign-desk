@@ -6,6 +6,7 @@ import type { AssetKind, AssetType, BodyFormat } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
 import { PEOPLE, OWNER_SLUG } from "./people";
 import { coalesceEntryStatus } from "./snapshot-status";
+import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -3085,6 +3086,24 @@ function migrate(database: Database.Database) {
     for (const row of rows) {
       const next = coalesceEntryStatus(row.status, row.work_done, row.notes);
       if (next !== row.status) upd.run(next, stamp, row.id);
+    }
+  }
+
+  const snapDelivRows = tableColumns(database, "snapshot_deliverables");
+  if (snapDelivRows.length) {
+    const stamp = new Date().toISOString();
+    const rows = database
+      .prepare(`SELECT id, name, kind, cadence FROM snapshot_deliverables WHERE active = 1`)
+      .all() as Array<{ id: string; name: string; kind: string; cadence: string }>;
+    const upd = database.prepare(
+      `UPDATE snapshot_deliverables SET kind = 'one_time', cadence = ?, updated_at = ? WHERE id = ?`
+    );
+    for (const row of rows) {
+      if (isExplicitlyRecurring(row.name, row.cadence)) continue;
+      if (row.kind === "one_time" && row.cadence === inferDeliverableCadenceLabel(row.name, row.cadence)) {
+        continue;
+      }
+      upd.run(inferDeliverableCadenceLabel(row.name, row.cadence), stamp, row.id);
     }
   }
 

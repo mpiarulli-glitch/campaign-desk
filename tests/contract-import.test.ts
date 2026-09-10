@@ -43,7 +43,16 @@ test("cadence is read from the way contracts phrase it", async () => {
   assert.equal(yearly.unit, "quarterly");
   assert.ok(yearly.note, "an approximated cadence must say so");
 
+  assert.equal(parseCadence("Account management").kind, "one_time");
   assert.equal(parseCadence("Account management").cadence, "");
+  assert.equal(parseCadence("Competitive Benchmarking Reports").kind, "one_time");
+  assert.equal(parseCadence("ICP Development").kind, "one_time");
+  assert.equal(parseCadence("AI Chatbot / Booking Bot").kind, "one_time");
+  assert.equal(parseCadence("Cookie Empire Tracking - Daily").kind, "one_time");
+  assert.equal(parseCadence("Systems Access").kind, "one_time");
+  assert.equal(parseCadence("Editorial Calendar").kind, "one_time");
+  assert.equal(parseCadence("Brand Positioning").kind, "one_time");
+  assert.equal(parseCadence("Monthly Strategy Meeting").kind, "recurring");
 });
 
 test("contract terms are read from the payment section", async () => {

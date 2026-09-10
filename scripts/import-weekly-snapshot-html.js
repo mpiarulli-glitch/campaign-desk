@@ -448,8 +448,8 @@ function classifyCadence(name) {
   if (/\b\d+\s*(?:hours?|hrs?)\b/.test(n) && !/one[- ]?time/.test(n)) {
     const hrs = n.match(/(\d+)\s*(?:hours?|hrs?)/);
     return {
-      cadence: hrs ? `${hrs[1]} hrs/month` : "Monthly",
-      kind: "recurring",
+      cadence: hrs ? `${hrs[1]} hours` : "One-time",
+      kind: "one_time",
       unit: "monthly",
     };
   }
@@ -461,15 +461,7 @@ function classifyCadence(name) {
     return { cadence: "Ongoing", kind: "recurring", unit: "monthly" };
   }
 
-  const setup =
-    /\b(systems access|crm(?:\/|,)?\s*email(?:\/|,)?\s*sms setup|sms setup|brand positioning|messaging framework|brand guidelines|ideal customer|persona development|buyer avatar|\bicp\b|directory listings?|business listings?|\d+\+?\s*directories|editorial calendar|home\s*page redesign|homepage redesign|website redesign|website rebuild|ada compliance|empire cookies|\bcookie\b|stripe|unified checkout|passport.?membership|ota set ?up|api\/?\s*rest|funnel.{0,20}lead magnet|booking flow|email automation(?:s)?(?: setup)?|automations?\s*[-–]?\s*\d+|\d+\s+automations|market research|keyword research|empire blueprint|onboard(?:ing)?|set[- ]?up|setup|installation|implementation|landing page development|audit\b(?!.*month)|kick[- ]?off)\b/.test(
-      n
-    );
-  if (setup) {
-    return { cadence: "One-time", kind: "one_time", unit: "monthly" };
-  }
-
-  return { cadence: "", kind: "recurring", unit: "monthly" };
+  return { cadence: "One-time", kind: "one_time", unit: "monthly" };
 }
 
 function applyCategoryKind(d) {
