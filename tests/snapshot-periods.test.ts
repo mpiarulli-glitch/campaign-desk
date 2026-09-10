@@ -407,4 +407,39 @@ test("contract fulfillment does not call an open period a miss", async (t) => {
     assert.equal(status.totalCount, 0);
     assert.equal(status.label, "No recurring deliverables");
   });
+
+  await t.test("launch date is the on-track clock, not when the row was imported", () => {
+    const id = client("per_launch_clock");
+    const d = snapshot.createDeliverable({
+      clientId: id, category: "Email", name: "Monthly newsletter", cadence: "Monthly", cadenceUnit: "monthly",
+    });
+    // Imported today, launched last year — last closed month still counts.
+    getDb()
+      .prepare(`UPDATE rev_clients SET snapshot_launch_date = ? WHERE id = ?`)
+      .run("2025-02-01", id);
+    getDb()
+      .prepare(`UPDATE snapshot_deliverables SET created_at = ? WHERE id = ?`)
+      .run(now, d.id);
+
+    const behind = snapshot.behindDeliverablesForClient(id);
+    assert.equal(behind.length, 1);
+    const status = snapshot.contractStatus(id);
+    assert.equal(status.onTrack, false);
+    assert.equal(status.totalCount, 1);
+  });
+
+  await t.test("a client who launched this period is not late for the period before launch", () => {
+    const id = client("per_just_launched");
+    olderDeliverable(id, "Monthly newsletter", "monthly");
+    const thisMonth = snapshot.periodStartFor("monthly", new Date().toISOString().slice(0, 10));
+    getDb()
+      .prepare(`UPDATE rev_clients SET snapshot_launch_date = ? WHERE id = ?`)
+      .run(thisMonth, id);
+
+    const behind = snapshot.behindDeliverablesForClient(id);
+    assert.equal(behind.length, 0);
+    const status = snapshot.contractStatus(id);
+    assert.equal(status.label, "Nothing due yet");
+    assert.equal(status.onTrack, true);
+  });
 });

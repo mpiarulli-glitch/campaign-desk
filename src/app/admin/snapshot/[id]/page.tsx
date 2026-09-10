@@ -688,7 +688,7 @@ export default function SnapshotEditorPage() {
                 )}
               </span>
             ) : (
-              <span className="snap-launch-through">Set this so catch-up has a start</span>
+              <span className="snap-launch-through">Set this — on-track scoring starts here</span>
             )}
           </label>
         </div>

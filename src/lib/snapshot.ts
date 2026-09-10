@@ -1710,8 +1710,11 @@ export function contractStatus(clientId: string): ContractStatus {
       .map((b) => b.deliverable_id)
   );
 
-  // A deliverable can only be judged once it has lived through a whole period.
+  // A deliverable can only be judged once the client has lived through a whole
+  // period since launch (or since the row was added, when launch is not set).
   const today = todayYmd();
+  const account = getAccount(clientId);
+  const launch = account ? snapshotLaunchDateFor(account) : null;
   const createdAt = new Map(
     (
       getDb()
@@ -1725,7 +1728,8 @@ export function contractStatus(clientId: string): ContractStatus {
   const hasClosedPeriod = (id: string, unit: CadenceUnit): boolean => {
     const row = createdAt.get(id);
     if (!row) return false;
-    return row.created_at.slice(0, 10) < periodStartFor(unit, today);
+    const start = launch || row.created_at.slice(0, 10);
+    return start < periodStartFor(unit, today);
   };
 
   let doneCount = 0;
@@ -1816,6 +1820,8 @@ export function behindDeliverablesForClient(clientId: string): BehindItem[] {
     byDeliverable.set(e.deliverable_id, list);
   }
 
+  const account = getAccount(clientId);
+  const launch = account ? snapshotLaunchDateFor(account) : null;
   const out: BehindItem[] = [];
   for (const d of deliverables) {
     const own = byDeliverable.get(d.id) || [];
@@ -1838,8 +1844,11 @@ export function behindDeliverablesForClient(clientId: string): BehindItem[] {
 
     const unit = normCadenceUnit(d.cadence_unit);
     const currentStart = periodStartFor(unit, today);
-    // Didn't exist yet during the previous period — nothing was missed.
-    if (d.created_at.slice(0, 10) >= currentStart) continue;
+    // Scoring starts at launch, not when we imported the row. An account that
+    // went live last year is judged on last period even if the deliverable was
+    // typed in today; an account that launched this period is not late yet.
+    const clockStart = launch || d.created_at.slice(0, 10);
+    if (clockStart >= currentStart) continue;
     const dueDate = subDaysYmd(currentStart, 1); // last day of the period that just ended
     const priorPeriodStart = periodStartFor(unit, dueDate);
     // Entries arrive in write order, so the last one inside the closed period is
