@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { can, sessionTeam } from "@/lib/auth";
 import {
   behindDeliverablesForClient,
+  backfillDeliverableTeams,
   contractStatus,
   getVisibleSnapshotAccount,
   getOrCreateToken,
@@ -25,6 +26,9 @@ export async function GET(_request: Request, { params }: Params) {
   if (!account) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  // Persist inferred teams (strategy → Client Services, ads → Ads, etc.) so
+  // Setup no longer shows those rows as Unassigned.
+  backfillDeliverableTeams(id);
   return NextResponse.json({
     account: {
       id: account.id,

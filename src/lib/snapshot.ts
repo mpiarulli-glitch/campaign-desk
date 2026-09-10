@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { isTeam } from "./people";
 import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
-import { deliverableVisibleTo } from "./snapshot-fill";
+import { deliverableVisibleTo, forcedDepartmentTeam, teamToStore } from "./snapshot-fill";
 import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import { inferDeliverableCadenceLabel, inferDeliverableKind } from "./snapshot-kind";
 import {
@@ -331,6 +331,14 @@ export function createDeliverable(input: {
     )
     .get(input.clientId) as { m: number };
   const kind = inferDeliverableKind(input.name, input.cadence, input.kind);
+  const category = input.category.trim();
+  const name = input.name.trim();
+  const team =
+    teamToStore({
+      team: isTeam(input.team) ? input.team : "",
+      category,
+      name,
+    }) || "";
   db.prepare(
     `INSERT INTO snapshot_deliverables
       (id, client_id, category, team, name, cadence, kind, cadence_unit, due_date, sort_order, active, created_at, updated_at)
@@ -338,9 +346,9 @@ export function createDeliverable(input: {
   ).run(
     id,
     input.clientId,
-    input.category.trim(),
-    isTeam(input.team) ? input.team : "",
-    input.name.trim(),
+    category,
+    team,
+    name,
     inferDeliverableCadenceLabel(input.name, input.cadence.trim(), kind),
     kind,
     normCadenceUnit(input.cadenceUnit),
@@ -378,6 +386,7 @@ export function updateDeliverable(
   const existing = getDeliverable(id);
   if (!existing) return null;
   const name = updates.name?.trim() ?? existing.name;
+  const category = updates.category?.trim() ?? existing.category;
   const rawCadence = updates.cadence?.trim() ?? existing.cadence;
   const kind = inferDeliverableKind(
     name,
@@ -385,6 +394,22 @@ export function updateDeliverable(
     updates.kind ? normKind(updates.kind) : existing.kind
   );
   const cadence = inferDeliverableCadenceLabel(name, rawCadence, kind);
+  let team: string;
+  if (updates.team !== undefined) {
+    // Explicit team edit: strategy/ads categories still force their department;
+    // clearing to blank otherwise stays Unassigned.
+    const forced = forcedDepartmentTeam(category);
+    if (forced) team = forced;
+    else if (isTeam(updates.team)) team = updates.team;
+    else team = "";
+  } else {
+    const resolved = teamToStore({
+      team: existing.team,
+      category,
+      name,
+    });
+    team = resolved || existing.team;
+  }
   getDb()
     .prepare(
       `UPDATE snapshot_deliverables
@@ -392,13 +417,8 @@ export function updateDeliverable(
        WHERE id = ?`
     )
     .run(
-      updates.category?.trim() ?? existing.category,
-      // An explicit "" clears the tag, so undefined is the only "leave alone".
-      updates.team === undefined
-        ? existing.team
-        : isTeam(updates.team)
-          ? updates.team
-          : "",
+      category,
+      team,
       name,
       cadence,
       kind,
@@ -409,6 +429,40 @@ export function updateDeliverable(
       id
     );
   return getDeliverable(id);
+}
+
+/**
+ * Write inferred owning teams onto blank (or wrongly tagged strategy/ads)
+ * deliverables so Setup shows Client Services / Ads instead of Unassigned.
+ */
+export function backfillDeliverableTeams(clientId?: string): number {
+  const db = getDb();
+  const rows = (
+    clientId
+      ? db
+          .prepare(
+            `SELECT * FROM snapshot_deliverables WHERE active = 1 AND client_id = ?`
+          )
+          .all(clientId)
+      : db.prepare(`SELECT * FROM snapshot_deliverables WHERE active = 1`).all()
+  ) as SnapshotDeliverable[];
+
+  let updated = 0;
+  const stamp = nowIso();
+  const write = db.prepare(
+    `UPDATE snapshot_deliverables SET team = ?, updated_at = ? WHERE id = ?`
+  );
+  for (const row of rows) {
+    const next = teamToStore({
+      team: row.team,
+      category: row.category,
+      name: row.name,
+    });
+    if (!next || next === row.team) continue;
+    write.run(next, stamp, row.id);
+    updated += 1;
+  }
+  return updated;
 }
 
 // Soft-delete so historical entries stay intact.

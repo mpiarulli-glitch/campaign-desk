@@ -13,8 +13,32 @@ import {
   filterFillRows,
   inferDeliverableOwnership,
   sortFillRows,
+  teamToStore,
   visibleFillRows,
 } from "../src/lib/snapshot-fill";
+
+test("teamToStore tags strategy as Client Services and ads as Ads", () => {
+  assert.equal(
+    teamToStore({ team: "", category: "Strategy & Planning", name: "Go-To-Market Strategy" }),
+    "client_services"
+  );
+  assert.equal(
+    teamToStore({ team: "email", category: "STRATEGY & PLANNING", name: "Monthly strategy meeting" }),
+    "client_services"
+  );
+  assert.equal(
+    teamToStore({ team: "", category: "Paid Media", name: "Google ads" }),
+    "ads"
+  );
+  assert.equal(
+    teamToStore({ team: "", category: "CONTENT", name: "Blogging - 2x / month" }),
+    "seo"
+  );
+  assert.equal(
+    teamToStore({ team: "", category: "Ops", name: "Mystery task" }),
+    ""
+  );
+});
 
 test("inferDeliverableOwnership reads the stored team first", () => {
   assert.equal(

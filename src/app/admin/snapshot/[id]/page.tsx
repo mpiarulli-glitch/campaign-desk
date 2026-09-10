@@ -1024,8 +1024,8 @@ export default function SnapshotEditorPage() {
               </p>
             ) : null}
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Leave team blank for strategy or account work. Specialists only see rows
-              tagged or named for their team.
+              Strategy, brand, and video production are Client Services; ads are
+              Ads. Specialists only see rows tagged or named for their team.
             </p>
             {deliverables.length === 0 ? (
               <p className="muted" style={{ margin: 0, fontSize: 13 }}>None yet. Add the contracted deliverables below.</p>
@@ -1035,8 +1035,12 @@ export default function SnapshotEditorPage() {
                   <div key={d.id} className="snap-setup-card">
                     <input defaultValue={d.category} placeholder="Category"
                       onBlur={(e) => e.target.value !== d.category && updateDeliverable(d.id, { category: e.target.value })} />
-                    <select defaultValue={d.team || ""} aria-label="Owning team"
-                      onChange={(e) => updateDeliverable(d.id, { team: e.target.value })}>
+                    <select
+                      key={`${d.id}-team-${d.team || "none"}`}
+                      defaultValue={d.team || ""}
+                      aria-label="Owning team"
+                      onChange={(e) => updateDeliverable(d.id, { team: e.target.value })}
+                    >
                       <option value="">Unassigned</option>
                       {TEAMS.map((t) => (
                         <option key={t.slug} value={t.slug}>{t.label}</option>

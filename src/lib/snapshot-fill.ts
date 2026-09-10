@@ -150,12 +150,12 @@ function haystack(row: FillNamed): string {
 }
 
 /** Categories Client Services always fills on the weekly snapshot. */
-function clientServicesFillCategory(category: string): boolean {
+export function clientServicesFillCategory(category: string): boolean {
   const c = category.trim().toLowerCase();
   return (
     c === "strategy" ||
     c === "planning" ||
-    /^strategy\s*(&|and)\s*(planning|client)$/.test(c) ||
+    /^strategy\b/.test(c) ||
     c === "brand" ||
     c === "creative" ||
     /^brand\b/.test(c) ||
@@ -165,14 +165,37 @@ function clientServicesFillCategory(category: string): boolean {
 }
 
 /** Categories Mike Hines / Ads always fills on the weekly snapshot. */
-function adsFillCategory(category: string): boolean {
+export function adsFillCategory(category: string): boolean {
   const c = category.trim().toLowerCase();
   return (
     c === "paid media" ||
     c === "paid ads" ||
     c === "ads" ||
-    /^paid\b/.test(c)
+    /^paid\b/.test(c) ||
+    /^ads?\b/.test(c)
   );
+}
+
+/**
+ * Team forced by category alone (strategy/brand/production → Client Services,
+ * ads → Ads). Empty when the category does not force a department.
+ */
+export function forcedDepartmentTeam(category: string): Team | "" {
+  if (clientServicesFillCategory(category)) return "client_services";
+  if (adsFillCategory(category)) return "ads";
+  return "";
+}
+
+/**
+ * Team slug to store on a deliverable.
+ *
+ * Strategy / brand / production and ads categories always resolve to their
+ * department. Otherwise a stored team wins; blank rows fall back to name
+ * inference. Mysteries stay blank.
+ */
+export function teamToStore(row: FillNamed): Team | "" {
+  const ownership = inferDeliverableOwnership(row);
+  return isTeam(ownership) ? ownership : "";
 }
 
 /**
@@ -210,7 +233,7 @@ export function inferDeliverableOwnership(row: FillNamed): FillOwnership {
   }
 
   if (
-    /\b(seo|blog|article|keyword|backlink|on-?page|search engine|gbp|google business)\b/.test(
+    /\b(seo|blogs?|blogging|article|keyword|backlink|on-?page|search engine|gbp|google business)\b/.test(
       text
     )
   ) {

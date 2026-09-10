@@ -35,6 +35,11 @@ test("weekly snapshot scoped to a team", async (t) => {
   snapshot.createDeliverable({
     clientId: "cl_1", category: "Strategy", name: "Quarterly review", cadence: "",
   });
+  assert.equal(
+    snapshot.listDeliverables("cl_1").find((d) => d.name === "Quarterly review")?.team,
+    "client_services",
+    "strategy rows store Client Services, not blank"
+  );
   snapshot.createDeliverable({
     clientId: "cl_1", category: "Social", name: "Instagram posts", cadence: "12 per month",
   });
