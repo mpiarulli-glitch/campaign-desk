@@ -168,7 +168,8 @@ export function snapshotStatusLabel(status: SnapshotStatus): string {
 
 /**
  * Client "this week's work" — only rows actually filed on the week being viewed.
- * One-off setups from months ago stay completed on the contract list, not here.
+ * A one-off setup belongs here the week it was done (new account), then it
+ * stays on the contract list in later weeks.
  */
 export function isThisWeeksWork(row: {
   week_start?: string | null;
@@ -179,8 +180,6 @@ export function isThisWeeksWork(row: {
   next_steps?: string | null;
   notes?: string | null;
 }, viewWeek: string): boolean {
-  // Lifetime setup does not belong in "what we moved on this week".
-  if (row.kind === "one_time") return false;
   if (!row.week_start || row.week_start !== viewWeek) return false;
   const created = (row.created_at || "").slice(0, 10);
   // A row that already existed before this week, then got restamped onto

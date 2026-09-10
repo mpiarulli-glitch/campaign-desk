@@ -86,6 +86,7 @@ test("notes can lift a forgotten status to met contract", () => {
 test("this week's work ignores one-off setups logged in earlier weeks", () => {
   const july = {
     week_start: "2026-07-13",
+    created_at: "2026-07-15T00:00:00.000Z",
     kind: "one_time",
     status: "completed",
     work_done: "Automations live",
@@ -93,7 +94,11 @@ test("this week's work ignores one-off setups logged in earlier weeks", () => {
     notes: "",
   };
   assert.equal(isThisWeeksWork(july, "2026-09-08"), false);
-  assert.equal(isThisWeeksWork(july, "2026-07-13"), false, "one-off setup is never this week's work");
+  assert.equal(
+    isThisWeeksWork(july, "2026-07-13"),
+    true,
+    "setup done that week belongs in this week's work"
+  );
   assert.equal(
     isThisWeeksWork({ week_start: "", status: "completed", work_done: "x" }, "2026-09-08"),
     false
@@ -117,12 +122,13 @@ test("this week's work ignores one-off setups logged in earlier weeks", () => {
       {
         week_start: "2026-09-08",
         created_at: "2026-09-09T12:00:00.000Z",
-        kind: "recurring",
-        status: "in_progress",
-        work_done: "SEO pass",
+        kind: "one_time",
+        status: "completed",
+        work_done: "CRM live",
       },
       "2026-09-08"
     ),
-    true
+    true,
+    "new-account setup logged this week still shows"
   );
 });
