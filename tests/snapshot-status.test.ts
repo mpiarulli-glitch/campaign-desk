@@ -86,20 +86,41 @@ test("notes can lift a forgotten status to met contract", () => {
 test("this week's work ignores one-off setups logged in earlier weeks", () => {
   const july = {
     week_start: "2026-07-13",
+    kind: "one_time",
     status: "completed",
     work_done: "Automations live",
     next_steps: "",
     notes: "",
   };
   assert.equal(isThisWeeksWork(july, "2026-09-08"), false);
-  assert.equal(isThisWeeksWork(july, "2026-07-13"), true);
+  assert.equal(isThisWeeksWork(july, "2026-07-13"), false, "one-off setup is never this week's work");
   assert.equal(
     isThisWeeksWork({ week_start: "", status: "completed", work_done: "x" }, "2026-09-08"),
     false
   );
   assert.equal(
     isThisWeeksWork(
-      { week_start: "2026-09-08", status: "in_progress", work_done: "SEO pass" },
+      {
+        week_start: "2026-09-08",
+        created_at: "2026-08-28T00:00:00.000Z",
+        kind: "recurring",
+        status: "in_progress",
+        work_done: "SEO pass",
+      },
+      "2026-09-08"
+    ),
+    false,
+    "restamped older row is not this week"
+  );
+  assert.equal(
+    isThisWeeksWork(
+      {
+        week_start: "2026-09-08",
+        created_at: "2026-09-09T12:00:00.000Z",
+        kind: "recurring",
+        status: "in_progress",
+        work_done: "SEO pass",
+      },
       "2026-09-08"
     ),
     true

@@ -1148,6 +1148,7 @@ async function writeHub(session, accounts, parsed, phrase) {
         await hubApi(session.cookie, "POST", "/api/snapshot/entry", {
           deliverableId: rem.id,
           weekStart: e.weekStart,
+          loggedFor: e.weekStart,
           status: e.status,
           workDone: e.workDone,
           nextSteps: e.nextSteps,

@@ -35,7 +35,9 @@ type Row = {
   category: string;
   name: string;
   cadence: string;
+  kind?: "recurring" | "one_time";
   week_start: string;
+  created_at?: string;
   status: Status;
   work_done: string;
   next_steps: string;

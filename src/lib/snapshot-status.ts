@@ -172,12 +172,20 @@ export function snapshotStatusLabel(status: SnapshotStatus): string {
  */
 export function isThisWeeksWork(row: {
   week_start?: string | null;
+  created_at?: string | null;
+  kind?: string | null;
   status: string;
   work_done?: string | null;
   next_steps?: string | null;
   notes?: string | null;
 }, viewWeek: string): boolean {
+  // Lifetime setup does not belong in "what we moved on this week".
+  if (row.kind === "one_time") return false;
   if (!row.week_start || row.week_start !== viewWeek) return false;
+  const created = (row.created_at || "").slice(0, 10);
+  // A row that already existed before this week, then got restamped onto
+  // this week's Monday, is not this week's work.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(created) && created < viewWeek) return false;
   return (
     row.status !== "not_started" ||
     !!(row.work_done || "").trim() ||
