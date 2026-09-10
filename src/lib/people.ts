@@ -222,6 +222,12 @@ export function actorLabel(tag: string): string {
   return marker === "impersonated" ? `${label} (via admin)` : label;
 }
 
+/** Name to show on a snapshot row, or empty when a script imported the sheet. */
+export function snapshotAuthorLabel(tag: string): string {
+  if (!tag || tag.startsWith("import:")) return "";
+  return actorLabel(tag);
+}
+
 export function isValidPerson(slug: string): boolean {
   return PEOPLE.some((p) => p.slug === slug);
 }

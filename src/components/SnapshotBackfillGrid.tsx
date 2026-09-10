@@ -12,7 +12,7 @@ import {
   visibleFillRows,
   type FillViewer,
 } from "@/lib/snapshot-fill";
-import { actorLabel, teamLabelFor } from "@/lib/people";
+import { snapshotAuthorLabel, teamLabelFor } from "@/lib/people";
 import {
   SNAPSHOT_STATUSES,
   SNAPSHOT_STATUS_SHORT,
@@ -458,9 +458,9 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                               ) : state === "failed" ? (
                                 <span className="snap-save snap-save-bad">Not saved</span>
                               ) : null}
-                              {cell.logged_by ? (
+                              {snapshotAuthorLabel(cell.logged_by) ? (
                                 <span className="snap-logged-by muted">
-                                  {actorLabel(cell.logged_by)}
+                                  {snapshotAuthorLabel(cell.logged_by)}
                                 </span>
                               ) : null}
                               <button

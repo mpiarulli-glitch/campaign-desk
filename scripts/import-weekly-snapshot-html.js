@@ -25,7 +25,7 @@ const HUB_URL =
   process.env.CAMPAIGN_DESK_URL || "https://hub.marketingempiregroup.com";
 const PASSWORD = process.env.CAMPAIGN_DESK_PASSWORD || "Marketingeg1!";
 const LOGIN_ACCOUNTS = (
-  process.env.CAMPAIGN_DESK_ACCOUNT || "kyle_onstott,luis_romero,michael"
+  process.env.CAMPAIGN_DESK_ACCOUNT || "michael"
 )
   .split(",")
   .map((s) => s.trim())
@@ -1082,7 +1082,9 @@ async function hubLogin() {
     const cookie = (res.headers.get("set-cookie") || "").split(";")[0];
     const body = await res.json().catch(() => ({}));
     if (body.needsTotp) {
-      console.log(`  hub ${slug}: 2FA required`);
+      console.log(
+        `  hub ${slug}: 2FA required — not falling through to another account (that would credit the import to them)`
+      );
       continue;
     }
     if (body.ok && cookie) return { cookie, slug };

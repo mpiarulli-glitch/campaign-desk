@@ -12,7 +12,7 @@ import {
   loggedForTargetsOtherPeriod,
   weekOfYmd,
 } from "@/lib/snapshot-entry-date";
-import { actorLabel, TEAMS, teamLabelFor } from "@/lib/people";
+import { snapshotAuthorLabel, TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
 import {
   isSnapshotContractMet,
@@ -1209,6 +1209,7 @@ function FillRow({
   });
   const [catchUpOpen, setCatchUpOpen] = useState(false);
   const met = isSnapshotContractMet(row.status);
+  const author = snapshotAuthorLabel(row.logged_by);
   return (
     <div className={`snap-desk-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
       <div className="snap-desk-row-top">
@@ -1221,9 +1222,9 @@ function FillRow({
             {hint}
             {chip ? ` · ${chip}` : ""}
           </span>
-          {row.logged_by || row.updated_at ? (
+          {author ? (
             <span className="snap-logged-by">
-              {row.logged_by ? actorLabel(row.logged_by) : "Logged"}
+              {author}
               {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
             </span>
           ) : null}

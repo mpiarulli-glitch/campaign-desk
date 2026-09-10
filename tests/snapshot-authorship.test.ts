@@ -27,6 +27,13 @@ test("actor tags render as names, and mark an impersonated write", async () => {
   assert.equal(actorLabel("randi:impersonated"), "Randi (via admin)");
 });
 
+test("sheet imports are not shown as a person on the fill desk", async () => {
+  const { snapshotAuthorLabel } = await import("../src/lib/people");
+  assert.equal(snapshotAuthorLabel("randi"), "Randi");
+  assert.equal(snapshotAuthorLabel("import:weekly-html"), "");
+  assert.equal(snapshotAuthorLabel(""), "");
+});
+
 test("snapshot entry authorship and week bounds", async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-author-test-"));
   const originalCwd = process.cwd();
