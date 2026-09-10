@@ -5,7 +5,6 @@ import { deliverableVisibleTo } from "./snapshot-fill";
 import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import { inferDeliverableCadenceLabel, inferDeliverableKind } from "./snapshot-kind";
 import {
-  coalesceEntryStatus,
   isSnapshotContractMet,
   normSnapshotStatus,
   SNAPSHOT_BEHIND_DONE_STATUSES,
@@ -36,7 +35,6 @@ import {
   type BackfillRow,
 } from "./snapshot-backfill";
 import {
-  entryWeekStartForDate,
   periodEndExclusiveFor,
   periodStartFor,
   weekOfYmd,
@@ -466,12 +464,13 @@ export function weekData(
   // update made while viewing an earlier week in the period was invisible.
   const rangeStmt = getDb().prepare(
     `SELECT ${FIELDS} FROM snapshot_entries
-     WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
-     ORDER BY updated_at DESC, week_start DESC LIMIT 1`
+     WHERE deliverable_id = ? AND week_start >= ? AND week_start < ? AND week_start <= ?
+     ORDER BY week_start DESC, updated_at DESC LIMIT 1`
   );
-  const latestEverStmt = getDb().prepare(
+  const asOfStmt = getDb().prepare(
     `SELECT ${FIELDS} FROM snapshot_entries
-     WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
+     WHERE deliverable_id = ? AND week_start <= ?
+     ORDER BY week_start DESC LIMIT 1`
   );
 
   return deliverables.map((d) => {
@@ -490,14 +489,14 @@ export function weekData(
     let period_start = "";
 
     if (kind === "one_time") {
-      e = latestEverStmt.get(d.id) as typeof e;
+      e = asOfStmt.get(d.id, weekStart) as typeof e;
     } else if (cadence_unit === "weekly") {
       period_start = weekStart;
       e = exactStmt.get(d.id, weekStart) as typeof e;
     } else {
       period_start = periodStartFor(cadence_unit, weekStart);
       const end = periodEndExclusiveFor(cadence_unit, weekStart);
-      e = rangeStmt.get(d.id, period_start, end) as typeof e;
+      e = rangeStmt.get(d.id, period_start, end, weekStart) as typeof e;
     }
 
     return {
@@ -519,15 +518,6 @@ export function weekData(
     };
   });
 }
-
-type BackfillEntryFields = {
-  status: SnapshotStatus;
-  work_done: string;
-  next_steps: string;
-  notes: string;
-  logged_by: string;
-  updated_at: string;
-};
 
 /** Six-month grid for backfilling deliverable progress from one page. */
 export function backfillGridData(
@@ -582,23 +572,6 @@ export function backfillGridData(
     updated_at: string;
   }>;
 
-  const latestOneTime = getDb()
-    .prepare(
-      `SELECT deliverable_id, status, work_done, next_steps, notes, logged_by, updated_at
-       FROM snapshot_entries
-       WHERE client_id = ? AND deliverable_id IN (${placeholders})
-       ORDER BY week_start DESC`
-    )
-    .all(clientId, ...ids) as Array<{
-    deliverable_id: string;
-    status: SnapshotStatus;
-    work_done: string;
-    next_steps: string;
-    notes: string;
-    logged_by: string;
-    updated_at: string;
-  }>;
-
   const entryMap: BackfillEntryMap = new Map();
   for (const e of ranged) {
     const list = entryMap.get(e.deliverable_id) || [];
@@ -612,22 +585,6 @@ export function backfillGridData(
       updated_at: e.updated_at,
     });
     entryMap.set(e.deliverable_id, list);
-  }
-
-  const oneTimeLatest = new Map<string, BackfillEntryFields>();
-  for (const d of deliverables) {
-    if (normKind(d.kind) !== "one_time") continue;
-    const hit = latestOneTime.find((e) => e.deliverable_id === d.id);
-    if (hit) {
-      oneTimeLatest.set(d.id, {
-        status: normStatus(hit.status),
-        work_done: hit.work_done,
-        next_steps: hit.next_steps,
-        notes: hit.notes,
-        logged_by: hit.logged_by,
-        updated_at: hit.updated_at,
-      });
-    }
   }
 
   const lastWeek = weeks[weeks.length - 1];
@@ -648,8 +605,7 @@ export function backfillGridData(
         cadence_unit,
         weekStart,
         entryMap,
-        d.id,
-        oneTimeLatest.get(d.id)
+        d.id
       );
       let period_start = "";
       if (kind === "one_time") period_start = "";
@@ -704,25 +660,24 @@ export function upsertEntry(input: {
   //
   //   - One-time items have a single lifetime entry, so whichever entry exists
   //     (any week) is the one updated.
-  //   - Monthly and quarterly items have one entry per PERIOD. The existing entry
-  //     is looked up across the whole period and a new one is filed under the
-  //     period's start. Writing to the literal week being viewed instead meant a
-  //     month could accumulate four rows, and an edit made from week 1 lost to
-  //     the row already sitting at week 3.
-  //   - Weekly items are one entry per week, which is already the same thing.
+  //   - Monthly and quarterly items have one entry per PERIOD. The existing
+  //     row is looked up across the period, then filed under the week it was
+  //     logged so earlier weeks in that month do not inherit a later "done".
   const kind = normKind(deliverable.kind);
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const isOneTime = kind === "one_time";
   const periodKeyed = !isOneTime && unit !== "weekly";
-  // Backdating sends loggedFor; otherwise the viewed week (always a Monday) is
-  // the anchor. Weekly items need Monday normalization when a calendar date is
-  // picked mid-week.
   const anchor = (input.loggedFor || input.weekStart).trim();
-  const writeKey = isOneTime
-    ? input.loggedFor
-      ? entryWeekStartForDate(kind, unit, anchor)
-      : input.weekStart
-    : entryWeekStartForDate(kind, unit, anchor);
+  let writeKey = weekOfYmd(anchor);
+  // Mondays of the week that contains the 1st can fall in the prior month.
+  // Keep the row inside the period so later weeks and contract scoring still
+  // find it, without filing it under week 1 of the previous month.
+  if (periodKeyed) {
+    const pStart = periodStartFor(unit, anchor);
+    const pEnd = periodEndExclusiveFor(unit, anchor);
+    if (writeKey < pStart) writeKey = pStart;
+    else if (writeKey >= pEnd) writeKey = weekOfYmd(addWeeks(pEnd, -1));
+  }
 
   const existing = (
     isOneTime
@@ -751,6 +706,7 @@ export function upsertEntry(input: {
   ) as
     | {
         id: string;
+        week_start: string;
         status: SnapshotStatus;
         work_done: string;
         next_steps: string;
@@ -759,12 +715,12 @@ export function upsertEntry(input: {
       }
     | undefined;
 
+  // Saving from an earlier week (a next-steps blur, a scroll-back) must not
+  // pull a later-week Complete onto that earlier week.
+  if (existing && existing.week_start > writeKey) writeKey = existing.week_start;
+
   const merged = {
-    status: coalesceEntryStatus(
-      input.status ?? existing?.status ?? "not_started",
-      input.workDone ?? existing?.work_done ?? "",
-      input.notes ?? existing?.notes ?? ""
-    ),
+    status: normStatus(input.status ?? existing?.status ?? "not_started"),
     work_done: input.workDone ?? existing?.work_done ?? "",
     next_steps: input.nextSteps ?? existing?.next_steps ?? "",
     notes: input.notes ?? existing?.notes ?? "",
@@ -776,9 +732,10 @@ export function upsertEntry(input: {
   if (existing) {
     db.prepare(
       `UPDATE snapshot_entries
-       SET status = ?, work_done = ?, next_steps = ?, notes = ?, logged_by = ?, updated_at = ?
+       SET week_start = ?, status = ?, work_done = ?, next_steps = ?, notes = ?, logged_by = ?, updated_at = ?
        WHERE id = ?`
     ).run(
+      writeKey,
       merged.status,
       merged.work_done,
       merged.next_steps,
@@ -812,62 +769,6 @@ export function upsertEntry(input: {
     loggedBy: merged.logged_by,
     updatedAt: ts,
   };
-}
-
-/** Lift forgotten statuses when work-done or notes already say the work landed. */
-export function promoteOpenEntriesFromNotes(): Array<{
-  id: string;
-  client_id: string;
-  deliverable_id: string;
-  week_start: string;
-  from: SnapshotStatus;
-  to: SnapshotStatus;
-}> {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT id, client_id, deliverable_id, week_start, status, work_done, notes
-       FROM snapshot_entries`
-    )
-    .all() as Array<{
-    id: string;
-    client_id: string;
-    deliverable_id: string;
-    week_start: string;
-    status: string;
-    work_done: string;
-    notes: string;
-  }>;
-  const changed: Array<{
-    id: string;
-    client_id: string;
-    deliverable_id: string;
-    week_start: string;
-    from: SnapshotStatus;
-    to: SnapshotStatus;
-  }> = [];
-  const stamp = nowIso();
-  const upd = db.prepare(
-    `UPDATE snapshot_entries SET status = ?, updated_at = ? WHERE id = ?`
-  );
-  const run = db.transaction(() => {
-    for (const row of rows) {
-      const from = normStatus(row.status);
-      const to = coalesceEntryStatus(from, row.work_done, row.notes);
-      if (to === from) continue;
-      upd.run(to, stamp, row.id);
-      changed.push({
-        id: row.id,
-        client_id: row.client_id,
-        deliverable_id: row.deliverable_id,
-        week_start: row.week_start,
-        from,
-        to,
-      });
-    }
-  });
-  run();
-  return changed;
 }
 
 interface SnapshotEntryResult {

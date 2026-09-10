@@ -5,8 +5,9 @@ import path from "path";
 import type { AssetKind, AssetType, BodyFormat } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
 import { PEOPLE, OWNER_SLUG } from "./people";
-import { coalesceEntryStatus } from "./snapshot-status";
+import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
+import { addWeeks } from "./week";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -3073,19 +3074,35 @@ function migrate(database: Database.Database) {
     );
   }
 
-  // Forgotten status column: if work-done/notes already say the client got it,
-  // treat that period as met contract. Safe to re-run; already-met rows stay put.
+  // Do not infer "completed" from notes. That stamped done onto weeks that only
+  // had WIP text from a later Wk cell.
   if (snapEntryCols.length) {
     const stamp = new Date().toISOString();
     const rows = database
-      .prepare(`SELECT id, status, work_done, notes FROM snapshot_entries`)
-      .all() as Array<{ id: string; status: string; work_done: string; notes: string }>;
+      .prepare(`SELECT id, week_start, status, work_done FROM snapshot_entries`)
+      .all() as Array<{ id: string; week_start: string; status: string; work_done: string }>;
     const upd = database.prepare(
-      `UPDATE snapshot_entries SET status = ?, updated_at = ? WHERE id = ?`
+      `UPDATE snapshot_entries SET week_start = ?, updated_at = ? WHERE id = ?`
     );
+    const met = new Set<string>(SNAPSHOT_MET_STATUSES);
     for (const row of rows) {
-      const next = coalesceEntryStatus(row.status, row.work_done, row.notes);
-      if (next !== row.status) upd.run(next, stamp, row.id);
+      if (!met.has(row.status)) continue;
+      let lastWk = 0;
+      const re = /\bWk\s*(\d)\b/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(row.work_done))) {
+        lastWk = Math.max(lastWk, Number(m[1]));
+      }
+      if (lastWk < 2) continue;
+      const day = Number(row.week_start.slice(8, 10));
+      if (day > 7) continue;
+      const bumped = addWeeks(row.week_start, lastWk - 1);
+      if (bumped === row.week_start) continue;
+      try {
+        upd.run(bumped, stamp, row.id);
+      } catch {
+        // UNIQUE (deliverable_id, week_start) — leave the earlier-week row.
+      }
     }
   }
 

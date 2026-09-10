@@ -88,6 +88,20 @@ test("resolveBackfillCell reads weekly, monthly, and one-time entries", () => {
         },
       ],
     ],
+    [
+      "d-onetime",
+      [
+        {
+          week_start: "2026-03-16",
+          status: "approved",
+          work_done: "Setup done",
+          next_steps: "",
+          notes: "",
+          logged_by: "kyle",
+          updated_at: "t3",
+        },
+      ],
+    ],
   ]);
 
   const weekly = resolveBackfillCell(
@@ -100,6 +114,15 @@ test("resolveBackfillCell reads weekly, monthly, and one-time entries", () => {
   assert.equal(weekly.status, "completed");
   assert.equal(weekly.work_done, "Week one");
 
+  const monthlyEarly = resolveBackfillCell(
+    "recurring",
+    "monthly",
+    "2026-03-02",
+    entries,
+    "d-monthly"
+  );
+  assert.equal(monthlyEarly.status, "not_started", "week 1 does not inherit week 3");
+
   const monthly = resolveBackfillCell(
     "recurring",
     "monthly",
@@ -110,20 +133,21 @@ test("resolveBackfillCell reads weekly, monthly, and one-time entries", () => {
   assert.equal(monthly.status, "in_progress");
   assert.equal(monthly.work_done, "March work");
 
-  const oneTime = resolveBackfillCell(
+  const oneTimeEarly = resolveBackfillCell(
     "one_time",
     "monthly",
     "2026-03-02",
     entries,
-    "d-onetime",
-    {
-      status: "approved",
-      work_done: "Setup done",
-      next_steps: "",
-      notes: "",
-      logged_by: "kyle",
-      updated_at: "t3",
-    }
+    "d-onetime"
+  );
+  assert.equal(oneTimeEarly.status, "not_started");
+
+  const oneTime = resolveBackfillCell(
+    "one_time",
+    "monthly",
+    "2026-03-16",
+    entries,
+    "d-onetime"
   );
   assert.equal(oneTime.status, "approved");
 });

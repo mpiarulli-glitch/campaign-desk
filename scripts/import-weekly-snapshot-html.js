@@ -810,24 +810,52 @@ function parseSheet(html, fileLabel) {
       }
       if (!weeksWith.length && !monthStatus && !nextTxt && !notesTxt) continue;
       const parts = [];
-      let lastStatus = monthStatus || null;
       if (weeksWith.length) {
         for (const w of weeksWith) {
-          if (w.chipStatus) lastStatus = w.chipStatus;
           if (w.work) parts.push(`Wk${w.n}: ${w.work}`);
         }
       }
       const firstN = weeksWith[0]?.n || 1;
-      weekEntries.push({
-        weekStart: weekMonday(blk.year, MONTHS[blk.month.toLowerCase()] - 1, firstN),
-        month: blk.month,
-        year: blk.year,
-        status: lastStatus || "not_started",
-        workDone: parts.join(" · "),
-        nextSteps: nextTxt,
-        notes: notesTxt,
-        weekCount: weeksWith.length || (monthStatus || nextTxt || notesTxt ? 1 : 0),
-      });
+      if (classified.cadenceUnit === "weekly") {
+        for (const w of weeksWith) {
+          weekEntries.push({
+            weekStart: weekMonday(blk.year, MONTHS[blk.month.toLowerCase()] - 1, w.n),
+            month: blk.month,
+            year: blk.year,
+            status: w.chipStatus || "not_started",
+            workDone: w.work || "",
+            nextSteps: nextTxt,
+            notes: notesTxt,
+            weekCount: 1,
+          });
+        }
+        if (!weeksWith.length && (monthStatus || nextTxt || notesTxt)) {
+          weekEntries.push({
+            weekStart: weekMonday(blk.year, MONTHS[blk.month.toLowerCase()] - 1, 1),
+            month: blk.month,
+            year: blk.year,
+            status: monthStatus || "not_started",
+            workDone: "",
+            nextSteps: nextTxt,
+            notes: notesTxt,
+            weekCount: 1,
+          });
+        }
+      } else {
+        const lastChip = [...weeksWith].reverse().find((w) => w.chipStatus);
+        const lastWork = weeksWith[weeksWith.length - 1];
+        const weekN = lastChip?.n || lastWork?.n || firstN;
+        weekEntries.push({
+          weekStart: weekMonday(blk.year, MONTHS[blk.month.toLowerCase()] - 1, weekN),
+          month: blk.month,
+          year: blk.year,
+          status: monthStatus || lastChip?.chipStatus || "not_started",
+          workDone: parts.join(" · "),
+          nextSteps: nextTxt,
+          notes: notesTxt,
+          weekCount: weeksWith.length || (monthStatus || nextTxt || notesTxt ? 1 : 0),
+        });
+      }
     }
 
     deliverables.push({
@@ -869,7 +897,7 @@ function foldEntries(d) {
     const prev = byKey.get(key);
     if (!prev) {
       byKey.set(key, {
-        weekStart: d.kind === "one_time" ? e.weekStart : key === "once" ? e.weekStart : key,
+        weekStart: e.weekStart,
         status: e.status,
         workDone: e.workDone,
         nextSteps: e.nextSteps,
@@ -880,16 +908,14 @@ function foldEntries(d) {
     prev.workDone = [prev.workDone, e.workDone].filter(Boolean).join(" · ");
     prev.nextSteps = e.nextSteps || prev.nextSteps;
     prev.notes = e.notes || prev.notes;
-    if (e.status && e.status !== "not_started") prev.status = e.status;
+    if (e.status && e.status !== "not_started") {
+      prev.status = e.status;
+      prev.weekStart = e.weekStart;
+    }
   }
-  return [...byKey.values()]
-    .map((e) => ({
-      ...e,
-      status: coalesceEntryStatus(e.status, e.workDone, e.notes),
-    }))
-    .filter(
-      (e) => e.workDone || e.nextSteps || e.notes || (e.status && e.status !== "not_started")
-    );
+  return [...byKey.values()].filter(
+    (e) => e.workDone || e.nextSteps || e.notes || (e.status && e.status !== "not_started")
+  );
 }
 
 function nid(len = 12) {

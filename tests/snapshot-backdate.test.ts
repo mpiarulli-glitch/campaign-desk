@@ -7,7 +7,6 @@ import {
   defaultLoggedForDate,
   entryWeekStartForDate,
   loggedForTargetsOtherPeriod,
-  periodStartFor,
 } from "../src/lib/snapshot-entry-date";
 
 test("entryWeekStartForDate maps calendar dates to storage keys", () => {
@@ -18,13 +17,13 @@ test("entryWeekStartForDate maps calendar dates to storage keys", () => {
   );
   assert.equal(
     entryWeekStartForDate("recurring", "monthly", "2026-08-15"),
-    "2026-08-01",
-    "August date → August period"
+    "2026-08-10",
+    "August date → Monday of that week"
   );
   assert.equal(
     entryWeekStartForDate("recurring", "quarterly", "2026-05-20"),
-    "2026-04-01",
-    "May date → Q2 start"
+    "2026-05-18",
+    "May date → Monday of that week, still inside Q2"
   );
   assert.equal(
     entryWeekStartForDate("one_time", "monthly", "2026-03-18"),
@@ -102,11 +101,10 @@ test("upsertEntry with loggedFor writes to the backdated period", async (t) => {
     workDone: "July send",
   });
 
-  const julyPeriod = periodStartFor("monthly", "2026-07-14");
   const julyRow = getDb()
     .prepare(`SELECT week_start, status, work_done FROM snapshot_entries WHERE deliverable_id = ?`)
     .get(monthly.id) as { week_start: string; status: string; work_done: string };
-  assert.equal(julyRow.week_start, julyPeriod);
+  assert.equal(julyRow.week_start, "2026-07-13");
   assert.equal(julyRow.status, "completed");
   assert.equal(julyRow.work_done, "July send");
 

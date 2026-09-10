@@ -60,17 +60,21 @@ export function defaultLoggedForDate(viewWeek: string, today = todayYmd()): stri
 
 /**
  * Map an actual calendar date to the `week_start` key upsertEntry should write.
- *
- * Weekly → Monday of that week. Monthly/quarterly → period start containing the
- * date. One-time → Monday of the week containing the date (lifetime entry).
+ * Always the Monday of that week (clamped into the month/quarter for longer
+ * cadences, so a week overlapping the 1st is not filed in the prior period).
  */
 export function entryWeekStartForDate(
   kind: DeliverableKind,
   unit: CadenceUnit,
   loggedFor: string
 ): string {
-  if (kind === "one_time" || unit === "weekly") return weekOfYmd(loggedFor);
-  return periodStartFor(unit, loggedFor);
+  const week = weekOfYmd(loggedFor);
+  if (kind === "one_time" || unit === "weekly") return week;
+  const start = periodStartFor(unit, loggedFor);
+  const end = periodEndExclusiveFor(unit, loggedFor);
+  if (week < start) return start;
+  if (week >= end) return weekOfYmd(addWeeks(end, -1));
+  return week;
 }
 
 /** Period start for a deliverable row when viewing a given week. */
@@ -92,12 +96,11 @@ export function loggedForTargetsOtherPeriod(input: {
   loggedFor: string;
 }): boolean {
   if (!isYmd(input.loggedFor)) return false;
-  const viewed = periodStartForRow(input.kind, input.cadence_unit, input.viewWeek);
-  const target = entryWeekStartForDate(input.kind, input.cadence_unit, input.loggedFor);
-  if (input.kind === "one_time") {
-    // One-time items are not period-scoped on read; only flag when backdating to
-    // a different week than the one being viewed.
+  if (input.kind === "one_time" || input.cadence_unit === "weekly") {
     return weekOfYmd(input.loggedFor) !== input.viewWeek;
   }
-  return target !== viewed;
+  return (
+    periodStartFor(input.cadence_unit, input.loggedFor) !==
+    periodStartFor(input.cadence_unit, input.viewWeek)
+  );
 }

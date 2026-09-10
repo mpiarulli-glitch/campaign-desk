@@ -37,7 +37,7 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
   const WEEK_4 = "2026-03-23";
   const APRIL = "2026-04-06";
 
-  await t.test("a status set in any week holds across the whole month", () => {
+  await t.test("a status set mid-month does not rewrite earlier weeks", () => {
     const id = client("per_hold");
     const d = snapshot.createDeliverable({
       clientId: id,
@@ -54,7 +54,9 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       workDone: "Sent it",
     });
 
-    for (const week of [WEEK_1, WEEK_3, WEEK_4]) {
+    const week1 = snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(week1.status, "not_started", "earlier weeks in the month stay open");
+    for (const week of [WEEK_3, WEEK_4]) {
       const row = snapshot.weekData(id, week).find((r) => r.deliverable_id === d.id)!;
       assert.equal(row.status, "completed", `week of ${week}`);
       assert.equal(row.work_done, "Sent it");
@@ -76,10 +78,9 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       cadenceUnit: "monthly",
     });
 
-    // Logged while viewing week 3, then corrected while viewing week 1 — which is
-    // the ordinary case of scrolling back to fix something. The correction used to
-    // be written under week 1 while the read kept returning week 3's row, so it
-    // vanished the moment the page reloaded.
+    // Logged in week 3, then the text was corrected while looking at week 1.
+    // The correction must stick on the week-3 row — it must not stamp Complete
+    // onto week 1.
     snapshot.upsertEntry({
       deliverableId: d.id,
       weekStart: WEEK_3,
@@ -93,7 +94,9 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       workDone: "Actually sent",
     });
 
-    for (const week of [WEEK_1, WEEK_3, WEEK_4]) {
+    const week1 = snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(week1.status, "not_started", "earlier week stays open");
+    for (const week of [WEEK_3, WEEK_4]) {
       const row = snapshot.weekData(id, week).find((r) => r.deliverable_id === d.id)!;
       assert.equal(row.status, "completed", `week of ${week}`);
       assert.equal(row.work_done, "Actually sent", `week of ${week}`);
@@ -117,7 +120,7 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       .prepare(`SELECT week_start FROM snapshot_entries WHERE deliverable_id = ?`)
       .all(d.id) as Array<{ week_start: string }>;
     assert.equal(rows.length, 1, "a monthly deliverable has one entry per month");
-    assert.equal(rows[0].week_start, "2026-03-01", "filed under the period, not the week viewed");
+    assert.equal(rows[0].week_start, WEEK_4, "filed under the week it was last logged");
   });
 
   await t.test("a weekly deliverable still gets one entry per week", () => {
@@ -167,6 +170,23 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
     // No team means everything, which is what an admin gets.
     assert.equal(snapshot.weekData(id, WEEK_1).length, 3);
     assert.equal(snapshot.weekData(id, WEEK_1, { team: null }).length, 3);
+  });
+
+  await t.test("one-time complete does not rewrite earlier weeks", () => {
+    const id = client("per_onetime_asof");
+    const d = snapshot.createDeliverable({
+      clientId: id, category: "Email", name: "Klaviyo setup", cadence: "", kind: "one_time",
+    });
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: WEEK_3,
+      status: "completed",
+      workDone: "Installed",
+    });
+    const week1 = snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(week1.status, "not_started");
+    const week3 = snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(week3.status, "completed");
   });
 });
 
@@ -346,7 +366,7 @@ test("contract fulfillment does not call an open period a miss", async (t) => {
     assert.equal(snapshot.behindDeliverablesForClient(id).length, 0);
   });
 
-  await t.test("forgotten status is lifted when notes already say it landed", () => {
+  await t.test("notes do not silently mark a week complete", () => {
     const id = client("per_notes_met");
     const d = olderDeliverable(id, "Monthly newsletter", "monthly");
     const lastMonth = snapshot.periodStartFor(
@@ -362,9 +382,7 @@ test("contract fulfillment does not call an open period a miss", async (t) => {
       workDone: "Published the July issue",
     });
     const row = snapshot.weekData(id, lastMonth).find((r) => r.deliverable_id === d.id)!;
-    assert.equal(row.status, "completed");
-    assert.equal(snapshot.behindDeliverablesForClient(id).length, 0);
-    assert.equal(snapshot.contractStatus(id).pct, 100);
+    assert.equal(row.status, "in_progress");
   });
 
   await t.test("one-time setup work is not a recurring promise", () => {

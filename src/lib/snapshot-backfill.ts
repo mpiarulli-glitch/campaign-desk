@@ -107,13 +107,16 @@ export function resolveBackfillCell(
   unit: CadenceUnit,
   weekStart: string,
   entries: BackfillEntryMap,
-  deliverableId: string,
-  latestOneTime?: BackfillCellFields
+  deliverableId: string
 ): BackfillCellFields {
   const own = entries.get(deliverableId) || [];
+  const asOf = (rows: typeof own) => {
+    const hits = rows.filter((e) => e.week_start <= weekStart);
+    return hits.length ? hits[hits.length - 1] : EMPTY_CELL;
+  };
 
   if (kind === "one_time") {
-    return latestOneTime || EMPTY_CELL;
+    return asOf(own);
   }
 
   if (unit === "weekly") {
@@ -123,7 +126,5 @@ export function resolveBackfillCell(
 
   const start = periodStartFor(unit, weekStart);
   const end = periodEndExclusiveFor(unit, weekStart);
-  const inPeriod = own.filter((e) => e.week_start >= start && e.week_start < end);
-  if (!inPeriod.length) return EMPTY_CELL;
-  return inPeriod[inPeriod.length - 1];
+  return asOf(own.filter((e) => e.week_start >= start && e.week_start < end));
 }
