@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   BACKFILL_WEEK_COUNT,
+  backfillCellRuns,
   backfillColumns,
   backfillWeekRange,
   isPeriodAnchorWeek,
@@ -28,6 +29,30 @@ test("backfillColumns labels each week", () => {
   assert.equal(cols[0].week_start, "2026-08-04");
   assert.match(cols[0].label, /Aug/);
   assert.equal(cols[0].month_key, "2026-08");
+});
+
+test("backfillCellRuns merges a month into one cell", () => {
+  const weekly = [
+    { editable: true, period_start: "2026-03-02" },
+    { editable: true, period_start: "2026-03-09" },
+  ];
+  assert.deepEqual(
+    backfillCellRuns(weekly).map((r) => r.span),
+    [1, 1]
+  );
+
+  const monthly = [
+    { editable: true, period_start: "2026-03-01" },
+    { editable: false, period_start: "2026-03-01" },
+    { editable: false, period_start: "2026-03-01" },
+    { editable: false, period_start: "2026-03-01" },
+    { editable: true, period_start: "2026-04-01" },
+    { editable: false, period_start: "2026-04-01" },
+  ];
+  const runs = backfillCellRuns(monthly);
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].span, 4);
+  assert.equal(runs[1].span, 2);
 });
 
 test("isPeriodAnchorWeek respects cadence", () => {

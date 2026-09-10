@@ -21,11 +21,10 @@ export default function SnapshotBackfillPage() {
       <div className="ops-page-head">
         <div>
           <p className="ops-eyebrow">Account snapshot · Backfill</p>
-          <h1 className="ops-title">6-month progress grid</h1>
+          <h1 className="ops-title">6-month grid</h1>
           <p className="ops-sub">
-            Update status, work done, and notes across the last ~26 weeks from one page.
-            Click a cell to edit; changes save immediately via the same entry API as the
-            weekly fill desk.
+            Click an empty cell to mark that week or month done. Click a check to
+            change it or add a note.
           </p>
         </div>
       </div>

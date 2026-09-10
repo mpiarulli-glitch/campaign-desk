@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
+import { backfillCellRuns } from "@/lib/snapshot-backfill";
 import {
   fillCanSeeAll,
   fillFocusTeam,
@@ -15,7 +16,7 @@ import {
 import { snapshotAuthorLabel, teamLabelFor } from "@/lib/people";
 import {
   SNAPSHOT_STATUSES,
-  SNAPSHOT_STATUS_SHORT,
+  isSnapshotContractMet,
   type SnapshotStatus,
 } from "@/lib/snapshot-status";
 
@@ -55,7 +56,7 @@ type Row = {
 };
 
 const STATUSES = SNAPSHOT_STATUSES;
-const STATUS_SHORT = SNAPSHOT_STATUS_SHORT;
+const CADENCE_ORDER: Record<string, number> = { weekly: 0, monthly: 1, quarterly: 2 };
 
 type SaveState = "saving" | "saved" | "failed";
 
@@ -70,8 +71,16 @@ function ownershipChip(row: { team: string; category: string; name: string }): s
   return teamLabelFor(ownership);
 }
 
+function markLabel(status: Status): string {
+  if (status === "not_started") return "";
+  if (isSnapshotContractMet(status)) return "✓";
+  if (status === "canceled") return "–";
+  return "·";
+}
+
 export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
   const router = useRouter();
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [accountName, setAccountName] = useState("");
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -79,11 +88,11 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [seeAll, setSeeAll] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
   const [openCell, setOpenCell] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
-  const [loggedForByCell, setLoggedForByCell] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +134,12 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
       .finally(() => setViewerReady(true));
   }, []);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || loading) return;
+    el.scrollLeft = el.scrollWidth;
+  }, [loading, columns.length]);
+
   const focusTeam = fillFocusTeam(viewer);
   const canSeeAll = fillCanSeeAll(viewer);
   const isAm = fillIsAccountManager(viewer);
@@ -132,13 +147,24 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
 
   const scopedRows = useMemo(() => {
     if (!viewerReady) return [];
-    const visible = visibleFillRows(rows, viewerTeam, { accountManager: isAm });
-    const q = query.trim().toLowerCase();
-    if (!q) return visible;
-    return visible.filter(
-      (r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q)
+    const visible = visibleFillRows(rows, viewerTeam, { accountManager: isAm }).filter(
+      (r) => showSetup || r.kind !== "one_time"
     );
-  }, [rows, viewerTeam, isAm, query, viewerReady]);
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? visible.filter(
+          (r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q)
+        )
+      : visible;
+    return [...filtered].sort((a, b) => {
+      const byKind = (a.kind === "one_time" ? 1 : 0) - (b.kind === "one_time" ? 1 : 0);
+      if (byKind) return byKind;
+      const byCadence =
+        (CADENCE_ORDER[a.cadence_unit] ?? 9) - (CADENCE_ORDER[b.cadence_unit] ?? 9);
+      if (byCadence) return byCadence;
+      return a.name.localeCompare(b.name);
+    });
+  }, [rows, viewerTeam, isAm, query, viewerReady, showSetup]);
 
   const monthBands = useMemo(() => {
     const bands: Array<{ month_key: string; label: string; span: number }> = [];
@@ -152,7 +178,6 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
           y && m
             ? new Date(y, m - 1, 1).toLocaleDateString("en-US", {
                 month: "short",
-                year: "numeric",
               })
             : col.month_key;
         bands.push({ month_key: col.month_key, label, span: 1 });
@@ -169,7 +194,6 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
           if (c.week_start !== weekStart) return c;
           return { ...c, ...patch };
         });
-        // Monthly/quarterly mirrors: keep non-anchor cells in sync visually.
         if (row.kind === "recurring" && row.cadence_unit !== "weekly") {
           const edited = cells.find((c) => c.week_start === weekStart);
           if (!edited?.period_start) return { ...row, cells };
@@ -185,15 +209,10 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
     );
   }
 
-  async function saveCell(
-    delivId: string,
-    weekStart: string,
-    patch: Partial<Cell>,
-    opts?: { loggedFor?: string }
-  ) {
+  async function saveCell(delivId: string, weekStart: string, patch: Partial<Cell>) {
     const key = cellKey(delivId, weekStart);
     setSaveState((s) => ({ ...s, [key]: "saving" }));
-    const loggedFor = opts?.loggedFor ?? loggedForByCell[key] ?? defaultLoggedForDate(weekStart);
+    const loggedFor = defaultLoggedForDate(weekStart);
     try {
       const res = await fetch("/api/snapshot/entry", {
         method: "POST",
@@ -201,7 +220,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
         body: JSON.stringify({
           deliverableId: delivId,
           weekStart,
-          loggedFor: loggedFor !== defaultLoggedForDate(weekStart) ? loggedFor : undefined,
+          loggedFor,
           status: patch.status,
           workDone: patch.work_done,
           nextSteps: patch.next_steps,
@@ -227,6 +246,18 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
     }
   }
 
+  function onCellActivate(row: Row, cell: Cell) {
+    if (!cell.editable) return;
+    const key = cellKey(row.deliverable_id, cell.week_start);
+    if (cell.status === "not_started") {
+      patchCell(row.deliverable_id, cell.week_start, { status: "completed" });
+      void saveCell(row.deliverable_id, cell.week_start, { status: "completed" });
+      return;
+    }
+    setOpenCell((cur) => (cur === key ? null : key));
+  }
+
+  const setupCount = rows.filter((r) => r.kind === "one_time").length;
   const scopeLabel = !viewerReady
     ? "Loading your list"
     : isAm
@@ -238,7 +269,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
   if (loading) {
     return (
       <div className="empty">
-        <p>Loading {accountName || "account"} backfill grid…</p>
+        <p>Loading {accountName || "account"}…</p>
       </div>
     );
   }
@@ -248,22 +279,52 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
       {error ? <p className="error">{error}</p> : null}
 
       <div className="snap-backfill-toolbar">
-        <p className="muted snap-backfill-hint">
-          {scopeLabel}. Scroll horizontally for {columns.length} weeks (~6 months). Weekly
-          deliverables have a cell every week; monthly and quarterly only at period starts
-          (same month/quarter shows the same status).
+        <p className="snap-backfill-hint">
+          {scopeLabel}. Empty cell → click once to mark done. Click a check to add a note or
+          undo. Monthly work is one cell, not four copies.
         </p>
-        {scopedRows.length > 6 ? (
-          <label className="snap-desk-search">
-            <span>Find a deliverable</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Name or category"
-            />
-          </label>
-        ) : null}
+        <div className="snap-backfill-legend" aria-hidden="true">
+          <span>
+            <i className="snap-backfill-swatch is-empty" /> Open
+          </span>
+          <span>
+            <i className="snap-backfill-swatch is-wip" /> In progress
+          </span>
+          <span>
+            <i className="snap-backfill-swatch is-met" /> Done
+          </span>
+        </div>
+        <div className="snap-backfill-tools">
+          {scopedRows.length > 6 || query ? (
+            <label className="snap-desk-search">
+              <span>Find</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Name or category"
+              />
+            </label>
+          ) : null}
+          {setupCount > 0 ? (
+            <button
+              type="button"
+              className={`btn btn-sm ${showSetup ? "btn-secondary" : "btn-ghost"}`}
+              onClick={() => setShowSetup((v) => !v)}
+            >
+              {showSetup ? "Hide setup" : `Show ${setupCount} one-offs`}
+            </button>
+          ) : null}
+          {canSeeAll ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setSeeAll((v) => !v)}
+            >
+              {seeAll ? `Show ${teamLabelFor(focusTeam || "email")} team` : "See all"}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {!viewerReady ? (
@@ -272,16 +333,25 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
         </div>
       ) : scopedRows.length === 0 ? (
         <div className="empty">
-          <p>{query.trim() ? "Nothing matches that search." : "No deliverables on this account yet."}</p>
+          <p>
+            {query.trim()
+              ? "Nothing matches that search."
+              : "No recurring deliverables on this account yet."}
+          </p>
         </div>
       ) : (
-        <div className="snap-backfill-scroll">
+        <div className="snap-backfill-scroll" ref={scrollRef}>
           <table className="snap-backfill-table">
             <thead>
               <tr className="snap-backfill-month-row">
-                <th className="snap-backfill-sticky" scope="col" aria-label="Deliverables" />
+                <th className="snap-backfill-sticky snap-backfill-corner-top" scope="col" />
                 {monthBands.map((band) => (
-                  <th key={band.month_key} colSpan={band.span} scope="colgroup" className="snap-backfill-month">
+                  <th
+                    key={band.month_key}
+                    colSpan={band.span}
+                    scope="colgroup"
+                    className="snap-backfill-month"
+                  >
                     {band.label}
                   </th>
                 ))}
@@ -297,7 +367,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                     className={`snap-backfill-week ${col.is_current ? "is-current" : ""}`}
                     title={col.label}
                   >
-                    {col.short_label}
+                    {Number(col.week_start.slice(8, 10))}
                   </th>
                 ))}
               </tr>
@@ -311,28 +381,37 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                   cadence: row.cadence,
                   period_start: row.cells.find((c) => c.editable)?.period_start || "",
                 });
+                const runs = backfillCellRuns(row.cells);
                 return (
                   <tr key={row.deliverable_id}>
                     <th className="snap-backfill-sticky snap-backfill-row-head" scope="row">
                       <span className="snap-backfill-name">{row.name}</span>
                       <span className="snap-backfill-meta">
-                        {row.category}
-                        {hint ? ` · ${hint}` : ""}
+                        {hint || row.category}
                         {chip ? ` · ${chip}` : ""}
                       </span>
                     </th>
-                    {row.cells.map((cell) => {
+                    {runs.map((run) => {
+                      const cell = run.cell;
                       const key = cellKey(row.deliverable_id, cell.week_start);
                       const open = openCell === key;
                       const state = saveState[key];
+                      const met = isSnapshotContractMet(cell.status);
+                      const col = columns.find((c) => c.week_start === cell.week_start);
+                      const hasNote = Boolean(
+                        (cell.work_done || "").trim() || (cell.notes || "").trim()
+                      );
                       return (
                         <td
                           key={cell.week_start}
+                          colSpan={run.span}
                           className={[
                             "snap-backfill-cell",
                             `status-${cell.status}`,
-                            cell.editable ? "is-editable" : "is-mirror",
+                            cell.editable ? "is-editable" : "is-inert",
+                            met ? "is-met" : "",
                             open ? "is-open" : "",
+                            hasNote ? "has-note" : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
@@ -341,29 +420,46 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                             <button
                               type="button"
                               className="snap-backfill-cell-btn"
-                              title={columns.find((c) => c.week_start === cell.week_start)?.label}
-                              onClick={() => setOpenCell(open ? null : key)}
+                              title={
+                                cell.status === "not_started"
+                                  ? `${col?.label || ""} — click to mark done`
+                                  : col?.label
+                              }
+                              onClick={() => onCellActivate(row, cell)}
                             >
-                              {STATUS_SHORT[cell.status]}
+                              {markLabel(cell.status)}
                             </button>
                           ) : (
-                            <span className="snap-backfill-mirror" aria-hidden="true">
-                              {cell.status === "not_started" ? "" : STATUS_SHORT[cell.status]}
-                            </span>
+                            <span className="snap-backfill-mirror" />
                           )}
                           {open ? (
                             <div className="snap-backfill-popover">
                               <div className="snap-backfill-popover-head">
                                 <strong>{row.name}</strong>
-                                <span className="muted">
-                                  {columns.find((c) => c.week_start === cell.week_start)?.label}
-                                </span>
+                                <span className="muted">{col?.label}</span>
                               </div>
-                              <label>
-                                <span>Status</span>
+                              <div className="snap-backfill-quick">
+                                {met ? null : (
+                                  <button
+                                    type="button"
+                                    className="snap-done-btn"
+                                    onClick={() => {
+                                      patchCell(row.deliverable_id, cell.week_start, {
+                                        status: "completed",
+                                      });
+                                      void saveCell(row.deliverable_id, cell.week_start, {
+                                        status: "completed",
+                                      });
+                                      setOpenCell(null);
+                                    }}
+                                  >
+                                    Done
+                                  </button>
+                                )}
                                 <select
                                   value={cell.status}
                                   className={`snap-status-select status-${cell.status}`}
+                                  aria-label="Status"
                                   onChange={(e) => {
                                     const status = e.target.value as Status;
                                     patchCell(row.deliverable_id, cell.week_start, { status });
@@ -376,30 +472,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                                     </option>
                                   ))}
                                 </select>
-                              </label>
-                              <label>
-                                <span>Logged for</span>
-                                <input
-                                  type="date"
-                                  value={loggedForByCell[key] ?? defaultLoggedForDate(cell.week_start)}
-                                  onChange={(e) =>
-                                    setLoggedForByCell((m) => ({ ...m, [key]: e.target.value }))
-                                  }
-                                  onBlur={() =>
-                                    void saveCell(
-                                      row.deliverable_id,
-                                      cell.week_start,
-                                      {
-                                        status: cell.status,
-                                        work_done: cell.work_done,
-                                        next_steps: cell.next_steps,
-                                        notes: cell.notes,
-                                      },
-                                      { loggedFor: loggedForByCell[key] }
-                                    )
-                                  }
-                                />
-                              </label>
+                              </div>
                               <label>
                                 <span>What we did</span>
                                 <textarea
@@ -414,41 +487,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                                       work_done: e.target.value,
                                     })
                                   }
-                                  rows={2}
-                                />
-                              </label>
-                              <label>
-                                <span>Next steps</span>
-                                <textarea
-                                  value={cell.next_steps}
-                                  onChange={(e) =>
-                                    patchCell(row.deliverable_id, cell.week_start, {
-                                      next_steps: e.target.value,
-                                    })
-                                  }
-                                  onBlur={(e) =>
-                                    void saveCell(row.deliverable_id, cell.week_start, {
-                                      next_steps: e.target.value,
-                                    })
-                                  }
-                                  rows={2}
-                                />
-                              </label>
-                              <label>
-                                <span>Notes</span>
-                                <textarea
-                                  value={cell.notes}
-                                  onChange={(e) =>
-                                    patchCell(row.deliverable_id, cell.week_start, {
-                                      notes: e.target.value,
-                                    })
-                                  }
-                                  onBlur={(e) =>
-                                    void saveCell(row.deliverable_id, cell.week_start, {
-                                      notes: e.target.value,
-                                    })
-                                  }
-                                  rows={2}
+                                  rows={3}
                                 />
                               </label>
                               {state === "saving" ? (
@@ -457,8 +496,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                                 <span className="snap-save snap-save-ok">Saved</span>
                               ) : state === "failed" ? (
                                 <span className="snap-save snap-save-bad">Not saved</span>
-                              ) : null}
-                              {snapshotAuthorLabel(cell.logged_by) ? (
+                              ) : snapshotAuthorLabel(cell.logged_by) ? (
                                 <span className="snap-logged-by muted">
                                   {snapshotAuthorLabel(cell.logged_by)}
                                 </span>
@@ -482,18 +520,6 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
           </table>
         </div>
       )}
-
-      {canSeeAll ? (
-        <div className="snap-backfill-scope">
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setSeeAll((v) => !v)}
-          >
-            {seeAll ? `Show ${teamLabelFor(focusTeam || "email")} team` : "See all"}
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

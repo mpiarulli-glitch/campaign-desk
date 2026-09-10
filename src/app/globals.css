@@ -3409,6 +3409,33 @@ button {
   border-radius: 999px;
 }
 
+.snap-when-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snap-when-ask label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.snap-when-ask input[type="date"] {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: var(--bg);
+}
+
 .snap-catchup-toggle {
   appearance: none;
   border: 0;
@@ -17747,31 +17774,71 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 /* ---- Snapshot 6-month backfill grid */
 
 .snap-backfill-page .ops-sub {
-  max-width: 720px;
+  max-width: 560px;
 }
 
 .snap-backfill-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .snap-backfill-hint {
   margin: 0;
-  font-size: 13px;
-  max-width: 720px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  max-width: 640px;
+  color: var(--text-muted);
 }
 
-.snap-backfill-scope {
-  margin-top: 12px;
+.snap-backfill-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-backfill-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.snap-backfill-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+
+.snap-backfill-swatch.is-empty {
+  background: var(--bg-elevated);
+}
+
+.snap-backfill-swatch.is-wip {
+  background: color-mix(in srgb, var(--warning) 28%, var(--bg-elevated));
+}
+
+.snap-backfill-swatch.is-met {
+  background: color-mix(in srgb, var(--success) 32%, var(--bg-elevated));
+}
+
+.snap-backfill-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 .snap-backfill-scroll {
   overflow: auto;
   max-width: 100%;
+  max-height: calc(100dvh - 220px);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--bg-elevated);
 }
 
@@ -17785,9 +17852,9 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .snap-backfill-table th,
 .snap-backfill-table td {
   border-bottom: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   padding: 0;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .snap-backfill-sticky {
@@ -17798,24 +17865,56 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   box-shadow: 1px 0 0 var(--border);
 }
 
-.snap-backfill-corner,
-.snap-backfill-row-head {
-  min-width: 220px;
-  max-width: 280px;
-  padding: 10px 12px;
+.snap-backfill-corner-top,
+.snap-backfill-month-row th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--bg-subtle);
+}
+
+.snap-backfill-corner-top {
+  left: 0;
+  z-index: 6;
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.snap-backfill-table thead tr:last-child th {
+  position: sticky;
+  top: 26px;
+  z-index: 4;
+  background: var(--bg-subtle);
+}
+
+.snap-backfill-corner {
+  left: 0;
+  z-index: 6;
+  min-width: 200px;
+  max-width: 240px;
+  padding: 8px 12px;
   text-align: left;
-  font-weight: 600;
+  font-weight: 650;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  box-shadow: 1px 0 0 var(--border);
 }
 
 .snap-backfill-row-head {
+  min-width: 200px;
+  max-width: 240px;
+  padding: 8px 12px;
+  text-align: left;
   font-weight: 500;
+  z-index: 2;
 }
 
 .snap-backfill-name {
   display: block;
   font-weight: 650;
   font-size: 13px;
-  line-height: 1.3;
+  line-height: 1.25;
 }
 
 .snap-backfill-meta {
@@ -17824,29 +17923,28 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .snap-backfill-month-row th {
-  background: var(--bg-subtle);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 6px 4px;
+  padding: 5px 2px;
   text-align: center;
+  height: 26px;
 }
 
 .snap-backfill-week {
-  min-width: 52px;
-  max-width: 52px;
-  padding: 8px 4px;
+  min-width: 36px;
+  width: 36px;
+  padding: 6px 2px;
   text-align: center;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 650;
   color: var(--text-muted);
-  background: var(--bg-subtle);
 }
 
 .snap-backfill-week.is-current {
@@ -17855,18 +17953,30 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .snap-backfill-cell {
-  min-width: 52px;
-  height: 44px;
+  min-width: 36px;
+  height: 38px;
   text-align: center;
   position: relative;
 }
 
-.snap-backfill-cell.is-mirror {
-  opacity: 0.55;
+.snap-backfill-cell.is-inert {
+  background: color-mix(in srgb, var(--bg-subtle) 80%, transparent);
 }
 
 .snap-backfill-cell.is-open {
-  z-index: 3;
+  z-index: 5;
+}
+
+.snap-backfill-cell.has-note::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  pointer-events: none;
 }
 
 .snap-backfill-cell-btn {
@@ -17874,37 +17984,49 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   border: 0;
   background: none;
   width: 100%;
-  height: 100%;
+  height: 38px;
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 700;
+  line-height: 1;
   color: inherit;
-  padding: 4px;
+  padding: 0;
 }
 
 .snap-backfill-cell.status-not_started .snap-backfill-cell-btn {
-  color: var(--text-muted);
+  color: transparent;
 }
 
 .snap-backfill-cell.status-in_progress,
-.snap-backfill-cell.status-scheduled {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
+.snap-backfill-cell.status-scheduled,
+.snap-backfill-cell.status-sent_for_approval {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
 }
 
 .snap-backfill-cell.status-completed,
-.snap-backfill-cell.status-approved {
-  background: color-mix(in srgb, var(--success) 14%, transparent);
+.snap-backfill-cell.status-approved,
+.snap-backfill-cell.status-shared {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
 }
 
-.snap-backfill-cell.status-shared,
-.snap-backfill-cell.status-sent_for_approval {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+.snap-backfill-cell.is-met .snap-backfill-cell-btn {
+  color: color-mix(in srgb, var(--success) 55%, var(--text));
 }
 
 .snap-backfill-cell.status-canceled {
   background: color-mix(in srgb, var(--text-muted) 10%, transparent);
-  opacity: 0.75;
+  opacity: 0.7;
+}
+
+.snap-backfill-quick {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.snap-backfill-quick select {
+  flex: 1;
 }
 
 .snap-backfill-popover {
@@ -17913,7 +18035,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
-  width: min(280px, 70vw);
+  width: min(300px, 72vw);
   margin-top: 4px;
   padding: 12px;
   background: var(--bg-elevated);
@@ -17956,7 +18078,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 @media (max-width: 900px) {
   .snap-backfill-corner,
   .snap-backfill-row-head {
-    min-width: 160px;
+    min-width: 148px;
+    max-width: 168px;
   }
 }
 

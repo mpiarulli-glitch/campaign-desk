@@ -840,7 +840,7 @@ export default function SnapshotEditorPage() {
                             onToggle={() => setOpenId(openId === r.deliverable_id ? null : r.deliverable_id)}
                             onPatch={(patch) => patchRow(r.deliverable_id, patch)}
                             onLoggedForChange={(d) => setLoggedFor(r.deliverable_id, d)}
-                            onSave={(patch) => void saveEntry(r.deliverable_id, patch)}
+                            onSave={(patch, opts) => void saveEntry(r.deliverable_id, patch, opts)}
                             onRetry={() => void retryEntry(r.deliverable_id)}
                             onCatchUpDone={() => {
                               void loadMeta();
@@ -1188,7 +1188,7 @@ function FillRow({
   onToggle: () => void;
   onPatch: (patch: Partial<Row>) => void;
   onLoggedForChange: (loggedFor: string) => void;
-  onSave: (patch: Partial<Row>) => void;
+  onSave: (patch: Partial<Row>, opts?: { loggedFor?: string }) => void;
   onRetry: () => void;
   onCatchUpDone: () => void;
   launchDate: string | null;
@@ -1208,8 +1208,20 @@ function FillRow({
     loggedFor,
   });
   const [catchUpOpen, setCatchUpOpen] = useState(false);
+  const [askingWhen, setAskingWhen] = useState(false);
+  const [whenDate, setWhenDate] = useState(loggedFor);
   const met = isSnapshotContractMet(row.status);
   const author = snapshotAuthorLabel(row.logged_by);
+  const now = new Date();
+  const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  function confirmDone() {
+    const when = whenDate || loggedFor;
+    onLoggedForChange(when);
+    onPatch({ status: "completed" });
+    onSave({ status: "completed" }, { loggedFor: when });
+    setAskingWhen(false);
+  }
   return (
     <div className={`snap-desk-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
       <div className="snap-desk-row-top">
@@ -1242,13 +1254,44 @@ function FillRow({
           ) : null}
           {met ? (
             <span className="snap-done-mark">Done</span>
+          ) : askingWhen ? (
+            <form
+              className="snap-when-ask"
+              onSubmit={(e) => {
+                e.preventDefault();
+                confirmDone();
+              }}
+            >
+              <label>
+                <span>When?</span>
+                <input
+                  type="date"
+                  value={whenDate}
+                  min={launchDate || undefined}
+                  max={todayYmd}
+                  autoFocus
+                  aria-label="When this work happened"
+                  onChange={(e) => setWhenDate(e.target.value)}
+                />
+              </label>
+              <button type="submit" className="snap-done-btn">
+                Save
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setAskingWhen(false)}
+              >
+                Cancel
+              </button>
+            </form>
           ) : (
             <button
               type="button"
               className="snap-done-btn"
               onClick={() => {
-                onPatch({ status: "completed" });
-                onSave({ status: "completed" });
+                setWhenDate(loggedFor);
+                setAskingWhen(true);
               }}
             >
               Done

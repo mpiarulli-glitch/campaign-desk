@@ -102,6 +102,41 @@ export interface BackfillRow {
   cells: BackfillCell[];
 }
 
+export type BackfillCellRun<T extends { editable: boolean; period_start: string }> = {
+  cell: T;
+  span: number;
+};
+
+/**
+ * Collapse monthly/quarterly mirror weeks so the grid shows one cell per period.
+ * Weekly rows stay one cell per week. Leading non-editable weeks (one-off setup
+ * before the last column) collapse into a single inert span.
+ */
+export function backfillCellRuns<T extends { editable: boolean; period_start: string }>(
+  cells: T[]
+): Array<BackfillCellRun<T>> {
+  const runs: Array<BackfillCellRun<T>> = [];
+  let i = 0;
+  while (i < cells.length) {
+    const start = cells[i];
+    let span = 1;
+    if (start.editable) {
+      while (
+        i + span < cells.length &&
+        !cells[i + span].editable &&
+        cells[i + span].period_start === start.period_start
+      ) {
+        span += 1;
+      }
+    } else {
+      while (i + span < cells.length && !cells[i + span].editable) span += 1;
+    }
+    runs.push({ cell: start, span });
+    i += span;
+  }
+  return runs;
+}
+
 export function resolveBackfillCell(
   kind: DeliverableKind,
   unit: CadenceUnit,
