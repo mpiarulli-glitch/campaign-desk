@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  coalesceEntryStatus,
+  inferContractMetFromNotes,
+  isSnapshotContractMet,
   normSnapshotStatus,
   SNAPSHOT_BEHIND_DONE_STATUSES,
   SNAPSHOT_FILL_OPEN_STATUSES,
+  SNAPSHOT_MET_STATUSES,
   SNAPSHOT_STATUSES,
   snapshotStatusLabel,
 } from "../src/lib/snapshot-status";
@@ -35,5 +39,45 @@ test("open vs behind-done status buckets", () => {
   assert.equal(SNAPSHOT_FILL_OPEN_STATUSES.includes("scheduled"), true);
   assert.equal(SNAPSHOT_FILL_OPEN_STATUSES.includes("sent_for_approval"), false);
   assert.equal(SNAPSHOT_BEHIND_DONE_STATUSES.includes("canceled"), true);
+  assert.equal(SNAPSHOT_BEHIND_DONE_STATUSES.includes("scheduled"), true);
+  assert.equal(SNAPSHOT_BEHIND_DONE_STATUSES.includes("shared"), true);
   assert.equal(SNAPSHOT_BEHIND_DONE_STATUSES.includes("sent_for_approval"), false);
+});
+
+test("contract-met statuses are the client-facing delivered states", () => {
+  assert.deepEqual(SNAPSHOT_MET_STATUSES, ["scheduled", "completed", "shared", "approved"]);
+  assert.equal(isSnapshotContractMet("scheduled"), true);
+  assert.equal(isSnapshotContractMet("completed"), true);
+  assert.equal(isSnapshotContractMet("shared"), true);
+  assert.equal(isSnapshotContractMet("approved"), true);
+  assert.equal(isSnapshotContractMet("sent_for_approval"), false);
+  assert.equal(isSnapshotContractMet("canceled"), false);
+  assert.equal(isSnapshotContractMet("in_progress"), false);
+  assert.equal(isSnapshotContractMet("not_started"), false);
+});
+
+test("notes can lift a forgotten status to met contract", () => {
+  assert.equal(inferContractMetFromNotes("Keyword Research Completed"), "completed");
+  assert.equal(inferContractMetFromNotes("Installed Empire Cookies"), "completed");
+  assert.equal(inferContractMetFromNotes("Launch Business Directories"), "completed");
+  assert.equal(inferContractMetFromNotes("Publish approved post"), "approved");
+  assert.equal(
+    inferContractMetFromNotes("Graphics approved by default, Schedled out until 17th"),
+    "approved"
+  );
+  assert.equal(inferContractMetFromNotes("Client approved design · Development in progress"), "approved");
+  assert.equal(inferContractMetFromNotes("Wk3: CRO Audit generated"), "completed");
+  assert.equal(inferContractMetFromNotes("shared with the client"), "shared");
+  assert.equal(inferContractMetFromNotes(""), null);
+  assert.equal(inferContractMetFromNotes("Need from Client", "Pending from client"), null);
+  assert.equal(inferContractMetFromNotes("Working on quote follow-up nurture"), null);
+  assert.equal(inferContractMetFromNotes("Content Waiting Approval"), null);
+  assert.equal(
+    inferContractMetFromNotes("Tunred on B2C campaings after complete rebuild"),
+    null
+  );
+  assert.equal(coalesceEntryStatus("not_started", "Posted 4 reels", ""), "completed");
+  assert.equal(coalesceEntryStatus("in_progress", "Scheduled out until the 17th", ""), "scheduled");
+  assert.equal(coalesceEntryStatus("approved", "still working", ""), "approved");
+  assert.equal(coalesceEntryStatus("canceled", "Posted anyway", ""), "canceled");
 });

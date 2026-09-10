@@ -8,6 +8,7 @@ import {
   type CycleStatus,
   type Window,
 } from "./cadence";
+import { isSnapshotContractMet } from "./snapshot-status";
 import { deliverableOverview, getOrCreateToken as getOrCreateSnapshotToken, listWins } from "./snapshot";
 import { mondayOf } from "./week";
 import { aggregate, getRevClient, kpisForModel, listMetrics } from "./revenue";
@@ -280,7 +281,7 @@ export function getClientWorkboard(clientId: string): Workboard {
 
   try {
     for (const d of deliverableOverview(clientId)) {
-      const done = ["completed", "approved"].includes(d.status);
+      const done = isSnapshotContractMet(d.status);
       // Route to a department floor by the work's name first (so e.g.
       // "Go-To-Market Marketing Strategy" lands on Strategy), falling back to
       // its snapshot category, then a General floor.
@@ -432,7 +433,7 @@ export function getClientDashboardData(clientId: string): ClientDashboardData | 
   const sentSends = db
     .prepare(`SELECT COUNT(*) AS c FROM scheduled_sends WHERE client_id = ? AND status = 'sent' AND send_date >= ?`)
     .get(client.id, weekStart) as { c: number };
-  const deliverablesDone = overview.filter((d) => ["completed", "approved"].includes(d.status)).length;
+  const deliverablesDone = overview.filter((d) => isSnapshotContractMet(d.status)).length;
 
   return {
     client: { id: client.id, name: client.name, accountManager: client.account_manager },

@@ -8,6 +8,7 @@
 // Reports are read-only aggregations over existing tables. Nothing here writes.
 
 import { getDb } from "./db";
+import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import {
   clientsMissingProjectId,
   lastMessageSyncAt,
@@ -371,7 +372,7 @@ function accountHealth(): ReportSection[] {
 // Statuses that mean a deliverable actually landed, as opposed to being talked
 // about. Anything else is work in flight. Interpolated into the query below so
 // the list lives in one place rather than being restated in SQL.
-const FINISHED_STATUSES = ["completed", "approved", "shared"] as const;
+const FINISHED_STATUSES = SNAPSHOT_MET_STATUSES;
 const FINISHED_SQL = FINISHED_STATUSES.map((s) => `'${s}'`).join(", ");
 
 // A deliverable with no entry for this long has gone quiet. Snapshot entries are

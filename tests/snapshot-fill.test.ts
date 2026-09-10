@@ -217,6 +217,7 @@ test("fill counts and the weekly pass copy", () => {
   assert.equal(counts.done, 4);
   assert.equal(counts.attention, 3);
   assert.equal(fillLane(rows[2], overdue), "todo");
+  assert.equal(fillLane(rows[4], overdue), "done"); // shared counts as logged
   assert.equal(fillLane(rows[5], overdue), "done");
   assert.equal(fillLane(rows[6], overdue), "done");
   assert.equal(fillPassSummary(counts, true), "1 overdue · 2 still need an update");

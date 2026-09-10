@@ -68,8 +68,8 @@ export default function BehindReportPage() {
           <h1 className="h1">Behind report</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Every deliverable that missed its deadline: a recurring item once its week,
-            month, or quarter fully ends without a completed entry, or a one-time item
-            past its manually-set due date.
+            month, or quarter fully ends without a scheduled, completed, shared, or approved
+            entry, or a one-time item past its manually-set due date.
           </p>
         </div>
 

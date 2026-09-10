@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
-import { snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
+import { isSnapshotContractMet, snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
@@ -270,8 +270,8 @@ export default function SnapshotClientPage() {
 
   // At-a-glance figures for the report header.
   const glance = useMemo(() => {
-    const delivered = updatedRows.filter((r) => r.status === "completed" || r.status === "approved").length;
-    const active = updatedRows.filter((r) => r.status === "in_progress" || r.status === "shared").length;
+    const delivered = updatedRows.filter((r) => isSnapshotContractMet(r.status)).length;
+    const active = updatedRows.filter((r) => r.status === "in_progress").length;
     const headline = metrics.find((m) => m.points.length >= 2) || metrics.find((m) => m.points.length > 0);
     let headlineText: string | null = null;
     if (headline) {
@@ -633,8 +633,16 @@ export default function SnapshotClientPage() {
                               </span>
                             </div>
                             <div className="snap-deliv-meta">
-                              {o.worked_ever ? "Work in progress" : "Not started yet"}
-                              {o.worked_ever && o.last_work_done ? ` · ${o.last_work_done}` : ""}
+                              {isSnapshotContractMet(o.status)
+                                ? o.last_work_done
+                                  ? `Delivered · ${o.last_work_done}`
+                                  : "Delivered"
+                                : o.worked_ever
+                                  ? "Work in progress"
+                                  : "Not started yet"}
+                              {!isSnapshotContractMet(o.status) && o.worked_ever && o.last_work_done
+                                ? ` · ${o.last_work_done}`
+                                : ""}
                             </div>
                           </div>
                         ))}

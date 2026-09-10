@@ -272,6 +272,101 @@ test("contract fulfillment does not call an open period a miss", async (t) => {
     assert.equal(status.pct, 50);
   });
 
+  await t.test("shared (awaiting approval) still meets the closed-period contract", () => {
+    const id = client("per_shared");
+    const d = olderDeliverable(id, "Monthly newsletter", "monthly");
+    const lastMonth = snapshot.periodStartFor(
+      "monthly",
+      new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+        .toISOString()
+        .slice(0, 10)
+    );
+    snapshot.upsertEntry({ deliverableId: d.id, weekStart: lastMonth, status: "shared" });
+
+    const behind = snapshot.behindDeliverablesForClient(id);
+    assert.equal(behind.length, 0);
+    const status = snapshot.contractStatus(id);
+    assert.equal(status.pct, 100);
+    assert.equal(status.doneCount, 1);
+    assert.equal(status.onTrack, true);
+  });
+
+  await t.test("scheduled still meets the closed-period contract", () => {
+    const id = client("per_sched");
+    const d = olderDeliverable(id, "Monthly newsletter", "monthly");
+    const lastMonth = snapshot.periodStartFor(
+      "monthly",
+      new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+        .toISOString()
+        .slice(0, 10)
+    );
+    snapshot.upsertEntry({ deliverableId: d.id, weekStart: lastMonth, status: "scheduled" });
+
+    const behind = snapshot.behindDeliverablesForClient(id);
+    assert.equal(behind.length, 0);
+    const status = snapshot.contractStatus(id);
+    assert.equal(status.pct, 100);
+    assert.equal(status.doneCount, 1);
+    assert.equal(status.onTrack, true);
+  });
+
+  await t.test("sent for approval is not delivered and still counts as a miss", () => {
+    const id = client("per_sent");
+    const d = olderDeliverable(id, "Monthly newsletter", "monthly");
+    const lastMonth = snapshot.periodStartFor(
+      "monthly",
+      new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+        .toISOString()
+        .slice(0, 10)
+    );
+    snapshot.upsertEntry({ deliverableId: d.id, weekStart: lastMonth, status: "sent_for_approval" });
+
+    const behind = snapshot.behindDeliverablesForClient(id);
+    assert.equal(behind.length, 1);
+    assert.equal(behind[0].status, "sent_for_approval");
+    const status = snapshot.contractStatus(id);
+    assert.equal(status.pct, 0);
+    assert.equal(status.onTrack, false);
+  });
+
+  await t.test("one-time shared work is treated as delivered in the overview", () => {
+    const id = client("per_onetime_shared");
+    const d = snapshot.createDeliverable({
+      clientId: id, category: "Email", name: "Klaviyo setup", cadence: "", kind: "one_time",
+    });
+    getDb()
+      .prepare(`UPDATE snapshot_deliverables SET due_date = ?, created_at = ? WHERE id = ?`)
+      .run("2020-01-15", "2020-01-01T00:00:00.000Z", d.id);
+    snapshot.upsertEntry({ deliverableId: d.id, weekStart: "2020-01-06", status: "shared" });
+
+    const overview = snapshot.deliverableOverview(id);
+    assert.equal(overview.length, 1);
+    assert.ok(overview[0].completed_on);
+    assert.equal(overview[0].status, "completed");
+    assert.equal(snapshot.behindDeliverablesForClient(id).length, 0);
+  });
+
+  await t.test("forgotten status is lifted when notes already say it landed", () => {
+    const id = client("per_notes_met");
+    const d = olderDeliverable(id, "Monthly newsletter", "monthly");
+    const lastMonth = snapshot.periodStartFor(
+      "monthly",
+      new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+        .toISOString()
+        .slice(0, 10)
+    );
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: lastMonth,
+      status: "in_progress",
+      workDone: "Published the July issue",
+    });
+    const row = snapshot.weekData(id, lastMonth).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(row.status, "completed");
+    assert.equal(snapshot.behindDeliverablesForClient(id).length, 0);
+    assert.equal(snapshot.contractStatus(id).pct, 100);
+  });
+
   await t.test("one-time setup work is not a recurring promise", () => {
     const id = client("per_onetime");
     snapshot.createDeliverable({

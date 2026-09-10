@@ -6,6 +6,7 @@ import { Brand } from "@/components/Brand";
 import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
 import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
+import { isSnapshotContractMet } from "@/lib/snapshot-status";
 import { type Workboard } from "@/components/WorkTower";
 
 type CycleStatus =
@@ -216,7 +217,7 @@ export default function ClientDashboardPage() {
   const todayYmdStr = ymd(today.getFullYear(), today.getMonth(), today.getDate());
 
   const snapshotDone = data?.snapshot.overview.filter((d) =>
-    ["completed", "approved"].includes(d.status)
+    isSnapshotContractMet(d.status)
   ).length ?? 0;
   const snapshotTotal = data?.snapshot.overview.length ?? 0;
 
@@ -360,7 +361,7 @@ export default function ClientDashboardPage() {
                     <div className="card card-pad">
                       <p style={{ margin: 0, fontSize: 14 }}>
                         {snapshotTotal
-                          ? `${snapshotDone} of ${snapshotTotal} deliverables completed this period.`
+                          ? `${snapshotDone} of ${snapshotTotal} deliverables delivered this period.`
                           : "No deliverables tracked yet."}
                       </p>
                     </div>

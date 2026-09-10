@@ -5,6 +5,7 @@ import path from "path";
 import type { AssetKind, AssetType, BodyFormat } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
 import { PEOPLE, OWNER_SLUG } from "./people";
+import { coalesceEntryStatus } from "./snapshot-status";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -3069,6 +3070,22 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE snapshot_entries ADD COLUMN logged_by TEXT NOT NULL DEFAULT ''`
     );
+  }
+
+  // Forgotten status column: if work-done/notes already say the client got it,
+  // treat that period as met contract. Safe to re-run; already-met rows stay put.
+  if (snapEntryCols.length) {
+    const stamp = new Date().toISOString();
+    const rows = database
+      .prepare(`SELECT id, status, work_done, notes FROM snapshot_entries`)
+      .all() as Array<{ id: string; status: string; work_done: string; notes: string }>;
+    const upd = database.prepare(
+      `UPDATE snapshot_entries SET status = ?, updated_at = ? WHERE id = ?`
+    );
+    for (const row of rows) {
+      const next = coalesceEntryStatus(row.status, row.work_done, row.notes);
+      if (next !== row.status) upd.run(next, stamp, row.id);
+    }
   }
 
   // Metric periods are canonicalised to YYYY-MM so a chart's x-axis sorts

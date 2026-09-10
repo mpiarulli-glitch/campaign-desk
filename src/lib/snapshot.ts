@@ -4,6 +4,8 @@ import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
 import { deliverableVisibleTo } from "./snapshot-fill";
 import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import {
+  coalesceEntryStatus,
+  isSnapshotContractMet,
   normSnapshotStatus,
   SNAPSHOT_BEHIND_DONE_STATUSES,
   type SnapshotStatus,
@@ -96,6 +98,9 @@ function todayYmd(): string {
 }
 
 export {
+  isSnapshotContractMet,
+  SNAPSHOT_BEHIND_DONE_STATUSES,
+  SNAPSHOT_MET_STATUSES,
   SNAPSHOT_STATUSES,
   SNAPSHOT_STATUS_SHORT,
   snapshotStatusLabel,
@@ -745,7 +750,11 @@ export function upsertEntry(input: {
     | undefined;
 
   const merged = {
-    status: normStatus(input.status ?? existing?.status ?? "not_started"),
+    status: coalesceEntryStatus(
+      input.status ?? existing?.status ?? "not_started",
+      input.workDone ?? existing?.work_done ?? "",
+      input.notes ?? existing?.notes ?? ""
+    ),
     work_done: input.workDone ?? existing?.work_done ?? "",
     next_steps: input.nextSteps ?? existing?.next_steps ?? "",
     notes: input.notes ?? existing?.notes ?? "",
@@ -793,6 +802,62 @@ export function upsertEntry(input: {
     loggedBy: merged.logged_by,
     updatedAt: ts,
   };
+}
+
+/** Lift forgotten statuses when work-done or notes already say the work landed. */
+export function promoteOpenEntriesFromNotes(): Array<{
+  id: string;
+  client_id: string;
+  deliverable_id: string;
+  week_start: string;
+  from: SnapshotStatus;
+  to: SnapshotStatus;
+}> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT id, client_id, deliverable_id, week_start, status, work_done, notes
+       FROM snapshot_entries`
+    )
+    .all() as Array<{
+    id: string;
+    client_id: string;
+    deliverable_id: string;
+    week_start: string;
+    status: string;
+    work_done: string;
+    notes: string;
+  }>;
+  const changed: Array<{
+    id: string;
+    client_id: string;
+    deliverable_id: string;
+    week_start: string;
+    from: SnapshotStatus;
+    to: SnapshotStatus;
+  }> = [];
+  const stamp = nowIso();
+  const upd = db.prepare(
+    `UPDATE snapshot_entries SET status = ?, updated_at = ? WHERE id = ?`
+  );
+  const run = db.transaction(() => {
+    for (const row of rows) {
+      const from = normStatus(row.status);
+      const to = coalesceEntryStatus(from, row.work_done, row.notes);
+      if (to === from) continue;
+      upd.run(to, stamp, row.id);
+      changed.push({
+        id: row.id,
+        client_id: row.client_id,
+        deliverable_id: row.deliverable_id,
+        week_start: row.week_start,
+        from,
+        to,
+      });
+    }
+  });
+  run();
+  return changed;
 }
 
 interface SnapshotEntryResult {
@@ -1408,14 +1473,15 @@ export interface DeliverableOverview {
   // For recurring items: the CURRENT period's status only — resets to
   // "not_started" once a new week/month/quarter starts with nothing logged
   // yet, even if the prior period was completed. For one-time items: sticky
-  // forever once done (see completed_on below).
+  // forever once delivered (see completed_on below).
   status: SnapshotStatus;
   worked_ever: boolean; // has any work been logged in any period, ever
   last_work_done: string; // most recent non-empty "what we did", any period
   last_activity_week: string; // period key of the most recent entry, or ""
-  completed_on: string; // for one-time items: the period it was completed, or ""
+  completed_on: string; // for one-time items: the period it was delivered, or ""
 }
 
+/** Finished for overdue + one-time rollup (includes canceled). Contract % uses met statuses. */
 const DONE_STATUSES: SnapshotStatus[] = SNAPSHOT_BEHIND_DONE_STATUSES;
 
 // All active deliverables for an account with their rolled-up status. Recurring
@@ -1499,8 +1565,9 @@ export function deliverableOverview(clientId: string): DeliverableOverview[] {
 
   const list = order.map((id) => map.get(id)!);
   for (const o of list) {
-    // One-time items that are done render as "Completed" regardless of
-    // period, and get pushed below the ongoing work.
+    // One-time items that were delivered (scheduled, completed, shared,
+    // approved, or canceled) render as "Completed" regardless of period,
+    // and get pushed below the ongoing work.
     if (o.kind === "one_time" && o.completed_on) o.status = "completed";
   }
   return list.sort((a, b) => rank(a) - rank(b));
@@ -1573,8 +1640,8 @@ export interface ContractStatus {
  *   - **A miss**, if the period that just ended closed without it being done.
  *     This is exactly what the behind report flags, and reusing that set is what
  *     keeps the percentage and the "N overdue" banner from contradicting.
- *   - **A hit**, if it has a closed period it did not miss, or it is already done
- *     in the current one.
+ *   - **A hit**, if it has a closed period it did not miss, or it is already
+ *     delivered in the current one (scheduled, completed, shared, or approved).
  *   - **In flight**, if it is too new to have a closed period. There is no fact
  *     yet about whether it will be delivered, so it is counted separately rather
  *     than scored as a failure. An account where everything is in flight has
@@ -1628,7 +1695,7 @@ export function contractStatus(clientId: string): ContractStatus {
       totalCount++;
       continue;
     }
-    if (hasClosedPeriod(d.deliverable_id, d.cadence_unit) || DONE_STATUSES.includes(d.status)) {
+    if (hasClosedPeriod(d.deliverable_id, d.cadence_unit) || isSnapshotContractMet(d.status)) {
       doneCount++;
       totalCount++;
       continue;
@@ -1675,7 +1742,7 @@ function subDaysYmd(ymd: string, n: number): string {
 // Deliverables that are actually overdue, not just "not done yet with time
 // left": a recurring item is only flagged once the period it was due in has
 // fully ended (a monthly item isn't behind on day 2 of the month — it's
-// behind once that month is over and it was never completed). A one-time
+// behind once that month is over and it was never delivered). A one-time
 // item is only flagged if it has a manually-set due date that has passed.
 export function behindDeliverablesForClient(clientId: string): BehindItem[] {
   const today = todayYmd();
