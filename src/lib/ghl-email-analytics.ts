@@ -104,6 +104,8 @@ export interface ClientEmailAnalytics {
   campaigns: GhlCampaignRow[];
   /** Workflow / automation email flows. */
   flows: GhlCampaignRow[];
+  /** Set when the flows pull failed (scope/network). */
+  flowsError: string | null;
   appointments: number | null;
   appointmentsError: string | null;
   formFills: number | null;
@@ -761,6 +763,7 @@ export async function pullClientEmailAnalytics(
     });
 
   let flows: GhlCampaignRow[] = [];
+  let flowsError: string | null = null;
   try {
     const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
     flows = workflowCampaigns.map((flow) => ({
@@ -784,12 +787,16 @@ export async function pullClientEmailAnalytics(
       attributedAppointments: 0,
       abandonedRecovery: flow.abandonedRecovery,
     }));
-  } catch {
+  } catch (err) {
     flows = [];
+    flowsError =
+      err instanceof Error
+        ? err.message
+        : "Could not load GHL flows.";
   }
 
   const totals = emptyTotals();
-  for (const row of campaigns) {
+  for (const row of [...campaigns, ...flows]) {
     if (!countsInTotals(row)) continue;
     addTotals(totals, row);
   }
@@ -950,6 +957,7 @@ export async function pullClientEmailAnalytics(
     totals: finalizedTotals,
     campaigns,
     flows,
+    flowsError,
     appointments,
     appointmentsError,
     formFills,
@@ -976,6 +984,7 @@ export function emptyClientEmailAnalytics(
     totals: emptyTotals(),
     campaigns: [],
     flows: [],
+    flowsError: null,
     appointments: null,
     appointmentsError: null,
     formFills: null,
