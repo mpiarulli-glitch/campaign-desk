@@ -11,15 +11,21 @@ export const maxDuration = 300;
 const PRESETS = new Set<AnalyticsPreset>(["1m", "3m", "6m", "12m"]);
 
 function secretMatches(provided: string | null): boolean {
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !provided) return false;
-  const a = createHmac("sha256", expected).update(provided).digest();
-  const b = createHmac("sha256", expected).update(expected).digest();
-  try {
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
+  if (!provided) return false;
+  const candidates = [
+    process.env.CRON_SECRET,
+    process.env.ATTRIBUTION_SCAN_SECRET,
+  ].filter((v): v is string => Boolean(v));
+  for (const expected of candidates) {
+    const a = createHmac("sha256", expected).update(provided).digest();
+    const b = createHmac("sha256", expected).update(expected).digest();
+    try {
+      if (timingSafeEqual(a, b)) return true;
+    } catch {
+      // length mismatch — try next candidate
+    }
   }
+  return false;
 }
 
 async function authorized(request: Request): Promise<boolean> {
