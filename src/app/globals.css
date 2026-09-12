@@ -16242,6 +16242,68 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin-bottom: 12px;
 }
 
+.lh-integrations .lh-card-head {
+  margin-bottom: 8px;
+}
+
+.lh-integrations-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lh-integration-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.lh-integration-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.lh-integration-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.lh-integration-tracks {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lh-integration-status {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.lh-integration-status.is-error {
+  color: var(--danger, #b42318);
+}
+
+.lh-integration-form {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.lh-integration-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .lh-li-status {
   font-size: 11px;
   font-weight: 700;

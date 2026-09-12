@@ -46,11 +46,14 @@ export function EmailAnalyticsPanel({
   clientId,
   memberIds = [],
   ghlLinked,
+  crmLinked = false,
   businessModel = "home_service",
 }: {
   clientId: string;
   memberIds?: string[];
   ghlLinked: boolean;
+  /** True when Housecall Pro and/or HubSpot is linked for this client. */
+  crmLinked?: boolean;
   businessModel?: "ecomm" | "b2b" | "home_service";
 }) {
   const commerceClient = businessModel === "ecomm";
@@ -66,7 +69,7 @@ export function EmailAnalyticsPanel({
     [data]
   );
 
-  const canPull = ghlLinked || commerceClient;
+  const canPull = ghlLinked || commerceClient || crmLinked;
 
   const pull = useCallback(async () => {
     if (!canPull) return;
@@ -118,8 +121,8 @@ export function EmailAnalyticsPanel({
           <h3>Email analytics</h3>
         </div>
         <p className="lh-card-note">
-          Link a GoHighLevel location for this account from Lifecycle → Tools to
-          pull campaign stats.
+          Link GoHighLevel from Lifecycle → Tools, or connect Housecall Pro /
+          HubSpot in CRM connections above, to pull conversion stats.
         </p>
       </section>
     );
@@ -137,7 +140,15 @@ export function EmailAnalyticsPanel({
           onClick={() => void pull()}
           disabled={loading || (preset === "custom" && (!from || !to))}
         >
-          {loading ? "Pulling…" : data ? "Refresh" : commerceClient ? "Pull analytics" : "Pull from GHL"}
+          {loading
+            ? "Pulling…"
+            : data
+              ? "Refresh"
+              : commerceClient
+                ? "Pull analytics"
+                : crmLinked && !ghlLinked
+                  ? "Pull from CRM"
+                  : "Pull from GHL"}
         </button>
       </div>
 

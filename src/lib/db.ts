@@ -3491,6 +3491,29 @@ function migrate(database: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_social_qa_reviews_batch ON social_qa_reviews(batch_id);
   `);
+
+  // Optional CRM connections for Lifecycle tracking (Housecall Pro, HubSpot, …).
+  // Secrets live in app_settings; this table only stores link state + external ids.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS client_integrations (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      external_id TEXT NOT NULL DEFAULT '',
+      label TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'linked',
+      last_verified_at TEXT,
+      last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, provider),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_integrations_client
+      ON client_integrations(client_id);
+    CREATE INDEX IF NOT EXISTS idx_client_integrations_provider
+      ON client_integrations(provider, status);
+  `);
 }
 
 // Insert a login row for every person in the code roster who does not have one

@@ -12,6 +12,7 @@ import {
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
 import { EmailAnalyticsPanel } from "./EmailAnalyticsPanel";
+import { ClientIntegrationsPanel } from "./ClientIntegrationsPanel";
 import { ChecklistBlock } from "./ChecklistBlock";
 import { ClientWorkflowsPanel } from "./ClientWorkflowsPanel";
 import { LinkedInAnalyticsPanel } from "./LinkedInAnalyticsPanel";
@@ -492,6 +493,14 @@ function ClientDetail({
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
   const [quotaError, setQuotaError] = useState("");
+  const [crmLinked, setCrmLinked] = useState(false);
+  const [analyticsTick, setAnalyticsTick] = useState(0);
+  const handleCrmChange = useCallback((linked: boolean) => {
+    setCrmLinked((prev) => {
+      if (prev !== linked) setAnalyticsTick((n) => n + 1);
+      return linked;
+    });
+  }, []);
   const automations = client.automations || [];
   const automationDone = automations.filter((a) => a.status === "done").length;
   const emailPct =
@@ -904,11 +913,18 @@ function ClientDetail({
         memberIds={client.memberIds || []}
       />
 
+      <ClientIntegrationsPanel
+        key={`crm-${client.id}`}
+        clientId={client.id}
+        onChange={handleCrmChange}
+      />
+
       <EmailAnalyticsPanel
-        key={client.id}
+        key={`email-${client.id}-${analyticsTick}`}
         clientId={client.id}
         memberIds={client.memberIds || []}
         ghlLinked={Boolean(client.ghlLinked)}
+        crmLinked={crmLinked}
         businessModel={client.businessModel || "home_service"}
       />
       </div>
