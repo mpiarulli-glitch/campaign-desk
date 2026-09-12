@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { can } from "@/lib/auth";
 import { isGhlConfigured } from "@/lib/ghl";
 import {
+  emptyClientEmailAnalytics,
   pullClientEmailAnalytics,
   resolveAnalyticsRange,
   type AnalyticsPreset,
+  type ClientEmailAnalytics,
 } from "@/lib/ghl-email-analytics";
-import { getRevClient } from "@/lib/revenue";
+import {
+  commerceRollupForRange,
+  getRevClient,
+} from "@/lib/revenue";
 
 const PRESETS = new Set<AnalyticsPreset>(["1m", "3m", "6m", "12m", "custom"]);
 
@@ -19,6 +24,28 @@ function resolveLocationId(clientId: string, memberIds: string[]): string | null
   return null;
 }
 
+function attachCommerce(
+  analytics: ClientEmailAnalytics,
+  clientId: string,
+  moneyMode: ClientEmailAnalytics["moneyMode"]
+): ClientEmailAnalytics {
+  if (moneyMode !== "commerce") {
+    return { ...analytics, moneyMode, commerce: null };
+  }
+  const rollup = commerceRollupForRange(clientId, analytics.start, analytics.end);
+  return {
+    ...analytics,
+    moneyMode,
+    commerce: {
+      revenue: rollup.revenue,
+      orders: rollup.orders,
+      aov: rollup.aov,
+      months: rollup.months,
+      revenueSource: rollup.revenueSource,
+    },
+  };
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ clientId: string }> }
@@ -26,16 +53,13 @@ export async function GET(
   if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
-  if (!isGhlConfigured()) {
-    return NextResponse.json(
-      { error: "GoHighLevel is not connected on this environment." },
-      { status: 503 }
-    );
-  }
 
   const { clientId } = await params;
   const client = getRevClient(clientId);
   if (!client) return NextResponse.json({ error: "Unknown account" }, { status: 404 });
+
+  const moneyMode =
+    client.business_model === "ecomm" ? ("commerce" as const) : ("service" as const);
 
   const url = new URL(request.url);
   const memberIds = (url.searchParams.get("members") || "")
@@ -44,15 +68,6 @@ export async function GET(
     .filter(Boolean);
 
   const locationId = resolveLocationId(clientId, memberIds);
-  if (!locationId) {
-    return NextResponse.json(
-      {
-        error:
-          "This account has no GoHighLevel location linked. Map it from Lifecycle → Tools.",
-      },
-      { status: 422 }
-    );
-  }
 
   const rawPreset = (url.searchParams.get("range") || "1m").toLowerCase();
   const preset = (PRESETS.has(rawPreset as AnalyticsPreset)
@@ -74,8 +89,56 @@ export async function GET(
     );
   }
 
+  // DTC clients can still see store sales without a GHL location.
+  if (!locationId) {
+    if (moneyMode === "commerce") {
+      const analytics = attachCommerce(
+        emptyClientEmailAnalytics(start, end, "commerce"),
+        clientId,
+        "commerce"
+      );
+      return NextResponse.json({
+        clientId,
+        clientName: client.name,
+        range: preset,
+        analytics,
+      });
+    }
+    return NextResponse.json(
+      {
+        error:
+          "This account has no GoHighLevel location linked. Map it from Lifecycle → Tools.",
+      },
+      { status: 422 }
+    );
+  }
+
+  if (!isGhlConfigured()) {
+    if (moneyMode === "commerce") {
+      const analytics = attachCommerce(
+        emptyClientEmailAnalytics(start, end, "commerce"),
+        clientId,
+        "commerce"
+      );
+      return NextResponse.json({
+        clientId,
+        clientName: client.name,
+        range: preset,
+        analytics,
+      });
+    }
+    return NextResponse.json(
+      { error: "GoHighLevel is not connected on this environment." },
+      { status: 503 }
+    );
+  }
+
   try {
-    const analytics = await pullClientEmailAnalytics(locationId, start, end);
+    const analytics = attachCommerce(
+      await pullClientEmailAnalytics(locationId, start, end),
+      clientId,
+      moneyMode
+    );
     return NextResponse.json({
       clientId,
       clientName: client.name,
@@ -83,6 +146,22 @@ export async function GET(
       analytics,
     });
   } catch (err) {
+    if (moneyMode === "commerce") {
+      // Still surface store sales if the GHL pull fails.
+      const analytics = attachCommerce(
+        emptyClientEmailAnalytics(start, end, "commerce"),
+        clientId,
+        "commerce"
+      );
+      return NextResponse.json({
+        clientId,
+        clientName: client.name,
+        range: preset,
+        analytics,
+        warning:
+          err instanceof Error ? err.message : "Could not pull GoHighLevel analytics.",
+      });
+    }
     return NextResponse.json(
       {
         error:

@@ -68,6 +68,7 @@ type HubClient = {
   launchDate: string | null;
   platform: EmailPlatform | null;
   ghlLinked: boolean;
+  businessModel?: "ecomm" | "b2b" | "home_service";
   nextSend: HubSend | null;
   sends: HubSend[];
   campaigns: HubCampaign[];
@@ -908,6 +909,7 @@ function ClientDetail({
         clientId={client.id}
         memberIds={client.memberIds || []}
         ghlLinked={Boolean(client.ghlLinked)}
+        businessModel={client.businessModel || "home_service"}
       />
       </div>
     </div>

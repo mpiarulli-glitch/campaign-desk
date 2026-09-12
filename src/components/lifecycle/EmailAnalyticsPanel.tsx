@@ -23,6 +23,14 @@ function fmtPct(n: number): string {
   return `${n.toFixed(1)}%`;
 }
 
+function fmtMoney(n: number): string {
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
 function prettyRange(start: string, end: string): string {
   const opts: Intl.DateTimeFormatOptions = {
     month: "short",
@@ -38,11 +46,14 @@ export function EmailAnalyticsPanel({
   clientId,
   memberIds = [],
   ghlLinked,
+  businessModel = "home_service",
 }: {
   clientId: string;
   memberIds?: string[];
   ghlLinked: boolean;
+  businessModel?: "ecomm" | "b2b" | "home_service";
 }) {
+  const commerceClient = businessModel === "ecomm";
   const [preset, setPreset] = useState<AnalyticsPreset>("1m");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -55,8 +66,10 @@ export function EmailAnalyticsPanel({
     [data]
   );
 
+  const canPull = ghlLinked || commerceClient;
+
   const pull = useCallback(async () => {
-    if (!ghlLinked) return;
+    if (!canPull) return;
     if (preset === "custom" && (!from || !to)) {
       setError("Pick a start and end date.");
       return;
@@ -73,6 +86,7 @@ export function EmailAnalyticsPanel({
       const res = await fetch(`/api/lifecycle/hub/${clientId}/analytics?${params}`);
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
+        warning?: string;
         analytics?: ClientEmailAnalytics;
       };
       if (!res.ok || !body.analytics) {
@@ -81,22 +95,23 @@ export function EmailAnalyticsPanel({
         return;
       }
       setData(body.analytics);
+      if (body.warning) setError(body.warning);
     } catch {
       setError("Could not pull analytics.");
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [clientId, from, ghlLinked, memberIds, preset, to]);
+  }, [canPull, clientId, from, memberIds, preset, to]);
 
   useEffect(() => {
-    if (!ghlLinked) return;
+    if (!canPull) return;
     if (preset === "custom") return;
     void pull();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ghlLinked, preset]);
+  }, [canPull, preset]);
 
-  if (!ghlLinked) {
+  if (!canPull) {
     return (
       <section className="lh-card lh-analytics">
         <div className="lh-card-head">
@@ -122,7 +137,7 @@ export function EmailAnalyticsPanel({
           onClick={() => void pull()}
           disabled={loading || (preset === "custom" && (!from || !to))}
         >
-          {loading ? "Pulling…" : data ? "Refresh" : "Pull from GHL"}
+          {loading ? "Pulling…" : data ? "Refresh" : commerceClient ? "Pull analytics" : "Pull from GHL"}
         </button>
       </div>
 
@@ -174,7 +189,11 @@ export function EmailAnalyticsPanel({
       {error ? <p className="lh-error">{error}</p> : null}
 
       {loading && !data ? (
-        <p className="lh-card-note">Pulling campaign stats from GoHighLevel…</p>
+        <p className="lh-card-note">
+          {commerceClient
+            ? "Loading store sales and email analytics…"
+            : "Pulling campaign stats from GoHighLevel…"}
+        </p>
       ) : null}
 
       {data && totals ? (
@@ -182,40 +201,75 @@ export function EmailAnalyticsPanel({
           <div className="lh-analytics-main">
             <p className="lh-analytics-window">{prettyRange(data.start, data.end)}</p>
             <p className="lh-card-note">
-              Form fills and bookings are credited to the most recent campaign or
-              automation send in the prior {data.attributionDays} days. Abandoned
-              booking recovery uses GHL tags (<code>abandoned booking</code> →{" "}
-              <code>meeting booked</code>) plus calendar bookings.
+              {data.moneyMode === "commerce" ? (
+                <>
+                  DTC money is store <strong>orders</strong> and{" "}
+                  <strong>revenue</strong> from monthly metrics in this window
+                  (Klaviyo / manual / client-reported). Email engagement still
+                  comes from GHL when linked.
+                </>
+              ) : (
+                <>
+                  Form fills and bookings are credited to the most recent
+                  campaign or automation send in the prior {data.attributionDays}{" "}
+                  days. Abandoned booking recovery uses GHL tags (
+                  <code>abandoned booking</code> → <code>meeting booked</code>)
+                  plus calendar bookings.
+                </>
+              )}
             </p>
             <div className="lh-metrics" aria-label="Money outcomes">
-              <div className="lh-metric">
-                <b>{data.formFills === null ? "—" : fmt(data.formFills)}</b>
-                <span>form fills</span>
-              </div>
-              <div className="lh-metric">
-                <b>
-                  {data.appointments === null ? "—" : fmt(data.appointments)}
-                </b>
-                <span>booked</span>
-              </div>
-              <div className="lh-metric">
-                <b>
-                  {data.abandonedRecovery?.error
-                    ? "—"
-                    : data.abandonedRecovery
-                      ? fmt(data.abandonedRecovery.recoveredInWindow)
-                      : "—"}
-                </b>
-                <span>abandoned recovered</span>
-              </div>
-              <div className="lh-metric">
-                <b>
-                  {data.abandonedRecovery && !data.abandonedRecovery.error
-                    ? fmtPct(data.abandonedRecovery.recoveryRate)
-                    : "—"}
-                </b>
-                <span>recovery rate</span>
-              </div>
+              {data.moneyMode === "commerce" && data.commerce ? (
+                <>
+                  <div className="lh-metric">
+                    <b>{fmtMoney(data.commerce.revenue)}</b>
+                    <span>revenue</span>
+                  </div>
+                  <div className="lh-metric">
+                    <b>{fmt(data.commerce.orders)}</b>
+                    <span>orders</span>
+                  </div>
+                  <div className="lh-metric">
+                    <b>{fmtMoney(data.commerce.aov)}</b>
+                    <span>AOV</span>
+                  </div>
+                  <div className="lh-metric">
+                    <b>{fmt(data.commerce.months)}</b>
+                    <span>months logged</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="lh-metric">
+                    <b>{data.formFills === null ? "—" : fmt(data.formFills)}</b>
+                    <span>form fills</span>
+                  </div>
+                  <div className="lh-metric">
+                    <b>
+                      {data.appointments === null ? "—" : fmt(data.appointments)}
+                    </b>
+                    <span>booked</span>
+                  </div>
+                  <div className="lh-metric">
+                    <b>
+                      {data.abandonedRecovery?.error
+                        ? "—"
+                        : data.abandonedRecovery
+                          ? fmt(data.abandonedRecovery.recoveredInWindow)
+                          : "—"}
+                    </b>
+                    <span>abandoned recovered</span>
+                  </div>
+                  <div className="lh-metric">
+                    <b>
+                      {data.abandonedRecovery && !data.abandonedRecovery.error
+                        ? fmtPct(data.abandonedRecovery.recoveryRate)
+                        : "—"}
+                    </b>
+                    <span>recovery rate</span>
+                  </div>
+                </>
+              )}
               <div className="lh-metric">
                 <b>{fmt(totals.sent)}</b>
                 <span>sent</span>
@@ -229,17 +283,25 @@ export function EmailAnalyticsPanel({
                 <span>click rate</span>
               </div>
             </div>
+            {data.moneyMode === "commerce" && data.commerce ? (
+              <p className="lh-card-note">
+                Revenue source: {data.commerce.revenueSource}
+                {data.commerce.months === 0
+                  ? " · no monthly store metrics in this window yet"
+                  : ""}
+              </p>
+            ) : null}
             {data.formFillsError ? (
               <p className="lh-card-note">Form fills: {data.formFillsError}</p>
             ) : null}
             {data.appointmentsError ? (
               <p className="lh-card-note">Appointments: {data.appointmentsError}</p>
             ) : null}
-            {data.abandonedRecovery?.error ? (
+            {data.moneyMode !== "commerce" && data.abandonedRecovery?.error ? (
               <p className="lh-card-note">
                 Abandoned recovery: {data.abandonedRecovery.error}
               </p>
-            ) : data.abandonedRecovery ? (
+            ) : data.moneyMode !== "commerce" && data.abandonedRecovery ? (
               <p className="lh-card-note">
                 Abandoned pool {fmt(data.abandonedRecovery.abandoned)} · recovered{" "}
                 {fmt(data.abandonedRecovery.recovered)} · still open{" "}

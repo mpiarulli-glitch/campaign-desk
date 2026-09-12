@@ -64,6 +64,17 @@ export interface AbandonedRecoveryStats {
   error: string | null;
 }
 
+/** DTC / ecommerce store-sales rollup (from rev_metrics). */
+export interface CommerceAnalytics {
+  revenue: number;
+  orders: number;
+  aov: number;
+  months: number;
+  revenueSource: string;
+}
+
+export type AnalyticsMoneyMode = "service" | "commerce";
+
 export interface EmailAnalyticsTotals {
   campaigns: number;
   withStats: number;
@@ -82,6 +93,8 @@ export interface ClientEmailAnalytics {
   start: string;
   end: string;
   fetchedAt: string;
+  /** service = GHL form/booking money; commerce = DTC store sales. */
+  moneyMode: AnalyticsMoneyMode;
   totals: EmailAnalyticsTotals;
   /** Broadcast / one-shot email campaigns. */
   campaigns: GhlCampaignRow[];
@@ -92,6 +105,8 @@ export interface ClientEmailAnalytics {
   formFills: number | null;
   formFillsError: string | null;
   abandonedRecovery: AbandonedRecoveryStats | null;
+  /** Present for ecommerce clients — orders + revenue in the window. */
+  commerce: CommerceAnalytics | null;
   attributionDays: number;
 }
 
@@ -896,6 +911,7 @@ export async function pullClientEmailAnalytics(
     start,
     end,
     fetchedAt: new Date().toISOString(),
+    moneyMode: "service",
     totals: finalizeTotals(totals),
     campaigns,
     flows,
@@ -904,6 +920,32 @@ export async function pullClientEmailAnalytics(
     formFills,
     formFillsError,
     abandonedRecovery,
+    commerce: null,
     attributionDays,
+  };
+}
+
+/** Empty email analytics shell for DTC clients with no GHL location linked. */
+export function emptyClientEmailAnalytics(
+  start: string,
+  end: string,
+  moneyMode: AnalyticsMoneyMode = "commerce"
+): ClientEmailAnalytics {
+  return {
+    locationId: "",
+    start,
+    end,
+    fetchedAt: new Date().toISOString(),
+    moneyMode,
+    totals: emptyTotals(),
+    campaigns: [],
+    flows: [],
+    appointments: null,
+    appointmentsError: null,
+    formFills: null,
+    formFillsError: null,
+    abandonedRecovery: null,
+    commerce: null,
+    attributionDays: DEFAULT_ATTRIBUTION_DAYS,
   };
 }

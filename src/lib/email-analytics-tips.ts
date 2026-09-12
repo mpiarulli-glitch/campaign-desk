@@ -154,7 +154,35 @@ export function buildEmailRecommendations(
   }
 
 
-  const allSends = [...campaigns, ...(flows || [])];
+  
+  if (analytics.moneyMode === "commerce" && analytics.commerce) {
+    const { revenue, orders, aov, months } = analytics.commerce;
+    if (months === 0) {
+      tips.push({
+        id: "commerce-empty",
+        title: "No store sales logged in this window",
+        detail:
+          "Add monthly orders and revenue for this ecommerce account so Lifecycle can show the money email is supposed to drive.",
+        tone: "focus",
+      });
+    } else if (orders > 0 && totals.clicked >= 20 && revenue / Math.max(totals.clicked, 1) < 1) {
+      tips.push({
+        id: "commerce-weak-click-value",
+        title: "Clicks are not producing enough revenue",
+        detail: `AOV is ${aov.toFixed(0)}. Push the offer and product page harder in the first screen — clicks need a clearer buy path.`,
+        tone: "focus",
+      });
+    } else if (revenue > 0) {
+      tips.push({
+        id: "commerce-ok",
+        title: "Store revenue is landing in this window",
+        detail: `${orders.toLocaleString("en-US")} orders / $${Math.round(revenue).toLocaleString("en-US")} revenue. Keep the winning offer cadence and protect send days.`,
+        tone: "keep",
+      });
+    }
+  }
+
+const allSends = [...campaigns, ...(flows || [])];
   const attributedForms = allSends.reduce((n, row) => n + (row.formFills || 0), 0);
   const attributedBooks = allSends.reduce((n, row) => n + (row.attributedAppointments || 0), 0);
   const topMoney = allSends
