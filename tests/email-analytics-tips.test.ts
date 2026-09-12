@@ -18,7 +18,7 @@ function sample(partial: Partial<ClientEmailAnalytics> & {
     formFills: null,
     formFillsError: null,
     abandonedRecovery: null,
-    attributionDays: 14,
+    attributionDays: 5,
     moneyMode: "service",
     commerce: null,
     ...partial,

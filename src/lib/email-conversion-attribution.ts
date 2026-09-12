@@ -13,7 +13,7 @@ export const FORM_FILL_TAGS = ["website form submission"] as const;
 export const ABANDONED_BOOKING_TAGS = ["abandoned booking"] as const;
 export const MEETING_BOOKED_TAGS = ["meeting booked"] as const;
 
-export const DEFAULT_ATTRIBUTION_DAYS = 14;
+export const DEFAULT_ATTRIBUTION_DAYS = 5;
 
 export type SendChannel = "campaign" | "flow";
 

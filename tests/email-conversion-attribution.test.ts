@@ -1,12 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_ATTRIBUTION_DAYS,
   attributeConversionsToSends,
   isAbandonedRecoveryFlowName,
   summarizeAbandonedRecovery,
 } from "../src/lib/email-conversion-attribution";
 
+test("default attribution window is 5 days", () => {
+  assert.equal(DEFAULT_ATTRIBUTION_DAYS, 5);
+});
+
 test("attributeConversionsToSends credits the latest prior send inside the window", () => {
+  // Window = 5 days.
+  // Blast A Aug 1 → through Aug 6
+  // Flow   Aug 5 → through Aug 10
+  // Blast B Aug 10 → through Aug 15
   const counts = attributeConversionsToSends(
     [
       { id: "c1", name: "Blast A", sentOn: "2026-08-01", channel: "campaign" },
@@ -21,15 +30,28 @@ test("attributeConversionsToSends credits the latest prior send inside the windo
     [
       { id: "form1", contactId: "x", at: "2026-08-11", kind: "form_fill" },
       { id: "appt1", contactId: "y", at: "2026-08-12", kind: "appointment" },
-      { id: "form2", contactId: "z", at: "2026-08-03", kind: "form_fill" },
-    ],
-    14
+      // Within Blast A's 5-day window.
+      { id: "form3", contactId: "w", at: "2026-08-03", kind: "form_fill" },
+      // Past Blast A's window (lag 7), inside the flow's window (lag 3).
+      { id: "form2", contactId: "z", at: "2026-08-08", kind: "form_fill" },
+    ]
   );
 
   assert.equal(counts.get("c2")?.formFills, 1);
   assert.equal(counts.get("c2")?.appointments, 1);
   assert.equal(counts.get("c1")?.formFills, 1);
-  assert.equal(counts.get("f1")?.formFills, 0);
+  assert.equal(counts.get("f1")?.formFills, 1);
+});
+
+test("attributeConversionsToSends ignores conversions outside the window", () => {
+  const counts = attributeConversionsToSends(
+    [{ id: "c1", name: "Blast A", sentOn: "2026-08-01", channel: "campaign" }],
+    [
+      // 6 days later — outside a 5-day window.
+      { id: "form1", contactId: "x", at: "2026-08-07", kind: "form_fill" },
+    ]
+  );
+  assert.equal(counts.get("c1")?.formFills, 0);
 });
 
 test("isAbandonedRecoveryFlowName catches recovery automations", () => {

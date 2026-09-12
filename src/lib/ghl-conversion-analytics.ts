@@ -6,6 +6,7 @@
 import { ghlRequest, GhlError } from "./ghl";
 import {
   ABANDONED_BOOKING_TAGS,
+  DEFAULT_ATTRIBUTION_DAYS,
   FORM_FILL_TAGS,
   MEETING_BOOKED_TAGS,
   contactHasTag,
@@ -234,7 +235,9 @@ export async function listBookedAppointmentEvents(
   start: string,
   end: string
 ): Promise<BookedAppointmentEvent[]> {
-  const startMs = new Date(`${start}T00:00:00.000Z`).getTime() - 14 * DAY_MS;
+  const startMs =
+    new Date(`${start}T00:00:00.000Z`).getTime() -
+    DEFAULT_ATTRIBUTION_DAYS * DAY_MS;
   const endMs = new Date(`${end}T23:59:59.999Z`).getTime() + 60 * DAY_MS;
   const calendars = await listCalendars(locationId);
   if (calendars.length === 0) return [];
