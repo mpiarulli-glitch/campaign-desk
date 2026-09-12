@@ -18222,3 +18222,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   }
   .acc-state em::before { content: "· "; }
 }
+
+
+.lh-analytics-section-title {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}

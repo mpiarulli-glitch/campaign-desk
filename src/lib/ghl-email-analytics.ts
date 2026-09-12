@@ -8,12 +8,27 @@
 
 import { parseTimeInput, zonedLocalToUtc } from "./forecast-time";
 import { ghlRequest, GhlError } from "./ghl";
+import {
+  DEFAULT_ATTRIBUTION_DAYS,
+  attributeConversionsToSends,
+  summarizeAbandonedRecovery,
+  type AttributionSend,
+  type ConversionEvent,
+} from "./email-conversion-attribution";
+import {
+  listAbandonedBookingContacts,
+  listBookedAppointmentEvents,
+  listFormFillEvents,
+  listWorkflowEmailCampaigns,
+} from "./ghl-conversion-analytics";
 
 const STATS_CONCURRENCY = 4;
 const SCHEDULE_TIME_ZONE =
   process.env.APP_TIME_ZONE || "America/Los_Angeles";
 
 export type AnalyticsPreset = "1m" | "3m" | "6m" | "12m" | "custom";
+
+export type EmailSendChannel = "campaign" | "flow";
 
 export interface GhlCampaignRow {
   id: string;
@@ -22,6 +37,7 @@ export interface GhlCampaignRow {
   status: string;
   sentOn: string | null;
   bulkRequestId: string | null;
+  channel: EmailSendChannel;
   sent: number;
   delivered: number;
   opened: number;
@@ -31,6 +47,21 @@ export interface GhlCampaignRow {
   openRate: number;
   clickRate: number;
   statsAvailable: boolean;
+  /** Form fills attributed to this send (post-send window). */
+  formFills: number;
+  /** Booked appointments attributed to this send (post-send window). */
+  attributedAppointments: number;
+  /** True for abandoned-booking recovery automations. */
+  abandonedRecovery: boolean;
+}
+
+export interface AbandonedRecoveryStats {
+  abandoned: number;
+  recovered: number;
+  recoveryRate: number;
+  recoveredInWindow: number;
+  stillAbandoned: number;
+  error: string | null;
 }
 
 export interface EmailAnalyticsTotals {
@@ -52,9 +83,16 @@ export interface ClientEmailAnalytics {
   end: string;
   fetchedAt: string;
   totals: EmailAnalyticsTotals;
+  /** Broadcast / one-shot email campaigns. */
   campaigns: GhlCampaignRow[];
+  /** Workflow / automation email flows. */
+  flows: GhlCampaignRow[];
   appointments: number | null;
   appointmentsError: string | null;
+  formFills: number | null;
+  formFillsError: string | null;
+  abandonedRecovery: AbandonedRecoveryStats | null;
+  attributionDays: number;
 }
 
 interface RawSchedule {
@@ -573,6 +611,10 @@ function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
     openRate,
     clickRate,
     statsAvailable: Boolean(stats),
+    channel: "campaign",
+    formFills: 0,
+    attributedAppointments: 0,
+    abandonedRecovery: false,
   };
 }
 
@@ -672,7 +714,8 @@ async function countBookedAppointments(
 export async function pullClientEmailAnalytics(
   locationId: string,
   start: string,
-  end: string
+  end: string,
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS
 ): Promise<ClientEmailAnalytics> {
   const schedules = await listScheduledCampaigns(locationId);
   const inWindow = schedules.filter((s) => inRange(campaignSentOn(s), start, end));
@@ -684,7 +727,7 @@ export async function pullClientEmailAnalytics(
     statsById.set(id, await fetchCampaignStats(locationId, id));
   });
 
-  const campaigns = inWindow
+  let campaigns = inWindow
     .map((s) => {
       const id = s.bulkRequestId || "";
       const stats = id ? statsById.get(id) ?? null : null;
@@ -696,6 +739,34 @@ export async function pullClientEmailAnalytics(
       return db.localeCompare(da) || a.name.localeCompare(b.name);
     });
 
+  let flows: GhlCampaignRow[] = [];
+  try {
+    const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
+    flows = workflowCampaigns.map((flow) => ({
+      id: flow.id,
+      name: flow.name,
+      subject: "",
+      status: flow.status,
+      sentOn: flow.sentOn,
+      bulkRequestId: flow.sourceId,
+      channel: "flow" as const,
+      sent: flow.sent,
+      delivered: flow.delivered,
+      opened: flow.opened,
+      clicked: flow.clicked,
+      bounced: flow.bounced,
+      unsubscribed: flow.unsubscribed,
+      openRate: flow.openRate,
+      clickRate: flow.clickRate,
+      statsAvailable: flow.statsAvailable,
+      formFills: 0,
+      attributedAppointments: 0,
+      abandonedRecovery: flow.abandonedRecovery,
+    }));
+  } catch {
+    flows = [];
+  }
+
   const totals = emptyTotals();
   for (const row of campaigns) {
     if (!countsInTotals(row)) continue;
@@ -704,10 +775,120 @@ export async function pullClientEmailAnalytics(
 
   let appointments: number | null = null;
   let appointmentsError: string | null = null;
+  let appointmentEvents: Awaited<ReturnType<typeof listBookedAppointmentEvents>> = [];
   try {
-    appointments = await countBookedAppointments(locationId, start, end);
+    appointmentEvents = await listBookedAppointmentEvents(locationId, start, end);
+    appointments = appointmentEvents.length;
   } catch (err) {
     appointmentsError = err instanceof Error ? err.message : "Could not load appointments.";
+    try {
+      appointments = await countBookedAppointments(locationId, start, end);
+    } catch (fallbackErr) {
+      appointmentsError =
+        fallbackErr instanceof Error ? fallbackErr.message : appointmentsError;
+    }
+  }
+
+  let formFills: number | null = null;
+  let formFillsError: string | null = null;
+  let formEvents: ConversionEvent[] = [];
+  try {
+    formEvents = await listFormFillEvents(locationId, start, end);
+    formFills = formEvents.length;
+  } catch (err) {
+    formFillsError = err instanceof Error ? err.message : "Could not load form fills.";
+  }
+
+  const conversionEvents: ConversionEvent[] = [
+    ...formEvents,
+    ...appointmentEvents.map((event) => ({
+      id: event.id,
+      contactId: event.contactId,
+      at: event.at,
+      kind: "appointment" as const,
+    })),
+  ];
+
+  const attributionSends: AttributionSend[] = [
+    ...campaigns.map((row) => ({
+      id: row.id,
+      name: row.name,
+      sentOn: row.sentOn,
+      channel: "campaign" as const,
+    })),
+    ...flows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      sentOn: row.sentOn,
+      channel: "flow" as const,
+    })),
+  ];
+  const attributed = attributeConversionsToSends(
+    attributionSends,
+    conversionEvents,
+    attributionDays
+  );
+
+  campaigns = campaigns.map((row) => {
+    const counts = attributed.get(row.id);
+    return {
+      ...row,
+      formFills: counts?.formFills || 0,
+      attributedAppointments: counts?.appointments || 0,
+    };
+  });
+  flows = flows.map((row) => {
+    const counts = attributed.get(row.id);
+    return {
+      ...row,
+      formFills: counts?.formFills || 0,
+      attributedAppointments: counts?.appointments || 0,
+    };
+  });
+
+  let abandonedRecovery: AbandonedRecoveryStats | null = null;
+  try {
+    const abandonedContacts = await listAbandonedBookingContacts(locationId);
+    const summary = summarizeAbandonedRecovery(
+      abandonedContacts,
+      appointmentEvents
+        .filter((event) => event.contactId)
+        .map((event) => ({ contactId: event.contactId as string, at: event.at })),
+      start,
+      end
+    );
+    abandonedRecovery = {
+      abandoned: summary.abandoned,
+      recovered: summary.recovered,
+      recoveryRate: summary.recoveryRate,
+      recoveredInWindow: summary.recoveredInWindow,
+      stillAbandoned: summary.stillAbandoned,
+      error: null,
+    };
+
+    const recoveryFlows = flows.filter((flow) => flow.abandonedRecovery);
+    if (recoveryFlows.length && summary.recoveredInWindow > 0) {
+      const share = Math.floor(summary.recoveredInWindow / recoveryFlows.length);
+      let remainder = summary.recoveredInWindow - share * recoveryFlows.length;
+      flows = flows.map((flow) => {
+        if (!flow.abandonedRecovery) return flow;
+        const extra = share + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder -= 1;
+        return {
+          ...flow,
+          attributedAppointments: Math.max(flow.attributedAppointments, extra),
+        };
+      });
+    }
+  } catch (err) {
+    abandonedRecovery = {
+      abandoned: 0,
+      recovered: 0,
+      recoveryRate: 0,
+      recoveredInWindow: 0,
+      stillAbandoned: 0,
+      error: err instanceof Error ? err.message : "Could not load abandoned bookings.",
+    };
   }
 
   return {
@@ -717,7 +898,12 @@ export async function pullClientEmailAnalytics(
     fetchedAt: new Date().toISOString(),
     totals: finalizeTotals(totals),
     campaigns,
+    flows,
     appointments,
     appointmentsError,
+    formFills,
+    formFillsError,
+    abandonedRecovery,
+    attributionDays,
   };
 }

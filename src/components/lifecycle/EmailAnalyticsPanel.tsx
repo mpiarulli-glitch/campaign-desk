@@ -181,42 +181,74 @@ export function EmailAnalyticsPanel({
         <div className="lh-analytics-body">
           <div className="lh-analytics-main">
             <p className="lh-analytics-window">{prettyRange(data.start, data.end)}</p>
-            <div className="lh-metrics">
+            <p className="lh-card-note">
+              Form fills and bookings are credited to the most recent campaign or
+              automation send in the prior {data.attributionDays} days. Abandoned
+              booking recovery uses GHL tags (<code>abandoned booking</code> →{" "}
+              <code>meeting booked</code>) plus calendar bookings.
+            </p>
+            <div className="lh-metrics" aria-label="Money outcomes">
               <div className="lh-metric">
-                <b>{fmt(totals.campaigns)}</b>
-                <span>campaigns</span>
+                <b>{data.formFills === null ? "—" : fmt(data.formFills)}</b>
+                <span>form fills</span>
+              </div>
+              <div className="lh-metric">
+                <b>
+                  {data.appointments === null ? "—" : fmt(data.appointments)}
+                </b>
+                <span>booked</span>
+              </div>
+              <div className="lh-metric">
+                <b>
+                  {data.abandonedRecovery?.error
+                    ? "—"
+                    : data.abandonedRecovery
+                      ? fmt(data.abandonedRecovery.recoveredInWindow)
+                      : "—"}
+                </b>
+                <span>abandoned recovered</span>
+              </div>
+              <div className="lh-metric">
+                <b>
+                  {data.abandonedRecovery && !data.abandonedRecovery.error
+                    ? fmtPct(data.abandonedRecovery.recoveryRate)
+                    : "—"}
+                </b>
+                <span>recovery rate</span>
               </div>
               <div className="lh-metric">
                 <b>{fmt(totals.sent)}</b>
                 <span>sent</span>
               </div>
               <div className="lh-metric">
-                <b>{fmt(totals.opened)}</b>
-                <span>opens</span>
-              </div>
-              <div className="lh-metric">
                 <b>{fmtPct(totals.openRate)}</b>
                 <span>open rate</span>
-              </div>
-              <div className="lh-metric">
-                <b>{fmt(totals.clicked)}</b>
-                <span>clicks</span>
               </div>
               <div className="lh-metric">
                 <b>{fmtPct(totals.clickRate)}</b>
                 <span>click rate</span>
               </div>
-              <div className="lh-metric">
-                <b>
-                  {data.appointments === null ? "—" : fmt(data.appointments)}
-                </b>
-                <span>appointments</span>
-              </div>
             </div>
+            {data.formFillsError ? (
+              <p className="lh-card-note">Form fills: {data.formFillsError}</p>
+            ) : null}
             {data.appointmentsError ? (
               <p className="lh-card-note">Appointments: {data.appointmentsError}</p>
             ) : null}
+            {data.abandonedRecovery?.error ? (
+              <p className="lh-card-note">
+                Abandoned recovery: {data.abandonedRecovery.error}
+              </p>
+            ) : data.abandonedRecovery ? (
+              <p className="lh-card-note">
+                Abandoned pool {fmt(data.abandonedRecovery.abandoned)} · recovered{" "}
+                {fmt(data.abandonedRecovery.recovered)} · still open{" "}
+                {fmt(data.abandonedRecovery.stillAbandoned)} · in this window{" "}
+                {fmt(data.abandonedRecovery.recoveredInWindow)}
+              </p>
+            ) : null}
 
+            <h4 className="lh-analytics-section-title">Campaigns</h4>
             {data.campaigns.length === 0 ? (
               <p className="lh-card-note">No GHL campaigns found in that window.</p>
             ) : (
@@ -225,12 +257,12 @@ export function EmailAnalyticsPanel({
                   <thead>
                     <tr>
                       <th>Campaign</th>
-                      <th>Subject line</th>
+                      <th>Subject</th>
                       <th>Sent</th>
-                      <th>Opens</th>
-                      <th>Clicks</th>
                       <th>Open %</th>
                       <th>Click %</th>
+                      <th>Forms</th>
+                      <th>Booked</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -247,10 +279,52 @@ export function EmailAnalyticsPanel({
                           {c.subject?.trim() || "—"}
                         </td>
                         <td>{fmt(c.sent)}</td>
-                        <td>{fmt(c.opened)}</td>
-                        <td>{fmt(c.clicked)}</td>
                         <td>{fmtPct(c.openRate)}</td>
                         <td>{fmtPct(c.clickRate)}</td>
+                        <td>{fmt(c.formFills)}</td>
+                        <td>{fmt(c.attributedAppointments)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h4 className="lh-analytics-section-title">Automation flows</h4>
+            {data.flows.length === 0 ? (
+              <p className="lh-card-note">
+                No published workflow email campaigns found (or the location token
+                is missing emails/campaigns.readonly).
+              </p>
+            ) : (
+              <div className="lh-analytics-table-wrap">
+                <table className="lh-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Flow</th>
+                      <th>Sent</th>
+                      <th>Open %</th>
+                      <th>Click %</th>
+                      <th>Forms</th>
+                      <th>Booked</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.flows.map((c) => (
+                      <tr key={c.id || c.name}>
+                        <td>
+                          <div className="lh-analytics-name">{c.name}</div>
+                          <div className="lh-analytics-meta">
+                            {c.abandonedRecovery ? "Abandoned booking recovery · " : ""}
+                            {c.sentOn || "—"}
+                            {c.statsAvailable ? "" : " · no stats yet"}
+                          </div>
+                        </td>
+                        <td>{fmt(c.sent)}</td>
+                        <td>{fmtPct(c.openRate)}</td>
+                        <td>{fmtPct(c.clickRate)}</td>
+                        <td>{fmt(c.formFills)}</td>
+                        <td>{fmt(c.attributedAppointments)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -263,7 +337,8 @@ export function EmailAnalyticsPanel({
             <aside className="lh-recs" aria-label="Recommendations for next month">
               <h4>Next month</h4>
               <p className="lh-recs-lead">
-                Based on this window’s sends, opens, clicks, and appointments.
+                Based on this window’s sends, form fills, bookings, and abandoned
+                recoveries.
               </p>
               <ul className="lh-recs-list">
                 {tips.map((tip) => (

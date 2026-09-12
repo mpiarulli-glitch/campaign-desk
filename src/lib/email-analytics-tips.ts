@@ -29,7 +29,7 @@ export function buildEmailRecommendations(
   analytics: ClientEmailAnalytics
 ): AnalyticsTip[] {
   const tips: AnalyticsTip[] = [];
-  const { totals, campaigns, appointments } = analytics;
+  const { totals, campaigns, flows, appointments, formFills, abandonedRecovery } = analytics;
   const complete = campaigns.filter(
     (c) => c.statsAvailable && !["cancelled", "canceled", "draft", "paused"].includes(c.status.toLowerCase())
   );
@@ -47,10 +47,9 @@ export function buildEmailRecommendations(
         "Plan the next month’s calendar now — subject, offer, and send day — so you are not scrambling mid-month.",
       tone: "focus",
     });
-    return tips;
   }
 
-  if (totals.openRate < 25) {
+  if (complete.length && totals.openRate < 25) {
     tips.push({
       id: "low-open",
       title: "Open rate is soft — fix the first line",
@@ -58,7 +57,7 @@ export function buildEmailRecommendations(
         "Test shorter, specific subject lines (outcome or number in the first 40 characters). Avoid spammy urgency and preview text that repeats the subject.",
       tone: "focus",
     });
-  } else if (totals.openRate < 40) {
+  } else if (complete.length && totals.openRate < 40) {
     tips.push({
       id: "mid-open",
       title: "Opens are okay — make subject the lever",
@@ -66,7 +65,7 @@ export function buildEmailRecommendations(
         "A/B one curiosity angle vs one plain benefit next month. Keep the winner’s pattern and retire vague titles.",
       tone: "watch",
     });
-  } else {
+  } else if (complete.length) {
     tips.push({
       id: "strong-open",
       title: "Opens are strong — spend effort on clicks",
@@ -151,6 +150,64 @@ export function buildEmailRecommendations(
       detail:
         "Do not stack last-minute blasts. Lock send days early and leave room for one opportunistic offer if a winner appears.",
       tone: "keep",
+    });
+  }
+
+
+  const allSends = [...campaigns, ...(flows || [])];
+  const attributedForms = allSends.reduce((n, row) => n + (row.formFills || 0), 0);
+  const attributedBooks = allSends.reduce((n, row) => n + (row.attributedAppointments || 0), 0);
+  const topMoney = allSends
+    .slice()
+    .sort(
+      (a, b) =>
+        b.attributedAppointments + b.formFills - (a.attributedAppointments + a.formFills) ||
+        b.clicked - a.clicked
+    )[0];
+
+  if (abandonedRecovery && !abandonedRecovery.error) {
+    if (abandonedRecovery.recoveredInWindow > 0) {
+      tips.push({
+        id: "abandoned-recovered",
+        title: `Recovered ${abandonedRecovery.recoveredInWindow} abandoned booking${abandonedRecovery.recoveredInWindow === 1 ? "" : "s"}`,
+        detail: `${abandonedRecovery.stillAbandoned} still open. Recovery rate ${abandonedRecovery.recoveryRate}% across abandoners with a meeting-booked signal.`,
+        tone: "keep",
+      });
+    } else if (abandonedRecovery.stillAbandoned > 0) {
+      tips.push({
+        id: "abandoned-open",
+        title: "Abandoned bookings are not converting",
+        detail: `${abandonedRecovery.stillAbandoned} contacts still carry abandoned booking without a booked meeting. Tighten the recovery flow SMS/email timing and calendar CTA.`,
+        tone: "focus",
+      });
+    }
+  }
+
+  if (formFills !== null && formFills === 0 && totals.clicked >= 20) {
+    tips.push({
+      id: "no-forms",
+      title: "Clicks are not producing form fills",
+      detail:
+        "Check landing pages and form tags (website form submission). If forms fire under a different tag, map it so Lifecycle can credit the send.",
+      tone: "focus",
+    });
+  }
+
+  if (topMoney && topMoney.attributedAppointments + topMoney.formFills > 0) {
+    const label = topMoney.subject?.trim() || topMoney.name;
+    tips.push({
+      id: "money-winner",
+      title: "Double down on the send that made money",
+      detail: `“${label}” is attributed ${topMoney.formFills} form fill${topMoney.formFills === 1 ? "" : "s"} and ${topMoney.attributedAppointments} booked appointment${topMoney.attributedAppointments === 1 ? "" : "s"} in the post-send window.`,
+      tone: "focus",
+    });
+  } else if (attributedForms + attributedBooks === 0 && totals.sent >= 100) {
+    tips.push({
+      id: "no-attribution",
+      title: "No form fills or bookings attributed to sends",
+      detail:
+        "Either conversions landed outside the attribution window, or GHL tags/calendars are not linked. Confirm website form submission + meeting booked tags and calendar access.",
+      tone: "watch",
     });
   }
 
