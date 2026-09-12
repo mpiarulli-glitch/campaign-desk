@@ -152,76 +152,78 @@ export function EmailAnalyticsPanel({
 
   return (
     <section className="lh-card lh-analytics lh-analytics-dash">
-      <div className="lh-analytics-hero">
-        <div>
-          <p className="lh-analytics-kicker">Performance studio</p>
-          <h3>Email command center</h3>
-          <p className="lh-card-note lh-analytics-lead">
-            Attribution, per-flow health, and list growth — last-touch within your window.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="lh-link"
-          onClick={() => void pull()}
-          disabled={loading || (preset === "custom" && (!from || !to))}
-        >
-          {loading
-            ? "Pulling…"
-            : data
-              ? "Refresh"
-              : commerceClient
-                ? "Pull analytics"
-                : crmLinked && !ghlLinked
-                  ? "Pull from CRM"
-                  : "Pull from GHL"}
-        </button>
-      </div>
-
-      <div className="lh-range" role="group" aria-label="Date range">
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={`lh-range-btn${preset === p.id ? " is-on" : ""}`}
-            onClick={() => setPreset(p.id)}
-            disabled={loading}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {preset === "custom" ? (
-        <div className="lh-custom-range">
-          <label className="lh-field">
-            <span>From</span>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              aria-label="Start date"
-            />
-          </label>
-          <label className="lh-field">
-            <span>To</span>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              aria-label="End date"
-            />
-          </label>
+      <div className="lh-analytics-toolbar">
+        <div className="lh-analytics-hero">
+          <div>
+            <p className="lh-analytics-kicker">Performance studio</p>
+            <h3>Email command center</h3>
+            <p className="lh-card-note lh-analytics-lead">
+              Attribution, per-flow health, and list growth — last-touch within your window.
+            </p>
+          </div>
           <button
             type="button"
-            className="btn btn-sm"
-            disabled={loading || !from || !to}
+            className="lh-link lh-analytics-refresh"
             onClick={() => void pull()}
+            disabled={loading || (preset === "custom" && (!from || !to))}
           >
-            {loading ? "Pulling…" : "Pull"}
+            {loading
+              ? "Pulling…"
+              : data
+                ? "Refresh"
+                : commerceClient
+                  ? "Pull analytics"
+                  : crmLinked && !ghlLinked
+                    ? "Pull from CRM"
+                    : "Pull from GHL"}
           </button>
         </div>
-      ) : null}
+
+        <div className="lh-range" role="group" aria-label="Date range">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`lh-range-btn${preset === p.id ? " is-on" : ""}`}
+              onClick={() => setPreset(p.id)}
+              disabled={loading}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {preset === "custom" ? (
+          <div className="lh-custom-range">
+            <label className="lh-field">
+              <span>From</span>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                aria-label="Start date"
+              />
+            </label>
+            <label className="lh-field">
+              <span>To</span>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                aria-label="End date"
+              />
+            </label>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={loading || !from || !to}
+              onClick={() => void pull()}
+            >
+              {loading ? "Pulling…" : "Pull"}
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       {error ? <p className="lh-error">{error}</p> : null}
 
@@ -341,7 +343,7 @@ export function EmailAnalyticsPanel({
                   token is missing emails/campaigns.readonly).
                 </p>
               ) : (
-                <div className="lh-flow-grid">
+                <div className="lh-flow-grid lh-flow-rail">
                   {rankedFlows.map((flow, index) => (
                     <FlowCard
                       key={flow.id || flow.name}
@@ -364,44 +366,91 @@ export function EmailAnalyticsPanel({
               {data.campaigns.length === 0 ? (
                 <p className="lh-card-note">No GHL campaigns found in that window.</p>
               ) : (
-                <div className="lh-analytics-table-wrap">
-                  <table className="lh-analytics-table">
-                    <thead>
-                      <tr>
-                        <th>Campaign</th>
-                        <th>Subject</th>
-                        <th>Sent</th>
-                        <th>Open %</th>
-                        <th>Click %</th>
-                        <th>Forms</th>
-                        <th>Booked</th>
-                        <th>Unsubs</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.campaigns.map((c) => (
-                        <tr key={c.id || c.bulkRequestId || c.name}>
-                          <td>
-                            <div className="lh-analytics-name">{c.name}</div>
-                            <div className="lh-analytics-meta">
-                              {c.sentOn || "—"}
-                              {c.statsAvailable ? "" : " · no stats yet"}
-                            </div>
-                          </td>
-                          <td className="lh-analytics-subject">
-                            {c.subject?.trim() || "—"}
-                          </td>
-                          <td>{fmt(c.sent)}</td>
-                          <td>{fmtPct(c.openRate)}</td>
-                          <td>{fmtPct(c.clickRate)}</td>
-                          <td>{fmt(c.formFills)}</td>
-                          <td>{fmt(c.attributedAppointments)}</td>
-                          <td>{fmt(c.unsubscribed)}</td>
+                <>
+                  <div className="lh-campaign-cards" aria-label="Campaigns">
+                    {data.campaigns.map((c) => (
+                      <article
+                        key={`m-${c.id || c.bulkRequestId || c.name}`}
+                        className="lh-campaign-card"
+                      >
+                        <div className="lh-campaign-card-top">
+                          <strong>{c.name}</strong>
+                          <span>
+                            {c.sentOn || "—"}
+                            {c.statsAvailable ? "" : " · no stats yet"}
+                          </span>
+                        </div>
+                        <p className="lh-campaign-subject">
+                          {c.subject?.trim() || "—"}
+                        </p>
+                        <div className="lh-campaign-metrics">
+                          <div>
+                            <span>Sent</span>
+                            <strong>{fmt(c.sent)}</strong>
+                          </div>
+                          <div>
+                            <span>Open</span>
+                            <strong>{fmtPct(c.openRate)}</strong>
+                          </div>
+                          <div>
+                            <span>Click</span>
+                            <strong>{fmtPct(c.clickRate)}</strong>
+                          </div>
+                          <div>
+                            <span>Forms</span>
+                            <strong>{fmt(c.formFills)}</strong>
+                          </div>
+                          <div>
+                            <span>Booked</span>
+                            <strong>{fmt(c.attributedAppointments)}</strong>
+                          </div>
+                          <div>
+                            <span>Unsubs</span>
+                            <strong>{fmt(c.unsubscribed)}</strong>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="lh-analytics-table-wrap lh-campaign-table">
+                    <table className="lh-analytics-table">
+                      <thead>
+                        <tr>
+                          <th>Campaign</th>
+                          <th>Subject</th>
+                          <th>Sent</th>
+                          <th>Open %</th>
+                          <th>Click %</th>
+                          <th>Forms</th>
+                          <th>Booked</th>
+                          <th>Unsubs</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {data.campaigns.map((c) => (
+                          <tr key={c.id || c.bulkRequestId || c.name}>
+                            <td>
+                              <div className="lh-analytics-name">{c.name}</div>
+                              <div className="lh-analytics-meta">
+                                {c.sentOn || "—"}
+                                {c.statsAvailable ? "" : " · no stats yet"}
+                              </div>
+                            </td>
+                            <td className="lh-analytics-subject">
+                              {c.subject?.trim() || "—"}
+                            </td>
+                            <td>{fmt(c.sent)}</td>
+                            <td>{fmtPct(c.openRate)}</td>
+                            <td>{fmtPct(c.clickRate)}</td>
+                            <td>{fmt(c.formFills)}</td>
+                            <td>{fmt(c.attributedAppointments)}</td>
+                            <td>{fmt(c.unsubscribed)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
 
