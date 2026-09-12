@@ -15,6 +15,7 @@ function sample(partial: Partial<ClientEmailAnalytics> & {
     appointments: null,
     appointmentsError: null,
     flows: [],
+    flowsError: null,
     formFills: null,
     formFillsError: null,
     abandonedRecovery: null,

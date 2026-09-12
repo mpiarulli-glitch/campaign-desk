@@ -339,8 +339,9 @@ export function EmailAnalyticsPanel({
               </header>
               {rankedFlows.length === 0 ? (
                 <p className="lh-card-note">
-                  No published workflow email campaigns found (or the location
-                  token is missing emails/campaigns.readonly).
+                  {data.flowsError
+                    ? `Could not load GHL flows: ${data.flowsError}`
+                    : "No GHL flows found for this location yet."}
                 </p>
               ) : (
                 <div className="lh-flow-grid lh-flow-rail">
