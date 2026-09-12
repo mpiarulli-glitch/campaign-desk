@@ -43,6 +43,25 @@ export type WorkflowEmailCampaign = {
   abandonedRecovery: boolean;
 };
 
+/** Weekly list growth vs email unsubscribe bars for the analytics dashboard. */
+export type ListGrowthBucket = {
+  /** Week start YYYY-MM-DD. */
+  weekStart: string;
+  label: string;
+  contactsAdded: number;
+  unsubscribed: number;
+};
+
+export type ListGrowthStats = {
+  contactsAdded: number;
+  unsubscribed: number;
+  net: number;
+  /** Unsubscribes ÷ delivered across attributed sends (0–100). */
+  unsubscribeRate: number;
+  series: ListGrowthBucket[];
+  error: string | null;
+};
+
 function num(v: unknown): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string" && v.trim()) {
@@ -391,3 +410,247 @@ export async function listWorkflowEmailCampaigns(
 
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
+
+function mondayOnOrBefore(day: string): string {
+  const d = new Date(`${day}T12:00:00.000Z`);
+  const dow = d.getUTCDay(); // 0 Sun … 6 Sat
+  const offset = dow === 0 ? 6 : dow - 1;
+  d.setUTCDate(d.getUTCDate() - offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function weekLabel(weekStart: string): string {
+  const d = new Date(`${weekStart}T12:00:00.000Z`);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/** Weekly empty buckets Mon→Sun covering [start, end] (inclusive). */
+export function buildListGrowthWeekBuckets(
+  start: string,
+  end: string
+): ListGrowthBucket[] {
+  const buckets: ListGrowthBucket[] = [];
+  let cursor = mondayOnOrBefore(start);
+  while (cursor <= end) {
+    buckets.push({
+      weekStart: cursor,
+      label: weekLabel(cursor),
+      contactsAdded: 0,
+      unsubscribed: 0,
+    });
+    cursor = addDays(cursor, 7);
+  }
+  return buckets;
+}
+
+/**
+ * Pure list-growth rollup (no GHL calls) — used by the live pull and unit tests.
+ */
+export function assembleListGrowthStats(
+  start: string,
+  end: string,
+  contactDays: string[],
+  sendUnsubs: Array<{ at: string | null; count: number }>,
+  delivered: number,
+  contactsTotal?: number,
+  error: string | null = null
+): ListGrowthStats {
+  const series = buildListGrowthWeekBuckets(start, end);
+  const byWeek = new Map(series.map((b) => [b.weekStart, b]));
+
+  for (const day of contactDays) {
+    const week = mondayOnOrBefore(day);
+    const bucket = byWeek.get(week);
+    if (bucket) bucket.contactsAdded += 1;
+  }
+
+  const contactsAdded =
+    contactsTotal != null ? contactsTotal : contactDays.length;
+
+  // Total-only pulls (no day samples) still need a visible bar.
+  if (contactDays.length === 0 && contactsAdded > 0 && series[0]) {
+    series[0].contactsAdded = contactsAdded;
+  }
+
+  let unsubscribed = 0;
+  for (const row of sendUnsubs) {
+    const n = Math.max(0, row.count || 0);
+    unsubscribed += n;
+    const day = ymd(row.at);
+    if (!day || !inRange(day, start, end)) continue;
+    const bucket = byWeek.get(mondayOnOrBefore(day));
+    if (bucket) bucket.unsubscribed += n;
+  }
+
+  return {
+    contactsAdded,
+    unsubscribed,
+    net: contactsAdded - unsubscribed,
+    unsubscribeRate: rate(unsubscribed, delivered),
+    series,
+    error,
+  };
+}
+
+/**
+ * Contacts created in [start, end] for one location.
+ * Uses GHL contacts/search dateAdded range when available; falls back to
+ * paging + client filter. Capped so a huge list cannot hang the hub pull.
+ */
+export async function listContactsAddedInRange(
+  locationId: string,
+  start: string,
+  end: string
+): Promise<{ total: number; days: string[] }> {
+  const days: string[] = [];
+  const seen = new Set<string>();
+  const startIso = `${start}T00:00:00.000Z`;
+  const endIso = `${end}T23:59:59.999Z`;
+
+  for (let page = 1; page <= 25; page++) {
+    let batch: Array<Record<string, unknown>> = [];
+    let reportedTotal: number | null = null;
+    try {
+      const res = await ghlRequest<{
+        contacts?: Array<Record<string, unknown>>;
+        total?: number;
+      }>("POST", "/contacts/search", {
+        locationId,
+        body: {
+          locationId,
+          page,
+          pageLimit: SEARCH_PAGE,
+          filters: [
+            {
+              field: "dateAdded",
+              operator: "range",
+              value: [startIso, endIso],
+            },
+          ],
+        },
+      });
+      batch = res.contacts || [];
+      if (typeof res.total === "number") reportedTotal = res.total;
+    } catch (err) {
+      // Older filter shapes — drop the range filter and scan (still capped).
+      if (page === 1) {
+        return listContactsAddedInRangeFallback(locationId, start, end);
+      }
+      if (err instanceof GhlError && err.status && err.status >= 400 && err.status < 500) {
+        break;
+      }
+      throw err;
+    }
+
+    for (const raw of batch) {
+      const id = String(raw.id || "");
+      const at = ymd(String(raw.dateAdded || raw.dateCreated || ""));
+      if (!id || seen.has(id)) continue;
+      if (!inRange(at, start, end)) continue;
+      seen.add(id);
+      days.push(at!);
+    }
+
+    if (batch.length === 0) {
+      if (reportedTotal !== null && page === 1 && seen.size === 0) {
+        // Filter accepted but returned no rows — trust total when present.
+        return { total: reportedTotal, days: [] };
+      }
+      break;
+    }
+    if (batch.length < SEARCH_PAGE) break;
+  }
+
+  return { total: seen.size, days };
+}
+
+async function listContactsAddedInRangeFallback(
+  locationId: string,
+  start: string,
+  end: string
+): Promise<{ total: number; days: string[] }> {
+  const days: string[] = [];
+  const seen = new Set<string>();
+  for (let page = 1; page <= 15; page++) {
+    let batch: Array<Record<string, unknown>> = [];
+    try {
+      const res = await ghlRequest<{ contacts?: Array<Record<string, unknown>> }>(
+        "POST",
+        "/contacts/search",
+        {
+          locationId,
+          body: { locationId, page, pageLimit: SEARCH_PAGE },
+        }
+      );
+      batch = res.contacts || [];
+    } catch (err) {
+      if (err instanceof GhlError && err.status && err.status >= 400 && err.status < 500) {
+        break;
+      }
+      throw err;
+    }
+    if (batch.length === 0) break;
+    let sawOlder = false;
+    for (const raw of batch) {
+      const id = String(raw.id || "");
+      const at = ymd(String(raw.dateAdded || raw.dateCreated || ""));
+      if (!id || seen.has(id)) continue;
+      if (at && at < start) {
+        sawOlder = true;
+        continue;
+      }
+      if (!inRange(at, start, end)) continue;
+      seen.add(id);
+      days.push(at!);
+    }
+    // Newest-first listings: once we pass the window we can stop.
+    if (sawOlder && batch.every((raw) => {
+      const at = ymd(String(raw.dateAdded || raw.dateCreated || ""));
+      return !at || at < start;
+    })) {
+      break;
+    }
+    if (batch.length < SEARCH_PAGE) break;
+  }
+  return { total: seen.size, days };
+}
+
+/**
+ * Combine new contacts + email unsubscribes into a growth vs churn snapshot
+ * with weekly bars for the dashboard.
+ */
+export async function pullListGrowthStats(
+  locationId: string,
+  start: string,
+  end: string,
+  sendUnsubs: Array<{ at: string | null; count: number }>,
+  delivered: number
+): Promise<ListGrowthStats> {
+  let contactDays: string[] = [];
+  let contactsTotal: number | undefined;
+  let error: string | null = null;
+  try {
+    const added = await listContactsAddedInRange(locationId, start, end);
+    contactDays = added.days;
+    contactsTotal = added.total;
+  } catch (err) {
+    error = err instanceof Error ? err.message : "Could not load list growth.";
+  }
+
+  return assembleListGrowthStats(
+    start,
+    end,
+    contactDays,
+    sendUnsubs,
+    delivered,
+    contactsTotal,
+    error
+  );
+}
+

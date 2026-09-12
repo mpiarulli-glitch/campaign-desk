@@ -20,7 +20,11 @@ import {
   listBookedAppointmentEvents,
   listFormFillEvents,
   listWorkflowEmailCampaigns,
+  pullListGrowthStats,
+  type ListGrowthStats,
 } from "./ghl-conversion-analytics";
+
+export type { ListGrowthStats } from "./ghl-conversion-analytics";
 
 const STATS_CONCURRENCY = 4;
 const SCHEDULE_TIME_ZONE =
@@ -105,6 +109,8 @@ export interface ClientEmailAnalytics {
   formFills: number | null;
   formFillsError: string | null;
   abandonedRecovery: AbandonedRecoveryStats | null;
+  /** New contacts vs email unsubscribes in the window. */
+  listGrowth: ListGrowthStats | null;
   /** Present for ecommerce clients — orders + revenue in the window. */
   commerce: CommerceAnalytics | null;
   attributionDays: number;
@@ -906,13 +912,42 @@ export async function pullClientEmailAnalytics(
     };
   }
 
+  const finalizedTotals = finalizeTotals(totals);
+  let listGrowth: ListGrowthStats | null = null;
+  try {
+    listGrowth = await pullListGrowthStats(
+      locationId,
+      start,
+      end,
+      [...campaigns, ...flows].map((row) => ({
+        at: row.sentOn,
+        count: row.unsubscribed,
+      })),
+      finalizedTotals.delivered
+    );
+  } catch (err) {
+    listGrowth = {
+      contactsAdded: 0,
+      unsubscribed: finalizedTotals.unsubscribed,
+      net: -finalizedTotals.unsubscribed,
+      unsubscribeRate: finalizedTotals.delivered
+        ? Math.round(
+            (finalizedTotals.unsubscribed / finalizedTotals.delivered) * 1000
+          ) / 10
+        : 0,
+      series: [],
+      error:
+        err instanceof Error ? err.message : "Could not load list growth.",
+    };
+  }
+
   return {
     locationId,
     start,
     end,
     fetchedAt: new Date().toISOString(),
     moneyMode: "service",
-    totals: finalizeTotals(totals),
+    totals: finalizedTotals,
     campaigns,
     flows,
     appointments,
@@ -920,6 +955,7 @@ export async function pullClientEmailAnalytics(
     formFills,
     formFillsError,
     abandonedRecovery,
+    listGrowth,
     commerce: null,
     attributionDays,
   };
@@ -945,6 +981,7 @@ export function emptyClientEmailAnalytics(
     formFills: null,
     formFillsError: null,
     abandonedRecovery: null,
+    listGrowth: null,
     commerce: null,
     attributionDays: DEFAULT_ATTRIBUTION_DAYS,
   };
