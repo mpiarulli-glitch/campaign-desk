@@ -87,6 +87,18 @@ export function EmailAnalyticsPanel({
     return [...data.flows].sort((a, b) => flowScore(b) - flowScore(a));
   }, [data]);
 
+  const attributed = useMemo(() => {
+    if (!data) return { forms: 0, appointments: 0 };
+    const rows = [...data.campaigns, ...data.flows];
+    return {
+      forms: rows.reduce((n, row) => n + (row.formFills || 0), 0),
+      appointments: rows.reduce(
+        (n, row) => n + (row.attributedAppointments || 0),
+        0
+      ),
+    };
+  }, [data]);
+
   const canPull = ghlLinked || commerceClient || crmLinked;
 
   const pull = useCallback(async () => {
@@ -275,23 +287,23 @@ export function EmailAnalyticsPanel({
             ) : (
               <>
                 <article className="lh-kpi is-teal">
-                  <span className="lh-kpi-label">Form fills</span>
-                  <strong className="lh-kpi-value">
-                    {data.formFills === null ? "—" : fmt(data.formFills)}
-                  </strong>
+                  <span className="lh-kpi-label">Email → forms</span>
+                  <strong className="lh-kpi-value">{fmt(attributed.forms)}</strong>
                   <span className="lh-kpi-hint">
-                    Last-touch · {data.attributionDays}-day window
+                    {data.formFills === null
+                      ? `Last-touch · ${data.attributionDays}-day window`
+                      : `${fmt(attributed.forms)} of ${fmt(data.formFills)} fills credited · ${data.attributionDays}-day window`}
                   </span>
                 </article>
                 <article className="lh-kpi is-cyan">
-                  <span className="lh-kpi-label">Appointments</span>
-                  <strong className="lh-kpi-value">
-                    {data.appointments === null ? "—" : fmt(data.appointments)}
-                  </strong>
+                  <span className="lh-kpi-label">Email → booked</span>
+                  <strong className="lh-kpi-value">{fmt(attributed.appointments)}</strong>
                   <span className="lh-kpi-hint">
-                    {data.abandonedRecovery && !data.abandonedRecovery.error
-                      ? `${fmt(data.abandonedRecovery.recoveredInWindow)} recovered · ${fmt(data.abandonedRecovery.stillAbandoned)} still open`
-                      : "Booked in range"}
+                    {data.appointments === null
+                      ? data.abandonedRecovery && !data.abandonedRecovery.error
+                        ? `${fmt(data.abandonedRecovery.recoveredInWindow)} recovered · ${fmt(data.abandonedRecovery.stillAbandoned)} still open`
+                        : "Attributed bookings"
+                      : `${fmt(attributed.appointments)} of ${fmt(data.appointments)} booked after a send`}
                   </span>
                 </article>
               </>

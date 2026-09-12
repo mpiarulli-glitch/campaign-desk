@@ -1012,6 +1012,11 @@ export function ClientHub() {
   useEffect(() => {
     setSelectedId(readClientParam());
     setUrlReady(true);
+    function onPopState() {
+      setSelectedId(readClientParam());
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const filtered = useMemo(() => {
