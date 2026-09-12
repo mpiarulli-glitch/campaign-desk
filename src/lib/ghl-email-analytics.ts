@@ -969,6 +969,171 @@ export async function pullClientEmailAnalytics(
   };
 }
 
+/**
+ * Lighter pull for cross-account rollups: send dates + conversions only.
+ * Skips campaign open/click stats and list-growth series.
+ */
+export async function pullClientAttributionSummary(
+  locationId: string,
+  start: string,
+  end: string,
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+): Promise<{
+  locationId: string;
+  start: string;
+  end: string;
+  attributionDays: number;
+  campaignSends: number;
+  flowSends: number;
+  attributedAppointments: number;
+  attributedFormFills: number;
+  totalAppointments: number | null;
+  totalFormFills: number | null;
+  error: string | null;
+}> {
+  let error: string | null = null;
+  let campaignSends = 0;
+  let flowSends = 0;
+  let attributedAppointments = 0;
+  let attributedFormFills = 0;
+  let totalAppointments: number | null = null;
+  let totalFormFills: number | null = null;
+
+  try {
+    const schedules = await listScheduledCampaigns(locationId);
+    const campaignRows = schedules
+      .filter((s) => inRange(campaignSentOn(s), start, end))
+      .map((s) => ({
+        id: String(s.id || s._id || ""),
+        name: String(s.name || "Untitled campaign"),
+        sentOn: campaignSentOn(s),
+        channel: "campaign" as const,
+      }))
+      .filter((row) => row.id);
+
+    let flowRows: Array<{
+      id: string;
+      name: string;
+      sentOn: string | null;
+      channel: "flow";
+      abandonedRecovery: boolean;
+    }> = [];
+    try {
+      const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
+      flowRows = workflowCampaigns.map((flow) => ({
+        id: flow.id,
+        name: flow.name,
+        sentOn: flow.sentOn,
+        channel: "flow" as const,
+        abandonedRecovery: flow.abandonedRecovery,
+      }));
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Could not load GHL flows.";
+    }
+
+    campaignSends = campaignRows.length;
+    flowSends = flowRows.length;
+
+    let appointmentEvents: Awaited<
+      ReturnType<typeof listBookedAppointmentEvents>
+    > = [];
+    try {
+      appointmentEvents = await listBookedAppointmentEvents(locationId, start, end);
+      totalAppointments = appointmentEvents.length;
+    } catch (err) {
+      error =
+        err instanceof Error
+          ? err.message
+          : "Could not load appointments.";
+    }
+
+    let formEvents: ConversionEvent[] = [];
+    try {
+      formEvents = await listFormFillEvents(locationId, start, end);
+      totalFormFills = formEvents.length;
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Could not load form fills.";
+      error = error ? `${error}; ${msg}` : msg;
+    }
+
+    const conversionEvents: ConversionEvent[] = [
+      ...formEvents,
+      ...appointmentEvents.map((event) => ({
+        id: event.id,
+        contactId: event.contactId,
+        at: event.at,
+        kind: "appointment" as const,
+      })),
+    ];
+
+    const attributionSends: AttributionSend[] = [
+      ...campaignRows,
+      ...flowRows.map(({ id, name, sentOn, channel }) => ({
+        id,
+        name,
+        sentOn,
+        channel,
+      })),
+    ];
+    const attributed = attributeConversionsToSends(
+      attributionSends,
+      conversionEvents,
+      attributionDays
+    );
+
+    for (const counts of attributed.values()) {
+      attributedAppointments += counts.appointments;
+      attributedFormFills += counts.formFills;
+    }
+
+    try {
+      const abandonedContacts = await listAbandonedBookingContacts(locationId);
+      const summary = summarizeAbandonedRecovery(
+        abandonedContacts,
+        appointmentEvents
+          .filter((event) => event.contactId)
+          .map((event) => ({
+            contactId: event.contactId as string,
+            at: event.at,
+          })),
+        start,
+        end
+      );
+      const recoveryFlows = flowRows.filter((flow) => flow.abandonedRecovery);
+      if (recoveryFlows.length && summary.recoveredInWindow > 0) {
+        // Match per-client analytics: recovery bookings counted on recovery flows.
+        const already = recoveryFlows.reduce(
+          (n, flow) => n + (attributed.get(flow.id)?.appointments || 0),
+          0
+        );
+        if (summary.recoveredInWindow > already) {
+          attributedAppointments += summary.recoveredInWindow - already;
+        }
+      }
+    } catch {
+      // Optional path — last-touch attribution still stands.
+    }
+  } catch (err) {
+    error = err instanceof Error ? err.message : "Attribution pull failed.";
+  }
+
+  return {
+    locationId,
+    start,
+    end,
+    attributionDays,
+    campaignSends,
+    flowSends,
+    attributedAppointments,
+    attributedFormFills,
+    totalAppointments,
+    totalFormFills,
+    error,
+  };
+}
+
 /** Empty email analytics shell for DTC clients with no GHL location linked. */
 export function emptyClientEmailAnalytics(
   start: string,

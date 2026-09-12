@@ -18347,6 +18347,67 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin-bottom: 12px;
 }
 
+
+
+
+
+/* Cross-account email attribution rollup (Lifecycle → Email wins) */
+.lh-attr-rollup .lh-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+
+.lh-attr-rollup .lh-analytics-window-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.lh-attr-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent-ink, var(--accent));
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-underline-offset: 2px;
+}
+
+.lh-attr-link:hover {
+  color: var(--text);
+}
+
+.lh-attr-others {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.lh-attr-other-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 720px) {
+  .lh-attr-rollup .lh-card-head {
+    flex-direction: column;
+  }
+}
+
 .lh-analytics-kicker {
   margin: 0 0 4px;
   font-size: 11px;
