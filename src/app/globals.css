@@ -37,6 +37,11 @@
   /* Translucent surface for the blurred sticky header. Its own token because an
      rgba() cannot be derived from an opaque one. */
   --surface-veil: rgba(255, 255, 255, 0.82);
+  /* Elevated card/panel fill. Alias kept so feature CSS can say --surface
+     without baking in a light-mode fallback that breaks dark mode. */
+  --surface: var(--bg-elevated);
+  --border-subtle: var(--border);
+  --text-strong: var(--text);
 
   /* Chosen segment in a segmented control. */
   --pill-bg: var(--ink);
@@ -116,6 +121,9 @@
   --on-accent: #04333a;
 
   --surface-veil: rgba(20, 20, 22, 0.82);
+  --surface: var(--bg-elevated);
+  --border-subtle: var(--border);
+  --text-strong: var(--text);
 
   /* A near-white slab would glare here, so the chosen segment takes the accent. */
   --pill-bg: var(--accent);
@@ -18327,7 +18335,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   background:
     radial-gradient(1200px 420px at -10% -20%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
     radial-gradient(900px 360px at 110% 0%, color-mix(in srgb, #2a9d8f 14%, transparent), transparent 55%),
-    var(--surface, #fff);
+    var(--bg-elevated);
+  color: var(--text);
 }
 
 .lh-analytics-hero {
@@ -18351,6 +18360,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin: 0;
   font-size: 1.35rem;
   letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .lh-analytics-lead {
@@ -18370,9 +18380,9 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   border-radius: 14px;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--border-subtle, #e5e7eb) 80%, transparent),
-    color-mix(in srgb, var(--accent) 10%, #f8fafc),
-    color-mix(in srgb, var(--border-subtle, #e5e7eb) 80%, transparent)
+    var(--bg-soft),
+    color-mix(in srgb, var(--accent) 14%, var(--bg-elevated)),
+    var(--bg-soft)
   );
   background-size: 200% 100%;
   animation: lh-skel-shine 1.2s ease-in-out infinite;
@@ -18406,9 +18416,9 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   gap: 6px;
   padding: 16px 16px 14px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle, #e5e7eb) 90%, transparent);
-  background: color-mix(in srgb, var(--surface, #fff) 92%, #f8fafc);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  box-shadow: var(--shadow);
   overflow: hidden;
   min-width: 0;
 }
@@ -18441,11 +18451,11 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   line-height: 1.05;
-  color: var(--text-strong, var(--text-body));
+  color: var(--text-strong);
 }
 
-.lh-kpi-value.is-up { color: #059669; }
-.lh-kpi-value.is-down { color: #be123c; }
+.lh-kpi-value.is-up { color: var(--success); }
+.lh-kpi-value.is-down { color: var(--danger); }
 
 .lh-kpi-hint {
   font-size: 12px;
@@ -18457,14 +18467,14 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin: 0 0 18px;
   padding: 16px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle, #e5e7eb) 90%, transparent);
+  border: 1px solid var(--border);
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--accent) 6%, transparent),
+      color-mix(in srgb, var(--accent) 8%, transparent),
       transparent 42%
     ),
-    color-mix(in srgb, var(--surface, #fff) 96%, #f1f5f9);
+    var(--bg-soft);
 }
 
 .lh-dash-head {
@@ -18481,6 +18491,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin: 0;
   font-size: 0.98rem;
   letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .lh-dash-head .lh-card-note,
@@ -18534,6 +18545,14 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   background: #94a3b8;
 }
 
+:root[data-theme="dark"] .lh-growth-legend .is-leave::before {
+  background: #64748b;
+}
+
+:root[data-theme="dark"] .lh-growth-bar.is-leave {
+  background: linear-gradient(180deg, #94a3b8, #64748b);
+}
+
 .lh-growth-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -18562,18 +18581,19 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .lh-growth-summary .is-up,
 .lh-side-metrics .is-up,
 .lh-kpi-value.is-up {
-  color: #059669;
+  color: var(--success);
 }
 
 .lh-growth-summary .is-down,
 .lh-side-metrics .is-down,
 .lh-kpi-value.is-down {
-  color: #be123c;
+  color: var(--danger);
 }
 
 .lh-growth-chart {
@@ -18649,15 +18669,15 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .lh-flow-card {
   padding: 14px;
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle, #e5e7eb) 90%, transparent);
-  background: color-mix(in srgb, var(--surface, #fff) 94%, #f8fafc);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.035);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .lh-flow-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+  box-shadow: var(--shadow-lift);
 }
 
 .lh-flow-card-top {
@@ -18678,7 +18698,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   flex: 1;
   height: 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--border-subtle, #e5e7eb) 80%, transparent);
+  background: var(--bg-soft);
   overflow: hidden;
 }
 
@@ -18704,8 +18724,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .lh-side-card {
   padding: 14px;
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle, #e5e7eb) 90%, transparent);
-  background: color-mix(in srgb, var(--surface, #fff) 94%, #f8fafc);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   margin-bottom: 12px;
 }
 
@@ -18757,10 +18777,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--surface, #fff) 96%, transparent),
-        color-mix(in srgb, var(--surface, #fff) 92%, #f8fafc)
+        color-mix(in srgb, var(--bg-elevated) 96%, transparent),
+        var(--bg-elevated)
       );
-    border-bottom: 1px solid color-mix(in srgb, var(--border-subtle, #e5e7eb) 85%, transparent);
+    border-bottom: 1px solid var(--border);
     backdrop-filter: blur(10px);
   }
 
@@ -18897,8 +18917,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   .lh-campaign-card {
     padding: 14px;
     border-radius: 14px;
-    border: 1px solid color-mix(in srgb, var(--border-subtle, #e5e7eb) 90%, transparent);
-    background: color-mix(in srgb, var(--surface, #fff) 94%, #f8fafc);
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
   }
 
   .lh-campaign-card-top {
