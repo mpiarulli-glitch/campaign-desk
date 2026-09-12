@@ -433,6 +433,50 @@ export function aggregate(metrics: RevMetric[]): Aggregate {
   return a;
 }
 
+/** Metrics whose month (YYYY-MM) overlaps an inclusive YYYY-MM-DD window. */
+export function listMetricsInRange(
+  clientId: string,
+  start: string,
+  end: string
+): RevMetric[] {
+  const startMonth = start.slice(0, 7);
+  const endMonth = end.slice(0, 7);
+  return listMetrics(clientId).filter(
+    (m) => m.month >= startMonth && m.month <= endMonth
+  );
+}
+
+export type CommerceRollup = {
+  revenue: number;
+  orders: number;
+  aov: number;
+  months: number;
+  revenueSource: RevMetric["revenue_source"] | "none";
+};
+
+/** Store sales rollup for DTC / ecommerce clients from rev_metrics. */
+export function commerceRollupForRange(
+  clientId: string,
+  start: string,
+  end: string
+): CommerceRollup {
+  const rows = listMetricsInRange(clientId, start, end);
+  const agg = aggregate(rows);
+  const sources = new Set(rows.map((r) => r.revenue_source).filter(Boolean));
+  let revenueSource: CommerceRollup["revenueSource"] = "none";
+  if (sources.size === 1) revenueSource = [...sources][0] as RevMetric["revenue_source"];
+  else if (sources.size > 1) revenueSource = "mixed";
+  return {
+    revenue: agg.revenue,
+    orders: agg.orders,
+    aov: agg.orders > 0 ? agg.revenue / agg.orders : 0,
+    months: agg.months,
+    revenueSource,
+  };
+}
+
+
+
 const div = (a: number, b: number) => (b > 0 ? a / b : 0);
 
 // Profitability is period-aware: retainer/cost are monthly, so multiply by the

@@ -6,7 +6,7 @@
  * so opening this page stays fast.
  */
 
-import { getDb, nowIso } from "./db";
+import { getDb, nowIso, type BusinessModel } from "./db";
 import {
   EMAIL_LAUNCH_LIST,
   EMAIL_LAUNCH_SOURCE,
@@ -168,6 +168,8 @@ export interface HubClient {
   platform: EmailPlatform | null;
   /** True when this hub card (or a group member) has a GHL location id. */
   ghlLinked: boolean;
+  /** ecomm | b2b | home_service — drives Lifecycle money metrics. */
+  businessModel: BusinessModel;
   nextSend: HubSend | null;
   sends: HubSend[];
   campaigns: HubCampaign[];
@@ -597,6 +599,7 @@ function toHubClient(
     launchDate,
     platform,
     ghlLinked,
+    businessModel: rev?.business_model || "home_service",
     nextSend: upcoming[0] || null,
     sends,
     campaigns,

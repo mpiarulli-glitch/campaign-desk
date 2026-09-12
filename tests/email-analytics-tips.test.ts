@@ -14,6 +14,14 @@ function sample(partial: Partial<ClientEmailAnalytics> & {
     fetchedAt: "2026-08-31T00:00:00.000Z",
     appointments: null,
     appointmentsError: null,
+    flows: [],
+    formFills: null,
+    formFillsError: null,
+    abandonedRecovery: null,
+    listGrowth: null,
+    attributionDays: 5,
+    moneyMode: "service",
+    commerce: null,
     ...partial,
   };
 }
@@ -51,6 +59,10 @@ test("buildEmailRecommendations flags low opens and cites a winning subject", ()
           openRate: 28.6,
           clickRate: 1.2,
           statsAvailable: true,
+          channel: "campaign",
+          formFills: 0,
+          attributedAppointments: 0,
+          abandonedRecovery: false,
         },
         {
           id: "2",
@@ -68,6 +80,10 @@ test("buildEmailRecommendations flags low opens and cites a winning subject", ()
           openRate: 8.2,
           clickRate: 0.4,
           statsAvailable: true,
+          channel: "campaign",
+          formFills: 0,
+          attributedAppointments: 0,
+          abandonedRecovery: false,
         },
       ],
     })
