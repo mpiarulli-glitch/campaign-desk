@@ -67,20 +67,40 @@ function isEmailMessage(msg: Record<string, unknown>): boolean {
   return false;
 }
 
+function isCampaignLikeSource(source: string): boolean {
+  return /(campaign|bulk|broadcast|mass|email.?market)/.test(source);
+}
+
+function isWorkflowLikeSource(source: string): boolean {
+  return /(workflow|automation)/.test(source);
+}
+
 /**
  * Campaign / workflow / bulk — not one-off manual sales emails when labeled.
  * When `strict`, unlabeled sources do NOT count (GHL often leaves manual mail blank).
+ *
+ * Pass `subject` in strict mode: workflow/automation with an empty subject is
+ * NOT marketing (GHL often omits subject on appointment confirmations).
+ * Campaign / bulk / broadcast still count without a subject.
  */
 export function isMarketingEmailSource(
   source: unknown,
-  options: { strict?: boolean } = {}
+  options: { strict?: boolean; subject?: unknown } = {}
 ): boolean {
   const strict = Boolean(options.strict);
   const s = String(source || "").toLowerCase().trim();
   if (!s) return !strict;
-  if (/(campaign|workflow|bulk|broadcast|mass|automation|email.?market)/.test(s)) {
-    return true;
+
+  if (isCampaignLikeSource(s)) return true;
+
+  if (isWorkflowLikeSource(s)) {
+    if (!strict) return true;
+    // Strict: require a non-empty subject. Empty-subject workflow mail is almost
+    // always a confirmation/automation notice, not a blast that drove a booking.
+    const subject = String(options.subject ?? "").trim();
+    return Boolean(subject);
   }
+
   if (/(manual|one.?off|user|staff|agent)/.test(s) && !/(campaign|workflow)/.test(s)) {
     return false;
   }
@@ -91,10 +111,15 @@ export function isMarketingEmailSource(
 /**
  * Appointment / form confirmations that go out AFTER someone converts.
  * These often come from workflows, so source alone would look like marketing.
+ * Works on subject, body, snippet, or any combined email text.
  * Example: "Your Onsite Consultation Has Been Scheduled."
  */
-export function isTransactionalEmailSubject(subject: unknown): boolean {
-  const s = String(subject || "").toLowerCase().trim();
+export function isTransactionalEmailContent(text: unknown): boolean {
+  const s = String(text || "")
+    .replace(/<[^>]+>/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
   if (!s) return false;
   if (/\b(has been|is|was)\s+scheduled\b/.test(s)) return true;
   if (/\b(appointment|consultation|estimate|meeting|booking|demo)\b.*\b(schedul|confirm|booked)\b/.test(s)) {
@@ -114,16 +139,76 @@ export function isTransactionalEmailSubject(subject: unknown): boolean {
   return false;
 }
 
+/** Subject-only wrapper; prefers isTransactionalEmailContent for body/snippet too. */
+export function isTransactionalEmailSubject(subject: unknown): boolean {
+  return isTransactionalEmailContent(subject);
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function messageSubject(msg: Record<string, unknown>): string {
   const meta = asRecord(msg.meta);
-  return String(
-    msg.subject ||
-      msg.emailSubject ||
-      msg.title ||
-      msg.name ||
-      (meta && meta.subject) ||
-      ""
+  return pickString(
+    msg.subject,
+    msg.emailSubject,
+    msg.title,
+    msg.name,
+    meta?.subject,
+    meta?.emailSubject
   );
+}
+
+/** Body / snippet / preview text GHL Conversations may return (often instead of subject). */
+function messageBodyText(msg: Record<string, unknown>): string {
+  const meta = asRecord(msg.meta);
+  const parts = [
+    msg.body,
+    msg.text,
+    msg.html,
+    msg.snippet,
+    msg.preview,
+    msg.bodyPreview,
+    msg.emailBody,
+    msg.messageBody,
+    msg.content,
+    msg.message,
+    meta?.body,
+    meta?.text,
+    meta?.html,
+    meta?.snippet,
+    meta?.preview,
+    meta?.bodyPreview,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  return parts.join("\n");
+}
+
+function messageContentText(msg: Record<string, unknown>): string {
+  return [messageSubject(msg), messageBodyText(msg)].filter(Boolean).join("\n");
+}
+
+/**
+ * Whether an outbound conversation message counts as a real marketing email touch.
+ * Used by attribution and unit tests (Eric Smith empty-subject workflow case).
+ */
+export function isOutboundMarketingTouchMessage(
+  msg: Record<string, unknown>,
+  options: { strict?: boolean } = {}
+): boolean {
+  if (!isEmailMessage(msg) || !isOutbound(msg.direction)) return false;
+  const subject = messageSubject(msg);
+  if (!isMarketingEmailSource(msg.source, { strict: options.strict, subject })) {
+    return false;
+  }
+  // Workflow confirmations look like marketing by source but did not drive the booking.
+  if (isTransactionalEmailContent(messageContentText(msg))) return false;
+  return true;
 }
 
 async function findConversationId(
@@ -214,11 +299,7 @@ export async function latestOutboundMarketingEmailDay(
   const strictSource = Boolean(options.strictSource);
   let best: string | null = null;
   for (const msg of messages) {
-    if (!isEmailMessage(msg) || !isOutbound(msg.direction)) continue;
-    if (!isMarketingEmailSource(msg.source, { strict: strictSource })) continue;
-    // Workflow confirmations ("Your consult has been scheduled") look like
-    // marketing by source but are not an email that drove the booking.
-    if (isTransactionalEmailSubject(messageSubject(msg))) continue;
+    if (!isOutboundMarketingTouchMessage(msg, { strict: strictSource })) continue;
     const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
     if (!day || day > before) continue;
     const lag = dayDiff(before, day);

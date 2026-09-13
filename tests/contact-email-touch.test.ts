@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isMarketingEmailSource,
+  isOutboundMarketingTouchMessage,
+  isTransactionalEmailContent,
   isTransactionalEmailSubject,
 } from "../src/lib/ghl-contact-email-touch";
 
@@ -15,8 +17,43 @@ describe("isMarketingEmailSource", () => {
 
   it("accepts campaign and workflow sources", () => {
     assert.equal(isMarketingEmailSource("campaign"), true);
-    assert.equal(isMarketingEmailSource("workflow", { strict: true }), true);
+    assert.equal(
+      isMarketingEmailSource("workflow", {
+        strict: true,
+        subject: "Three Details That Matter",
+      }),
+      true
+    );
     assert.equal(isMarketingEmailSource("bulk_email"), true);
+    assert.equal(isMarketingEmailSource("broadcast", { strict: true }), true);
+  });
+
+  it("rejects empty-subject workflow/automation in strict mode (Eric case)", () => {
+    assert.equal(
+      isMarketingEmailSource("workflow", { strict: true, subject: "" }),
+      false
+    );
+    assert.equal(
+      isMarketingEmailSource("workflow", { strict: true, subject: null }),
+      false
+    );
+    assert.equal(
+      isMarketingEmailSource("automation", { strict: true, subject: "  " }),
+      false
+    );
+    // Non-strict still allows empty-subject workflow (legacy / loose mode).
+    assert.equal(isMarketingEmailSource("workflow", { subject: "" }), true);
+  });
+
+  it("still accepts campaign/bulk with empty subject in strict mode", () => {
+    assert.equal(
+      isMarketingEmailSource("campaign", { strict: true, subject: "" }),
+      true
+    );
+    assert.equal(
+      isMarketingEmailSource("bulk", { strict: true, subject: "" }),
+      true
+    );
   });
 
   it("rejects clearly manual one-off sources", () => {
@@ -55,5 +92,98 @@ describe("isTransactionalEmailSubject", () => {
     assert.equal(isTransactionalEmailSubject("Don't miss this week's tips"), false);
     assert.equal(isTransactionalEmailSubject(""), false);
     assert.equal(isTransactionalEmailSubject(null), false);
+  });
+});
+
+describe("isTransactionalEmailContent", () => {
+  it("flags confirmation body/snippet when subject is empty", () => {
+    assert.equal(
+      isTransactionalEmailContent(
+        "Hi Eric, your onsite consultation has been scheduled for Tuesday."
+      ),
+      true
+    );
+    assert.equal(
+      isTransactionalEmailContent(
+        "<p>Thanks for booking your appointment. We look forward to meeting you.</p>"
+      ),
+      true
+    );
+    assert.equal(
+      isTransactionalEmailContent("Don't miss this week's tips on solar"),
+      false
+    );
+  });
+});
+
+describe("isOutboundMarketingTouchMessage", () => {
+  it("rejects Eric-style empty-subject workflow confirmation (strict)", () => {
+    const ericMsg = {
+      type: "Email",
+      direction: "outbound",
+      source: "workflow",
+      subject: "",
+      body: "Your Onsite Consultation Has Been Scheduled. See you soon.",
+      dateAdded: "2026-08-25T15:00:00.000Z",
+    };
+    assert.equal(
+      isOutboundMarketingTouchMessage(ericMsg, { strict: true }),
+      false
+    );
+  });
+
+  it("rejects empty-subject workflow even without body text (strict)", () => {
+    const msg = {
+      messageType: "email",
+      direction: "outgoing",
+      source: "workflow",
+      // GHL Conversations often omits subject entirely on workflow mail.
+      snippet: "",
+      dateAdded: "2026-08-25T15:00:00.000Z",
+    };
+    assert.equal(isOutboundMarketingTouchMessage(msg, { strict: true }), false);
+  });
+
+  it("rejects workflow with confirmation only in snippet/meta (strict)", () => {
+    const msg = {
+      type: 3,
+      direction: "outbound",
+      source: "automation",
+      meta: {
+        snippet: "Appointment confirmation for your free estimate visit.",
+      },
+      dateAdded: "2026-08-25T15:00:00.000Z",
+    };
+    assert.equal(isOutboundMarketingTouchMessage(msg, { strict: true }), false);
+  });
+
+  it("keeps real campaign / workflow marketing mail (strict)", () => {
+    assert.equal(
+      isOutboundMarketingTouchMessage(
+        {
+          type: "Email",
+          direction: "outbound",
+          source: "campaign",
+          subject: "Three Details That Matter",
+          dateAdded: "2026-08-25T12:00:00.000Z",
+        },
+        { strict: true }
+      ),
+      true
+    );
+    assert.equal(
+      isOutboundMarketingTouchMessage(
+        {
+          type: "Email",
+          direction: "outbound",
+          source: "workflow",
+          subject: "Solar tips for August",
+          body: "Here are three ways to cut your bill this month.",
+          dateAdded: "2026-08-24T12:00:00.000Z",
+        },
+        { strict: true }
+      ),
+      true
+    );
   });
 });
