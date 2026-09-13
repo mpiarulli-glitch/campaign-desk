@@ -15719,6 +15719,12 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   align-items: start;
 }
 
+/* Full-bleed by default so new panels aren't crushed into one column. */
+.lh-detail-layout > .lh-card {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .lh-detail-layout > .lh-quota {
   grid-column: span 4;
 }
@@ -15736,6 +15742,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .lh-detail-layout > .lh-linkedin {
+  grid-column: 1 / -1;
+}
+
+.lh-detail-layout > .lh-integrations {
   grid-column: 1 / -1;
 }
 
@@ -15757,6 +15767,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   .lh-detail-layout > .lh-launch-card,
   .lh-detail-layout > .lh-workflows,
   .lh-detail-layout > .lh-linkedin,
+  .lh-detail-layout > .lh-integrations,
   .lh-detail-layout > .lh-analytics {
     grid-column: 1 / -1;
   }
@@ -16293,8 +16304,9 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .lh-integration-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 16px;
+  align-items: start;
   padding: 12px 0;
   border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
 }
@@ -16302,6 +16314,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .lh-integration-row:first-child {
   border-top: none;
   padding-top: 0;
+}
+
+.lh-integration-main {
+  min-width: 0;
 }
 
 .lh-integration-title {
@@ -16324,6 +16340,15 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .lh-integration-status.is-error {
   color: var(--danger, #b42318);
+}
+
+.lh-integration-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+  white-space: nowrap;
 }
 
 .lh-integration-form {
