@@ -661,7 +661,7 @@ export default function SnapshotEditorPage() {
           <h1 className="ops-title">{name || "Account"}</h1>
           <p className="ops-sub">{scopeLabel}</p>
           <label className="snap-launch">
-            <span>Launch date</span>
+            <span>Launch</span>
             <input
               type="date"
               value={launchDate || ""}
@@ -676,9 +676,7 @@ export default function SnapshotEditorPage() {
                   { month: "short", day: "numeric", year: "numeric" }
                 )}
               </span>
-            ) : (
-              <span className="snap-launch-through">Set this — on-track scoring starts here</span>
-            )}
+            ) : null}
           </label>
         </div>
         {section === "week" || section === "leads" ? (
@@ -715,12 +713,6 @@ export default function SnapshotEditorPage() {
           {counts.total > 0 ? (
             <div className={`ads-pass-banner ${counts.attention === 0 ? "is-clear" : "is-work"}`}>
               <p className="ads-pass-banner-line">{passLine}</p>
-              {counts.attention > 0 ? (
-                <p className="ads-pass-banner-hint">
-                  This list is current work and unfinished setup. It is not the last-period
-                  score.
-                </p>
-              ) : null}
             </div>
           ) : null}
 
@@ -745,11 +737,19 @@ export default function SnapshotEditorPage() {
           ) : null}
 
           {counts.total > 0 ? (
-            <div className="ops-stats ads-stats snap-desk-stats">
-              <StatButton n={counts.attention} label="Needs update" on={fillFilter === "todo"} onClick={() => setFillFilter("todo")} />
-              <StatButton n={counts.overdue} label="Overdue" on={fillFilter === "overdue"} onClick={() => setFillFilter("overdue")} />
-              <StatButton n={counts.done} label="Logged" on={fillFilter === "done"} onClick={() => setFillFilter("done")} />
-              <StatButton n={counts.total} label="All" on={fillFilter === "all"} onClick={() => setFillFilter("all")} />
+            <div className="snap-desk-filters" role="group" aria-label="Filter this week">
+              <button type="button" className={fillFilter === "todo" ? "is-on" : undefined} onClick={() => setFillFilter("todo")}>
+                Needs update <em>{counts.attention}</em>
+              </button>
+              <button type="button" className={fillFilter === "overdue" ? "is-on" : undefined} onClick={() => setFillFilter("overdue")}>
+                Overdue <em>{counts.overdue}</em>
+              </button>
+              <button type="button" className={fillFilter === "done" ? "is-on" : undefined} onClick={() => setFillFilter("done")}>
+                Logged <em>{counts.done}</em>
+              </button>
+              <button type="button" className={fillFilter === "all" ? "is-on" : undefined} onClick={() => setFillFilter("all")}>
+                All <em>{counts.total}</em>
+              </button>
             </div>
           ) : null}
 
@@ -798,7 +798,6 @@ export default function SnapshotEditorPage() {
                       {LANE_COPY[group.lane].title}{" "}
                       <span className="snap-desk-lane-count">{group.rows.length}</span>
                     </h2>
-                    <p>{LANE_COPY[group.lane].hint}</p>
                   </header>
                   {groupByCategory(group.rows).map(([category, catRows]) => (
                     <div key={category} className="snap-desk-cat">
@@ -1139,25 +1138,6 @@ export default function SnapshotEditorPage() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function StatButton({
-  n,
-  label,
-  on,
-  onClick,
-}: {
-  n: number;
-  label: string;
-  on: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className={`ops-stat ads-stat ${on ? "on" : ""}`} onClick={onClick}>
-      <span className="n">{n}</span>
-      <span className="l">{label}</span>
-    </button>
   );
 }
 
