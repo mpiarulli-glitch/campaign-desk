@@ -44,27 +44,6 @@ function signedNet(n: number): string {
   return "0";
 }
 
-function campaignMetaLine(c: GhlCampaignRow): string {
-  const parts = [formatGhlCampaignStatusLabel(c.status)];
-  if (c.sentOn) parts.push(c.sentOn);
-  if (!c.statsAvailable && !isGhlCampaignNotYetSent(c.status)) {
-    parts.push("no stats yet");
-  }
-  return parts.join(" · ");
-}
-
-function campaignPending(c: GhlCampaignRow): boolean {
-  return isGhlCampaignNotYetSent(c.status) || c.sent <= 0;
-}
-
-function fmtSent(c: GhlCampaignRow): string {
-  return campaignPending(c) ? "—" : fmt(c.sent);
-}
-
-function fmtEngagement(c: GhlCampaignRow, rate: number): string {
-  return campaignPending(c) ? "—" : fmtPct(rate);
-}
-
 function prettyRange(start: string, end: string): string {
   const opts: Intl.DateTimeFormatOptions = {
     month: "short",
@@ -74,6 +53,26 @@ function prettyRange(start: string, end: string): string {
   const a = new Date(`${start}T12:00:00`).toLocaleDateString("en-US", opts);
   const b = new Date(`${end}T12:00:00`).toLocaleDateString("en-US", opts);
   return `${a} – ${b}`;
+}
+
+/** No real mail yet — scheduled/queued, or sent volume resolved to 0. */
+function isPending(c: GhlCampaignRow): boolean {
+  return isGhlCampaignNotYetSent(c.status) || c.sent <= 0;
+}
+
+function statusLabel(c: GhlCampaignRow): string {
+  if (c.sent <= 0 && !isGhlCampaignNotYetSent(c.status)) {
+    return "Unsent";
+  }
+  return formatGhlCampaignStatusLabel(c.status);
+}
+
+function fmtSent(c: GhlCampaignRow): string {
+  return isPending(c) ? "—" : fmt(c.sent);
+}
+
+function fmtEngagement(c: GhlCampaignRow, rate: number): string {
+  return isPending(c) ? "—" : fmtPct(rate);
 }
 
 function flowScore(row: GhlCampaignRow): number {
@@ -90,7 +89,6 @@ export function EmailAnalyticsPanel({
   clientId: string;
   memberIds?: string[];
   ghlLinked: boolean;
-  /** True when Housecall Pro and/or HubSpot is linked for this client. */
   crmLinked?: boolean;
   businessModel?: "ecomm" | "b2b" | "home_service";
 }) {
@@ -124,6 +122,11 @@ export function EmailAnalyticsPanel({
     };
   }, [data]);
 
+  const scheduledCount = useMemo(() => {
+    if (!data) return 0;
+    return data.campaigns.filter((c) => isGhlCampaignNotYetSent(c.status)).length;
+  }, [data]);
+
   const canPull = ghlLinked || commerceClient || crmLinked;
 
   const pull = useCallback(async () => {
@@ -141,7 +144,9 @@ export function EmailAnalyticsPanel({
         params.set("to", to);
       }
       if (memberIds.length) params.set("members", memberIds.join(","));
-      const res = await fetch(`/api/lifecycle/hub/${clientId}/analytics?${params}`);
+      const res = await fetch(
+        `/api/lifecycle/hub/${clientId}/analytics?${params}`
+      );
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         warning?: string;
@@ -173,11 +178,11 @@ export function EmailAnalyticsPanel({
     return (
       <section className="lh-card lh-analytics">
         <div className="lh-card-head">
-          <h3>Email analytics</h3>
+          <h3>Email & revenue</h3>
         </div>
         <p className="lh-card-note">
           Link GoHighLevel from Lifecycle → Tools, or connect Housecall Pro /
-          HubSpot in CRM connections above, to pull conversion stats.
+          HubSpot above, to pull conversion stats.
         </p>
       </section>
     );
@@ -185,393 +190,342 @@ export function EmailAnalyticsPanel({
 
   const totals = data?.totals;
   const growth = data?.listGrowth;
-  const maxFlow = Math.max(1, ...rankedFlows.map(flowScore));
 
   return (
-    <section className="lh-card lh-analytics lh-analytics-dash">
-      <div className="lh-analytics-toolbar">
-        <div className="lh-analytics-hero">
-          <div>
-            <p className="lh-analytics-kicker">Performance studio</p>
-            <h3>Email command center</h3>
-            <p className="lh-card-note lh-analytics-lead">
-              Attribution, per-flow health, and list growth — last-touch within your window.
-            </p>
+    <section className="lh-card lh-analytics lh-analytics-clean">
+      <div className="lh-an-toolbar">
+        <div className="lh-an-title">
+          <h3>Email & revenue</h3>
+          {data ? (
+            <p className="lh-an-sub">{prettyRange(data.start, data.end)}</p>
+          ) : (
+            <p className="lh-an-sub">Outcomes and send health</p>
+          )}
+        </div>
+
+        <div className="lh-an-controls">
+          <div className="lh-range" role="group" aria-label="Date range">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`lh-range-btn${preset === p.id ? " is-on" : ""}`}
+                onClick={() => setPreset(p.id)}
+                disabled={loading}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
           <button
             type="button"
-            className="lh-link lh-analytics-refresh"
+            className="lh-link"
             onClick={() => void pull()}
             disabled={loading || (preset === "custom" && (!from || !to))}
           >
-            {loading
-              ? "Pulling…"
-              : data
-                ? "Refresh"
-                : commerceClient
-                  ? "Pull analytics"
-                  : crmLinked && !ghlLinked
-                    ? "Pull from CRM"
-                    : "Pull from GHL"}
+            {loading ? "Refreshing…" : data ? "Refresh" : "Load"}
           </button>
         </div>
-
-        <div className="lh-range" role="group" aria-label="Date range">
-          {PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`lh-range-btn${preset === p.id ? " is-on" : ""}`}
-              onClick={() => setPreset(p.id)}
-              disabled={loading}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        {preset === "custom" ? (
-          <div className="lh-custom-range">
-            <label className="lh-field">
-              <span>From</span>
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                aria-label="Start date"
-              />
-            </label>
-            <label className="lh-field">
-              <span>To</span>
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                aria-label="End date"
-              />
-            </label>
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={loading || !from || !to}
-              onClick={() => void pull()}
-            >
-              {loading ? "Pulling…" : "Pull"}
-            </button>
-          </div>
-        ) : null}
       </div>
+
+      {preset === "custom" ? (
+        <div className="lh-custom-range">
+          <label className="lh-field">
+            <span>From</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="Start date"
+            />
+          </label>
+          <label className="lh-field">
+            <span>To</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              aria-label="End date"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={loading || !from || !to}
+            onClick={() => void pull()}
+          >
+            {loading ? "Loading…" : "Apply"}
+          </button>
+        </div>
+      ) : null}
 
       {error ? <p className="lh-error">{error}</p> : null}
 
       {loading && !data ? (
-        <div className="lh-analytics-skeleton" aria-busy="true">
+        <div className="lh-an-skeleton" aria-busy="true">
           <div className="lh-skel" />
           <div className="lh-skel" />
           <div className="lh-skel" />
-          <div className="lh-skel is-wide" />
         </div>
       ) : null}
 
       {data && totals ? (
-        <div className="lh-dash">
-          <p className="lh-analytics-window">{prettyRange(data.start, data.end)}</p>
-          <p className="lh-card-note">
+        <div className="lh-an-body">
+          <p className="lh-an-accuracy">
             {data.moneyMode === "commerce" ? (
               <>
-                DTC money is store <strong>orders</strong> and{" "}
-                <strong>revenue</strong> from monthly metrics in this window.
-                Email engagement still comes from GHL when linked.
+                Store revenue from monthly metrics. Open and click rates use
+                actually sent campaigns only
+                {scheduledCount > 0
+                  ? ` · ${scheduledCount} scheduled excluded`
+                  : ""}
+                .
               </>
             ) : (
               <>
-                Form fills and bookings are credited to the most recent campaign
-                or automation send in the prior {data.attributionDays} days.
-                Abandoned recovery uses GHL tags (
-                <code>abandoned booking</code> → <code>meeting booked</code>).
+                Forms and bookings credited to the last send within{" "}
+                {data.attributionDays} days. Open and click rates use actually
+                sent campaigns only
+                {scheduledCount > 0
+                  ? ` · ${scheduledCount} scheduled excluded`
+                  : ""}
+                .
               </>
             )}
           </p>
 
-          <div className="lh-kpi-grid" aria-label="Key outcomes">
-            {data.moneyMode === "commerce" && data.commerce ? (
-              <>
-                <article className="lh-kpi is-teal">
-                  <span className="lh-kpi-label">Store revenue</span>
-                  <strong className="lh-kpi-value">{fmtMoney(data.commerce.revenue)}</strong>
-                  <span className="lh-kpi-hint">
-                    {fmt(data.commerce.orders)} orders · AOV {fmtMoney(data.commerce.aov)}
-                  </span>
-                </article>
-                <article className="lh-kpi is-cyan">
-                  <span className="lh-kpi-label">Months logged</span>
-                  <strong className="lh-kpi-value">{fmt(data.commerce.months)}</strong>
-                  <span className="lh-kpi-hint">Source: {data.commerce.revenueSource}</span>
-                </article>
-              </>
-            ) : (
-              <>
-                <article className="lh-kpi is-teal">
-                  <span className="lh-kpi-label">Email → forms</span>
-                  <strong className="lh-kpi-value">{fmt(attributed.forms)}</strong>
-                  <span className="lh-kpi-hint">
-                    {data.formFills === null
-                      ? `Last-touch · ${data.attributionDays}-day window`
-                      : `${fmt(attributed.forms)} of ${fmt(data.formFills)} fills credited · ${data.attributionDays}-day window`}
-                  </span>
-                </article>
-                <article className="lh-kpi is-cyan">
-                  <span className="lh-kpi-label">Email → booked</span>
-                  <strong className="lh-kpi-value">{fmt(attributed.appointments)}</strong>
-                  <span className="lh-kpi-hint">
-                    {data.appointments === null
-                      ? data.abandonedRecovery && !data.abandonedRecovery.error
-                        ? `${fmt(data.abandonedRecovery.recoveredInWindow)} recovered · ${fmt(data.abandonedRecovery.stillAbandoned)} still open`
-                        : "Attributed bookings"
-                      : `${fmt(attributed.appointments)} of ${fmt(data.appointments)} booked after a send`}
-                  </span>
-                </article>
-              </>
-            )}
-            <article className="lh-kpi is-blue">
-              <span className="lh-kpi-label">Engagement</span>
-              <strong className="lh-kpi-value">{fmtPct(totals.openRate)}</strong>
-              <span className="lh-kpi-hint">
-                {fmt(totals.sent)} actually sent · {fmtPct(totals.clickRate)} click
-                {data.campaigns.some((c) => isGhlCampaignNotYetSent(c.status))
-                  ? " · scheduled excluded"
-                  : ""}
-              </span>
-            </article>
-            <article
-              className={`lh-kpi ${growth && growth.net < 0 ? "is-rose" : "is-mint"}`}
-            >
-              <span className="lh-kpi-label">List growth</span>
-              <strong
-                className={`lh-kpi-value${
-                  growth ? (growth.net >= 0 ? " is-up" : " is-down") : ""
-                }`}
-              >
-                {growth ? signedNet(growth.net) : "—"}
-              </strong>
-              <span className="lh-kpi-hint">
-                {growth
-                  ? `${fmt(growth.contactsAdded)} joined · ${fmt(growth.unsubscribed)} unsubbed`
-                  : ghlLinked
-                    ? "No growth data in this pull"
-                    : "Connect GHL to track joins vs leaves"}
-              </span>
-            </article>
+          <div className="lh-an-band">
+            <h4 className="lh-an-band-label">Outcomes</h4>
+            <div className="lh-an-metrics" aria-label="Outcomes">
+              {data.moneyMode === "commerce" && data.commerce ? (
+                <>
+                  <div className="lh-an-metric">
+                    <span>Store revenue</span>
+                    <strong>{fmtMoney(data.commerce.revenue)}</strong>
+                    <em>
+                      {fmt(data.commerce.orders)} orders · AOV{" "}
+                      {fmtMoney(data.commerce.aov)}
+                    </em>
+                  </div>
+                  <div className="lh-an-metric">
+                    <span>Orders</span>
+                    <strong>{fmt(data.commerce.orders)}</strong>
+                    <em>{data.commerce.revenueSource}</em>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="lh-an-metric">
+                    <span>Email → forms</span>
+                    <strong>{fmt(attributed.forms)}</strong>
+                    <em>
+                      {data.formFills === null
+                        ? `${data.attributionDays}-day last-touch`
+                        : `${fmt(attributed.forms)} of ${fmt(data.formFills)} fills`}
+                    </em>
+                  </div>
+                  <div className="lh-an-metric">
+                    <span>Email → booked</span>
+                    <strong>{fmt(attributed.appointments)}</strong>
+                    <em>
+                      {data.appointments === null
+                        ? data.abandonedRecovery && !data.abandonedRecovery.error
+                          ? `${fmt(data.abandonedRecovery.recoveredInWindow)} recovered · ${fmt(data.abandonedRecovery.stillAbandoned)} open`
+                          : "Attributed bookings"
+                        : `${fmt(attributed.appointments)} of ${fmt(data.appointments)} after a send`}
+                    </em>
+                  </div>
+                </>
+              )}
+              <div className="lh-an-metric">
+                <span>List net</span>
+                <strong
+                  className={
+                    growth
+                      ? growth.net >= 0
+                        ? "is-up"
+                        : "is-down"
+                      : undefined
+                  }
+                >
+                  {growth ? signedNet(growth.net) : "—"}
+                </strong>
+                <em>
+                  {growth
+                    ? `${fmt(growth.contactsAdded)} joined · ${fmt(growth.unsubscribed)} unsubbed`
+                    : ghlLinked
+                      ? "No growth in this pull"
+                      : "Connect GHL for list growth"}
+                </em>
+              </div>
+            </div>
+          </div>
+
+          <div className="lh-an-band">
+            <h4 className="lh-an-band-label">Send health</h4>
+            <div className="lh-an-metrics" aria-label="Send health">
+              <div className="lh-an-metric">
+                <span>Delivered</span>
+                <strong>{fmt(totals.delivered || totals.sent)}</strong>
+                <em>{fmt(totals.sent)} sent</em>
+              </div>
+              <div className="lh-an-metric">
+                <span>Open rate</span>
+                <strong>{fmtPct(totals.openRate)}</strong>
+                <em>Sent campaigns only</em>
+              </div>
+              <div className="lh-an-metric">
+                <span>Click rate</span>
+                <strong>{fmtPct(totals.clickRate)}</strong>
+                <em>{fmt(totals.unsubscribed)} unsubs</em>
+              </div>
+            </div>
           </div>
 
           {growth ? <GrowthChart growth={growth} /> : null}
 
-          <div className="lh-dash-split">
-            <div className="lh-dash-main">
-              <header className="lh-dash-head">
-                <div>
-                  <h4>Flows</h4>
-                  <p className="lh-card-note">
-                    Ranked by attributed appointments, then forms, then clicks.
-                  </p>
-                </div>
-                <span className="lh-dash-chip">{rankedFlows.length}</span>
+          {data.moneyMode !== "commerce" &&
+          data.abandonedRecovery &&
+          !data.abandonedRecovery.error ? (
+            <div className="lh-an-inline">
+              <span className="lh-an-band-label">Abandoned recovery</span>
+              <div className="lh-an-inline-stats">
+                <span>
+                  <strong>{fmt(data.abandonedRecovery.abandoned)}</strong> tagged
+                </span>
+                <span>
+                  <strong>
+                    {fmt(data.abandonedRecovery.recoveredInWindow)}
+                  </strong>{" "}
+                  recovered
+                </span>
+                <span>
+                  <strong>
+                    {fmt(data.abandonedRecovery.stillAbandoned)}
+                  </strong>{" "}
+                  still open
+                </span>
+                <span>
+                  <strong>
+                    {fmtPct(data.abandonedRecovery.recoveryRate)}
+                  </strong>{" "}
+                  rate
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="lh-an-split">
+            <div className="lh-an-main">
+              <header className="lh-an-section-head">
+                <h4>Flows</h4>
+                <span className="lh-an-count">{rankedFlows.length}</span>
               </header>
               {rankedFlows.length === 0 ? (
                 <p className="lh-card-note">
                   {data.flowsError
-                    ? `Could not load GHL flows: ${data.flowsError}`
-                    : "No GHL flows found for this location yet."}
+                    ? `Could not load flows: ${data.flowsError}`
+                    : "No flows in this location yet."}
                 </p>
               ) : (
-                <div className="lh-flow-grid lh-flow-rail">
-                  {rankedFlows.map((flow, index) => (
-                    <FlowCard
+                <div className="lh-an-flow-list">
+                  {rankedFlows.slice(0, 8).map((flow, index) => (
+                    <FlowRow
                       key={flow.id || flow.name}
                       flow={flow}
                       rank={index + 1}
-                      maxScore={maxFlow}
                     />
                   ))}
                 </div>
               )}
 
-              <header className="lh-dash-head lh-dash-head-spaced">
+              <header className="lh-an-section-head lh-an-section-spaced">
                 <div>
                   <h4>Campaigns</h4>
                   <p className="lh-card-note">
-                    Broadcast performance with {data.attributionDays}-day attribution.
-                    Scheduled blasts stay listed but are excluded from open/click averages until they send.
+                    Scheduled rows stay visible with — metrics and stay out of
+                    averages until they send.
                   </p>
                 </div>
               </header>
               {data.campaigns.length === 0 ? (
-                <p className="lh-card-note">No GHL campaigns found in that window.</p>
+                <p className="lh-card-note">No campaigns in this window.</p>
               ) : (
-                <>
-                  <div className="lh-campaign-cards" aria-label="Campaigns">
-                    {data.campaigns.map((c) => (
-                      <article
-                        key={`m-${c.id || c.bulkRequestId || c.name}`}
-                        className="lh-campaign-card"
-                      >
-                        <div className="lh-campaign-card-top">
-                          <strong>{c.name}</strong>
-                          <span>{campaignMetaLine(c)}</span>
-                        </div>
-                        <p className="lh-campaign-subject">
-                          {c.subject?.trim() || "—"}
-                        </p>
-                        <div className="lh-campaign-metrics">
-                          <div>
-                            <span>Sent</span>
-                            <strong>{fmtSent(c)}</strong>
-                          </div>
-                          <div>
-                            <span>Open</span>
-                            <strong>{fmtEngagement(c, c.openRate)}</strong>
-                          </div>
-                          <div>
-                            <span>Click</span>
-                            <strong>{fmtEngagement(c, c.clickRate)}</strong>
-                          </div>
-                          <div>
-                            <span>Forms</span>
-                            <strong>{fmt(c.formFills)}</strong>
-                          </div>
-                          <div>
-                            <span>Booked</span>
-                            <strong>{fmt(c.attributedAppointments)}</strong>
-                          </div>
-                          <div>
-                            <span>Unsubs</span>
-                            <strong>{fmt(c.unsubscribed)}</strong>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="lh-analytics-table-wrap lh-campaign-table">
-                    <table className="lh-analytics-table">
-                      <thead>
-                        <tr>
-                          <th>Campaign</th>
-                          <th>Subject</th>
-                          <th>Sent</th>
-                          <th>Open %</th>
-                          <th>Click %</th>
-                          <th>Forms</th>
-                          <th>Booked</th>
-                          <th>Unsubs</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.campaigns.map((c) => (
-                          <tr key={c.id || c.bulkRequestId || c.name}>
+                <div className="lh-an-table-wrap">
+                  <table className="lh-an-table">
+                    <thead>
+                      <tr>
+                        <th>Campaign</th>
+                        <th>Status</th>
+                        <th>Sent</th>
+                        <th>Open</th>
+                        <th>Click</th>
+                        <th>Forms</th>
+                        <th>Booked</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.campaigns.map((c) => {
+                        const pending = isPending(c);
+                        return (
+                          <tr
+                            key={c.id || c.bulkRequestId || c.name}
+                            className={pending ? "is-pending" : undefined}
+                          >
                             <td>
-                              <div className="lh-analytics-name">{c.name}</div>
-                              <div className="lh-analytics-meta">
-                                {campaignMetaLine(c)}
+                              <div className="lh-an-name">{c.name}</div>
+                              <div className="lh-an-meta">
+                                {c.subject?.trim() || "—"}
+                                {c.sentOn ? ` · ${c.sentOn}` : ""}
                               </div>
                             </td>
-                            <td className="lh-analytics-subject">
-                              {c.subject?.trim() || "—"}
+                            <td>
+                              <span
+                                className={`lh-an-badge${
+                                  pending ? " is-scheduled" : " is-sent"
+                                }`}
+                              >
+                                {statusLabel(c)}
+                              </span>
                             </td>
                             <td>{fmtSent(c)}</td>
                             <td>{fmtEngagement(c, c.openRate)}</td>
                             <td>{fmtEngagement(c, c.clickRate)}</td>
-                            <td>{fmt(c.formFills)}</td>
-                            <td>{fmt(c.attributedAppointments)}</td>
-                            <td>{fmt(c.unsubscribed)}</td>
+                            <td>{pending ? "—" : fmt(c.formFills)}</td>
+                            <td>
+                              {pending ? "—" : fmt(c.attributedAppointments)}
+                            </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
-            <aside className="lh-dash-side">
-              {data.moneyMode !== "commerce" && data.abandonedRecovery ? (
-                <div className="lh-side-card">
-                  <h4>Abandoned recovery</h4>
-                  <p className="lh-card-note">
-                    {data.attributionDays}-day window after abandon tag.
-                  </p>
-                  {data.abandonedRecovery.error ? (
-                    <p className="lh-card-note">{data.abandonedRecovery.error}</p>
-                  ) : (
-                    <div className="lh-side-metrics">
-                      <div>
-                        <span>Tagged</span>
-                        <strong>{fmt(data.abandonedRecovery.abandoned)}</strong>
-                      </div>
-                      <div>
-                        <span>Recovered</span>
-                        <strong className="is-up">
-                          {fmt(data.abandonedRecovery.recoveredInWindow)}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Still open</span>
-                        <strong className="is-down">
-                          {fmt(data.abandonedRecovery.stillAbandoned)}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Rate</span>
-                        <strong>{fmtPct(data.abandonedRecovery.recoveryRate)}</strong>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              <div className="lh-side-card">
-                <h4>Engagement rollup</h4>
-                <p className="lh-card-note">Campaigns and flows in this window.</p>
-                <div className="lh-side-metrics">
-                  <div>
-                    <span>Delivered</span>
-                    <strong>{fmt(totals.delivered || totals.sent)}</strong>
-                  </div>
-                  <div>
-                    <span>Opens</span>
-                    <strong>{fmtPct(totals.openRate)}</strong>
-                  </div>
-                  <div>
-                    <span>Clicks</span>
-                    <strong>{fmtPct(totals.clickRate)}</strong>
-                  </div>
-                  <div>
-                    <span>Unsubs</span>
-                    <strong>{fmt(totals.unsubscribed)}</strong>
-                  </div>
-                </div>
-              </div>
-
-              {tips.length > 0 ? (
-                <div className="lh-side-card lh-tips-card">
-                  <h4>What to do next</h4>
-                  <ul className="lh-recs-list">
-                    {tips.map((tip) => (
-                      <li key={tip.id} className={`lh-rec is-${tip.tone}`}>
-                        <strong>{tip.title}</strong>
-                        <span>{tip.detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </aside>
+            {tips.length > 0 ? (
+              <aside className="lh-an-side">
+                <h4>Next moves</h4>
+                <ul className="lh-an-tips">
+                  {tips.slice(0, 4).map((tip) => (
+                    <li key={tip.id} className={`is-${tip.tone}`}>
+                      <strong>{tip.title}</strong>
+                      <span>{tip.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            ) : null}
           </div>
 
           {data.formFillsError ? (
             <p className="lh-card-note">Form fills: {data.formFillsError}</p>
           ) : null}
           {data.appointmentsError ? (
-            <p className="lh-card-note">Appointments: {data.appointmentsError}</p>
+            <p className="lh-card-note">
+              Appointments: {data.appointmentsError}
+            </p>
           ) : null}
           {growth?.error ? (
             <p className="lh-card-note">List growth: {growth.error}</p>
@@ -589,39 +543,14 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
   );
 
   return (
-    <section className="lh-growth" aria-label="List growth versus unsubscribes">
-      <header className="lh-dash-head">
-        <div>
-          <h4>List growth vs unsubscribes</h4>
-          <p className="lh-card-note">
-            New GHL contacts versus email unsubscribes from campaigns and flows.
-          </p>
-        </div>
+    <section className="lh-an-growth" aria-label="List growth versus unsubscribes">
+      <header className="lh-an-section-head">
+        <h4>List growth</h4>
         <div className="lh-growth-legend" aria-hidden="true">
           <span className="is-join">Joined</span>
           <span className="is-leave">Unsubscribed</span>
         </div>
       </header>
-      <div className="lh-growth-summary">
-        <div>
-          <span>Joined</span>
-          <strong>{fmt(growth.contactsAdded)}</strong>
-        </div>
-        <div>
-          <span>Unsubscribed</span>
-          <strong>{fmt(growth.unsubscribed)}</strong>
-        </div>
-        <div>
-          <span>Net</span>
-          <strong className={growth.net >= 0 ? "is-up" : "is-down"}>
-            {signedNet(growth.net)}
-          </strong>
-        </div>
-        <div>
-          <span>Unsub rate</span>
-          <strong>{fmtPct(growth.unsubscribeRate)}</strong>
-        </div>
-      </div>
       {growth.series.length === 0 ? (
         <p className="lh-card-note">No weekly growth data in this range.</p>
       ) : (
@@ -663,57 +592,30 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
   );
 }
 
-function FlowCard({
-  flow,
-  rank,
-  maxScore,
-}: {
-  flow: GhlCampaignRow;
-  rank: number;
-  maxScore: number;
-}) {
-  const score = flowScore(flow);
-  const heat = Math.round((score / maxScore) * 100);
-
+function FlowRow({ flow, rank }: { flow: GhlCampaignRow; rank: number }) {
   return (
-    <article className="lh-flow-card">
-      <div className="lh-flow-card-top">
-        <span className="lh-flow-rank">#{rank}</span>
-        <div className="lh-flow-heat" aria-hidden="true">
-          <span style={{ width: `${heat}%` }} />
-        </div>
+    <article className="lh-an-flow">
+      <span className="lh-an-flow-rank">{rank}</span>
+      <div className="lh-an-flow-body">
+        <strong>{flow.name}</strong>
+        <span className="lh-an-meta">
+          {flow.abandonedRecovery ? "Recovery · " : ""}
+          {flow.sentOn || "—"}
+        </span>
       </div>
-      <h5>{flow.name}</h5>
-      <p className="lh-analytics-meta">
-        {flow.abandonedRecovery ? "Abandoned booking recovery · " : ""}
-        {flow.sentOn || "—"}
-        {flow.statsAvailable ? "" : " · no stats yet"}
-      </p>
-      <div className="lh-flow-stats">
-        <div>
-          <span>Sent</span>
-          <strong>{fmt(flow.sent)}</strong>
-        </div>
-        <div>
-          <span>Open</span>
-          <strong>{fmtPct(flow.openRate)}</strong>
-        </div>
-        <div>
-          <span>Click</span>
-          <strong>{fmtPct(flow.clickRate)}</strong>
-        </div>
-        <div>
-          <span>Forms</span>
-          <strong>{fmt(flow.formFills)}</strong>
-        </div>
-        <div>
-          <span>Appts</span>
+      <div className="lh-an-flow-stats">
+        <span>
+          <em>Booked</em>
           <strong>{fmt(flow.attributedAppointments)}</strong>
-        </div>
-        <div>
-          <span>Unsubs</span>
-          <strong>{fmt(flow.unsubscribed)}</strong>
-        </div>
+        </span>
+        <span>
+          <em>Forms</em>
+          <strong>{fmt(flow.formFills)}</strong>
+        </span>
+        <span>
+          <em>Click</em>
+          <strong>{fmtPct(flow.clickRate)}</strong>
+        </span>
       </div>
     </article>
   );

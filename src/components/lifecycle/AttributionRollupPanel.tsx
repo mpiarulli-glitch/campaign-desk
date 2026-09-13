@@ -16,7 +16,14 @@ function fmt(n: number): string {
 }
 
 function prettyRange(start: string, end: string): string {
-  return `${start} → ${end}`;
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  };
+  const a = new Date(`${start}T12:00:00`).toLocaleDateString("en-US", opts);
+  const b = new Date(`${end}T12:00:00`).toLocaleDateString("en-US", opts);
+  return `${a} – ${b}`;
 }
 
 export function AttributionRollupPanel({
@@ -62,25 +69,30 @@ export function AttributionRollupPanel({
   );
 
   return (
-    <section className="lh-analytics lh-attr-rollup">
-      <div className="lh-card-head">
-        <div>
-          <p className="lh-analytics-kicker">Email → appointments</p>
-          <h2>Email wins</h2>
-          <p className="lh-card-note">
-            Accounts where a campaign or automation send is credited for a
-            booked appointment or form fill (last-touch, 5-day window).
-          </p>
+    <section className="lh-card lh-analytics lh-attr-rollup lh-analytics-clean">
+      <div className="lh-an-toolbar">
+        <div className="lh-an-title">
+          <h3>Email wins</h3>
+          {data ? (
+            <p className="lh-an-sub">
+              {prettyRange(data.start, data.end)}
+              {data.cached ? " · cached" : ""}
+              {" · "}
+              {fmt(data.scanned)} scanned · {fmt(data.withWins)} with wins
+            </p>
+          ) : (
+            <p className="lh-an-sub">
+              Last-touch bookings and form fills after a send
+            </p>
+          )}
         </div>
-        <div className="lh-analytics-window-controls">
-          <div className="lh-filters" role="tablist" aria-label="Date range">
+        <div className="lh-an-controls">
+          <div className="lh-range" role="group" aria-label="Date range">
             {PRESETS.map((p) => (
               <button
                 key={p.id}
                 type="button"
-                role="tab"
-                aria-selected={range === p.id}
-                className={range === p.id ? "on" : ""}
+                className={`lh-range-btn${range === p.id ? " is-on" : ""}`}
                 disabled={loading}
                 onClick={() => setRange(p.id)}
               >
@@ -90,11 +102,11 @@ export function AttributionRollupPanel({
           </div>
           <button
             type="button"
-            className="btn"
+            className="lh-link"
             disabled={loading}
             onClick={() => void scan(Boolean(data))}
           >
-            {loading ? "Scanning…" : data ? "Rescan" : "Scan all accounts"}
+            {loading ? "Scanning…" : data ? "Rescan" : "Scan all"}
           </button>
         </div>
       </div>
@@ -103,41 +115,45 @@ export function AttributionRollupPanel({
 
       {!data && !loading && !error ? (
         <p className="lh-card-note">
-          This hits every GHL-linked Lifecycle account. First run can take a
-          few minutes.
+          Scans every GHL-linked Lifecycle account. First run can take a few
+          minutes.
         </p>
       ) : null}
 
       {loading && !data ? (
-        <p className="lh-empty">Scanning GHL-linked accounts…</p>
+        <div className="lh-an-skeleton" aria-busy="true">
+          <div className="lh-skel" />
+          <div className="lh-skel" />
+        </div>
       ) : null}
 
       {data ? (
-        <div className="lh-analytics-body">
-          <p className="lh-analytics-window">
-            {prettyRange(data.start, data.end)}
-            {data.cached ? " · cached" : ""}
-            {" · "}
-            {fmt(data.scanned)} scanned · {fmt(data.withWins)} with wins
+        <div className="lh-an-body">
+          <p className="lh-an-accuracy">
+            Credit goes to the last campaign or flow send within{" "}
+            {data.attributionDays} days of the booking or form fill. Scheduled
+            sends with no real mail volume stay out of the totals.
           </p>
 
-          <div className="lh-kpi-grid" aria-label="Rollup totals">
-            <article className="lh-kpi is-cyan">
-              <span className="lh-kpi-label">Email → booked</span>
-              <strong className="lh-kpi-value">
-                {fmt(data.totals.attributedAppointments)}
-              </strong>
-              <span className="lh-kpi-hint">
-                Attributed appointments · {data.attributionDays}-day window
-              </span>
-            </article>
-            <article className="lh-kpi is-teal">
-              <span className="lh-kpi-label">Email → forms</span>
-              <strong className="lh-kpi-value">
-                {fmt(data.totals.attributedFormFills)}
-              </strong>
-              <span className="lh-kpi-hint">Attributed form fills</span>
-            </article>
+          <div className="lh-an-band">
+            <h4 className="lh-an-band-label">Outcomes</h4>
+            <div className="lh-an-metrics" aria-label="Rollup totals">
+              <div className="lh-an-metric">
+                <span>Email → booked</span>
+                <strong>{fmt(data.totals.attributedAppointments)}</strong>
+                <em>{data.attributionDays}-day last-touch</em>
+              </div>
+              <div className="lh-an-metric">
+                <span>Email → forms</span>
+                <strong>{fmt(data.totals.attributedFormFills)}</strong>
+                <em>Attributed form fills</em>
+              </div>
+              <div className="lh-an-metric">
+                <span>Accounts with wins</span>
+                <strong>{fmt(data.withWins)}</strong>
+                <em>{fmt(data.scanned)} scanned</em>
+              </div>
+            </div>
           </div>
 
           {data.wins.length === 0 ? (
@@ -146,13 +162,13 @@ export function AttributionRollupPanel({
               window.
             </p>
           ) : (
-            <div className="lh-analytics-table-wrap">
-              <table className="lh-analytics-table">
+            <div className="lh-an-table-wrap">
+              <table className="lh-an-table">
                 <thead>
                   <tr>
                     <th>Account</th>
-                    <th>Booked from email</th>
-                    <th>Forms from email</th>
+                    <th>Booked</th>
+                    <th>Forms</th>
                     <th>All booked</th>
                     <th>Sends</th>
                   </tr>
@@ -164,18 +180,16 @@ export function AttributionRollupPanel({
                         {onOpenClient ? (
                           <button
                             type="button"
-                            className="lh-analytics-name lh-attr-link"
+                            className="lh-an-name lh-attr-link"
                             onClick={() => onOpenClient(row.clientId)}
                           >
                             {row.clientName}
                           </button>
                         ) : (
-                          <span className="lh-analytics-name">
-                            {row.clientName}
-                          </span>
+                          <span className="lh-an-name">{row.clientName}</span>
                         )}
                         {row.error ? (
-                          <span className="lh-analytics-meta">{row.error}</span>
+                          <div className="lh-an-meta">{row.error}</div>
                         ) : null}
                       </td>
                       <td>
@@ -214,7 +228,7 @@ export function AttributionRollupPanel({
                     <li key={row.clientId}>
                       {row.clientName}
                       {row.error ? (
-                        <span className="lh-analytics-meta"> — {row.error}</span>
+                        <span className="lh-an-meta"> — {row.error}</span>
                       ) : null}
                     </li>
                   ))}
