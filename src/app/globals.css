@@ -4071,10 +4071,24 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .snap-rev-done p { margin: 0; font-size: 15px; color: var(--text); }
 .snap-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 
-/* Quiet client snapshot: one clear header, title-only sections, less chrome */
+/* Client snapshot: flat document, not a stack of tinted cards.
+   PR #16 removed icons/pulse copy but left elevated panels + nested cards —
+   that still read as the old desk. Flatten chrome so the first viewport and
+   section rhythm are obviously quieter while every field stays. */
 .snap-client .snap-wrap {
-  gap: 18px;
-  padding-top: 22px;
+  gap: 0;
+  padding-top: 28px;
+  padding-bottom: 48px;
+  width: min(760px, calc(100% - 40px));
+}
+.snap-client .snap-topbar-tag {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
 }
 .snap-client .snap-hero {
   display: flex;
@@ -4085,35 +4099,37 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   background: none;
   color: inherit;
   border: 0;
-  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0 28px;
+  margin: 0 0 4px;
 }
 .snap-client .snap-hero-copy {
   min-width: 0;
   flex: 1;
 }
 .snap-client .snap-kicker {
-  margin: 0 0 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .snap-client .snap-hero h1 {
   margin: 0;
   font-family: var(--font-head, var(--font));
-  font-size: clamp(1.55rem, 2.4vw, 1.95rem);
+  font-size: clamp(1.7rem, 3vw, 2.15rem);
   font-weight: 650;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
   color: var(--text);
   text-shadow: none;
 }
 .snap-client .snap-lede {
-  margin: 10px 0 0;
-  max-width: 46ch;
-  font-size: 0.98rem;
-  line-height: 1.45;
+  margin: 14px 0 0;
+  max-width: 40ch;
+  font-size: 0.95rem;
+  line-height: 1.5;
   color: var(--text-body, var(--text-muted));
 }
 .snap-client .snap-lede b {
@@ -4122,24 +4138,25 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   font-variant-numeric: tabular-nums;
 }
 .snap-client .snap-dot {
-  margin: 0 0.35em;
+  margin: 0 0.4em;
   color: var(--text-muted);
-  opacity: 0.7;
+  opacity: 0.55;
 }
 .snap-client .snap-week-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: none;
+  margin-top: 2px;
 }
 .snap-client .snap-week-nav button {
-  background: var(--bg-elevated);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  height: 36px;
-  min-width: 36px;
-  padding: 0 12px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
   font: inherit;
   font-size: 15px;
   font-weight: 500;
@@ -4147,52 +4164,185 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   cursor: pointer;
 }
 .snap-client .snap-week-nav button:hover:not(:disabled) {
-  border-color: var(--accent, var(--border-strong));
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--bg-elevated);
 }
 .snap-client .snap-week-nav button:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 .snap-client .snap-week-today {
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 650 !important;
+  letter-spacing: 0.02em;
 }
 .snap-client .snap-panel {
-  border-radius: 16px;
-  padding: 18px 20px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--border);
+  overflow: visible;
 }
 .snap-client .snap-panel::before {
   display: none;
 }
+.snap-client .snap-panel.t-wins,
+.snap-client .snap-panel.t-work,
+.snap-client .snap-panel.t-deliv,
+.snap-client .snap-panel.t-perf,
+.snap-client .snap-panel.t-leads,
+.snap-client .snap-panel.t-revenue {
+  --tool: var(--accent-ink);
+  --tool-tint: var(--bg-soft);
+}
 .snap-client .snap-sec-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 12px;
-  min-height: 32px;
+  margin: 0 0 14px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
 }
 .snap-client .snap-sec-head h2 {
   margin: 0;
-  font-family: var(--font-head, var(--font));
-  font-size: 1.05rem;
+  font-family: var(--font, inherit);
+  font-size: 0.72rem;
   font-weight: 650;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-.snap-client .snap-footer {
-  margin-top: 8px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-  text-align: center;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--text-muted);
-  font-size: 0.78rem;
+}
+.snap-client .snap-group {
+  gap: 4px;
+}
+.snap-client .snap-cat {
+  color: var(--text-muted);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  border-bottom: 0;
+  padding: 0 0 2px;
+}
+.snap-client .snap-cat-count {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-weight: 650;
+}
+.snap-client .snap-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 0;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.snap-client .snap-card:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+.snap-client .snap-name {
+  font-weight: 650;
+  font-size: 0.98rem;
+}
+.snap-client .snap-pill {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  padding: 4px 9px;
+}
+.snap-client .snap-pill.status-not_started,
+.snap-client .snap-pill.status-in_progress,
+.snap-client .snap-pill.status-scheduled,
+.snap-client .snap-pill.status-sent_for_approval,
+.snap-client .snap-pill.status-completed,
+.snap-client .snap-pill.status-shared,
+.snap-client .snap-pill.status-approved,
+.snap-client .snap-pill.status-canceled {
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.snap-client .snap-toggle {
+  margin-left: auto;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.snap-client .snap-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.snap-client .snap-lead-scope {
+  background: transparent;
+  border-radius: 8px;
+}
+.snap-client .snap-lead-btn {
+  border-radius: 8px;
+}
+.snap-client .snap-rev-send {
+  background: var(--ink);
+  color: var(--on-ink);
+  border-radius: 8px;
+}
+.snap-client .snap-rev-field input:focus {
+  outline-color: var(--accent-ink);
+}
+.snap-client .snap-wins2,
+.snap-client .snap-leads {
+  gap: 0;
+}
+.snap-client .snap-win2,
+.snap-client .snap-lead {
+  padding: 12px 0;
 }
 .snap-client .snap-win2-mark { display: none; }
 .snap-client .snap-lead-tally,
 .snap-client .snap-lead-scope {
   font-size: 0.84rem;
+}
+.snap-client .snap-footer {
+  margin-top: 0;
+  padding: 22px 0 0;
+  border-top: 0;
+  text-align: left;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+@media (max-width: 640px) {
+  .snap-client .snap-wrap {
+    width: calc(100% - 32px);
+    padding-top: 20px;
+  }
+  .snap-client .snap-hero {
+    padding-bottom: 22px;
+  }
+  .snap-client .snap-panel {
+    padding: 22px 0;
+  }
+  .snap-client .snap-sec-head {
+    flex-wrap: wrap;
+  }
+  .snap-client .snap-sec-head .snap-toggle,
+  .snap-client .snap-sec-head .snap-lead-scope {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 
 /* Show/hide control that sits at the right edge of a panel heading */
@@ -9597,6 +9747,17 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
 :root[data-theme="dark"] .snap-panel.t-revenue { --tool: #48c98a; --tool-tint: #142e22; }
 :root[data-theme="dark"] .hq-card.t-senti { --tool: #dd88ab; --tool-tint: #33202a; }
 :root[data-theme="dark"] .hq-card.t-hr { --tool: #9aabbb; --tool-tint: #1d232b; }
+
+/* Keep client snapshot neutrals in dark mode (override tinted panel tokens above). */
+:root[data-theme="dark"] .snap-client .snap-panel.t-wins,
+:root[data-theme="dark"] .snap-client .snap-panel.t-work,
+:root[data-theme="dark"] .snap-client .snap-panel.t-deliv,
+:root[data-theme="dark"] .snap-client .snap-panel.t-perf,
+:root[data-theme="dark"] .snap-client .snap-panel.t-leads,
+:root[data-theme="dark"] .snap-client .snap-panel.t-revenue {
+  --tool: var(--accent-ink);
+  --tool-tint: var(--bg-soft);
+}
 
 .hq-card.t-hr { --tool: #5a6b7b; --tool-tint: #eef1f4; }
 
