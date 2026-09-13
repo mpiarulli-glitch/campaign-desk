@@ -1,9 +1,12 @@
 /**
  * Pure attribution helpers for Lifecycle money metrics.
  *
- * GHL does not stamp "this blast caused that booking". We credit a form fill or
- * appointment to the most recent campaign/flow send in the prior N days — same
- * windowing operators already use when reading open → book rates by eye.
+ * GHL does not stamp "this blast caused that booking". This helper only matches
+ * conversion *dates* to nearby campaign/flow *send dates*. That is not proof the
+ * booker received (or opened) the email — busy accounts over-count badly.
+ *
+ * Callers that report "email-driven" numbers must first filter conversions with
+ * contact-level outbound email evidence (see ghl-contact-email-touch).
  *
  * Abandoned-booking recovery is tag-based: contacts that got `abandoned booking`
  * and later show `meeting booked` (or a booked calendar event) count as recovered.

@@ -23,7 +23,24 @@ export type BookedAppointmentEvent = {
   id: string;
   contactId: string | null;
   at: string;
+  title: string | null;
+  calendarId: string | null;
+  calendarName: string | null;
 };
+
+export type ListBookedAppointmentOptions = {
+  /** Keep only calendars/events whose name looks like a discovery meeting. */
+  discoveryOnly?: boolean;
+};
+
+/** Match discovery calendars/meetings by name (case-insensitive). */
+export function isDiscoveryMeeting(parts: {
+  title?: string | null;
+  calendarName?: string | null;
+}): boolean {
+  const haystack = `${parts.calendarName || ""} ${parts.title || ""}`.toLowerCase();
+  return /\bdiscovery\b/.test(haystack);
+}
 
 export type WorkflowEmailCampaign = {
   id: string;
@@ -205,7 +222,9 @@ export async function listAbandonedBookingContacts(
   return [...seen.values()];
 }
 
-async function listCalendars(locationId: string): Promise<Array<{ id: string }>> {
+async function listCalendars(
+  locationId: string
+): Promise<Array<{ id: string; name: string }>> {
   const attempts: Array<{ path: string; params: Record<string, string> }> = [
     { path: "/calendars/", params: { locationId } },
     { path: "/calendars", params: { locationId } },
@@ -214,13 +233,16 @@ async function listCalendars(locationId: string): Promise<Array<{ id: string }>>
   for (const attempt of attempts) {
     try {
       const result = await ghlRequest<{
-        calendars?: Array<{ id?: string; _id?: string }>;
-        data?: Array<{ id?: string; _id?: string }>;
-        items?: Array<{ id?: string; _id?: string }>;
+        calendars?: Array<{ id?: string; _id?: string; name?: string; title?: string }>;
+        data?: Array<{ id?: string; _id?: string; name?: string; title?: string }>;
+        items?: Array<{ id?: string; _id?: string; name?: string; title?: string }>;
       }>("GET", attempt.path, { locationId, params: attempt.params });
       const rows = result.calendars || result.data || result.items || [];
       return rows
-        .map((c) => ({ id: String(c.id || c._id || "") }))
+        .map((c) => ({
+          id: String(c.id || c._id || ""),
+          name: String(c.name || c.title || "").trim(),
+        }))
         .filter((c) => c.id);
     } catch (err) {
       lastErr = err;
@@ -252,8 +274,10 @@ function eventBookedAt(event: Record<string, unknown>): string | null {
 export async function listBookedAppointmentEvents(
   locationId: string,
   start: string,
-  end: string
+  end: string,
+  options: ListBookedAppointmentOptions = {}
 ): Promise<BookedAppointmentEvent[]> {
+  const discoveryOnly = Boolean(options.discoveryOnly);
   const startMs =
     new Date(`${start}T00:00:00.000Z`).getTime() -
     DEFAULT_ATTRIBUTION_DAYS * DAY_MS;
@@ -261,7 +285,11 @@ export async function listBookedAppointmentEvents(
   const calendars = await listCalendars(locationId);
   if (calendars.length === 0) return [];
 
-  const unique = new Map<string, Record<string, unknown>>();
+  const calendarNameById = new Map(calendars.map((c) => [c.id, c.name]));
+  const unique = new Map<
+    string,
+    { event: Record<string, unknown>; calendarId: string; calendarName: string }
+  >();
   await pooled(calendars, async (cal) => {
     try {
       const result = await ghlRequest<{
@@ -283,7 +311,11 @@ export async function listBookedAppointmentEvents(
             event._id ||
             `${cal.id}:${event.startTime}:${event.contactId || event.title || ""}`
         );
-        unique.set(id, event);
+        unique.set(id, {
+          event,
+          calendarId: cal.id,
+          calendarName: cal.name,
+        });
       }
     } catch {
       // Skip bad calendars.
@@ -291,14 +323,31 @@ export async function listBookedAppointmentEvents(
   });
 
   const out: BookedAppointmentEvent[] = [];
-  for (const event of unique.values()) {
+  for (const { event, calendarId, calendarName } of unique.values()) {
     if (!isBookedAppointment(event)) continue;
     const at = eventBookedAt(event);
     if (!inRange(at, start, end)) continue;
+    const resolvedCalendarId = String(
+      event.calendarId || event.calendar_id || calendarId || ""
+    );
+    const resolvedCalendarName =
+      calendarNameById.get(resolvedCalendarId) ||
+      String(event.calendarName || event.calendar_name || calendarName || "").trim() ||
+      null;
+    const title = String(event.title || event.name || "").trim() || null;
+    if (
+      discoveryOnly &&
+      !isDiscoveryMeeting({ title, calendarName: resolvedCalendarName })
+    ) {
+      continue;
+    }
     out.push({
       id: String(event.id || event._id || `${event.contactId}:${at}`),
       contactId: event.contactId ? String(event.contactId) : null,
       at: at!,
+      title,
+      calendarId: resolvedCalendarId || null,
+      calendarName: resolvedCalendarName,
     });
   }
   return out;

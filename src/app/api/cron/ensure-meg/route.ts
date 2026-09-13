@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { ensureMegLifecycleClient } from "@/lib/ensure-meg-client";
-import { pullClientAttributionSummary } from "@/lib/ghl-email-analytics";
+import {
+  pullClientAttributionSummary,
+  pullClientAttributionCuts,
+} from "@/lib/ghl-email-analytics";
 import { resolveAnalyticsRange } from "@/lib/ghl-email-analytics";
 import { DEFAULT_ATTRIBUTION_DAYS } from "@/lib/email-conversion-attribution";
 import type { AnalyticsPreset } from "@/lib/ghl-email-analytics";
@@ -40,6 +43,7 @@ async function authorized(request: Request): Promise<boolean> {
 /**
  * Create/link Marketing Empire Group on the Lifecycle hub with its GHL
  * location, then optionally return 12m email→booking attribution for MEG.
+ * Pass ?meetings=discovery (or discoveryOnly=1) to count discovery meetings only.
  */
 export async function POST(request: Request) {
   if (!(await authorized(request))) {
@@ -53,12 +57,40 @@ export async function POST(request: Request) {
     const range = (
       ["1m", "3m", "6m", "12m"].includes(rawRange) ? rawRange : "12m"
     ) as AnalyticsPreset;
+    const discoveryOnly =
+      url.searchParams.get("discoveryOnly") === "1" ||
+      url.searchParams.get("meetings") === "discovery";
+    // Default: require contact-level outbound marketing email before credit.
+    // Pass requireEmailTouch=0 to see the old (inflated) date-only numbers.
+    const requireEmailTouch = url.searchParams.get("requireEmailTouch") !== "0";
+    const wantCuts =
+      url.searchParams.get("cuts") === "1" ||
+      url.searchParams.get("ladder") === "1";
     const { start, end } = resolveAnalyticsRange(range);
+
+    if (wantCuts) {
+      const cuts = await pullClientAttributionCuts(
+        ensured.locationId,
+        start,
+        end,
+        { discoveryOnly }
+      );
+      return NextResponse.json({
+        ensured,
+        range,
+        start,
+        end,
+        discoveryOnly,
+        cuts,
+      });
+    }
+
     const attribution = await pullClientAttributionSummary(
       ensured.locationId,
       start,
       end,
-      DEFAULT_ATTRIBUTION_DAYS
+      DEFAULT_ATTRIBUTION_DAYS,
+      { discoveryOnly, requireEmailTouch }
     );
 
     return NextResponse.json({
@@ -66,6 +98,8 @@ export async function POST(request: Request) {
       range,
       start,
       end,
+      discoveryOnly,
+      requireEmailTouch: attribution.requireEmailTouch,
       attribution: {
         attributedAppointments: attribution.attributedAppointments,
         attributedFormFills: attribution.attributedFormFills,
@@ -73,6 +107,7 @@ export async function POST(request: Request) {
         totalFormFills: attribution.totalFormFills,
         campaignSends: attribution.campaignSends,
         flowSends: attribution.flowSends,
+        emailTouch: attribution.emailTouch,
         error: attribution.error,
       },
     });
