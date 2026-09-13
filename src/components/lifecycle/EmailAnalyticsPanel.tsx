@@ -316,32 +316,9 @@ export function EmailAnalyticsPanel({
 
       {data && totals ? (
         <div className="lh-an-body">
-          <p className="lh-an-accuracy">
-            {data.moneyMode === "commerce" ? (
-              <>
-                Store revenue from monthly metrics. Open and click rates use
-                actually sent campaigns only
-                {scheduledCount > 0
-                  ? ` · ${scheduledCount} scheduled excluded`
-                  : ""}
-                .
-              </>
-            ) : (
-              <>
-                Forms and bookings credited to the last send within{" "}
-                {data.attributionDays} days. Open and click rates use actually
-                sent campaigns only
-                {scheduledCount > 0
-                  ? ` · ${scheduledCount} scheduled excluded`
-                  : ""}
-                .
-              </>
-            )}
-          </p>
-
-          <div className="lh-an-band">
+          <div className="lh-an-band is-hero">
             <h4 className="lh-an-band-label">Outcomes</h4>
-            <div className="lh-an-metrics" aria-label="Outcomes">
+            <div className="lh-an-metrics is-hero" aria-label="Outcomes">
               {data.moneyMode === "commerce" && data.commerce ? (
                 <>
                   <div className="lh-an-metric">
@@ -367,7 +344,7 @@ export function EmailAnalyticsPanel({
                     disabled={!ghlLinked || attributed.forms <= 0 || loading}
                     title={
                       attributed.forms > 0
-                        ? "See who filled a form after an email"
+                        ? "Open customer journeys"
                         : "No attributed form fills in this range"
                     }
                   >
@@ -377,7 +354,9 @@ export function EmailAnalyticsPanel({
                       {data.formFills === null
                         ? `${data.attributionDays}-day last-touch`
                         : `${fmt(attributed.forms)} of ${fmt(data.formFills)} fills`}
-                      {attributed.forms > 0 ? " · View journeys" : ""}
+                      {attributed.forms > 0 ? (
+                        <span className="lh-an-journeys-hint"> · Journeys</span>
+                      ) : null}
                     </em>
                   </button>
                   <button
@@ -389,20 +368,17 @@ export function EmailAnalyticsPanel({
                     }
                     title={
                       attributed.appointments > 0
-                        ? "See who booked after an email"
+                        ? "Open customer journeys"
                         : "No attributed bookings in this range"
                     }
                   >
                     <span>Email → booked</span>
                     <strong>{fmt(attributed.appointments)}</strong>
                     <em>
-                      {data.appointments === null
-                        ? data.abandonedRecovery &&
-                          !data.abandonedRecovery.error
-                          ? `${fmt(data.abandonedRecovery.recoveredInWindow)} recovered · ${fmt(data.abandonedRecovery.stillAbandoned)} open`
-                          : "Attributed bookings"
-                        : `${fmt(attributed.appointments)} of ${fmt(data.appointments)} after a send`}
-                      {attributed.appointments > 0 ? " · View journeys" : ""}
+                      {bookedSubtitle(data, attributed.appointments)}
+                      {attributed.appointments > 0 ? (
+                        <span className="lh-an-journeys-hint"> · Journeys</span>
+                      ) : null}
                     </em>
                   </button>
                 </>
@@ -431,9 +407,9 @@ export function EmailAnalyticsPanel({
             </div>
           </div>
 
-          <div className="lh-an-band">
+          <div className="lh-an-band is-quiet">
             <h4 className="lh-an-band-label">Send health</h4>
-            <div className="lh-an-metrics" aria-label="Send health">
+            <div className="lh-an-metrics is-quiet" aria-label="Send health">
               <div className="lh-an-metric">
                 <span>Delivered</span>
                 <strong>{fmt(totals.delivered || totals.sent)}</strong>
@@ -452,38 +428,29 @@ export function EmailAnalyticsPanel({
             </div>
           </div>
 
-          {growth ? <GrowthChart growth={growth} /> : null}
+          <p className="lh-an-footnote">
+            {data.moneyMode === "commerce" ? (
+              <>
+                Store revenue from monthly metrics. Opens and clicks use sent
+                campaigns only
+                {scheduledCount > 0
+                  ? ` · ${scheduledCount} scheduled excluded`
+                  : ""}
+                .
+              </>
+            ) : (
+              <>
+                Last-touch within {data.attributionDays} days. Opens and clicks
+                use sent campaigns only
+                {scheduledCount > 0
+                  ? ` · ${scheduledCount} scheduled excluded`
+                  : ""}
+                .
+              </>
+            )}
+          </p>
 
-          {data.moneyMode !== "commerce" &&
-          data.abandonedRecovery &&
-          !data.abandonedRecovery.error ? (
-            <div className="lh-an-inline">
-              <span className="lh-an-band-label">Abandoned recovery</span>
-              <div className="lh-an-inline-stats">
-                <span>
-                  <strong>{fmt(data.abandonedRecovery.abandoned)}</strong> tagged
-                </span>
-                <span>
-                  <strong>
-                    {fmt(data.abandonedRecovery.recoveredInWindow)}
-                  </strong>{" "}
-                  recovered
-                </span>
-                <span>
-                  <strong>
-                    {fmt(data.abandonedRecovery.stillAbandoned)}
-                  </strong>{" "}
-                  still open
-                </span>
-                <span>
-                  <strong>
-                    {fmtPct(data.abandonedRecovery.recoveryRate)}
-                  </strong>{" "}
-                  rate
-                </span>
-              </div>
-            </div>
-          ) : null}
+          {growth ? <GrowthChart growth={growth} /> : null}
 
           <div className="lh-an-split">
             <div className="lh-an-main">
@@ -513,8 +480,7 @@ export function EmailAnalyticsPanel({
                 <div>
                   <h4>Campaigns</h4>
                   <p className="lh-card-note">
-                    Scheduled rows stay visible with — metrics and stay out of
-                    averages until they send.
+                    Scheduled stays out of averages until sent.
                   </p>
                 </div>
               </header>
@@ -576,9 +542,9 @@ export function EmailAnalyticsPanel({
 
             {tips.length > 0 ? (
               <aside className="lh-an-side">
-                <h4>Next moves</h4>
+                <h4>Tips</h4>
                 <ul className="lh-an-tips">
-                  {tips.slice(0, 4).map((tip) => (
+                  {tips.slice(0, 2).map((tip) => (
                     <li key={tip.id} className={`is-${tip.tone}`}>
                       <strong>{tip.title}</strong>
                       <span>{tip.detail}</span>
@@ -600,24 +566,42 @@ export function EmailAnalyticsPanel({
           {growth?.error ? (
             <p className="lh-card-note">List growth: {growth.error}</p>
           ) : null}
-
-          {journeyKind ? (
-            <JourneyPanel
-              kind={journeyKind}
-              loading={journeysLoading}
-              error={journeysError}
-              journeys={journeys}
-              onClose={() => {
-                setJourneyKind(null);
-                setJourneys(null);
-                setJourneysError("");
-              }}
-            />
-          ) : null}
         </div>
+      ) : null}
+
+      {journeyKind ? (
+        <JourneyPanel
+          kind={journeyKind}
+          loading={journeysLoading}
+          error={journeysError}
+          journeys={journeys}
+          onClose={() => {
+            setJourneyKind(null);
+            setJourneys(null);
+            setJourneysError("");
+          }}
+        />
       ) : null}
     </section>
   );
+}
+
+function bookedSubtitle(
+  data: ClientEmailAnalytics,
+  attributedAppointments: number
+): string {
+  const recovery = data.abandonedRecovery;
+  const recoveryBit =
+    recovery && !recovery.error
+      ? `${fmt(recovery.recoveredInWindow)} recovered · ${fmt(recovery.stillAbandoned)} open`
+      : null;
+
+  if (data.appointments === null) {
+    return recoveryBit || "Attributed bookings";
+  }
+
+  const base = `${fmt(attributedAppointments)} of ${fmt(data.appointments)} after a send`;
+  return recoveryBit ? `${base} · ${recoveryBit}` : base;
 }
 
 function prettyDay(value: string | null | undefined): string {
@@ -657,72 +641,99 @@ function JourneyPanel({
     kind === "appointment"
       ? "Email → booked journeys"
       : "Email → form journeys";
+  const titleId = "lh-an-journey-modal-title";
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
 
   return (
-    <section className="lh-an-journeys" aria-label={title}>
-      <header className="lh-an-section-head">
-        <div>
-          <h4>{title}</h4>
-          <p className="lh-card-note">
-            Last email before the{" "}
-            {kind === "appointment" ? "booking" : "form fill"}, plus who it was.
-          </p>
-        </div>
-        <button type="button" className="lh-link" onClick={onClose}>
-          Close
-        </button>
-      </header>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal modal-wide card card-pad stack lh-an-journeys-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="lh-an-section-head">
+          <div>
+            <h4 id={titleId}>{title}</h4>
+            <p className="lh-card-note">
+              Last email before the{" "}
+              {kind === "appointment" ? "booking" : "form fill"}.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            autoFocus
+          >
+            Close
+          </button>
+        </header>
 
-      {loading ? <p className="lh-card-note">Loading journeys…</p> : null}
-      {error ? <p className="lh-error">{error}</p> : null}
+        {loading ? <p className="lh-card-note">Loading journeys…</p> : null}
+        {error ? <p className="lh-error">{error}</p> : null}
 
-      {!loading && !error && journeys && journeys.length === 0 ? (
-        <p className="lh-card-note">No journeys found in this range.</p>
-      ) : null}
+        {!loading && !error && journeys && journeys.length === 0 ? (
+          <p className="lh-card-note">No journeys found in this range.</p>
+        ) : null}
 
-      {!loading && journeys && journeys.length > 0 ? (
-        <ul className="lh-an-journey-list">
-          {journeys.map((row) => (
-            <li
-              key={`${row.kind}:${row.contactId || "x"}:${row.conversionAt}:${row.sendId}`}
-              className="lh-an-journey"
-            >
-              <div className="lh-an-journey-who">
-                <strong>{contactLabel(row)}</strong>
-                {row.contactEmail && row.contactName ? (
-                  <span className="lh-an-meta">{row.contactEmail}</span>
-                ) : null}
-              </div>
-              <ol className="lh-an-journey-steps">
-                <li>
-                  <em>Email</em>
-                  <strong>
-                    {prettyDay(row.emailTouchDay || row.sendOn)}
-                  </strong>
-                  <span className="lh-an-meta">
-                    {row.subject || row.sendName}
-                    {row.sendChannel === "flow" ? " · flow" : ""}
-                    {!row.emailTouchDay && row.sendOn
-                      ? " · credited send"
-                      : ""}
-                  </span>
-                </li>
-                {kind === "appointment" && row.formFilledAt ? (
+        {!loading && journeys && journeys.length > 0 ? (
+          <ul className="lh-an-journey-list">
+            {journeys.map((row) => (
+              <li
+                key={`${row.kind}:${row.contactId || "x"}:${row.conversionAt}:${row.sendId}`}
+                className="lh-an-journey"
+              >
+                <div className="lh-an-journey-who">
+                  <strong>{contactLabel(row)}</strong>
+                  {row.contactEmail && row.contactName ? (
+                    <span className="lh-an-meta">{row.contactEmail}</span>
+                  ) : null}
+                </div>
+                <ol className="lh-an-journey-steps">
                   <li>
-                    <em>Form</em>
-                    <strong>{prettyDay(row.formFilledAt)}</strong>
+                    <em>Email</em>
+                    <strong>
+                      {prettyDay(row.emailTouchDay || row.sendOn)}
+                    </strong>
+                    <span className="lh-an-meta">
+                      {row.subject || row.sendName}
+                      {row.sendChannel === "flow" ? " · flow" : ""}
+                      {!row.emailTouchDay && row.sendOn
+                        ? " · credited send"
+                        : ""}
+                    </span>
                   </li>
-                ) : null}
-                <li>
-                  <em>{kind === "appointment" ? "Booked" : "Form"}</em>
-                  <strong>{prettyDay(row.conversionAt)}</strong>
-                </li>
-              </ol>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
+                  {kind === "appointment" && row.formFilledAt ? (
+                    <li>
+                      <em>Form</em>
+                      <strong>{prettyDay(row.formFilledAt)}</strong>
+                    </li>
+                  ) : null}
+                  <li>
+                    <em>{kind === "appointment" ? "Booked" : "Form"}</em>
+                    <strong>{prettyDay(row.conversionAt)}</strong>
+                  </li>
+                </ol>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

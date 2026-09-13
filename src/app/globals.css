@@ -19099,7 +19099,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 /* —— Email & revenue: clean layout —— */
 .lh-analytics-clean {
-  padding: 20px 22px 24px;
+  padding: 22px 24px 28px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   box-shadow: none;
@@ -19110,25 +19110,25 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px 20px;
-  margin-bottom: 14px;
-  padding-bottom: 14px;
+  gap: 14px 24px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--border-subtle, var(--border));
 }
 
 .lh-analytics-clean .lh-an-title h3 {
   margin: 0;
-  font-size: 1.12rem;
+  font-size: 1.14rem;
   font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--text);
 }
 
 .lh-analytics-clean .lh-an-sub {
-  margin: 4px 0 0;
-  font-size: 0.86rem;
+  margin: 5px 0 0;
+  font-size: 0.84rem;
   color: var(--text-muted);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .lh-analytics-clean .lh-an-controls {
@@ -19142,28 +19142,41 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin-bottom: 0;
 }
 
-.lh-analytics-clean .lh-an-accuracy {
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  font-size: 0.82rem;
+/* Quiet attribution footnote (replaces boxed accuracy callout) */
+.lh-analytics-clean .lh-an-accuracy,
+.lh-analytics-clean .lh-an-footnote {
+  margin: 0 0 22px;
+  padding: 0;
+  font-size: 0.75rem;
   line-height: 1.45;
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-soft) 88%, transparent);
-  border: 1px solid var(--border-subtle, var(--border));
-  border-radius: 10px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  max-width: 68ch;
 }
 
 .lh-analytics-clean .lh-an-band {
-  margin: 0 0 18px;
+  margin: 0 0 22px;
+}
+
+.lh-analytics-clean .lh-an-band.is-quiet {
+  margin-bottom: 12px;
 }
 
 .lh-analytics-clean .lh-an-band-label {
-  margin: 0 0 8px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  margin: 0 0 10px;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.lh-analytics-clean .lh-an-band.is-quiet .lh-an-band-label {
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  opacity: 0.85;
 }
 
 .lh-analytics-clean .lh-an-metrics {
@@ -19171,9 +19184,65 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   background: var(--border);
+}
+
+/* Hero outcomes: open, airy metric plane */
+.lh-analytics-clean .lh-an-metrics.is-hero {
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  border-top: 1px solid var(--border-subtle, var(--border));
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+
+.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric {
+  padding: 18px 4px 16px;
+  background: transparent;
+  border-right: 1px solid var(--border-subtle, var(--border));
+}
+
+.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric:last-child {
+  border-right: 0;
+}
+
+.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric > strong {
+  font-size: 1.72rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+/* Quieter send-health strip */
+.lh-analytics-clean .lh-an-metrics.is-quiet {
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric {
+  padding: 6px 4px 4px;
+  background: transparent;
+  gap: 2px;
+}
+
+.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric > span {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric > strong {
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric > em {
+  font-size: 0.72rem;
 }
 
 .lh-analytics-clean .lh-an-metric {
@@ -19186,9 +19255,9 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .lh-analytics-clean .lh-an-metric > span {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -19213,8 +19282,13 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .lh-analytics-clean .lh-an-metric > em {
   font-style: normal;
   font-size: 0.78rem;
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--text-muted);
+}
+
+.lh-analytics-clean .lh-an-journeys-hint {
+  color: color-mix(in srgb, var(--accent-ink, var(--accent)) 70%, var(--text-muted));
+  font-weight: 550;
 }
 
 .lh-analytics-clean .lh-an-metric.is-clickable {
@@ -19225,11 +19299,19 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   text-align: left;
   font: inherit;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric.is-clickable:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .lh-analytics-clean .lh-an-metric.is-clickable:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+}
+
+.lh-analytics-clean .lh-an-metric.is-clickable:hover:not(:disabled) .lh-an-journeys-hint {
+  color: var(--accent-ink, var(--accent));
 }
 
 .lh-analytics-clean .lh-an-metric.is-clickable:focus-visible {
@@ -19249,6 +19331,29 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   border-top: 1px solid var(--border-subtle, var(--border));
 }
 
+.lh-analytics-clean .lh-an-journeys-modal {
+  width: min(720px, 100%);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--ink, #0d0f14) 18%, transparent);
+}
+
+.lh-analytics-clean .lh-an-journeys-modal .lh-an-section-head {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.lh-analytics-clean .lh-an-journeys-modal .lh-an-journey-list {
+  margin: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  max-height: min(58vh, 520px);
+}
+
 .lh-analytics-clean .lh-an-journey-list {
   list-style: none;
   margin: 12px 0 0;
@@ -19262,10 +19367,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   display: grid;
   grid-template-columns: minmax(140px, 0.9fr) minmax(0, 1.6fr);
   gap: 12px 18px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle, var(--border));
   border-radius: 12px;
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-soft) 45%, var(--bg-elevated));
 }
 
 .lh-analytics-clean .lh-an-journey-who {
@@ -19353,7 +19458,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .lh-analytics-clean .lh-an-growth {
-  margin: 0 0 20px;
+  margin: 4px 0 24px;
   padding: 0;
   border: 0;
   background: none;
@@ -19366,7 +19471,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px 12px;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
 .lh-analytics-clean .lh-an-section-head h4 {
@@ -19378,7 +19483,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .lh-analytics-clean .lh-an-section-spaced {
-  margin-top: 22px;
+  margin-top: 28px;
 }
 
 .lh-analytics-clean .lh-an-section-head .lh-card-note {
@@ -19403,8 +19508,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .lh-analytics-clean .lh-an-split {
   display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(220px, 0.85fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 1.85fr) minmax(200px, 0.75fr);
+  gap: 28px;
   align-items: start;
 }
 
@@ -19414,10 +19519,12 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .lh-analytics-clean .lh-an-side h4 {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
+  margin: 0 0 12px;
+  font-size: 0.88rem;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .lh-analytics-clean .lh-an-tips {
@@ -19425,43 +19532,47 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 
 .lh-analytics-clean .lh-an-tips li {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 11px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle, var(--border));
-  background: var(--bg-soft);
+  padding: 0 0 12px;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  background: none;
+}
+
+.lh-analytics-clean .lh-an-tips li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .lh-analytics-clean .lh-an-tips li strong {
   font-size: 0.86rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text);
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .lh-analytics-clean .lh-an-tips li span {
-  font-size: 0.8rem;
-  line-height: 1.4;
+  font-size: 0.78rem;
+  line-height: 1.45;
   color: var(--text-muted);
 }
 
-.lh-analytics-clean .lh-an-tips li.is-focus {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
-}
-
-.lh-analytics-clean .lh-an-tips li.is-watch {
-  border-color: color-mix(in srgb, #d97706 22%, var(--border));
-}
-
+.lh-analytics-clean .lh-an-tips li.is-focus,
+.lh-analytics-clean .lh-an-tips li.is-watch,
 .lh-analytics-clean .lh-an-tips li.is-keep {
-  border-color: color-mix(in srgb, var(--success) 22%, var(--border));
+  border-color: var(--border-subtle, var(--border));
+  background: none;
+}
+
+.lh-analytics-clean .lh-an-tips li.is-focus strong {
+  color: var(--accent-ink, var(--text));
 }
 
 .lh-analytics-clean .lh-an-flow-list {
@@ -19670,6 +19781,25 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
     grid-template-columns: 1fr;
   }
 
+  .lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle, var(--border));
+    padding: 14px 2px;
+  }
+
+  .lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric:last-child {
+    border-bottom: 0;
+  }
+
+  .lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric > strong {
+    font-size: 1.45rem;
+  }
+
+  .lh-analytics-clean .lh-an-metrics.is-quiet {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
   .lh-analytics-clean .lh-an-flow {
     grid-template-columns: 22px minmax(0, 1fr);
   }
@@ -19689,5 +19819,10 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
   .lh-analytics-clean .lh-an-journey {
     grid-template-columns: 1fr;
+  }
+
+  .lh-analytics-clean .lh-an-journeys-modal {
+    width: 100%;
+    max-height: 90vh;
   }
 }
