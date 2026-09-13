@@ -85,17 +85,19 @@ test("scheduled / queued never treat audience size as sent", () => {
   // Ecoworkz-style: 6443 on the list, 0% opens, still Scheduled.
   assert.equal(resolveGhlCampaignSentCount("scheduled", 0, 6443, false), 0);
   assert.equal(resolveGhlCampaignSentCount("scheduled", 0, 6443, true), 0);
+  // GHL echoes audience into stats.sent while status is still scheduled.
+  assert.equal(resolveGhlCampaignSentCount("scheduled", 6443, 6443, true, 0), 0);
+  assert.equal(resolveGhlCampaignSentCount("pending", 6443, 6443, true, 0), 0);
   assert.equal(resolveGhlCampaignSentCount("processing", 0, 6443, false), 0);
-  assert.equal(resolveGhlCampaignSentCount("pending", 0, 6443, true), 0);
   assert.equal(resolveGhlCampaignSentCount("queued", 0, 9000, false), 0);
   assert.equal(resolveGhlCampaignSentCount("draft", 0, 100, false), 0);
   assert.equal(resolveGhlCampaignSentCount("cancelled", 50, 6443, true), 0);
 });
 
 test("real stats.sent wins, including mid-flight processing", () => {
-  assert.equal(resolveGhlCampaignSentCount("processing", 1200, 6443, true), 1200);
-  assert.equal(resolveGhlCampaignSentCount("complete", 5100, 6443, true), 5100);
-  assert.equal(resolveGhlCampaignSentCount("sent", 4800, 6443, true), 4800);
+  assert.equal(resolveGhlCampaignSentCount("processing", 1200, 6443, true, 0), 1200);
+  assert.equal(resolveGhlCampaignSentCount("complete", 5100, 6443, true, 200), 5100);
+  assert.equal(resolveGhlCampaignSentCount("sent", 4800, 6443, true, 100), 4800);
 });
 
 test("complete with stats saying 0 sent does not fall back to audience", () => {
@@ -104,7 +106,15 @@ test("complete with stats saying 0 sent does not fall back to audience", () => {
   assert.equal(resolveGhlCampaignSentCount("complete", 0, 6443, false), 0);
 });
 
-test("open-rate totals ignore scheduled and zero-send rows", () => {
+test("complete + audience-sized sent + zero engagement is treated as unsent", () => {
+  // Mis-labeled Ecoworkz September rows: status complete, sent=6443, 0 opens.
+  assert.equal(resolveGhlCampaignSentCount("complete", 6443, 6443, true, 0), 0);
+  assert.equal(resolveGhlCampaignSentCount("sent", 6443, 6443, true, 0), 0);
+  // Real send below audience with opens still counts.
+  assert.equal(resolveGhlCampaignSentCount("complete", 5100, 6443, true, 800), 5100);
+});
+
+test("open-rate totals ignore scheduled and zero-engagement rows", () => {
   assert.equal(
     campaignCountsInEmailTotals({
       status: "scheduled",
@@ -118,8 +128,21 @@ test("open-rate totals ignore scheduled and zero-send rows", () => {
       status: "complete",
       sent: 5100,
       statsAvailable: true,
+      opened: 1200,
     }),
     true
+  );
+  assert.equal(
+    campaignCountsInEmailTotals({
+      status: "complete",
+      sent: 6443,
+      statsAvailable: true,
+      opened: 0,
+      clicked: 0,
+      bounced: 0,
+      unsubscribed: 0,
+    }),
+    false
   );
   assert.equal(
     campaignCountsInEmailTotals({
@@ -134,6 +157,7 @@ test("open-rate totals ignore scheduled and zero-send rows", () => {
       status: "complete",
       sent: 5100,
       statsAvailable: false,
+      opened: 10,
     }),
     false
   );
@@ -162,12 +186,15 @@ test("rollup open rate is not diluted by scheduled audience rows", () => {
       statsAvailable: false,
     },
     {
+      // Mis-labeled complete with audience stamp + zero engagement.
       status: "complete",
       sent: 6443,
       delivered: 6443,
       opened: 0,
       clicked: 0,
-      statsAvailable: false, // audience-as-sent without stats must not count
+      bounced: 0,
+      unsubscribed: 0,
+      statsAvailable: true,
     },
   ]);
   assert.equal(rollup.campaigns, 1);

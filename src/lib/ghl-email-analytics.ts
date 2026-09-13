@@ -30,6 +30,7 @@ import {
 import {
   campaignCountsInEmailTotals,
   isGhlCampaignNotYetSent,
+  isGhlCampaignQueuedStatus,
   resolveGhlCampaignSentCount,
 } from "./ghl-email-campaign-status";
 
@@ -40,6 +41,7 @@ export {
   isGhlCampaignDeadStatus,
   isGhlCampaignExcludedFromTotals,
   isGhlCampaignNotYetSent,
+  isGhlCampaignQueuedStatus,
   resolveGhlCampaignSentCount,
   rollupEmailEngagement,
 } from "./ghl-email-campaign-status";
@@ -635,11 +637,18 @@ async function fetchCampaignStats(
 function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
   const status = String(raw.status || "unknown");
   const hasStats = Boolean(stats);
+  const openedRaw = num(stats?.opened);
+  const clickedRaw = num(stats?.clicked);
+  const bouncedRaw =
+    num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
+  const unsubscribedRaw = num(stats?.unsubscribed);
+  const engagement = openedRaw + clickedRaw + bouncedRaw + unsubscribedRaw;
   const sent = resolveGhlCampaignSentCount(
     status,
     num(stats?.sent),
     num(raw.totalCount),
-    hasStats
+    hasStats,
+    engagement
   );
   // Treat as unsent when nothing has gone out yet (scheduled, or complete
   // with no usable stats). Never paint audience size as delivered volume.
@@ -647,12 +656,10 @@ function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
   const delivered = unsent
     ? 0
     : num(stats?.delivered) || num(raw.successCount) || sent;
-  const opened = unsent ? 0 : num(stats?.opened);
-  const clicked = unsent ? 0 : num(stats?.clicked);
-  const bounced = unsent
-    ? 0
-    : num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
-  const unsubscribed = unsent ? 0 : num(stats?.unsubscribed);
+  const opened = unsent ? 0 : openedRaw;
+  const clicked = unsent ? 0 : clickedRaw;
+  const bounced = unsent ? 0 : bouncedRaw;
+  const unsubscribed = unsent ? 0 : unsubscribedRaw;
   const openRate = unsent
     ? 0
     : stats?.openRate !== undefined && stats?.openRate !== null
@@ -668,7 +675,10 @@ function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
     id: String(raw.id || raw._id || ""),
     name: String(raw.name || "Untitled campaign"),
     subject: scheduleSubject(raw),
-    status,
+    // Surface scheduled clearly when we collapsed an audience stamp.
+    status: unsent && isGhlCampaignQueuedStatus(status) ? status : unsent && engagement === 0 && num(stats?.sent) > 0
+      ? "scheduled"
+      : status,
     sentOn: campaignSentOn(raw),
     bulkRequestId: raw.bulkRequestId || null,
     sent,
@@ -783,7 +793,26 @@ export async function pullClientEmailAnalytics(
   end: string,
   attributionDays = DEFAULT_ATTRIBUTION_DAYS
 ): Promise<ClientEmailAnalytics> {
-  const schedules = await listScheduledCampaigns(locationId);
+  // Overlay v2 "scheduled" / "processing" status onto the legacy schedule list.
+  // Legacy rows sometimes look "complete" while still sitting in GHL's scheduled
+  // queue — and stats.sent echoes the audience size (Ecoworkz 6443 / 0% opens).
+  const [schedules, scheduledV2, processingV2] = await Promise.all([
+    listScheduledCampaigns(locationId),
+    listV2EmailCampaigns(locationId, "scheduled"),
+    listV2EmailCampaigns(locationId, "processing"),
+  ]);
+  const scheduledIds = new Set(
+    scheduledV2.map((r) => String(r.id || r._id || "")).filter(Boolean)
+  );
+  const processingIds = new Set(
+    processingV2.map((r) => String(r.id || r._id || "")).filter(Boolean)
+  );
+  for (const s of schedules) {
+    const id = String(s.id || s._id || "");
+    if (scheduledIds.has(id)) s.status = "scheduled";
+    else if (processingIds.has(id)) s.status = "processing";
+  }
+
   const inWindow = schedules.filter((s) => inRange(campaignSentOn(s), start, end));
 
   const withIds = inWindow.filter((s) => Boolean(s.bulkRequestId));

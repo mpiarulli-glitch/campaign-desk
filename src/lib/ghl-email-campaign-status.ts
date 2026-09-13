@@ -4,8 +4,11 @@
  *
  * Accuracy rules:
  * - Audience size (totalCount) is never "sent" for scheduled / queued blasts.
- * - Open-rate averages only include rows with real send volume + stats.
- * - Prefer GHL stats.sent; never invent sends from audience when stats say 0.
+ * - GHL often echoes audience size into stats.sent before anything mails —
+ *   scheduled/pending/queued status always wins over that echo.
+ * - Open-rate averages only include rows with real send volume, stats, and at
+ *   least one engagement signal (open / click / bounce / unsub). Pure-zero
+ *   "sends" are almost always unsent audience stamps, not real 0% campaigns.
  */
 
 export function isGhlCampaignNotYetSent(status: string): boolean {
@@ -14,6 +17,17 @@ export function isGhlCampaignNotYetSent(status: string): boolean {
     s.includes("schedul") ||
     s.includes("pending") ||
     s.includes("process") ||
+    s.includes("queue") ||
+    s === "draft"
+  );
+}
+
+/** Strictly queued — not mid-flight processing. */
+export function isGhlCampaignQueuedStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return (
+    s.includes("schedul") ||
+    s.includes("pending") ||
     s.includes("queue") ||
     s === "draft"
   );
@@ -33,42 +47,83 @@ export function isGhlCampaignExcludedFromTotals(status: string): boolean {
  * Resolve how many emails actually went out.
  *
  * @param hasStats - true when GHL returned a stats payload (even if sent is 0)
+ * @param engagement - opens+clicks+bounces+unsubs; when 0, audience-sized
+ *   stats.sent is treated as an unsent stamp (Ecoworkz scheduled case)
  */
 export function resolveGhlCampaignSentCount(
   status: string,
   statsSent: number,
   audienceTotal: number,
-  hasStats = false
+  hasStats = false,
+  engagement = -1
 ): number {
   if (isGhlCampaignDeadStatus(status)) return 0;
 
-  // Real tracked sends always win — including mid-flight "processing" blasts.
-  if (statsSent > 0) return statsSent;
+  // Queued / scheduled: NEVER trust stats.sent — GHL echoes audience size
+  // (e.g. 6443) with 0 opens and tanks averages.
+  if (isGhlCampaignQueuedStatus(status)) return 0;
 
-  // Still queued / not out — audience size is NOT sent.
+  // Mid-flight processing may have real partial sends.
+  if (statsSent > 0) {
+    // Audience stamp: status says complete/sent but every engagement counter
+    // is still 0 and "sent" equals (or exceeds) the audience size. That is
+    // how GHL presents not-yet-mailed September package blasts.
+    if (
+      engagement === 0 &&
+      audienceTotal > 0 &&
+      statsSent >= audienceTotal
+    ) {
+      return 0;
+    }
+    return statsSent;
+  }
+
   if (isGhlCampaignNotYetSent(status)) return 0;
 
   // Stats payload exists and reports zero — trust it (don't use audience).
   if (hasStats) return 0;
 
   // Completed-looking but no stats yet: do not invent volume from audience.
-  // Including audience-as-sent with 0 opens is what tanks open-rate averages.
   void audienceTotal;
   return 0;
 }
 
+function engagementCount(row: {
+  opened?: number;
+  clicked?: number;
+  bounced?: number;
+  unsubscribed?: number;
+}): number {
+  return (
+    (row.opened ?? 0) +
+    (row.clicked ?? 0) +
+    (row.bounced ?? 0) +
+    (row.unsubscribed ?? 0)
+  );
+}
+
 /**
  * Whether a campaign row should roll into open / click / sent averages.
- * Requires real send volume and a stats payload so 0% isn't a missing-data lie.
+ *
+ * Requires real send volume, a stats payload, and at least one engagement
+ * signal so audience-stamped scheduled blasts (6443 sent / 0% open) cannot
+ * dilute averages — even when GHL mislabels status as complete.
  */
 export function campaignCountsInEmailTotals(row: {
   status: string;
   sent: number;
   statsAvailable?: boolean;
+  opened?: number;
+  clicked?: number;
+  bounced?: number;
+  unsubscribed?: number;
 }): boolean {
   if (isGhlCampaignDeadStatus(row.status)) return false;
+  if (isGhlCampaignQueuedStatus(row.status)) return false;
   if (row.sent <= 0) return false;
   if (row.statsAvailable === false) return false;
+  // No opens/clicks/bounces/unsubs at all → not a usable engagement sample.
+  if (engagementCount(row) <= 0) return false;
   return true;
 }
 
@@ -100,6 +155,8 @@ export function rollupEmailEngagement(rows: Array<{
   delivered: number;
   opened: number;
   clicked: number;
+  bounced?: number;
+  unsubscribed?: number;
   statsAvailable?: boolean;
 }>): {
   campaigns: number;
