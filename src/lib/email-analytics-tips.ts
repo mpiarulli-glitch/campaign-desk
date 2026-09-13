@@ -1,4 +1,5 @@
 import type { ClientEmailAnalytics, GhlCampaignRow } from "./ghl-email-analytics";
+import { campaignCountsInEmailTotals } from "./ghl-email-campaign-status";
 
 export type AnalyticsTip = {
   id: string;
@@ -9,14 +10,14 @@ export type AnalyticsTip = {
 
 function rankedByOpen(campaigns: GhlCampaignRow[]): GhlCampaignRow[] {
   return campaigns
-    .filter((c) => c.statsAvailable && c.sent >= 20 && c.status.toLowerCase() !== "cancelled")
+    .filter((c) => c.statsAvailable && c.sent >= 20 && campaignCountsInEmailTotals(c))
     .slice()
     .sort((a, b) => b.openRate - a.openRate || b.sent - a.sent);
 }
 
 function rankedByClick(campaigns: GhlCampaignRow[]): GhlCampaignRow[] {
   return campaigns
-    .filter((c) => c.statsAvailable && c.sent >= 20 && c.status.toLowerCase() !== "cancelled")
+    .filter((c) => c.statsAvailable && c.sent >= 20 && campaignCountsInEmailTotals(c))
     .slice()
     .sort((a, b) => b.clickRate - a.clickRate || b.clicked - a.clicked);
 }
@@ -31,7 +32,7 @@ export function buildEmailRecommendations(
   const tips: AnalyticsTip[] = [];
   const { totals, campaigns, flows, appointments, formFills, abandonedRecovery } = analytics;
   const complete = campaigns.filter(
-    (c) => c.statsAvailable && !["cancelled", "canceled", "draft", "paused"].includes(c.status.toLowerCase())
+    (c) => c.statsAvailable && campaignCountsInEmailTotals(c)
   );
   const byOpen = rankedByOpen(complete);
   const byClick = rankedByClick(complete);

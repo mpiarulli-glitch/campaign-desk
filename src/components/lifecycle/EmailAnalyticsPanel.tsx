@@ -7,6 +7,10 @@ import type {
   GhlCampaignRow,
   ListGrowthStats,
 } from "@/lib/ghl-email-analytics";
+import {
+  formatGhlCampaignStatusLabel,
+  isGhlCampaignNotYetSent,
+} from "@/lib/ghl-email-campaign-status";
 import { buildEmailRecommendations } from "@/lib/email-analytics-tips";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
@@ -38,6 +42,27 @@ function signedNet(n: number): string {
   if (n > 0) return `+${abs}`;
   if (n < 0) return `−${abs}`;
   return "0";
+}
+
+function campaignMetaLine(c: GhlCampaignRow): string {
+  const parts = [formatGhlCampaignStatusLabel(c.status)];
+  if (c.sentOn) parts.push(c.sentOn);
+  if (!c.statsAvailable && !isGhlCampaignNotYetSent(c.status)) {
+    parts.push("no stats yet");
+  }
+  return parts.join(" · ");
+}
+
+function campaignPending(c: GhlCampaignRow): boolean {
+  return isGhlCampaignNotYetSent(c.status) || c.sent <= 0;
+}
+
+function fmtSent(c: GhlCampaignRow): string {
+  return campaignPending(c) ? "—" : fmt(c.sent);
+}
+
+function fmtEngagement(c: GhlCampaignRow, rate: number): string {
+  return campaignPending(c) ? "—" : fmtPct(rate);
 }
 
 function prettyRange(start: string, end: string): string {
@@ -312,7 +337,10 @@ export function EmailAnalyticsPanel({
               <span className="lh-kpi-label">Engagement</span>
               <strong className="lh-kpi-value">{fmtPct(totals.openRate)}</strong>
               <span className="lh-kpi-hint">
-                {fmt(totals.sent)} sent · {fmtPct(totals.clickRate)} click
+                {fmt(totals.sent)} actually sent · {fmtPct(totals.clickRate)} click
+                {data.campaigns.some((c) => isGhlCampaignNotYetSent(c.status))
+                  ? " · scheduled excluded"
+                  : ""}
               </span>
             </article>
             <article
@@ -373,6 +401,7 @@ export function EmailAnalyticsPanel({
                   <h4>Campaigns</h4>
                   <p className="lh-card-note">
                     Broadcast performance with {data.attributionDays}-day attribution.
+                    Scheduled blasts stay listed but are excluded from open/click averages until they send.
                   </p>
                 </div>
               </header>
@@ -388,10 +417,7 @@ export function EmailAnalyticsPanel({
                       >
                         <div className="lh-campaign-card-top">
                           <strong>{c.name}</strong>
-                          <span>
-                            {c.sentOn || "—"}
-                            {c.statsAvailable ? "" : " · no stats yet"}
-                          </span>
+                          <span>{campaignMetaLine(c)}</span>
                         </div>
                         <p className="lh-campaign-subject">
                           {c.subject?.trim() || "—"}
@@ -399,15 +425,15 @@ export function EmailAnalyticsPanel({
                         <div className="lh-campaign-metrics">
                           <div>
                             <span>Sent</span>
-                            <strong>{fmt(c.sent)}</strong>
+                            <strong>{fmtSent(c)}</strong>
                           </div>
                           <div>
                             <span>Open</span>
-                            <strong>{fmtPct(c.openRate)}</strong>
+                            <strong>{fmtEngagement(c, c.openRate)}</strong>
                           </div>
                           <div>
                             <span>Click</span>
-                            <strong>{fmtPct(c.clickRate)}</strong>
+                            <strong>{fmtEngagement(c, c.clickRate)}</strong>
                           </div>
                           <div>
                             <span>Forms</span>
@@ -445,16 +471,15 @@ export function EmailAnalyticsPanel({
                             <td>
                               <div className="lh-analytics-name">{c.name}</div>
                               <div className="lh-analytics-meta">
-                                {c.sentOn || "—"}
-                                {c.statsAvailable ? "" : " · no stats yet"}
+                                {campaignMetaLine(c)}
                               </div>
                             </td>
                             <td className="lh-analytics-subject">
                               {c.subject?.trim() || "—"}
                             </td>
-                            <td>{fmt(c.sent)}</td>
-                            <td>{fmtPct(c.openRate)}</td>
-                            <td>{fmtPct(c.clickRate)}</td>
+                            <td>{fmtSent(c)}</td>
+                            <td>{fmtEngagement(c, c.openRate)}</td>
+                            <td>{fmtEngagement(c, c.clickRate)}</td>
                             <td>{fmt(c.formFills)}</td>
                             <td>{fmt(c.attributedAppointments)}</td>
                             <td>{fmt(c.unsubscribed)}</td>

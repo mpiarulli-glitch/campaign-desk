@@ -27,8 +27,22 @@ import {
   filterConversionsWithEmailTouch,
   filterEventsByTouchLag,
 } from "./ghl-contact-email-touch";
+import {
+  campaignCountsInEmailTotals,
+  isGhlCampaignNotYetSent,
+  resolveGhlCampaignSentCount,
+} from "./ghl-email-campaign-status";
 
 export type { ListGrowthStats } from "./ghl-conversion-analytics";
+export {
+  campaignCountsInEmailTotals,
+  formatGhlCampaignStatusLabel,
+  isGhlCampaignDeadStatus,
+  isGhlCampaignExcludedFromTotals,
+  isGhlCampaignNotYetSent,
+  resolveGhlCampaignSentCount,
+  rollupEmailEngagement,
+} from "./ghl-email-campaign-status";
 
 const STATS_CONCURRENCY = 4;
 const SCHEDULE_TIME_ZONE =
@@ -619,19 +633,34 @@ async function fetchCampaignStats(
 }
 
 function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
-  const sent = num(stats?.sent) || num(raw.totalCount);
-  const delivered = num(stats?.delivered) || num(raw.successCount) || sent;
-  const opened = num(stats?.opened);
-  const clicked = num(stats?.clicked);
-  const bounced =
-    num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
-  const unsubscribed = num(stats?.unsubscribed);
-  const openRate =
-    stats?.openRate !== undefined && stats?.openRate !== null
+  const status = String(raw.status || "unknown");
+  const hasStats = Boolean(stats);
+  const sent = resolveGhlCampaignSentCount(
+    status,
+    num(stats?.sent),
+    num(raw.totalCount),
+    hasStats
+  );
+  // Treat as unsent when nothing has gone out yet (scheduled, or complete
+  // with no usable stats). Never paint audience size as delivered volume.
+  const unsent = sent <= 0;
+  const delivered = unsent
+    ? 0
+    : num(stats?.delivered) || num(raw.successCount) || sent;
+  const opened = unsent ? 0 : num(stats?.opened);
+  const clicked = unsent ? 0 : num(stats?.clicked);
+  const bounced = unsent
+    ? 0
+    : num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
+  const unsubscribed = unsent ? 0 : num(stats?.unsubscribed);
+  const openRate = unsent
+    ? 0
+    : stats?.openRate !== undefined && stats?.openRate !== null
       ? num(stats.openRate)
       : rate(opened, delivered);
-  const clickRate =
-    stats?.clickRate !== undefined && stats?.clickRate !== null
+  const clickRate = unsent
+    ? 0
+    : stats?.clickRate !== undefined && stats?.clickRate !== null
       ? num(stats.clickRate)
       : rate(clicked, delivered);
 
@@ -639,7 +668,7 @@ function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
     id: String(raw.id || raw._id || ""),
     name: String(raw.name || "Untitled campaign"),
     subject: scheduleSubject(raw),
-    status: String(raw.status || "unknown"),
+    status,
     sentOn: campaignSentOn(raw),
     bulkRequestId: raw.bulkRequestId || null,
     sent,
@@ -650,7 +679,8 @@ function toRow(raw: RawSchedule, stats: RawStats | null): GhlCampaignRow {
     unsubscribed,
     openRate,
     clickRate,
-    statsAvailable: Boolean(stats),
+    // Stats only count once we have a payload AND real send volume.
+    statsAvailable: hasStats && sent > 0,
     channel: "campaign",
     formFills: 0,
     attributedAppointments: 0,
@@ -670,11 +700,7 @@ function isBookedAppointment(event: Record<string, unknown>): boolean {
 }
 
 function countsInTotals(row: GhlCampaignRow): boolean {
-  const status = row.status.toLowerCase();
-  // Cancelled / draft / paused blasts shouldn't dilute open and click rates.
-  if (status === "cancelled" || status === "canceled") return false;
-  if (status === "draft" || status === "paused") return false;
-  return true;
+  return campaignCountsInEmailTotals(row);
 }
 
 async function listCalendars(locationId: string): Promise<Array<{ id: string }>> {
@@ -855,18 +881,22 @@ export async function pullClientEmailAnalytics(
   ];
 
   const attributionSends: AttributionSend[] = [
-    ...campaigns.map((row) => ({
-      id: row.id,
-      name: row.name,
-      sentOn: row.sentOn,
-      channel: "campaign" as const,
-    })),
-    ...flows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      sentOn: row.sentOn,
-      channel: "flow" as const,
-    })),
+    ...campaigns
+      .filter((row) => campaignCountsInEmailTotals(row))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        sentOn: row.sentOn,
+        channel: "campaign" as const,
+      })),
+    ...flows
+      .filter((row) => campaignCountsInEmailTotals(row))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        sentOn: row.sentOn,
+        channel: "flow" as const,
+      })),
   ];
   const attributed = attributeConversionsToSends(
     attributionSends,
@@ -1036,6 +1066,7 @@ export async function pullClientAttributionSummary(
     const schedules = await listScheduledCampaigns(locationId);
     const campaignRows = schedules
       .filter((s) => inRange(campaignSentOn(s), start, end))
+      .filter((s) => !isGhlCampaignNotYetSent(String(s.status || "")))
       .map((s) => ({
         id: String(s.id || s._id || ""),
         name: String(s.name || "Untitled campaign"),
@@ -1254,6 +1285,7 @@ export async function pullClientAttributionCuts(
     const schedules = await listScheduledCampaigns(locationId);
     const campaignRows = schedules
       .filter((s) => inRange(campaignSentOn(s), start, end))
+      .filter((s) => !isGhlCampaignNotYetSent(String(s.status || "")))
       .map((s) => ({
         id: String(s.id || s._id || ""),
         name: String(s.name || "Untitled campaign"),
