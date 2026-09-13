@@ -57,13 +57,16 @@ export async function POST(request: Request) {
     const discoveryOnly =
       url.searchParams.get("discoveryOnly") === "1" ||
       url.searchParams.get("meetings") === "discovery";
+    // Default: require contact-level outbound marketing email before credit.
+    // Pass requireEmailTouch=0 to see the old (inflated) date-only numbers.
+    const requireEmailTouch = url.searchParams.get("requireEmailTouch") !== "0";
     const { start, end } = resolveAnalyticsRange(range);
     const attribution = await pullClientAttributionSummary(
       ensured.locationId,
       start,
       end,
       DEFAULT_ATTRIBUTION_DAYS,
-      { discoveryOnly }
+      { discoveryOnly, requireEmailTouch }
     );
 
     return NextResponse.json({
@@ -72,6 +75,7 @@ export async function POST(request: Request) {
       start,
       end,
       discoveryOnly,
+      requireEmailTouch: attribution.requireEmailTouch,
       attribution: {
         attributedAppointments: attribution.attributedAppointments,
         attributedFormFills: attribution.attributedFormFills,
@@ -79,6 +83,7 @@ export async function POST(request: Request) {
         totalFormFills: attribution.totalFormFills,
         campaignSends: attribution.campaignSends,
         flowSends: attribution.flowSends,
+        emailTouch: attribution.emailTouch,
         error: attribution.error,
       },
     });

@@ -23,6 +23,7 @@ import {
   pullListGrowthStats,
   type ListGrowthStats,
 } from "./ghl-conversion-analytics";
+import { filterConversionsWithEmailTouch } from "./ghl-contact-email-touch";
 
 export type { ListGrowthStats } from "./ghl-conversion-analytics";
 
@@ -978,22 +979,30 @@ export async function pullClientAttributionSummary(
   start: string,
   end: string,
   attributionDays = DEFAULT_ATTRIBUTION_DAYS,
-  options: { discoveryOnly?: boolean } = {}
+  options: { discoveryOnly?: boolean; requireEmailTouch?: boolean } = {}
 ): Promise<{
   locationId: string;
   start: string;
   end: string;
   attributionDays: number;
   discoveryOnly: boolean;
+  requireEmailTouch: boolean;
   campaignSends: number;
   flowSends: number;
   attributedAppointments: number;
   attributedFormFills: number;
   totalAppointments: number | null;
   totalFormFills: number | null;
+  emailTouch: {
+    checked: number;
+    touched: number;
+    skippedNoContact: number;
+  } | null;
   error: string | null;
 }> {
   const discoveryOnly = Boolean(options.discoveryOnly);
+  // Default on: date-only matching wildly over-counts on accounts that mail often.
+  const requireEmailTouch = options.requireEmailTouch !== false;
   let error: string | null = null;
   let campaignSends = 0;
   let flowSends = 0;
@@ -1001,6 +1010,11 @@ export async function pullClientAttributionSummary(
   let attributedFormFills = 0;
   let totalAppointments: number | null = null;
   let totalFormFills: number | null = null;
+  let emailTouch: {
+    checked: number;
+    touched: number;
+    skippedNoContact: number;
+  } | null = null;
 
   try {
     const schedules = await listScheduledCampaigns(locationId);
@@ -1073,6 +1087,21 @@ export async function pullClientAttributionSummary(
       })),
     ];
 
+    let attributableEvents = conversionEvents;
+    if (requireEmailTouch) {
+      const touch = await filterConversionsWithEmailTouch(
+        locationId,
+        conversionEvents,
+        attributionDays
+      );
+      emailTouch = {
+        checked: touch.checked,
+        touched: touch.touched,
+        skippedNoContact: touch.skippedNoContact,
+      };
+      attributableEvents = touch.kept;
+    }
+
     const attributionSends: AttributionSend[] = [
       ...campaignRows,
       ...flowRows.map(({ id, name, sentOn, channel }) => ({
@@ -1084,7 +1113,7 @@ export async function pullClientAttributionSummary(
     ];
     const attributed = attributeConversionsToSends(
       attributionSends,
-      conversionEvents,
+      attributableEvents,
       attributionDays
     );
 
@@ -1093,32 +1122,34 @@ export async function pullClientAttributionSummary(
       attributedFormFills += counts.formFills;
     }
 
-    try {
-      const abandonedContacts = await listAbandonedBookingContacts(locationId);
-      const summary = summarizeAbandonedRecovery(
-        abandonedContacts,
-        appointmentEvents
-          .filter((event) => event.contactId)
-          .map((event) => ({
-            contactId: event.contactId as string,
-            at: event.at,
-          })),
-        start,
-        end
-      );
-      const recoveryFlows = flowRows.filter((flow) => flow.abandonedRecovery);
-      if (recoveryFlows.length && summary.recoveredInWindow > 0) {
-        // Match per-client analytics: recovery bookings counted on recovery flows.
-        const already = recoveryFlows.reduce(
-          (n, flow) => n + (attributed.get(flow.id)?.appointments || 0),
-          0
+    // Abandoned-recovery tag bump is not email proof — skip when requiring touch.
+    if (!requireEmailTouch) {
+      try {
+        const abandonedContacts = await listAbandonedBookingContacts(locationId);
+        const summary = summarizeAbandonedRecovery(
+          abandonedContacts,
+          appointmentEvents
+            .filter((event) => event.contactId)
+            .map((event) => ({
+              contactId: event.contactId as string,
+              at: event.at,
+            })),
+          start,
+          end
         );
-        if (summary.recoveredInWindow > already) {
-          attributedAppointments += summary.recoveredInWindow - already;
+        const recoveryFlows = flowRows.filter((flow) => flow.abandonedRecovery);
+        if (recoveryFlows.length && summary.recoveredInWindow > 0) {
+          const already = recoveryFlows.reduce(
+            (n, flow) => n + (attributed.get(flow.id)?.appointments || 0),
+            0
+          );
+          if (summary.recoveredInWindow > already) {
+            attributedAppointments += summary.recoveredInWindow - already;
+          }
         }
+      } catch {
+        // Optional path — last-touch attribution still stands.
       }
-    } catch {
-      // Optional path — last-touch attribution still stands.
     }
   } catch (err) {
     error = err instanceof Error ? err.message : "Attribution pull failed.";
@@ -1130,12 +1161,14 @@ export async function pullClientAttributionSummary(
     end,
     attributionDays,
     discoveryOnly,
+    requireEmailTouch,
     campaignSends,
     flowSends,
     attributedAppointments,
     attributedFormFills,
     totalAppointments,
     totalFormFills,
+    emailTouch,
     error,
   };
 }
