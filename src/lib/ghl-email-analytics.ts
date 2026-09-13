@@ -977,12 +977,14 @@ export async function pullClientAttributionSummary(
   locationId: string,
   start: string,
   end: string,
-  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS,
+  options: { discoveryOnly?: boolean } = {}
 ): Promise<{
   locationId: string;
   start: string;
   end: string;
   attributionDays: number;
+  discoveryOnly: boolean;
   campaignSends: number;
   flowSends: number;
   attributedAppointments: number;
@@ -991,6 +993,7 @@ export async function pullClientAttributionSummary(
   totalFormFills: number | null;
   error: string | null;
 }> {
+  const discoveryOnly = Boolean(options.discoveryOnly);
   let error: string | null = null;
   let campaignSends = 0;
   let flowSends = 0;
@@ -1039,7 +1042,9 @@ export async function pullClientAttributionSummary(
       ReturnType<typeof listBookedAppointmentEvents>
     > = [];
     try {
-      appointmentEvents = await listBookedAppointmentEvents(locationId, start, end);
+      appointmentEvents = await listBookedAppointmentEvents(locationId, start, end, {
+        discoveryOnly,
+      });
       totalAppointments = appointmentEvents.length;
     } catch (err) {
       error =
@@ -1124,6 +1129,7 @@ export async function pullClientAttributionSummary(
     start,
     end,
     attributionDays,
+    discoveryOnly,
     campaignSends,
     flowSends,
     attributedAppointments,

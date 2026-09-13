@@ -40,6 +40,7 @@ async function authorized(request: Request): Promise<boolean> {
 /**
  * Create/link Marketing Empire Group on the Lifecycle hub with its GHL
  * location, then optionally return 12m email→booking attribution for MEG.
+ * Pass ?meetings=discovery (or discoveryOnly=1) to count discovery meetings only.
  */
 export async function POST(request: Request) {
   if (!(await authorized(request))) {
@@ -53,12 +54,16 @@ export async function POST(request: Request) {
     const range = (
       ["1m", "3m", "6m", "12m"].includes(rawRange) ? rawRange : "12m"
     ) as AnalyticsPreset;
+    const discoveryOnly =
+      url.searchParams.get("discoveryOnly") === "1" ||
+      url.searchParams.get("meetings") === "discovery";
     const { start, end } = resolveAnalyticsRange(range);
     const attribution = await pullClientAttributionSummary(
       ensured.locationId,
       start,
       end,
-      DEFAULT_ATTRIBUTION_DAYS
+      DEFAULT_ATTRIBUTION_DAYS,
+      { discoveryOnly }
     );
 
     return NextResponse.json({
@@ -66,6 +71,7 @@ export async function POST(request: Request) {
       range,
       start,
       end,
+      discoveryOnly,
       attribution: {
         attributedAppointments: attribution.attributedAppointments,
         attributedFormFills: attribution.attributedFormFills,
