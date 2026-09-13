@@ -23,7 +23,10 @@ import {
   pullListGrowthStats,
   type ListGrowthStats,
 } from "./ghl-conversion-analytics";
-import { filterConversionsWithEmailTouch } from "./ghl-contact-email-touch";
+import {
+  filterConversionsWithEmailTouch,
+  filterEventsByTouchLag,
+} from "./ghl-contact-email-touch";
 
 export type { ListGrowthStats } from "./ghl-conversion-analytics";
 
@@ -1172,6 +1175,304 @@ export async function pullClientAttributionSummary(
     error,
   };
 }
+
+
+export type AttributionCut = {
+  id: string;
+  label: string;
+  attributionDays: number;
+  channels: "all" | "campaign";
+  excludeAbandonedRecovery: boolean;
+  strictSource: boolean;
+  attributedAppointments: number;
+  attributedFormFills: number;
+  emailTouchedEvents: number;
+  topSends: Array<{
+    id: string;
+    name: string;
+    channel: "campaign" | "flow";
+    appointments: number;
+    formFills: number;
+  }>;
+};
+
+/**
+ * One expensive email-touch pass, then several stricter offline cuts.
+ * Used to pressure-test inflated "email drove discovery" claims.
+ */
+export async function pullClientAttributionCuts(
+  locationId: string,
+  start: string,
+  end: string,
+  options: { discoveryOnly?: boolean } = {}
+): Promise<{
+  locationId: string;
+  start: string;
+  end: string;
+  discoveryOnly: boolean;
+  totalAppointments: number | null;
+  totalFormFills: number | null;
+  campaignSends: number;
+  flowSends: number;
+  emailTouch: {
+    checked: number;
+    touchedLoose: number;
+    touchedStrict: number;
+    skippedNoContact: number;
+  } | null;
+  cuts: AttributionCut[];
+  error: string | null;
+}> {
+  const discoveryOnly = Boolean(options.discoveryOnly);
+  let error: string | null = null;
+  let totalAppointments: number | null = null;
+  let totalFormFills: number | null = null;
+  let campaignSends = 0;
+  let flowSends = 0;
+  let emailTouch: {
+    checked: number;
+    touchedLoose: number;
+    touchedStrict: number;
+    skippedNoContact: number;
+  } | null = null;
+  const cuts: AttributionCut[] = [];
+
+  try {
+    const schedules = await listScheduledCampaigns(locationId);
+    const campaignRows = schedules
+      .filter((s) => inRange(campaignSentOn(s), start, end))
+      .map((s) => ({
+        id: String(s.id || s._id || ""),
+        name: String(s.name || "Untitled campaign"),
+        sentOn: campaignSentOn(s),
+        channel: "campaign" as const,
+      }))
+      .filter((row) => row.id);
+
+    let flowRows: Array<{
+      id: string;
+      name: string;
+      sentOn: string | null;
+      channel: "flow";
+      abandonedRecovery: boolean;
+    }> = [];
+    try {
+      const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
+      flowRows = workflowCampaigns.map((flow) => ({
+        id: flow.id,
+        name: flow.name,
+        sentOn: flow.sentOn,
+        channel: "flow" as const,
+        abandonedRecovery: flow.abandonedRecovery,
+      }));
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Could not load GHL flows.";
+    }
+
+    campaignSends = campaignRows.length;
+    flowSends = flowRows.length;
+
+    let appointmentEvents: Awaited<
+      ReturnType<typeof listBookedAppointmentEvents>
+    > = [];
+    try {
+      appointmentEvents = await listBookedAppointmentEvents(locationId, start, end, {
+        discoveryOnly,
+      });
+      totalAppointments = appointmentEvents.length;
+    } catch (err) {
+      error =
+        err instanceof Error ? err.message : "Could not load appointments.";
+    }
+
+    let formEvents: ConversionEvent[] = [];
+    try {
+      formEvents = await listFormFillEvents(locationId, start, end);
+      totalFormFills = formEvents.length;
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Could not load form fills.";
+      error = error ? `${error}; ${msg}` : msg;
+    }
+
+    const conversionEvents: ConversionEvent[] = [
+      ...formEvents,
+      ...appointmentEvents.map((event) => ({
+        id: event.id,
+        contactId: event.contactId,
+        at: event.at,
+        kind: "appointment" as const,
+      })),
+    ];
+
+    // Loose touch (unlabeled sources count) at 5d — matches prior "69" scan.
+    const looseTouch = await filterConversionsWithEmailTouch(
+      locationId,
+      conversionEvents,
+      5,
+      { strictSource: false }
+    );
+    // Strict touch (unlabeled sources do not count) at 5d.
+    const strictTouch = await filterConversionsWithEmailTouch(
+      locationId,
+      conversionEvents,
+      5,
+      { strictSource: true }
+    );
+    emailTouch = {
+      checked: looseTouch.checked,
+      touchedLoose: looseTouch.touched,
+      touchedStrict: strictTouch.touched,
+      skippedNoContact: looseTouch.skippedNoContact,
+    };
+
+    const sendIndex = new Map<
+      string,
+      { id: string; name: string; channel: "campaign" | "flow" }
+    >();
+    for (const row of campaignRows) sendIndex.set(row.id, row);
+    for (const row of flowRows) sendIndex.set(row.id, row);
+
+    function buildCut(input: {
+      id: string;
+      label: string;
+      attributionDays: number;
+      channels: "all" | "campaign";
+      excludeAbandonedRecovery: boolean;
+      strictSource: boolean;
+      touch: typeof looseTouch;
+    }): AttributionCut {
+      const events = filterEventsByTouchLag(
+        input.touch.kept,
+        input.touch.touchDayByEventId,
+        input.attributionDays
+      );
+      let sends: AttributionSend[] = [
+        ...campaignRows,
+        ...flowRows.map(({ id, name, sentOn, channel }) => ({
+          id,
+          name,
+          sentOn,
+          channel,
+        })),
+      ];
+      if (input.channels === "campaign") {
+        sends = sends.filter((s) => s.channel === "campaign");
+      }
+      if (input.excludeAbandonedRecovery) {
+        const blocked = new Set(
+          flowRows.filter((f) => f.abandonedRecovery).map((f) => f.id)
+        );
+        sends = sends.filter((s) => !blocked.has(s.id));
+      }
+      const attributed = attributeConversionsToSends(
+        sends,
+        events,
+        input.attributionDays
+      );
+      let attributedAppointments = 0;
+      let attributedFormFills = 0;
+      const topSends: AttributionCut["topSends"] = [];
+      for (const [sendId, counts] of attributed.entries()) {
+        attributedAppointments += counts.appointments;
+        attributedFormFills += counts.formFills;
+        if (counts.appointments > 0 || counts.formFills > 0) {
+          const meta = sendIndex.get(sendId);
+          topSends.push({
+            id: sendId,
+            name: meta?.name || sendId,
+            channel: meta?.channel || "campaign",
+            appointments: counts.appointments,
+            formFills: counts.formFills,
+          });
+        }
+      }
+      topSends.sort(
+        (a, b) =>
+          b.appointments - a.appointments ||
+          b.formFills - a.formFills ||
+          a.name.localeCompare(b.name)
+      );
+      return {
+        id: input.id,
+        label: input.label,
+        attributionDays: input.attributionDays,
+        channels: input.channels,
+        excludeAbandonedRecovery: input.excludeAbandonedRecovery,
+        strictSource: input.strictSource,
+        attributedAppointments,
+        attributedFormFills,
+        emailTouchedEvents: events.length,
+        topSends: topSends.slice(0, 8),
+      };
+    }
+
+    cuts.push(
+      buildCut({
+        id: "loose_5d_all",
+        label: "Any email touch ≤5d (incl unlabeled) → campaign/flow",
+        attributionDays: 5,
+        channels: "all",
+        excludeAbandonedRecovery: false,
+        strictSource: false,
+        touch: looseTouch,
+      }),
+      buildCut({
+        id: "loose_5d_campaigns",
+        label: "Any email touch ≤5d → campaigns only",
+        attributionDays: 5,
+        channels: "campaign",
+        excludeAbandonedRecovery: false,
+        strictSource: false,
+        touch: looseTouch,
+      }),
+      buildCut({
+        id: "strict_5d_campaigns",
+        label: "Labeled marketing email ≤5d → campaigns only",
+        attributionDays: 5,
+        channels: "campaign",
+        excludeAbandonedRecovery: true,
+        strictSource: true,
+        touch: strictTouch,
+      }),
+      buildCut({
+        id: "strict_1d_campaigns",
+        label: "Labeled marketing email ≤1d → campaigns only",
+        attributionDays: 1,
+        channels: "campaign",
+        excludeAbandonedRecovery: true,
+        strictSource: true,
+        touch: strictTouch,
+      }),
+      buildCut({
+        id: "strict_5d_no_recovery",
+        label: "Labeled marketing email ≤5d → all sends except recovery flows",
+        attributionDays: 5,
+        channels: "all",
+        excludeAbandonedRecovery: true,
+        strictSource: true,
+        touch: strictTouch,
+      })
+    );
+  } catch (err) {
+    error = err instanceof Error ? err.message : "Attribution cuts failed.";
+  }
+
+  return {
+    locationId,
+    start,
+    end,
+    discoveryOnly,
+    totalAppointments,
+    totalFormFills,
+    campaignSends,
+    flowSends,
+    emailTouch,
+    cuts,
+    error,
+  };
+}
+
 
 /** Empty email analytics shell for DTC clients with no GHL location linked. */
 export function emptyClientEmailAnalytics(

@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { ensureMegLifecycleClient } from "@/lib/ensure-meg-client";
-import { pullClientAttributionSummary } from "@/lib/ghl-email-analytics";
+import {
+  pullClientAttributionSummary,
+  pullClientAttributionCuts,
+} from "@/lib/ghl-email-analytics";
 import { resolveAnalyticsRange } from "@/lib/ghl-email-analytics";
 import { DEFAULT_ATTRIBUTION_DAYS } from "@/lib/email-conversion-attribution";
 import type { AnalyticsPreset } from "@/lib/ghl-email-analytics";
@@ -60,7 +63,28 @@ export async function POST(request: Request) {
     // Default: require contact-level outbound marketing email before credit.
     // Pass requireEmailTouch=0 to see the old (inflated) date-only numbers.
     const requireEmailTouch = url.searchParams.get("requireEmailTouch") !== "0";
+    const wantCuts =
+      url.searchParams.get("cuts") === "1" ||
+      url.searchParams.get("ladder") === "1";
     const { start, end } = resolveAnalyticsRange(range);
+
+    if (wantCuts) {
+      const cuts = await pullClientAttributionCuts(
+        ensured.locationId,
+        start,
+        end,
+        { discoveryOnly }
+      );
+      return NextResponse.json({
+        ensured,
+        range,
+        start,
+        end,
+        discoveryOnly,
+        cuts,
+      });
+    }
+
     const attribution = await pullClientAttributionSummary(
       ensured.locationId,
       start,

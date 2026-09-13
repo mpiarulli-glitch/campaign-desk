@@ -67,17 +67,25 @@ function isEmailMessage(msg: Record<string, unknown>): boolean {
   return false;
 }
 
-/** Campaign / workflow / bulk — not one-off manual sales emails when labeled. */
-export function isMarketingEmailSource(source: unknown): boolean {
+/**
+ * Campaign / workflow / bulk — not one-off manual sales emails when labeled.
+ * When `strict`, unlabeled sources do NOT count (GHL often leaves manual mail blank).
+ */
+export function isMarketingEmailSource(
+  source: unknown,
+  options: { strict?: boolean } = {}
+): boolean {
+  const strict = Boolean(options.strict);
   const s = String(source || "").toLowerCase().trim();
-  if (!s) return true;
+  if (!s) return !strict;
   if (/(campaign|workflow|bulk|broadcast|mass|automation|email.?market)/.test(s)) {
     return true;
   }
   if (/(manual|one.?off|user|staff|agent)/.test(s) && !/(campaign|workflow)/.test(s)) {
     return false;
   }
-  return true;
+  // Ambiguous labels: keep only in non-strict mode.
+  return !strict;
 }
 
 async function findConversationId(
@@ -150,7 +158,8 @@ export async function latestOutboundMarketingEmailDay(
   locationId: string,
   contactId: string,
   onOrBefore: string,
-  attributionDays: number
+  attributionDays: number,
+  options: { strictSource?: boolean } = {}
 ): Promise<string | null> {
   const before = ymd(onOrBefore);
   if (!before || !contactId) return null;
@@ -164,10 +173,11 @@ export async function latestOutboundMarketingEmailDay(
     return null;
   }
 
+  const strictSource = Boolean(options.strictSource);
   let best: string | null = null;
   for (const msg of messages) {
     if (!isEmailMessage(msg) || !isOutbound(msg.direction)) continue;
-    if (!isMarketingEmailSource(msg.source)) continue;
+    if (!isMarketingEmailSource(msg.source, { strict: strictSource })) continue;
     const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
     if (!day || day > before) continue;
     const lag = dayDiff(before, day);
@@ -179,6 +189,8 @@ export async function latestOutboundMarketingEmailDay(
 
 export type EmailTouchFilterResult = {
   kept: ConversionEvent[];
+  /** eventId → YYYY-MM-DD of the outbound marketing email used. */
+  touchDayByEventId: Record<string, string>;
   checked: number;
   touched: number;
   skippedNoContact: number;
@@ -191,12 +203,13 @@ export type EmailTouchFilterResult = {
 export async function filterConversionsWithEmailTouch(
   locationId: string,
   events: ConversionEvent[],
-  attributionDays: number
+  attributionDays: number,
+  options: { strictSource?: boolean } = {}
 ): Promise<EmailTouchFilterResult> {
   const withContact = events.filter((e) => Boolean(e.contactId));
   const skippedNoContact = events.length - withContact.length;
-  const dayTouch = new Map<string, boolean>();
-  const eventTouch = new Map<string, boolean>();
+  const dayTouch = new Map<string, string | null>();
+  const touchDayByEventId: Record<string, string> = {};
 
   const uniqueDays: Array<{ contactId: string; at: string }> = [];
   const seenDay = new Set<string>();
@@ -215,25 +228,42 @@ export async function filterConversionsWithEmailTouch(
       locationId,
       contactId,
       at,
-      attributionDays
+      attributionDays,
+      { strictSource: options.strictSource }
     );
-    dayTouch.set(`${contactId}:${at}`, Boolean(day));
+    dayTouch.set(`${contactId}:${at}`, day);
   });
 
+  const kept: ConversionEvent[] = [];
   for (const event of withContact) {
     const at = ymd(event.at);
-    if (!at || !event.contactId) {
-      eventTouch.set(event.id, false);
-      continue;
-    }
-    eventTouch.set(event.id, Boolean(dayTouch.get(`${event.contactId}:${at}`)));
+    if (!at || !event.contactId) continue;
+    const day = dayTouch.get(`${event.contactId}:${at}`) || null;
+    if (!day) continue;
+    touchDayByEventId[event.id] = day;
+    kept.push(event);
   }
 
-  const kept = withContact.filter((e) => eventTouch.get(e.id));
   return {
     kept,
+    touchDayByEventId,
     checked: withContact.length,
     touched: kept.length,
     skippedNoContact,
   };
+}
+
+/** Keep events whose email touch day is within `maxLagDays` of the conversion. */
+export function filterEventsByTouchLag(
+  events: ConversionEvent[],
+  touchDayByEventId: Record<string, string>,
+  maxLagDays: number
+): ConversionEvent[] {
+  return events.filter((event) => {
+    const at = ymd(event.at);
+    const touch = touchDayByEventId[event.id];
+    if (!at || !touch) return false;
+    const lag = dayDiff(at, touch);
+    return lag >= 0 && lag <= maxLagDays;
+  });
 }
