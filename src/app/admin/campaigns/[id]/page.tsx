@@ -1259,10 +1259,10 @@ export default function AdminCampaignPage() {
     }
     setGhlHint(
       filled
-        ? `Filled ${filled} date${filled === 1 ? "" : "s"} from GoHighLevel.`
+        ? `Filled ${filled} send date${filled === 1 ? "" : "s"} from GoHighLevel (scheduled send time, not the day you clicked Schedule).`
         : named.length
-          ? "Found matching campaigns in GoHighLevel, but not a send time. Set the dates by hand."
-          : "No matching scheduled campaigns in GoHighLevel. Set the dates by hand."
+          ? "Matched GoHighLevel campaigns, but GHL did not return a send time yet. Set the dates by hand, or try again after GHL finishes scheduling."
+          : "No matching scheduled campaigns in GoHighLevel. Names need to line up with the package emails (e.g. “01. Imagine Your Finished Yard”)."
     );
   }
 

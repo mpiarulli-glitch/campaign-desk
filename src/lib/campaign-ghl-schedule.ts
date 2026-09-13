@@ -31,15 +31,44 @@ function normalize(value: string): string {
     .trim();
 }
 
+/**
+ * Pull "01. Imagine Your Finished Yard" out of long GHL package names like
+ * "Ecoworkz September 2026 Email Campaigns - 01. Imagine Your Finished Yard | Ecoworkz".
+ */
+export function extractNumberedEmailTitle(value: string): string {
+  const match = value.match(
+    /(?:^|[\s\-|–—])(\d{1,2}[\.\):\-]\s*[^|]+?)(?:\s*[|–—].*)?$/i
+  );
+  if (match?.[1]) return normalize(match[1]);
+  return normalize(value);
+}
+
 function scorePair(email: MatchableEmail, schedule: MatchableSchedule): number {
   const title = normalize(email.title);
+  const titleCore = extractNumberedEmailTitle(email.title);
   const name = normalize(schedule.name);
+  const nameCore = extractNumberedEmailTitle(schedule.name);
   const ghlSubject = normalize(schedule.subject);
   const emailSubjects = (email.subjects || []).map(normalize).filter(Boolean);
-  if (!title && !emailSubjects.length) return 0;
-  if (title && name && title === name) return 100;
+  if (!title && !titleCore && !emailSubjects.length) return 0;
+  if (titleCore && nameCore && titleCore === nameCore) return 100;
+  if (title && name && title === name) return 98;
+  if (titleCore && ghlSubject && titleCore === ghlSubject) return 94;
   if (title && ghlSubject && title === ghlSubject) return 92;
-  if (emailSubjects.some((s) => s && (s === name || s === ghlSubject))) return 90;
+  if (
+    emailSubjects.some(
+      (s) => s && (s === name || s === nameCore || s === ghlSubject)
+    )
+  ) {
+    return 90;
+  }
+  if (
+    titleCore &&
+    name &&
+    (name.includes(titleCore) || titleCore.includes(nameCore))
+  ) {
+    return Math.min(89, 70 + Math.min(titleCore.length, nameCore.length || name.length));
+  }
   if (title && name && (name.includes(title) || title.includes(name))) {
     return Math.min(89, 70 + Math.min(title.length, name.length));
   }

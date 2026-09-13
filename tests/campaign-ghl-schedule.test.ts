@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchEmailsToGhlSchedules } from "../src/lib/campaign-ghl-schedule";
+import {
+  extractNumberedEmailTitle,
+  matchEmailsToGhlSchedules,
+} from "../src/lib/campaign-ghl-schedule";
 
 test("GHL scheduled blasts match package emails by title or subject", () => {
   const emails = [
@@ -43,4 +46,54 @@ test("GHL scheduled blasts match package emails by title or subject", () => {
   assert.equal(matched[0].schedule?.id, "g1");
   assert.equal(matched[1].schedule?.id, "g2");
   assert.equal(matched.filter((row) => row.schedule).length, 2);
+});
+
+test("extractNumberedEmailTitle pulls the N. Title from long GHL package names", () => {
+  assert.equal(
+    extractNumberedEmailTitle(
+      "Ecoworkz September 2026 Email Campaigns - 01. Imagine Your Finished Yard | Ecoworkz"
+    ),
+    "imagine your finished yard"
+  );
+  assert.equal(
+    extractNumberedEmailTitle("02. Plan Your Fall Project | Ecoworkz"),
+    "plan your fall project"
+  );
+});
+
+test("long Ecoworkz GHL package names map to package emails with real send dates", () => {
+  const emails = [
+    {
+      id: "e1",
+      title: "01. Imagine Your Finished Yard | Ecoworkz",
+      subjects: ["Imagine Your Finished Yard"],
+    },
+    {
+      id: "e2",
+      title: "02. Plan Your Fall Project | Ecoworkz",
+      subjects: ["Quality Starts With A Clear Fall Plan"],
+    },
+  ];
+  const schedules = [
+    {
+      id: "g2",
+      name: "Ecoworkz September 2026 Email Campaigns - 02. Plan Your Fall Project | Ecoworkz",
+      subject: "Quality Starts With A Clear Fall Plan",
+      status: "scheduled",
+      scheduledAt: "2026-09-28T17:00:00.000Z",
+    },
+    {
+      id: "g1",
+      name: "Ecoworkz September 2026 Email Campaigns - 01. Imagine Your Finished Yard | Ecoworkz",
+      subject: "Imagine Your Finished Yard",
+      status: "scheduled",
+      scheduledAt: "2026-09-15T17:00:00.000Z",
+    },
+  ];
+
+  const matched = matchEmailsToGhlSchedules(emails, schedules);
+  assert.equal(matched[0].schedule?.id, "g1");
+  assert.equal(matched[0].schedule?.scheduledAt, "2026-09-15T17:00:00.000Z");
+  assert.equal(matched[1].schedule?.id, "g2");
+  assert.equal(matched[1].schedule?.scheduledAt, "2026-09-28T17:00:00.000Z");
 });

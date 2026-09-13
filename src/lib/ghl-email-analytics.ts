@@ -552,14 +552,25 @@ function mergeScheduleRows(lists: Record<string, unknown>[][]): GhlEmailSchedule
   return [...byId.values()].filter((row) => row.name);
 }
 
-/** Pull send timestamps onto rows that only have a name from the list APIs. */
+/**
+ * Pull real send timestamps from campaign detail.
+ *
+ * List APIs often omit send-at or stamp created-at into a schedule-looking
+ * field. Always refresh rows that are still scheduled/processing (or missing
+ * a time) so Campaign Desk gets Sep 15 / Sep 28, not the Sep 9 click time.
+ */
 export async function fillGhlSendTimes(
   locationId: string,
   schedules: GhlEmailSchedule[]
 ): Promise<void> {
-  const missing = schedules.filter((row) => row.id && !row.scheduledAt);
-  if (!missing.length) return;
-  await pooled(missing, async (row) => {
+  const needsDetail = schedules.filter((row) => {
+    if (!row.id) return false;
+    const status = row.status.toLowerCase();
+    if (!row.scheduledAt) return true;
+    return status === "scheduled" || status === "processing" || status === "pending";
+  });
+  if (!needsDetail.length) return;
+  await pooled(needsDetail, async (row) => {
     const detail = await fetchV2EmailCampaign(locationId, row.id);
     if (!detail) return;
     const sendAt = ghlCampaignSendAt(detail);
@@ -567,7 +578,9 @@ export async function fillGhlSendTimes(
     const subject = String(detail.subject || "").trim();
     if (subject && !row.subject) row.subject = subject;
     const name = scheduleName(detail);
-    if (name && !row.name) row.name = name;
+    if (name) row.name = name;
+    const status = String(detail.status || "").trim();
+    if (status) row.status = status;
   });
 }
 
