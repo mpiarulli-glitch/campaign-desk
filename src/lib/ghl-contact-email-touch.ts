@@ -88,6 +88,44 @@ export function isMarketingEmailSource(
   return !strict;
 }
 
+/**
+ * Appointment / form confirmations that go out AFTER someone converts.
+ * These often come from workflows, so source alone would look like marketing.
+ * Example: "Your Onsite Consultation Has Been Scheduled."
+ */
+export function isTransactionalEmailSubject(subject: unknown): boolean {
+  const s = String(subject || "").toLowerCase().trim();
+  if (!s) return false;
+  if (/\b(has been|is|was)\s+scheduled\b/.test(s)) return true;
+  if (/\b(appointment|consultation|estimate|meeting|booking|demo)\b.*\b(schedul|confirm|booked)\b/.test(s)) {
+    return true;
+  }
+  if (/\b(schedul|confirm|booked)\b.*\b(appointment|consultation|estimate|meeting|booking|demo)\b/.test(s)) {
+    return true;
+  }
+  if (/\b(booking|appointment|meeting)\s+confirm/.test(s)) return true;
+  if (/\bconfirm(ation)?\s+(of\s+)?(your\s+)?(booking|appointment|meeting|estimate)\b/.test(s)) {
+    return true;
+  }
+  if (/\bthanks?(?:\s+you)?\s+for\s+(schedul|book)/.test(s)) return true;
+  if (/\b(reminder|reschedul)/.test(s) && /\b(appointment|consultation|estimate|meeting|booking)\b/.test(s)) {
+    return true;
+  }
+  return false;
+}
+
+function messageSubject(msg: Record<string, unknown>): string {
+  const meta = asRecord(msg.meta);
+  return String(
+    msg.subject ||
+      msg.emailSubject ||
+      msg.title ||
+      msg.name ||
+      (meta && meta.subject) ||
+      ""
+  );
+}
+
 async function findConversationId(
   locationId: string,
   contactId: string
@@ -178,6 +216,9 @@ export async function latestOutboundMarketingEmailDay(
   for (const msg of messages) {
     if (!isEmailMessage(msg) || !isOutbound(msg.direction)) continue;
     if (!isMarketingEmailSource(msg.source, { strict: strictSource })) continue;
+    // Workflow confirmations ("Your consult has been scheduled") look like
+    // marketing by source but are not an email that drove the booking.
+    if (isTransactionalEmailSubject(messageSubject(msg))) continue;
     const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
     if (!day || day > before) continue;
     const lag = dayDiff(before, day);
