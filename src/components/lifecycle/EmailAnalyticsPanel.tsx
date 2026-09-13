@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AnalyticsPreset,
   ClientEmailAnalytics,
+  EmailJourneyKind,
+  EmailJourneyRow,
   GhlCampaignRow,
   ListGrowthStats,
 } from "@/lib/ghl-email-analytics";
@@ -99,6 +101,12 @@ export function EmailAnalyticsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<ClientEmailAnalytics | null>(null);
+  const [journeyKind, setJourneyKind] = useState<EmailJourneyKind | null>(
+    null
+  );
+  const [journeys, setJourneys] = useState<EmailJourneyRow[] | null>(null);
+  const [journeysLoading, setJourneysLoading] = useState(false);
+  const [journeysError, setJourneysError] = useState("");
 
   const tips = useMemo(
     () => (data ? buildEmailRecommendations(data) : []),
@@ -166,6 +174,43 @@ export function EmailAnalyticsPanel({
       setLoading(false);
     }
   }, [canPull, clientId, from, memberIds, preset, to]);
+
+  const openJourneys = useCallback(
+    async (kind: EmailJourneyKind) => {
+      if (!canPull || !ghlLinked) return;
+      setJourneyKind(kind);
+      setJourneys(null);
+      setJourneysError("");
+      setJourneysLoading(true);
+      try {
+        const params = new URLSearchParams({ range: preset, kind });
+        if (preset === "custom") {
+          params.set("from", from);
+          params.set("to", to);
+        }
+        if (memberIds.length) params.set("members", memberIds.join(","));
+        const res = await fetch(
+          `/api/lifecycle/hub/${clientId}/analytics/journeys?${params}`
+        );
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          journeys?: EmailJourneyRow[];
+        };
+        if (!res.ok || !body.journeys) {
+          setJourneysError(body.error || "Could not load journeys.");
+          setJourneys([]);
+          return;
+        }
+        setJourneys(body.journeys);
+      } catch {
+        setJourneysError("Could not load journeys.");
+        setJourneys([]);
+      } finally {
+        setJourneysLoading(false);
+      }
+    },
+    [canPull, clientId, from, ghlLinked, memberIds, preset, to]
+  );
 
   useEffect(() => {
     if (!canPull) return;
@@ -315,26 +360,51 @@ export function EmailAnalyticsPanel({
                 </>
               ) : (
                 <>
-                  <div className="lh-an-metric">
+                  <button
+                    type="button"
+                    className="lh-an-metric is-clickable"
+                    onClick={() => void openJourneys("form_fill")}
+                    disabled={!ghlLinked || attributed.forms <= 0 || loading}
+                    title={
+                      attributed.forms > 0
+                        ? "See who filled a form after an email"
+                        : "No attributed form fills in this range"
+                    }
+                  >
                     <span>Email → forms</span>
                     <strong>{fmt(attributed.forms)}</strong>
                     <em>
                       {data.formFills === null
                         ? `${data.attributionDays}-day last-touch`
                         : `${fmt(attributed.forms)} of ${fmt(data.formFills)} fills`}
+                      {attributed.forms > 0 ? " · View journeys" : ""}
                     </em>
-                  </div>
-                  <div className="lh-an-metric">
+                  </button>
+                  <button
+                    type="button"
+                    className="lh-an-metric is-clickable"
+                    onClick={() => void openJourneys("appointment")}
+                    disabled={
+                      !ghlLinked || attributed.appointments <= 0 || loading
+                    }
+                    title={
+                      attributed.appointments > 0
+                        ? "See who booked after an email"
+                        : "No attributed bookings in this range"
+                    }
+                  >
                     <span>Email → booked</span>
                     <strong>{fmt(attributed.appointments)}</strong>
                     <em>
                       {data.appointments === null
-                        ? data.abandonedRecovery && !data.abandonedRecovery.error
+                        ? data.abandonedRecovery &&
+                          !data.abandonedRecovery.error
                           ? `${fmt(data.abandonedRecovery.recoveredInWindow)} recovered · ${fmt(data.abandonedRecovery.stillAbandoned)} open`
                           : "Attributed bookings"
                         : `${fmt(attributed.appointments)} of ${fmt(data.appointments)} after a send`}
+                      {attributed.appointments > 0 ? " · View journeys" : ""}
                     </em>
-                  </div>
+                  </button>
                 </>
               )}
               <div className="lh-an-metric">
@@ -530,7 +600,127 @@ export function EmailAnalyticsPanel({
           {growth?.error ? (
             <p className="lh-card-note">List growth: {growth.error}</p>
           ) : null}
+
+          {journeyKind ? (
+            <JourneyPanel
+              kind={journeyKind}
+              loading={journeysLoading}
+              error={journeysError}
+              journeys={journeys}
+              onClose={() => {
+                setJourneyKind(null);
+                setJourneys(null);
+                setJourneysError("");
+              }}
+            />
+          ) : null}
         </div>
+      ) : null}
+    </section>
+  );
+}
+
+function prettyDay(value: string | null | undefined): string {
+  if (!value) return "—";
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  };
+  return new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString(
+    "en-US",
+    opts
+  );
+}
+
+function contactLabel(row: EmailJourneyRow): string {
+  if (row.contactName?.trim()) return row.contactName.trim();
+  if (row.contactEmail?.trim()) return row.contactEmail.trim();
+  if (row.contactId) return `Contact ${row.contactId.slice(0, 8)}`;
+  return "Unknown contact";
+}
+
+function JourneyPanel({
+  kind,
+  loading,
+  error,
+  journeys,
+  onClose,
+}: {
+  kind: EmailJourneyKind;
+  loading: boolean;
+  error: string;
+  journeys: EmailJourneyRow[] | null;
+  onClose: () => void;
+}) {
+  const title =
+    kind === "appointment"
+      ? "Email → booked journeys"
+      : "Email → form journeys";
+
+  return (
+    <section className="lh-an-journeys" aria-label={title}>
+      <header className="lh-an-section-head">
+        <div>
+          <h4>{title}</h4>
+          <p className="lh-card-note">
+            Last email before the{" "}
+            {kind === "appointment" ? "booking" : "form fill"}, plus who it was.
+          </p>
+        </div>
+        <button type="button" className="lh-link" onClick={onClose}>
+          Close
+        </button>
+      </header>
+
+      {loading ? <p className="lh-card-note">Loading journeys…</p> : null}
+      {error ? <p className="lh-error">{error}</p> : null}
+
+      {!loading && !error && journeys && journeys.length === 0 ? (
+        <p className="lh-card-note">No journeys found in this range.</p>
+      ) : null}
+
+      {!loading && journeys && journeys.length > 0 ? (
+        <ul className="lh-an-journey-list">
+          {journeys.map((row) => (
+            <li
+              key={`${row.kind}:${row.contactId || "x"}:${row.conversionAt}:${row.sendId}`}
+              className="lh-an-journey"
+            >
+              <div className="lh-an-journey-who">
+                <strong>{contactLabel(row)}</strong>
+                {row.contactEmail && row.contactName ? (
+                  <span className="lh-an-meta">{row.contactEmail}</span>
+                ) : null}
+              </div>
+              <ol className="lh-an-journey-steps">
+                <li>
+                  <em>Email</em>
+                  <strong>
+                    {prettyDay(row.emailTouchDay || row.sendOn)}
+                  </strong>
+                  <span className="lh-an-meta">
+                    {row.subject || row.sendName}
+                    {row.sendChannel === "flow" ? " · flow" : ""}
+                    {!row.emailTouchDay && row.sendOn
+                      ? " · credited send"
+                      : ""}
+                  </span>
+                </li>
+                {kind === "appointment" && row.formFilledAt ? (
+                  <li>
+                    <em>Form</em>
+                    <strong>{prettyDay(row.formFilledAt)}</strong>
+                  </li>
+                ) : null}
+                <li>
+                  <em>{kind === "appointment" ? "Booked" : "Form"}</em>
+                  <strong>{prettyDay(row.conversionAt)}</strong>
+                </li>
+              </ol>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </section>
   );

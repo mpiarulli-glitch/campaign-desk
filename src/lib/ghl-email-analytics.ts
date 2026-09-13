@@ -10,6 +10,7 @@ import { parseTimeInput, zonedLocalToUtc } from "./forecast-time";
 import { ghlRequest, GhlError } from "./ghl";
 import {
   DEFAULT_ATTRIBUTION_DAYS,
+  attributeConversionsToJourneys,
   attributeConversionsToSends,
   summarizeAbandonedRecovery,
   type AttributionSend,
@@ -26,6 +27,7 @@ import {
 import {
   filterConversionsWithEmailTouch,
   filterEventsByTouchLag,
+  latestOutboundMarketingEmailDay,
 } from "./ghl-contact-email-touch";
 import {
   campaignCountsInEmailTotals,
@@ -1572,5 +1574,211 @@ export function emptyClientEmailAnalytics(
     listGrowth: null,
     commerce: null,
     attributionDays: DEFAULT_ATTRIBUTION_DAYS,
+  };
+}
+
+export type EmailJourneyKind = "form_fill" | "appointment";
+
+export type EmailJourneyRow = {
+  kind: EmailJourneyKind;
+  contactId: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  /** Form fill or booking day (YYYY-MM-DD). */
+  conversionAt: string;
+  /** Prior form fill for the same contact in-window, when this is a booking. */
+  formFilledAt: string | null;
+  sendId: string;
+  sendName: string;
+  sendChannel: "campaign" | "flow";
+  /** Credited campaign/flow send day. */
+  sendOn: string;
+  subject: string | null;
+  /**
+   * Day that contact actually received an outbound marketing email (Conversations),
+   * when found. Falls back to null — UI can show credited sendOn instead.
+   */
+  emailTouchDay: string | null;
+};
+
+async function resolveContactProfiles(
+  locationId: string,
+  contactIds: string[]
+): Promise<Map<string, { name: string | null; email: string | null }>> {
+  const out = new Map<string, { name: string | null; email: string | null }>();
+  const unique = [...new Set(contactIds.filter(Boolean))];
+  await pooled(unique, async (contactId) => {
+    try {
+      const result = await ghlRequest<{
+        contact?: Record<string, unknown>;
+      }>("GET", `/contacts/${contactId}`, { locationId });
+      const raw = result.contact || (result as unknown as Record<string, unknown>);
+      const first = String(raw.firstName || raw.first_name || "").trim();
+      const last = String(raw.lastName || raw.last_name || "").trim();
+      const name =
+        String(raw.name || "").trim() ||
+        [first, last].filter(Boolean).join(" ").trim() ||
+        null;
+      const email = String(raw.email || "").trim() || null;
+      out.set(contactId, { name, email });
+    } catch {
+      out.set(contactId, { name: null, email: null });
+    }
+  });
+  return out;
+}
+
+/**
+ * Per-contact journeys behind Email → forms / Email → booked.
+ * Matches the panel's date-proximity last-touch counts, then enriches with
+ * contact name/email and (when found) the outbound marketing email day.
+ */
+export async function pullClientEmailJourneys(
+  locationId: string,
+  start: string,
+  end: string,
+  kind: EmailJourneyKind,
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+): Promise<{
+  kind: EmailJourneyKind;
+  start: string;
+  end: string;
+  attributionDays: number;
+  journeys: EmailJourneyRow[];
+}> {
+  const analytics = await pullClientEmailAnalytics(
+    locationId,
+    start,
+    end,
+    attributionDays
+  );
+
+  const subjectById = new Map<string, string>();
+  for (const row of [...analytics.campaigns, ...analytics.flows]) {
+    if (row.subject?.trim()) subjectById.set(row.id, row.subject.trim());
+  }
+
+  const sends: AttributionSend[] = [
+    ...analytics.campaigns
+      .filter((row) => campaignCountsInEmailTotals(row))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        sentOn: row.sentOn,
+        channel: "campaign" as const,
+      })),
+    ...analytics.flows
+      .filter((row) => campaignCountsInEmailTotals(row))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        sentOn: row.sentOn,
+        channel: "flow" as const,
+      })),
+  ];
+
+  let formEvents: ConversionEvent[] = [];
+  let appointmentEvents: ConversionEvent[] = [];
+  try {
+    formEvents = await listFormFillEvents(locationId, start, end);
+  } catch {
+    formEvents = [];
+  }
+  try {
+    const booked = await listBookedAppointmentEvents(locationId, start, end);
+    appointmentEvents = booked.map((event) => ({
+      id: event.id,
+      contactId: event.contactId,
+      at: event.at,
+      kind: "appointment" as const,
+    }));
+  } catch {
+    appointmentEvents = [];
+  }
+
+  const formDayByContact = new Map<string, string>();
+  for (const event of formEvents) {
+    if (!event.contactId) continue;
+    const day = event.at.slice(0, 10);
+    const prev = formDayByContact.get(event.contactId);
+    if (!prev || day > prev) formDayByContact.set(event.contactId, day);
+  }
+
+  const events =
+    kind === "form_fill"
+      ? formEvents
+      : appointmentEvents;
+
+  const matched = attributeConversionsToJourneys(
+    sends,
+    events,
+    attributionDays
+  ).sort((a, b) => b.event.at.localeCompare(a.event.at));
+
+  const contactIds = matched
+    .map((j) => j.event.contactId)
+    .filter((id): id is string => Boolean(id));
+  const profiles = await resolveContactProfiles(locationId, contactIds);
+
+  const touchDayByContactAt = new Map<string, string | null>();
+  await pooled(
+    matched
+      .filter((j) => j.event.contactId)
+      .map((j) => ({
+        contactId: j.event.contactId as string,
+        at: j.event.at.slice(0, 10),
+      })),
+    async ({ contactId, at }) => {
+      const key = `${contactId}:${at}`;
+      if (touchDayByContactAt.has(key)) return;
+      const day = await latestOutboundMarketingEmailDay(
+        locationId,
+        contactId,
+        at,
+        attributionDays
+      );
+      touchDayByContactAt.set(key, day);
+    }
+  );
+
+  const journeys: EmailJourneyRow[] = matched.map((j) => {
+    const contactId = j.event.contactId;
+    const profile = contactId ? profiles.get(contactId) : null;
+    const touchKey = contactId
+      ? `${contactId}:${j.event.at.slice(0, 10)}`
+      : "";
+    const formFilledAt =
+      kind === "appointment" && contactId
+        ? formDayByContact.get(contactId) || null
+        : kind === "form_fill"
+          ? j.event.at.slice(0, 10)
+          : null;
+    return {
+      kind,
+      contactId,
+      contactName: profile?.name || null,
+      contactEmail: profile?.email || null,
+      conversionAt: j.event.at.slice(0, 10),
+      formFilledAt:
+        formFilledAt && formFilledAt <= j.event.at.slice(0, 10)
+          ? formFilledAt
+          : null,
+      sendId: j.send.id,
+      sendName: j.send.name,
+      sendChannel: j.send.channel,
+      sendOn: j.sendOn,
+      subject: subjectById.get(j.send.id) || null,
+      emailTouchDay: touchKey
+        ? touchDayByContactAt.get(touchKey) || null
+        : null,
+    };
+  });
+
+  return {
+    kind,
+    start,
+    end,
+    attributionDays,
+    journeys,
   };
 }

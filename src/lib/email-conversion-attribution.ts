@@ -101,6 +101,44 @@ export function isAbandonedRecoveryFlowName(name: string): boolean {
   return false;
 }
 
+export type AttributionJourney = {
+  event: ConversionEvent;
+  send: AttributionSend;
+  /** Resolved YYYY-MM-DD of the credited send. */
+  sendOn: string;
+};
+
+/**
+ * Pair each conversion with the latest send on or before the event, within
+ * `attributionDays`. One conversion → one journey (no double counting).
+ */
+export function attributeConversionsToJourneys(
+  sends: AttributionSend[],
+  events: ConversionEvent[],
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+): AttributionJourney[] {
+  const dated = sends
+    .map((s) => ({ send: s, on: ymd(s.sentOn) }))
+    .filter((s): s is { send: AttributionSend; on: string } => Boolean(s.on))
+    .sort((a, b) => b.on.localeCompare(a.on) || a.send.name.localeCompare(b.send.name));
+
+  const journeys: AttributionJourney[] = [];
+  for (const event of events) {
+    const at = ymd(event.at);
+    if (!at) continue;
+    let best: { send: AttributionSend; on: string } | null = null;
+    for (const row of dated) {
+      if (row.on > at) continue;
+      const lag = dayDiff(at, row.on);
+      if (lag < 0 || lag > attributionDays) continue;
+      if (!best || row.on > best.on) best = row;
+    }
+    if (!best) continue;
+    journeys.push({ event, send: best.send, sendOn: best.on });
+  }
+  return journeys;
+}
+
 /**
  * Credit each conversion to the latest send on or before the event, within
  * `attributionDays`. One conversion → one send (no double counting).
@@ -115,26 +153,18 @@ export function attributeConversionsToSends(
     counts.set(send.id, { formFills: 0, appointments: 0 });
   }
 
-  const dated = sends
-    .map((s) => ({ send: s, on: ymd(s.sentOn) }))
-    .filter((s): s is { send: AttributionSend; on: string } => Boolean(s.on))
-    .sort((a, b) => b.on.localeCompare(a.on) || a.send.name.localeCompare(b.send.name));
-
-  for (const event of events) {
-    const at = ymd(event.at);
-    if (!at) continue;
-    let best: { send: AttributionSend; on: string } | null = null;
-    for (const row of dated) {
-      if (row.on > at) continue;
-      const lag = dayDiff(at, row.on);
-      if (lag < 0 || lag > attributionDays) continue;
-      if (!best || row.on > best.on) best = row;
-    }
-    if (!best) continue;
-    const bucket = counts.get(best.send.id) || { formFills: 0, appointments: 0 };
-    if (event.kind === "form_fill") bucket.formFills += 1;
+  for (const journey of attributeConversionsToJourneys(
+    sends,
+    events,
+    attributionDays
+  )) {
+    const bucket = counts.get(journey.send.id) || {
+      formFills: 0,
+      appointments: 0,
+    };
+    if (journey.event.kind === "form_fill") bucket.formFills += 1;
     else bucket.appointments += 1;
-    counts.set(best.send.id, bucket);
+    counts.set(journey.send.id, bucket);
   }
 
   return counts;
