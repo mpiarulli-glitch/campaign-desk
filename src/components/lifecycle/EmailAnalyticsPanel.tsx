@@ -440,8 +440,10 @@ export function EmailAnalyticsPanel({
               </>
             ) : (
               <>
-                Last-touch within {data.attributionDays} days. Opens and clicks
-                use sent campaigns only
+                Forms and bookings only count when that contact got a marketing
+                email within {data.attributionDays} days before converting —
+                appointment confirmations do not count. Opens and clicks use sent
+                campaigns only
                 {scheduledCount > 0
                   ? ` · ${scheduledCount} scheduled excluded`
                   : ""}

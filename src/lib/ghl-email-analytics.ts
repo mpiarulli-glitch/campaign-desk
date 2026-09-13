@@ -27,7 +27,6 @@ import {
 import {
   filterConversionsWithEmailTouch,
   filterEventsByTouchLag,
-  latestOutboundMarketingEmailDay,
 } from "./ghl-contact-email-touch";
 import {
   campaignCountsInEmailTotals,
@@ -911,6 +910,17 @@ export async function pullClientEmailAnalytics(
     })),
   ];
 
+  // Date-proximity alone over-counts (Eric Smith: booked + confirmation email,
+  // no marketing blast). Only credit conversions with a real outbound
+  // marketing email touch on that contact before the conversion.
+  const touch = await filterConversionsWithEmailTouch(
+    locationId,
+    conversionEvents,
+    attributionDays,
+    { strictSource: true }
+  );
+  const attributableEvents = touch.kept;
+
   const attributionSends: AttributionSend[] = [
     ...campaigns
       .filter((row) => campaignCountsInEmailTotals(row))
@@ -931,7 +941,7 @@ export async function pullClientEmailAnalytics(
   ];
   const attributed = attributeConversionsToSends(
     attributionSends,
-    conversionEvents,
+    attributableEvents,
     attributionDays
   );
 
@@ -971,21 +981,8 @@ export async function pullClientEmailAnalytics(
       stillAbandoned: summary.stillAbandoned,
       error: null,
     };
-
-    const recoveryFlows = flows.filter((flow) => flow.abandonedRecovery);
-    if (recoveryFlows.length && summary.recoveredInWindow > 0) {
-      const share = Math.floor(summary.recoveredInWindow / recoveryFlows.length);
-      let remainder = summary.recoveredInWindow - share * recoveryFlows.length;
-      flows = flows.map((flow) => {
-        if (!flow.abandonedRecovery) return flow;
-        const extra = share + (remainder > 0 ? 1 : 0);
-        if (remainder > 0) remainder -= 1;
-        return {
-          ...flow,
-          attributedAppointments: Math.max(flow.attributedAppointments, extra),
-        };
-      });
-    }
+    // Do not inflate Email → booked from tag-only recoveries — they can lack a
+    // marketing email on the contact (same class of false positive as Eric Smith).
   } catch (err) {
     abandonedRecovery = {
       abandoned: 0,
@@ -1170,7 +1167,8 @@ export async function pullClientAttributionSummary(
       const touch = await filterConversionsWithEmailTouch(
         locationId,
         conversionEvents,
-        attributionDays
+        attributionDays,
+        { strictSource: true }
       );
       emailTouch = {
         checked: touch.checked,
@@ -1709,9 +1707,18 @@ export async function pullClientEmailJourneys(
       ? formEvents
       : appointmentEvents;
 
+  // Same honesty gate as the Outcomes tiles: no marketing email touch → no journey.
+  const touch = await filterConversionsWithEmailTouch(
+    locationId,
+    events,
+    attributionDays,
+    { strictSource: true }
+  );
+  const touchDayByEventId = touch.touchDayByEventId;
+
   const matched = attributeConversionsToJourneys(
     sends,
-    events,
+    touch.kept,
     attributionDays
   ).sort((a, b) => b.event.at.localeCompare(a.event.at));
 
@@ -1720,33 +1727,9 @@ export async function pullClientEmailJourneys(
     .filter((id): id is string => Boolean(id));
   const profiles = await resolveContactProfiles(locationId, contactIds);
 
-  const touchDayByContactAt = new Map<string, string | null>();
-  await pooled(
-    matched
-      .filter((j) => j.event.contactId)
-      .map((j) => ({
-        contactId: j.event.contactId as string,
-        at: j.event.at.slice(0, 10),
-      })),
-    async ({ contactId, at }) => {
-      const key = `${contactId}:${at}`;
-      if (touchDayByContactAt.has(key)) return;
-      const day = await latestOutboundMarketingEmailDay(
-        locationId,
-        contactId,
-        at,
-        attributionDays
-      );
-      touchDayByContactAt.set(key, day);
-    }
-  );
-
   const journeys: EmailJourneyRow[] = matched.map((j) => {
     const contactId = j.event.contactId;
     const profile = contactId ? profiles.get(contactId) : null;
-    const touchKey = contactId
-      ? `${contactId}:${j.event.at.slice(0, 10)}`
-      : "";
     const formFilledAt =
       kind === "appointment" && contactId
         ? formDayByContact.get(contactId) || null
@@ -1768,9 +1751,7 @@ export async function pullClientEmailJourneys(
       sendChannel: j.send.channel,
       sendOn: j.sendOn,
       subject: subjectById.get(j.send.id) || null,
-      emailTouchDay: touchKey
-        ? touchDayByContactAt.get(touchKey) || null
-        : null,
+      emailTouchDay: touchDayByEventId[j.event.id] || null,
     };
   });
 

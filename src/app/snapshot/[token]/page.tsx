@@ -58,52 +58,6 @@ type Overview = {
   completed_on: string;
 };
 
-const ICONS: Record<string, React.ReactNode> = {
-  wins: (
-    <>
-      <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0z" />
-      <path d="M5 4H3v1.5a3 3 0 0 0 3 3M19 4h2v1.5a3 3 0 0 1-3 3" />
-    </>
-  ),
-  work: (
-    <>
-      <path d="M9 11l3 3L22 4" />
-      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-    </>
-  ),
-  deliv: (
-    <>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6M9 13h6M9 17h6" />
-    </>
-  ),
-  perf: (
-    <>
-      <path d="M3 3v18h18" />
-      <path d="M7 15l4-4 3 3 5-6" />
-    </>
-  ),
-  leads: (
-    <>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M17 11l2 2 4-4" />
-    </>
-  ),
-  revenue: (
-    <>
-      <path d="M12 1v22" />
-      <path d="M17 6.5A3.5 3.5 0 0 0 13.5 3h-3a3.5 3.5 0 0 0 0 7h3a3.5 3.5 0 0 1 0 7h-3.5A3.5 3.5 0 0 1 6.5 14" />
-    </>
-  ),
-};
-function Icon({ name }: { name: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {ICONS[name]}
-    </svg>
-  );
-}
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
 function ymdLabel(ymd: string): string {
@@ -344,19 +298,41 @@ export default function SnapshotClientPage() {
           <p className="error">{error}</p>
         ) : (
           <>
-            {/* Hero */}
-            <div className="snap-head-row">
-              <div className="hq-hero" style={{ marginBottom: 0 }}>
-                <p className="ops-eyebrow">Weekly snapshot · Week of {weekLabel(week)}{isCurrentWeek(week) ? " · current" : ""}{launchDate ? ` · launched ${ymdLabel(launchDate)}` : ""}</p>
-                <h1>{accountName || "Account snapshot"}</h1>
-                <p>
-                  <b>{glance.delivered}</b> delivered this week, <b>{glance.active}</b> in progress
-                  {glance.wins > 0 ? <>, and <b>{glance.wins} win{glance.wins === 1 ? "" : "s"}</b> to celebrate.</> : "."}
-                  {" "}Prepared by Marketing Empire Group.
+            <header className="snap-hero">
+              <div className="snap-hero-copy">
+                <p className="snap-kicker">
+                  Week of {weekLabel(week)}
+                  {isCurrentWeek(week) ? " · Current" : ""}
+                  {launchDate ? ` · Launched ${ymdLabel(launchDate)}` : ""}
+                </p>
+                <h1>{accountName || "Weekly snapshot"}</h1>
+                <p className="snap-lede">
+                  <b>{glance.delivered}</b> delivered
+                  <span className="snap-dot" aria-hidden="true">
+                    ·
+                  </span>
+                  <b>{glance.active}</b> in progress
+                  {glance.wins > 0 ? (
+                    <>
+                      <span className="snap-dot" aria-hidden="true">
+                        ·
+                      </span>
+                      <b>{glance.wins}</b> win{glance.wins === 1 ? "" : "s"}
+                    </>
+                  ) : null}
+                  {glance.headlineText ? (
+                    <>
+                      <span className="snap-dot" aria-hidden="true">
+                        ·
+                      </span>
+                      {glance.headlineText}
+                    </>
+                  ) : null}
                 </p>
               </div>
-              <div className="snap-week-nav">
+              <div className="snap-week-nav" role="group" aria-label="Week">
                 <button
+                  type="button"
                   onClick={() => setWeek((w) => addWeeks(w, -1))}
                   disabled={!canGoBack}
                   title={canGoBack ? "Previous week" : "This is the first week we logged"}
@@ -364,8 +340,15 @@ export default function SnapshotClientPage() {
                 >
                   ‹
                 </button>
-                <button onClick={() => setWeek(currentWeek())} className="snap-week-today">This week</button>
                 <button
+                  type="button"
+                  onClick={() => setWeek(currentWeek())}
+                  className="snap-week-today"
+                >
+                  This week
+                </button>
+                <button
+                  type="button"
                   onClick={() => setWeek((w) => addWeeks(w, 1))}
                   disabled={!canGoForward}
                   title={canGoForward ? "Next week" : "This is the latest week"}
@@ -374,30 +357,15 @@ export default function SnapshotClientPage() {
                   ›
                 </button>
               </div>
-            </div>
-
-            {/* Pulse bar */}
-            <div className="hq-pulse">
-              <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#1f9d63" }} /><span className="n">{glance.delivered}</span><span className="l">delivered</span></div>
-              <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#04808d" }} /><span className="n">{glance.active}</span><span className="l">in progress</span></div>
-              <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#b8820b" }} /><span className="n">{glance.wins}</span><span className="l">wins</span></div>
-              {glance.headlineText ? (
-                <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#3f5bd6" }} /><span className="n" style={{ fontSize: 14 }}>{glance.headlineText}</span></div>
-              ) : null}
-            </div>
+            </header>
 
             {/* WINS — up top */}
             {wins.length > 0 ? (
               <section className="snap-panel t-wins">
-                <div className="snap-panel-head">
-                  <span className="hq-icon"><Icon name="wins" /></span>
-                  <div><h3 className="hq-card-title">Wins</h3><p className="hq-card-desc">Highlights worth celebrating</p></div>
-                </div>
-                <div className="hq-divider" />
-                <div className="snap-wins2">
+                <header className="snap-sec-head"><h2>Wins</h2></header>
+<div className="snap-wins2">
                   {wins.map((w) => (
                     <div key={w.id} className="snap-win2">
-                      <span className="snap-win2-mark" aria-hidden="true">★</span>
                       <div>
                         <p>{w.body}</p>
                         {w.happened_on ? <span className="snap-win2-date">{w.happened_on}</span> : null}
@@ -411,18 +379,10 @@ export default function SnapshotClientPage() {
             {/* REVENUE ASK — first thing, while we have their attention */}
             {revAsk ? (
               <section className="snap-panel t-revenue">
-                <div className="snap-panel-head">
-                  <span className="hq-icon"><Icon name="revenue" /></span>
-                  <div>
-                    <h3 className="hq-card-title">How did {revAsk.label} go?</h3>
-                    <p className="hq-card-desc">
-                      Tell us your total revenue for the month and we can tie it back to the
-                      work we ran for you
-                    </p>
-                  </div>
-                </div>
-                <div className="hq-divider" />
-                {revAsk.amount !== null && !revEditing ? (
+                <header className="snap-sec-head">
+                  <h2>Revenue · {revAsk.label}</h2>
+                </header>
+{revAsk.amount !== null && !revEditing ? (
                   <div className="snap-rev-done">
                     <p>
                       Thanks. You told us <b>{money(revAsk.amount)}</b> for {revAsk.label}.
@@ -469,25 +429,18 @@ export default function SnapshotClientPage() {
             {/* LEADS — the client answers these */}
             {leads.length > 0 || leadWeeks.length > 0 ? (
               <section className="snap-panel t-leads">
-                <div className="snap-panel-head">
-                  <span className="hq-icon"><Icon name="leads" /></span>
-                  <div>
-                    <h3 className="hq-card-title">Leads we saw come through</h3>
-                    <p className="hq-card-desc">
-                      Tell us which ones turned into business so we can double down on what works
-                    </p>
-                  </div>
+                <header className="snap-sec-head">
+                  <h2>Leads</h2>
                   <select
                     className="snap-lead-scope"
                     aria-label="Which leads to show"
                     value={leadScope}
                     onChange={(e) => setLeadScope(e.target.value as "week" | "all")}
                   >
-                    <option value="week">This week only</option>
-                    <option value="all">All leads</option>
+                    <option value="week">This week</option>
+                    <option value="all">All</option>
                   </select>
-                </div>
-                <div className="hq-divider" />
+                </header>
                 {leadAnswered.total > 0 ? (
                   <p className="snap-lead-tally">
                     <b>{leadAnswered.yes}</b> converted · <b>{leadAnswered.no}</b> did not ·{" "}
@@ -535,15 +488,13 @@ export default function SnapshotClientPage() {
 
             {/* This week's work */}
             <section className="snap-panel t-work">
-              <div className="snap-panel-head">
-                <span className="hq-icon"><Icon name="work" /></span>
-                <div><h3 className="hq-card-title">This week&apos;s work</h3><p className="hq-card-desc">What we moved on this week</p></div>
-              </div>
-              <div className="hq-divider" />
+              <header className="snap-sec-head">
+                <h2>This week</h2>
+              </header>
               {rows.length === 0 ? (
                 <p className="muted" style={{ margin: 0 }}>No deliverables set up yet.</p>
               ) : !anyUpdates ? (
-                <p className="muted" style={{ margin: 0 }}>No updates logged for this week yet. Check back soon.</p>
+                <p className="muted" style={{ margin: 0 }}>No updates logged for this week yet.</p>
               ) : (
                 <div className="stack" style={{ gap: 18 }}>
                   {grouped.map(([category, catRows]) => {
@@ -600,20 +551,18 @@ export default function SnapshotClientPage() {
             {/* Contracted deliverables */}
             {overview.length > 0 ? (
               <section className="snap-panel t-deliv">
-                <div className="snap-panel-head">
-                  <span className="hq-icon"><Icon name="deliv" /></span>
-                  <div><h3 className="hq-card-title">Contracted deliverables</h3><p className="hq-card-desc">Everything in your agreement and where it stands</p></div>
+                <header className="snap-sec-head">
+                  <h2>Contract</h2>
                   <button
+                    type="button"
                     className="snap-toggle"
                     aria-expanded={showDeliverables}
                     onClick={() => setShowDeliverables((v) => !v)}
                   >
-                    {showDeliverables ? "Hide" : `Show all ${overview.length}`}
+                    {showDeliverables ? "Hide" : `Show ${overview.length}`}
                   </button>
-                </div>
+                </header>
                 {showDeliverables ? (
-                <>
-                <div className="hq-divider" />
                 <div className="stack" style={{ gap: 18 }}>
                   {ongoingGroups.map(([category, items]) => (
                     <div key={category} className="snap-group">
@@ -676,25 +625,27 @@ export default function SnapshotClientPage() {
                     </div>
                   ) : null}
                 </div>
-                </>
-                ) : null}
+                ) : (
+                  <p className="muted" style={{ margin: 0 }}>
+                    {overview.length} contracted deliverable
+                    {overview.length === 1 ? "" : "s"} — open when you want the full list.
+                  </p>
+                )}
               </section>
             ) : null}
 
             {/* Performance */}
             {hasMetrics ? (
               <section className="snap-panel t-perf">
-                <div className="snap-panel-head">
-                  <span className="hq-icon"><Icon name="perf" /></span>
-                  <div><h3 className="hq-card-title">Performance</h3><p className="hq-card-desc">The numbers behind the work</p></div>
-                </div>
-                <div className="hq-divider" />
+                <header className="snap-sec-head">
+                  <h2>Performance</h2>
+                </header>
                 <PerfCharts series={metrics} />
               </section>
             ) : null}
 
             <footer className="snap-footer">
-              Prepared by Marketing Empire Group · Week of {weekLabel(week)}
+              Marketing Empire Group · Week of {weekLabel(week)}
             </footer>
           </>
         )}

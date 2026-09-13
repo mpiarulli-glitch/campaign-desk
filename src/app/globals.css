@@ -4071,6 +4071,130 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .snap-rev-done p { margin: 0; font-size: 15px; color: var(--text); }
 .snap-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 
+/* Quiet client snapshot: one clear header, title-only sections, less chrome */
+.snap-client .snap-wrap {
+  gap: 18px;
+  padding-top: 22px;
+}
+.snap-client .snap-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px 28px;
+  flex-wrap: wrap;
+  background: none;
+  color: inherit;
+  border: 0;
+  padding: 4px 0 6px;
+}
+.snap-client .snap-hero-copy {
+  min-width: 0;
+  flex: 1;
+}
+.snap-client .snap-kicker {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.snap-client .snap-hero h1 {
+  margin: 0;
+  font-family: var(--font-head, var(--font));
+  font-size: clamp(1.55rem, 2.4vw, 1.95rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--text);
+  text-shadow: none;
+}
+.snap-client .snap-lede {
+  margin: 10px 0 0;
+  max-width: 46ch;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: var(--text-body, var(--text-muted));
+}
+.snap-client .snap-lede b {
+  color: var(--text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.snap-client .snap-dot {
+  margin: 0 0.35em;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.snap-client .snap-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.snap-client .snap-week-nav button {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+.snap-client .snap-week-nav button:hover:not(:disabled) {
+  border-color: var(--accent, var(--border-strong));
+}
+.snap-client .snap-week-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.snap-client .snap-week-today {
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+.snap-client .snap-panel {
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: none;
+}
+.snap-client .snap-panel::before {
+  display: none;
+}
+.snap-client .snap-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  min-height: 32px;
+}
+.snap-client .snap-sec-head h2 {
+  margin: 0;
+  font-family: var(--font-head, var(--font));
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.snap-client .snap-footer {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.snap-client .snap-win2-mark { display: none; }
+.snap-client .snap-lead-tally,
+.snap-client .snap-lead-scope {
+  font-size: 0.84rem;
+}
+
 /* Show/hide control that sits at the right edge of a panel heading */
 .snap-toggle {
   margin-left: auto;
@@ -17636,6 +17760,41 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   padding: 14px 16px;
   margin-bottom: 16px;
 }
+
+
+.snap-desk-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.snap-desk-filters button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.snap-desk-filters button em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 700;
+}
+.snap-desk-filters button.is-on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+  color: var(--text);
+}
+.snap-desk-lane-head p { display: none; }
 
 .snap-desk-stats {
   grid-template-columns: repeat(4, 1fr);
