@@ -21,8 +21,20 @@ jobs:
   send-reminders:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger reminder run
+      - name: Diagnose Ecoworkz outreach (dry run)
         run: |
+          set -euo pipefail
+          AUTH="Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          BASE="https://hub.marketingempiregroup.com/api/cron/reminders"
+          for TODAY in 2026-08-10 2026-08-14 2026-09-14 2026-09-21 2026-10-12; do
+            echo "===== dryRun only=Ecoworkz today=$TODAY ====="
+            curl -fsS --show-error -X POST \
+              -H "$AUTH" \
+              "$BASE?dryRun=1&only=Ecoworkz&today=$TODAY"
+            echo
+          done
+          echo "===== dryRun only=Ecoworkz (real today) ====="
           curl -fsS --show-error -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://hub.marketingempiregroup.com/api/cron/reminders
+            -H "$AUTH" \
+            "$BASE?dryRun=1&only=Ecoworkz"
+          echo
