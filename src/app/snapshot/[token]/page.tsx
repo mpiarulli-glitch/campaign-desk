@@ -362,8 +362,10 @@ export default function SnapshotClientPage() {
             {/* WINS — up top */}
             {wins.length > 0 ? (
               <section className="snap-panel t-wins">
-                <header className="snap-sec-head"><h2>Wins</h2></header>
-<div className="snap-wins2">
+                <header className="snap-sec-head">
+                  <h2>Wins</h2>
+                </header>
+                <div className="snap-wins2">
                   {wins.map((w) => (
                     <div key={w.id} className="snap-win2">
                       <div>
@@ -382,7 +384,7 @@ export default function SnapshotClientPage() {
                 <header className="snap-sec-head">
                   <h2>Revenue · {revAsk.label}</h2>
                 </header>
-{revAsk.amount !== null && !revEditing ? (
+                {revAsk.amount !== null && !revEditing ? (
                   <div className="snap-rev-done">
                     <p>
                       Thanks. You told us <b>{money(revAsk.amount)}</b> for {revAsk.label}.
