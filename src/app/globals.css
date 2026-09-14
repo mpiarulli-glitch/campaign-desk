@@ -19985,3 +19985,74 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
     max-height: 90vh;
   }
 }
+
+
+/* —— Lifecycle conversion log —— */
+.lh-conversion-log .lh-an-band-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.lh-clog-search {
+  margin: 12px 0 16px;
+}
+
+.lh-clog-search input {
+  width: min(420px, 100%);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  color: var(--text);
+}
+
+.lh-clog-table-wrap {
+  overflow-x: auto;
+}
+
+.lh-clog-table th:nth-child(1),
+.lh-clog-table td:nth-child(1) {
+  white-space: nowrap;
+}
+
+.lh-clog-table th:nth-child(6),
+.lh-clog-table td:nth-child(6) {
+  min-width: 160px;
+}
+
+.lh-clog-type {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 0;
+  color: var(--muted);
+}
+
+.lh-clog-type.is-booked {
+  color: color-mix(in srgb, var(--accent) 80%, white);
+}
+
+.lh-clog-type.is-form {
+  color: color-mix(in srgb, var(--text) 70%, var(--muted));
+}
+
+.lh-clog-subject {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lh-clog-errors {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lh-clog-errors ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}

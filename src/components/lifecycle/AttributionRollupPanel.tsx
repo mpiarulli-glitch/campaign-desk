@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import type { AnalyticsPreset } from "@/lib/ghl-email-analytics";
 import type { AttributionRollup } from "@/lib/email-attribution-rollup";
@@ -136,7 +137,12 @@ export function AttributionRollupPanel({
           </p>
 
           <div className="lh-an-band">
-            <h4 className="lh-an-band-label">Outcomes</h4>
+            <div className="lh-an-band-head">
+              <h4 className="lh-an-band-label">Outcomes</h4>
+              <Link className="lh-link" href="/admin/lifecycle/conversions">
+                Open conversion log
+              </Link>
+            </div>
             <div className="lh-an-metrics" aria-label="Rollup totals">
               <div className="lh-an-metric">
                 <span>Email → booked</span>
