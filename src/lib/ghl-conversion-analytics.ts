@@ -174,6 +174,90 @@ export async function listFormFillEvents(
   start: string,
   end: string
 ): Promise<ConversionEvent[]> {
+  // Prefer Forms Submissions API — real submission timestamps. Tag search
+  // keyed on contact.dateAdded misses existing contacts who fill a form later
+  // (Pacific Coast / Ecoworkz style: 0 of 0 fills while calendars show bookings).
+  try {
+    const fromApi = await listFormSubmissionEvents(locationId, start, end);
+    if (fromApi.length > 0) return fromApi;
+  } catch {
+    // Fall through to tag search when forms.readonly is missing or the API 4xxs.
+  }
+  return listFormFillEventsFromTags(locationId, start, end);
+}
+
+/**
+ * Form fills via GET /forms/submissions (createdAt in range).
+ * One event per contact (latest submission in-window).
+ */
+export async function listFormSubmissionEvents(
+  locationId: string,
+  start: string,
+  end: string
+): Promise<ConversionEvent[]> {
+  const seen = new Map<string, ConversionEvent>();
+  for (let page = 1; page <= 50; page++) {
+    let batch: Array<Record<string, unknown>> = [];
+    let nextPage: number | null = null;
+    try {
+      const res = await ghlRequest<{
+        submissions?: Array<Record<string, unknown>>;
+        meta?: { nextPage?: number | null; total?: number };
+      }>("GET", "/forms/submissions", {
+        locationId,
+        version: "v3",
+        params: {
+          locationId,
+          page,
+          limit: 100,
+          startAt: start,
+          endAt: end,
+        },
+      });
+      batch = res.submissions || [];
+      const metaNext = res.meta?.nextPage;
+      nextPage =
+        typeof metaNext === "number" && Number.isFinite(metaNext)
+          ? metaNext
+          : null;
+    } catch (err) {
+      if (err instanceof GhlError && err.status && err.status >= 400 && err.status < 500) {
+        break;
+      }
+      throw err;
+    }
+    if (batch.length === 0) break;
+    for (const raw of batch) {
+      const contactId = String(raw.contactId || raw.contact_id || "").trim();
+      if (!contactId) continue;
+      const at =
+        ymd(String(raw.createdAt || raw.dateAdded || raw.submittedAt || "")) ||
+        null;
+      if (!inRange(at, start, end)) continue;
+      const id = String(raw.id || raw._id || `formsub:${contactId}:${at}`);
+      const prev = seen.get(contactId);
+      if (!prev || at! > prev.at) {
+        seen.set(contactId, {
+          id: `form:${id}`,
+          contactId,
+          at: at!,
+          kind: "form_fill",
+        });
+      }
+    }
+    if (nextPage == null || nextPage <= page) {
+      if (batch.length < 100) break;
+    }
+  }
+  return [...seen.values()];
+}
+
+/** Legacy tag-based form fills (contact.dateAdded as proxy — often under-counts). */
+async function listFormFillEventsFromTags(
+  locationId: string,
+  start: string,
+  end: string
+): Promise<ConversionEvent[]> {
   const seen = new Map<string, ConversionEvent>();
   for (const tag of FORM_FILL_TAGS) {
     let rows: Array<Record<string, unknown>> = [];
@@ -186,12 +270,19 @@ export async function listFormFillEvents(
       const contact = contactFromRaw(raw);
       if (!contact.id) continue;
       if (!contactHasTag(contact.tags, FORM_FILL_TAGS)) continue;
-      const at = ymd(contact.dateAdded);
-      if (!inRange(at, start, end)) continue;
+      // Prefer dateUpdated when the contact is older than the window but was
+      // touched recently (tag applied / form sync). Still a proxy — submissions
+      // API is authoritative when available.
+      const added = ymd(contact.dateAdded);
+      const updated = ymd(contact.dateUpdated);
+      let at: string | null = null;
+      if (inRange(added, start, end)) at = added;
+      else if (inRange(updated, start, end)) at = updated;
+      if (!at) continue;
       seen.set(contact.id, {
         id: `form:${contact.id}`,
         contactId: contact.id,
-        at: at!,
+        at,
         kind: "form_fill",
       });
     }

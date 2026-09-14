@@ -79,13 +79,15 @@ function isWorkflowLikeSource(source: string): boolean {
  * Campaign / workflow / bulk — not one-off manual sales emails when labeled.
  * When `strict`, unlabeled sources do NOT count (GHL often leaves manual mail blank).
  *
- * Pass `subject` in strict mode: workflow/automation with an empty subject is
- * NOT marketing (GHL often omits subject on appointment confirmations).
+ * Pass `subject` in strict mode. Workflow/automation with an empty subject is
+ * only eligible when `bodyHint` has substantial text (≥40 chars) — GHL often
+ * omits subject on both confirmations and nurture; transactional filtering
+ * happens separately on the full message.
  * Campaign / bulk / broadcast still count without a subject.
  */
 export function isMarketingEmailSource(
   source: unknown,
-  options: { strict?: boolean; subject?: unknown } = {}
+  options: { strict?: boolean; subject?: unknown; bodyHint?: unknown } = {}
 ): boolean {
   const strict = Boolean(options.strict);
   const s = String(source || "").toLowerCase().trim();
@@ -95,10 +97,16 @@ export function isMarketingEmailSource(
 
   if (isWorkflowLikeSource(s)) {
     if (!strict) return true;
-    // Strict: require a non-empty subject. Empty-subject workflow mail is almost
-    // always a confirmation/automation notice, not a blast that drove a booking.
+    // Strict: non-empty subject → eligible (transactional body filtered later).
+    // Empty subject alone is not enough to reject here — GHL Conversations often
+    // omits subject on real nurture workflows too. Callers must still run
+    // transactional + post-form checks on the full message.
     const subject = String(options.subject ?? "").trim();
-    return Boolean(subject);
+    if (subject) return true;
+    // Empty subject: only keep when the caller passes a non-empty body snippet
+    // via options (see isOutboundMarketingTouchMessage). Default deny.
+    const bodyHint = String(options.bodyHint ?? "").trim();
+    return bodyHint.length >= 40;
   }
 
   if (/(manual|one.?off|user|staff|agent)/.test(s) && !/(campaign|workflow)/.test(s)) {
@@ -132,7 +140,15 @@ export function isTransactionalEmailContent(text: unknown): boolean {
   if (/\bconfirm(ation)?\s+(of\s+)?(your\s+)?(booking|appointment|meeting|estimate)\b/.test(s)) {
     return true;
   }
-  if (/\bthanks?(?:\s+you)?\s+for\s+(schedul|book)/.test(s)) return true;
+  // "Thanks for booking your appointment" — not "Thanks for these booking tips".
+  if (
+    /\bthanks?(?:\s+you)?\s+for\s+schedul(?:ing|ed)\b/.test(s) ||
+    /\bthanks?(?:\s+you)?\s+for\s+book(?:ing|ed)\s+(?:your\s+)?(?:appointment|consultation|estimate|meeting|demo|visit|booking)\b/.test(
+      s
+    )
+  ) {
+    return true;
+  }
   if (/\b(reminder|reschedul)/.test(s) && /\b(appointment|consultation|estimate|meeting|booking)\b/.test(s)) {
     return true;
   }
@@ -222,11 +238,24 @@ export function isOutboundMarketingTouchMessage(
 ): boolean {
   if (!isEmailMessage(msg) || !isOutbound(msg.direction)) return false;
   const subject = messageSubject(msg);
-  if (!isMarketingEmailSource(msg.source, { strict: options.strict, subject })) {
+  const bodyText = messageBodyText(msg);
+  const content = messageContentText(msg);
+  // Strip tags for the empty-subject body-length gate (same as transactional).
+  const bodyHint = bodyText
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    !isMarketingEmailSource(msg.source, {
+      strict: options.strict,
+      subject,
+      bodyHint,
+    })
+  ) {
     return false;
   }
   // Workflow confirmations look like marketing by source but did not drive the booking.
-  if (isTransactionalEmailContent(messageContentText(msg))) return false;
+  if (isTransactionalEmailContent(content)) return false;
   const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
   if (isPostFormWorkflowAutomation(msg.source, day, options.formFilledAt)) {
     return false;
