@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   isMarketingEmailSource,
   isOutboundMarketingTouchMessage,
+  isPostFormWorkflowAutomation,
   isTransactionalEmailContent,
   isTransactionalEmailSubject,
+  formFilledAtByContactId,
 } from "../src/lib/ghl-contact-email-touch";
 
 describe("isMarketingEmailSource", () => {
@@ -184,6 +186,116 @@ describe("isOutboundMarketingTouchMessage", () => {
         { strict: true }
       ),
       true
+    );
+  });
+
+  it("rejects post-form workflow mail even with a non-transactional subject (form→email→booked)", () => {
+    const msg = {
+      type: "Email",
+      direction: "outbound",
+      source: "workflow",
+      subject: "Thanks for reaching out",
+      body: "We got your request and will be in touch.",
+      dateAdded: "2026-08-25T16:00:00.000Z",
+    };
+    // Without form context this would look like marketing (non-empty subject).
+    assert.equal(
+      isOutboundMarketingTouchMessage(msg, { strict: true }),
+      true
+    );
+    // With form fill earlier the same day: post-form automation, not a driver.
+    assert.equal(
+      isOutboundMarketingTouchMessage(msg, {
+        strict: true,
+        formFilledAt: "2026-08-25",
+      }),
+      false
+    );
+  });
+
+  it("still counts campaign nurture after a form fill", () => {
+    assert.equal(
+      isOutboundMarketingTouchMessage(
+        {
+          type: "Email",
+          direction: "outbound",
+          source: "campaign",
+          subject: "Three Details That Matter",
+          dateAdded: "2026-08-26T12:00:00.000Z",
+        },
+        { strict: true, formFilledAt: "2026-08-25" }
+      ),
+      true
+    );
+  });
+
+  it("still counts workflow marketing that arrived before the form fill", () => {
+    assert.equal(
+      isOutboundMarketingTouchMessage(
+        {
+          type: "Email",
+          direction: "outbound",
+          source: "workflow",
+          subject: "Solar tips for August",
+          body: "Here are three ways to cut your bill this month.",
+          dateAdded: "2026-08-20T12:00:00.000Z",
+        },
+        { strict: true, formFilledAt: "2026-08-25" }
+      ),
+      true
+    );
+  });
+});
+
+describe("isPostFormWorkflowAutomation", () => {
+  it("flags workflow/automation on or after form day", () => {
+    assert.equal(
+      isPostFormWorkflowAutomation("workflow", "2026-08-25", "2026-08-25"),
+      true
+    );
+    assert.equal(
+      isPostFormWorkflowAutomation("automation", "2026-08-26", "2026-08-25"),
+      true
+    );
+    assert.equal(
+      isPostFormWorkflowAutomation("workflow", "2026-08-24", "2026-08-25"),
+      false
+    );
+    assert.equal(
+      isPostFormWorkflowAutomation("campaign", "2026-08-26", "2026-08-25"),
+      false
+    );
+    assert.equal(
+      isPostFormWorkflowAutomation("workflow", "2026-08-26", null),
+      false
+    );
+  });
+});
+
+describe("formFilledAtByContactId", () => {
+  it("keeps the latest form day per contact", () => {
+    assert.deepEqual(
+      formFilledAtByContactId([
+        {
+          id: "form:a",
+          contactId: "a",
+          at: "2026-08-20",
+          kind: "form_fill",
+        },
+        {
+          id: "form:a2",
+          contactId: "a",
+          at: "2026-08-25",
+          kind: "form_fill",
+        },
+        {
+          id: "appt:a",
+          contactId: "a",
+          at: "2026-08-26",
+          kind: "appointment",
+        },
+      ]),
+      { a: "2026-08-25" }
     );
   });
 });

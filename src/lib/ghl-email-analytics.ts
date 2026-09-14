@@ -26,6 +26,7 @@ import {
 } from "./ghl-conversion-analytics";
 import {
   filterConversionsWithEmailTouch,
+  formFilledAtByContactId,
   filterEventsByTouchLag,
 } from "./ghl-contact-email-touch";
 import {
@@ -910,14 +911,15 @@ export async function pullClientEmailAnalytics(
     })),
   ];
 
-  // Date-proximity alone over-counts (Eric Smith: booked + confirmation email,
-  // no marketing blast). Only credit conversions with a real outbound
+  // Date-proximity alone over-counts (Eric Smith: form → confirmation email →
+  // booked, no marketing blast). Only credit conversions with a real outbound
   // marketing email touch on that contact before the conversion.
+  const formDays = formFilledAtByContactId(formEvents);
   const touch = await filterConversionsWithEmailTouch(
     locationId,
     conversionEvents,
     attributionDays,
-    { strictSource: true }
+    { strictSource: true, formFilledAtByContactId: formDays }
   );
   const attributableEvents = touch.kept;
 
@@ -1164,11 +1166,12 @@ export async function pullClientAttributionSummary(
 
     let attributableEvents = conversionEvents;
     if (requireEmailTouch) {
+      const formDays = formFilledAtByContactId(formEvents);
       const touch = await filterConversionsWithEmailTouch(
         locationId,
         conversionEvents,
         attributionDays,
-        { strictSource: true }
+        { strictSource: true, formFilledAtByContactId: formDays }
       );
       emailTouch = {
         checked: touch.checked,
@@ -1379,19 +1382,20 @@ export async function pullClientAttributionCuts(
       })),
     ];
 
+    const formDays = formFilledAtByContactId(formEvents);
     // Loose touch (unlabeled sources count) at 5d — matches prior "69" scan.
     const looseTouch = await filterConversionsWithEmailTouch(
       locationId,
       conversionEvents,
       5,
-      { strictSource: false }
+      { strictSource: false, formFilledAtByContactId: formDays }
     );
     // Strict touch (unlabeled sources do not count) at 5d.
     const strictTouch = await filterConversionsWithEmailTouch(
       locationId,
       conversionEvents,
       5,
-      { strictSource: true }
+      { strictSource: true, formFilledAtByContactId: formDays }
     );
     emailTouch = {
       checked: looseTouch.checked,
@@ -1694,13 +1698,8 @@ export async function pullClientEmailJourneys(
     appointmentEvents = [];
   }
 
-  const formDayByContact = new Map<string, string>();
-  for (const event of formEvents) {
-    if (!event.contactId) continue;
-    const day = event.at.slice(0, 10);
-    const prev = formDayByContact.get(event.contactId);
-    if (!prev || day > prev) formDayByContact.set(event.contactId, day);
-  }
+  const formDays = formFilledAtByContactId(formEvents);
+  const formDayByContact = new Map(Object.entries(formDays));
 
   const events =
     kind === "form_fill"
@@ -1708,11 +1707,15 @@ export async function pullClientEmailJourneys(
       : appointmentEvents;
 
   // Same honesty gate as the Outcomes tiles: no marketing email touch → no journey.
+  // For bookings, also ignore post-form workflow confirmations (form → email → booked).
   const touch = await filterConversionsWithEmailTouch(
     locationId,
     events,
     attributionDays,
-    { strictSource: true }
+    {
+      strictSource: true,
+      formFilledAtByContactId: kind === "appointment" ? formDays : undefined,
+    }
   );
   const touchDayByEventId = touch.touchDayByEventId;
 
