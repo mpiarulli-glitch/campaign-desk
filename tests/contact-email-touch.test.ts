@@ -30,7 +30,7 @@ describe("isMarketingEmailSource", () => {
     assert.equal(isMarketingEmailSource("broadcast", { strict: true }), true);
   });
 
-  it("rejects empty-subject workflow/automation in strict mode (Eric case)", () => {
+  it("rejects empty-subject workflow/automation without body in strict mode (Eric case)", () => {
     assert.equal(
       isMarketingEmailSource("workflow", { strict: true, subject: "" }),
       false
@@ -45,6 +45,26 @@ describe("isMarketingEmailSource", () => {
     );
     // Non-strict still allows empty-subject workflow (legacy / loose mode).
     assert.equal(isMarketingEmailSource("workflow", { subject: "" }), true);
+  });
+
+  it("allows empty-subject workflow when bodyHint is substantial (GHL omits subject)", () => {
+    assert.equal(
+      isMarketingEmailSource("workflow", {
+        strict: true,
+        subject: "",
+        bodyHint:
+          "Here are three ways to cut your summer energy bill this month.",
+      }),
+      true
+    );
+    assert.equal(
+      isMarketingEmailSource("workflow", {
+        strict: true,
+        subject: "",
+        bodyHint: "short",
+      }),
+      false
+    );
   });
 
   it("still accepts campaign/bulk with empty subject in strict mode", () => {
@@ -116,6 +136,24 @@ describe("isTransactionalEmailContent", () => {
       false
     );
   });
+
+  it("does not flag nurture copy that merely mentions booking tips", () => {
+    assert.equal(
+      isTransactionalEmailContent(
+        "Thanks for these booking tips: three ways to prep your home before we arrive."
+      ),
+      false
+    );
+  });
+
+  it("still flags thanks-for-booking-your-appointment confirmations", () => {
+    assert.equal(
+      isTransactionalEmailContent(
+        "Thanks for booking your appointment. We look forward to meeting you."
+      ),
+      true
+    );
+  });
 });
 
 describe("isOutboundMarketingTouchMessage", () => {
@@ -141,6 +179,30 @@ describe("isOutboundMarketingTouchMessage", () => {
       source: "workflow",
       // GHL Conversations often omits subject entirely on workflow mail.
       snippet: "",
+      dateAdded: "2026-08-25T15:00:00.000Z",
+    };
+    assert.equal(isOutboundMarketingTouchMessage(msg, { strict: true }), false);
+  });
+
+  it("keeps empty-subject workflow nurture with non-transactional body (strict)", () => {
+    const msg = {
+      type: "Email",
+      direction: "outbound",
+      source: "workflow",
+      subject: "",
+      body: "Here are three ways to cut your summer energy bill this month with better insulation.",
+      dateAdded: "2026-08-24T12:00:00.000Z",
+    };
+    assert.equal(isOutboundMarketingTouchMessage(msg, { strict: true }), true);
+  });
+
+  it("still rejects Eric-style empty-subject confirmation even with long transactional body", () => {
+    const msg = {
+      type: "Email",
+      direction: "outbound",
+      source: "workflow",
+      subject: "",
+      body: "Hi Eric, your onsite consultation has been scheduled for Tuesday at 2pm. We look forward to meeting you at the property.",
       dateAdded: "2026-08-25T15:00:00.000Z",
     };
     assert.equal(isOutboundMarketingTouchMessage(msg, { strict: true }), false);
