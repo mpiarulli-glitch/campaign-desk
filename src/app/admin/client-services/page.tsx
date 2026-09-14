@@ -456,6 +456,9 @@ export default function ClientServicesPage() {
   return (
     <div className="app-shell">
       <div className="page-actions">
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
+          How to fill
+        </Link>
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
           Behind report
         </Link>

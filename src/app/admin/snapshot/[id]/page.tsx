@@ -639,6 +639,9 @@ export default function SnapshotEditorPage() {
     <div className="ops-page snap-desk">
       <div className="page-actions">
         <Link className="btn btn-ghost btn-sm" href="/admin/client-services">All accounts</Link>
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
+          How to fill
+        </Link>
         {isAdmin ? (
           <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}/backfill`}>
             6-month backfill

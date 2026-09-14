@@ -13,6 +13,9 @@ export default function SnapshotBackfillPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
           All accounts
         </Link>
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
+          How to fill
+        </Link>
         <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}`}>
           This week
         </Link>

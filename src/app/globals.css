@@ -20217,3 +20217,88 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin: 8px 0 0;
   padding-left: 18px;
 }
+
+/* —— Snapshot instructions —— */
+.snap-instructions .snap-instr-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 4px 0 22px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.snap-instructions .snap-instr-toc a {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.snap-instructions .snap-instr-toc a:hover {
+  color: var(--accent);
+}
+
+.snap-instr-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.snap-instr-card {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated, var(--bg-soft));
+}
+
+.snap-instr-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.snap-instr-card p,
+.snap-instr-card li {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.snap-instr-card ol,
+.snap-instr-card ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snap-instr-card p + ol,
+.snap-instr-card p + ul,
+.snap-instr-card ol + p,
+.snap-instr-card ul + p {
+  margin-top: 12px;
+}
+
+.snap-instr-note {
+  margin-top: 12px !important;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--text-muted) !important;
+  font-size: 0.86rem !important;
+}
+
+.snap-instr-card a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.snap-instr-card a:hover {
+  text-decoration: underline;
+}
