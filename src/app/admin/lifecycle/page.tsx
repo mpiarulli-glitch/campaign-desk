@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AttributionRollupPanel } from "@/components/lifecycle/AttributionRollupPanel";
+import { ConversionLogPanel } from "@/components/lifecycle/ConversionLogPanel";
 import { AutomationsPanel } from "@/components/lifecycle/AutomationsPanel";
 import { ClientHub } from "@/components/lifecycle/ClientHub";
 import { SubjectBankPanel } from "@/components/lifecycle/SubjectBankPanel";
@@ -23,10 +24,12 @@ type Tool =
   | "notes"
   | "report"
   | "tools"
-  | "wins";
+  | "wins"
+  | "conversions";
 
 const TOOLS: Array<{ id: Tool; label: string }> = [
   { id: "wins", label: "Email wins" },
+  { id: "conversions", label: "Conversion log" },
   { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
   { id: "report", label: "Account report" },
@@ -60,7 +63,7 @@ export default function LifecyclePage() {
 
   useEffect(() => {
     // Email wins loads its own GHL scan — skip the heavy Lifecycle tools sync.
-    if (tool && tool !== "wins" && !data) void loadTools();
+    if (tool && tool !== "wins" && tool !== "conversions" && !data) void loadTools();
   }, [tool, data, loadTools]);
 
   useEffect(() => {
@@ -116,6 +119,14 @@ export default function LifecyclePage() {
 
       {tool === null ? <ClientHub /> : null}
 
+      {tool === "conversions" ? (
+        <div className="hud">
+          <div className="hud-page">
+            <ConversionLogPanel />
+          </div>
+        </div>
+      ) : null}
+
       {tool === "wins" ? (
         <div className="hud">
           <div className="hud-page">
@@ -134,9 +145,9 @@ export default function LifecyclePage() {
         </div>
       ) : null}
 
-      {tool && tool !== "wins" && !data ? <p className="lh-empty">Loading…</p> : null}
+      {tool && tool !== "wins" && tool !== "conversions" && !data ? <p className="lh-empty">Loading…</p> : null}
 
-      {tool && tool !== "wins" && data ? (
+      {tool && tool !== "wins" && tool !== "conversions" && data ? (
         <div className="hud">
           <div className="hud-page">
             {tool === "linkedin" ? (
