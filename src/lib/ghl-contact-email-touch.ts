@@ -67,20 +67,40 @@ function isEmailMessage(msg: Record<string, unknown>): boolean {
   return false;
 }
 
+function isCampaignLikeSource(source: string): boolean {
+  return /(campaign|bulk|broadcast|mass|email.?market)/.test(source);
+}
+
+function isWorkflowLikeSource(source: string): boolean {
+  return /(workflow|automation)/.test(source);
+}
+
 /**
  * Campaign / workflow / bulk — not one-off manual sales emails when labeled.
  * When `strict`, unlabeled sources do NOT count (GHL often leaves manual mail blank).
+ *
+ * Pass `subject` in strict mode: workflow/automation with an empty subject is
+ * NOT marketing (GHL often omits subject on appointment confirmations).
+ * Campaign / bulk / broadcast still count without a subject.
  */
 export function isMarketingEmailSource(
   source: unknown,
-  options: { strict?: boolean } = {}
+  options: { strict?: boolean; subject?: unknown } = {}
 ): boolean {
   const strict = Boolean(options.strict);
   const s = String(source || "").toLowerCase().trim();
   if (!s) return !strict;
-  if (/(campaign|workflow|bulk|broadcast|mass|automation|email.?market)/.test(s)) {
-    return true;
+
+  if (isCampaignLikeSource(s)) return true;
+
+  if (isWorkflowLikeSource(s)) {
+    if (!strict) return true;
+    // Strict: require a non-empty subject. Empty-subject workflow mail is almost
+    // always a confirmation/automation notice, not a blast that drove a booking.
+    const subject = String(options.subject ?? "").trim();
+    return Boolean(subject);
   }
+
   if (/(manual|one.?off|user|staff|agent)/.test(s) && !/(campaign|workflow)/.test(s)) {
     return false;
   }
@@ -91,10 +111,15 @@ export function isMarketingEmailSource(
 /**
  * Appointment / form confirmations that go out AFTER someone converts.
  * These often come from workflows, so source alone would look like marketing.
+ * Works on subject, body, snippet, or any combined email text.
  * Example: "Your Onsite Consultation Has Been Scheduled."
  */
-export function isTransactionalEmailSubject(subject: unknown): boolean {
-  const s = String(subject || "").toLowerCase().trim();
+export function isTransactionalEmailContent(text: unknown): boolean {
+  const s = String(text || "")
+    .replace(/<[^>]+>/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
   if (!s) return false;
   if (/\b(has been|is|was)\s+scheduled\b/.test(s)) return true;
   if (/\b(appointment|consultation|estimate|meeting|booking|demo)\b.*\b(schedul|confirm|booked)\b/.test(s)) {
@@ -114,16 +139,99 @@ export function isTransactionalEmailSubject(subject: unknown): boolean {
   return false;
 }
 
+/** Subject-only wrapper; prefers isTransactionalEmailContent for body/snippet too. */
+export function isTransactionalEmailSubject(subject: unknown): boolean {
+  return isTransactionalEmailContent(subject);
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function messageSubject(msg: Record<string, unknown>): string {
   const meta = asRecord(msg.meta);
-  return String(
-    msg.subject ||
-      msg.emailSubject ||
-      msg.title ||
-      msg.name ||
-      (meta && meta.subject) ||
-      ""
+  return pickString(
+    msg.subject,
+    msg.emailSubject,
+    msg.title,
+    msg.name,
+    meta?.subject,
+    meta?.emailSubject
   );
+}
+
+/** Body / snippet / preview text GHL Conversations may return (often instead of subject). */
+function messageBodyText(msg: Record<string, unknown>): string {
+  const meta = asRecord(msg.meta);
+  const parts = [
+    msg.body,
+    msg.text,
+    msg.html,
+    msg.snippet,
+    msg.preview,
+    msg.bodyPreview,
+    msg.emailBody,
+    msg.messageBody,
+    msg.content,
+    msg.message,
+    meta?.body,
+    meta?.text,
+    meta?.html,
+    meta?.snippet,
+    meta?.preview,
+    meta?.bodyPreview,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  return parts.join("\n");
+}
+
+function messageContentText(msg: Record<string, unknown>): string {
+  return [messageSubject(msg), messageBodyText(msg)].filter(Boolean).join("\n");
+}
+
+/**
+ * Form → workflow email → booked: the post-form automation is not a marketing
+ * touch that drove the booking (Eric Smith path). Campaign/bulk after a form
+ * still counts (nurture).
+ */
+export function isPostFormWorkflowAutomation(
+  source: unknown,
+  messageDay: string | null | undefined,
+  formFilledAt: string | null | undefined
+): boolean {
+  const formDay = ymd(formFilledAt);
+  const day = ymd(messageDay);
+  if (!formDay || !day) return false;
+  if (!isWorkflowLikeSource(String(source || "").toLowerCase().trim())) {
+    return false;
+  }
+  return day >= formDay;
+}
+
+/**
+ * Whether an outbound conversation message counts as a real marketing email touch.
+ * Used by attribution and unit tests (Eric Smith empty-subject / form→confirm case).
+ */
+export function isOutboundMarketingTouchMessage(
+  msg: Record<string, unknown>,
+  options: { strict?: boolean; formFilledAt?: string | null } = {}
+): boolean {
+  if (!isEmailMessage(msg) || !isOutbound(msg.direction)) return false;
+  const subject = messageSubject(msg);
+  if (!isMarketingEmailSource(msg.source, { strict: options.strict, subject })) {
+    return false;
+  }
+  // Workflow confirmations look like marketing by source but did not drive the booking.
+  if (isTransactionalEmailContent(messageContentText(msg))) return false;
+  const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
+  if (isPostFormWorkflowAutomation(msg.source, day, options.formFilledAt)) {
+    return false;
+  }
+  return true;
 }
 
 async function findConversationId(
@@ -191,13 +299,16 @@ async function listConversationMessages(
 /**
  * Latest outbound marketing-email day for a contact on/before `onOrBefore`,
  * within `attributionDays`. Null when none found.
+ *
+ * Pass `formFilledAt` for appointment checks so post-form workflow mail
+ * (confirmations) does not count as the marketing touch.
  */
 export async function latestOutboundMarketingEmailDay(
   locationId: string,
   contactId: string,
   onOrBefore: string,
   attributionDays: number,
-  options: { strictSource?: boolean } = {}
+  options: { strictSource?: boolean; formFilledAt?: string | null } = {}
 ): Promise<string | null> {
   const before = ymd(onOrBefore);
   if (!before || !contactId) return null;
@@ -212,13 +323,17 @@ export async function latestOutboundMarketingEmailDay(
   }
 
   const strictSource = Boolean(options.strictSource);
+  const formFilledAt = ymd(options.formFilledAt);
   let best: string | null = null;
   for (const msg of messages) {
-    if (!isEmailMessage(msg) || !isOutbound(msg.direction)) continue;
-    if (!isMarketingEmailSource(msg.source, { strict: strictSource })) continue;
-    // Workflow confirmations ("Your consult has been scheduled") look like
-    // marketing by source but are not an email that drove the booking.
-    if (isTransactionalEmailSubject(messageSubject(msg))) continue;
+    if (
+      !isOutboundMarketingTouchMessage(msg, {
+        strict: strictSource,
+        formFilledAt,
+      })
+    ) {
+      continue;
+    }
     const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
     if (!day || day > before) continue;
     const lag = dayDiff(before, day);
@@ -240,46 +355,67 @@ export type EmailTouchFilterResult = {
 /**
  * Keep only conversions where that contact received an outbound marketing email
  * in the prior attribution window. Events without a contactId are dropped.
+ *
+ * For appointments, pass `formFilledAtByContactId` so form → confirmation
+ * workflow → booked does not count as an email-driven journey.
  */
 export async function filterConversionsWithEmailTouch(
   locationId: string,
   events: ConversionEvent[],
   attributionDays: number,
-  options: { strictSource?: boolean } = {}
+  options: {
+    strictSource?: boolean;
+    /** Latest in-window form day per contact — used for appointment honesty. */
+    formFilledAtByContactId?: Record<string, string>;
+  } = {}
 ): Promise<EmailTouchFilterResult> {
   const withContact = events.filter((e) => Boolean(e.contactId));
   const skippedNoContact = events.length - withContact.length;
   const dayTouch = new Map<string, string | null>();
   const touchDayByEventId: Record<string, string> = {};
+  const formByContact = options.formFilledAtByContactId || {};
 
-  const uniqueDays: Array<{ contactId: string; at: string }> = [];
-  const seenDay = new Set<string>();
+  const uniqueDays: Array<{
+    contactId: string;
+    at: string;
+    formFilledAt: string | null;
+  }> = [];
+  const seenDay = new Map<string, string | null>();
   for (const event of withContact) {
     const contactId = event.contactId as string;
     const at = ymd(event.at);
     if (!at) continue;
-    const key = `${contactId}:${at}`;
+    const formFilledAt =
+      event.kind === "appointment"
+        ? ymd(formByContact[contactId])
+        : null;
+    const key = `${contactId}:${at}:${formFilledAt || ""}`;
     if (seenDay.has(key)) continue;
-    seenDay.add(key);
-    uniqueDays.push({ contactId, at });
+    seenDay.set(key, formFilledAt);
+    uniqueDays.push({ contactId, at, formFilledAt });
   }
 
-  await pooled(uniqueDays, async ({ contactId, at }) => {
+  await pooled(uniqueDays, async ({ contactId, at, formFilledAt }) => {
     const day = await latestOutboundMarketingEmailDay(
       locationId,
       contactId,
       at,
       attributionDays,
-      { strictSource: options.strictSource }
+      { strictSource: options.strictSource, formFilledAt }
     );
-    dayTouch.set(`${contactId}:${at}`, day);
+    dayTouch.set(`${contactId}:${at}:${formFilledAt || ""}`, day);
   });
 
   const kept: ConversionEvent[] = [];
   for (const event of withContact) {
     const at = ymd(event.at);
     if (!at || !event.contactId) continue;
-    const day = dayTouch.get(`${event.contactId}:${at}`) || null;
+    const formFilledAt =
+      event.kind === "appointment"
+        ? ymd(formByContact[event.contactId])
+        : null;
+    const day =
+      dayTouch.get(`${event.contactId}:${at}:${formFilledAt || ""}`) || null;
     if (!day) continue;
     touchDayByEventId[event.id] = day;
     kept.push(event);
@@ -292,6 +428,21 @@ export async function filterConversionsWithEmailTouch(
     touched: kept.length,
     skippedNoContact,
   };
+}
+
+/** Latest form-fill day per contact (YYYY-MM-DD) from conversion events. */
+export function formFilledAtByContactId(
+  formEvents: ConversionEvent[]
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const event of formEvents) {
+    if (!event.contactId || event.kind !== "form_fill") continue;
+    const day = ymd(event.at);
+    if (!day) continue;
+    const prev = out[event.contactId];
+    if (!prev || day > prev) out[event.contactId] = day;
+  }
+  return out;
 }
 
 /** Keep events whose email touch day is within `maxLagDays` of the conversion. */
