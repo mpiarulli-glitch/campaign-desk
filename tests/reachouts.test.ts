@@ -540,3 +540,61 @@ test("a videographer's standing days off block those weekdays", async (t) => {
     assert.deepEqual(unavailableWeekdays(odd), [3], "deduped and bounded");
   });
 });
+
+// After a paused cron, catch-up must reach people on a Tuesday (not an email
+// day). Without catchUp the same sweep would count them as notAFollowupDay.
+test("catchUp reaches clients on a non-follow-up weekday", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-catchup-test-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const { createRevClient, updateRevClient, getRevClient } = await import(
+    "../src/lib/revenue"
+  );
+  const { runReminders, isEmailFollowupDay } = await import("../src/lib/reminders");
+  const { nextWindow } = await import("../src/lib/cadence");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  // Tuesday 2026-09-15 — not Mon/Thu. Red October window is Oct 5–9; reminders
+  // open Sep 14, so they are due today.
+  const today = "2026-09-15";
+  assert.equal(isEmailFollowupDay(today), false, "fixture day must not be an email day");
+
+  const created = createRevClient({
+    name: "Catch Up Co",
+    businessModel: "home_service",
+  });
+  updateRevClient(created.id, {
+    colorWeek: "red",
+    productionCadence: "monthly",
+    productionEnrolled: true,
+    lastProductionDate: "2026-08-31",
+    contactName: "Sam Doe",
+    contactEmail: "sam@catchup.co",
+  });
+
+  const client = getRevClient(created.id)!;
+  const window = nextWindow(client, today);
+  assert.ok(window, "client must have a next window");
+  assert.equal(window!.start, "2026-10-05");
+  assert.ok(today >= "2026-09-14" && today <= window!.end);
+
+  const blocked = await runReminders({ today, dryRun: true });
+  assert.equal(
+    blocked.reachedOut.filter((r) => r.client === "Catch Up Co").length,
+    0,
+    "normal Tuesday sweep must not email Catch Up Co"
+  );
+  assert.ok(blocked.skipped.notAFollowupDay >= 1);
+
+  const caught = await runReminders({ today, dryRun: true, catchUp: true });
+  assert.ok(
+    caught.reachedOut.some((r) => r.client === "Catch Up Co"),
+    "catch-up lifts the weekday gate for Catch Up Co"
+  );
+  assert.equal(caught.skipped.notAFollowupDay, 0);
+});

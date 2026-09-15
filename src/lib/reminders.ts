@@ -456,10 +456,20 @@ export async function runReminders(opts?: {
   // otherwise make a deliberate test silently do nothing. The window and
   // already-booked checks still apply: those are the behaviour under test.
   only?: string;
+  // Catch-up after the daily cron was paused: same window / booked / paused
+  // gates as a normal sweep, but lift the Mon/Thu email and Mon/Wed/Fri
+  // Basecamp weekday schedule so a Tuesday (or any off-day) can still clear
+  // the backlog. Once-per-day still applies, so a second catch-up the same
+  // calendar day will not double-email.
+  catchUp?: boolean;
 }): Promise<ReminderRunResult> {
   const today = opts?.today || todayYmd();
   const dryRun = Boolean(opts?.dryRun);
   const only = (opts?.only || "").trim().toLowerCase();
+  const catchUp = Boolean(opts?.catchUp);
+  // `only` and catch-up both mean "send on this calendar day even if it is not
+  // a normal follow-up weekday."
+  const ignoreWeekday = Boolean(only) || catchUp;
   const forceNewCard = Boolean(only) && Boolean(opts?.newCard);
   const cardOnly = Boolean(opts?.cardOnly);
   const result: ReminderRunResult = {
@@ -588,7 +598,7 @@ export async function runReminders(opts?: {
     // stated here. Targeting one client still lifts it, the same way it lifts
     // the email gates, because a deliberate test that silently does nothing is
     // the opposite of a test.
-    const basecampDayOk = Boolean(only) || isBasecampFollowupDay(today);
+    const basecampDayOk = ignoreWeekday || isBasecampFollowupDay(today);
     if (!dryRun && client.basecamp_project_id && basecampConnected() && basecampDayOk) {
       const existingCard = getReminder(client.id, window.start);
       const bcToken = getOrCreateScheduleToken(client.id);
@@ -677,7 +687,7 @@ export async function runReminders(opts?: {
         // email. Leaving the daily dedupe in place meant a targeted test sent
         // the email and silently posted nothing, which is the opposite of what
         // a test is for.
-        (Boolean(only) ||
+        (ignoreWeekday ||
           (existingCard.bc_last_nudge !== today && isBasecampFollowupDay(today)))
       ) {
         try {
@@ -778,8 +788,9 @@ export async function runReminders(opts?: {
     }
     const rec = getReminder(client.id, window.start);
     // Client emails go out on their follow-up weekdays only, so nobody gets a
-    // weekend nudge and nobody gets more than two in a week.
-    if (!only && !isEmailFollowupDay(today)) {
+    // weekend nudge and nobody gets more than two in a week. Catch-up and
+    // single-client tests lift that gate so a backlog can clear mid-week.
+    if (!ignoreWeekday && !isEmailFollowupDay(today)) {
       skip("notAFollowupDay");
       continue;
     }

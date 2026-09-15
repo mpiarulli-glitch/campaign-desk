@@ -55,12 +55,22 @@ async function handle(request: Request) {
   // ?only=<client id or name> targets one account, for testing the outreach
   // without mailing everybody else.
   const only = url.searchParams.get("only") || undefined;
+  // &catchUp=1 clears a paused-cron backlog on any weekday: same eligibility
+  // as the daily sweep, without the Mon/Thu / Mon/Wed/Fri send-day gates.
+  const catchUp = url.searchParams.get("catchUp") === "1";
   // &newCard=1 forces a fresh Basecamp card. Ignored without ?only=, so it can
   // never create a card for every client at once.
   const newCard = url.searchParams.get("newCard") === "1";
   // &cardOnly=1 does the Basecamp card and sends no email.
   const cardOnly = url.searchParams.get("cardOnly") === "1";
-  const result = await runReminders({ dryRun, only, newCard, cardOnly, today: asOf || undefined });
+  const result = await runReminders({
+    dryRun,
+    only,
+    catchUp,
+    newCard,
+    cardOnly,
+    today: asOf || undefined,
+  });
   if (only) {
     return NextResponse.json({ ...result, targeted: only });
   }

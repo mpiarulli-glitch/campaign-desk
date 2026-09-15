@@ -12,15 +12,33 @@ on:
     # 16:00 UTC daily (~9am Pacific). GitHub may delay scheduled runs a few
     # minutes; that's fine, the job only sends once per client per day.
     - cron: "0 16 * * *"
-  # Lets you trigger a run by hand from the Actions tab to test.
-  workflow_dispatch: {}
+  # Lets you trigger a run by hand from the Actions tab to test or catch up.
+  workflow_dispatch:
+    inputs:
+      catchUp:
+        description: "Clear backlog on any weekday (lift Mon/Thu email and Mon/Wed/Fri Basecamp gates)"
+        type: boolean
+        default: false
+      dryRun:
+        description: "Report who would be reached without sending"
+        type: boolean
+        default: false
 
 jobs:
   send-reminders:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger reminder run
+        env:
+          CATCH_UP: ${{ inputs.catchUp && '1' || '' }}
+          DRY_RUN: ${{ inputs.dryRun && '1' || '' }}
         run: |
+          qs=""
+          if [ "$CATCH_UP" = "1" ]; then qs="${qs:+$qs&}catchUp=1"; fi
+          if [ "$DRY_RUN" = "1" ]; then qs="${qs:+$qs&}dryRun=1"; fi
+          url="https://hub.marketingempiregroup.com/api/cron/reminders"
+          if [ -n "$qs" ]; then url="$url?$qs"; fi
+          echo "POST $url"
           curl -fsS --show-error -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://hub.marketingempiregroup.com/api/cron/reminders
+            "$url"
