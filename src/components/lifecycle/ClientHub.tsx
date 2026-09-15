@@ -476,11 +476,13 @@ function ClientDetail({
   today,
   onChanged,
   canSeeOwnerTools,
+  onOpenTools,
 }: {
   client: HubClient;
   today: string;
   onChanged: () => void;
   canSeeOwnerTools: boolean;
+  onOpenTools?: () => void;
 }) {
   const [launching, setLaunching] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -650,6 +652,16 @@ function ClientDetail({
       </header>
 
       <div className="lh-detail-layout">
+      <EmailAnalyticsPanel
+        key={`email-${client.id}-${analyticsTick}`}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
+        ghlLinked={Boolean(client.ghlLinked)}
+        crmLinked={crmLinked}
+        businessModel={client.businessModel || "home_service"}
+        onOpenTools={onOpenTools}
+      />
+
       <section className="lh-card lh-quota">
         <div className="lh-card-head">
           <h3>Deliverables</h3>
@@ -905,6 +917,7 @@ function ClientDetail({
         clientId={client.id}
         memberIds={client.memberIds || []}
         ghlLinked={Boolean(client.ghlLinked)}
+        onOpenTools={onOpenTools}
       />
 
       <LinkedInAnalyticsPanel
@@ -917,15 +930,6 @@ function ClientDetail({
         key={`crm-${client.id}`}
         clientId={client.id}
         onChange={handleCrmChange}
-      />
-
-      <EmailAnalyticsPanel
-        key={`email-${client.id}-${analyticsTick}`}
-        clientId={client.id}
-        memberIds={client.memberIds || []}
-        ghlLinked={Boolean(client.ghlLinked)}
-        crmLinked={crmLinked}
-        businessModel={client.businessModel || "home_service"}
       />
       </div>
     </div>
@@ -967,7 +971,11 @@ function ActivityRow({
   );
 }
 
-export function ClientHub() {
+export function ClientHub({
+  onOpenTools,
+}: {
+  onOpenTools?: () => void;
+} = {}) {
   const [data, setData] = useState<HubPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -1074,6 +1082,7 @@ export function ClientHub() {
           today={data.today}
           onChanged={() => void load()}
           canSeeOwnerTools={canSeeOwnerTools}
+          onOpenTools={onOpenTools}
         />
       </div>
     );

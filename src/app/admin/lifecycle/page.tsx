@@ -27,9 +27,8 @@ type Tool =
   | "wins"
   | "conversions";
 
+/** Library / ops tools — attribution sits as first-class buttons, not here. */
 const TOOLS: Array<{ id: Tool; label: string }> = [
-  { id: "wins", label: "Email wins" },
-  { id: "conversions", label: "Conversion log" },
   { id: "subjects", label: "Subject lines" },
   { id: "automations", label: "Automations" },
   { id: "report", label: "Account report" },
@@ -77,7 +76,10 @@ export default function LifecyclePage() {
       <header className="lh-page-bar">
         <div>
           <h1>Lifecycle</h1>
-          <p className="muted">What’s owed, what went out, what’s left to launch.</p>
+          <p className="muted">
+            Email cadence, attributed bookings and forms, and what still needs
+            to launch.
+          </p>
         </div>
         <div className="lh-page-bar-right">
           {tool ? (
@@ -96,28 +98,48 @@ export default function LifecyclePage() {
               </button>
             </>
           ) : (
-            <label className="lh-tools-pick">
-              <span className="sr-only">More tools</span>
-              <select
-                value=""
-                onChange={(e) => {
-                  const v = e.target.value as Tool;
-                  if (v) setTool(v);
-                }}
-              >
-                <option value="">More tools</option>
-                {TOOLS.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <>
+              <div className="lh-attr-nav" role="group" aria-label="Attribution">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTool("wins")}
+                >
+                  Email wins
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setTool("conversions")}
+                >
+                  Conversion log
+                </button>
+              </div>
+              <label className="lh-tools-pick">
+                <span className="sr-only">More tools</span>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value as Tool;
+                    if (v) setTool(v);
+                  }}
+                >
+                  <option value="">More tools</option>
+                  {TOOLS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
           )}
         </div>
       </header>
 
-      {tool === null ? <ClientHub /> : null}
+      {tool === null ? (
+        <ClientHub onOpenTools={() => setTool("tools")} />
+      ) : null}
 
       {tool === "conversions" ? (
         <div className="hud">

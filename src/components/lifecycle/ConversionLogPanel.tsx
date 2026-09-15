@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import type { AnalyticsPreset, EmailJourneyKind } from "@/lib/ghl-email-analytics";
 import type { ConversionLog, ConversionLogRow } from "@/lib/conversion-log";
+import {
+  attributionHonestyLine,
+  attributionPortfolioNote,
+} from "@/lib/attribution-copy";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
   { id: "1m", label: "1 mo" },
@@ -168,8 +172,8 @@ export function ConversionLogPanel() {
       {!data && !loading && !error ? (
         <p className="lh-card-note">
           Loads email-attributed conversions from every GHL-linked Lifecycle
-          account. Same honesty rules as Email wins — confirmation-only paths
-          stay out. First run can take a few minutes.
+          account. {attributionPortfolioNote()} First run can take a few
+          minutes.
         </p>
       ) : null}
 
@@ -184,10 +188,9 @@ export function ConversionLogPanel() {
       {data ? (
         <div className="lh-an-body">
           <p className="lh-an-accuracy">
-            Only conversions with a real outbound marketing email on the contact
-            within {data.attributionDays} days. Source is the credited campaign
-            or flow send — not landing-page URL or HDYHAU (Campaign Desk does not
-            store those).
+            {attributionHonestyLine(data.attributionDays)} Source is the credited
+            campaign or flow send — not landing-page URL or HDYHAU (Campaign Desk
+            does not store those).
           </p>
 
           <div className="lh-an-band">

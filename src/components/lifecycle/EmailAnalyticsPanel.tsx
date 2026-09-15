@@ -14,6 +14,10 @@ import {
   isGhlCampaignNotYetSent,
 } from "@/lib/ghl-email-campaign-status";
 import { buildEmailRecommendations } from "@/lib/email-analytics-tips";
+import {
+  attributionHonestyLine,
+  attributionJourneySubtitle,
+} from "@/lib/attribution-copy";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
   { id: "1m", label: "1 mo" },
@@ -87,12 +91,14 @@ export function EmailAnalyticsPanel({
   ghlLinked,
   crmLinked = false,
   businessModel = "home_service",
+  onOpenTools,
 }: {
   clientId: string;
   memberIds?: string[];
   ghlLinked: boolean;
   crmLinked?: boolean;
   businessModel?: "ecomm" | "b2b" | "home_service";
+  onOpenTools?: () => void;
 }) {
   const commerceClient = businessModel === "ecomm";
   const [preset, setPreset] = useState<AnalyticsPreset>("1m");
@@ -226,9 +232,17 @@ export function EmailAnalyticsPanel({
           <h3>Email & revenue</h3>
         </div>
         <p className="lh-card-note">
-          Link GoHighLevel from Lifecycle → Tools, or connect Housecall Pro /
-          HubSpot above, to pull conversion stats.
+          Link GoHighLevel to pull forms, bookings, and send health for this
+          account. You can also connect Housecall Pro or HubSpot under
+          Integrations.
         </p>
+        {onOpenTools ? (
+          <p className="lh-card-actions">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenTools}>
+              Link GoHighLevel
+            </button>
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -440,10 +454,8 @@ export function EmailAnalyticsPanel({
               </>
             ) : (
               <>
-                Forms and bookings only count when that contact got a marketing
-                email within {data.attributionDays} days before converting —
-                appointment confirmations do not count. Opens and clicks use sent
-                campaigns only
+                {attributionHonestyLine(data.attributionDays)} Opens and clicks
+                use sent campaigns only
                 {scheduledCount > 0
                   ? ` · ${scheduledCount} scheduled excluded`
                   : ""}
@@ -670,10 +682,7 @@ function JourneyPanel({
         <header className="lh-an-section-head">
           <div>
             <h4 id={titleId}>{title}</h4>
-            <p className="lh-card-note">
-              Last email before the{" "}
-              {kind === "appointment" ? "booking" : "form fill"}.
-            </p>
+            <p className="lh-card-note">{attributionJourneySubtitle(kind)}</p>
           </div>
           <button
             type="button"

@@ -15800,6 +15800,17 @@ button.am-node:hover .am-edit-cue,
   gap: 8px;
 }
 
+.lh-attr-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lh-card-actions {
+  margin: 10px 0 0;
+}
+
 .lh-tools-pick select {
   appearance: none;
   border: 1px solid var(--border);

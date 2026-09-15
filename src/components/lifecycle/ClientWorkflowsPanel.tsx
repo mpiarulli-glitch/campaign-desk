@@ -33,10 +33,12 @@ export function ClientWorkflowsPanel({
   clientId,
   memberIds = [],
   ghlLinked,
+  onOpenTools,
 }: {
   clientId: string;
   memberIds?: string[];
   ghlLinked: boolean;
+  onOpenTools?: () => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -98,10 +100,18 @@ export function ClientWorkflowsPanel({
       </div>
 
       {!ghlLinked ? (
-        <p className="lh-card-note">
-          Link a GoHighLevel location from Lifecycle → Tools to pull live workflows for this
-          account.
-        </p>
+        <>
+          <p className="lh-card-note">
+            Link a GoHighLevel location to pull live workflows for this account.
+          </p>
+          {onOpenTools ? (
+            <p className="lh-card-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenTools}>
+                Link GoHighLevel
+              </button>
+            </p>
+          ) : null}
+        </>
       ) : error ? (
         <>
           <h4 className="lh-subhead">Live in GoHighLevel</h4>

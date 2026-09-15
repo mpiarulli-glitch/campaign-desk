@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 import type { AnalyticsPreset } from "@/lib/ghl-email-analytics";
 import type { AttributionRollup } from "@/lib/email-attribution-rollup";
+import {
+  attributionHonestyLine,
+  attributionPortfolioNote,
+} from "@/lib/attribution-copy";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
   { id: "1m", label: "1 mo" },
@@ -116,8 +120,8 @@ export function AttributionRollupPanel({
 
       {!data && !loading && !error ? (
         <p className="lh-card-note">
-          Scans every GHL-linked Lifecycle account. First run can take a few
-          minutes.
+          Scans every GHL-linked Lifecycle account. {attributionPortfolioNote()}{" "}
+          First run can take a few minutes.
         </p>
       ) : null}
 
@@ -131,9 +135,9 @@ export function AttributionRollupPanel({
       {data ? (
         <div className="lh-an-body">
           <p className="lh-an-accuracy">
-            Credit goes to the last campaign or flow send within{" "}
-            {data.attributionDays} days of the booking or form fill. Scheduled
-            sends with no real mail volume stay out of the totals.
+            {attributionHonestyLine(data.attributionDays)} Credit goes to the
+            last campaign or flow send. Scheduled sends with no real mail volume
+            stay out of the totals.
           </p>
 
           <div className="lh-an-band">
