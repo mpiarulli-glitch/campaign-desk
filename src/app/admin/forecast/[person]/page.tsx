@@ -2162,6 +2162,7 @@ export default function PersonForecastPage() {
     patch: { dueOn?: string | null; repeat?: "once" | "weekly" | "monthly" }
   ) {
     setTasksBusyId(todo.id);
+    const repeatKey = todo.kind === "step" && todo.parentId ? todo.parentId : todo.id;
     if (Object.prototype.hasOwnProperty.call(patch, "dueOn")) {
       setAssigned((a) => ({
         ...a,
@@ -2169,6 +2170,16 @@ export default function PersonForecastPage() {
           row.id === todo.id ? { ...row, dueOn: patch.dueOn ?? null } : row
         ),
       }));
+    }
+    if (patch.repeat) {
+      setAssigned((a) => {
+        const repeats = { ...(a.repeats || {}) };
+        if (patch.repeat === "once") delete repeats[repeatKey];
+        else if (patch.repeat === "weekly" || patch.repeat === "monthly") {
+          repeats[repeatKey] = patch.repeat;
+        }
+        return { ...a, repeats };
+      });
     }
     const res = await fetch("/api/forecast/assignments", {
       method: "PATCH",
@@ -3242,7 +3253,7 @@ export default function PersonForecastPage() {
             )}
             {view === "tasks" ? (
               <p className="ops-sub">
-                Everything Basecamp has assigned to you. Check one off, or schedule it onto this week.
+                Open Basecamp work. Tick it off, change the date, or plan it onto a week.
               </p>
             ) : null}
           </div>

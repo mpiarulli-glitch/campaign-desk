@@ -1788,6 +1788,102 @@ export async function updateAssignmentDue(input: {
   }
 }
 
+function todoPutBodyFromGet(
+  todo: {
+    content?: string;
+    title?: string;
+    description?: unknown;
+    assignees?: Array<{ id?: number }>;
+    due_on?: string | null;
+    starts_on?: string | null;
+    parent?: { id?: number };
+  },
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> | { error: string } {
+  const content = (todo.content || todo.title || "").trim();
+  if (!content) return { error: "That to-do has no title to preserve." };
+  const payload: Record<string, unknown> = {
+    content,
+    description: typeof todo.description === "string" ? todo.description : "",
+    assignee_ids: Array.isArray(todo.assignees)
+      ? todo.assignees.map((a) => a.id).filter(Boolean)
+      : [],
+    due_on: todo.due_on || null,
+    ...extra,
+  };
+  if (todo.starts_on) payload.starts_on = todo.starts_on;
+  return payload;
+}
+
+function recurrenceScheduleFor(
+  frequency: "weekly" | "monthly" | "once",
+  dueOn: string | null
+): Record<string, unknown> | null {
+  if (frequency === "once") return null;
+  if (frequency === "weekly") return { frequency: "every_week" };
+  const day = dueOn && /^\d{4}-\d{2}-\d{2}$/.test(dueOn) ? Number(dueOn.slice(8, 10)) : 0;
+  return day
+    ? { frequency: "every_month", days: [day] }
+    : { frequency: "every_month" };
+}
+
+/**
+ * Try to set Basecamp's own Repeat on a to-do. Their public docs don't list
+ * this field; schedule entries use `recurrence_schedule`, so we send the same
+ * shape. If Basecamp ignores it, Forecast still stores the cadence locally
+ * and opens the next to-do when this one is completed.
+ */
+export async function trySetTodoRecurrence(input: {
+  projectId: string;
+  id: string;
+  frequency: "weekly" | "monthly" | "once";
+  dueOn?: string | null;
+  identity?: BcIdentity;
+}): Promise<{ applied: boolean; title?: string; listId?: string }> {
+  const identity = input.identity ?? SERVICE;
+  const projectId = input.projectId.trim();
+  const id = input.id.trim();
+  if (!projectId || !id) return { applied: false };
+  try {
+    const get = await bc(`/buckets/${projectId}/todos/${id}.json`, undefined, identity);
+    if (!get.ok) return { applied: false };
+    const todo = await get.json();
+    const extra = {
+      recurrence_schedule: recurrenceScheduleFor(
+        input.frequency,
+        input.dueOn || todo.due_on || null
+      ),
+    };
+    const payload = todoPutBodyFromGet(todo, extra);
+    if ("error" in payload) return { applied: false };
+    const put = await bc(
+      `/buckets/${projectId}/todos/${id}.json`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      identity
+    );
+    if (!put.ok) return { applied: false, title: (todo.content || todo.title || "").trim() };
+    const saved = await put.json().catch(() => todo);
+    const listId =
+      saved?.parent?.id != null
+        ? String(saved.parent.id)
+        : todo.parent?.id != null
+          ? String(todo.parent.id)
+          : "";
+    const applied = Boolean(
+      saved?.recurrence_schedule?.frequency ||
+        saved?.recurrence?.frequency ||
+        saved?.repeating
+    );
+    return {
+      applied,
+      title: (saved?.content || saved?.title || todo.content || "").trim(),
+      listId,
+    };
+  } catch {
+    return { applied: false };
+  }
+}
+
 // Create a card in the project's card table, in the "In progress" column
 // (falls back to the first column if none matches). If assigneeIds are given,
 // the card is assigned to those people via a follow-up update (the create

@@ -37,17 +37,10 @@ function dueTone(
   return "soon";
 }
 
-function dueText(dueOn: string | null, today: string): string {
-  if (!dueOn) return "No date";
-  if (dueOn < today) return `Overdue · ${shortDate(dueOn)}`;
-  if (dueOn === today) return "Due today";
-  return `Due ${shortDate(dueOn)}`;
-}
-
-function repeatLabel(repeat: TodoRepeat): string {
-  if (repeat === "weekly") return "Weekly";
-  if (repeat === "monthly") return "Monthly";
-  return "One-time";
+function dueDisplay(dueOn: string | null, today: string): string {
+  if (!dueOn) return "Date";
+  if (dueOn === today) return "Today";
+  return shortDate(dueOn);
 }
 
 function repeatOf(
@@ -252,6 +245,10 @@ export function ForecastTasksPanel({
                       todo.kind === "step" && todo.parentTitle
                         ? todo.parentTitle
                         : todo.list || "";
+                    const planned =
+                      forecast && !forecast.completed
+                        ? weekdayButtonLabel(forecast.taskDate)
+                        : "";
 
                     return (
                       <li
@@ -260,8 +257,6 @@ export function ForecastTasksPanel({
                           "fc-tasks-row",
                           forecast?.completed ? "is-done" : "",
                           picking ? "is-picking" : "",
-                          tone === "late" ? "is-late" : "",
-                          tone === "today" ? "is-today" : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
@@ -288,20 +283,11 @@ export function ForecastTasksPanel({
                               title="Open in Basecamp"
                             >
                               {todo.title}
-                              <span className="fc-tasks-ext" aria-hidden="true">
-                                ↗
-                              </span>
                             </a>
                             {todo.kind === "step" ? (
                               <span className="fc-queue-tag">subtask</span>
                             ) : todo.kind === "card" ? (
                               <span className="fc-queue-tag">card</span>
-                            ) : null}
-                            {repeat !== "once" ? (
-                              <span className="fc-tasks-on">{repeatLabel(repeat)}</span>
-                            ) : null}
-                            {booked ? (
-                              <span className="fc-tasks-on">On forecast</span>
                             ) : null}
                           </div>
                           <div className="fc-tasks-meta">
@@ -311,76 +297,67 @@ export function ForecastTasksPanel({
                               </span>
                             ) : null}
                             {context ? <span>{context}</span> : null}
-                            {forecast && !forecast.completed ? (
-                              <span>
-                                Planned {weekdayButtonLabel(forecast.taskDate)}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="fc-tasks-edit">
-                            <label className="fc-tasks-field">
-                              <span>Due</span>
-                              <input
-                                type="date"
-                                value={todo.dueOn || ""}
-                                disabled={rowBusy}
-                                aria-label={`Due date for ${todo.title}`}
-                                onChange={(e) =>
-                                  onUpdate(todo, {
-                                    dueOn: e.target.value || null,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="fc-tasks-field">
-                              <span>Repeat</span>
-                              <select
-                                value={repeat}
-                                disabled={rowBusy || (!todo.dueOn && repeat === "once")}
-                                aria-label={`Repeat for ${todo.title}`}
-                                onChange={(e) => {
-                                  const next = e.target.value;
-                                  if (!isTodoRepeat(next)) return;
-                                  onUpdate(todo, { repeat: next });
-                                }}
-                              >
-                                <option value="once">One-time</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly">Monthly</option>
-                              </select>
-                            </label>
                           </div>
                         </div>
 
-                        <div className="fc-tasks-side">
-                          <span className={`fc-tasks-due is-${tone}`}>
-                            {dueText(todo.dueOn, today)}
+                        <label className={`fc-tasks-due-edit is-${tone}`}>
+                          <span aria-hidden="true">
+                            {dueDisplay(todo.dueOn, today)}
                           </span>
-                          {booked ? (
-                            <span className="fc-tasks-scheduled-label">
-                              Scheduled
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              className="fc-tasks-schedule"
-                              disabled={rowBusy}
-                              aria-expanded={picking}
-                              onClick={() => {
-                                setPickerWeek(0);
-                                setPickerFor((id) =>
-                                  id === todo.id ? null : todo.id
-                                );
-                              }}
-                            >
-                              {schedulingId === todo.id
-                                ? "Scheduling…"
-                                : picking
-                                  ? "Cancel"
-                                  : "Schedule"}
-                            </button>
-                          )}
-                        </div>
+                          <input
+                            type="date"
+                            value={todo.dueOn || ""}
+                            disabled={rowBusy}
+                            aria-label={`Due date for ${todo.title}`}
+                            onChange={(e) =>
+                              onUpdate(todo, {
+                                dueOn: e.target.value || null,
+                              })
+                            }
+                          />
+                        </label>
+
+                        <select
+                          className={`fc-tasks-repeat ${repeat !== "once" ? "is-on" : ""}`}
+                          value={repeat}
+                          disabled={rowBusy || (!todo.dueOn && repeat === "once")}
+                          title="Forecast opens the next to-do when you complete this. Basecamp does not let apps set its Repeat control."
+                          aria-label={`Repeat for ${todo.title}`}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            if (!isTodoRepeat(next)) return;
+                            onUpdate(todo, { repeat: next });
+                          }}
+                        >
+                          <option value="once">Once</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+
+                        {booked ? (
+                          <span className="fc-tasks-booked" title="Already on the forecast">
+                            {planned || "Planned"}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="fc-tasks-schedule"
+                            disabled={rowBusy}
+                            aria-expanded={picking}
+                            onClick={() => {
+                              setPickerWeek(0);
+                              setPickerFor((id) =>
+                                id === todo.id ? null : todo.id
+                              );
+                            }}
+                          >
+                            {schedulingId === todo.id
+                              ? "…"
+                              : picking
+                                ? "Close"
+                                : "Plan"}
+                          </button>
+                        )}
 
                         {picking && !booked ? (
                           <div
@@ -586,6 +563,7 @@ function NewTodoForm({
               const next = e.target.value;
               if (isTodoRepeat(next)) setRepeat(next);
             }}
+            title="Forecast opens the next to-do when you complete this. Basecamp does not let apps set its Repeat control."
             disabled={!dueOn && repeat === "once"}
           >
             <option value="once">One-time</option>

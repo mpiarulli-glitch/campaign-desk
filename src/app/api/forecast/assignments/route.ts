@@ -7,6 +7,7 @@ import {
   hasConnection,
   listMyAssignments,
   OPS_TODOLIST_NAME,
+  trySetTodoRecurrence,
   updateAssignmentDue,
 } from "@/lib/basecamp";
 import { getConnection } from "@/lib/basecamp-identity";
@@ -180,6 +181,24 @@ export async function POST(request: Request) {
       listId: created.listId,
       assigneeId: conn.bc_person_id,
     });
+    const attempted = await trySetTodoRecurrence({
+      projectId: resolved.projectId,
+      id: created.todoId,
+      frequency: repeat,
+      dueOn,
+      identity: asPerson(person),
+    });
+    return NextResponse.json(
+      {
+        ok: true,
+        todoId: created.todoId,
+        todoUrl: created.todoUrl,
+        dueOn,
+        repeat,
+        basecampRepeat: attempted.applied,
+      },
+      { status: 201 }
+    );
   }
 
   return NextResponse.json(
@@ -275,10 +294,25 @@ export async function PATCH(request: Request) {
     });
   }
 
+  let basecampRepeat = false;
+  if (kind === "todo" && (repeat === "weekly" || repeat === "monthly")) {
+    const attempted = await trySetTodoRecurrence({
+      projectId,
+      id,
+      frequency: repeat,
+      dueOn: dueSent ? dueOn ?? null : undefined,
+      identity,
+    });
+    basecampRepeat = attempted.applied;
+    title = attempted.title || title;
+    listId = attempted.listId || listId;
+  }
+
   const stored = getRepeat(projectId, repeatId);
   return NextResponse.json({
     ok: true,
     dueOn: dueSent ? dueOn ?? null : undefined,
     repeat: stored?.frequency || "once",
+    basecampRepeat,
   });
 }

@@ -8186,19 +8186,14 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .fc-tasks {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 .fc-tasks-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow);
+  gap: 8px 12px;
 }
 .fc-tasks-controls {
   display: flex;
@@ -8286,43 +8281,31 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   border-radius: var(--radius);
   background: var(--bg-elevated);
   overflow: hidden;
-  box-shadow: var(--shadow);
 }
 .fc-tasks-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) 4.4rem 4.4rem 7.2rem;
   grid-template-areas:
-    "check main side"
-    "picker picker picker";
-  gap: 6px 12px;
+    "check main due repeat action"
+    "picker picker picker picker picker";
+  column-gap: 10px;
+  row-gap: 8px;
   align-items: center;
-  padding: 12px 14px;
+  padding: 9px 12px;
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);
-  transition: background 0.12s ease;
 }
 .fc-tasks-row:first-child { border-top: none; }
-.fc-tasks-row:hover { background: color-mix(in srgb, var(--bg-soft) 55%, var(--bg-elevated)); }
-.fc-tasks-row.is-late {
-  background: color-mix(in srgb, var(--danger-wash) 42%, var(--bg-elevated));
-}
-.fc-tasks-row.is-late:hover {
-  background: color-mix(in srgb, var(--danger-wash) 58%, var(--bg-elevated));
-}
-.fc-tasks-row.is-today {
-  background: color-mix(in srgb, var(--warning-wash) 35%, var(--bg-elevated));
-}
+.fc-tasks-row:hover { background: color-mix(in srgb, var(--bg-soft) 40%, var(--bg-elevated)); }
 .fc-tasks-row.is-picking {
-  background: color-mix(in srgb, var(--accent-wash) 70%, var(--bg-elevated));
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--accent-wash) 45%, var(--bg-elevated));
 }
-.fc-tasks-row.is-done { opacity: 0.52; }
+.fc-tasks-row.is-done { opacity: 0.5; }
 .fc-tasks-row.is-done .fc-tasks-title { text-decoration: line-through; }
 .fc-tasks-check {
   grid-area: check;
   display: flex;
   align-items: center;
-  padding-top: 1px;
 }
 .fc-tasks-check input {
   margin: 0;
@@ -8339,28 +8322,17 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   gap: 6px 8px;
 }
 .fc-tasks-title {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   max-width: 100%;
-  font-size: 14px;
-  font-weight: 650;
+  font-size: 13.5px;
+  font-weight: 600;
   line-height: 1.35;
   color: var(--text);
   text-decoration: none;
 }
-a.fc-tasks-title:hover {
-  color: var(--accent-ink);
-}
-a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
-.fc-tasks-ext {
-  flex: none;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent-ink);
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
+a.fc-tasks-title:hover { color: var(--accent-ink); }
 .fc-tasks-on {
   font-size: 10.5px;
   font-weight: 700;
@@ -8374,102 +8346,109 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
   flex-wrap: wrap;
   align-items: center;
   gap: 0;
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 1px;
+  font-size: 11.5px;
   color: var(--text-muted);
-  line-height: 1.35;
+  line-height: 1.3;
 }
 .fc-tasks-meta > span:not(:last-child)::after {
   content: "·";
-  margin: 0 7px;
+  margin: 0 6px;
   color: var(--border-strong);
 }
-.fc-tasks-client { color: var(--text-body); font-weight: 600; }
-.fc-tasks-side {
-  grid-area: side;
+.fc-tasks-client { color: var(--text-body); font-weight: 550; }
+.fc-tasks-due-edit {
+  grid-area: due;
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  min-width: 7.5rem;
-}
-.fc-tasks-due {
-  display: inline-flex;
   align-items: center;
-  max-width: 100%;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-  background: var(--bg-soft);
+  justify-content: flex-end;
+  min-width: 0;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 650;
   color: var(--text-muted);
+  cursor: pointer;
 }
-.fc-tasks-due.is-late {
-  background: var(--danger-wash);
-  color: var(--danger-ink);
+.fc-tasks-due-edit span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.fc-tasks-due.is-today {
-  background: var(--warning-wash);
-  color: var(--warning-ink);
+.fc-tasks-due-edit.is-late { color: var(--danger-ink); }
+.fc-tasks-due-edit.is-today { color: var(--warning-ink); }
+.fc-tasks-due-edit.is-soon { color: var(--text-body); }
+.fc-tasks-due-edit.is-muted { font-weight: 550; }
+.fc-tasks-due-edit input[type="date"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  width: 100%;
 }
-.fc-tasks-due.is-soon {
-  background: color-mix(in srgb, var(--accent-wash) 80%, var(--bg-soft));
-  color: var(--accent-ink);
-}
-.fc-tasks-due.is-muted {
+.fc-tasks-due-edit:hover span { color: var(--accent-ink); }
+.fc-tasks-repeat {
+  grid-area: repeat;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-weight: 600;
-  padding-right: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  text-align: right;
+  cursor: pointer;
 }
-.fc-tasks-schedule {
-  appearance: none;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--bg-elevated);
+.fc-tasks-repeat.is-on {
   color: var(--text-body);
+  font-weight: 650;
+}
+.fc-tasks-repeat:hover:not(:disabled) { color: var(--accent-ink); }
+.fc-tasks-repeat:disabled { opacity: 0.45; cursor: default; }
+.fc-tasks-schedule {
+  grid-area: action;
+  appearance: none;
+  justify-self: end;
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
   font: inherit;
   font-size: 12px;
   font-weight: 650;
-  line-height: 1;
-  padding: 6px 10px;
+  padding: 4px 0;
   cursor: pointer;
   white-space: nowrap;
 }
-.fc-tasks-schedule:hover {
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  background: var(--accent-wash);
-}
+.fc-tasks-schedule:hover { text-decoration: underline; }
 .fc-tasks-schedule:disabled {
   opacity: 0.5;
   cursor: default;
+  text-decoration: none;
 }
-.fc-tasks-row.is-picking .fc-tasks-schedule {
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  background: var(--accent-wash);
-}
-.fc-tasks-scheduled-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-muted);
+.fc-tasks-row.is-picking .fc-tasks-schedule { color: var(--text-muted); }
+.fc-tasks-booked {
+  grid-area: action;
+  justify-self: end;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 6px 2px;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-muted);
+  text-align: right;
 }
 .fc-tasks-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-.fc-tasks-edit {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 8px;
 }
 .fc-tasks-field {
   display: flex;
@@ -8503,7 +8482,6 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-elevated);
-  box-shadow: var(--shadow);
 }
 .fc-tasks-composer-title {
   font-size: 13px;
@@ -8577,20 +8555,16 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
 
 @media (max-width: 720px) {
   .fc-tasks-row {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 18px minmax(0, 1fr) auto;
     grid-template-areas:
-      "check main"
-      "side side"
-      "picker picker";
-    align-items: start;
-  }
-  .fc-tasks-side {
-    flex-direction: row;
+      "check main action"
+      "due due repeat"
+      "picker picker picker";
     align-items: center;
-    justify-content: space-between;
-    min-width: 0;
-    padding-left: 27px;
   }
+  .fc-tasks-due-edit,
+  .fc-tasks-repeat { justify-content: flex-start; text-align: left; }
+  .fc-tasks-title { white-space: normal; }
 }
 
 /* -------------------------------------------------- edit a calendar block */
