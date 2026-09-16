@@ -91,6 +91,7 @@ export const CLIENT_APPROVAL_STATUSES = [
   "approved",
   "scheduled",
   "sent",
+  "live",
 ] as const;
 
 /**

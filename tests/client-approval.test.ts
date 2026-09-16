@@ -167,11 +167,14 @@ test("review follow-up asks the client to look, and mentions them when it can", 
   assert.match(html, /Approve and notify email team/);
 });
 
-test("only a LinkedIn-only package uses the outreach approval note", () => {
+test("only LinkedIn-only or blog-only packages leave the email approval note", () => {
   assert.equal(approvalChannelForAssets(["linkedin"]), "linkedin");
   assert.equal(approvalChannelForAssets(["linkedin", "linkedin"]), "linkedin");
+  assert.equal(approvalChannelForAssets(["blog"]), "blog");
+  assert.equal(approvalChannelForAssets(["blog", "blog"]), "blog");
   assert.equal(approvalChannelForAssets(["email"]), "email");
   assert.equal(approvalChannelForAssets(["linkedin", "email"]), "email");
+  assert.equal(approvalChannelForAssets(["blog", "email"]), "email");
   assert.equal(approvalChannelForAssets([]), "email");
 });
 
@@ -238,6 +241,16 @@ test("campaigns list has a LinkedIn kind tab", () => {
   assert.match(page, /campaignMatchesKind/);
   assert.match(page, /kf\.value === "linkedin"/);
   assert.match(page, /searchParams\.set\("kind"/);
+  assert.match(page, /kindScope === "blog" \|\| kindScope === "interactive"/);
+});
+
+test("blog-scoped new campaign page only offers blog posts", () => {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const path = require("node:path") as typeof import("node:path");
+  const page = fs.readFileSync(path.join("src/app/admin/new/page.tsx"), "utf8");
+  assert.match(page, /kindChoices/);
+  assert.match(page, /blogOnly/);
+  assert.match(page, /assetKindsForCampaignScope/);
 });
 
 test("LinkedIn review follow-up talks about outreach, not email packaging", () => {
@@ -245,4 +258,52 @@ test("LinkedIn review follow-up talks about outreach, not email packaging", () =
   assert.match(text, /LinkedIn outreach is still waiting on review/);
   assert.match(text, /the idea, the targeting, and the messages/);
   assert.doesNotMatch(text, /review everything, then type/);
+});
+
+test("blog-only packages use a publish note, not the email checklist", () => {
+  const blog = {
+    ...input,
+    campaignTitle: "Kentenia Team Building Guide",
+    channel: "blog" as const,
+    itemCount: 1,
+  };
+  const text = clientApprovalMessageText(blog);
+  assert.match(text, /^Hi Katie,/);
+  assert.match(text, /blog post is ready for review/);
+  assert.match(text, /before we publish/);
+  assert.match(text, /Headline: does the title match/);
+  assert.match(text, /headings, lists, and any tables/);
+  assert.match(text, /Approve this blog post/);
+  assert.match(text, /keep publishing moving/);
+  assert.match(text, /CC: @Sylvia/);
+  assert.doesNotMatch(text, /email team/i);
+  assert.doesNotMatch(text, /CTAs: are the calls to action/);
+  assert.doesNotMatch(text, /keep scheduling moving/);
+  assert.doesNotMatch(text, /item in the package/);
+
+  const html = clientApprovalMessageHtml(blog);
+  assert.match(html, /blog post is ready for review/);
+  assert.match(html, /Approve this blog post/);
+  assert.match(html, /headings, lists, and any tables/);
+  assert.doesNotMatch(html, /email team/i);
+  assert.doesNotMatch(html, /calls to action/);
+  assert.doesNotMatch(html, /scheduling moving/);
+
+  const follow = clientReviewFollowupText(blog);
+  assert.match(follow, /blog post is still waiting on review/);
+  assert.match(follow, /Approve this blog post/);
+  assert.doesNotMatch(follow, /email team/i);
+});
+
+test("client review page copy for blogs does not mention the email team", () => {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const path = require("node:path") as typeof import("node:path");
+  const page = fs.readFileSync(
+    path.join("src/app/review/[token]/page.tsx"),
+    "utf8"
+  );
+  assert.match(page, /isBlogReview/);
+  assert.match(page, /clientApproveCta/);
+  assert.match(page, /The team has been notified this is approved/);
+  assert.match(page, /Read the post, leave comments/);
 });

@@ -28,6 +28,7 @@ test("operator status options use Sent for approval and workflow order", () => {
       "approved",
       "scheduled",
       "sent",
+      "live",
     ]
   );
   assert.deepEqual(
@@ -42,6 +43,7 @@ test("operator status options use Sent for approval and workflow order", () => {
       "Approved",
       "Scheduled",
       "Sent",
+      "Live",
     ]
   );
   assert.equal(operatorStatusLabel("in_review"), "Sent for approval");

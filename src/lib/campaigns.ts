@@ -202,12 +202,11 @@ export function listArchivedCampaigns(): Campaign[] {
 }
 
 /**
- * Campaigns holding at least one item of the given asset kind.
+ * Campaigns whose items are all of the given asset kind.
  *
- * The kind lives on campaign_emails, not on the campaign, because one review
- * package can mix an email with a blog post. A campaign therefore counts as a
- * blog campaign if any of its items is one. Used to scope the list for SEO
- * (blogs), forms/quizzes, or whatever the owner picked on /admin/access.
+ * Used to scope the list for SEO (blogs), forms/quizzes, or whatever the owner
+ * picked on /admin/access. A mixed email+blog package stays on the email list
+ * so Carlos and Abel only see work they can send as a blog approval.
  */
 export function listCampaignsWithKind(
   kind: EmailKind,
@@ -225,20 +224,80 @@ export function listCampaignsWithKind(
            SELECT 1 FROM campaign_emails e
            WHERE e.campaign_id = c.id AND e.kind = ?
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM campaign_emails e
+           WHERE e.campaign_id = c.id AND e.kind != ?
+         )
+       ORDER BY ${order}`
+    )
+    .all(kind, kind) as Campaign[];
+}
+
+export function listCampaignsExcludingKind(
+  kind: EmailKind,
+  opts?: { archived?: boolean }
+): Campaign[] {
+  const archived = opts?.archived
+    ? "c.archived_at IS NOT NULL"
+    : "c.archived_at IS NULL";
+  const order = opts?.archived ? "c.archived_at DESC" : "c.updated_at DESC";
+  return getDb()
+    .prepare(
+      `SELECT c.* FROM campaigns c
+       WHERE ${archived}
+         AND NOT EXISTS (
+           SELECT 1 FROM campaign_emails e
+           WHERE e.campaign_id = c.id AND e.kind = ?
+         )
        ORDER BY ${order}`
     )
     .all(kind) as Campaign[];
 }
 
-// Does this campaign contain an item of the given kind? Keeps someone scoped to
-// blogs from opening a non-blog campaign by pasting its URL.
-export function campaignHasKind(campaignId: string, kind: EmailKind): boolean {
+export function listCampaignsForKindScope(
+  scope: "blog" | "interactive" | "no_blog",
+  opts?: { archived?: boolean }
+): Campaign[] {
+  if (scope === "no_blog") return listCampaignsExcludingKind("blog", opts);
+  return listCampaignsWithKind(scope, opts);
+}
+
+export function campaignContainsKind(
+  campaignId: string,
+  kind: EmailKind
+): boolean {
   const row = getDb()
     .prepare(
       `SELECT 1 AS hit FROM campaign_emails WHERE campaign_id = ? AND kind = ? LIMIT 1`
     )
     .get(campaignId, kind) as { hit: number } | undefined;
   return Boolean(row);
+}
+
+// Does this campaign contain only items of the given kind? Keeps someone
+// scoped to blogs from opening (or sending approval on) a mixed email package
+// just because it happens to include a blog post.
+export function campaignHasKind(campaignId: string, kind: EmailKind): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN kind = ? THEN 1 ELSE 0 END) AS hits
+       FROM campaign_emails
+       WHERE campaign_id = ?`
+    )
+    .get(kind, campaignId) as { total: number; hits: number | null } | undefined;
+  const total = row?.total ?? 0;
+  const hits = row?.hits ?? 0;
+  return total > 0 && hits === total;
+}
+
+export function campaignFitsKindScope(
+  campaignId: string,
+  scope: "blog" | "interactive" | "no_blog"
+): boolean {
+  if (scope === "no_blog") return !campaignContainsKind(campaignId, "blog");
+  return campaignHasKind(campaignId, scope);
 }
 
 export function setCampaignArchived(
@@ -1512,6 +1571,7 @@ export function applyOperatorCampaignStatus(
     updated &&
     existing.status === "scheduled" &&
     updated.status !== "sent" &&
+    updated.status !== "live" &&
     updated.status !== "scheduled"
   ) {
     getDb()

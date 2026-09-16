@@ -720,6 +720,40 @@ button {
   resize: vertical;
 }
 
+.md-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.md-tool {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-body);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.md-tool:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.md-tool-gap {
+  width: 6px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -817,6 +851,12 @@ button {
   color: #3a4a5a;
   border-color: rgba(58, 74, 90, 0.24);
   background: #eef2f6;
+}
+
+.badge-live {
+  color: #0b7a54;
+  border-color: rgba(31, 157, 99, 0.4);
+  background: var(--success-wash);
 }
 
 .badge-in_qa {
@@ -927,6 +967,12 @@ button {
 .badge-sent {
   color: var(--success);
   border-color: rgba(31, 157, 99, 0.28);
+  background: var(--success-wash);
+}
+
+.badge-live {
+  color: #0b7a54;
+  border-color: rgba(31, 157, 99, 0.45);
   background: var(--success-wash);
 }
 
@@ -2172,6 +2218,24 @@ button {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
+}
+
+.campaign-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.campaign-hero .campaign-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 4px;
+  flex: 1;
+  min-width: 220px;
+  max-width: 320px;
 }
 
 /* Compact single-row "next step" action bar (replaces the two tall cards). */
@@ -16747,6 +16811,34 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   margin: 0 0 12px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.lh-outcomes {
+  margin: 8px 0 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.lh-outcomes h4,
+.lh-commerce h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lh-outcomes-note,
+.lh-outcomes-split {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.lh-commerce {
+  margin-top: 12px;
 }
 
 .lh-metrics {

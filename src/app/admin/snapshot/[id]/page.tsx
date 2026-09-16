@@ -1274,7 +1274,7 @@ function FillRow({
                 setAskingWhen(true);
               }}
             >
-              Done
+              Mark done
             </button>
           )}
           <select

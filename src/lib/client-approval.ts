@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
-import { coerceKind, type AssetKind } from "./asset-kinds";
+import {
+  clientApproveCta,
+  type ClientApprovalChannel,
+} from "./asset-kinds";
 import type { Campaign, CampaignEmail } from "./db";
 import { SYLVIA_CC_TEXT, stripSylviaCcLines, sylviaCcHtml } from "./review-cc";
+
+export {
+  approvalChannelForAssets,
+  type ClientApprovalChannel,
+} from "./asset-kinds";
 
 function escapeHtml(value: string): string {
   return value
@@ -18,33 +26,31 @@ function firstName(value: string): string {
   return cleaned.split(/\s+/)[0];
 }
 
-export type ClientApprovalChannel = "email" | "linkedin";
-
 export interface ClientApprovalMessageInput {
   clientContactName: string;
   campaignTitle: string;
   previewUrl: string;
   isAutomation?: boolean;
   channel?: ClientApprovalChannel;
+  itemCount?: number;
 }
 
 export const LINKEDIN_SETUP_CALENDAR_URL =
   "https://api.leadconnectorhq.com/widget/bookings/michael-piarullis-calendar";
 
-/** LinkedIn-only packages get the outreach brief. Mixed or email packages stay on the email note. */
-export function approvalChannelForAssets(
-  kinds: Array<AssetKind | string | null | undefined>
-): ClientApprovalChannel {
-  const distinct = Array.from(new Set(kinds.map((kind) => coerceKind(kind))));
-  return distinct.length === 1 && distinct[0] === "linkedin"
-    ? "linkedin"
-    : "email";
+function approveButtonLabel(input: ClientApprovalMessageInput): string {
+  return clientApproveCta(input.channel ?? "email", input.itemCount ?? 1);
+}
+
+function blogNoun(input: ClientApprovalMessageInput): string {
+  return (input.itemCount ?? 1) === 1 ? "blog post" : "blog posts";
 }
 
 export function clientApprovalMessageText(
   input: ClientApprovalMessageInput
 ): string {
   if (input.channel === "linkedin") return linkedinApprovalMessageText(input);
+  if (input.channel === "blog") return blogApprovalMessageText(input);
   const name = firstName(input.clientContactName);
   const flowNote = input.isAutomation
     ? `\nYou'll see the full automation on a map: what starts it, the wait times, and each email. Click an email to preview it.\n`
@@ -68,11 +74,48 @@ How to approve in the app:
 
 1. Open the preview link above.
 2. Review each ${input.isAutomation ? "email in the automation" : "item in the package"}. Leave comments on anything that needs a change.
-3. When everything looks good, type your full name at the top of the page and click "Approve and notify email team".
+3. When everything looks good, type your full name at the top of the page and click "${approveButtonLabel(input)}".
 
 One quick note: we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.
 
 After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep scheduling moving.
+
+Looking forward to hearing from you!
+
+${SYLVIA_CC_TEXT}`;
+}
+
+function blogApprovalMessageText(input: ClientApprovalMessageInput): string {
+  const name = firstName(input.clientContactName);
+  const noun = blogNoun(input);
+  const each = (input.itemCount ?? 1) === 1 ? "the blog post" : "each blog post";
+  return `Hi ${name},
+
+I hope you're doing well. Your ${input.campaignTitle} ${noun} ${
+    (input.itemCount ?? 1) === 1 ? "is" : "are"
+  } ready for review. Please take a look and let us know if everything looks good before we publish.
+
+Here's what to check:
+
+• Headline: does the title match the article and what you want people to find?
+• Copy: is the messaging on-brand, accurate, and easy to follow?
+• Structure: do the headings, lists, and any tables read clearly?
+• Links: do they all point to the right pages?
+• Imagery: do the photos and graphics match the story and your brand?
+
+Preview Link:
+
+Review the ${input.campaignTitle}: ${input.previewUrl}
+
+How to approve in the app:
+
+1. Open the preview link above.
+2. Review ${each}. Leave comments on anything that needs a change.
+3. When everything looks good, type your full name at the top of the page and click "${approveButtonLabel(input)}".
+
+One quick note: we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.
+
+After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep publishing moving.
 
 Looking forward to hearing from you!
 
@@ -102,7 +145,7 @@ How to approve in the app:
 
 1. Open the preview link above.
 2. Review the idea, the targeting, and each LinkedIn message. Leave comments on anything that needs a change.
-3. When everything looks good, type your full name at the top of the page and click "Approve and notify email team".
+3. When everything looks good, type your full name at the top of the page and click "${approveButtonLabel(input)}".
 
 One quick note: we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.
 
@@ -195,6 +238,9 @@ export function clientApprovalMessageHtml(
   if (input.channel === "linkedin") {
     return linkedinApprovalMessageHtml(input, contactMention, ccMention);
   }
+  if (input.channel === "blog") {
+    return blogApprovalMessageHtml(input, contactMention, ccMention);
+  }
   const name = contactMention || escapeHtml(firstName(input.clientContactName));
   const title = escapeHtml(input.campaignTitle);
   const url = escapeHtml(input.previewUrl);
@@ -236,13 +282,65 @@ export function clientApprovalMessageHtml(
       `<li>Review each ${
         input.isAutomation ? "email in the automation" : "item in the package"
       }. Leave comments on anything that needs a change.</li>`,
-      `<li>When everything looks good, type your full name at the top of the page and click <strong>Approve and notify email team</strong>.</li>`,
+      `<li>When everything looks good, type your full name at the top of the page and click <strong>${escapeHtml(approveButtonLabel(input))}</strong>.</li>`,
       "</ol>",
     ].join(""),
   ].join(BC_BLANK_LINE);
   const close = [
     "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.</p>",
     "<p>After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep scheduling moving.</p>",
+    "<p>Looking forward to hearing from you!</p>",
+    sylviaCcHtml(ccMention),
+  ].join(BC_BLANK_LINE);
+  return [intro, checklist, preview, howTo, close].join("<hr>");
+}
+
+function blogApprovalMessageHtml(
+  input: ClientApprovalMessageInput,
+  contactMention?: string,
+  ccMention?: string
+): string {
+  const name = contactMention || escapeHtml(firstName(input.clientContactName));
+  const title = escapeHtml(input.campaignTitle);
+  const url = escapeHtml(input.previewUrl);
+  const noun = blogNoun(input);
+  const verb = (input.itemCount ?? 1) === 1 ? "is" : "are";
+  const each = (input.itemCount ?? 1) === 1 ? "the blog post" : "each blog post";
+  const cta = escapeHtml(approveButtonLabel(input));
+
+  const intro = [
+    `<p>Hi ${name},</p>`,
+    `<p>I hope you're doing well. Your ${title} ${noun} ${verb} ready for review. Please take a look and let us know if everything looks good before we publish.</p>`,
+  ].join(BC_BLANK_LINE);
+  const checklist = [
+    "<p><strong>Here's what to check:</strong></p>",
+    [
+      "<ul>",
+      "<li><strong>Headline.</strong> Does the title match the article and what you want people to find?</li>",
+      "<li><strong>Copy.</strong> Is the messaging on-brand, accurate, and easy to follow?</li>",
+      "<li><strong>Structure.</strong> Do the headings, lists, and any tables read clearly?</li>",
+      "<li><strong>Links.</strong> Do they all point to the right pages?</li>",
+      "<li><strong>Imagery.</strong> Do the photos and graphics match the story and your brand?</li>",
+      "</ul>",
+    ].join(""),
+  ].join(BC_BLANK_LINE);
+  const preview = [
+    "<p><strong>Preview Link:</strong></p>",
+    `<p><a href="${url}">Review the ${title}</a></p>`,
+  ].join(BC_BLANK_LINE);
+  const howTo = [
+    "<p><strong>How to approve in the app:</strong></p>",
+    [
+      "<ol>",
+      "<li>Open the preview link above.</li>",
+      `<li>Review ${each}. Leave comments on anything that needs a change.</li>`,
+      `<li>When everything looks good, type your full name at the top of the page and click <strong>${cta}</strong>.</li>`,
+      "</ol>",
+    ].join(""),
+  ].join(BC_BLANK_LINE);
+  const close = [
+    "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.</p>",
+    "<p>After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep publishing moving.</p>",
     "<p>Looking forward to hearing from you!</p>",
     sylviaCcHtml(ccMention),
   ].join(BC_BLANK_LINE);
@@ -285,7 +383,7 @@ function linkedinApprovalMessageHtml(
       "<ol>",
       "<li>Open the preview link above.</li>",
       "<li>Review the idea, the targeting, and each LinkedIn message. Leave comments on anything that needs a change.</li>",
-      "<li>When everything looks good, type your full name at the top of the page and click <strong>Approve and notify email team</strong>.</li>",
+      `<li>When everything looks good, type your full name at the top of the page and click <strong>${escapeHtml(approveButtonLabel(input))}</strong>.</li>`,
       "</ol>",
     ].join(""),
   ].join(BC_BLANK_LINE);
@@ -311,16 +409,26 @@ function linkedinApprovalMessageHtml(
 
 export function clientReviewFollowupText(input: ClientApprovalMessageInput): string {
   const name = firstName(input.clientContactName);
+  const cta = approveButtonLabel(input);
   if (input.channel === "linkedin") {
     return `Hi ${name},
 
-Just a friendly follow-up — your ${input.campaignTitle} LinkedIn outreach is still waiting on review. When you have a moment, please open the preview link, review the idea, the targeting, and the messages, then type your full name and click "Approve and notify email team". After you approve in the app, reply on this Basecamp card to let us know.
+Just a friendly follow-up — your ${input.campaignTitle} LinkedIn outreach is still waiting on review. When you have a moment, please open the preview link, review the idea, the targeting, and the messages, then type your full name and click "${cta}". After you approve in the app, reply on this Basecamp card to let us know.
+
+Review the ${input.campaignTitle}: ${input.previewUrl}`;
+  }
+  if (input.channel === "blog") {
+    return `Hi ${name},
+
+Just a friendly follow-up — your ${input.campaignTitle} ${blogNoun(input)} ${(input.itemCount ?? 1) === 1 ? "is" : "are"} still waiting on review. When you have a moment, please open the preview link, review ${
+      (input.itemCount ?? 1) === 1 ? "the post" : "each post"
+    }, then type your full name and click "${cta}". After you approve in the app, reply on this Basecamp card to let us know.
 
 Review the ${input.campaignTitle}: ${input.previewUrl}`;
   }
   return `Hi ${name},
 
-Just a friendly follow-up — your ${input.campaignTitle} is still waiting on review. When you have a moment, please open the preview link, review everything, then type your full name and click "Approve and notify email team". After you approve in the app, reply on this Basecamp card to let us know.
+Just a friendly follow-up — your ${input.campaignTitle} is still waiting on review. When you have a moment, please open the preview link, review everything, then type your full name and click "${cta}". After you approve in the app, reply on this Basecamp card to let us know.
 
 Review the ${input.campaignTitle}: ${input.previewUrl}`;
 }
@@ -347,10 +455,17 @@ export function clientReviewFollowupHtml(
   const name = contactMention || escapeHtml(firstName(input.clientContactName));
   const title = escapeHtml(input.campaignTitle);
   const url = escapeHtml(input.previewUrl);
+  const cta = escapeHtml(approveButtonLabel(input));
   const body =
     input.channel === "linkedin"
-      ? `<p>Just a friendly follow-up — your ${title} LinkedIn outreach is still waiting on review. When you have a moment, please open the preview link, review the idea, the targeting, and the messages, then type your full name and click <strong>Approve and notify email team</strong>. After you approve in the app, reply on this Basecamp card to let us know.</p>`
-      : `<p>Just a friendly follow-up — your ${title} is still waiting on review. When you have a moment, please open the preview link, review everything, then type your full name and click <strong>Approve and notify email team</strong>. After you approve in the app, reply on this Basecamp card to let us know.</p>`;
+      ? `<p>Just a friendly follow-up — your ${title} LinkedIn outreach is still waiting on review. When you have a moment, please open the preview link, review the idea, the targeting, and the messages, then type your full name and click <strong>${cta}</strong>. After you approve in the app, reply on this Basecamp card to let us know.</p>`
+      : input.channel === "blog"
+        ? `<p>Just a friendly follow-up — your ${title} ${blogNoun(input)} ${
+            (input.itemCount ?? 1) === 1 ? "is" : "are"
+          } still waiting on review. When you have a moment, please open the preview link, review ${
+            (input.itemCount ?? 1) === 1 ? "the post" : "each post"
+          }, then type your full name and click <strong>${cta}</strong>. After you approve in the app, reply on this Basecamp card to let us know.</p>`
+        : `<p>Just a friendly follow-up — your ${title} is still waiting on review. When you have a moment, please open the preview link, review everything, then type your full name and click <strong>${cta}</strong>. After you approve in the app, reply on this Basecamp card to let us know.</p>`;
   return [
     `<p>Hi ${name},</p>`,
     body,

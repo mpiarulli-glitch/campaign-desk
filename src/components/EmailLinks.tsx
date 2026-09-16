@@ -45,7 +45,13 @@ function extractLinks(html: string): LinkRow[] {
   return rows;
 }
 
-export function EmailLinks({ html }: { html: string }) {
+export function EmailLinks({
+  html,
+  itemNoun = "email",
+}: {
+  html: string;
+  itemNoun?: string;
+}) {
   const links = useMemo(() => extractLinks(html), [html]);
   const [open, setOpen] = useState(false);
 
@@ -56,7 +62,7 @@ export function EmailLinks({ html }: { html: string }) {
         style={{ justifyContent: "space-between", alignItems: "center" }}
       >
         <h2 className="h2" style={{ margin: 0 }}>
-          Links in this email{" "}
+          Links in this {itemNoun}{" "}
           <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>
             ({links.length})
           </span>
@@ -72,7 +78,7 @@ export function EmailLinks({ html }: { html: string }) {
 
       {open ? (
         links.length === 0 ? (
-          <div className="empty">No links found in this email.</div>
+          <div className="empty">No links found in this {itemNoun}.</div>
         ) : (
           <>
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>

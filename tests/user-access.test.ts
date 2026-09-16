@@ -390,7 +390,7 @@ test("per-person access", async (t) => {
     assert.equal(access.effectiveCampaignKind(roy), null);
     assert.equal(access.effectiveCampaignKind(abel), "blog");
     assert.equal(access.effectiveCampaignKind(jack), null);
-    assert.equal(access.effectiveCampaignKind(owner), null);
+    assert.equal(access.effectiveCampaignKind(owner), "no_blog");
   });
 
   await t.test("the owner can pin Roy to forms and quizzes only", () => {
@@ -411,6 +411,13 @@ test("per-person access", async (t) => {
     assert.equal(access.effectiveCampaignKind(abel), null);
     access.clearCampaignKind("abel");
     assert.equal(access.effectiveCampaignKind(abel), "blog");
+  });
+
+  await t.test("the owner can hide blogs for someone who otherwise sees all", () => {
+    access.setCampaignKind("roy", "no_blog", "michael");
+    assert.equal(access.campaignKindStored("roy"), "no_blog");
+    assert.equal(access.effectiveCampaignKind(roy), "no_blog");
+    access.clearCampaignKind("roy");
   });
 
   await t.test("an unknown campaign kind is refused on write", () => {

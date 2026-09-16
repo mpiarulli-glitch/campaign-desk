@@ -95,7 +95,8 @@ export type CampaignStatus =
   | "needs_changes"
   | "approved"
   | "scheduled"
-  | "sent";
+  | "sent"
+  | "live";
 
 export type SocialBatchStatus = "draft" | "in_qa" | "needs_revisions" | "approved";
 

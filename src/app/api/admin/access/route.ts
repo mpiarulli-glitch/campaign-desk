@@ -144,12 +144,13 @@ export async function POST(request: Request) {
         } else if (
           kind === "all" ||
           kind === "blog" ||
-          kind === "interactive"
+          kind === "interactive" ||
+          kind === "no_blog"
         ) {
           setCampaignKind(person, kind as CampaignKindChoice, by);
         } else {
           return NextResponse.json(
-            { error: "Pick All, Blog posts, or Forms / quizzes." },
+            { error: "Pick All, Blog posts, Everything except blogs, or Forms / quizzes." },
             { status: 400 }
           );
         }

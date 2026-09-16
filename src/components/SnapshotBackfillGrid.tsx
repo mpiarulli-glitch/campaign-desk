@@ -452,7 +452,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
                                       setOpenCell(null);
                                     }}
                                   >
-                                    Done
+                                    Mark done
                                   </button>
                                 )}
                                 <select

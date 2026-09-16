@@ -8,12 +8,13 @@ import {
   createCampaign,
   listCampaigns,
   listArchivedCampaigns,
-  listCampaignsWithKind,
+  listCampaignsForKindScope,
   countOpenComments,
   countEmails,
   listEmailKinds,
 } from "@/lib/campaigns";
 import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
+import { kindAllowedForCampaignScope } from "@/lib/people";
 import {
   coercePresentation,
   coerceTriggerKind,
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
 
   const kindScope = await sessionCampaignKind();
   const source = kindScope
-    ? listCampaignsWithKind(kindScope, { archived })
+    ? listCampaignsForKindScope(kindScope, { archived })
     : archived
       ? listArchivedCampaigns()
       : listCampaigns();
@@ -77,6 +78,26 @@ export async function POST(request: Request) {
       ? body.triggerFormMediaUrl
       : "";
   const kind = coerceKind(body.kind);
+  const kindScope = await sessionCampaignKind();
+  if (!kindAllowedForCampaignScope(kind, kindScope)) {
+    return NextResponse.json(
+      {
+        error:
+          kindScope === "blog"
+            ? "Your campaigns are limited to blog posts."
+            : kindScope === "no_blog"
+              ? "Blog posts are handled by the SEO team."
+              : "That campaign type isn't available for your account.",
+      },
+      { status: 400 }
+    );
+  }
+  if (kindScope === "blog" && presentation === "automation") {
+    return NextResponse.json(
+      { error: "Blog campaigns go out as a review package, not an automation." },
+      { status: 400 }
+    );
+  }
   const bodyFormat = coerceFormat(kind, body.bodyFormat);
   const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : "";
 

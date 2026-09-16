@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { canOrSync } from "@/lib/auth";
+import { coerceKind, coerceFormat, isBodyFormat } from "@/lib/asset-kinds";
+import { kindAllowedForCampaignScope } from "@/lib/people";
+import { canOrSync, sessionCampaignKind } from "@/lib/auth";
 import {
   addEmail,
   deleteEmail,
@@ -9,7 +11,6 @@ import {
   updateEmail,
   countOpenComments,
 } from "@/lib/campaigns";
-import { coerceKind, coerceFormat, isBodyFormat } from "@/lib/asset-kinds";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -49,6 +50,20 @@ export async function POST(request: Request, { params }: Params) {
   const htmlContent =
     typeof body.htmlContent === "string" ? body.htmlContent : "";
   const kind = coerceKind(body.kind);
+  const kindScope = await sessionCampaignKind();
+  if (!kindAllowedForCampaignScope(kind, kindScope)) {
+    return NextResponse.json(
+      {
+        error:
+          kindScope === "blog"
+            ? "You can only add blog posts to a package."
+            : kindScope === "no_blog"
+              ? "Blog posts are handled by the SEO team."
+              : "That item type isn't available for your account.",
+      },
+      { status: 400 }
+    );
+  }
   const bodyFormat = coerceFormat(kind, body.bodyFormat);
   const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : "";
 

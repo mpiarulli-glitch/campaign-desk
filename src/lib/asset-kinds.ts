@@ -181,6 +181,33 @@ export function kindCountLabel(kind: AssetKind, count: number): string {
   }
 }
 
+export type ClientApprovalChannel = "email" | "linkedin" | "blog";
+
+/**
+ * Which Basecamp approval note and client-facing approve CTA to use.
+ * LinkedIn-only and blog-only packages get their own copy; mixed packages
+ * stay on the email note so a blog sitting next to an email is not treated
+ * as a content handoff.
+ */
+export function approvalChannelForAssets(
+  kinds: Array<AssetKind | string | null | undefined>
+): ClientApprovalChannel {
+  const distinct = Array.from(new Set(kinds.map((kind) => coerceKind(kind))));
+  if (distinct.length === 1 && distinct[0] === "linkedin") return "linkedin";
+  if (distinct.length === 1 && distinct[0] === "blog") return "blog";
+  return "email";
+}
+
+export function clientApproveCta(
+  channel: ClientApprovalChannel,
+  itemCount = 1
+): string {
+  if (channel === "blog") {
+    return itemCount === 1 ? "Approve this blog post" : "Approve these blog posts";
+  }
+  return "Approve and notify email team";
+}
+
 /**
  * Count label for a package's items. Homogeneous packages use that kind's
  * noun; mixed packages fall back to "item(s)"; automations use "step(s)".
@@ -229,11 +256,10 @@ export function deliverableCardTitle(
 // ---------------------------------------------------------------------------
 // Minimal markdown -> HTML string converter.
 //
-// Mirrors the subset supported by the React <Markdown> component (## / ###
-// headings, - and 1. lists, > callouts, **bold**) and adds inline links, so
-// blog posts and copy decks authored in markdown render the same everywhere.
-// Text is HTML-escaped before any markup is applied. The output is only ever
-// shown inside a sandboxed, script-disabled iframe.
+// Supported subset for blog posts and copy decks: # / ## / ### headings,
+// - and 1. lists, pipe tables, images, > callouts, **bold**, *italic*, and
+// [links](url). Text is HTML-escaped before any markup is applied. The output
+// is only ever shown inside a sandboxed, script-disabled iframe.
 // ---------------------------------------------------------------------------
 
 function escapeHtml(text: string): string {
@@ -244,18 +270,98 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function unescapeHtml(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
+}
+
+function safeUrl(escaped: string): string | null {
+  const url = unescapeHtml(escaped).trim();
+  if (!url) return null;
+  const lower = url.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
+    return null;
+  }
+  if (lower.startsWith("data:")) {
+    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(url)) return null;
+    return escapeHtml(url);
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(https?|mailto):/i.test(url)) {
+    return null;
+  }
+  return escapeHtml(url);
+}
+
 function inlineMd(raw: string): string {
   let text = escapeHtml(raw);
-  // [label](url) -> anchor (url is escaped above, quotes already handled)
-  text = text.replace(
-    /\[([^\]]+)\]\(([^)\s]+)\)/g,
-    (_m, label, url) => `<a href="${url}">${label}</a>`
-  );
-  // **bold**
+  const mdUrl = /!\[([^\]]*)\]\(([^()\s]*(?:\([^)]*\)[^()\s]*)*)\)/g;
+  const mdLink = /\[([^\]]+)\]\(([^()\s]*(?:\([^)]*\)[^()\s]*)*)\)/g;
+  text = text.replace(mdUrl, (_m, alt, url) => {
+    const href = safeUrl(url);
+    return href ? `<img src="${href}" alt="${alt}">` : alt;
+  });
+  text = text.replace(mdLink, (_m, label, url) => {
+    const href = safeUrl(url);
+    return href ? `<a href="${href}">${label}</a>` : label;
+  });
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  // *italic* (single asterisk, avoid eating bold which is handled above)
   text = text.replace(/(^|[^*])\*(?!\*)([^*]+?)\*(?!\*)/g, "$1<em>$2</em>");
   return text;
+}
+
+function isPipeRow(line: string): boolean {
+  return line.includes("|") && !/^\s*>/.test(line) && !/^\s*```/.test(line);
+}
+
+function isTableSeparator(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function splitTableCells(line: string): string[] {
+  let inner = line.trim();
+  if (inner.startsWith("|")) inner = inner.slice(1);
+  if (inner.endsWith("|")) inner = inner.slice(0, -1);
+  return inner.split("|").map((cell) => cell.trim());
+}
+
+function separatorAlign(cell: string): "left" | "center" | "right" | "" {
+  const t = cell.trim();
+  const left = t.startsWith(":");
+  const right = t.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  if (left) return "left";
+  return "";
+}
+
+function renderTable(rows: string[]): string {
+  if (rows.length < 2) return "";
+  const headers = splitTableCells(rows[0]);
+  const aligns = splitTableCells(rows[1]).map(separatorAlign);
+  const body = rows.slice(2).map(splitTableCells);
+  const th = headers
+    .map((cell, i) => {
+      const align = aligns[i];
+      const style = align ? ` style="text-align:${align}"` : "";
+      return `<th${style}>${inlineMd(cell)}</th>`;
+    })
+    .join("");
+  const trs = body
+    .map((cells) => {
+      const tds = headers
+        .map((_, i) => {
+          const align = aligns[i];
+          const style = align ? ` style="text-align:${align}"` : "";
+          return `<td${style}>${inlineMd(cells[i] || "")}</td>`;
+        })
+        .join("");
+      return `<tr>${tds}</tr>`;
+    })
+    .join("");
+  return `<table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 export function mdToHtml(md: string): string {
@@ -290,10 +396,25 @@ export function mdToHtml(md: string): string {
     flushQuote();
   };
 
-  for (const raw of lines) {
-    const line = raw.trimEnd();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
     if (!line.trim()) {
       flushAll();
+      continue;
+    }
+    if (
+      isPipeRow(line) &&
+      i + 1 < lines.length &&
+      isTableSeparator(lines[i + 1].trimEnd())
+    ) {
+      flushAll();
+      const rows = [line, lines[i + 1].trimEnd()];
+      i += 1;
+      while (i + 1 < lines.length && isPipeRow(lines[i + 1].trimEnd()) && lines[i + 1].trim()) {
+        i += 1;
+        rows.push(lines[i].trimEnd());
+      }
+      out.push(renderTable(rows));
       continue;
     }
     if (line.startsWith("# ")) {
@@ -368,7 +489,11 @@ const DOC_STYLE = `
     background:#f5f3ff;color:#3a3a5a;border-radius:0 6px 6px 0;}
   .cd-doc a{color:#6c5ce7;text-decoration:underline;}
   .cd-doc strong{font-weight:700;}
-  .cd-doc img{max-width:100%;height:auto;border-radius:6px;}
+  .cd-doc img{max-width:100%;height:auto;border-radius:6px;margin:8px 0 18px;display:block;}
+  .cd-doc table{width:100%;border-collapse:collapse;margin:0 0 22px;font-size:15px;}
+  .cd-doc th,.cd-doc td{border:1px solid #e2e2ea;padding:10px 12px;text-align:left;vertical-align:top;}
+  .cd-doc th{background:#f6f7fb;font-weight:600;}
+  .cd-doc tbody tr:nth-child(even) td{background:#fafbfe;}
   .cd-deck{border-top:6px solid #6c5ce7;}
 `;
 

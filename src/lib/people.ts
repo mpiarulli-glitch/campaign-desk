@@ -1,4 +1,5 @@
-import type { AssetType } from "./asset-kinds";
+import type { AssetKind, AssetType } from "./asset-kinds";
+import { ASSET_KINDS } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
 
 // productionAccess: entry-level forecast users normally get just Forecast,
@@ -100,12 +101,37 @@ export function doesCampaignWork(slug: string | null): boolean {
 // Role-default campaign kind scope from TEAM_FOCUS. The owner can override
 // this per person on /admin/access (see effectiveCampaignKind in ./access).
 // Returns null when the list is unrestricted.
-export type CampaignKindScope = "blog" | "interactive";
+export type CampaignKindScope = "blog" | "interactive" | "no_blog";
+
+export function isCampaignKindScope(value: unknown): value is CampaignKindScope {
+  return value === "blog" || value === "interactive" || value === "no_blog";
+}
 
 export function campaignKindFor(slug: string | null): CampaignKindScope | null {
+  if (slug === OWNER_SLUG) return "no_blog";
   const focus = teamFocus(slug);
   if (!focus) return null;
   return focus.length === 1 && focus[0] === "blog_post" ? "blog" : null;
+}
+
+/** Asset kinds a scoped campaigns session may create and send for approval. */
+export function assetKindsForCampaignScope(
+  scope: CampaignKindScope | null
+): AssetKind[] | null {
+  if (scope === "blog") return ["blog"];
+  if (scope === "interactive") return ["interactive"];
+  if (scope === "no_blog") {
+    return ASSET_KINDS.map((k) => k.kind).filter((k) => k !== "blog");
+  }
+  return null;
+}
+
+export function kindAllowedForCampaignScope(
+  kind: AssetKind,
+  scope: CampaignKindScope | null
+): boolean {
+  const allowed = assetKindsForCampaignScope(scope);
+  return !allowed || allowed.includes(kind);
 }
 
 /* ---------------------------------------------------------------------------

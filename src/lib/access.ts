@@ -171,11 +171,11 @@ export const PAGES: Capability[] = [
   },
   {
     key: "page.client_services",
-    label: "Client Services",
+    label: "Weekly Snapshots",
     group: "page",
     href: "/admin/client-services",
     icon: "ring",
-    blurb: "The account health ring and what each client is owed.",
+    blurb: "Every client's weekly snapshot: deliverables, outreach, and what came back.",
   },
   {
     key: "page.reports",
@@ -595,6 +595,11 @@ export const CAMPAIGN_KIND_CHOICES: Array<{
     blurb: "Packages that contain a blog post.",
   },
   {
+    value: "no_blog",
+    label: "Everything except blogs",
+    blurb: "Email, SMS, LinkedIn, forms, and the rest — not blog posts.",
+  },
+  {
     value: "interactive",
     label: "Forms / quizzes only",
     blurb: "Packages that contain a form or quiz.",
@@ -602,7 +607,12 @@ export const CAMPAIGN_KIND_CHOICES: Array<{
 ];
 
 function isCampaignKindChoice(value: unknown): value is CampaignKindChoice {
-  return value === "all" || value === "blog" || value === "interactive";
+  return (
+    value === "all" ||
+    value === "blog" ||
+    value === "interactive" ||
+    value === "no_blog"
+  );
 }
 
 /**
@@ -643,16 +653,20 @@ export function clearCampaignKind(person: string): void {
 /**
  * Effective list filter for Campaigns.
  *
- * null means unrestricted. A stored 'all' also means unrestricted. Otherwise
- * the stored kind wins over the TEAM_FOCUS default (blog for the SEO pair).
+ * null means unrestricted. A stored 'all' also means unrestricted. The owner
+ * never sees blogs. Otherwise the stored kind wins over TEAM_FOCUS (blog for
+ * the SEO pair).
  */
 export function effectiveCampaignKind(
   who: AccessSubject
 ): CampaignKindScope | null {
-  if (who.owner || !who.person) return null;
+  if (who.owner) return "no_blog";
+  if (!who.person) return null;
   const stored = campaignKindStored(who.person);
   if (stored === "all") return null;
-  if (stored === "blog" || stored === "interactive") return stored;
+  if (stored === "blog" || stored === "interactive" || stored === "no_blog") {
+    return stored;
+  }
   return campaignKindFor(who.person);
 }
 

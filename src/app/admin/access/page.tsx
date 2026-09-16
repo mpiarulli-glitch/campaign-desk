@@ -419,14 +419,18 @@ function CampaignKindPanel({
     ? "Blog posts only"
     : byDefault === "interactive"
       ? "Forms / quizzes only"
-      : "All campaigns";
+      : byDefault === "no_blog"
+        ? "Everything except blogs"
+        : "All campaigns";
 
   const effectiveLabel =
     effective === "blog"
       ? "Blog posts only"
       : effective === "interactive"
         ? "Forms / quizzes only"
-        : "All campaigns";
+        : effective === "no_blog"
+          ? "Everything except blogs"
+          : "All campaigns";
 
   return (
     <div className="ops-panel">

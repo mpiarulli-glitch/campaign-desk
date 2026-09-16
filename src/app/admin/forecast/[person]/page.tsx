@@ -1214,6 +1214,10 @@ export default function PersonForecastPage() {
   // yesterday unless somebody picks another day.
   const [logDates, setLogDates] = useState<Record<string, string>>({});
   const [logExpanded, setLogExpanded] = useState<Record<string, boolean>>({});
+  // Same shape as logExpanded: MoveMenu is declared inside this page, so a
+  // timer tick remounts it every second. Local open state would snap shut;
+  // keeping it here survives those remounts the way Log time already does.
+  const [moveExpanded, setMoveExpanded] = useState<Record<string, boolean>>({});
   const [addingSubtask, setAddingSubtask] = useState<Record<string, boolean>>(
     {}
   );
@@ -2873,28 +2877,39 @@ export default function PersonForecastPage() {
    *
    * Tomorrow and next week cover the common cases; Custom opens a date picker
    * for anything else. Every option keeps the task's start time.
+   *
+   * Open state lives on the page (`moveExpanded`), not here — a running timer
+   * re-renders this page every second and remounts this nested component.
    */
   function MoveMenu({ task }: { task: Task }) {
-    const [open, setOpen] = useState(false);
+    const open = Boolean(moveExpanded[task.id]);
     const wrapRef = useRef<HTMLDivElement>(null);
     const tomorrow = addDaysYmd(todayYmd(), 1);
     const nextWeek = addWeeks(task.task_date, 1);
 
+    function close() {
+      setMoveExpanded((d) => ({ ...d, [task.id]: false }));
+    }
+
     useEffect(() => {
       if (!open) return;
       function onDown(e: MouseEvent) {
-        if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+        if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+          setMoveExpanded((d) => ({ ...d, [task.id]: false }));
+        }
       }
       function onKey(e: KeyboardEvent) {
-        if (e.key === "Escape") setOpen(false);
+        if (e.key === "Escape") setMoveExpanded((d) => ({ ...d, [task.id]: false }));
       }
-      document.addEventListener("mousedown", onDown);
       document.addEventListener("keydown", onKey);
+      // Deferred a tick: the click that opened this is still travelling.
+      const timer = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
       return () => {
-        document.removeEventListener("mousedown", onDown);
         document.removeEventListener("keydown", onKey);
+        clearTimeout(timer);
+        document.removeEventListener("mousedown", onDown);
       };
-    }, [open]);
+    }, [open, task.id]);
 
     return (
       <div className="fc-move" ref={wrapRef}>
@@ -2903,7 +2918,9 @@ export default function PersonForecastPage() {
           className="fc-move-btn"
           aria-expanded={open}
           title="Move this task to another day"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() =>
+            setMoveExpanded((d) => ({ ...d, [task.id]: !d[task.id] }))
+          }
           onMouseDown={(e) => e.stopPropagation()}
         >
           Move
@@ -2913,7 +2930,7 @@ export default function PersonForecastPage() {
             <button
               type="button"
               onClick={() => {
-                setOpen(false);
+                close();
                 void moveTaskToDate(task, tomorrow);
               }}
             >
@@ -2923,7 +2940,7 @@ export default function PersonForecastPage() {
             <button
               type="button"
               onClick={() => {
-                setOpen(false);
+                close();
                 void rescheduleTask(task, 1);
               }}
             >
@@ -2937,7 +2954,7 @@ export default function PersonForecastPage() {
                 defaultValue={task.task_date}
                 onChange={(e) => {
                   if (!e.target.value) return;
-                  setOpen(false);
+                  close();
                   void moveTaskToDate(task, e.target.value);
                 }}
               />

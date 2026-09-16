@@ -12,7 +12,7 @@ import { actorLabel } from "@/lib/people";
 import {
   deleteCampaign,
   getCampaignById,
-  campaignHasKind,
+  campaignFitsKindScope,
   listCommentsWithAttachments,
   listVersions,
   listEmails,
@@ -73,7 +73,7 @@ export async function GET(_request: Request, { params }: Params) {
   // Kind-scoped sessions cannot open a campaign that has none of that kind,
   // including by pasting a URL. The owner sets the scope on /admin/access.
   const kindScope = await sessionCampaignKind();
-  if (kindScope && !campaignHasKind(id, kindScope)) {
+  if (kindScope && !campaignFitsKindScope(id, kindScope)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -98,6 +98,7 @@ export async function GET(_request: Request, { params }: Params) {
     emails,
     flow,
     comments: listCommentsWithAttachments(campaign.id),
+    kindScope: kindScope || "all",
     versions: listVersions(campaign.id),
   });
 }
@@ -254,6 +255,17 @@ export async function PATCH(request: Request, { params }: Params) {
     flippedToSent = scheduled.flippedToSent;
   } else if (statusChoice) {
     applyOperatorCampaignStatus(id, statusChoice, await internalApproverLabel());
+  }
+
+  if (
+    body.presentation !== undefined &&
+    coercePresentation(body.presentation) === "automation" &&
+    (await sessionCampaignKind()) === "blog"
+  ) {
+    return NextResponse.json(
+      { error: "Blog campaigns go out as a review package, not an automation." },
+      { status: 400 }
+    );
   }
 
   const campaign = updateCampaign(id, {

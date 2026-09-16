@@ -9,6 +9,8 @@ import {
   TEAM_FOCUS,
   SOCIAL_QA_PEOPLE,
   campaignKindFor,
+  assetKindsForCampaignScope,
+  kindAllowedForCampaignScope,
   doesCampaignWork,
   hasProductionAccess,
   hasOwnerToolsAccess,
@@ -221,6 +223,9 @@ test("the SEO pair's calendar is blog work only", () => {
     assert.deepEqual(teamFocus(slug), ["blog_post"]);
     assert.equal(campaignKindFor(slug), "blog");
     assert.equal(doesCampaignWork(slug), true);
+    assert.deepEqual(assetKindsForCampaignScope(campaignKindFor(slug)), ["blog"]);
+    assert.equal(kindAllowedForCampaignScope("blog", "blog"), true);
+    assert.equal(kindAllowedForCampaignScope("email", "blog"), false);
   }
 });
 
@@ -249,11 +254,19 @@ test("an empty focus is distinct from no focus at all", () => {
 });
 
 test("anyone without a focus entry owns everything", () => {
-  for (const slug of ["jack", "paula", "cassidy", "kyle_morris", "sylvia", OWNER_SLUG]) {
+  for (const slug of ["jack", "paula", "cassidy", "kyle_morris", "sylvia"]) {
     assert.equal(teamFocus(slug), null, `${slug} should be unrestricted`);
     assert.equal(doesCampaignWork(slug), true);
     assert.equal(campaignKindFor(slug), null);
   }
+});
+
+test("Michael does not see blog campaigns", () => {
+  assert.equal(campaignKindFor(OWNER_SLUG), "no_blog");
+  assert.equal(kindAllowedForCampaignScope("blog", "no_blog"), false);
+  assert.equal(kindAllowedForCampaignScope("email", "no_blog"), true);
+  assert.equal(kindAllowedForCampaignScope("linkedin", "no_blog"), true);
+  assert.ok(!assetKindsForCampaignScope("no_blog")?.includes("blog"));
 });
 
 test("Kyle Morris is on the forecast roster", () => {

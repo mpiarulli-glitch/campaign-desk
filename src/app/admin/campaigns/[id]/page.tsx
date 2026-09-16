@@ -19,6 +19,7 @@ import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
 import { APP_TIME_ZONE } from "@/lib/period";
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { AbVariantBar } from "@/components/AbVariantBar";
 import {
   ASSET_KINDS,
@@ -31,6 +32,7 @@ import {
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
+import { assetKindsForCampaignScope, isCampaignKindScope, type CampaignKindScope } from "@/lib/people";
 import {
   AutomationMap,
   DelayPicker,
@@ -352,6 +354,12 @@ export default function AdminCampaignPage() {
   const [newEmailHtmlB, setNewEmailHtmlB] = useState("");
   const [newAbHypothesis, setNewAbHypothesis] = useState("");
   const [newEmailKind, setNewEmailKind] = useState<AssetKind>("email");
+  const [kindScope, setKindScope] = useState<CampaignKindScope | null>(null);
+  const allowedNewKinds = assetKindsForCampaignScope(kindScope);
+  const newKindChoices = allowedNewKinds
+    ? ASSET_KINDS.filter((k) => allowedNewKinds.includes(k.kind))
+    : ASSET_KINDS;
+  const blogOnly = kindScope === "blog";
   const [newEmailFormat, setNewEmailFormat] = useState<BodyFormat>("html");
   const [newEmailMedia, setNewEmailMedia] = useState("");
   const [aiLoadingCommentId, setAiLoadingCommentId] = useState<string | null>(
@@ -467,6 +475,12 @@ export default function AdminCampaignPage() {
       setVersions(data.versions || []);
       setStatus(data.campaign.status);
       setFlow(data.flow || []);
+      const scope = isCampaignKindScope(data.kindScope) ? data.kindScope : null;
+      setKindScope(scope);
+      if (scope === "blog") {
+        setNewEmailKind("blog");
+        setNewEmailFormat("markdown");
+      }
       loadBasecampApproval();
       loadInternalReview();
 
@@ -1970,7 +1984,7 @@ export default function AdminCampaignPage() {
               />
             </div>
           </div>
-        ) : (
+        ) : blogOnly ? null : (
           <div className="card am-switch-bar">
             <div className="am-switch-copy">
               <strong>Review as an automation</strong>
@@ -2069,10 +2083,11 @@ export default function AdminCampaignPage() {
 
           {addingEmail ? (
             <form className="stack" onSubmit={addEmail} style={{ marginTop: 8 }}>
+              {newKindChoices.length > 1 ? (
               <div className="field">
                 <label>Type</label>
                 <div className="tabs" style={{ marginTop: 4, flexWrap: "wrap" }}>
-                  {ASSET_KINDS.map((k) => (
+                  {newKindChoices.map((k) => (
                     <button
                       key={k.kind}
                       type="button"
@@ -2087,6 +2102,7 @@ export default function AdminCampaignPage() {
                   ))}
                 </div>
               </div>
+              ) : null}
               <div className="field">
                 <label htmlFor="newEmailTitle">Title</label>
                 <input
@@ -2253,7 +2269,9 @@ export default function AdminCampaignPage() {
             className={`tab ${tab === "html" ? "active" : ""}`}
             onClick={() => setTab("html")}
           >
-            Revise HTML
+            {(activeEmail.body_format ?? "html") === "markdown"
+              ? "Revise article"
+              : "Revise HTML"}
           </button>
           <button
             className={`tab ${tab === "versions" ? "active" : ""}`}
@@ -2469,7 +2487,10 @@ export default function AdminCampaignPage() {
                     : undefined
                 }
               />
-              <EmailLinks html={activeDoc.html} />
+              <EmailLinks
+                html={activeDoc.html}
+                itemNoun={kindNoun(activeEmail.kind ?? "email")}
+              />
 
               <div className="card card-pad stack">
                 <h2 className="h2" style={{ margin: 0 }}>
@@ -2746,10 +2767,10 @@ export default function AdminCampaignPage() {
           <form className="card card-pad stack" onSubmit={saveHtml}>
             <p className="muted" style={{ margin: 0 }}>
               Editing: <strong>{activeEmail.title}</strong>. Save creates a new
-              version for this email only.
+              version for this item only.
             </p>
             <div className="field">
-              <label htmlFor="emailTitle">Email title</label>
+              <label htmlFor="emailTitle">Title</label>
               <input
                 id="emailTitle"
                 value={emailTitleDraft}
@@ -2766,6 +2787,19 @@ export default function AdminCampaignPage() {
                 placeholder="Fixed headline and CTA color"
               />
             </div>
+            {(activeEmail.body_format ?? "html") === "markdown" ? (
+              <div className="field">
+                <label htmlFor="html">Article</label>
+                <MarkdownEditor
+                  id="html"
+                  value={htmlDraft}
+                  onChange={setHtmlDraft}
+                  minHeight={320}
+                  required
+                />
+              </div>
+            ) : (
+              <>
             <div className="field">
               <label htmlFor="html">Version A HTML</label>
               <textarea
@@ -2832,6 +2866,8 @@ export default function AdminCampaignPage() {
                 preview and in Basecamp approval notes.
               </p>
             </div>
+              </>
+            )}
             <div className="row">
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? "Saving..." : "Save revision"}

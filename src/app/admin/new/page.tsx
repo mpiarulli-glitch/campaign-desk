@@ -10,6 +10,7 @@ import {
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
+import { assetKindsForCampaignScope, isCampaignKindScope, type CampaignKindScope } from "@/lib/people";
 import {
   TRIGGER_KINDS,
   coerceTriggerFormFormat,
@@ -30,6 +31,12 @@ export default function NewCampaignPage() {
   const [audience, setAudience] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
   const [kind, setKind] = useState<AssetKind>("email");
+  const [kindScope, setKindScope] = useState<CampaignKindScope | null>(null);
+  const allowedKinds = assetKindsForCampaignScope(kindScope);
+  const kindChoices = allowedKinds
+    ? ASSET_KINDS.filter((k) => allowedKinds.includes(k.kind))
+    : ASSET_KINDS;
+  const blogOnly = kindScope === "blog";
   const [format, setFormat] = useState<BodyFormat>("html");
   const [mediaUrl, setMediaUrl] = useState("");
   const [fileName, setFileName] = useState("");
@@ -45,6 +52,20 @@ export default function NewCampaignPage() {
   const [triggerFormMediaUrl, setTriggerFormMediaUrl] = useState("");
 
   useEffect(() => {
+    fetch("/api/auth")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const scope = isCampaignKindScope(d?.campaignKind) ? d.campaignKind : null;
+        setKindScope(scope);
+        if (scope === "blog") {
+          setKind("blog");
+          setFormat("markdown");
+          setPresentation("package");
+        } else if (scope === "interactive") {
+          setKind("interactive");
+          setFormat("html");
+        }
+      });
     fetch("/api/revenue/clients")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setClients(d.clients.map((c: RevClientOption) => ({ id: c.id, name: c.name }))));
@@ -127,6 +148,8 @@ export default function NewCampaignPage() {
             <h1 className="h1">New campaign</h1>
           </div>
 
+          {blogOnly ? null : (
+          <>
           <div className="field">
             <label>How should the client review this?</label>
             <div className="tabs" style={{ marginTop: 4, flexWrap: "wrap" }}>
@@ -244,11 +267,14 @@ export default function NewCampaignPage() {
               </div>
             </div>
           ) : null}
+          </>
+          )}
 
+          {kindChoices.length > 1 ? (
           <div className="field">
             <label>What is this?</label>
             <div className="tabs" style={{ marginTop: 4, flexWrap: "wrap" }}>
-              {ASSET_KINDS.map((k) => (
+              {kindChoices.map((k) => (
                 <button
                   key={k.kind}
                   type="button"
@@ -263,6 +289,7 @@ export default function NewCampaignPage() {
               ))}
             </div>
           </div>
+          ) : null}
 
           <div className="field">
             <label htmlFor="title">Title</label>
@@ -270,7 +297,7 @@ export default function NewCampaignPage() {
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="July promo email"
+              placeholder={blogOnly ? "October team-building guide" : "July promo email"}
               required
             />
           </div>

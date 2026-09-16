@@ -77,6 +77,7 @@ export async function POST(_request: Request, { params }: Params) {
       channel: approvalChannelForAssets(
         listEmails(campaign.id).map((email) => email.kind)
       ),
+      itemCount: listEmails(campaign.id).length,
     },
     mentionHtml(recipient)
   );

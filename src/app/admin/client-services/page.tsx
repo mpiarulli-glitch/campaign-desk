@@ -471,8 +471,8 @@ export default function ClientServicesPage() {
 
       <main className="container container-wide stack">
         <div className="page-hero">
-          <p className="eyebrow">Client services</p>
-          <h1 className="h1">Client Services Hub</h1>
+          <p className="eyebrow">Snapshots</p>
+          <h1 className="h1">Weekly Snapshots</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Every client&apos;s weekly snapshot in one place: what we asked them
             for, whether it reached them, and whether the numbers came back.

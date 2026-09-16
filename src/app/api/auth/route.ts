@@ -6,7 +6,7 @@ import {
   login,
   sessionForecastSubjects,
 } from "@/lib/auth";
-import { FORECAST_ALL, resolveAll, visiblePages } from "@/lib/access";
+import { FORECAST_ALL, resolveAll, visiblePages, effectiveCampaignKind } from "@/lib/access";
 import { forecastGoogleEnabled } from "@/lib/forecast-google";
 import { OWNER_SLUG, personLabel } from "@/lib/people";
 import { hasOwnPassword } from "@/lib/users";
@@ -54,6 +54,7 @@ export async function GET() {
     setupComplete: setup ? setup.complete : true,
     setupRemaining: setup ? setup.remaining : [],
     forecastGoogle: forecastGoogleEnabled(),
+    campaignKind: who ? effectiveCampaignKind(who) : null,
   });
 }
 

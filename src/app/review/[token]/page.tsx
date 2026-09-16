@@ -11,9 +11,12 @@ import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AutomationMap } from "@/components/AutomationMap";
 import {
-  renderAssetDoc,
+  approvalChannelForAssets,
+  clientApproveCta,
   kindNoun,
   kindUsesSubjects,
+  packageItemCountLabel,
+  renderAssetDoc,
   type AssetKind,
   type BodyFormat,
 } from "@/lib/asset-kinds";
@@ -383,11 +386,14 @@ export default function ReviewPage() {
     setApproving(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not approve this email.");
+      setError(data.error || `Could not approve this ${noun}.`);
       return;
     }
     const data = await res.json();
-    setMessage(data.message || "Email approved.");
+    setMessage(
+      data.message ||
+        `${noun.charAt(0).toUpperCase() + noun.slice(1)} approved.`
+    );
     load(emailId, { silent: true });
   }
 
@@ -493,9 +499,20 @@ export default function ReviewPage() {
       setError("Enter your first and last name above to approve.");
       return;
     }
+    const channel = approvalChannelForAssets(emails.map((e) => e.kind));
+    const noun =
+      channel === "blog"
+        ? emails.length === 1
+          ? "blog post"
+          : "blog posts"
+        : "campaign";
     if (
       !confirm(
-        "This will let the email team know this campaign is approved. Continue?"
+        channel === "blog"
+          ? `This lets the team know ${
+              emails.length === 1 ? "this blog post is" : "these blog posts are"
+            } approved. Continue?`
+          : "This will let the email team know this campaign is approved. Continue?"
       )
     ) {
       return;
@@ -512,10 +529,14 @@ export default function ReviewPage() {
     setApproving(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not approve this email.");
+      setError(data.error || `Could not approve this ${noun}.`);
       return;
     }
-    setMessage("Got it. The email team has been notified this is approved.");
+    setMessage(
+      channel === "blog"
+        ? "Got it. The team has been notified this is approved."
+        : "Got it. The email team has been notified this is approved."
+    );
     load(activeEmailId, { silent: true });
   }
 
@@ -546,6 +567,13 @@ export default function ReviewPage() {
   const activeDoc = renderAssetDoc(activeEmail);
   const itemNoun = kindNoun(activeEmail.kind ?? "email");
   const isAutomation = coercePresentation(campaign.presentation) === "automation";
+  const approvalChannel = approvalChannelForAssets(emails.map((e) => e.kind));
+  const isBlogReview = approvalChannel === "blog";
+  const approveCta = clientApproveCta(approvalChannel, emails.length);
+  const packageCountLabel = packageItemCountLabel(
+    emails.map((e) => e.kind),
+    { automation: isAutomation }
+  );
 
   return (
     <div className="app-shell review-page">
@@ -576,11 +604,7 @@ export default function ReviewPage() {
                 <span className="rv-meta-dot" aria-hidden />
               </>
             ) : null}
-            <span>
-              {emails.length} {isAutomation ? "email" : "item"}
-              {emails.length === 1 ? "" : "s"}
-              {isAutomation ? " in this automation" : ""}
-            </span>
+            <span>{packageCountLabel}</span>
             <span className="rv-meta-dot" aria-hidden />
             <span>
               Updated {new Date(campaign.updated_at).toLocaleString()}
@@ -684,8 +708,9 @@ export default function ReviewPage() {
                   {campaign.approved_by
                     ? `Approved by ${campaign.approved_by}. `
                     : ""}
-                  The email team has been notified and feedback is now closed.
-                  You can still read every item and all prior comments.
+                  {isBlogReview
+                    ? "The team has been notified and feedback is now closed. You can still read every post and all prior comments."
+                    : "The email team has been notified and feedback is now closed. You can still read every item and all prior comments."}
                 </p>
               </div>
             </div>
@@ -701,7 +726,11 @@ export default function ReviewPage() {
               <p className="rv-approve-sub">
                 {campaign.internally_approved
                   ? "The team has signed off internally. This still needs your approval before it is client-approved."
-                  : `This covers every ${isAutomation ? "email in the automation" : "item in the package"}. Type your full name to confirm it is you.`}
+                  : isBlogReview
+                    ? emails.length === 1
+                      ? "Read the post, leave comments if anything needs a change, then type your full name to confirm it is you."
+                      : "This covers every blog post in the package. Type your full name to confirm it is you."
+                    : `This covers every ${isAutomation ? "email in the automation" : "item in the package"}. Type your full name to confirm it is you.`}
               </p>
             </div>
             <div className="row" style={{ gap: 8 }}>
@@ -716,7 +745,7 @@ export default function ReviewPage() {
                 onClick={approveEmail}
                 disabled={approving || !isFullName(authorName)}
               >
-                {approving ? "Sending..." : "Approve and notify email team"}
+                {approving ? "Sending..." : approveCta}
               </button>
             </div>
           </div>
@@ -888,7 +917,7 @@ export default function ReviewPage() {
               </div>
             ) : null}
 
-            <EmailLinks html={activeDoc.html} />
+            <EmailLinks html={activeDoc.html} itemNoun={itemNoun} />
           </div>
 
           <div className="rv-rail">
@@ -918,7 +947,11 @@ export default function ReviewPage() {
                     id="body"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
-                    placeholder="Overall thoughts, tone, offer, CTA..."
+                    placeholder={
+                      isBlogReview
+                        ? "Overall thoughts, headline, accuracy, tone..."
+                        : "Overall thoughts, tone, offer, CTA..."
+                    }
                   />
                 </div>
 

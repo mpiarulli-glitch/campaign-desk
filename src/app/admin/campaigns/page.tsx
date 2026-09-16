@@ -16,6 +16,8 @@ import {
   packageItemCountLabel,
   type AssetKind,
 } from "@/lib/asset-kinds";
+import type { CampaignKindScope } from "@/lib/people";
+import { isCampaignKindScope } from "@/lib/people";
 
 type CampaignRow = {
   id: string;
@@ -301,18 +303,28 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const dateBounds = resolveDateBounds(datePreset, dateFrom, dateTo);
   const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
   const kinded = dated.filter((c) => campaignMatchesKind(c, kindFilter));
-  const visible =
+  const statused =
     statusFilter === "all"
       ? kinded
       : kinded.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? statused.filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          c.client_name.toLowerCase().includes(q)
+      )
+    : statused;
   const dateActive = Boolean(dateBounds.start || dateBounds.end);
   const kindsInList = new Set(
     campaigns.flatMap((c) => c.email_kinds || [])
@@ -347,6 +359,11 @@ export default function AdminPage() {
     }
     const data = await res.json();
     setCampaigns(data.campaigns || []);
+    const scope = isCampaignKindScope(data.scope) ? data.scope : "all";
+    setKindScope(scope);
+    if (scope === "no_blog") {
+      setKindFilter((current) => (current === "blog" ? "all" : current));
+    }
     setLoading(false);
   }
 
@@ -402,8 +419,20 @@ export default function AdminPage() {
       </div>
 
       <main className="container container-wide stack">
-        <div className="page-hero">
-          <h1 className="h1">Campaigns</h1>
+        <div className="page-hero campaign-hero">
+          <div>
+            <h1 className="h1">Campaigns</h1>
+          </div>
+          <label className="cs-search campaign-search">
+            <span className="ads-search-label">Search</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Campaign or client"
+              aria-label="Search campaigns by name or client"
+            />
+          </label>
         </div>
 
         {error ? <p className="error">{error}</p> : null}
@@ -442,12 +471,14 @@ export default function AdminPage() {
           })}
         </div>
 
+        {kindScope === "blog" || kindScope === "interactive" ? null : (
         <div className="tabs" role="tablist" aria-label="Campaign kind">
           {KIND_FILTERS.filter(
             (kf) =>
-              kf.value === "all" ||
-              kf.value === "linkedin" ||
-              kindsInList.has(kf.value)
+              (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
+              (kf.value === "all" ||
+                kf.value === "linkedin" ||
+                kindsInList.has(kf.value))
           ).map((kf) => {
             const count =
               kf.value === "all"
@@ -473,6 +504,7 @@ export default function AdminPage() {
             );
           })}
         </div>
+        )}
 
         <div className="campaign-date-filter">
           <span className="campaign-date-label">Updated</span>
@@ -576,7 +608,7 @@ export default function AdminPage() {
                   </Link>
                 </div>
               )
-            ) : visible.length === 0 ? (
+            ) : statused.length === 0 ? (
               <div className="empty">
                 <p>
                   No{" "}
@@ -598,6 +630,18 @@ export default function AdminPage() {
                     Clear date filter
                   </button>
                 ) : null}
+              </div>
+            ) : visible.length === 0 ? (
+              <div className="empty">
+                <p>No campaigns match “{query.trim()}”.</p>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setQuery("")}
+                >
+                  Clear search
+                </button>
               </div>
             ) : view === "all" ? (
               <div className="campaign-list">

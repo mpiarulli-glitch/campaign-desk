@@ -22,6 +22,7 @@ import {
   reviewAcceptsViewerAction,
 } from "@/lib/campaigns";
 import type { Campaign, ReviewChannel } from "@/lib/db";
+import { kindCountLabel, kindNoun } from "@/lib/asset-kinds";
 import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
 import { MAX_QUOTE_CHARS, quotedFeedback } from "@/lib/copy-quote";
 import { notifyClientFeedback } from "@/lib/notify";
@@ -268,7 +269,7 @@ export async function POST(request: Request, { params }: Params) {
       (e) => e.id === body.approveEmail
     );
     if (!target) {
-      return NextResponse.json({ error: "Email not found" }, { status: 404 });
+      return NextResponse.json({ error: "Item not found" }, { status: 404 });
     }
     const { allApproved } = setEmailApproved(
       target.id,
@@ -281,12 +282,15 @@ export async function POST(request: Request, { params }: Params) {
       await syncCampaignDeliverablesCard(campaign.id, "approved");
     }
     const fresh = getCampaignById(campaign.id)!;
+    const noun = kindNoun(target.kind);
+    const cap = noun.charAt(0).toUpperCase() + noun.slice(1);
+    const allLabel = kindCountLabel(target.kind, 2).replace(/^\d+\s/, "");
     return NextResponse.json({
       campaign: publicCampaign(fresh, channel),
       allApproved,
       message: allApproved
-        ? "All emails approved. The team has been notified."
-        : "Email approved.",
+        ? `All ${allLabel} approved. The team has been notified.`
+        : `${cap} approved.`,
     });
   }
 

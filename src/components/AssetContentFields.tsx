@@ -1,5 +1,6 @@
 "use client";
 
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { kindMeta, type AssetKind, type BodyFormat } from "@/lib/asset-kinds";
 
 // Shared content inputs for creating/adding a review asset. The fields shown
@@ -140,16 +141,15 @@ export function AssetContentFields({
       {format === "markdown" ? (
         <div className="field">
           <label htmlFor={contentId}>
-            {kind === "copydeck" ? "Copy deck (markdown)" : "Article (markdown)"}
+            {kind === "copydeck" ? "Copy deck" : "Article"}
           </label>
-          <textarea
+          <MarkdownEditor
             id={contentId}
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={setContent}
             placeholder={
-              "# Headline\n\nWrite in markdown. Use ## and ### for sections, - for bullets, **bold**, and [links](https://example.com)."
+              "# Headline\n\nWrite the article. Use the toolbar for headings, lists, tables, bold, links, and images."
             }
-            style={{ minHeight: 220, fontSize: 14, lineHeight: 1.6 }}
             required
           />
         </div>

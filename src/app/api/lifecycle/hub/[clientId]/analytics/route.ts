@@ -202,6 +202,7 @@ export async function GET(
     return NextResponse.json({
       clientId,
       clientName: client.name,
+      businessModel: client.business_model,
       range: preset,
       analytics,
     });

@@ -15,6 +15,7 @@ export const OPERATOR_STATUS_OPTIONS = [
   { value: "approved", label: "Approved" },
   { value: "scheduled", label: "Scheduled" },
   { value: "sent", label: "Sent" },
+  { value: "live", label: "Live" },
 ] as const;
 
 export type OperatorCampaignStatus =
