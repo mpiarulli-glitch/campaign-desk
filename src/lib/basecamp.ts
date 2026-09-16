@@ -1600,7 +1600,12 @@ export async function createAssignedTodo(input: {
   listName?: string;
   /** When set, create on this list and skip get-or-create by name. */
   listId?: string;
-}): Promise<{ ok: true; todoId: string; todoUrl: string } | { ok: false; error: string }> {
+  /** Defaults to true when there are assignees. */
+  notify?: boolean;
+}): Promise<
+  | { ok: true; todoId: string; todoUrl: string; listId: string }
+  | { ok: false; error: string }
+> {
   const identity = input.identity ?? SERVICE;
   if (!input.projectId) return { ok: false, error: "No Basecamp project set." };
   const title = input.title.trim().slice(0, 999);
@@ -1622,6 +1627,8 @@ export async function createAssignedTodo(input: {
       if ("error" in resolved) return { ok: false, error: resolved.error };
       list = resolved;
     }
+    const notify =
+      input.notify === undefined ? input.assigneeIds.length > 0 : input.notify;
     const res = await bc(
       `/buckets/${input.projectId}/todolists/${list.id}/todos.json`,
       {
@@ -1630,7 +1637,7 @@ export async function createAssignedTodo(input: {
           content: title,
           description: input.description || "",
           assignee_ids: input.assigneeIds,
-          notify: input.assigneeIds.length > 0,
+          notify,
           ...(dueOn ? { due_on: dueOn } : {}),
         }),
       },
@@ -1645,10 +1652,139 @@ export async function createAssignedTodo(input: {
     return {
       ok: true,
       todoId,
+      listId: list.id,
       todoUrl: basecampTodoAppUrl(input.projectId, todoId, todo.app_url),
     };
   } catch (err) {
     return { ok: false, error: (err as Error).message || "Could not create the Basecamp to-do." };
+  }
+}
+
+type TodoWritePayload = {
+  content: string;
+  description?: string;
+  assignee_ids: number[];
+  due_on: string | null;
+  starts_on?: string | null;
+  notify?: boolean;
+};
+
+/**
+ * Change a to-do/card/step due date without wiping the rest of the recording.
+ * Basecamp's PUT treats omitted fields as a clear, so this GETs first.
+ */
+export async function updateAssignmentDue(input: {
+  projectId: string;
+  id: string;
+  kind?: "todo" | "card" | "step";
+  dueOn: string | null;
+  identity?: BcIdentity;
+}): Promise<{ ok: boolean; error?: string; title?: string; listId?: string }> {
+  const identity = input.identity ?? SERVICE;
+  const projectId = input.projectId.trim();
+  const id = input.id.trim();
+  const kind = input.kind || "todo";
+  if (!projectId || !id) return { ok: false, error: "Missing project or recording id." };
+
+  const dueOn = (input.dueOn || "").trim() || null;
+
+  if (kind === "card") {
+    try {
+      const get = await bc(
+        `/buckets/${projectId}/card_tables/cards/${id}.json`,
+        undefined,
+        identity
+      );
+      if (!get.ok) return { ok: false, error: `Could not load that card (${get.status}).` };
+      const card = await get.json();
+      const title = (card.title || card.content || "").trim();
+      const assignees = Array.isArray(card.assignees)
+        ? card.assignees.map((a: { id?: number }) => a.id).filter(Boolean)
+        : [];
+      const put = await bc(
+        `/buckets/${projectId}/card_tables/cards/${id}.json`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            title,
+            content: card.content || "",
+            assignee_ids: assignees,
+            due_on: dueOn,
+          }),
+        },
+        identity
+      );
+      if (!put.ok) return { ok: false, error: `Could not update that card (${put.status}).` };
+      return { ok: true, title };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  if (kind === "step") {
+    try {
+      const paths = [
+        `/buckets/${projectId}/card_tables/steps/${id}.json`,
+        `/buckets/${projectId}/steps/${id}.json`,
+      ];
+      let step: { title?: string; content?: string; parent?: { id?: number } } | null = null;
+      for (const path of paths) {
+        const get = await bc(path, undefined, identity);
+        if (get.ok) {
+          step = await get.json();
+          break;
+        }
+      }
+      const title = (step?.title || step?.content || "").trim();
+      if (!title) return { ok: false, error: "Could not load that subtask." };
+      const putBody = JSON.stringify({ title, due_on: dueOn });
+      let ok = false;
+      for (const path of [
+        `/buckets/${projectId}/card_tables/steps/${id}.json`,
+        `/buckets/${projectId}/steps/${id}.json`,
+      ]) {
+        const put = await bc(path, { method: "PUT", body: putBody }, identity);
+        if (put.ok) {
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) return { ok: false, error: "Could not update that subtask's due date." };
+      return {
+        ok: true,
+        title,
+        listId: step?.parent?.id ? String(step.parent.id) : undefined,
+      };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  try {
+    const get = await bc(`/buckets/${projectId}/todos/${id}.json`, undefined, identity);
+    if (!get.ok) return { ok: false, error: `Could not load that to-do (${get.status}).` };
+    const todo = await get.json();
+    const content = (todo.content || todo.title || "").trim();
+    if (!content) return { ok: false, error: "That to-do has no title to preserve." };
+    const payload: TodoWritePayload = {
+      content,
+      description: typeof todo.description === "string" ? todo.description : "",
+      assignee_ids: Array.isArray(todo.assignees)
+        ? todo.assignees.map((a: { id?: number }) => a.id).filter(Boolean)
+        : [],
+      due_on: dueOn,
+    };
+    if (todo.starts_on) payload.starts_on = todo.starts_on;
+    const put = await bc(
+      `/buckets/${projectId}/todos/${id}.json`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      identity
+    );
+    if (!put.ok) return { ok: false, error: `Could not update that to-do (${put.status}).` };
+    const listId = todo.parent?.id != null ? String(todo.parent.id) : "";
+    return { ok: true, title: content, listId };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
 }
 

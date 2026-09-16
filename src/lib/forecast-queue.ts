@@ -13,6 +13,7 @@ export interface QueueTodo {
   id: string;
   title: string;
   list: string;
+  listId?: string;
   dueOn: string | null;
   assigned?: boolean;
   kind?: QueueTodoKind;

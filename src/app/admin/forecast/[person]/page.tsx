@@ -80,6 +80,12 @@ type Data = {
   // Hours logged to Basecamp, keyed by the day they were written (not the
   // task's current slot). Week/day gauges read this so a move cannot steal them.
   loggedByDate?: Record<string, number>;
+  bookings?: Array<{
+    id: string;
+    completed: boolean;
+    taskDate: string;
+    recordingId: string;
+  }>;
 };
 
 type ClientOption = { id: string; name: string; internal?: boolean };
@@ -1380,10 +1386,12 @@ export default function PersonForecastPage() {
       setAssigned({
         loading: false,
         assignments: Array.isArray(json?.assignments) ? json.assignments : [],
+        repeats:
+          json?.repeats && typeof json.repeats === "object" ? json.repeats : {},
         reason: json?.reason ?? (res.ok ? null : "failed"),
       });
     } catch {
-      setAssigned({ loading: false, assignments: [], reason: "failed" });
+      setAssigned({ loading: false, assignments: [], repeats: {}, reason: "failed" });
     }
   }, [person]);
 
@@ -1656,10 +1664,18 @@ export default function PersonForecastPage() {
     return map;
   }, [data]);
 
-  // Tasks view: which Basecamp recordings are already booked this week, so
-  // Schedule can become "On forecast" and the checkbox can drive the row.
+  // Tasks view: which Basecamp recordings are already booked on any week, so
+  // scheduling next week still counts as booked while this week's calendar is open.
   const forecastTaskByRecording = useMemo(() => {
     const map = new Map<string, { id: string; completed: boolean; taskDate: string }>();
+    for (const b of data?.bookings || []) {
+      if (!b.recordingId) continue;
+      map.set(b.recordingId, {
+        id: b.id,
+        completed: Boolean(b.completed),
+        taskDate: b.taskDate,
+      });
+    }
     for (const t of data?.tasks || []) {
       const recording = t.basecamp_step_id || t.basecamp_todo_id;
       if (!recording) continue;
@@ -2120,6 +2136,7 @@ export default function PersonForecastPage() {
         id: todo.id,
         kind: todo.kind || "todo",
         completed,
+        dueOn: todo.dueOn,
       }),
     });
     setTasksBusyId(null);
@@ -2138,6 +2155,66 @@ export default function PersonForecastPage() {
     setTasksSchedulingId(todo.id);
     await bookTodo(todo, date, "");
     setTasksSchedulingId(null);
+  }
+
+  async function updateAssignedTask(
+    todo: QueueTodo,
+    patch: { dueOn?: string | null; repeat?: "once" | "weekly" | "monthly" }
+  ) {
+    setTasksBusyId(todo.id);
+    if (Object.prototype.hasOwnProperty.call(patch, "dueOn")) {
+      setAssigned((a) => ({
+        ...a,
+        assignments: a.assignments.map((row) =>
+          row.id === todo.id ? { ...row, dueOn: patch.dueOn ?? null } : row
+        ),
+      }));
+    }
+    const res = await fetch("/api/forecast/assignments", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person,
+        projectId: todo.projectId,
+        id: todo.id,
+        kind: todo.kind || "todo",
+        title: todo.title,
+        listId: todo.listId || "",
+        parentId: todo.parentId || "",
+        ...patch,
+      }),
+    });
+    setTasksBusyId(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not update that Basecamp task.");
+      void loadAssigned();
+      return;
+    }
+    setError("");
+    void loadAssigned();
+  }
+
+  async function createAssignedTask(input: {
+    title: string;
+    clientId: string;
+    listId: string;
+    dueOn: string | null;
+    repeat: "once" | "weekly" | "monthly";
+  }): Promise<boolean> {
+    const res = await fetch("/api/forecast/assignments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ person, ...input }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error || "Could not create that to-do.");
+      return false;
+    }
+    setError("");
+    void loadAssigned();
+    return true;
   }
 
   // One drop handler for the whole grid: move the row that was dragged, or book
@@ -3762,18 +3839,18 @@ export default function PersonForecastPage() {
           </div>
         ) : view === "tasks" ? (
           <ForecastTasksPanel
+            person={person}
             assigned={assigned}
             today={today}
-            days={days.map((ymd) => ({
-              ymd,
-              label: `${dayName(ymd).slice(0, 3)} ${dayShortDate(ymd)}`,
-            }))}
-            bookedIds={bookedRecordingIds(data?.tasks || [])}
+            clients={pickerClients}
+            bookedIds={new Set(forecastTaskByRecording.keys())}
             forecastTaskByRecording={forecastTaskByRecording}
             busyId={tasksBusyId}
             schedulingId={tasksSchedulingId}
             onComplete={(todo, completed) => void completeAssignedTask(todo, completed)}
             onSchedule={(todo, date) => void scheduleAssignedTask(todo, date)}
+            onUpdate={(todo, patch) => void updateAssignedTask(todo, patch)}
+            onCreate={(input) => createAssignedTask(input)}
             onRefresh={() => void loadAssigned()}
           />
         ) : (

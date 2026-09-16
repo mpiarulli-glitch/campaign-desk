@@ -24,6 +24,7 @@ import {
 import { ensureMeetingOnBasecamp } from "@/lib/forecast-schedule";
 import { parseTimeInput } from "@/lib/forecast-time";
 import { isForecastMeeting, resolveLogTimeDate } from "@/lib/forecast-timer";
+import { spawnNextRepeat } from "@/lib/forecast-todo-repeats";
 
 type Params = { params: Promise<{ person: string; id: string }> };
 
@@ -314,6 +315,19 @@ export async function PATCH(request: Request, { params }: Params) {
               asPerson(person)
             );
       basecamp = { synced: result.ok, error: result.error };
+      if (
+        result.ok &&
+        body.completed &&
+        !existing.basecamp_step_id &&
+        existing.basecamp_todo_id
+      ) {
+        await spawnNextRepeat({
+          person,
+          projectId: existing.basecamp_project_id,
+          recordingId: existing.basecamp_todo_id,
+          identity: asPerson(person),
+        }).catch(() => null);
+      }
     }
   }
   return NextResponse.json({ task, basecamp });

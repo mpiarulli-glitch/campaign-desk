@@ -37,6 +37,7 @@ export type QueueTodoSource = {
 export type AssignedSource = {
   loading: boolean;
   assignments: QueueTodo[];
+  repeats?: Record<string, "weekly" | "monthly">;
   reason: string | null;
 };
 

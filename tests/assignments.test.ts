@@ -32,6 +32,7 @@ test("a to-do comes through with its project and list", () => {
     projectId: "28110364",
     projectName: "Empire Leadership HQ",
     list: "Michael's To-Do's",
+    listId: "7840832649",
     dueOn: "2026-08-07",
     appUrl: "https://app.basecamp.com/5338018/buckets/28110364/todos/9855166235",
   });

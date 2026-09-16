@@ -31,6 +31,17 @@ export function addWeeks(weekStart: string, n: number): string {
   return toYmd(d);
 }
 
+// The five workday dates (Mon–Fri) making up a Monday-keyed week.
+export function weekdays(weekStart: string): string[] {
+  const start = parseYmd(weekStart);
+  const out: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    out.push(toYmd(dt));
+  }
+  return out;
+}
+
 // "Jul 14 – 20, 2026" (or spanning months / years when needed)
 export function weekLabel(weekStart: string): string {
   const start = parseYmd(weekStart);

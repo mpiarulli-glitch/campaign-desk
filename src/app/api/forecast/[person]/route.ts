@@ -7,6 +7,7 @@ import {
   getWeekNote,
   hasPlanUndo,
   isValidPerson,
+  listPersonRecordingBookings,
   listTasksForPersonWeek,
   loggedHoursByDate,
   personLabel,
@@ -59,6 +60,7 @@ export async function GET(request: Request, { params }: Params) {
     allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
     note: getWeekNote(person, week),
     canUndoPlan: hasPlanUndo(person, week),
+    bookings: listPersonRecordingBookings(person),
     google: googleStatusFor(person, self === person),
   });
 }

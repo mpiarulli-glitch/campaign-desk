@@ -13,6 +13,8 @@ import { parseTimeInput } from "./forecast-time";
 import { runningSeconds } from "./forecast-timer";
 import { addWeeks } from "./week";
 
+export { weekdays } from "./week";
+
 export type { ForecastSubtask, ForecastTask, ForecastTimeLog } from "./db";
 export { PEOPLE, isValidPerson, personLabel };
 
@@ -23,17 +25,51 @@ export type ForecastTaskWithSubtasks = ForecastTask & { subtasks: ForecastSubtas
 export const WEEKLY_CAPACITY_HOURS = 40;
 export const DAILY_CAPACITY_HOURS = WEEKLY_CAPACITY_HOURS / 5;
 
-// The five workday dates (Mon-Fri) making up a Monday-keyed week.
-export function weekdays(weekStart: string): string[] {
-  const [y, m, d] = weekStart.split("-").map(Number);
-  const out: string[] = [];
-  for (let i = 0; i < 5; i++) {
-    const dt = new Date(y, m - 1, d + i);
-    out.push(
-      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`
-    );
+export type RecordingBooking = {
+  id: string;
+  completed: boolean;
+  taskDate: string;
+  recordingId: string;
+};
+
+/**
+ * Every Basecamp recording already sitting on this person's forecast, any week.
+ * The Tasks view needs this so scheduling next week still counts as booked
+ * while you're looking at this week's calendar.
+ */
+export function listPersonRecordingBookings(person: string): RecordingBooking[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, completed, task_date, basecamp_todo_id, basecamp_step_id
+         FROM forecast_tasks
+        WHERE person = ?
+          AND (IFNULL(basecamp_todo_id, '') != '' OR IFNULL(basecamp_step_id, '') != '')
+        ORDER BY task_date ASC, created_at ASC`
+    )
+    .all(person) as Array<{
+    id: string;
+    completed: number;
+    task_date: string;
+    basecamp_todo_id: string;
+    basecamp_step_id: string;
+  }>;
+  const byRecording = new Map<string, RecordingBooking>();
+  for (const row of rows) {
+    const recordingId = (row.basecamp_step_id || row.basecamp_todo_id || "").trim();
+    if (!recordingId) continue;
+    const next: RecordingBooking = {
+      id: row.id,
+      completed: Boolean(row.completed),
+      taskDate: row.task_date,
+      recordingId,
+    };
+    const prev = byRecording.get(recordingId);
+    // Prefer the open booking when the same recording landed twice.
+    if (!prev || (prev.completed && !next.completed)) {
+      byRecording.set(recordingId, next);
+    }
   }
-  return out;
+  return [...byRecording.values()];
 }
 
 export function listTasksForPersonWeek(person: string, weekStart: string): ForecastTaskWithSubtasks[] {

@@ -23,6 +23,7 @@ export interface BcAssignment {
   // The to-do list or card column it sits in, for context in a list that spans
   // every project.
   list: string;
+  listId?: string;
   dueOn: string | null;
   parentId?: string;
   parentTitle?: string;
@@ -105,6 +106,7 @@ export function shapeAssignments(payload: AssignmentsPayload): BcAssignment[] {
     const title = textOf(row);
     const projectName = row.bucket?.name || "";
     const list = (row.parent?.title || "").trim();
+    const listId = row.parent?.id ? String(row.parent.id) : "";
     // A placeholder parent/project, or a shared to-do library project, means
     // this is still template material — its checklist steps are not either.
     const template =
@@ -121,6 +123,7 @@ export function shapeAssignments(payload: AssignmentsPayload): BcAssignment[] {
         projectId,
         projectName,
         list,
+        listId,
         dueOn: row.due_on || null,
         appUrl: row.app_url || "",
       });
@@ -141,6 +144,7 @@ export function shapeAssignments(payload: AssignmentsPayload): BcAssignment[] {
         projectId,
         projectName,
         list,
+        listId,
         // A step carries no date of its own, so it falls due when its parent
         // does — the same rule the per-project picker uses.
         dueOn: child.due_on || row.due_on || null,

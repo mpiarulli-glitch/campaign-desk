@@ -8459,6 +8459,97 @@ a.fc-tasks-title:hover .fc-tasks-ext { opacity: 1; }
   white-space: nowrap;
   padding: 6px 2px;
 }
+.fc-tasks-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fc-tasks-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+.fc-tasks-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.fc-tasks-field > span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fc-tasks-field input,
+.fc-tasks-field select {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 5px 8px;
+}
+.fc-tasks-field-wide { grid-column: 1 / -1; }
+.fc-tasks-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+.fc-tasks-composer-title {
+  font-size: 13px;
+  font-weight: 750;
+}
+.fc-tasks-composer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 12px;
+}
+.fc-tasks-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.fc-tasks-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 2px;
+}
+.fc-tasks-week-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-body);
+  text-align: center;
+}
+.fc-tasks-week-btn {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-body);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.fc-tasks-week-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.fc-tasks-week-btn:disabled { opacity: 0.45; cursor: default; }
 .fc-tasks-picker {
   grid-area: picker;
   display: flex;

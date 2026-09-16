@@ -5,6 +5,8 @@ import {
   filterAssignedTasks,
   groupAssignedTasks,
   groupAssignedTasksByDue,
+  nextRepeatDueOn,
+  scheduleWeekDays,
 } from "../src/lib/forecast-tasks";
 import type { QueueTodo } from "../src/lib/forecast-queue";
 
@@ -65,6 +67,22 @@ test("groupAssignedTasksByDue buckets overdue, today, upcoming, and no date", ()
       ["none", ["4"]],
     ]
   );
+});
+
+test("nextRepeatDueOn walks a week or a month without overflowing the day", () => {
+  assert.equal(nextRepeatDueOn("2026-09-16", "weekly"), "2026-09-23");
+  assert.equal(nextRepeatDueOn("2026-01-31", "monthly"), "2026-02-28");
+});
+
+test("scheduleWeekDays starts on this week's Monday and can look ahead", () => {
+  const thisWeek = scheduleWeekDays("2026-09-16", 0);
+  assert.equal(thisWeek.weekStart, "2026-09-14");
+  assert.equal(thisWeek.days.length, 5);
+  assert.equal(thisWeek.days[0].ymd, "2026-09-14");
+  assert.match(thisWeek.label, /This week/);
+  const next = scheduleWeekDays("2026-09-16", 1);
+  assert.equal(next.weekStart, "2026-09-21");
+  assert.match(next.label, /Next week/);
 });
 
 test("assignedTaskHref prefers appUrl and falls back for steps to the parent", () => {

@@ -15,6 +15,8 @@ test("the person forecast page keeps Today, List, Calendar, and Tasks — not We
   assert.match(src, />\s*Calendar\s*</);
   assert.match(src, />\s*Tasks\s*/);
   assert.match(src, /ForecastTasksPanel/);
+  assert.match(src, /createAssignedTask/);
+  assert.match(src, /updateAssignedTask/);
   assert.doesNotMatch(src, /setView\("week"\)/);
   assert.doesNotMatch(src, />\s*Week\s*</);
   assert.doesNotMatch(src, /ops-planner/);

@@ -1,18 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   assignedTaskHref,
   filterAssignedTasks,
   groupAssignedTasks,
   groupAssignedTasksByDue,
+  isTodoRepeat,
+  scheduleWeekDays,
+  weekdayButtonLabel,
   type TasksFilter,
   type TasksLayout,
+  type TodoRepeat,
 } from "@/lib/forecast-tasks";
 import { sortQueueTodos, type QueueTodo } from "@/lib/forecast-queue";
 import type { AssignedSource } from "./ForecastQueue";
 
-export type ForecastDay = { ymd: string; label: string };
+export type TaskClientOption = { id: string; name: string };
 
 function shortDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -40,41 +44,70 @@ function dueText(dueOn: string | null, today: string): string {
   return `Due ${shortDate(dueOn)}`;
 }
 
+function repeatLabel(repeat: TodoRepeat): string {
+  if (repeat === "weekly") return "Weekly";
+  if (repeat === "monthly") return "Monthly";
+  return "One-time";
+}
+
+function repeatOf(
+  todo: QueueTodo,
+  repeats: Record<string, "weekly" | "monthly">
+): TodoRepeat {
+  const key = todo.kind === "step" && todo.parentId ? todo.parentId : todo.id;
+  return repeats[key] || repeats[todo.id] || "once";
+}
+
 /**
  * Top-level Tasks view: everything Basecamp has assigned to this person.
  *
  * Check one off to complete it in Basecamp (and any matching forecast row).
- * Schedule opens a Mon–Fri picker and books the item onto that day of the
- * week being planned. Titles open the to-do in Basecamp.
+ * Schedule books it onto a weekday of this week or a later one. Due dates and
+ * weekly/monthly repeats can be edited here. New to-dos are created on this
+ * page, assigned as you.
  */
 export function ForecastTasksPanel({
+  person,
   assigned,
   today,
-  days,
+  clients,
   bookedIds,
   forecastTaskByRecording,
   busyId,
   schedulingId,
   onComplete,
   onSchedule,
+  onUpdate,
+  onCreate,
   onRefresh,
 }: {
+  person: string;
   assigned: AssignedSource;
   today: string;
-  days: ForecastDay[];
+  clients: TaskClientOption[];
   bookedIds: Set<string>;
-  // Recording id → forecast task id when that assignment is already on this week.
   forecastTaskByRecording: Map<string, { id: string; completed: boolean; taskDate: string }>;
   busyId: string | null;
   schedulingId: string | null;
   onComplete: (todo: QueueTodo, completed: boolean) => void;
   onSchedule: (todo: QueueTodo, date: string) => void;
+  onUpdate: (todo: QueueTodo, patch: { dueOn?: string | null; repeat?: TodoRepeat }) => void;
+  onCreate: (input: {
+    title: string;
+    clientId: string;
+    listId: string;
+    dueOn: string | null;
+    repeat: TodoRepeat;
+  }) => Promise<boolean>;
   onRefresh: () => void;
 }) {
   const [filter, setFilter] = useState<TasksFilter>("all");
   const [layout, setLayout] = useState<TasksLayout>("due");
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [pickerWeek, setPickerWeek] = useState(0);
+  const [composerOpen, setComposerOpen] = useState(false);
 
+  const repeats = assigned.repeats || {};
   const groups = useMemo(() => {
     const filtered = sortQueueTodos(
       filterAssignedTasks(assigned.assignments, filter)
@@ -90,6 +123,7 @@ export function ForecastTasksPanel({
     (a) => a.dueOn && a.dueOn < today
   ).length;
   const showClientInMeta = layout === "due";
+  const scheduleWeek = scheduleWeekDays(today, pickerWeek);
 
   return (
     <div className="fc-tasks">
@@ -139,15 +173,37 @@ export function ForecastTasksPanel({
             </span>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm fc-tasks-refresh"
-          onClick={onRefresh}
-          disabled={assigned.loading}
-        >
-          {assigned.loading ? "Loading…" : "Refresh"}
-        </button>
+        <div className="fc-tasks-toolbar-actions">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setComposerOpen((open) => !open)}
+          >
+            {composerOpen ? "Cancel" : "New to-do"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm fc-tasks-refresh"
+            onClick={onRefresh}
+            disabled={assigned.loading}
+          >
+            {assigned.loading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
       </div>
+
+      {composerOpen ? (
+        <NewTodoForm
+          person={person}
+          clients={clients}
+          onCancel={() => setComposerOpen(false)}
+          onCreate={async (input) => {
+            const ok = await onCreate(input);
+            if (ok) setComposerOpen(false);
+            return ok;
+          }}
+        />
+      ) : null}
 
       {assigned.loading && assigned.assignments.length === 0 ? (
         <p className="fc-tasks-empty">Loading your Basecamp tasks…</p>
@@ -191,6 +247,7 @@ export function ForecastTasksPanel({
                     const rowBusy =
                       busyId === todo.id || schedulingId === todo.id;
                     const tone = dueTone(todo.dueOn, today);
+                    const repeat = repeatOf(todo, repeats);
                     const context =
                       todo.kind === "step" && todo.parentTitle
                         ? todo.parentTitle
@@ -240,6 +297,9 @@ export function ForecastTasksPanel({
                             ) : todo.kind === "card" ? (
                               <span className="fc-queue-tag">card</span>
                             ) : null}
+                            {repeat !== "once" ? (
+                              <span className="fc-tasks-on">{repeatLabel(repeat)}</span>
+                            ) : null}
                             {booked ? (
                               <span className="fc-tasks-on">On forecast</span>
                             ) : null}
@@ -253,11 +313,42 @@ export function ForecastTasksPanel({
                             {context ? <span>{context}</span> : null}
                             {forecast && !forecast.completed ? (
                               <span>
-                                Planned{" "}
-                                {days.find((d) => d.ymd === forecast.taskDate)
-                                  ?.label || forecast.taskDate}
+                                Planned {weekdayButtonLabel(forecast.taskDate)}
                               </span>
                             ) : null}
+                          </div>
+                          <div className="fc-tasks-edit">
+                            <label className="fc-tasks-field">
+                              <span>Due</span>
+                              <input
+                                type="date"
+                                value={todo.dueOn || ""}
+                                disabled={rowBusy}
+                                aria-label={`Due date for ${todo.title}`}
+                                onChange={(e) =>
+                                  onUpdate(todo, {
+                                    dueOn: e.target.value || null,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="fc-tasks-field">
+                              <span>Repeat</span>
+                              <select
+                                value={repeat}
+                                disabled={rowBusy || (!todo.dueOn && repeat === "once")}
+                                aria-label={`Repeat for ${todo.title}`}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  if (!isTodoRepeat(next)) return;
+                                  onUpdate(todo, { repeat: next });
+                                }}
+                              >
+                                <option value="once">One-time</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                              </select>
+                            </label>
                           </div>
                         </div>
 
@@ -275,11 +366,12 @@ export function ForecastTasksPanel({
                               className="fc-tasks-schedule"
                               disabled={rowBusy}
                               aria-expanded={picking}
-                              onClick={() =>
+                              onClick={() => {
+                                setPickerWeek(0);
                                 setPickerFor((id) =>
                                   id === todo.id ? null : todo.id
-                                )
-                              }
+                                );
+                              }}
                             >
                               {schedulingId === todo.id
                                 ? "Scheduling…"
@@ -296,7 +388,32 @@ export function ForecastTasksPanel({
                             role="group"
                             aria-label="Pick a day"
                           >
-                            {days.map((day) => (
+                            <div className="fc-tasks-week-nav">
+                              <button
+                                type="button"
+                                className="fc-tasks-week-btn"
+                                disabled={pickerWeek <= 0 || rowBusy}
+                                onClick={() =>
+                                  setPickerWeek((n) => Math.max(0, n - 1))
+                                }
+                              >
+                                Earlier
+                              </button>
+                              <span className="fc-tasks-week-label">
+                                {scheduleWeek.label}
+                              </span>
+                              <button
+                                type="button"
+                                className="fc-tasks-week-btn"
+                                disabled={pickerWeek >= 8 || rowBusy}
+                                onClick={() =>
+                                  setPickerWeek((n) => Math.min(8, n + 1))
+                                }
+                              >
+                                Later
+                              </button>
+                            </div>
+                            {scheduleWeek.days.map((day) => (
                               <button
                                 key={day.ymd}
                                 type="button"
@@ -306,6 +423,7 @@ export function ForecastTasksPanel({
                                 disabled={rowBusy}
                                 onClick={() => {
                                   setPickerFor(null);
+                                  setPickerWeek(0);
                                   onSchedule(todo, day.ymd);
                                 }}
                               >
@@ -324,5 +442,170 @@ export function ForecastTasksPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function NewTodoForm({
+  person,
+  clients,
+  onCancel,
+  onCreate,
+}: {
+  person: string;
+  clients: TaskClientOption[];
+  onCancel: () => void;
+  onCreate: (input: {
+    title: string;
+    clientId: string;
+    listId: string;
+    dueOn: string | null;
+    repeat: TodoRepeat;
+  }) => Promise<boolean>;
+}) {
+  const [title, setTitle] = useState("");
+  const [clientId, setClientId] = useState(clients[0]?.id || "");
+  const [listId, setListId] = useState("");
+  const [dueOn, setDueOn] = useState("");
+  const [repeat, setRepeat] = useState<TodoRepeat>("once");
+  const [saving, setSaving] = useState(false);
+  const [lists, setLists] = useState<Array<{ id: string; name: string }>>([]);
+  const [listsLoading, setListsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!clientId) {
+      setLists([]);
+      setListId("");
+      return;
+    }
+    let cancelled = false;
+    setListsLoading(true);
+    fetch(
+      `/api/forecast/todolists?person=${encodeURIComponent(person)}&client=${encodeURIComponent(clientId)}`
+    )
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled) return;
+        const next = Array.isArray(json?.lists) ? json.lists : [];
+        setLists(next);
+        setListId((current) =>
+          next.some((l: { id: string }) => l.id === current) ? current : ""
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setLists([]);
+      })
+      .finally(() => {
+        if (!cancelled) setListsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, person]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!title.trim() || !clientId || saving) return;
+    if (repeat !== "once" && !dueOn) return;
+    setSaving(true);
+    const ok = await onCreate({
+      title: title.trim(),
+      clientId,
+      listId,
+      dueOn: dueOn || null,
+      repeat,
+    });
+    setSaving(false);
+    if (ok) {
+      setTitle("");
+      setDueOn("");
+      setRepeat("once");
+    }
+  }
+
+  return (
+    <form className="fc-tasks-composer" onSubmit={(e) => void submit(e)}>
+      <div className="fc-tasks-composer-title">New to-do</div>
+      <div className="fc-tasks-composer-grid">
+        <label className="fc-tasks-field fc-tasks-field-wide">
+          <span>Title</span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="What needs doing?"
+            autoFocus
+            required
+          />
+        </label>
+        <label className="fc-tasks-field">
+          <span>Client</span>
+          <select
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            required
+          >
+            {clients.length === 0 ? (
+              <option value="">No clients loaded</option>
+            ) : null}
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="fc-tasks-field">
+          <span>List</span>
+          <select
+            value={listId}
+            onChange={(e) => setListId(e.target.value)}
+            disabled={listsLoading || !clientId}
+          >
+            <option value="">
+              {listsLoading ? "Loading lists…" : "Tasks (default)"}
+            </option>
+            {lists.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="fc-tasks-field">
+          <span>Due</span>
+          <input
+            type="date"
+            value={dueOn}
+            onChange={(e) => setDueOn(e.target.value)}
+          />
+        </label>
+        <label className="fc-tasks-field">
+          <span>Repeat</span>
+          <select
+            value={repeat}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (isTodoRepeat(next)) setRepeat(next);
+            }}
+            disabled={!dueOn && repeat === "once"}
+          >
+            <option value="once">One-time</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </label>
+      </div>
+      <div className="fc-tasks-composer-actions">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-sm"
+          disabled={saving || !title.trim() || !clientId}
+        >
+          {saving ? "Creating…" : "Create to-do"}
+        </button>
+      </div>
+    </form>
   );
 }
