@@ -29,7 +29,8 @@ test("the app shell has an activity bell in the top bar", () => {
 
   const api = fs.readFileSync(path.join("src/app/api/activity/route.ts"), "utf8");
   assert.match(api, /sessionCampaignKind/);
-  assert.match(api, /listActivity\(150, undefined, kindScope\)/);
+  assert.match(api, /mergeActivityWithFollowups/);
+  assert.match(bell, /followup/);
 });
 
 test("activity item keys and relative time stay stable for the bell", () => {
@@ -38,8 +39,8 @@ test("activity item keys and relative time stay stable for the bell", () => {
     "feedback-c1"
   );
   assert.equal(
-    activityItemKey({ kind: "approved", id: "camp-9" }),
-    "approved-camp-9"
+    activityItemKey({ kind: "followup", id: "camp-9:2026-09-16" }),
+    "followup-camp-9:2026-09-16"
   );
   assert.equal(relativeActivityTime(new Date().toISOString()), "just now");
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();

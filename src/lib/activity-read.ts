@@ -6,7 +6,7 @@ export const ACTIVITY_HIDDEN_IDS_KEY = "cd_activity_hidden_ids";
 const CHANGED_EVENT = "cd-activity-read";
 
 export type ActivityFeedItem = {
-  kind: "feedback" | "approved";
+  kind: "feedback" | "approved" | "followup";
   id: string;
   campaign_id: string;
   campaign_title: string;
@@ -21,6 +21,8 @@ export type ActivityFeedItem = {
   attachment_count: number;
   approved_channel?: string | null;
   at: string;
+  waiting_days?: number;
+  followup_kind?: "internal" | "external";
 };
 
 export function activityItemKey(item: Pick<ActivityFeedItem, "kind" | "id">): string {

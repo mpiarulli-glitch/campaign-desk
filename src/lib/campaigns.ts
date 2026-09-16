@@ -295,8 +295,9 @@ export function campaignHasKind(campaignId: string, kind: EmailKind): boolean {
 
 export function campaignFitsKindScope(
   campaignId: string,
-  scope: "blog" | "interactive" | "no_blog"
+  scope?: CampaignKindScope | null
 ): boolean {
+  if (!scope) return true;
   if (scope === "no_blog") return !campaignContainsKind(campaignId, "blog");
   return campaignHasKind(campaignId, scope);
 }
@@ -347,6 +348,17 @@ export function getCampaignById(id: string): Campaign | null {
       .prepare(`SELECT * FROM campaigns WHERE id = ?`)
       .get(id) as Campaign | undefined) || null
   );
+}
+
+export function listOpenApprovalCampaigns(): Campaign[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM campaigns
+        WHERE archived_at IS NULL
+          AND status IN ('internal_review', 'in_review')
+        ORDER BY updated_at ASC`
+    )
+    .all() as Campaign[];
 }
 
 // Review-link audience → stored approval channel. The internal (boss/team)
@@ -1132,15 +1144,26 @@ export function recordInternalReviewTodo(
   if (!existing) return null;
   const todoId = (input.todoId || "").trim() || null;
   const todoUrl = (input.todoUrl || "").trim() || null;
+  const ts = nowIso();
   getDb()
     .prepare(
       `UPDATE campaigns
        SET internal_review_todo_id = ?,
            internal_review_todo_url = ?,
+           internal_review_sent_at = ?,
            updated_at = ?
        WHERE id = ?`
     )
-    .run(todoId, todoUrl, nowIso(), id);
+    .run(todoId, todoUrl, ts, ts, id);
+  return getCampaignById(id);
+}
+
+export function recordApprovalNudge(id: string, at = nowIso()): Campaign | null {
+  const existing = getCampaignById(id);
+  if (!existing) return null;
+  getDb()
+    .prepare(`UPDATE campaigns SET approval_nudge_last_at = ? WHERE id = ?`)
+    .run(at, id);
   return getCampaignById(id);
 }
 
@@ -1723,7 +1746,7 @@ export function listEmailKinds(campaignId: string): AssetKind[] {
   return rows.map((r) => coerceKind(r.kind));
 }
 
-export type ActivityKind = "feedback" | "approved";
+export type ActivityKind = "feedback" | "approved" | "followup";
 
 export interface ActivityItem {
   kind: ActivityKind;
@@ -1742,6 +1765,8 @@ export interface ActivityItem {
   attachment_count: number;
   approved_channel: string | null;
   at: string;
+  waiting_days?: number;
+  followup_kind?: "internal" | "external";
 }
 
 // A unified, reverse-chronological feed of client activity across every

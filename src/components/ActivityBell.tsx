@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { approvalActivityParts } from "@/lib/activity-copy";
+import { approvalActivityParts, followupActivityParts } from "@/lib/activity-copy";
 import {
   ACTIVITY_HIDDEN_IDS_KEY,
   ACTIVITY_READ_IDS_KEY,
@@ -179,6 +179,8 @@ export function ActivityBell() {
                 const isRead = readIds.has(key);
                 const approval =
                   item.kind === "approved" ? approvalActivityParts(item) : null;
+                const followup =
+                  item.kind === "followup" ? followupActivityParts(item) : null;
                 return (
                   <Link
                     key={key}
@@ -196,7 +198,11 @@ export function ActivityBell() {
                       className="activity-dot"
                       style={{
                         background:
-                          item.kind === "approved" ? "#16a34a" : "#2563eb",
+                          item.kind === "approved"
+                            ? "#16a34a"
+                            : item.kind === "followup"
+                              ? "#d97706"
+                              : "#2563eb",
                       }}
                     />
                     <span className="app-notif-text">
@@ -205,6 +211,10 @@ export function ActivityBell() {
                           <>
                             <strong>{approval.actor}</strong> {approval.rest}
                             {item.star_rating ? ` (${item.star_rating}★)` : ""}
+                          </>
+                        ) : item.kind === "followup" && followup ? (
+                          <>
+                            <strong>{followup.actor}</strong> {followup.rest}
                           </>
                         ) : (
                           <>

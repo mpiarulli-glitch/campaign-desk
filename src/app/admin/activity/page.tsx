@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { approvalActivityParts } from "@/lib/activity-copy";
+import { approvalActivityParts, followupActivityParts } from "@/lib/activity-copy";
 
 type ActivityItem = {
-  kind: "feedback" | "approved";
+  kind: "feedback" | "approved" | "followup";
   id: string;
   campaign_id: string;
   campaign_title: string;
@@ -21,6 +21,8 @@ type ActivityItem = {
   attachment_count: number;
   approved_channel?: string | null;
   at: string;
+  waiting_days?: number;
+  followup_kind?: "internal" | "external";
 };
 
 function relativeTime(iso: string): string {
@@ -42,7 +44,9 @@ export default function ActivityPage() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"all" | "feedback" | "approved">("all");
+  const [filter, setFilter] = useState<"all" | "feedback" | "approved" | "followup">(
+    "all"
+  );
 
   async function load() {
     setLoading(true);
@@ -86,12 +90,12 @@ export default function ActivityPage() {
           <h1 className="h1">Client activity</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
             Every piece of client feedback and approval across all campaigns,
-            newest first.
+            plus follow-up reminders for packages still waiting.
           </p>
         </div>
 
         <div className="row" style={{ gap: 8 }}>
-          {(["all", "feedback", "approved"] as const).map((f) => (
+          {(["all", "feedback", "approved", "followup"] as const).map((f) => (
             <button
               key={f}
               className={`btn btn-sm ${filter === f ? "" : "btn-ghost"}`}
@@ -101,7 +105,9 @@ export default function ActivityPage() {
                 ? "All activity"
                 : f === "feedback"
                   ? "Feedback"
-                  : "Approvals"}
+                  : f === "approved"
+                    ? "Approvals"
+                    : "Follow-ups"}
             </button>
           ))}
         </div>
@@ -131,7 +137,11 @@ export default function ActivityPage() {
                     marginTop: 6,
                     flexShrink: 0,
                     background:
-                      item.kind === "approved" ? "#16a34a" : "#2563eb",
+                      item.kind === "approved"
+                        ? "#16a34a"
+                        : item.kind === "followup"
+                          ? "#d97706"
+                          : "#2563eb",
                   }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -164,6 +174,15 @@ export default function ActivityPage() {
                               </span>
                             </span>
                           ) : null}
+                        </>
+                      ) : item.kind === "followup" ? (
+                        <>
+                          <strong>{followupActivityParts(item).actor}</strong>{" "}
+                          {followupActivityParts(item).rest}
+                          {" · "}
+                          <Link href={`/admin/campaigns/${item.campaign_id}`}>
+                            {item.campaign_title}
+                          </Link>
                         </>
                       ) : (
                         <>

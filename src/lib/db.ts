@@ -196,8 +196,12 @@ export interface Campaign {
   // client-approval Deliverables card in basecamp_card_*.
   internal_review_todo_id: string | null;
   internal_review_todo_url: string | null;
+  // When the AM to-do was last sent. Age for internal follow-up nudges.
+  internal_review_sent_at: string | null;
   basecamp_approval_revision: string | null;
   basecamp_approval_sent_at: string | null;
+  // Last time we pinged Michael that this approval still needs a follow-up.
+  approval_nudge_last_at: string | null;
   // YYYY-MM-DD last sent to the Deliverables card, or null when none was set.
   basecamp_due_on: string | null;
   // When to post Michael's thank-you comment on the approval card after a
@@ -1773,6 +1777,25 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
 
+    /* Recurring Basecamp to-dos created or marked from Forecast. Completing
+       the current recording creates the next one on the same list. */
+    CREATE TABLE IF NOT EXISTS forecast_todo_repeats (
+      id TEXT PRIMARY KEY,
+      person TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      recording_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'todo',
+      frequency TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      list_id TEXT NOT NULL DEFAULT '',
+      assignee_id INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (project_id, recording_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_forecast_todo_repeats_person
+      ON forecast_todo_repeats(person);
+
     CREATE TABLE IF NOT EXISTS forecast_subtasks (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
@@ -2675,6 +2698,20 @@ function migrate(database: Database.Database) {
   if (!campaignCols.includes("internal_review_todo_url")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN internal_review_todo_url TEXT`);
   }
+  if (!campaignCols.includes("internal_review_sent_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN internal_review_sent_at TEXT`);
+  }
+  if (!campaignCols.includes("approval_nudge_last_at")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN approval_nudge_last_at TEXT`);
+  }
+  // Existing internal reviews have no send timestamp. Age them from last edit
+  // rather than treating them as brand new the day this column shipped.
+  database.exec(
+    `UPDATE campaigns
+        SET internal_review_sent_at = updated_at
+      WHERE status = 'internal_review'
+        AND internal_review_sent_at IS NULL`
+  );
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_campaigns_scheduled_due
        ON campaigns(status, scheduled_send_at)`
@@ -3279,6 +3316,25 @@ function migrate(database: Database.Database) {
        ON forecast_tasks(person, google_event_id)
        WHERE google_event_id != ''`
   );
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS forecast_todo_repeats (
+      id TEXT PRIMARY KEY,
+      person TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      recording_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'todo',
+      frequency TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      list_id TEXT NOT NULL DEFAULT '',
+      assignee_id INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (project_id, recording_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_forecast_todo_repeats_person
+      ON forecast_todo_repeats(person);
+  `);
 
   const forecastSubtaskCols = tableColumns(database, "forecast_subtasks");
   if (forecastSubtaskCols.length && !forecastSubtaskCols.includes("basecamp_step_id")) {

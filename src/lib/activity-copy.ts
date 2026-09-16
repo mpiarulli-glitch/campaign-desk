@@ -28,3 +28,32 @@ export function approvalActivitySummary(item: {
   const parts = approvalActivityParts(item);
   return `${parts.actor} ${parts.rest}`;
 }
+
+export function followupActivityParts(item: {
+  client_name?: string | null;
+  body?: string | null;
+  followup_kind?: "internal" | "external" | null;
+  waiting_days?: number | null;
+}): { actor: string; rest: string } {
+  const waiting =
+    item.waiting_days != null
+      ? item.waiting_days === 1
+        ? "1 day"
+        : `${item.waiting_days} days`
+      : null;
+  const where =
+    item.followup_kind === "internal"
+      ? "internal review"
+      : item.followup_kind === "external"
+        ? "client approval"
+        : item.body || "pending approval";
+  const client = item.client_name?.trim();
+  const rest = client
+    ? waiting
+      ? `on ${client}'s ${where} · ${waiting}`
+      : `on ${client}'s ${where}`
+    : waiting
+      ? `on ${where} · ${waiting}`
+      : `on ${where}`;
+  return { actor: "Follow up", rest };
+}

@@ -90,17 +90,17 @@ export interface AccountActivityItem {
 }
 
 export function accountActivity(clientId: string, limit = 30): AccountActivityItem[] {
-  const campaignItems: AccountActivityItem[] = listActivity(limit, clientId).map(
-    (item: ActivityItem) => ({
-      kind: item.kind,
+  const campaignItems: AccountActivityItem[] = listActivity(limit, clientId)
+    .filter((item) => item.kind !== "followup")
+    .map((item: ActivityItem) => ({
+      kind: item.kind === "approved" ? "approved" : "feedback",
       at: item.at,
       summary:
         item.kind === "approved"
           ? approvalActivitySummary(item)
           : `${item.actor || "Someone"} commented on ${item.campaign_title}`,
       detail: item.kind === "approved" ? "" : item.body || "",
-    })
-  );
+    }));
 
   const calendarNotes = getDb()
     .prepare(

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { can, sessionCampaignKind } from "@/lib/auth";
+import { mergeActivityWithFollowups } from "@/lib/approval-followup-nudge";
 import { listActivity } from "@/lib/campaigns";
 
 export async function GET() {
@@ -10,5 +11,8 @@ export async function GET() {
   }
 
   const kindScope = await sessionCampaignKind();
-  return NextResponse.json({ activity: listActivity(150, undefined, kindScope) });
+  const activity = listActivity(150, undefined, kindScope);
+  return NextResponse.json({
+    activity: mergeActivityWithFollowups(activity, undefined, kindScope, 150),
+  });
 }
