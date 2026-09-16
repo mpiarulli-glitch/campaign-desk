@@ -39,9 +39,15 @@ export async function GET() {
       ? FORECAST_ALL
       : forecastVisible.map((s) => ({ slug: s, label: personLabel(s) }));
 
+  const campaignKind = who ? effectiveCampaignKind(who) : null;
   return NextResponse.json({
     authenticated: Boolean(session),
-    pages: pages.map((p) => ({ key: p.key, href: p.href, label: p.label, icon: p.icon })),
+    pages: pages.map((p) => {
+      if (campaignKind === "blog" && p.key === "page.campaigns") {
+        return { key: p.key, href: p.href, label: "Blogs", icon: "doc" };
+      }
+      return { key: p.key, href: p.href, label: p.label, icon: p.icon };
+    }),
     capabilities,
     forecastSubjects,
     role: session?.role || null,
@@ -54,7 +60,7 @@ export async function GET() {
     setupComplete: setup ? setup.complete : true,
     setupRemaining: setup ? setup.remaining : [],
     forecastGoogle: forecastGoogleEnabled(),
-    campaignKind: who ? effectiveCampaignKind(who) : null,
+    campaignKind,
   });
 }
 

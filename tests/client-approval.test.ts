@@ -230,7 +230,7 @@ test("campaign detail can open the Basecamp card after client approval is sent",
   assert.match(header, /target="_blank"/);
 });
 
-test("campaigns list has a LinkedIn kind tab", () => {
+test("campaigns list filters status and kind with dropdowns", () => {
   const fs = require("node:fs") as typeof import("node:fs");
   const path = require("node:path") as typeof import("node:path");
   const page = fs.readFileSync(
@@ -240,8 +240,12 @@ test("campaigns list has a LinkedIn kind tab", () => {
   assert.match(page, /KIND_FILTERS/);
   assert.match(page, /campaignMatchesKind/);
   assert.match(page, /kf\.value === "linkedin"/);
-  assert.match(page, /searchParams\.set\("kind"/);
-  assert.match(page, /kindScope === "blog" \|\| kindScope === "interactive"/);
+  assert.match(page, /campaign-filter-select/);
+  assert.match(page, /setListQueryParam\("status"/);
+  assert.match(page, /setListQueryParam\("kind"/);
+  assert.match(page, /Create your first blog post/);
+  assert.match(page, /Upload your first email/);
+  assert.match(page, /New blog post/);
 });
 
 test("blog-scoped new campaign page only offers blog posts", () => {
@@ -251,6 +255,8 @@ test("blog-scoped new campaign page only offers blog posts", () => {
   assert.match(page, /kindChoices/);
   assert.match(page, /blogOnly/);
   assert.match(page, /assetKindsForCampaignScope/);
+  assert.match(page, /Create blog post/);
+  assert.match(page, /New blog post/);
 });
 
 test("LinkedIn review follow-up talks about outreach, not email packaging", () => {

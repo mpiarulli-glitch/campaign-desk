@@ -26,6 +26,10 @@ test("the app shell has an activity bell in the top bar", () => {
   assert.match(bell, /Mark all read/);
   assert.match(css, /\.app-bell-badge/);
   assert.match(css, /\.app-notif-item/);
+
+  const api = fs.readFileSync(path.join("src/app/api/activity/route.ts"), "utf8");
+  assert.match(api, /sessionCampaignKind/);
+  assert.match(api, /listActivity\(150, undefined, kindScope\)/);
 });
 
 test("activity item keys and relative time stay stable for the bell", () => {

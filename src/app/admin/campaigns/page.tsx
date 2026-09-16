@@ -61,6 +61,13 @@ const KIND_FILTERS: { value: KindFilter; label: string }[] = [
   })),
 ];
 
+function setListQueryParam(key: "status" | "kind", value: string) {
+  const url = new URL(window.location.href);
+  if (value === "all") url.searchParams.delete(key);
+  else url.searchParams.set(key, value);
+  window.history.replaceState(null, "", url);
+}
+
 function campaignMatchesKind(c: CampaignRow, kind: KindFilter): boolean {
   if (kind === "all") return true;
   return (c.email_kinds || []).includes(kind);
@@ -414,14 +421,14 @@ export default function AdminPage() {
     <div className="app-shell">
       <div className="page-actions">
         <Link className="btn" href="/admin/new">
-          New campaign
+          {kindScope === "blog" ? "New blog post" : "New campaign"}
         </Link>
       </div>
 
       <main className="container container-wide stack">
         <div className="page-hero campaign-hero">
           <div>
-            <h1 className="h1">Campaigns</h1>
+            <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
           </div>
           <label className="cs-search campaign-search">
             <span className="ads-search-label">Search</span>
@@ -429,82 +436,98 @@ export default function AdminPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Campaign or client"
-              aria-label="Search campaigns by name or client"
+              placeholder={
+                kindScope === "blog" ? "Post or client" : "Campaign or client"
+              }
+              aria-label={
+                kindScope === "blog"
+                  ? "Search blog posts by name or client"
+                  : "Search campaigns by name or client"
+              }
             />
           </label>
         </div>
 
         {error ? <p className="error">{error}</p> : null}
 
-        <div className="tabs">
-          <button
-            className={`tab ${filter === "active" ? "active" : ""}`}
-            onClick={() => setFilter("active")}
-          >
-            Active
-          </button>
-          <button
-            className={`tab ${filter === "archived" ? "active" : ""}`}
-            onClick={() => setFilter("archived")}
-          >
-            Archived
-          </button>
-          <span className="tab-divider" aria-hidden="true" />
-          {STATUS_FILTERS.map((sf) => {
-            const count =
-              sf.value === "all"
-                ? kinded.length
-                : kinded.filter((c) =>
-                    matchesCampaignStatusFilter(c, sf.value)
-                  ).length;
-            return (
-              <button
-                key={sf.value}
-                className={`tab ${statusFilter === sf.value ? "active" : ""}`}
-                onClick={() => setStatusFilter(sf.value)}
-              >
-                {sf.label}
-                <span className="tab-count">{count}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {kindScope === "blog" || kindScope === "interactive" ? null : (
-        <div className="tabs" role="tablist" aria-label="Campaign kind">
-          {KIND_FILTERS.filter(
-            (kf) =>
-              (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
-              (kf.value === "all" ||
-                kf.value === "linkedin" ||
-                kindsInList.has(kf.value))
-          ).map((kf) => {
-            const count =
-              kf.value === "all"
-                ? dated.length
-                : dated.filter((c) => campaignMatchesKind(c, kf.value)).length;
-            return (
-              <button
-                key={kf.value}
-                role="tab"
-                aria-selected={kindFilter === kf.value}
-                className={`tab ${kindFilter === kf.value ? "active" : ""}`}
-                onClick={() => {
-                  setKindFilter(kf.value);
-                  const url = new URL(window.location.href);
-                  if (kf.value === "all") url.searchParams.delete("kind");
-                  else url.searchParams.set("kind", kf.value);
-                  window.history.replaceState(null, "", url);
+        <div className="campaign-toolbar">
+          <div className="tabs" style={{ marginBottom: 0 }}>
+            <button
+              className={`tab ${filter === "active" ? "active" : ""}`}
+              onClick={() => setFilter("active")}
+            >
+              Active
+            </button>
+            <button
+              className={`tab ${filter === "archived" ? "active" : ""}`}
+              onClick={() => setFilter("archived")}
+            >
+              Archived
+            </button>
+          </div>
+          <label className="campaign-filter">
+            <span className="campaign-date-label">Status</span>
+            <select
+              className="campaign-filter-select"
+              aria-label="Filter by status"
+              value={statusFilter}
+              onChange={(e) => {
+                const next = e.target.value as StatusFilter;
+                setStatusFilter(next);
+                setListQueryParam("status", next);
+              }}
+            >
+              {STATUS_FILTERS.map((sf) => {
+                const count =
+                  sf.value === "all"
+                    ? kinded.length
+                    : kinded.filter((c) =>
+                        matchesCampaignStatusFilter(c, sf.value)
+                      ).length;
+                return (
+                  <option key={sf.value} value={sf.value}>
+                    {sf.label} ({count})
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          {kindScope === "blog" || kindScope === "interactive" ? null : (
+            <label className="campaign-filter">
+              <span className="campaign-date-label">Kind</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by campaign kind"
+                value={kindFilter}
+                onChange={(e) => {
+                  const next = e.target.value as KindFilter;
+                  setKindFilter(next);
+                  setListQueryParam("kind", next);
                 }}
               >
-                {kf.label}
-                <span className="tab-count">{count}</span>
-              </button>
-            );
-          })}
+                {KIND_FILTERS.filter(
+                  (kf) =>
+                    (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
+                    (kf.value === "all" ||
+                      kf.value === "linkedin" ||
+                      kindsInList.has(kf.value))
+                ).map((kf) => {
+                  const count =
+                    kf.value === "all"
+                      ? dated.length
+                      : dated.filter((c) =>
+                          campaignMatchesKind(c, kf.value)
+                        ).length;
+                  return (
+                    <option key={kf.value} value={kf.value}>
+                      {kf.label} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          )}
         </div>
-        )}
 
         <div className="campaign-date-filter">
           <span className="campaign-date-label">Updated</span>
@@ -598,13 +621,19 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <div className="empty">
-                  <p>No campaigns yet.</p>
+                  <p>
+                    {kindScope === "blog"
+                      ? "No blog posts yet."
+                      : "No campaigns yet."}
+                  </p>
                   <Link
                     className="btn"
                     href="/admin/new"
                     style={{ marginTop: 12 }}
                   >
-                    Upload your first email
+                    {kindScope === "blog"
+                      ? "Create your first blog post"
+                      : "Upload your first email"}
                   </Link>
                 </div>
               )

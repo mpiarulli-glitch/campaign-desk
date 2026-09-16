@@ -145,7 +145,7 @@ export default function NewCampaignPage() {
           style={{ maxWidth: 720, margin: "0 auto" }}
         >
           <div>
-            <h1 className="h1">New campaign</h1>
+            <h1 className="h1">{blogOnly ? "New blog post" : "New campaign"}</h1>
           </div>
 
           {blogOnly ? null : (
@@ -394,7 +394,9 @@ export default function NewCampaignPage() {
                 ? "Creating..."
                 : presentation === "automation"
                   ? "Create automation"
-                  : "Create campaign"}
+                  : blogOnly
+                    ? "Create blog post"
+                    : "Create campaign"}
             </button>
             <Link className="btn btn-secondary" href="/admin/campaigns">
               Cancel

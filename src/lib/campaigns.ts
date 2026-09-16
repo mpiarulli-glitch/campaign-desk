@@ -43,6 +43,7 @@ import {
   storedStatusForOperatorChoice,
   type OperatorCampaignStatus,
 } from "./campaign-status";
+import type { CampaignKindScope } from "./people";
 
 // The campaigns.html_content column is only a convenience thumbnail for list
 // views. Keep it in sync with the first asset, rendered the same way the
@@ -298,6 +299,34 @@ export function campaignFitsKindScope(
 ): boolean {
   if (scope === "no_blog") return !campaignContainsKind(campaignId, "blog");
   return campaignHasKind(campaignId, scope);
+}
+
+/** SQL AND-clause so a kind-scoped session only sees matching packages. */
+function sqlCampaignFitsKindScope(
+  campaignIdExpr: string,
+  scope?: CampaignKindScope | null
+): { clause: string; params: string[] } {
+  if (!scope) return { clause: "", params: [] };
+  if (scope === "no_blog") {
+    return {
+      clause: `AND NOT EXISTS (
+        SELECT 1 FROM campaign_emails e
+        WHERE e.campaign_id = ${campaignIdExpr} AND e.kind = ?
+      )`,
+      params: ["blog"],
+    };
+  }
+  return {
+    clause: `AND EXISTS (
+        SELECT 1 FROM campaign_emails e
+        WHERE e.campaign_id = ${campaignIdExpr} AND e.kind = ?
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM campaign_emails e
+        WHERE e.campaign_id = ${campaignIdExpr} AND e.kind != ?
+      )`,
+    params: [scope, scope],
+  };
 }
 
 export function setCampaignArchived(
@@ -1718,9 +1747,19 @@ export interface ActivityItem {
 // A unified, reverse-chronological feed of client activity across every
 // campaign: feedback left on the review link, and campaigns the client
 // approved. Derived from existing data so it always reflects full history.
-export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
+export function listActivity(
+  limit = 100,
+  clientId?: string,
+  kindScope?: CampaignKindScope | null
+): ActivityItem[] {
+  const scope = sqlCampaignFitsKindScope("cam.id", kindScope);
   const where = clientId ? `WHERE client_id = ?` : "";
-  const args = clientId ? [clientId, limit] : [limit];
+  const args = [
+    ...scope.params,
+    ...scope.params,
+    ...(clientId ? [clientId] : []),
+    limit,
+  ];
   return getDb()
     .prepare(
       `SELECT * FROM (
@@ -1744,6 +1783,7 @@ export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
          FROM comments c
          JOIN campaigns cam ON cam.id = c.campaign_id
          LEFT JOIN campaign_emails e ON e.id = c.email_id
+         ${scope.clause}
 
          UNION ALL
 
@@ -1766,6 +1806,7 @@ export function listActivity(limit = 100, clientId?: string): ActivityItem[] {
            cam.updated_at AS at
          FROM campaigns cam
          WHERE cam.status = 'approved'
+         ${scope.clause}
        )
        ${where}
        ORDER BY at DESC

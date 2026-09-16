@@ -1686,7 +1686,7 @@ export default function AdminCampaignPage() {
     setNewEmailHtml("");
     setNewEmailHtmlB("");
     setNewAbHypothesis("");
-    setNewEmailKind("email");
+    setNewEmailKind(blogOnly ? "blog" : "email");
     setNewEmailFormat("html");
     setNewEmailMedia("");
     setNewEmailDelayAmount(1);
@@ -1699,7 +1699,11 @@ export default function AdminCampaignPage() {
   async function removeActiveEmail() {
     if (!activeEmail) return;
     if (emails.length <= 1) {
-      setError("A package must keep at least one email.");
+      setError(
+        blogOnly
+          ? "A package must keep at least one blog post."
+          : "A package must keep at least one email."
+      );
       return;
     }
     if (!confirm(`Remove "${activeEmail.title}" from this package?`)) return;
