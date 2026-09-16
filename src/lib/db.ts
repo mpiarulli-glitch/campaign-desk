@@ -1777,25 +1777,6 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_forecast_person_date ON forecast_tasks(person, task_date);
 
-    /* Recurring Basecamp to-dos created or marked from Forecast. Completing
-       the current recording creates the next one on the same list. */
-    CREATE TABLE IF NOT EXISTS forecast_todo_repeats (
-      id TEXT PRIMARY KEY,
-      person TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      recording_id TEXT NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'todo',
-      frequency TEXT NOT NULL,
-      title TEXT NOT NULL DEFAULT '',
-      list_id TEXT NOT NULL DEFAULT '',
-      assignee_id INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE (project_id, recording_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_forecast_todo_repeats_person
-      ON forecast_todo_repeats(person);
-
     CREATE TABLE IF NOT EXISTS forecast_subtasks (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
@@ -3317,24 +3298,7 @@ function migrate(database: Database.Database) {
        WHERE google_event_id != ''`
   );
 
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS forecast_todo_repeats (
-      id TEXT PRIMARY KEY,
-      person TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      recording_id TEXT NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'todo',
-      frequency TEXT NOT NULL,
-      title TEXT NOT NULL DEFAULT '',
-      list_id TEXT NOT NULL DEFAULT '',
-      assignee_id INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE (project_id, recording_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_forecast_todo_repeats_person
-      ON forecast_todo_repeats(person);
-  `);
+  database.exec(`DROP TABLE IF EXISTS forecast_todo_repeats`);
 
   const forecastSubtaskCols = tableColumns(database, "forecast_subtasks");
   if (forecastSubtaskCols.length && !forecastSubtaskCols.includes("basecamp_step_id")) {

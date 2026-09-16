@@ -1386,12 +1386,10 @@ export default function PersonForecastPage() {
       setAssigned({
         loading: false,
         assignments: Array.isArray(json?.assignments) ? json.assignments : [],
-        repeats:
-          json?.repeats && typeof json.repeats === "object" ? json.repeats : {},
         reason: json?.reason ?? (res.ok ? null : "failed"),
       });
     } catch {
-      setAssigned({ loading: false, assignments: [], repeats: {}, reason: "failed" });
+      setAssigned({ loading: false, assignments: [], reason: "failed" });
     }
   }, [person]);
 
@@ -2136,7 +2134,6 @@ export default function PersonForecastPage() {
         id: todo.id,
         kind: todo.kind || "todo",
         completed,
-        dueOn: todo.dueOn,
       }),
     });
     setTasksBusyId(null);
@@ -2159,10 +2156,9 @@ export default function PersonForecastPage() {
 
   async function updateAssignedTask(
     todo: QueueTodo,
-    patch: { dueOn?: string | null; repeat?: "once" | "weekly" | "monthly" }
+    patch: { dueOn?: string | null }
   ) {
     setTasksBusyId(todo.id);
-    const repeatKey = todo.kind === "step" && todo.parentId ? todo.parentId : todo.id;
     if (Object.prototype.hasOwnProperty.call(patch, "dueOn")) {
       setAssigned((a) => ({
         ...a,
@@ -2170,16 +2166,6 @@ export default function PersonForecastPage() {
           row.id === todo.id ? { ...row, dueOn: patch.dueOn ?? null } : row
         ),
       }));
-    }
-    if (patch.repeat) {
-      setAssigned((a) => {
-        const repeats = { ...(a.repeats || {}) };
-        if (patch.repeat === "once") delete repeats[repeatKey];
-        else if (patch.repeat === "weekly" || patch.repeat === "monthly") {
-          repeats[repeatKey] = patch.repeat;
-        }
-        return { ...a, repeats };
-      });
     }
     const res = await fetch("/api/forecast/assignments", {
       method: "PATCH",
@@ -2190,8 +2176,6 @@ export default function PersonForecastPage() {
         id: todo.id,
         kind: todo.kind || "todo",
         title: todo.title,
-        listId: todo.listId || "",
-        parentId: todo.parentId || "",
         ...patch,
       }),
     });
@@ -2211,7 +2195,6 @@ export default function PersonForecastPage() {
     clientId: string;
     listId: string;
     dueOn: string | null;
-    repeat: "once" | "weekly" | "monthly";
   }): Promise<boolean> {
     const res = await fetch("/api/forecast/assignments", {
       method: "POST",

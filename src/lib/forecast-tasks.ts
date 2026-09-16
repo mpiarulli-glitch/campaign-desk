@@ -92,45 +92,10 @@ export function assignedTaskHref(
   return `https://3.basecamp.com/${account}/buckets/${todo.projectId}/todos/${todoId}`;
 }
 
-export type TodoRepeat = "once" | "weekly" | "monthly";
-
-export function isTodoRepeat(value: unknown): value is TodoRepeat {
-  return value === "once" || value === "weekly" || value === "monthly";
-}
-
 function parseYmd(ymd: string): Date | null {
   const [y, m, d] = ymd.split("-").map(Number);
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d);
-}
-
-function toYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function addCalendarDays(ymd: string, days: number): string {
-  const d = parseYmd(ymd);
-  if (!d) return ymd;
-  d.setDate(d.getDate() + days);
-  return toYmd(d);
-}
-
-export function addCalendarMonths(ymd: string, months: number): string {
-  const d = parseYmd(ymd);
-  if (!d) return ymd;
-  const day = d.getDate();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + months);
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(day, last));
-  return toYmd(d);
-}
-
-export function nextRepeatDueOn(dueOn: string, frequency: Exclude<TodoRepeat, "once">): string {
-  return frequency === "weekly" ? addCalendarDays(dueOn, 7) : addCalendarMonths(dueOn, 1);
 }
 
 export function weekdayButtonLabel(ymd: string): string {

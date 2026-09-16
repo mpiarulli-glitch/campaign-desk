@@ -8284,10 +8284,10 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 }
 .fc-tasks-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 4.4rem 4.4rem 7.2rem;
+  grid-template-columns: 18px minmax(0, 1fr) 4.4rem 7.2rem;
   grid-template-areas:
-    "check main due repeat action"
-    "picker picker picker picker picker";
+    "check main due action"
+    "picker picker picker picker";
   column-gap: 10px;
   row-gap: 8px;
   align-items: center;
@@ -8389,28 +8389,6 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   width: 100%;
 }
 .fc-tasks-due-edit:hover span { color: var(--accent-ink); }
-.fc-tasks-repeat {
-  grid-area: repeat;
-  appearance: none;
-  width: 100%;
-  min-width: 0;
-  height: 28px;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 550;
-  text-align: right;
-  cursor: pointer;
-}
-.fc-tasks-repeat.is-on {
-  color: var(--text-body);
-  font-weight: 650;
-}
-.fc-tasks-repeat:hover:not(:disabled) { color: var(--accent-ink); }
-.fc-tasks-repeat:disabled { opacity: 0.45; cursor: default; }
 .fc-tasks-schedule {
   grid-area: action;
   appearance: none;
@@ -8558,12 +8536,11 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
     grid-template-columns: 18px minmax(0, 1fr) auto;
     grid-template-areas:
       "check main action"
-      "due due repeat"
+      "due due due"
       "picker picker picker";
     align-items: center;
   }
-  .fc-tasks-due-edit,
-  .fc-tasks-repeat { justify-content: flex-start; text-align: left; }
+  .fc-tasks-due-edit { justify-content: flex-start; text-align: left; }
   .fc-tasks-title { white-space: normal; }
 }
 

@@ -7,31 +7,13 @@ import {
   hasConnection,
   listMyAssignments,
   OPS_TODOLIST_NAME,
-  trySetTodoRecurrence,
   updateAssignmentDue,
 } from "@/lib/basecamp";
 import { getConnection } from "@/lib/basecamp-identity";
 import { isValidPerson } from "@/lib/forecast";
-import { isTodoRepeat, type TodoRepeat } from "@/lib/forecast-tasks";
-import {
-  deleteRepeat,
-  getRepeat,
-  listRepeatsForPerson,
-  upsertRepeat,
-} from "@/lib/forecast-todo-repeats";
 import { getRevClient, listRevClients } from "@/lib/revenue";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function repeatsMap(person: string): Record<string, "weekly" | "monthly"> {
-  const out: Record<string, "weekly" | "monthly"> = {};
-  for (const row of listRepeatsForPerson(person)) {
-    if (row.frequency === "weekly" || row.frequency === "monthly") {
-      out[row.recording_id] = row.frequency;
-    }
-  }
-  return out;
-}
 
 function projectIdForClient(clientId: string): { projectId: string; error?: string } {
   const raw = clientId.trim();
@@ -48,7 +30,7 @@ function projectIdForClient(clientId: string): { projectId: string; error?: stri
 }
 
 function emptyAssignments(reason: string) {
-  return NextResponse.json({ assignments: [], repeats: {}, reason });
+  return NextResponse.json({ assignments: [], reason });
 }
 
 // Everything Basecamp says is assigned to this person, across every project.
@@ -104,7 +86,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       assignments,
-      repeats: repeatsMap(person),
       reason: assignments.length ? null : "none-assigned",
     });
   } catch {
@@ -120,7 +101,6 @@ export async function POST(request: Request) {
   const listId = typeof body.listId === "string" ? body.listId.trim() : "";
   const dueRaw = typeof body.dueOn === "string" ? body.dueOn.trim() : "";
   const dueOn = dueRaw && DATE_RE.test(dueRaw) ? dueRaw : null;
-  const repeat: TodoRepeat = isTodoRepeat(body.repeat) ? body.repeat : "once";
 
   if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -130,12 +110,6 @@ export async function POST(request: Request) {
   }
   if (!title) {
     return NextResponse.json({ error: "A to-do needs a title." }, { status: 400 });
-  }
-  if (repeat !== "once" && !dueOn) {
-    return NextResponse.json(
-      { error: "A repeating to-do needs a due date to count from." },
-      { status: 400 }
-    );
   }
   if (!basecampConnected()) {
     return NextResponse.json({ error: "Basecamp isn't connected." }, { status: 400 });
@@ -170,44 +144,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: created.error }, { status: 502 });
   }
 
-  if (repeat === "weekly" || repeat === "monthly") {
-    upsertRepeat({
-      person,
-      projectId: resolved.projectId,
-      recordingId: created.todoId,
-      kind: "todo",
-      frequency: repeat,
-      title,
-      listId: created.listId,
-      assigneeId: conn.bc_person_id,
-    });
-    const attempted = await trySetTodoRecurrence({
-      projectId: resolved.projectId,
-      id: created.todoId,
-      frequency: repeat,
-      dueOn,
-      identity: asPerson(person),
-    });
-    return NextResponse.json(
-      {
-        ok: true,
-        todoId: created.todoId,
-        todoUrl: created.todoUrl,
-        dueOn,
-        repeat,
-        basecampRepeat: attempted.applied,
-      },
-      { status: 201 }
-    );
-  }
-
   return NextResponse.json(
     {
       ok: true,
       todoId: created.todoId,
       todoUrl: created.todoUrl,
       dueOn,
-      repeat,
     },
     { status: 201 }
   );
@@ -223,12 +165,9 @@ export async function PATCH(request: Request) {
       ? body.kind
       : "todo";
   const titleHint = typeof body.title === "string" ? body.title.trim() : "";
-  const listHint = typeof body.listId === "string" ? body.listId.trim() : "";
-  const parentId = typeof body.parentId === "string" ? body.parentId.trim() : "";
   const dueSent = Object.prototype.hasOwnProperty.call(body, "dueOn");
   const dueRaw = typeof body.dueOn === "string" ? body.dueOn.trim() : "";
   const dueOn = dueSent ? (dueRaw && DATE_RE.test(dueRaw) ? dueRaw : null) : undefined;
-  const repeat: TodoRepeat | undefined = isTodoRepeat(body.repeat) ? body.repeat : undefined;
 
   if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -239,11 +178,8 @@ export async function PATCH(request: Request) {
   if (!projectId || !id) {
     return NextResponse.json({ error: "Missing project or recording id." }, { status: 400 });
   }
-  if (repeat && repeat !== "once" && dueSent && !dueOn) {
-    return NextResponse.json(
-      { error: "A repeating to-do needs a due date to count from." },
-      { status: 400 }
-    );
+  if (!dueSent) {
+    return NextResponse.json({ error: "Missing due date." }, { status: 400 });
   }
   if (!basecampConnected()) {
     return NextResponse.json({ error: "Basecamp isn't connected." }, { status: 400 });
@@ -260,59 +196,20 @@ export async function PATCH(request: Request) {
   }
 
   const identity = asPerson(person);
-
-  let title = titleHint;
-  let listId = listHint;
-  if (dueSent) {
-    const updated = await updateAssignmentDue({
-      projectId,
-      id,
-      kind,
-      dueOn: dueOn ?? null,
-      identity,
-    });
-    if (!updated.ok) {
-      return NextResponse.json({ error: updated.error }, { status: 502 });
-    }
-    title = updated.title || title;
-    listId = updated.listId || listId;
+  const updated = await updateAssignmentDue({
+    projectId,
+    id,
+    kind,
+    dueOn: dueOn ?? null,
+    identity,
+  });
+  if (!updated.ok) {
+    return NextResponse.json({ error: updated.error }, { status: 502 });
   }
 
-  const repeatId = kind === "step" && parentId ? parentId : id;
-  if (repeat === "once" || (dueSent && dueOn === null && repeat !== "weekly" && repeat !== "monthly")) {
-    deleteRepeat(projectId, repeatId);
-  } else if (repeat === "weekly" || repeat === "monthly") {
-    upsertRepeat({
-      person,
-      projectId,
-      recordingId: repeatId,
-      kind: kind === "card" ? "card" : "todo",
-      frequency: repeat,
-      title: title || titleHint || "To-do",
-      listId,
-      assigneeId: conn.bc_person_id,
-    });
-  }
-
-  let basecampRepeat = false;
-  if (kind === "todo" && (repeat === "weekly" || repeat === "monthly")) {
-    const attempted = await trySetTodoRecurrence({
-      projectId,
-      id,
-      frequency: repeat,
-      dueOn: dueSent ? dueOn ?? null : undefined,
-      identity,
-    });
-    basecampRepeat = attempted.applied;
-    title = attempted.title || title;
-    listId = attempted.listId || listId;
-  }
-
-  const stored = getRepeat(projectId, repeatId);
   return NextResponse.json({
     ok: true,
-    dueOn: dueSent ? dueOn ?? null : undefined,
-    repeat: stored?.frequency || "once",
-    basecampRepeat,
+    dueOn: dueOn ?? null,
+    title: updated.title || titleHint,
   });
 }

@@ -5,7 +5,6 @@ import {
   filterAssignedTasks,
   groupAssignedTasks,
   groupAssignedTasksByDue,
-  nextRepeatDueOn,
   scheduleWeekDays,
 } from "../src/lib/forecast-tasks";
 import type { QueueTodo } from "../src/lib/forecast-queue";
@@ -67,11 +66,6 @@ test("groupAssignedTasksByDue buckets overdue, today, upcoming, and no date", ()
       ["none", ["4"]],
     ]
   );
-});
-
-test("nextRepeatDueOn walks a week or a month without overflowing the day", () => {
-  assert.equal(nextRepeatDueOn("2026-09-16", "weekly"), "2026-09-23");
-  assert.equal(nextRepeatDueOn("2026-01-31", "monthly"), "2026-02-28");
 });
 
 test("scheduleWeekDays starts on this week's Monday and can look ahead", () => {

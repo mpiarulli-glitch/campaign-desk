@@ -10,7 +10,6 @@ import {
 } from "@/lib/basecamp";
 import { getDb } from "@/lib/db";
 import { isValidPerson, updateTask, type ForecastTask } from "@/lib/forecast";
-import { spawnNextRepeat } from "@/lib/forecast-todo-repeats";
 
 type Body = {
   person?: string;
@@ -18,7 +17,6 @@ type Body = {
   id?: string;
   kind?: "todo" | "card" | "step";
   completed?: boolean;
-  dueOn?: string | null;
 };
 
 /**
@@ -78,20 +76,6 @@ export async function POST(request: Request) {
       { error: result.error || "Could not update Basecamp" },
       { status: 502 }
     );
-  }
-
-  if (completed && kind !== "step") {
-    const dueOn =
-      typeof body.dueOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.dueOn.trim())
-        ? body.dueOn.trim()
-        : null;
-    await spawnNextRepeat({
-      person,
-      projectId,
-      recordingId: id,
-      dueOn,
-      identity,
-    }).catch(() => null);
   }
 
   // Keep any forecast rows that already point at this recording in step with

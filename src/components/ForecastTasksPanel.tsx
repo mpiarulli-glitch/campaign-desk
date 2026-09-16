@@ -6,12 +6,10 @@ import {
   filterAssignedTasks,
   groupAssignedTasks,
   groupAssignedTasksByDue,
-  isTodoRepeat,
   scheduleWeekDays,
   weekdayButtonLabel,
   type TasksFilter,
   type TasksLayout,
-  type TodoRepeat,
 } from "@/lib/forecast-tasks";
 import { sortQueueTodos, type QueueTodo } from "@/lib/forecast-queue";
 import type { AssignedSource } from "./ForecastQueue";
@@ -43,21 +41,12 @@ function dueDisplay(dueOn: string | null, today: string): string {
   return shortDate(dueOn);
 }
 
-function repeatOf(
-  todo: QueueTodo,
-  repeats: Record<string, "weekly" | "monthly">
-): TodoRepeat {
-  const key = todo.kind === "step" && todo.parentId ? todo.parentId : todo.id;
-  return repeats[key] || repeats[todo.id] || "once";
-}
-
 /**
  * Top-level Tasks view: everything Basecamp has assigned to this person.
  *
  * Check one off to complete it in Basecamp (and any matching forecast row).
- * Schedule books it onto a weekday of this week or a later one. Due dates and
- * weekly/monthly repeats can be edited here. New to-dos are created on this
- * page, assigned as you.
+ * Schedule books it onto a weekday of this week or a later one. Due dates can
+ * be edited here. New to-dos are created on this page, assigned as you.
  */
 export function ForecastTasksPanel({
   person,
@@ -84,13 +73,12 @@ export function ForecastTasksPanel({
   schedulingId: string | null;
   onComplete: (todo: QueueTodo, completed: boolean) => void;
   onSchedule: (todo: QueueTodo, date: string) => void;
-  onUpdate: (todo: QueueTodo, patch: { dueOn?: string | null; repeat?: TodoRepeat }) => void;
+  onUpdate: (todo: QueueTodo, patch: { dueOn?: string | null }) => void;
   onCreate: (input: {
     title: string;
     clientId: string;
     listId: string;
     dueOn: string | null;
-    repeat: TodoRepeat;
   }) => Promise<boolean>;
   onRefresh: () => void;
 }) {
@@ -100,7 +88,6 @@ export function ForecastTasksPanel({
   const [pickerWeek, setPickerWeek] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
 
-  const repeats = assigned.repeats || {};
   const groups = useMemo(() => {
     const filtered = sortQueueTodos(
       filterAssignedTasks(assigned.assignments, filter)
@@ -240,7 +227,6 @@ export function ForecastTasksPanel({
                     const rowBusy =
                       busyId === todo.id || schedulingId === todo.id;
                     const tone = dueTone(todo.dueOn, today);
-                    const repeat = repeatOf(todo, repeats);
                     const context =
                       todo.kind === "step" && todo.parentTitle
                         ? todo.parentTitle
@@ -316,23 +302,6 @@ export function ForecastTasksPanel({
                             }
                           />
                         </label>
-
-                        <select
-                          className={`fc-tasks-repeat ${repeat !== "once" ? "is-on" : ""}`}
-                          value={repeat}
-                          disabled={rowBusy || (!todo.dueOn && repeat === "once")}
-                          title="Forecast opens the next to-do when you complete this. Basecamp does not let apps set its Repeat control."
-                          aria-label={`Repeat for ${todo.title}`}
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            if (!isTodoRepeat(next)) return;
-                            onUpdate(todo, { repeat: next });
-                          }}
-                        >
-                          <option value="once">Once</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="monthly">Monthly</option>
-                        </select>
 
                         {booked ? (
                           <span className="fc-tasks-booked" title="Already on the forecast">
@@ -436,14 +405,12 @@ function NewTodoForm({
     clientId: string;
     listId: string;
     dueOn: string | null;
-    repeat: TodoRepeat;
   }) => Promise<boolean>;
 }) {
   const [title, setTitle] = useState("");
   const [clientId, setClientId] = useState(clients[0]?.id || "");
   const [listId, setListId] = useState("");
   const [dueOn, setDueOn] = useState("");
-  const [repeat, setRepeat] = useState<TodoRepeat>("once");
   const [saving, setSaving] = useState(false);
   const [lists, setLists] = useState<Array<{ id: string; name: string }>>([]);
   const [listsLoading, setListsLoading] = useState(false);
@@ -482,20 +449,17 @@ function NewTodoForm({
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!title.trim() || !clientId || saving) return;
-    if (repeat !== "once" && !dueOn) return;
     setSaving(true);
     const ok = await onCreate({
       title: title.trim(),
       clientId,
       listId,
       dueOn: dueOn || null,
-      repeat,
     });
     setSaving(false);
     if (ok) {
       setTitle("");
       setDueOn("");
-      setRepeat("once");
     }
   }
 
@@ -554,22 +518,6 @@ function NewTodoForm({
             value={dueOn}
             onChange={(e) => setDueOn(e.target.value)}
           />
-        </label>
-        <label className="fc-tasks-field">
-          <span>Repeat</span>
-          <select
-            value={repeat}
-            onChange={(e) => {
-              const next = e.target.value;
-              if (isTodoRepeat(next)) setRepeat(next);
-            }}
-            title="Forecast opens the next to-do when you complete this. Basecamp does not let apps set its Repeat control."
-            disabled={!dueOn && repeat === "once"}
-          >
-            <option value="once">One-time</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
         </label>
       </div>
       <div className="fc-tasks-composer-actions">
