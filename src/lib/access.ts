@@ -164,9 +164,9 @@ export const PAGES: Capability[] = [
     key: "page.client_services",
     label: "Weekly Snapshots",
     group: "page",
-    href: "/admin/client-services",
+    href: "/admin/snapshot/desk",
     icon: "ring",
-    blurb: "Every client's weekly snapshot: deliverables, outreach, and what came back.",
+    blurb: "Update every client's weekly snapshot from one list.",
   },
   {
     key: "page.reports",
@@ -189,7 +189,7 @@ export const PAGES: Capability[] = [
     label: "Snapshots",
     group: "page",
     blurb:
-      "Weekly account snapshots. Off the sidebar since Client Services replaced it, so this only governs direct and saved links.",
+      "Weekly account snapshots. Off the sidebar: Weekly Snapshots opens the all-accounts desk instead.",
   },
 ];
 

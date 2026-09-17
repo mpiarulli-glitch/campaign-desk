@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Account snapshots moved into the Client Services Hub as its home tab.
-// Kept as a redirect because this path is in muscle memory and in old links.
+// The company-wide fill desk is the primary snapshot surface.
 export default function SnapshotAccountsPage() {
-  redirect("/admin/client-services");
+  redirect("/admin/snapshot/desk");
 }

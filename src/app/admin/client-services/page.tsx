@@ -456,6 +456,9 @@ export default function ClientServicesPage() {
   return (
     <div className="app-shell">
       <div className="page-actions">
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
+          Fill this week
+        </Link>
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
           How to fill
         </Link>
@@ -474,8 +477,8 @@ export default function ClientServicesPage() {
           <p className="eyebrow">Snapshots</p>
           <h1 className="h1">Weekly Snapshots</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Every client&apos;s weekly snapshot in one place: what we asked them
-            for, whether it reached them, and whether the numbers came back.
+            Friday outreach and deliverable setup. Log the week for every
+            client from Fill this week.
           </p>
         </div>
 
@@ -497,7 +500,7 @@ export default function ClientServicesPage() {
             className={`tab ${tab === "dashboard" ? "active" : ""}`}
             onClick={() => setTab("dashboard")}
           >
-            This week
+            Friday ask
             <span className="tab-count">{rows.length}</span>
           </button>
         </div>

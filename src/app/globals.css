@@ -17559,6 +17559,60 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   color: var(--text-muted);
 }
 
+.snap-n-group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.snap-n-group a {
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.snap-n-group a:hover {
+  text-decoration: underline;
+}
+
+.snap-n-group span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-section-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 0;
+  max-width: 240px;
+}
+
+.snap-section-nav span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snap-section-nav select {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
 .snap-n-db {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -17978,7 +18032,7 @@ div.snap-n-title {
   .snap-setup-card { grid-template-columns: 1fr; }
 }
 
-/* ---- Snapshot 6-month backfill grid */
+/* ---- Snapshot 6-month backfill list */
 
 .snap-backfill-page .ops-sub {
   max-width: 560px;
@@ -17999,40 +18053,6 @@ div.snap-n-title {
   color: var(--text-muted);
 }
 
-.snap-backfill-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.snap-backfill-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.snap-backfill-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-  display: inline-block;
-}
-
-.snap-backfill-swatch.is-empty {
-  background: var(--bg-elevated);
-}
-
-.snap-backfill-swatch.is-wip {
-  background: color-mix(in srgb, var(--warning) 28%, var(--bg-elevated));
-}
-
-.snap-backfill-swatch.is-met {
-  background: color-mix(in srgb, var(--success) 32%, var(--bg-elevated));
-}
-
 .snap-backfill-tools {
   display: flex;
   flex-wrap: wrap;
@@ -18040,254 +18060,91 @@ div.snap-n-title {
   gap: 8px;
 }
 
-.snap-backfill-scroll {
-  overflow: auto;
-  max-width: 100%;
-  max-height: calc(100dvh - 220px);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-elevated);
+.snap-bf-db {
+  overflow-x: auto;
 }
 
-.snap-backfill-table {
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12.5px;
-  min-width: max-content;
+.snap-bf-cols {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+  padding: 0 12px;
+  min-height: 42px;
+  min-width: 720px;
 }
 
-.snap-backfill-table th,
-.snap-backfill-table td {
-  border-bottom: 1px solid var(--border);
-  border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  padding: 0;
-  vertical-align: middle;
+.snap-bf-weeks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.snap-backfill-sticky {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  background: var(--bg-elevated);
-  box-shadow: 1px 0 0 var(--border);
-}
-
-.snap-backfill-corner-top,
-.snap-backfill-month-row th {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  background: var(--bg-subtle);
-}
-
-.snap-backfill-corner-top {
-  left: 0;
-  z-index: 6;
-  box-shadow: 1px 0 0 var(--border);
-}
-
-.snap-backfill-table thead tr:last-child th {
-  position: sticky;
-  top: 26px;
-  z-index: 4;
-  background: var(--bg-subtle);
-}
-
-.snap-backfill-corner {
-  left: 0;
-  z-index: 6;
-  min-width: 200px;
-  max-width: 240px;
-  padding: 8px 12px;
-  text-align: left;
-  font-weight: 650;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  box-shadow: 1px 0 0 var(--border);
-}
-
-.snap-backfill-row-head {
-  min-width: 200px;
-  max-width: 240px;
-  padding: 8px 12px;
-  text-align: left;
-  font-weight: 500;
-  z-index: 2;
-}
-
-.snap-backfill-name {
-  display: block;
-  font-weight: 650;
-  font-size: 13px;
-  line-height: 1.25;
-}
-
-.snap-backfill-meta {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  line-height: 1.3;
-}
-
-.snap-backfill-month-row th {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 5px 2px;
-  text-align: center;
-  height: 26px;
-}
-
-.snap-backfill-week {
-  min-width: 36px;
-  width: 36px;
-  padding: 6px 2px;
-  text-align: center;
-  font-size: 10.5px;
-  font-weight: 650;
-  color: var(--text-muted);
-}
-
-.snap-backfill-week.is-current {
-  color: var(--text);
-  background: var(--accent-wash);
-}
-
-.snap-backfill-cell {
-  min-width: 36px;
-  height: 38px;
-  text-align: center;
-  position: relative;
-}
-
-.snap-backfill-cell.is-inert {
-  background: color-mix(in srgb, var(--bg-subtle) 80%, transparent);
-}
-
-.snap-backfill-cell.is-open {
-  z-index: 5;
-}
-
-.snap-backfill-cell.has-note::after {
-  content: "";
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  pointer-events: none;
-}
-
-.snap-backfill-cell-btn {
+.snap-bf-chip,
+.snap-bf-month {
   appearance: none;
   border: 0;
-  background: none;
-  width: 100%;
-  height: 38px;
-  cursor: pointer;
+  background: var(--bg-soft);
+  color: var(--text-muted);
   font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
-  color: inherit;
-  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 28px;
+  text-align: center;
 }
 
-.snap-backfill-cell.status-not_started .snap-backfill-cell-btn {
-  color: transparent;
+.snap-bf-month {
+  width: 100%;
+  min-height: 28px;
 }
 
-.snap-backfill-cell.status-in_progress,
-.snap-backfill-cell.status-scheduled,
-.snap-backfill-cell.status-sent_for_approval {
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
+.snap-bf-chip.is-met,
+.snap-bf-month.is-met {
+  background: color-mix(in srgb, var(--success) 22%, var(--bg-elevated));
+  color: var(--text);
 }
 
-.snap-backfill-cell.status-completed,
-.snap-backfill-cell.status-approved,
-.snap-backfill-cell.status-shared {
-  background: color-mix(in srgb, var(--success) 18%, transparent);
+.snap-bf-chip.status-in_progress,
+.snap-bf-chip.status-scheduled,
+.snap-bf-chip.status-sent_for_approval,
+.snap-bf-month.status-in_progress,
+.snap-bf-month.status-scheduled,
+.snap-bf-month.status-sent_for_approval {
+  background: color-mix(in srgb, var(--warning) 22%, var(--bg-elevated));
+  color: var(--text);
 }
 
-.snap-backfill-cell.is-met .snap-backfill-cell-btn {
-  color: color-mix(in srgb, var(--success) 55%, var(--text));
+.snap-bf-chip.is-open,
+.snap-bf-month.is-open {
+  outline: 1px solid var(--accent);
 }
 
-.snap-backfill-cell.status-canceled {
-  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
-  opacity: 0.7;
+.snap-bf-chip.is-inert {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.snap-bf-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-height: 28px;
+}
+
+.snap-bf-empty.is-echo {
+  opacity: 0.55;
 }
 
 .snap-backfill-quick {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
 }
 
 .snap-backfill-quick select {
-  flex: 1;
-}
-
-.snap-backfill-popover {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  width: min(300px, 72vw);
-  margin-top: 4px;
-  padding: 12px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  text-align: left;
-}
-
-.snap-backfill-popover-head {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-}
-
-.snap-backfill-popover label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--text-muted);
-}
-
-.snap-backfill-popover textarea,
-.snap-backfill-popover select {
-  font: inherit;
-  font-size: 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 8px;
-  background: var(--bg);
-  color: var(--text);
-}
-
-@media (max-width: 900px) {
-  .snap-backfill-corner,
-  .snap-backfill-row-head {
-    min-width: 148px;
-    max-width: 168px;
-  }
+  max-width: 220px;
 }
 
 /* --- Permissions (/admin/access) -----------------------------------------

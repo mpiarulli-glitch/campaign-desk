@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
-import { backfillCellRuns } from "@/lib/snapshot-backfill";
 import {
+  categoryTagTone,
   fillCanSeeAll,
   fillFocusTeam,
   fillIsAccountManager,
@@ -16,6 +16,7 @@ import {
 import { snapshotAuthorLabel, teamLabelFor } from "@/lib/people";
 import {
   SNAPSHOT_STATUSES,
+  SNAPSHOT_STATUS_SHORT,
   isSnapshotContractMet,
   type SnapshotStatus,
 } from "@/lib/snapshot-status";
@@ -70,16 +71,14 @@ function ownershipChip(row: { team: string; category: string; name: string }): s
   return teamLabelFor(ownership);
 }
 
-function markLabel(status: Status): string {
-  if (status === "not_started") return "";
-  if (isSnapshotContractMet(status)) return "✓";
-  if (status === "canceled") return "–";
-  return "·";
+function monthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return monthKey;
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short" });
 }
 
 export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
   const router = useRouter();
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [accountName, setAccountName] = useState("");
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -87,7 +86,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [seeAll, setSeeAll] = useState(false);
-  const [showSetup, setShowSetup] = useState(false);
+  const [showSetup, setShowSetup] = useState(true);
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
   const [openCell, setOpenCell] = useState<string | null>(null);
@@ -100,7 +99,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
       const res = await fetch(`/api/snapshot/accounts/${clientId}/backfill`);
       if (res.status === 401) return router.push("/login");
       if (!res.ok) {
-        setError("Could not load backfill grid.");
+        setError("Could not load history.");
         return;
       }
       const data = await res.json();
@@ -133,16 +132,18 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
       .finally(() => setViewerReady(true));
   }, []);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || loading) return;
-    el.scrollLeft = el.scrollWidth;
-  }, [loading, columns.length]);
-
   const focusTeam = fillFocusTeam(viewer);
   const canSeeAll = fillCanSeeAll(viewer);
   const isAm = fillIsAccountManager(viewer);
   const viewerTeam = seeAll || isAm ? null : focusTeam;
+
+  const months = useMemo(() => {
+    const keys: string[] = [];
+    for (const col of columns) {
+      if (keys[keys.length - 1] !== col.month_key) keys.push(col.month_key);
+    }
+    return keys;
+  }, [columns]);
 
   const scopedRows = useMemo(() => {
     if (!viewerReady) return [];
@@ -164,26 +165,6 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
       return a.name.localeCompare(b.name);
     });
   }, [rows, viewerTeam, isAm, query, viewerReady, showSetup]);
-
-  const monthBands = useMemo(() => {
-    const bands: Array<{ month_key: string; label: string; span: number }> = [];
-    for (const col of columns) {
-      const last = bands[bands.length - 1];
-      if (last?.month_key === col.month_key) {
-        last.span += 1;
-      } else {
-        const [y, m] = col.month_key.split("-").map(Number);
-        const label =
-          y && m
-            ? new Date(y, m - 1, 1).toLocaleDateString("en-US", {
-                month: "short",
-              })
-            : col.month_key;
-        bands.push({ month_key: col.month_key, label, span: 1 });
-      }
-    }
-    return bands;
-  }, [columns]);
 
   function patchCell(delivId: string, weekStart: string, patch: Partial<Cell>) {
     setRows((rs) =>
@@ -245,7 +226,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
     }
   }
 
-  function onCellActivate(row: Row, cell: Cell) {
+  function onChipClick(row: Row, cell: Cell) {
     if (!cell.editable) return;
     const key = cellKey(row.deliverable_id, cell.week_start);
     if (cell.status === "not_started") {
@@ -279,20 +260,9 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
 
       <div className="snap-backfill-toolbar">
         <p className="snap-backfill-hint">
-          {scopeLabel}. Empty cell → click once to mark done. Click a check to add a note or
-          undo. Monthly work is one cell, not four copies.
+          {scopeLabel}. Each column is a month. Click an empty week or month to mark it done.
+          Click a filled one to change the status or add a note.
         </p>
-        <div className="snap-backfill-legend" aria-hidden="true">
-          <span>
-            <i className="snap-backfill-swatch is-empty" /> Open
-          </span>
-          <span>
-            <i className="snap-backfill-swatch is-wip" /> In progress
-          </span>
-          <span>
-            <i className="snap-backfill-swatch is-met" /> Done
-          </span>
-        </div>
         <div className="snap-backfill-tools">
           {scopedRows.length > 6 || query ? (
             <label className="snap-desk-search">
@@ -311,7 +281,7 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
               className={`btn btn-sm ${showSetup ? "btn-secondary" : "btn-ghost"}`}
               onClick={() => setShowSetup((v) => !v)}
             >
-              {showSetup ? "Hide setup" : `Show ${setupCount} one-offs`}
+              {showSetup ? "Hide one-offs" : `Show ${setupCount} one-offs`}
             </button>
           ) : null}
           {canSeeAll ? (
@@ -335,190 +305,274 @@ export function SnapshotBackfillGrid({ clientId }: { clientId: string }) {
           <p>
             {query.trim()
               ? "Nothing matches that search."
-              : "No recurring deliverables on this account yet."}
+              : "No deliverables on this account yet."}
           </p>
         </div>
       ) : (
-        <div className="snap-backfill-scroll" ref={scrollRef}>
-          <table className="snap-backfill-table">
-            <thead>
-              <tr className="snap-backfill-month-row">
-                <th className="snap-backfill-sticky snap-backfill-corner-top" scope="col" />
-                {monthBands.map((band) => (
-                  <th
-                    key={band.month_key}
-                    colSpan={band.span}
-                    scope="colgroup"
-                    className="snap-backfill-month"
-                  >
-                    {band.label}
-                  </th>
-                ))}
-              </tr>
-              <tr>
-                <th className="snap-backfill-sticky snap-backfill-corner" scope="col">
-                  Deliverable
-                </th>
-                {columns.map((col) => (
-                  <th
-                    key={col.week_start}
-                    scope="col"
-                    className={`snap-backfill-week ${col.is_current ? "is-current" : ""}`}
-                    title={col.label}
-                  >
-                    {Number(col.week_start.slice(8, 10))}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {scopedRows.map((row) => {
-                const chip = ownershipChip(row);
-                const hint = fillPeriodHint({
-                  kind: row.kind,
-                  cadence_unit: row.cadence_unit,
-                  cadence: row.cadence,
-                  period_start: row.cells.find((c) => c.editable)?.period_start || "",
-                });
-                const runs = backfillCellRuns(row.cells);
-                return (
-                  <tr key={row.deliverable_id}>
-                    <th className="snap-backfill-sticky snap-backfill-row-head" scope="row">
-                      <span className="snap-backfill-name">{row.name}</span>
-                      <span className="snap-backfill-meta">
-                        {hint || row.category}
-                        {chip ? ` · ${chip}` : ""}
-                      </span>
-                    </th>
-                    {runs.map((run) => {
-                      const cell = run.cell;
-                      const key = cellKey(row.deliverable_id, cell.week_start);
-                      const open = openCell === key;
-                      const state = saveState[key];
-                      const met = isSnapshotContractMet(cell.status);
-                      const col = columns.find((c) => c.week_start === cell.week_start);
-                      const hasNote = Boolean(
-                        (cell.work_done || "").trim() || (cell.notes || "").trim()
-                      );
-                      return (
-                        <td
-                          key={cell.week_start}
-                          colSpan={run.span}
-                          className={[
-                            "snap-backfill-cell",
-                            `status-${cell.status}`,
-                            cell.editable ? "is-editable" : "is-inert",
-                            met ? "is-met" : "",
-                            open ? "is-open" : "",
-                            hasNote ? "has-note" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                        >
-                          {cell.editable ? (
-                            <button
-                              type="button"
-                              className="snap-backfill-cell-btn"
-                              title={
-                                cell.status === "not_started"
-                                  ? `${col?.label || ""} — click to mark done`
-                                  : col?.label
-                              }
-                              onClick={() => onCellActivate(row, cell)}
-                            >
-                              {markLabel(cell.status)}
-                            </button>
-                          ) : (
-                            <span className="snap-backfill-mirror" />
-                          )}
-                          {open ? (
-                            <div className="snap-backfill-popover">
-                              <div className="snap-backfill-popover-head">
-                                <strong>{row.name}</strong>
-                                <span className="muted">{col?.label}</span>
-                              </div>
-                              <div className="snap-backfill-quick">
-                                {met ? null : (
-                                  <button
-                                    type="button"
-                                    className="snap-done-btn"
-                                    onClick={() => {
-                                      patchCell(row.deliverable_id, cell.week_start, {
-                                        status: "completed",
-                                      });
-                                      void saveCell(row.deliverable_id, cell.week_start, {
-                                        status: "completed",
-                                      });
-                                      setOpenCell(null);
-                                    }}
-                                  >
-                                    Mark done
-                                  </button>
-                                )}
-                                <select
-                                  value={cell.status}
-                                  className={`snap-status-select status-${cell.status}`}
-                                  aria-label="Status"
-                                  onChange={(e) => {
-                                    const status = e.target.value as Status;
-                                    patchCell(row.deliverable_id, cell.week_start, { status });
-                                    void saveCell(row.deliverable_id, cell.week_start, { status });
-                                  }}
-                                >
-                                  {STATUSES.map((s) => (
-                                    <option key={s.value} value={s.value}>
-                                      {s.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <label>
-                                <span>What we did</span>
-                                <textarea
-                                  value={cell.work_done}
-                                  onChange={(e) =>
-                                    patchCell(row.deliverable_id, cell.week_start, {
-                                      work_done: e.target.value,
-                                    })
-                                  }
-                                  onBlur={(e) =>
-                                    void saveCell(row.deliverable_id, cell.week_start, {
-                                      work_done: e.target.value,
-                                    })
-                                  }
-                                  rows={3}
-                                />
-                              </label>
-                              {state === "saving" ? (
-                                <span className="snap-save snap-save-busy">Saving…</span>
-                              ) : state === "saved" ? (
-                                <span className="snap-save snap-save-ok">Saved</span>
-                              ) : state === "failed" ? (
-                                <span className="snap-save snap-save-bad">Not saved</span>
-                              ) : snapshotAuthorLabel(cell.logged_by) ? (
-                                <span className="snap-logged-by muted">
-                                  {snapshotAuthorLabel(cell.logged_by)}
-                                </span>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setOpenCell(null)}
-                              >
-                                Close
-                              </button>
-                            </div>
-                          ) : null}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="snap-n-db snap-bf-db">
+          <div
+            className="snap-bf-cols snap-n-head"
+            style={{ gridTemplateColumns: `minmax(180px, 1.4fr) repeat(${months.length}, minmax(92px, 1fr))` }}
+          >
+            <span>Deliverable</span>
+            {months.map((key) => (
+              <span key={key}>{monthLabel(key)}</span>
+            ))}
+          </div>
+          {scopedRows.map((row) => {
+            const chip = ownershipChip(row);
+            const hint = fillPeriodHint({
+              kind: row.kind,
+              cadence_unit: row.cadence_unit,
+              cadence: row.cadence,
+              period_start: row.cells.find((c) => c.editable)?.period_start || "",
+            });
+            return (
+              <BackfillRow
+                key={row.deliverable_id}
+                row={row}
+                months={months}
+                columns={columns}
+                openCell={openCell}
+                saveState={saveState}
+                chip={chip}
+                hint={hint}
+                onChipClick={onChipClick}
+                onPatch={patchCell}
+                onSave={saveCell}
+                onClose={() => setOpenCell(null)}
+              />
+            );
+          })}
         </div>
       )}
     </div>
+  );
+}
+
+function BackfillRow({
+  row,
+  months,
+  columns,
+  openCell,
+  saveState,
+  chip,
+  hint,
+  onChipClick,
+  onPatch,
+  onSave,
+  onClose,
+}: {
+  row: Row;
+  months: string[];
+  columns: Column[];
+  openCell: string | null;
+  saveState: Record<string, SaveState>;
+  chip: string | null;
+  hint: string;
+  onChipClick: (row: Row, cell: Cell) => void;
+  onPatch: (delivId: string, weekStart: string, patch: Partial<Cell>) => void;
+  onSave: (delivId: string, weekStart: string, patch: Partial<Cell>) => void;
+  onClose: () => void;
+}) {
+  const open = row.cells.find(
+    (c) => cellKey(row.deliverable_id, c.week_start) === openCell && c.editable
+  );
+  const openCol = open ? columns.find((c) => c.week_start === open.week_start) : null;
+  const openKey = open ? cellKey(row.deliverable_id, open.week_start) : "";
+  const state = openKey ? saveState[openKey] : undefined;
+  const metOpen = open ? isSnapshotContractMet(open.status) : false;
+
+  return (
+    <div className={`snap-n-row ${open ? "is-open" : ""}`}>
+      <div
+        className="snap-bf-cols"
+        style={{ gridTemplateColumns: `minmax(180px, 1.4fr) repeat(${months.length}, minmax(92px, 1fr))` }}
+      >
+        <div className="snap-n-title">
+          <span className="snap-n-ico" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
+              <path d="M9.5 2.5V5.5h3" />
+            </svg>
+          </span>
+          <span className="snap-n-name">{row.name}</span>
+        </div>
+        {months.map((monthKey) => {
+          const monthCells = row.cells.filter((c) => c.week_start.startsWith(monthKey));
+          if (row.kind === "one_time") {
+            const cell = monthCells.find((c) => c.editable);
+            if (!cell) {
+              return <span key={monthKey} className="snap-bf-empty" />;
+            }
+            return (
+              <MonthPeriodCell
+                key={monthKey}
+                row={row}
+                cell={cell}
+                columns={columns}
+                open={openCell === cellKey(row.deliverable_id, cell.week_start)}
+                onChipClick={onChipClick}
+              />
+            );
+          }
+          if (row.cadence_unit === "weekly") {
+            return (
+              <div key={monthKey} className="snap-bf-weeks">
+                {monthCells.map((cell) => {
+                  const col = columns.find((c) => c.week_start === cell.week_start);
+                  const met = isSnapshotContractMet(cell.status);
+                  const openThis = openCell === cellKey(row.deliverable_id, cell.week_start);
+                  return (
+                    <button
+                      key={cell.week_start}
+                      type="button"
+                      className={[
+                        "snap-bf-chip",
+                        `status-${cell.status}`,
+                        met ? "is-met" : "",
+                        openThis ? "is-open" : "",
+                        cell.editable ? "" : "is-inert",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      disabled={!cell.editable}
+                      title={`${col?.label || cell.week_start} · ${SNAPSHOT_STATUSES.find((s) => s.value === cell.status)?.label}`}
+                      onClick={() => onChipClick(row, cell)}
+                    >
+                      {cell.status === "not_started"
+                        ? col?.short_label.replace(/^[A-Za-z]+ /, "") || "·"
+                        : SNAPSHOT_STATUS_SHORT[cell.status]}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          }
+          const cell = monthCells.find((c) => c.editable);
+          if (!cell) {
+            const mirrored = monthCells.find((c) => c.period_start && isSnapshotContractMet(c.status));
+            return (
+              <span key={monthKey} className={`snap-bf-empty ${mirrored ? "is-echo" : ""}`}>
+                {mirrored ? "same" : ""}
+              </span>
+            );
+          }
+          return (
+            <MonthPeriodCell
+              key={monthKey}
+              row={row}
+              cell={cell}
+              columns={columns}
+              open={openCell === cellKey(row.deliverable_id, cell.week_start)}
+              onChipClick={onChipClick}
+            />
+          );
+        })}
+      </div>
+      <p className="snap-n-meta">
+        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(row.category || "Other")}`}>
+          {row.category.trim() || "Other"}
+        </span>
+        {hint || row.cadence}
+        {chip ? ` · ${chip}` : ""}
+        {row.kind === "one_time" ? " · One-off" : ""}
+      </p>
+      {open ? (
+        <div className="snap-fields">
+          <div className="snap-backfill-quick">
+            <strong>{openCol?.label}</strong>
+            {metOpen ? null : (
+              <button
+                type="button"
+                className="snap-done-btn"
+                onClick={() => {
+                  onPatch(row.deliverable_id, open.week_start, { status: "completed" });
+                  void onSave(row.deliverable_id, open.week_start, { status: "completed" });
+                  onClose();
+                }}
+              >
+                Mark done
+              </button>
+            )}
+            <select
+              value={open.status}
+              className={`snap-n-status status-${open.status}`}
+              aria-label="Status"
+              onChange={(e) => {
+                const status = e.target.value as Status;
+                onPatch(row.deliverable_id, open.week_start, { status });
+                void onSave(row.deliverable_id, open.week_start, { status });
+              }}
+            >
+              {STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label>
+            <span>What we did</span>
+            <textarea
+              value={open.work_done}
+              onChange={(e) =>
+                onPatch(row.deliverable_id, open.week_start, { work_done: e.target.value })
+              }
+              onBlur={(e) =>
+                void onSave(row.deliverable_id, open.week_start, { work_done: e.target.value })
+              }
+              rows={3}
+            />
+          </label>
+          {state === "saving" ? (
+            <span className="snap-save snap-save-busy">Saving…</span>
+          ) : state === "saved" ? (
+            <span className="snap-save snap-save-ok">Saved</span>
+          ) : state === "failed" ? (
+            <span className="snap-save snap-save-bad">Not saved</span>
+          ) : snapshotAuthorLabel(open.logged_by) ? (
+            <span className="snap-logged-by muted">{snapshotAuthorLabel(open.logged_by)}</span>
+          ) : null}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MonthPeriodCell({
+  row,
+  cell,
+  columns,
+  open,
+  onChipClick,
+}: {
+  row: Row;
+  cell: Cell;
+  columns: Column[];
+  open: boolean;
+  onChipClick: (row: Row, cell: Cell) => void;
+}) {
+  const col = columns.find((c) => c.week_start === cell.week_start);
+  const met = isSnapshotContractMet(cell.status);
+  return (
+    <button
+      type="button"
+      className={[
+        "snap-bf-month",
+        `status-${cell.status}`,
+        met ? "is-met" : "",
+        open ? "is-open" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      title={`${col?.label || cell.week_start} · ${SNAPSHOT_STATUSES.find((s) => s.value === cell.status)?.label}`}
+      onClick={() => onChipClick(row, cell)}
+    >
+      {cell.status === "not_started" ? "Empty" : SNAPSHOT_STATUS_SHORT[cell.status]}
+    </button>
   );
 }

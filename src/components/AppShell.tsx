@@ -233,6 +233,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         pathname.startsWith("/admin/courses/")
       );
     }
+    if (href === "/admin/snapshot/desk") {
+      return (
+        pathname === "/admin/snapshot/desk" ||
+        pathname.startsWith("/admin/snapshot/") ||
+        pathname === "/admin/client-services" ||
+        pathname.startsWith("/admin/client-services/")
+      );
+    }
     return pathname === href || pathname.startsWith(href + "/");
   }
 

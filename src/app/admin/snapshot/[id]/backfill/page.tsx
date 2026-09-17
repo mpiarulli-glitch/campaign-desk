@@ -10,8 +10,8 @@ export default function SnapshotBackfillPage() {
   return (
     <div className="ops-page snap-desk snap-backfill-page">
       <div className="page-actions">
-        <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
-          All accounts
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
+          All snapshots
         </Link>
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
           How to fill
@@ -23,11 +23,11 @@ export default function SnapshotBackfillPage() {
 
       <div className="ops-page-head">
         <div>
-          <p className="ops-eyebrow">Account snapshot · Backfill</p>
-          <h1 className="ops-title">6-month grid</h1>
+          <p className="ops-eyebrow">Account snapshot · History</p>
+          <h1 className="ops-title">Past six months</h1>
           <p className="ops-sub">
-            Click an empty cell to mark that week or month done. Click a check to
-            change it or add a note.
+            One row per deliverable, one column per month. Click Empty to mark
+            that week or month done. Click Done to change it or add a note.
           </p>
         </div>
       </div>

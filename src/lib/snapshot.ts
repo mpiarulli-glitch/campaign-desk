@@ -613,6 +613,45 @@ export function weekData(
   });
 }
 
+export type DeskWeekRow = WeekRow & {
+  client_id: string;
+  client_name: string;
+  launch_date: string | null;
+};
+
+/** Every allowlisted client's week rows, for the company-wide fill desk. */
+export function weekDesk(
+  weekStart: string,
+  opts?: { team?: string | null }
+): DeskWeekRow[] {
+  const out: DeskWeekRow[] = [];
+  for (const account of listAccounts()) {
+    const launch_date = snapshotLaunchDateFor(account);
+    for (const row of weekData(account.id, weekStart, opts)) {
+      out.push({
+        ...row,
+        client_id: account.id,
+        client_name: account.name,
+        launch_date,
+      });
+    }
+  }
+  out.sort((a, b) => {
+    const byClient = a.client_name.localeCompare(b.client_name, undefined, {
+      sensitivity: "base",
+    });
+    if (byClient) return byClient;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  });
+  return out;
+}
+
+export function behindDeliverableIdsForDesk(): string[] {
+  return listAccounts().flatMap((account) =>
+    behindDeliverablesForClient(account.id).map((item) => item.deliverable_id)
+  );
+}
+
 /** Six-month grid for backfilling deliverable progress from one page. */
 export function backfillGridData(
   clientId: string,

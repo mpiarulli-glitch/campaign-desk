@@ -4,20 +4,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
-import { SnapshotCatchUp } from "@/components/SnapshotCatchUp";
-import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
+import { SnapshotFillRow, type SnapshotFillSaveState } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
-import {
-  defaultLoggedForDate,
-  loggedForTargetsOtherPeriod,
-} from "@/lib/snapshot-entry-date";
-import { snapshotAuthorLabel, TEAMS, teamLabelFor } from "@/lib/people";
+import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
+import { TEAMS, teamLabelFor } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
-import {
-  isSnapshotContractMet,
-  SNAPSHOT_STATUSES,
-  type SnapshotStatus,
-} from "@/lib/snapshot-status";
+import { type SnapshotStatus } from "@/lib/snapshot-status";
 import {
   fillCanSeeAll,
   fillCounts,
@@ -25,16 +17,21 @@ import {
   fillIsAccountManager,
   fillLane,
   fillPassSummary,
-  fillPeriodHint,
   filterFillRows,
-  categoryTagTone,
-  inferDeliverableOwnership,
   visibleFillRows,
   type FillFilter,
   type FillViewer,
 } from "@/lib/snapshot-fill";
 
-type Section = "week" | "leads" | "wins" | "metrics" | "setup" | "client";
+type Section = "week" | "leads" | "wins" | "setup" | "client";
+
+const SECTIONS: { value: Section; label: string }[] = [
+  { value: "week", label: "This week" },
+  { value: "leads", label: "Leads" },
+  { value: "wins", label: "Wins" },
+  { value: "setup", label: "Setup" },
+  { value: "client", label: "Client view" },
+];
 
 type Win = { id: string; body: string; happened_on: string };
 type Converted = "unknown" | "yes" | "no";
@@ -70,32 +67,16 @@ const CONVERTED_LABEL: Record<Converted, string> = {
   yes: "Converted",
   no: "Did not convert",
 };
-type MetricRow = { id: string; metric: string; period: string; value: number; unit: string };
 type Contract = {
   pct: number;
   doneCount: number;
   totalCount: number;
-  // Recurring deliverables whose current period is still running. Not scored, so
-  // the percentage is about periods that have actually closed.
   inFlightCount: number;
   onTrack: boolean;
   label: string;
 };
 
-function groupSeries(rows: MetricRow[]): MetricSeries[] {
-  const map = new Map<string, MetricSeries>();
-  for (const r of rows) {
-    let s = map.get(r.metric);
-    if (!s) { s = { metric: r.metric, unit: r.unit, points: [] }; map.set(r.metric, s); }
-    if (r.unit && !s.unit) s.unit = r.unit;
-    s.points.push({ period: r.period, value: r.value });
-  }
-  for (const s of map.values()) s.points.sort((a, b) => a.period.localeCompare(b.period));
-  return Array.from(map.values());
-}
-
 type Status = SnapshotStatus;
-const STATUSES = SNAPSHOT_STATUSES;
 
 type Kind = "recurring" | "one_time";
 type CadenceUnit = "weekly" | "monthly" | "quarterly";
@@ -146,28 +127,7 @@ type Row = {
 // Per-row save state. A save that failed has to look different from one that
 // worked: the old code fired the request and never read the response, so a
 // dropped connection left the typed text on screen looking saved.
-type SaveState = "saving" | "saved" | "failed";
-
-// "2 hours ago" for a recent write, a date once that stops being the useful fact.
-function relativeTime(iso: string): string {
-  if (!iso) return "";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const mins = Math.round((Date.now() - then) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function ownershipChip(row: { team: string; category: string; name: string }): string | null {
-  const ownership = inferDeliverableOwnership(row);
-  if (ownership === "unknown") return null;
-  return teamLabelFor(ownership);
-}
+type SaveState = SnapshotFillSaveState;
 
 export default function SnapshotEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -205,7 +165,6 @@ export default function SnapshotEditorPage() {
     dueDate: "",
   });
   const [wins, setWins] = useState<Win[]>([]);
-  const [metricsRaw, setMetricsRaw] = useState<MetricRow[]>([]);
   const [contract, setContract] = useState<Contract | null>(null);
   const [behind, setBehind] = useState<BehindItem[]>([]);
   const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
@@ -214,7 +173,6 @@ export default function SnapshotEditorPage() {
   const [failedPatch, setFailedPatch] = useState<Record<string, Partial<Row>>>({});
   /** Per-row backdate override; resets when the viewed week changes. */
   const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
-  const [metricError, setMetricError] = useState("");
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [leads, setLeads] = useState<Lead[]>([]);
   const [revReports, setRevReports] = useState<RevenueReport[]>([]);
@@ -236,7 +194,6 @@ export default function SnapshotEditorPage() {
     receivedOn: "",
     notes: "",
   });
-  const [nm, setNm] = useState({ metric: "", period: "", value: "", unit: "" });
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
   const isAdmin = viewer.role === "admin";
@@ -279,7 +236,6 @@ export default function SnapshotEditorPage() {
       setDeliverables(data.deliverables || []);
       setToken(data.token || null);
       setWins(data.wins || []);
-      setMetricsRaw(data.metricsRaw || []);
       setContract(data.contract || null);
       setBehind(data.behind || []);
       setRevReports(data.revenueReports || []);
@@ -396,35 +352,6 @@ export default function SnapshotEditorPage() {
   }
   async function removeWin(winId: string) {
     await fetch(`/api/snapshot/win/${winId}`, { method: "DELETE" });
-    loadMeta();
-  }
-  async function addMetric(e: FormEvent) {
-    e.preventDefault();
-    setMetricError("");
-    if (!nm.metric.trim() || !nm.period.trim() || nm.value === "") return;
-    const res = await fetch("/api/snapshot/metric", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId: id,
-        metric: nm.metric,
-        period: nm.period,
-        value: Number(nm.value),
-        unit: nm.unit,
-      }),
-    });
-    if (!res.ok) {
-      // The server explains an unreadable month specifically. Showing that beats
-      // "Could not save metric", which leaves the person guessing which field.
-      const data = await res.json().catch(() => ({}));
-      setMetricError(data.error || "Could not save metric.");
-      return;
-    }
-    setNm({ metric: nm.metric, period: "", value: "", unit: nm.unit });
-    loadMeta();
-  }
-  async function removeMetric(mId: string) {
-    await fetch(`/api/snapshot/metric/${mId}`, { method: "DELETE" });
     loadMeta();
   }
 
@@ -626,13 +553,13 @@ export default function SnapshotEditorPage() {
   return (
     <div className="ops-page snap-desk">
       <div className="page-actions">
-        <Link className="btn btn-ghost btn-sm" href="/admin/client-services">All accounts</Link>
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">All snapshots</Link>
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
           How to fill
         </Link>
         {isAdmin ? (
           <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}/backfill`}>
-            6-month backfill
+            Past six months
           </Link>
         ) : null}
         {canSeeAll ? (
@@ -650,7 +577,22 @@ export default function SnapshotEditorPage() {
         <div>
           <p className="ops-eyebrow">Account snapshot</p>
           <h1 className="ops-title">{name || "Account"}</h1>
-          <p className="snap-n-view">List</p>
+          <label className="snap-section-nav">
+            <span>View</span>
+            <select
+              value={section}
+              aria-label="Account snapshot view"
+              onChange={(e) => setSection(e.target.value as Section)}
+            >
+              {SECTIONS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                  {s.value === "week" && counts.attention ? ` (${counts.attention})` : ""}
+                  {s.value === "leads" && leadsWaiting ? ` (${leadsWaiting})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
           <p className="ops-sub">{scopeLabel}</p>
           <label className="snap-launch">
             <span>Launch</span>
@@ -684,21 +626,6 @@ export default function SnapshotEditorPage() {
       </div>
 
       {error ? <p className="error">{error}</p> : null}
-
-      <div className="tabs" role="tablist" aria-label="Snapshot sections">
-        <button type="button" role="tab" aria-selected={section === "week"} className={`tab ${section === "week" ? "active" : ""}`} onClick={() => setSection("week")}>
-          This week
-          {counts.attention ? <span className="tab-count">{counts.attention}</span> : null}
-        </button>
-        <button type="button" role="tab" aria-selected={section === "leads"} className={`tab ${section === "leads" ? "active" : ""}`} onClick={() => setSection("leads")}>
-          Leads
-          {leadsWaiting ? <span className="tab-count">{leadsWaiting}</span> : null}
-        </button>
-        <button type="button" role="tab" aria-selected={section === "wins"} className={`tab ${section === "wins" ? "active" : ""}`} onClick={() => setSection("wins")}>Wins</button>
-        <button type="button" role="tab" aria-selected={section === "metrics"} className={`tab ${section === "metrics" ? "active" : ""}`} onClick={() => setSection("metrics")}>Metrics</button>
-        <button type="button" role="tab" aria-selected={section === "setup"} className={`tab ${section === "setup" ? "active" : ""}`} onClick={() => setSection("setup")}>Setup</button>
-        <button type="button" role="tab" aria-selected={section === "client"} className={`tab ${section === "client" ? "active" : ""}`} onClick={() => setSection("client")}>Client view</button>
-      </div>
 
       {section === "week" ? (
         <>
@@ -791,7 +718,7 @@ export default function SnapshotEditorPage() {
                 <span />
               </div>
               {filteredRows.map((r) => (
-                <FillRow
+                <SnapshotFillRow
                   key={r.deliverable_id}
                   row={r}
                   viewWeek={week}
@@ -922,51 +849,6 @@ export default function SnapshotEditorPage() {
               onChange={(e) => setNw({ ...nw, happenedOn: e.target.value })} />
             <button className="btn btn-sm" type="submit">Add win</button>
           </form>
-        </div>
-      ) : null}
-
-      {section === "metrics" ? (
-        <div className="card card-pad stack">
-          <strong>Performance</strong>
-          <PerfCharts series={groupSeries(metricsRaw)} />
-          <form className="snap-metric-form" onSubmit={addMetric}>
-            <input
-              list="snap-metric-names"
-              value={nm.metric}
-              onChange={(e) => setNm({ ...nm, metric: e.target.value })}
-              placeholder="Metric (e.g. Leads)"
-            />
-            <datalist id="snap-metric-names">
-              {Array.from(new Set(metricsRaw.map((m) => m.metric))).map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-            <input
-              type="month"
-              value={nm.period}
-              onChange={(e) => setNm({ ...nm, period: e.target.value })}
-              aria-label="Month"
-            />
-            <input value={nm.value} onChange={(e) => setNm({ ...nm, value: e.target.value })} placeholder="Value" type="number" step="any" />
-            <input value={nm.unit} onChange={(e) => setNm({ ...nm, unit: e.target.value })} placeholder="Unit ($, %, blank)" />
-            <button className="btn btn-sm" type="submit">Add / update</button>
-          </form>
-          {metricError ? <p className="error" style={{ margin: 0 }}>{metricError}</p> : null}
-          {metricsRaw.length > 0 ? (
-            <div className="snap-metric-list">
-              {metricsRaw.map((m) => (
-                <div key={m.id} className="snap-metric-row">
-                  <span><strong>{m.metric}</strong> · {metricPeriodLabel(m.period)}</span>
-                  <span>{m.unit === "$" ? "$" : ""}{m.value.toLocaleString()}{m.unit === "%" ? "%" : ""}</span>
-                  <button className="btn btn-ghost btn-sm" aria-label="Remove metric" onClick={() => removeMetric(m.id)}>×</button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Add data points (same metric name across months builds a trend chart).
-            </p>
-          )}
         </div>
       ) : null}
 
@@ -1123,233 +1005,6 @@ export default function SnapshotEditorPage() {
               />
             </div>
           ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function FillRow({
-  row,
-  viewWeek,
-  loggedFor,
-  overdue,
-  open,
-  saveState,
-  onToggle,
-  onPatch,
-  onLoggedForChange,
-  onSave,
-  onRetry,
-  onCatchUpDone,
-  launchDate,
-}: {
-  row: Row;
-  viewWeek: string;
-  loggedFor: string;
-  overdue: boolean;
-  open: boolean;
-  saveState?: SaveState;
-  onToggle: () => void;
-  onPatch: (patch: Partial<Row>) => void;
-  onLoggedForChange: (loggedFor: string) => void;
-  onSave: (patch: Partial<Row>, opts?: { loggedFor?: string }) => void;
-  onRetry: () => void;
-  onCatchUpDone: () => void;
-  launchDate: string | null;
-}) {
-  const chip = ownershipChip(row);
-  const hint = fillPeriodHint({
-    kind: row.kind,
-    cadence_unit: row.cadence_unit,
-    cadence: row.cadence,
-    period_start: row.period_start,
-    due_date: row.due_date,
-  });
-  const backdateOther = loggedForTargetsOtherPeriod({
-    kind: row.kind,
-    cadence_unit: row.cadence_unit,
-    viewWeek,
-    loggedFor,
-  });
-  const [catchUpOpen, setCatchUpOpen] = useState(false);
-  const [askingWhen, setAskingWhen] = useState(false);
-  const [whenDate, setWhenDate] = useState(loggedFor);
-  const met = isSnapshotContractMet(row.status);
-  const author = snapshotAuthorLabel(row.logged_by);
-  const now = new Date();
-  const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-  function confirmDone() {
-    const when = whenDate || loggedFor;
-    onLoggedForChange(when);
-    onPatch({ status: "completed" });
-    onSave({ status: "completed" }, { loggedFor: when });
-    setAskingWhen(false);
-  }
-  return (
-    <div className={`snap-n-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
-      <div className="snap-n-cols">
-        <button type="button" className="snap-n-title" onClick={onToggle}>
-          <span className="snap-n-ico" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
-              <path d="M9.5 2.5V5.5h3" />
-            </svg>
-          </span>
-          <span className="snap-n-name">
-            {row.name}
-            {overdue ? <span className="snap-desk-overdue">Overdue</span> : null}
-          </span>
-        </button>
-        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(row.category || "Other")}`}>
-          {row.category.trim() || "Other"}
-        </span>
-        <select
-          className={`snap-n-status status-${row.status}`}
-          value={row.status}
-          aria-label="Status"
-          onChange={(e) => {
-            const status = e.target.value as Status;
-            onPatch({ status });
-            onSave({ status });
-          }}
-        >
-          {STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
-        </select>
-        <span className="snap-n-date">
-          {hint}
-          {chip ? ` · ${chip}` : ""}
-        </span>
-        <div className="snap-n-actions" onClick={(e) => e.stopPropagation()}>
-          {saveState === "saving" ? (
-            <span className="snap-save snap-save-busy">Saving…</span>
-          ) : saveState === "saved" ? (
-            <span className="snap-save snap-save-ok">Saved</span>
-          ) : saveState === "failed" ? (
-            <span className="snap-save snap-save-bad">
-              Not saved
-              <button type="button" className="link-button" onClick={onRetry}>Retry</button>
-            </span>
-          ) : null}
-          {met ? (
-            <span className="snap-done-mark">Done</span>
-          ) : askingWhen ? (
-            <form
-              className="snap-when-ask"
-              onSubmit={(e) => {
-                e.preventDefault();
-                confirmDone();
-              }}
-            >
-              <label>
-                <span>When?</span>
-                <input
-                  type="date"
-                  value={whenDate}
-                  min={launchDate || undefined}
-                  max={todayYmd}
-                  autoFocus
-                  aria-label="When this work happened"
-                  onChange={(e) => setWhenDate(e.target.value)}
-                />
-              </label>
-              <button type="submit" className="snap-done-btn">
-                Save
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setAskingWhen(false)}
-              >
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              className="snap-done-btn"
-              onClick={() => {
-                setWhenDate(loggedFor);
-                setAskingWhen(true);
-              }}
-            >
-              Mark done
-            </button>
-          )}
-          {row.kind === "recurring" ? (
-            <button
-              type="button"
-              className={`snap-catchup-toggle ${catchUpOpen ? "is-on" : ""}`}
-              aria-expanded={catchUpOpen}
-              onClick={() => setCatchUpOpen((v) => !v)}
-            >
-              Catch up
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {author ? (
-        <p className="snap-n-meta">
-          {author}
-          {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
-        </p>
-      ) : null}
-      {backdateOther ? (
-        <p className="snap-backdate-hint">
-          Saves to the period containing {loggedFor}, not the week on screen.
-        </p>
-      ) : null}
-      {catchUpOpen ? (
-        <SnapshotCatchUp
-          deliverableId={row.deliverable_id}
-          kind={row.kind}
-          cadenceUnit={row.cadence_unit}
-          launchDate={launchDate}
-          onDone={onCatchUpDone}
-        />
-      ) : null}
-      {open ? (
-        <div className="snap-fields">
-          <label>
-            <span>What we did</span>
-            <textarea
-              value={row.work_done}
-              onChange={(e) => onPatch({ work_done: e.target.value })}
-              onBlur={(e) => onSave({ work_done: e.target.value })}
-              placeholder="What got done this week"
-            />
-          </label>
-          <label>
-            <span>Next steps</span>
-            <textarea
-              value={row.next_steps}
-              onChange={(e) => onPatch({ next_steps: e.target.value })}
-              onBlur={(e) => onSave({ next_steps: e.target.value })}
-              placeholder="What's coming next"
-            />
-          </label>
-          <label>
-            <span>Notes</span>
-            <textarea
-              value={row.notes}
-              onChange={(e) => onPatch({ notes: e.target.value })}
-              onBlur={(e) => onSave({ notes: e.target.value })}
-              placeholder="Anything the client should know"
-            />
-          </label>
-          <label className="snap-logged-for snap-logged-for-field">
-            <span>Logged for</span>
-            <input
-              type="date"
-              value={loggedFor}
-              aria-label="Logged for date"
-              title="When this work actually happened"
-              onChange={(e) => onLoggedForChange(e.target.value)}
-            />
-          </label>
         </div>
       ) : null}
     </div>

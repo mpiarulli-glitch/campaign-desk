@@ -70,7 +70,7 @@ test("per-person access", async (t) => {
 
   await t.test("the new pages on main are in the registry", () => {
     const hrefs = access.PAGES.map((p) => p.href);
-    assert.ok(hrefs.includes("/admin/client-services"));
+    assert.ok(hrefs.includes("/admin/snapshot/desk"));
     assert.ok(hrefs.includes("/admin/social-qa"));
   });
 
@@ -270,7 +270,7 @@ test("per-person access", async (t) => {
     assert.ok(!pages.includes("/admin/calendar"), "the calendar is owner-only");
     assert.ok(!pages.includes("/admin/social-qa"), "roy is not on the social QA list");
     assert.ok(pages.includes("/admin/whiteboard"));
-    assert.ok(pages.includes("/admin/client-services"));
+    assert.ok(pages.includes("/admin/snapshot/desk"));
     assert.ok(!pages.includes("/admin"), "old dashboard is no longer a nav item");
 
     // Every page with an href, and nothing without one.

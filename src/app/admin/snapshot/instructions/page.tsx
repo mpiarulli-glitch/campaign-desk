@@ -4,9 +4,9 @@ const SECTIONS = [
   { id: "weekly-pass", label: "Weekly pass" },
   { id: "done-vs-status", label: "Done vs status" },
   { id: "catch-up", label: "Catch up" },
-  { id: "backfill", label: "6-month backfill" },
+  { id: "backfill", label: "Past six months" },
   { id: "behind", label: "Behind report" },
-  { id: "tabs", label: "Other tabs" },
+  { id: "tabs", label: "On the account" },
   { id: "client-view", label: "What clients see" },
 ] as const;
 
@@ -14,8 +14,8 @@ export default function SnapshotInstructionsPage() {
   return (
     <div className="ops-page snap-desk snap-instructions">
       <div className="page-actions">
-        <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
-          All accounts
+        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
+          All snapshots
         </Link>
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
           Behind report
@@ -47,18 +47,12 @@ export default function SnapshotInstructionsPage() {
           <ol>
             <li>
               Open{" "}
-              <Link href="/admin/client-services">Client Services</Link>, pick
-              an account, then <strong>Full account</strong> (or open the
-              account card).
+              <Link href="/admin/snapshot/desk">This week</Link> — every
+              client&apos;s deliverables in one list.
             </li>
             <li>
-              Stay on <strong>This week</strong>. Use the week picker if you
-              need last week.
-            </li>
-            <li>
-              Work the lanes top to bottom: <strong>Overdue</strong>, then{" "}
-              <strong>Open</strong>. Filter to <em>Needs update</em> if the
-              list is long.
+              Use the week picker if you need last week. Filter to{" "}
+              <em>Needs update</em> if the list is long.
             </li>
             <li>
               For each deliverable: set status, hit <strong>Done</strong> when
@@ -67,8 +61,7 @@ export default function SnapshotInstructionsPage() {
               see context.
             </li>
             <li>
-              Clear the pass banner (“all N logged”) before you leave. That’s
-              the weekly bar.
+              Open a client name for setup, leads, wins, or the client link.
             </li>
           </ol>
           <p className="snap-instr-note">
@@ -122,18 +115,19 @@ export default function SnapshotInstructionsPage() {
         </section>
 
         <section id="backfill" className="snap-instr-card">
-          <h2>6-month backfill</h2>
+          <h2>Past six months</h2>
           <p>
-            Admins: from the account page open{" "}
-            <strong>6-month backfill</strong>. It’s a grid of weeks/months.
+            Admins: from an account, open <strong>Past six months</strong>.
+            It’s a list — one row per deliverable, one column per month.
           </p>
           <ul>
-            <li>Empty cell → click to mark that period done.</li>
-            <li>Check mark → click again to change or add a note.</li>
+            <li>Weekly work shows a chip per week inside that month.</li>
+            <li>Monthly work is one cell for the month.</li>
+            <li>Empty → click to mark done. A filled cell opens notes.</li>
           </ul>
           <p>
             Prefer Catch up on a single deliverable when you’re cleaning one
-            line. Use the grid when you’re clearing a whole account’s history.
+            line. Use this list when you’re clearing a whole account’s history.
           </p>
         </section>
 
@@ -159,8 +153,15 @@ export default function SnapshotInstructionsPage() {
         </section>
 
         <section id="tabs" className="snap-instr-card">
-          <h2>Other tabs on the account</h2>
+          <h2>On the account</h2>
+          <p>
+            Open a client from the desk. The view dropdown has:
+          </p>
           <ul>
+            <li>
+              <strong>This week</strong> — that account only (same editor as
+              the desk).
+            </li>
             <li>
               <strong>Leads</strong> — add or update leads; clients can mark
               Converted / Not yet on their link.
@@ -168,10 +169,6 @@ export default function SnapshotInstructionsPage() {
             <li>
               <strong>Wins</strong> — short wins with a date (shows on the
               client page).
-            </li>
-            <li>
-              <strong>Metrics</strong> — monthly numbers + charts for the
-              client Performance section.
             </li>
             <li>
               <strong>Setup</strong> — deliverables (team, cadence, one-time vs
