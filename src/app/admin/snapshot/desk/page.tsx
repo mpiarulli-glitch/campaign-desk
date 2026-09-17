@@ -36,7 +36,7 @@ export default function SnapshotDeskPage() {
   const [week, setWeek] = useState(currentWeek());
   const [weekLoaded, setWeekLoaded] = useState("");
   const [error, setError] = useState("");
-  const [fillFilter, setFillFilter] = useState<FillFilter>("todo");
+  const [fillFilter, setFillFilter] = useState<FillFilter>("all");
   const [seeAll, setSeeAll] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -45,6 +45,7 @@ export default function SnapshotDeskPage() {
   const [saveState, setSaveState] = useState<Record<string, SnapshotFillSaveState>>({});
   const [failedPatch, setFailedPatch] = useState<Record<string, Partial<SnapshotFillRowData>>>({});
   const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
+  const [keptIds, setKeptIds] = useState<string[]>([]);
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
   const [weekWins, setWeekWins] = useState<DeskWeekWin[]>([]);
@@ -76,6 +77,7 @@ export default function SnapshotDeskPage() {
         setSaveState({});
         setFailedPatch({});
         setLoggedForByRow({});
+        setKeptIds([]);
       } catch {
         setError("Network error. Check your connection and try again.");
       }
@@ -152,7 +154,12 @@ export default function SnapshotDeskPage() {
     return new Set(ids.filter((id) => !have.has(id)));
   }, [clientScoped, weekWins, viewerSlug]);
   const winNeeded = accountsMissingWin.size;
-  const filteredRows = filterFillRows(searched, fillFilter, behindIds);
+  const stayOnList = useMemo(() => {
+    const ids = new Set(keptIds);
+    if (openId) ids.add(openId);
+    return ids;
+  }, [keptIds, openId]);
+  const filteredRows = filterFillRows(searched, fillFilter, behindIds, stayOnList);
   const passLine = fillPassSummary(counts, isCurrentWeek(week));
   const winLine =
     winNeeded === 0
@@ -206,6 +213,10 @@ export default function SnapshotDeskPage() {
     opts?: { loggedFor?: string }
   ) {
     setSaveState((s) => ({ ...s, [delivId]: "saving" }));
+    if (patch.status && fillLane({ deliverable_id: delivId, status: patch.status }, behindIds) === "done") {
+      setKeptIds((ids) => (ids.includes(delivId) ? ids : [...ids, delivId]));
+      setOpenId(delivId);
+    }
     const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
     try {
       const res = await fetch("/api/snapshot/entry", {
@@ -304,23 +315,20 @@ export default function SnapshotDeskPage() {
       ) : null}
 
       {counts.total > 0 ? (
-        <div className="snap-desk-filters" role="group" aria-label="Filter this week">
-          <button type="button" className={fillFilter === "todo" ? "is-on" : undefined} onClick={() => setFillFilter("todo")}>
-            Needs update <em>{counts.attention}</em>
-          </button>
-          <button type="button" className={fillFilter === "overdue" ? "is-on" : undefined} onClick={() => setFillFilter("overdue")}>
-            Overdue <em>{counts.overdue}</em>
-          </button>
-          <button type="button" className={fillFilter === "win" ? "is-on" : undefined} onClick={() => setFillFilter("win")}>
-            Needs your win <em>{winNeeded}</em>
-          </button>
-          <button type="button" className={fillFilter === "done" ? "is-on" : undefined} onClick={() => setFillFilter("done")}>
-            Logged <em>{counts.done}</em>
-          </button>
-          <button type="button" className={fillFilter === "all" ? "is-on" : undefined} onClick={() => setFillFilter("all")}>
-            All <em>{counts.total}</em>
-          </button>
-        </div>
+        <label className="snap-desk-search snap-desk-client">
+          <span>Show</span>
+          <select
+            value={fillFilter}
+            aria-label="Filter this week"
+            onChange={(e) => setFillFilter(e.target.value as FillFilter)}
+          >
+            <option value="all">All · {counts.total}</option>
+            <option value="todo">Needs update · {counts.attention}</option>
+            <option value="overdue">Overdue · {counts.overdue}</option>
+            <option value="win">Needs your win · {winNeeded}</option>
+            <option value="done">Logged · {counts.done}</option>
+          </select>
+        </label>
       ) : null}
 
       {clients.length > 1 ? (
@@ -385,7 +393,7 @@ export default function SnapshotDeskPage() {
         <div className="stack" style={{ gap: 18 }}>
           {groups.map((group) => {
             const view = groupView[group.id] || "week";
-            const weekRows = filterFillRows(group.rows, fillFilter, behindIds);
+            const weekRows = filterFillRows(group.rows, fillFilter, behindIds, stayOnList);
             return (
             <div key={group.id} className="snap-n-db">
               <div className="snap-n-group">

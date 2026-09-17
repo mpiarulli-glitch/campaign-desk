@@ -142,7 +142,7 @@ export default function SnapshotEditorPage() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [section, setSection] = useState<Section>("week");
-  const [fillFilter, setFillFilter] = useState<FillFilter>("todo");
+  const [fillFilter, setFillFilter] = useState<FillFilter>("all");
   const [seeAll, setSeeAll] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -173,6 +173,7 @@ export default function SnapshotEditorPage() {
   const [failedPatch, setFailedPatch] = useState<Record<string, Partial<Row>>>({});
   /** Per-row backdate override; resets when the viewed week changes. */
   const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
+  const [keptIds, setKeptIds] = useState<string[]>([]);
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [leads, setLeads] = useState<Lead[]>([]);
   const [revReports, setRevReports] = useState<RevenueReport[]>([]);
@@ -216,6 +217,7 @@ export default function SnapshotEditorPage() {
           setSaveState({});
           setFailedPatch({});
           setLoggedForByRow({});
+          setKeptIds([]);
         }
       } catch {
         setError("Network error. Check your connection and try again.");
@@ -403,6 +405,10 @@ export default function SnapshotEditorPage() {
     opts?: { loggedFor?: string }
   ) {
     setSaveState((s) => ({ ...s, [delivId]: "saving" }));
+    if (patch.status && fillLane({ deliverable_id: delivId, status: patch.status }, behindIds) === "done") {
+      setKeptIds((ids) => (ids.includes(delivId) ? ids : [...ids, delivId]));
+      setOpenId(delivId);
+    }
     const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
     try {
       const res = await fetch("/api/snapshot/entry", {
@@ -535,7 +541,12 @@ export default function SnapshotEditorPage() {
     );
   }, [rows, viewerTeam, isAm, query, viewerReady]);
   const counts = fillCounts(scopedRows, behindIds);
-  const filteredRows = filterFillRows(scopedRows, fillFilter, behindIds);
+  const stayOnList = useMemo(() => {
+    const ids = new Set(keptIds);
+    if (openId) ids.add(openId);
+    return ids;
+  }, [keptIds, openId]);
+  const filteredRows = filterFillRows(scopedRows, fillFilter, behindIds, stayOnList);
   const pendingRev = revReports.filter((r) => !r.accepted_at);
   const leadsWaiting = leads.filter((l) => l.converted === "unknown").length;
   const passLine = fillPassSummary(counts, isCurrentWeek(week));
@@ -661,20 +672,19 @@ export default function SnapshotEditorPage() {
           ) : null}
 
           {counts.total > 0 ? (
-            <div className="snap-desk-filters" role="group" aria-label="Filter this week">
-              <button type="button" className={fillFilter === "todo" ? "is-on" : undefined} onClick={() => setFillFilter("todo")}>
-                Needs update <em>{counts.attention}</em>
-              </button>
-              <button type="button" className={fillFilter === "overdue" ? "is-on" : undefined} onClick={() => setFillFilter("overdue")}>
-                Overdue <em>{counts.overdue}</em>
-              </button>
-              <button type="button" className={fillFilter === "done" ? "is-on" : undefined} onClick={() => setFillFilter("done")}>
-                Logged <em>{counts.done}</em>
-              </button>
-              <button type="button" className={fillFilter === "all" ? "is-on" : undefined} onClick={() => setFillFilter("all")}>
-                All <em>{counts.total}</em>
-              </button>
-            </div>
+            <label className="snap-desk-search snap-desk-client">
+              <span>Show</span>
+              <select
+                value={fillFilter}
+                aria-label="Filter this week"
+                onChange={(e) => setFillFilter(e.target.value as FillFilter)}
+              >
+                <option value="all">All · {counts.total}</option>
+                <option value="todo">Needs update · {counts.attention}</option>
+                <option value="overdue">Overdue · {counts.overdue}</option>
+                <option value="done">Logged · {counts.done}</option>
+              </select>
+            </label>
           ) : null}
 
           {scopedRows.length > 8 ? (

@@ -324,6 +324,10 @@ test("fill counts and the weekly pass copy", () => {
     filterFillRows(rows, "todo", overdue).map((r) => r.deliverable_id),
     ["a", "b", "c"]
   );
+  assert.deepEqual(
+    filterFillRows(rows, "todo", overdue, new Set(["f", "d"])).map((r) => r.deliverable_id),
+    ["a", "b", "c", "d", "f"]
+  );
   assert.equal(
     fillPassSummary({ total: 3, overdue: 0, todo: 0, done: 3, attention: 0 }, true),
     "Clear — all 3 deliverables are logged for this period."

@@ -114,11 +114,15 @@ export function fillPassSummary(
 export function filterFillRows<T extends { status: FillStatus; deliverable_id: string }>(
   rows: T[],
   filter: FillFilter,
-  overdueIds: ReadonlySet<string>
+  overdueIds: ReadonlySet<string>,
+  keepIds?: ReadonlySet<string>
 ): T[] {
   if (filter === "all" || filter === "win") return rows;
   if (filter === "todo") {
-    return rows.filter((row) => fillLane(row, overdueIds) !== "done");
+    return rows.filter(
+      (row) =>
+        fillLane(row, overdueIds) !== "done" || Boolean(keepIds?.has(row.deliverable_id))
+    );
   }
   return rows.filter((row) => fillLane(row, overdueIds) === filter);
 }

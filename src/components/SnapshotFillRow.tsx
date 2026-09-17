@@ -267,48 +267,6 @@ export function SnapshotFillRow({
               <button type="button" className="link-button" onClick={onRetry}>Retry</button>
             </span>
           ) : null}
-          {met && !askingWhen ? (
-            <span className="snap-done-mark">Done</span>
-          ) : askingWhen ? (
-            <form
-              className="snap-when-ask"
-              onSubmit={(e) => {
-                e.preventDefault();
-                confirmDone();
-              }}
-            >
-              <label>
-                <span>When?</span>
-                <input
-                  type="date"
-                  value={whenDate}
-                  min={launchDate || undefined}
-                  max={today}
-                  autoFocus
-                  aria-label="When this work happened"
-                  onChange={(e) => setWhenDate(e.target.value)}
-                />
-              </label>
-              <button type="submit" className="snap-done-btn">
-                Save
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={cancelAskWhen}
-              >
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              className="snap-done-btn"
-              onClick={startAskWhen}
-            >
-              Mark done
-            </button>
-          )}
           {row.kind === "recurring" ? (
             <button
               type="button"
@@ -321,6 +279,41 @@ export function SnapshotFillRow({
           ) : null}
         </div>
       </div>
+      {askingWhen ? (
+        <form
+          className="snap-overdue-pop"
+          role="dialog"
+          aria-label="When this work was completed"
+          onSubmit={(e) => {
+            e.preventDefault();
+            confirmDone();
+          }}
+        >
+          <strong>When was this completed?</strong>
+          <p>Status stays Completed. Pick the date the work actually happened.</p>
+          <label>
+            <span>Date</span>
+            <input
+              type="date"
+              value={whenDate}
+              min={launchDate || undefined}
+              max={today}
+              autoFocus
+              required
+              aria-label="When this work happened"
+              onChange={(e) => setWhenDate(e.target.value)}
+            />
+          </label>
+          <div className="snap-overdue-actions">
+            <button type="submit" className="snap-done-btn">
+              Save date
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={cancelAskWhen}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
       {author ? (
         <p className="snap-n-meta">
           {author}

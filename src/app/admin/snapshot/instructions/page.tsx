@@ -51,14 +51,15 @@ export default function SnapshotInstructionsPage() {
               client&apos;s deliverables in one list.
             </li>
             <li>
-              Use the week picker if you need last week. Filter to{" "}
-              <em>Needs update</em> if the list is long.
+              Use the week picker if you need last week. The list starts on{" "}
+              <em>All</em>. Filter to <em>Needs update</em> if you only want
+              what still needs a status.
             </li>
             <li>
-              For each deliverable: set status, hit <strong>Done</strong> when
-              it shipped (you’ll pick the date), and expand the row to add{" "}
-              <em>What we did</em> / <em>Next steps</em> if the client should
-              see context.
+              For each deliverable: set status. Choose <strong>Completed</strong>{" "}
+              when it shipped — you&apos;ll pick the date — then expand the row
+              to add <em>What we did</em> / <em>Next steps</em> if the client
+              should see context.
             </li>
             <li>
               Open a client name for setup, leads, wins, or the client link.
@@ -80,8 +81,8 @@ export default function SnapshotInstructionsPage() {
               Approved, etc.).
             </li>
             <li>
-              <strong>Done</strong> means “this period is closed.” It asks{" "}
-              <em>When?</em> so history lines up with the real ship date.
+              <strong>Completed</strong> means this period shipped. It asks{" "}
+              <em>when</em> so history lines up with the real date.
             </li>
             <li>
               Recurring items (weekly / monthly / quarterly) reopen next
