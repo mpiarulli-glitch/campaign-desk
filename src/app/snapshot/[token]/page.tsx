@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { isSnapshotContractMet, isThisWeeksWork, snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
+import { categoryTagTone } from "@/lib/snapshot-fill";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string };
@@ -92,16 +93,6 @@ function money(n: number): string {
 
 function leadName(l: Lead): string {
   return [l.first_name, l.last_name].filter(Boolean).join(" ") || "Unnamed lead";
-}
-
-function groupByCategory(rows: Row[]): [string, Row[]][] {
-  const map = new Map<string, Row[]>();
-  for (const r of rows) {
-    const key = r.category.trim() || "Other";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(r);
-  }
-  return Array.from(map.entries());
 }
 
 function hasUpdate(r: Row, viewWeek: string): boolean {
@@ -260,7 +251,6 @@ export default function SnapshotClientPage() {
     );
   }
 
-  const grouped = groupByCategory(rows);
   const anyUpdates = updatedRows.length > 0;
 
   // Bounds are only enforced once the server has stated them, so the arrows are
@@ -269,19 +259,9 @@ export default function SnapshotClientPage() {
   const canGoBack = !bounds.earliest || week > bounds.earliest;
   const canGoForward = !bounds.latest || week < bounds.latest;
 
-  // Ongoing contracted work, grouped by category; completed one-time setup
-  // items are pulled out and shown at the very bottom.
+  // Contract list: one-time setup that is finished sits after the rest.
   const setupDone = overview.filter((o) => o.kind === "one_time" && !!o.completed_on);
   const ongoing = overview.filter((o) => !(o.kind === "one_time" && o.completed_on));
-  const ongoingGroups = (() => {
-    const map = new Map<string, Overview[]>();
-    for (const o of ongoing) {
-      const key = o.category.trim() || "Other";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(o);
-    }
-    return Array.from(map.entries());
-  })();
   const hasMetrics = metrics.some((m) => m.points.length > 0);
 
   return (
@@ -498,54 +478,53 @@ export default function SnapshotClientPage() {
               ) : !anyUpdates ? (
                 <p className="muted" style={{ margin: 0 }}>No updates logged for this week yet.</p>
               ) : (
-                <div className="stack" style={{ gap: 18 }}>
-                  {grouped.map(([category, catRows]) => {
-                    const updated = catRows.filter((r) => hasUpdate(r, week));
-                    if (updated.length === 0) return null;
-                    return (
-                      <div key={category} className="snap-group">
-                        <div className="snap-cat">
-                          <span>{category}</span>
-                          <span className="snap-cat-count">{updated.length}</span>
+                <div className="snap-n-db">
+                  <div className="snap-n-cols snap-n-head" aria-hidden="true">
+                    <span>This week</span>
+                    <span>Category</span>
+                    <span>Status</span>
+                  </div>
+                  {updatedRows.map((r) => (
+                    <div key={r.deliverable_id} className="snap-n-row">
+                      <div className="snap-n-cols snap-n-cols-client">
+                        <div className="snap-n-title" >
+                          <span className="snap-n-ico" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
+                              <path d="M9.5 2.5V5.5h3" />
+                            </svg>
+                          </span>
+                          <span className="snap-n-name">{r.name}</span>
                         </div>
-                        <div className="stack" style={{ gap: 10 }}>
-                          {updated.map((r) => (
-                            <div key={r.deliverable_id} className="snap-card">
-                              <div className="snap-card-head">
-                                <div>
-                                  <div className="snap-name">{r.name}</div>
-                                  {r.cadence ? <div className="snap-cadence">{r.cadence}</div> : null}
-                                </div>
-                                <span className={`snap-pill status-${r.status}`}>
-                                  {STATUS_LABEL(r.status)}
-                                </span>
-                              </div>
-                              <div className="snap-ro-grid">
-                                {r.work_done.trim() ? (
-                                  <div className="snap-ro">
-                                    <span className="snap-ro-label">What we did</span>
-                                    <p>{r.work_done}</p>
-                                  </div>
-                                ) : null}
-                                {r.next_steps.trim() ? (
-                                  <div className="snap-ro">
-                                    <span className="snap-ro-label">Next steps</span>
-                                    <p>{r.next_steps}</p>
-                                  </div>
-                                ) : null}
-                                {r.notes.trim() ? (
-                                  <div className="snap-ro">
-                                    <span className="snap-ro-label">Notes</span>
-                                    <p>{r.notes}</p>
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(r.category || "Other")}`}>
+                          {r.category.trim() || "Other"}
+                        </span>
+                        <span className={`snap-n-pill status-${r.status}`}>{STATUS_LABEL(r.status)}</span>
                       </div>
-                    );
-                  })}
+                      {r.work_done.trim() || r.next_steps.trim() || r.notes.trim() ? (
+                        <div className="snap-n-letter">
+                          {r.work_done.trim() ? (
+                            <div className="snap-ro">
+                              <span className="snap-ro-label">What we did</span>
+                              <p>{r.work_done}</p>
+                            </div>
+                          ) : null}
+                          {r.next_steps.trim() ? (
+                            <div className="snap-ro">
+                              <span className="snap-ro-label">Next steps</span>
+                              <p>{r.next_steps}</p>
+                            </div>
+                          ) : null}
+                          {r.notes.trim() ? (
+                            <div className="snap-ro">
+                              <span className="snap-ro-label">Notes</span>
+                              <p>{r.notes}</p>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
@@ -565,67 +544,63 @@ export default function SnapshotClientPage() {
                   </button>
                 </header>
                 {showDeliverables ? (
-                <div className="stack" style={{ gap: 18 }}>
-                  {ongoingGroups.map(([category, items]) => (
-                    <div key={category} className="snap-group">
-                      <div className="snap-cat">
-                        <span>{category}</span>
-                        <span className="snap-cat-count">{items.length}</span>
+                <div className="snap-n-db">
+                  <div className="snap-n-cols snap-n-head snap-n-cols-contract" aria-hidden="true">
+                    <span>Deliverable</span>
+                    <span>Category</span>
+                    <span>Status</span>
+                  </div>
+                  {ongoing.map((o) => (
+                    <div key={o.deliverable_id} className="snap-n-row">
+                      <div className="snap-n-cols snap-n-cols-contract">
+                        <div className="snap-n-title">
+                          <span className="snap-n-ico" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
+                              <path d="M9.5 2.5V5.5h3" />
+                            </svg>
+                          </span>
+                          <span className="snap-n-name">{o.name}</span>
+                        </div>
+                        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(o.category || "Other")}`}>
+                          {o.category.trim() || "Other"}
+                        </span>
+                        <span className={`snap-n-pill status-${o.status}`}>{STATUS_LABEL(o.status)}</span>
                       </div>
-                      <div className="stack" style={{ gap: 10 }}>
-                        {items.map((o) => (
-                          <div key={o.deliverable_id} className="snap-card">
-                            <div className="snap-card-head">
-                              <div>
-                                <div className="snap-name">{o.name}</div>
-                                {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
-                              </div>
-                              <span className={`snap-pill status-${o.status}`}>
-                                {STATUS_LABEL(o.status)}
-                              </span>
-                            </div>
-                            <div className="snap-deliv-meta">
-                              {isSnapshotContractMet(o.status)
-                                ? o.last_work_done
-                                  ? `Delivered · ${o.last_work_done}`
-                                  : "Delivered"
-                                : o.worked_ever
-                                  ? "Work in progress"
-                                  : "Not started yet"}
-                              {!isSnapshotContractMet(o.status) && o.worked_ever && o.last_work_done
-                                ? ` · ${o.last_work_done}`
-                                : ""}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="snap-n-meta">
+                        {isSnapshotContractMet(o.status)
+                          ? o.last_work_done
+                            ? `Delivered · ${o.last_work_done}`
+                            : "Delivered"
+                          : o.worked_ever
+                            ? "Work in progress"
+                            : "Not started yet"}
+                        {!isSnapshotContractMet(o.status) && o.worked_ever && o.last_work_done
+                          ? ` · ${o.last_work_done}`
+                          : ""}
+                      </p>
                     </div>
                   ))}
-
-                  {setupDone.length > 0 ? (
-                    <div className="snap-group">
-                      <div className="snap-cat">
-                        <span>Setup &amp; one-time work</span>
-                        <span className="snap-cat-count">{setupDone.length}</span>
+                  {setupDone.map((o) => (
+                    <div key={o.deliverable_id} className="snap-n-row is-met">
+                      <div className="snap-n-cols snap-n-cols-contract">
+                        <div className="snap-n-title">
+                          <span className="snap-n-ico" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
+                              <path d="M9.5 2.5V5.5h3" />
+                            </svg>
+                          </span>
+                          <span className="snap-n-name">{o.name}</span>
+                        </div>
+                        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(o.category || "Other")}`}>
+                          {o.category.trim() || "Other"}
+                        </span>
+                        <span className="snap-n-pill status-completed">Completed</span>
                       </div>
-                      <div className="stack" style={{ gap: 10 }}>
-                        {setupDone.map((o) => (
-                          <div key={o.deliverable_id} className="snap-card snap-card-done">
-                            <div className="snap-card-head">
-                              <div>
-                                <div className="snap-name">{o.name}</div>
-                                {o.cadence ? <div className="snap-cadence">{o.cadence}</div> : null}
-                              </div>
-                              <span className="snap-pill status-completed">Completed</span>
-                            </div>
-                            <div className="snap-deliv-meta">
-                              Completed · week of {weekLabel(o.completed_on)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="snap-n-meta">Completed · week of {weekLabel(o.completed_on)}</p>
                     </div>
-                  ) : null}
+                  ))}
                 </div>
                 ) : (
                   <p className="muted" style={{ margin: 0 }}>

@@ -27,25 +27,14 @@ import {
   fillPassSummary,
   fillPeriodHint,
   filterFillRows,
-  groupByCategory,
-  groupFillLanes,
+  categoryTagTone,
   inferDeliverableOwnership,
   visibleFillRows,
   type FillFilter,
-  type FillLane,
   type FillViewer,
 } from "@/lib/snapshot-fill";
 
 type Section = "week" | "leads" | "wins" | "metrics" | "setup" | "client";
-
-const LANE_COPY: Record<FillLane, { title: string; hint: string }> = {
-  overdue: { title: "Overdue", hint: "Log it or finish it." },
-  todo: {
-    title: "Open",
-    hint: "This week, this month, this quarter, and one-time setup that is not finished yet.",
-  },
-  done: { title: "Logged", hint: "Already recorded for this period." },
-};
 
 type Win = { id: string; body: string; happened_on: string };
 type Converted = "unknown" | "yes" | "no";
@@ -615,7 +604,6 @@ export default function SnapshotEditorPage() {
   }, [rows, viewerTeam, isAm, query, viewerReady]);
   const counts = fillCounts(scopedRows, behindIds);
   const filteredRows = filterFillRows(scopedRows, fillFilter, behindIds);
-  const lanes = groupFillLanes(filteredRows, behindIds);
   const pendingRev = revReports.filter((r) => !r.accepted_at);
   const leadsWaiting = leads.filter((l) => l.converted === "unknown").length;
   const passLine = fillPassSummary(counts, isCurrentWeek(week));
@@ -662,6 +650,7 @@ export default function SnapshotEditorPage() {
         <div>
           <p className="ops-eyebrow">Account snapshot</p>
           <h1 className="ops-title">{name || "Account"}</h1>
+          <p className="snap-n-view">List</p>
           <p className="ops-sub">{scopeLabel}</p>
           <label className="snap-launch">
             <span>Launch</span>
@@ -793,47 +782,34 @@ export default function SnapshotEditorPage() {
               ) : null}
             </div>
           ) : (
-            <div className="snap-desk-pass">
-              {lanes.map((group) => (
-                <section key={group.lane} className={`snap-desk-lane is-${group.lane}`}>
-                  <header className="snap-desk-lane-head">
-                    <h2>
-                      {LANE_COPY[group.lane].title}{" "}
-                      <span className="snap-desk-lane-count">{group.rows.length}</span>
-                    </h2>
-                  </header>
-                  {groupByCategory(group.rows).map(([category, catRows]) => (
-                    <div key={category} className="snap-desk-cat">
-                      <div className="snap-cat">
-                        {category}
-                        <span className="snap-cat-count">{catRows.length}</span>
-                      </div>
-                      <div className="snap-desk-list">
-                        {catRows.map((r) => (
-                          <FillRow
-                            key={r.deliverable_id}
-                            row={r}
-                            viewWeek={week}
-                            loggedFor={loggedForForRow(r.deliverable_id)}
-                            overdue={behindIds.has(r.deliverable_id)}
-                            open={openId === r.deliverable_id}
-                            saveState={saveState[r.deliverable_id]}
-                            onToggle={() => setOpenId(openId === r.deliverable_id ? null : r.deliverable_id)}
-                            onPatch={(patch) => patchRow(r.deliverable_id, patch)}
-                            onLoggedForChange={(d) => setLoggedFor(r.deliverable_id, d)}
-                            onSave={(patch, opts) => void saveEntry(r.deliverable_id, patch, opts)}
-                            onRetry={() => void retryEntry(r.deliverable_id)}
-                            onCatchUpDone={() => {
-                              void loadMeta();
-                              void fetchWeek(week);
-                            }}
-                            launchDate={launchDate}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </section>
+            <div className="snap-n-db">
+              <div className="snap-n-cols snap-n-head" aria-hidden="true">
+                <span>Deliverable</span>
+                <span>Category</span>
+                <span>Status</span>
+                <span>Period</span>
+                <span />
+              </div>
+              {filteredRows.map((r) => (
+                <FillRow
+                  key={r.deliverable_id}
+                  row={r}
+                  viewWeek={week}
+                  loggedFor={loggedForForRow(r.deliverable_id)}
+                  overdue={behindIds.has(r.deliverable_id)}
+                  open={openId === r.deliverable_id}
+                  saveState={saveState[r.deliverable_id]}
+                  onToggle={() => setOpenId(openId === r.deliverable_id ? null : r.deliverable_id)}
+                  onPatch={(patch) => patchRow(r.deliverable_id, patch)}
+                  onLoggedForChange={(d) => setLoggedFor(r.deliverable_id, d)}
+                  onSave={(patch, opts) => void saveEntry(r.deliverable_id, patch, opts)}
+                  onRetry={() => void retryEntry(r.deliverable_id)}
+                  onCatchUpDone={() => {
+                    void loadMeta();
+                    void fetchWeek(week);
+                  }}
+                  launchDate={launchDate}
+                />
               ))}
             </div>
           )}
@@ -1028,7 +1004,16 @@ export default function SnapshotEditorPage() {
             {deliverables.length === 0 ? (
               <p className="muted" style={{ margin: 0, fontSize: 13 }}>None yet. Add the contracted deliverables below.</p>
             ) : (
-              <div className="stack" style={{ gap: 10 }}>
+              <div className="snap-n-db snap-setup-db">
+                <div className="snap-setup-card snap-n-head" aria-hidden="true">
+                  <span>Category</span>
+                  <span>Team</span>
+                  <span>Deliverable</span>
+                  <span>Cadence</span>
+                  <span>Kind</span>
+                  <span>Period / due</span>
+                  <span />
+                </div>
                 {deliverables.map((d) => (
                   <div key={d.id} className="snap-setup-card">
                     <input defaultValue={d.category} placeholder="Category"
@@ -1203,25 +1188,42 @@ function FillRow({
     setAskingWhen(false);
   }
   return (
-    <div className={`snap-desk-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
-      <div className="snap-desk-row-top">
-        <button type="button" className="snap-desk-row-main" onClick={onToggle}>
-          <span className="snap-name">
+    <div className={`snap-n-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
+      <div className="snap-n-cols">
+        <button type="button" className="snap-n-title" onClick={onToggle}>
+          <span className="snap-n-ico" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
+              <path d="M9.5 2.5V5.5h3" />
+            </svg>
+          </span>
+          <span className="snap-n-name">
             {row.name}
             {overdue ? <span className="snap-desk-overdue">Overdue</span> : null}
           </span>
-          <span className="snap-cadence">
-            {hint}
-            {chip ? ` · ${chip}` : ""}
-          </span>
-          {author ? (
-            <span className="snap-logged-by">
-              {author}
-              {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
-            </span>
-          ) : null}
         </button>
-        <div className="snap-card-actions" onClick={(e) => e.stopPropagation()}>
+        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(row.category || "Other")}`}>
+          {row.category.trim() || "Other"}
+        </span>
+        <select
+          className={`snap-n-status status-${row.status}`}
+          value={row.status}
+          aria-label="Status"
+          onChange={(e) => {
+            const status = e.target.value as Status;
+            onPatch({ status });
+            onSave({ status });
+          }}
+        >
+          {STATUSES.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+        <span className="snap-n-date">
+          {hint}
+          {chip ? ` · ${chip}` : ""}
+        </span>
+        <div className="snap-n-actions" onClick={(e) => e.stopPropagation()}>
           {saveState === "saving" ? (
             <span className="snap-save snap-save-busy">Saving…</span>
           ) : saveState === "saved" ? (
@@ -1277,20 +1279,6 @@ function FillRow({
               Mark done
             </button>
           )}
-          <select
-            className={`snap-status-select status-${row.status}`}
-            value={row.status}
-            aria-label="Status"
-            onChange={(e) => {
-              const status = e.target.value as Status;
-              onPatch({ status });
-              onSave({ status });
-            }}
-          >
-            {STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
           {row.kind === "recurring" ? (
             <button
               type="button"
@@ -1303,6 +1291,12 @@ function FillRow({
           ) : null}
         </div>
       </div>
+      {author ? (
+        <p className="snap-n-meta">
+          {author}
+          {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
+        </p>
+      ) : null}
       {backdateOther ? (
         <p className="snap-backdate-hint">
           Saves to the period containing {loggedFor}, not the week on screen.

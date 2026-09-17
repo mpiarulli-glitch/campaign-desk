@@ -14,7 +14,6 @@ import {
   doesCampaignWork,
   hasProductionAccess,
   hasOwnerToolsAccess,
-  hasAdsDashboardAccess,
   hasSocialQaAccess,
   isSeoOnly,
   isTeam,
@@ -99,43 +98,6 @@ test("campaign calendar is owner-only in the nav", () => {
   assert.equal(hasOwnerToolsAccess(null), false);
 });
 
-test("weekly ads is open to the owner plus Mike Hines, Jerald, and Kyle Morris", () => {
-  const owner = { role: "admin" as const, person: null, owner: true };
-  const michael = { role: "admin" as const, person: "michael", owner: false };
-  const jerald = { role: "admin" as const, person: "jerald", owner: false };
-  const kyle = { role: "admin" as const, person: "kyle_morris", owner: false };
-  const mike = { role: "forecast" as const, person: "mike_hines", owner: false };
-  const cassidy = { role: "admin" as const, person: "cassidy", owner: false };
-  const jack = { role: "forecast" as const, person: "jack", owner: false };
-
-  assert.equal(hasAdsDashboardAccess(owner), true);
-  assert.equal(hasAdsDashboardAccess(michael), true);
-  assert.equal(hasAdsDashboardAccess(jerald), true);
-  assert.equal(hasAdsDashboardAccess(kyle), true);
-  assert.equal(hasAdsDashboardAccess(mike), true);
-  assert.equal(hasAdsDashboardAccess(cassidy), false);
-  assert.equal(hasAdsDashboardAccess(jack), false);
-  assert.equal(hasAdsDashboardAccess(null), false);
-  assert.equal(
-    hasAdsDashboardAccess({
-      role: "admin",
-      person: "cassidy",
-      owner: true,
-      impersonating: true,
-    }),
-    false
-  );
-  assert.equal(
-    hasAdsDashboardAccess({
-      role: "admin",
-      person: "jerald",
-      owner: true,
-      impersonating: true,
-    }),
-    true
-  );
-});
-
 test("Social QA is the social pair plus a short leadership lookback list", () => {
   assert.deepEqual(
     [...SOCIAL_QA_PEOPLE].sort(),
@@ -151,30 +113,16 @@ test("Social QA is the social pair plus a short leadership lookback list", () =>
   assert.equal(hasSocialQaAccess(owner), true);
 });
 
-test("the ads page and APIs use the ads allowlist, not owner-only tools", () => {
-  const layout = fs.readFileSync(path.join("src/app/admin/ads/layout.tsx"), "utf8");
-  const list = fs.readFileSync(path.join("src/app/api/ads/route.ts"), "utf8");
-  const patch = fs.readFileSync(
-    path.join("src/app/api/ads/[clientId]/route.ts"),
-    "utf8"
-  );
-  assert.match(layout, /isAdsDashboardAuthenticated/);
-  assert.match(list, /isAdsDashboardAuthenticated/);
-  assert.match(patch, /isAdsDashboardAuthenticated/);
-  assert.doesNotMatch(layout, /isOwnerToolsAuthenticated/);
-});
-
 test("the app shell no longer decides the nav for itself", () => {
   // Which pages somebody can see moved to src/lib/access.ts, resolved per
   // session by /api/auth. This used to assert the shell's own filters by name;
   // asserting them now would pin the rules back into the client bundle, which
   // is the thing that let the sidebar and the route gates disagree.
   //
-  // Calendar being owner-only and Ads following ADS_DASHBOARD_PEOPLE are still
-  // guaranteed, now as behaviour rather than as source text: see
-  // tests/user-access.test.ts, "the calendar is an owner tool" and "Ads follows
-  // ADS_DASHBOARD_PEOPLE". hasOwnerToolsAccess and hasAdsDashboardAccess are
-  // what defaultAllowed reads, so the lists below stay the source of truth.
+  // Calendar being owner-only is still guaranteed as behaviour rather than
+  // source text: see tests/user-access.test.ts, "the calendar is an owner
+  // tool". hasOwnerToolsAccess is what defaultAllowed reads, so the list
+  // below stays the source of truth.
   const shell = fs.readFileSync(
     path.join("src/components/AppShell.tsx"),
     "utf8"
@@ -188,7 +136,6 @@ test("the app shell no longer decides the nav for itself", () => {
   // The registry, and only the registry, carries the page list.
   const access = fs.readFileSync(path.join("src/lib/access.ts"), "utf8");
   assert.match(access, /hasOwnerToolsAccess/);
-  assert.match(access, /hasAdsDashboardAccess/);
   assert.match(access, /hasProductionAccess/);
   assert.match(access, /hasSocialQaAccess/);
 });

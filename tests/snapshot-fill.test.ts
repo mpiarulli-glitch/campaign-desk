@@ -12,6 +12,7 @@ import {
   fillPeriodHint,
   filterFillRows,
   inferDeliverableOwnership,
+  categoryTagTone,
   sortFillRows,
   teamToStore,
   visibleFillRows,
@@ -356,4 +357,10 @@ test("period hint names the cadence without repeating the week nav", () => {
     }),
     "One-time · due Sep 15"
   );
+});
+
+test("category tags stay on the same color for a given name", () => {
+  assert.equal(categoryTagTone("Summer Events"), categoryTagTone("Summer Events"));
+  assert.notEqual(categoryTagTone("Summer Events"), categoryTagTone("Team Meeting"));
+  assert.ok(categoryTagTone("Team Meeting") >= 0 && categoryTagTone("Team Meeting") <= 7);
 });

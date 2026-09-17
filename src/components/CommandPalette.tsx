@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { hasAdsDashboardAccess, hasOwnerToolsAccess } from "@/lib/people";
+import { hasOwnerToolsAccess } from "@/lib/people";
 
 type Hit = {
   kind: "client" | "campaign" | "social";
@@ -13,7 +13,7 @@ type Hit = {
 };
 
 // Static destinations always offered so the palette doubles as quick-nav even
-// with an empty query. Calendar stays owner-only; Ads is a smaller allowlist.
+// with an empty query. Calendar stays owner-only.
 const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-home", title: "MEG Team Hub", subtitle: "Home", href: "/admin/hub" },
   { kind: "client", id: "nav-campaigns", title: "Campaigns", subtitle: "All campaigns", href: "/admin/campaigns" },
@@ -22,13 +22,6 @@ const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-clients", title: "Clients", subtitle: "All clients", href: "/admin/clients" },
 ];
 
-const ADS_QUICK_LINK: Hit = {
-  kind: "client",
-  id: "nav-ads",
-  title: "Ads",
-  subtitle: "Paid media dashboard",
-  href: "/admin/ads",
-};
 const CALENDAR_QUICK_LINK: Hit = {
   kind: "client",
   id: "nav-calendar",
@@ -53,7 +46,6 @@ function quickLinksForSession(session: {
   capabilities?: Record<string, boolean>;
 } | null): Hit[] {
   const extras: Hit[] = [];
-  if (hasAdsDashboardAccess(session)) extras.push(ADS_QUICK_LINK);
   if (hasOwnerToolsAccess(session)) extras.push(CALENDAR_QUICK_LINK);
   if (session?.capabilities?.["page.social_qa"] || session?.owner) {
     extras.push(SOCIAL_QA_QUICK_LINK);

@@ -694,12 +694,6 @@ export async function isOwnerToolsAuthenticated(): Promise<boolean> {
   return can("page.calendar");
 }
 
-// Weekly ads dashboard. The default is still owner plus ADS_DASHBOARD_PEOPLE,
-// read through hasAdsDashboardAccess by page.ads, and now grantable per person.
-export async function isAdsDashboardAuthenticated(): Promise<boolean> {
-  return can("page.ads");
-}
-
 export async function isSocialQaAuthenticated(): Promise<boolean> {
   return can("page.social_qa");
 }

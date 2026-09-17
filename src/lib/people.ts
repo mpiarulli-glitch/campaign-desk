@@ -307,17 +307,6 @@ export function hasOwnerToolsAccess(session: {
 }
 
 /**
- * Weekly ads dashboard. Owner plus the paid-media / leadership people who
- * run the pass. Impersonating follows the person being viewed, so "view as
- * Jerald" shows Ads and "view as Cassidy" does not.
- */
-export const ADS_DASHBOARD_PEOPLE = [
-  "mike_hines",
-  "jerald",
-  "kyle_morris",
-] as const;
-
-/**
  * Social QA is its own page, not a Campaigns tab. The social pair does the
  * work; owner plus a short leadership list can look back when something goes
  * wrong. Everyone else is off until granted on /admin/access.
@@ -363,24 +352,6 @@ export function defaultSocialQaAssignee(createdBySlug: string): string {
   if (slug === "randi") return "lana";
   if (slug === "lana") return "randi";
   return "lana";
-}
-
-export function hasAdsDashboardAccess(session: {
-  role: "admin" | "forecast" | null;
-  person: string | null;
-  owner?: boolean;
-  impersonating?: boolean;
-} | null): boolean {
-  if (!session) return false;
-  if (session.role !== "admin" && session.role !== "forecast") return false;
-  const slug = session.person;
-  const ownerSession =
-    !session.impersonating &&
-    session.role === "admin" &&
-    (Boolean(session.owner) || slug === OWNER_SLUG || slug === null);
-  if (ownerSession) return true;
-  if (slug === OWNER_SLUG) return true;
-  return Boolean(slug) && (ADS_DASHBOARD_PEOPLE as readonly string[]).includes(slug!);
 }
 
 /**

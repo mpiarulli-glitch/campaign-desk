@@ -14,7 +14,7 @@ test("per-person access", async (t) => {
   process.chdir(tmp);
 
   const access = await import("../src/lib/access");
-  const { OWNER_SLUG, ADS_DASHBOARD_PEOPLE, PRODUCTION_ACCESS, SOCIAL_QA_PEOPLE } = await import(
+  const { OWNER_SLUG, PRODUCTION_ACCESS, SOCIAL_QA_PEOPLE } = await import(
     "../src/lib/people"
   );
 
@@ -29,7 +29,7 @@ test("per-person access", async (t) => {
   const abel = access.subjectFor("abel"); // user role, blog focus
   const carlos = access.subjectFor("carlos"); // admin role, SEO side
   const sylvia = access.subjectFor("sylvia"); // admin role, unscoped
-  const jerald = access.subjectFor("jerald"); // admin role, on the ads list
+  const jerald = access.subjectFor("jerald"); // admin role
 
   /* ------------------------------------------------------------- the shape */
 
@@ -55,6 +55,7 @@ test("per-person access", async (t) => {
     const hrefs = access.PAGES.map((p) => p.href);
     assert.ok(!hrefs.includes("/admin/revenue"));
     assert.ok(!hrefs.includes("/admin/todos"));
+    assert.ok(!hrefs.includes("/admin/ads"));
   });
 
   await t.test("Snapshots is gateable but stays off the sidebar", () => {
@@ -69,7 +70,6 @@ test("per-person access", async (t) => {
 
   await t.test("the new pages on main are in the registry", () => {
     const hrefs = access.PAGES.map((p) => p.href);
-    assert.ok(hrefs.includes("/admin/ads"));
     assert.ok(hrefs.includes("/admin/client-services"));
     assert.ok(hrefs.includes("/admin/social-qa"));
   });
@@ -162,19 +162,6 @@ test("per-person access", async (t) => {
     assert.equal(access.allows(owner, "page.calendar"), true);
   });
 
-  await t.test("Ads follows ADS_DASHBOARD_PEOPLE", () => {
-    for (const slug of ADS_DASHBOARD_PEOPLE) {
-      assert.equal(
-        access.allows(access.subjectFor(slug), "page.ads"),
-        true,
-        `${slug} is on the ads list and should have it`
-      );
-    }
-    assert.equal(access.allows(sylvia, "page.ads"), false);
-    assert.equal(access.allows(jack, "page.ads"), false);
-    assert.equal(access.allows(owner, "page.ads"), true);
-  });
-
   await t.test("Social QA follows SOCIAL_QA_PEOPLE", () => {
     for (const slug of SOCIAL_QA_PEOPLE) {
       if (slug === OWNER_SLUG) continue;
@@ -219,13 +206,10 @@ test("per-person access", async (t) => {
   });
 
   await t.test("impersonating follows the person being viewed", () => {
-    // hasOwnerToolsAccess and hasAdsDashboardAccess both refuse an owner who is
-    // viewing as somebody else, so "view as Cassidy" shows Cassidy's app.
+    // hasOwnerToolsAccess refuses an owner who is viewing as somebody else, so
+    // "view as Cassidy" shows Cassidy's app.
     const asCassidy = { role: "admin" as const, person: "cassidy", owner: false, impersonating: true };
     assert.equal(access.defaultAllowed("page.calendar", asCassidy), false);
-    assert.equal(access.defaultAllowed("page.ads", asCassidy), false);
-    const asJerald = { role: "admin" as const, person: "jerald", owner: false, impersonating: true };
-    assert.equal(access.defaultAllowed("page.ads", asJerald), true);
   });
 
   /* --------------------------------------------------------- the overrides */

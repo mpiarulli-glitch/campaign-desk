@@ -123,6 +123,14 @@ export function filterFillRows<T extends { status: FillStatus; deliverable_id: s
   return rows.filter((row) => fillLane(row, overdueIds) === filter);
 }
 
+/** Stable 0–7 index so a category always gets the same Notion-style tag color. */
+export function categoryTagTone(label: string): number {
+  const s = label.trim() || "other";
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0;
+  return h % 8;
+}
+
 export function groupByCategory<T extends { category: string }>(rows: T[]): [string, T[]][] {
   const map = new Map<string, T[]>();
   for (const row of rows) {
