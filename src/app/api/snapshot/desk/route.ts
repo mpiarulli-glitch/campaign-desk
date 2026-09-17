@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { can, sessionTeam } from "@/lib/auth";
-import { behindDeliverableIdsForDesk, weekDesk } from "@/lib/snapshot";
+import { behindItemsForDesk, weekDesk } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -15,6 +15,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     week,
     rows: weekDesk(week, { team: await sessionTeam() }),
-    behindIds: behindDeliverableIdsForDesk(),
+    behind: behindItemsForDesk(),
   });
 }

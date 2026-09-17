@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState } from "@/components/SnapshotFillRow";
+import { SnapshotDeskClientView, SnapshotDeskWins } from "@/components/SnapshotDeskAccountViews";
+import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState, type SnapshotOverdueDetail } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
 import { teamLabelFor } from "@/lib/people";
@@ -29,7 +30,7 @@ type DeskRow = SnapshotFillRowData & {
 export default function SnapshotDeskPage() {
   const router = useRouter();
   const [rows, setRows] = useState<DeskRow[]>([]);
-  const [behindIds, setBehindIds] = useState<Set<string>>(new Set());
+  const [behindById, setBehindById] = useState<Record<string, SnapshotOverdueDetail>>({});
   const [week, setWeek] = useState(currentWeek());
   const [weekLoaded, setWeekLoaded] = useState("");
   const [error, setError] = useState("");
@@ -38,6 +39,7 @@ export default function SnapshotDeskPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [clientId, setClientId] = useState("all");
+  const [groupView, setGroupView] = useState<Record<string, "week" | "wins" | "client">>({});
   const [saveState, setSaveState] = useState<Record<string, SnapshotFillSaveState>>({});
   const [failedPatch, setFailedPatch] = useState<Record<string, Partial<SnapshotFillRowData>>>({});
   const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
@@ -54,8 +56,18 @@ export default function SnapshotDeskPage() {
           return;
         }
         const data = await res.json();
+        const behindRows = (data.behind || []) as Array<SnapshotOverdueDetail & { deliverable_id: string }>;
+        const next: Record<string, SnapshotOverdueDetail> = {};
+        for (const item of behindRows) {
+          next[item.deliverable_id] = {
+            due_date: item.due_date,
+            kind: item.kind,
+            cadence_unit: item.cadence_unit,
+            status: item.status,
+          };
+        }
         setRows(data.rows || []);
-        setBehindIds(new Set(data.behindIds || []));
+        setBehindById(next);
         setWeekLoaded(w);
         setSaveState({});
         setFailedPatch({});
@@ -122,6 +134,7 @@ export default function SnapshotDeskPage() {
     );
   }, [clientScoped, query]);
 
+  const behindIds = useMemo(() => new Set(Object.keys(behindById)), [behindById]);
   const counts = fillCounts(clientScoped, behindIds);
   const filteredRows = filterFillRows(searched, fillFilter, behindIds);
   const passLine = fillPassSummary(counts, isCurrentWeek(week));
@@ -135,7 +148,7 @@ export default function SnapshotDeskPage() {
 
   const groups = useMemo(() => {
     const map = new Map<string, { id: string; name: string; launch: string | null; rows: DeskRow[] }>();
-    for (const row of filteredRows) {
+    for (const row of searched) {
       let group = map.get(row.client_id);
       if (!group) {
         group = { id: row.client_id, name: row.client_name, launch: row.launch_date, rows: [] };
@@ -144,7 +157,7 @@ export default function SnapshotDeskPage() {
       group.rows.push(row);
     }
     return [...map.values()];
-  }, [filteredRows]);
+  }, [searched]);
 
   useEffect(() => {
     if (weekLoaded !== week) return;
@@ -285,21 +298,21 @@ export default function SnapshotDeskPage() {
       ) : null}
 
       {clients.length > 1 ? (
-        <div className="snap-desk-filters" role="group" aria-label="Filter by client">
-          <button type="button" className={clientId === "all" ? "is-on" : undefined} onClick={() => setClientId("all")}>
-            Every client
-          </button>
-          {clients.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={clientId === c.id ? "is-on" : undefined}
-              onClick={() => setClientId(c.id)}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
+        <label className="snap-desk-search snap-desk-client">
+          <span>Client</span>
+          <select
+            value={clientId}
+            aria-label="Filter by client"
+            onChange={(e) => setClientId(e.target.value)}
+          >
+            <option value="all">Every client</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
 
       {scopedRows.length > 8 ? (
@@ -325,7 +338,7 @@ export default function SnapshotDeskPage() {
             Open deliverable setup
           </Link>
         </div>
-      ) : filteredRows.length === 0 ? (
+      ) : searched.length === 0 ? (
         <div className="empty">
           <p>
             {query.trim()
@@ -342,12 +355,42 @@ export default function SnapshotDeskPage() {
         </div>
       ) : (
         <div className="stack" style={{ gap: 18 }}>
-          {groups.map((group) => (
+          {groups.map((group) => {
+            const view = groupView[group.id] || "week";
+            const weekRows = filterFillRows(group.rows, fillFilter, behindIds);
+            return (
             <div key={group.id} className="snap-n-db">
               <div className="snap-n-group">
                 <Link href={`/admin/snapshot/${group.id}`}>{group.name}</Link>
-                <span>{group.rows.length} {group.rows.length === 1 ? "item" : "items"}</span>
+                <label className="snap-n-group-view">
+                  <select
+                    value={view}
+                    aria-label={`View for ${group.name}`}
+                    onChange={(e) =>
+                      setGroupView((cur) => ({
+                        ...cur,
+                        [group.id]: e.target.value as "week" | "wins" | "client",
+                      }))
+                    }
+                  >
+                    <option value="week">This week</option>
+                    <option value="wins">Wins</option>
+                    <option value="client">Client view</option>
+                  </select>
+                </label>
               </div>
+              {view === "wins" ? (
+                <SnapshotDeskWins clientId={group.id} />
+              ) : view === "client" ? (
+                <SnapshotDeskClientView clientId={group.id} />
+              ) : weekRows.length === 0 ? (
+                <p className="snap-n-pane-muted">
+                  {fillFilter === "todo"
+                    ? "Nothing left to update for this client in this filter."
+                    : "Nothing in this filter."}
+                </p>
+              ) : (
+                <>
               <div className="snap-n-cols snap-n-head" aria-hidden="true">
                 <span>Deliverable</span>
                 <span>Category</span>
@@ -355,13 +398,14 @@ export default function SnapshotDeskPage() {
                 <span>Period</span>
                 <span />
               </div>
-              {group.rows.map((r) => (
+              {weekRows.map((r) => (
                 <SnapshotFillRow
                   key={r.deliverable_id}
                   row={r}
                   viewWeek={week}
                   loggedFor={loggedForForRow(r.deliverable_id)}
                   overdue={behindIds.has(r.deliverable_id)}
+                  overdueDetail={behindById[r.deliverable_id] || null}
                   open={openId === r.deliverable_id}
                   saveState={saveState[r.deliverable_id]}
                   launchDate={group.launch}
@@ -375,8 +419,11 @@ export default function SnapshotDeskPage() {
                   onCatchUpDone={() => void fetchWeek(week)}
                 />
               ))}
+                </>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

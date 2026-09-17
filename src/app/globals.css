@@ -17500,7 +17500,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   color: var(--text-muted);
 }
 
-.snap-desk-search input {
+.snap-desk-search input,
+.snap-desk-search select {
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -17561,7 +17562,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .snap-n-group {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px 8px;
@@ -17583,6 +17584,44 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .snap-n-group span {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.snap-n-group-view select {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+
+.snap-n-pane {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.snap-n-pane-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.snap-n-pane-head span,
+.snap-n-pane-muted {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.snap-n-pane-head span {
+  padding: 0;
 }
 
 .snap-section-nav {
@@ -17664,6 +17703,18 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .snap-n-row.is-met .snap-n-name {
   color: var(--text-muted);
+}
+
+.snap-n-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.snap-n-title-wrap .snap-n-title {
+  flex: 1;
+  min-width: 0;
 }
 
 .snap-n-title {
@@ -17995,12 +18046,73 @@ div.snap-n-title {
 }
 
 .snap-desk-overdue {
-  margin-left: 8px;
+  appearance: none;
+  margin: 0;
+  border: 0;
+  background: none;
+  padding: 0;
   color: var(--danger-ink);
+  font: inherit;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  cursor: pointer;
+  flex: none;
+}
+
+.snap-desk-overdue.is-on {
+  text-decoration: underline;
+}
+
+.snap-overdue-pop {
+  margin: 0 12px 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.snap-overdue-pop strong {
+  font-size: 14px;
+}
+
+.snap-overdue-pop p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.snap-overdue-pop label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.snap-overdue-pop input,
+.snap-overdue-pop textarea {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+}
+
+.snap-overdue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .snap-setup-card {

@@ -646,10 +646,12 @@ export function weekDesk(
   return out;
 }
 
+export function behindItemsForDesk(): BehindItem[] {
+  return listAccounts().flatMap((account) => behindDeliverablesForClient(account.id));
+}
+
 export function behindDeliverableIdsForDesk(): string[] {
-  return listAccounts().flatMap((account) =>
-    behindDeliverablesForClient(account.id).map((item) => item.deliverable_id)
-  );
+  return behindItemsForDesk().map((item) => item.deliverable_id);
 }
 
 /** Six-month grid for backfilling deliverable progress from one page. */

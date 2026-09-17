@@ -724,6 +724,7 @@ export default function SnapshotEditorPage() {
                   viewWeek={week}
                   loggedFor={loggedForForRow(r.deliverable_id)}
                   overdue={behindIds.has(r.deliverable_id)}
+                  overdueDetail={behind.find((b) => b.deliverable_id === r.deliverable_id) || null}
                   open={openId === r.deliverable_id}
                   saveState={saveState[r.deliverable_id]}
                   onToggle={() => setOpenId(openId === r.deliverable_id ? null : r.deliverable_id)}
