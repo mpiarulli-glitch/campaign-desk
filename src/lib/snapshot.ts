@@ -478,11 +478,12 @@ export function deleteDeliverable(id: string): boolean {
 
 // A deliverable joined with its entry for the period the given week falls
 // in (defaults when the team hasn't logged anything for that period yet).
-// For a monthly/quarterly deliverable, every week inside the same period
-// resolves to the same underlying entry — flipping weeks doesn't reset it,
-// and it only goes back to "not started" once a new period actually starts.
-// One-time deliverables aren't period-keyed at all: whatever was last logged
-// for them (any week) carries forward forever, same as the overview.
+// For a monthly/quarterly deliverable, later weeks in the same period still
+// show the latest status until someone logs that week. Notes do not: each
+// week that is edited keeps its own work-done / next-steps / notes, so going
+// back a week on the picker reads last week's note. One-time deliverables
+// aren't period-keyed at all: whatever was last logged for them (any week)
+// carries forward forever, same as the overview.
 export interface WeekRow {
   deliverable_id: string;
   category: string;
@@ -790,14 +791,14 @@ export function upsertEntry(input: {
   const db = getDb();
   const ts = nowIso();
 
-  // A write lands on the same key the read resolves to, which is what makes
-  // editing idempotent:
+  // A write lands on the week being edited:
   //
   //   - One-time items have a single lifetime entry, so whichever entry exists
   //     (any week) is the one updated.
-  //   - Monthly and quarterly items have one entry per PERIOD. The existing
-  //     row is looked up across the period, then filed under the week it was
-  //     logged so earlier weeks in that month do not inherit a later "done".
+  //   - Weekly items are one row per Monday.
+  //   - Monthly and quarterly items still *read* the latest row in the period
+  //     so status carries forward, but a write on a later week inserts its own
+  //     row. Editing this week's notes must not erase last week's.
   const kind = normKind(deliverable.kind);
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const isOneTime = kind === "one_time";
@@ -815,54 +816,59 @@ export function upsertEntry(input: {
     else if (writeKey >= pEnd) writeKey = weekOfYmd(addWeeks(pEnd, -1));
   }
 
-  const existing = (
-    isOneTime
-      ? db
-          .prepare(
-            `SELECT * FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
-          )
-          .get(input.deliverableId)
-      : periodKeyed
-        ? db
-            .prepare(
-              `SELECT * FROM snapshot_entries
-               WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
-               ORDER BY updated_at DESC, week_start DESC LIMIT 1`
-            )
-            .get(
-              input.deliverableId,
-              periodStartFor(unit, anchor),
-              periodEndExclusiveFor(unit, anchor)
-            )
-        : db
-            .prepare(
-              `SELECT * FROM snapshot_entries WHERE deliverable_id = ? AND week_start = ?`
-            )
-            .get(input.deliverableId, writeKey)
-  ) as
-    | {
-        id: string;
-        week_start: string;
-        status: SnapshotStatus;
-        work_done: string;
-        next_steps: string;
-        notes: string;
-        logged_by: string;
-      }
-    | undefined;
+  type Existing = {
+    id: string;
+    week_start: string;
+    status: SnapshotStatus;
+    work_done: string;
+    next_steps: string;
+    notes: string;
+    logged_by: string;
+  };
 
-  // Viewing a later week to edit notes must not restamp a July setup as
-  // "logged for today". Only an explicit Logged-for date moves the row.
-  if (existing && !explicitLoggedFor) writeKey = existing.week_start;
+  const exact = db
+    .prepare(
+      `SELECT * FROM snapshot_entries WHERE deliverable_id = ? AND week_start = ?`
+    )
+    .get(input.deliverableId, writeKey) as Existing | undefined;
 
+  let existing: Existing | undefined = exact;
+  let inherit: Existing | undefined;
+
+  if (isOneTime) {
+    existing = db
+      .prepare(
+        `SELECT * FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
+      )
+      .get(input.deliverableId) as Existing | undefined;
+    // Viewing a later week to edit notes must not restamp a July setup as
+    // "logged for today". Only an explicit Logged-for date moves the row.
+    if (existing && !explicitLoggedFor) writeKey = existing.week_start;
+  } else if (!existing && periodKeyed) {
+    inherit = db
+      .prepare(
+        `SELECT * FROM snapshot_entries
+         WHERE deliverable_id = ? AND week_start >= ? AND week_start < ?
+           AND week_start < ?
+         ORDER BY week_start DESC, updated_at DESC LIMIT 1`
+      )
+      .get(
+        input.deliverableId,
+        periodStartFor(unit, anchor),
+        periodEndExclusiveFor(unit, anchor),
+        writeKey
+      ) as Existing | undefined;
+  }
+
+  const source = existing ?? inherit;
   const merged = {
-    status: normStatus(input.status ?? existing?.status ?? "not_started"),
-    work_done: input.workDone ?? existing?.work_done ?? "",
-    next_steps: input.nextSteps ?? existing?.next_steps ?? "",
-    notes: input.notes ?? existing?.notes ?? "",
+    status: normStatus(input.status ?? source?.status ?? "not_started"),
+    work_done: input.workDone ?? source?.work_done ?? "",
+    next_steps: input.nextSteps ?? source?.next_steps ?? "",
+    notes: input.notes ?? source?.notes ?? "",
     // The last person to touch the row owns it. An undefined loggedBy is a caller
     // with no session (a seed script), which must not erase a real name.
-    logged_by: input.loggedBy ?? existing?.logged_by ?? "",
+    logged_by: input.loggedBy ?? source?.logged_by ?? "",
   };
 
   if (existing) {

@@ -78,9 +78,6 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       cadenceUnit: "monthly",
     });
 
-    // Logged in week 3, then the text was corrected while looking at week 1.
-    // The correction must stick on the week-3 row — it must not stamp Complete
-    // onto week 1.
     snapshot.upsertEntry({
       deliverableId: d.id,
       weekStart: WEEK_3,
@@ -95,15 +92,52 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
     });
 
     const week1 = snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!;
-    assert.equal(week1.status, "not_started", "earlier week stays open");
-    for (const week of [WEEK_3, WEEK_4]) {
-      const row = snapshot.weekData(id, week).find((r) => r.deliverable_id === d.id)!;
-      assert.equal(row.status, "completed", `week of ${week}`);
-      assert.equal(row.work_done, "Actually sent", `week of ${week}`);
-    }
+    assert.equal(week1.status, "completed");
+    assert.equal(week1.work_done, "Actually sent");
+    const week3 = snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(week3.status, "in_progress");
+    assert.equal(week3.work_done, "Drafted");
   });
 
-  await t.test("a month keeps one entry, not one per week edited", () => {
+  await t.test("a later week keeps its own notes instead of overwriting", () => {
+    const id = client("per_notes");
+    const d = snapshot.createDeliverable({
+      clientId: id,
+      category: "Email",
+      name: "Monthly newsletter",
+      cadence: "1 per month",
+      cadenceUnit: "monthly",
+    });
+
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: WEEK_1,
+      status: "in_progress",
+      workDone: "Wk1: sent for approval",
+    });
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: WEEK_3,
+      status: "in_progress",
+      workDone: "Wk3: pending access",
+    });
+
+    assert.equal(
+      snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!.work_done,
+      "Wk1: sent for approval"
+    );
+    assert.equal(
+      snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!.work_done,
+      "Wk3: pending access"
+    );
+    assert.equal(
+      snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!.work_done,
+      "Wk3: pending access",
+      "unread later weeks still show the latest note in the month"
+    );
+  });
+
+  await t.test("editing later weeks adds a row instead of rewriting the first", () => {
     const id = client("per_onerow");
     const d = snapshot.createDeliverable({
       clientId: id,
@@ -117,10 +151,13 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       snapshot.upsertEntry({ deliverableId: d.id, weekStart: week, status: "in_progress" });
     }
     const rows = getDb()
-      .prepare(`SELECT week_start FROM snapshot_entries WHERE deliverable_id = ?`)
+      .prepare(`SELECT week_start FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start`)
       .all(d.id) as Array<{ week_start: string }>;
-    assert.equal(rows.length, 1, "a monthly deliverable has one entry per month");
-    assert.equal(rows[0].week_start, WEEK_1, "stays on the week it was first logged");
+    assert.equal(rows.length, 3);
+    assert.deepEqual(
+      rows.map((r) => r.week_start),
+      [WEEK_1, WEEK_3, WEEK_4]
+    );
   });
 
   await t.test("a weekly deliverable still gets one entry per week", () => {

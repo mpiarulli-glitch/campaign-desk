@@ -486,6 +486,10 @@ export default function SnapshotClientPage() {
               <header className="snap-sec-head">
                 <h2>This week</h2>
               </header>
+              <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
+                Notes stay with the week they were written. Use the arrows above to
+                read last week without changing this one.
+              </p>
               {rows.length === 0 ? (
                 <p className="muted" style={{ margin: 0 }}>No deliverables set up yet.</p>
               ) : !anyUpdates ? (
@@ -582,15 +586,10 @@ export default function SnapshotClientPage() {
                       </div>
                       <p className="snap-n-meta">
                         {isSnapshotContractMet(o.status)
-                          ? o.last_work_done
-                            ? `Delivered · ${o.last_work_done}`
-                            : "Delivered"
+                          ? "Delivered"
                           : o.worked_ever
                             ? "Work in progress"
                             : "Not started yet"}
-                        {!isSnapshotContractMet(o.status) && o.worked_ever && o.last_work_done
-                          ? ` · ${o.last_work_done}`
-                          : ""}
                       </p>
                     </div>
                   ))}

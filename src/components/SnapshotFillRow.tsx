@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SnapshotCatchUp } from "@/components/SnapshotCatchUp";
+import { weekLabel } from "@/lib/week";
 import { catchUpPeriodLabel } from "@/lib/snapshot-catchup";
 import {
   loggedForTargetsOtherPeriod,
@@ -32,6 +33,7 @@ export type SnapshotFillRowData = {
   cadence_unit: "weekly" | "monthly" | "quarterly";
   due_date: string | null;
   period_start: string;
+  week_start?: string;
   status: SnapshotStatus;
   work_done: string;
   next_steps: string;
@@ -397,6 +399,12 @@ export function SnapshotFillRow({
       ) : null}
       {open ? (
         <div className="snap-fields">
+          {row.week_start && row.week_start !== viewWeek ? (
+            <p className="snap-backdate-hint">
+              Showing the note from {weekLabel(row.week_start)}. Saving this week
+              keeps that week&apos;s note as it is.
+            </p>
+          ) : null}
           <label>
             <span>What we did</span>
             <textarea

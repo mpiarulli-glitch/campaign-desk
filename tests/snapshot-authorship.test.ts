@@ -116,22 +116,32 @@ test("snapshot entry authorship and week bounds", async (t) => {
     assert.equal(row.updated_at, "");
   });
 
-  await t.test("the author travels with a monthly item across its whole period", () => {
+  await t.test("the author travels with a monthly item across later weeks in the period", () => {
     const id = client("auth_monthly");
     const d = deliverable(id, "Monthly newsletter", "monthly");
     snapshot.upsertEntry({
       deliverableId: d.id, weekStart: THIS_WEEK, status: "completed", loggedBy: "carlos",
     });
 
-    // Every week inside the month resolves to the same entry, so it names the same
-    // person rather than only doing so in the week it was typed.
-    for (const week of [THIS_WEEK, addWeeks(THIS_WEEK, 1), addWeeks(THIS_WEEK, -1)]) {
-      const rows = snapshot.weekData(id, week);
-      const row = rows.find((r) => r.deliverable_id === d.id);
-      // Only assert for weeks that fall in the same month as today.
-      if (row && week.slice(0, 7) === THIS_WEEK.slice(0, 7)) {
-        assert.equal(row.logged_by, "carlos", `week of ${week}`);
-      }
+    // Later weeks in the same month still show this row. Earlier weeks stay
+    // empty, so last week's note is not rewritten when someone logs this week.
+    const later = addWeeks(THIS_WEEK, 1);
+    const earlier = addWeeks(THIS_WEEK, -1);
+    assert.equal(
+      snapshot.weekData(id, THIS_WEEK).find((r) => r.deliverable_id === d.id)!.logged_by,
+      "carlos"
+    );
+    if (later.slice(0, 7) === THIS_WEEK.slice(0, 7)) {
+      assert.equal(
+        snapshot.weekData(id, later).find((r) => r.deliverable_id === d.id)!.logged_by,
+        "carlos"
+      );
+    }
+    if (earlier.slice(0, 7) === THIS_WEEK.slice(0, 7)) {
+      assert.equal(
+        snapshot.weekData(id, earlier).find((r) => r.deliverable_id === d.id)!.logged_by,
+        ""
+      );
     }
   });
 
