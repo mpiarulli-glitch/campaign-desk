@@ -1,10 +1,117 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { snapshotAuthorLabel } from "@/lib/people";
+import { winLoggedByMatches } from "@/lib/snapshot-fill";
 
 type Win = { id: string; body: string; happened_on: string };
 
-export function SnapshotDeskWins({ clientId }: { clientId: string }) {
+export type DeskWeekWin = {
+  id: string;
+  client_id: string;
+  body: string;
+  happened_on: string;
+  logged_by: string;
+};
+
+export function SnapshotDeskWeeklyWin({
+  clientId,
+  clientName,
+  weekStart,
+  viewerSlug,
+  wins,
+  onAdded,
+}: {
+  clientId: string;
+  clientName: string;
+  weekStart: string;
+  viewerSlug: string;
+  wins: DeskWeekWin[];
+  onAdded: (win: DeskWeekWin) => void;
+}) {
+  const [body, setBody] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const mine = wins.filter((w) => winLoggedByMatches(w.logged_by, viewerSlug));
+  const others = wins.filter((w) => !winLoggedByMatches(w.logged_by, viewerSlug));
+  const done = mine.length > 0;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!body.trim() || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/snapshot/win", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, body, weekStart }),
+      });
+      if (!res.ok) {
+        setError("Could not save your win.");
+        return;
+      }
+      const data = await res.json();
+      const win = data.win || data;
+      setBody("");
+      onAdded({
+        id: win.id,
+        client_id: clientId,
+        body: win.body,
+        happened_on: win.happened_on || "",
+        logged_by: win.logged_by || viewerSlug,
+      });
+    } catch {
+      setError("Network error. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={`snap-desk-win ${done ? "is-in" : "is-needed"}`}>
+      <div className="snap-desk-win-head">
+        <strong>{done ? "Your win this week" : "Add your weekly win"}</strong>
+        <span>
+          {done
+            ? "On the client snapshot"
+            : `Required for ${clientName} · this week`}
+        </span>
+      </div>
+      {error ? <p className="error">{error}</p> : null}
+      {mine.length > 0 ? (
+        <ul className="snap-desk-win-list">
+          {mine.map((w) => (
+            <li key={w.id}>{w.body}</li>
+          ))}
+        </ul>
+      ) : null}
+      {others.length > 0 ? (
+        <ul className="snap-desk-win-others">
+          {others.map((w) => (
+            <li key={w.id}>
+              <span>{snapshotAuthorLabel(w.logged_by) || "Teammate"}</span>
+              {w.body}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <form className="snap-desk-win-form" onSubmit={(e) => void submit(e)}>
+        <input
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder={done ? "Add another win for this account" : "What moved this account this week?"}
+          aria-label={`Weekly win for ${clientName}`}
+        />
+        <button className="btn btn-sm" type="submit" disabled={saving || !body.trim()}>
+          {saving ? "Saving…" : done ? "Add another" : "Log win"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export function SnapshotDeskWins({ clientId, weekStart }: { clientId: string; weekStart?: string }) {
   const [wins, setWins] = useState<Win[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,7 +146,7 @@ export function SnapshotDeskWins({ clientId }: { clientId: string }) {
     const res = await fetch("/api/snapshot/win", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId, body, happenedOn }),
+      body: JSON.stringify({ clientId, body, happenedOn, weekStart }),
     });
     if (!res.ok) {
       setError("Could not add win.");

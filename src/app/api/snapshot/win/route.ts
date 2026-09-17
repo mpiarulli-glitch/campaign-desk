@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { can } from "@/lib/auth";
+import { can, sessionActor } from "@/lib/auth";
 import { addWin, getAccount } from "@/lib/snapshot";
 
 export async function POST(request: Request) {
@@ -19,6 +19,8 @@ export async function POST(request: Request) {
     clientId,
     body: text,
     happenedOn: typeof body.happenedOn === "string" ? body.happenedOn : "",
+    weekStart: typeof body.weekStart === "string" ? body.weekStart : "",
+    loggedBy: await sessionActor(),
   });
   return NextResponse.json({ win }, { status: 201 });
 }

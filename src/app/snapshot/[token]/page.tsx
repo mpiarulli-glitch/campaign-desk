@@ -28,6 +28,16 @@ const SOURCE_LABEL: Record<Lead["source"], string> = {
   call: "Called in",
   other: "Other",
 };
+
+function formatClientWinDate(ymd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 type Status = SnapshotStatus;
 const STATUS_LABEL = (status: Status) => snapshotStatusLabel(status);
 
@@ -348,9 +358,12 @@ export default function SnapshotClientPage() {
                 <div className="snap-wins2">
                   {wins.map((w) => (
                     <div key={w.id} className="snap-win2">
+                      <div className="snap-win2-mark" aria-hidden="true">★</div>
                       <div>
                         <p>{w.body}</p>
-                        {w.happened_on ? <span className="snap-win2-date">{w.happened_on}</span> : null}
+                        {w.happened_on ? (
+                          <span className="snap-win2-date">{formatClientWinDate(w.happened_on)}</span>
+                        ) : null}
                       </div>
                     </div>
                   ))}

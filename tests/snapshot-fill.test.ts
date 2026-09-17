@@ -10,12 +10,14 @@ import {
   fillLane,
   fillPassSummary,
   fillPeriodHint,
+  fillViewerSlug,
   filterFillRows,
   inferDeliverableOwnership,
   categoryTagTone,
   sortFillRows,
   teamToStore,
   visibleFillRows,
+  winLoggedByMatches,
 } from "../src/lib/snapshot-fill";
 
 test("teamToStore tags strategy as Client Services and ads as Ads", () => {
@@ -363,4 +365,15 @@ test("category tags stay on the same color for a given name", () => {
   assert.equal(categoryTagTone("Summer Events"), categoryTagTone("Summer Events"));
   assert.notEqual(categoryTagTone("Summer Events"), categoryTagTone("Team Meeting"));
   assert.ok(categoryTagTone("Team Meeting") >= 0 && categoryTagTone("Team Meeting") <= 7);
+});
+
+test("fillViewerSlug maps owner and named logins", () => {
+  assert.equal(fillViewerSlug({ role: "admin", person: null, owner: true }), "michael");
+  assert.equal(fillViewerSlug({ role: "forecast", person: "cassidy", owner: false }), "cassidy");
+});
+
+test("winLoggedByMatches treats impersonated tags as that person", () => {
+  assert.equal(winLoggedByMatches("cassidy:impersonated", "cassidy"), true);
+  assert.equal(winLoggedByMatches("randi", "cassidy"), false);
+  assert.equal(winLoggedByMatches("", "cassidy"), false);
 });

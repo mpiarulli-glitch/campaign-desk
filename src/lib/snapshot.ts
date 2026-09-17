@@ -1132,15 +1132,40 @@ export function addWin(input: {
   clientId: string;
   body: string;
   happenedOn?: string;
+  weekStart?: string;
+  loggedBy?: string;
 }): SnapshotWin {
   const db = getDb();
   const id = nanoid(12);
   const ts = nowIso();
+  const happenedOn = (input.happenedOn || "").trim();
+  const weekStart =
+    (input.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(input.weekStart)
+      ? weekOfYmd(input.weekStart)
+      : "") ||
+    (happenedOn ? weekOfYmd(happenedOn) : weekOfYmd(ts.slice(0, 10)));
   db.prepare(
-    `INSERT INTO snapshot_wins (id, client_id, body, happened_on, sort_order, created_at)
-     VALUES (?, ?, ?, ?, 0, ?)`
-  ).run(id, input.clientId, input.body.trim(), (input.happenedOn || "").trim(), ts);
+    `INSERT INTO snapshot_wins (id, client_id, body, happened_on, week_start, logged_by, sort_order, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?)`
+  ).run(
+    id,
+    input.clientId,
+    input.body.trim(),
+    happenedOn,
+    weekStart,
+    input.loggedBy || "",
+    ts
+  );
   return db.prepare(`SELECT * FROM snapshot_wins WHERE id = ?`).get(id) as SnapshotWin;
+}
+
+export function weekWins(weekStart: string): SnapshotWin[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM snapshot_wins WHERE week_start = ?
+       ORDER BY created_at ASC`
+    )
+    .all(weekStart) as SnapshotWin[];
 }
 
 export function deleteWin(id: string): boolean {

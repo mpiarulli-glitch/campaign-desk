@@ -4404,15 +4404,37 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .snap-client .snap-rev-field input:focus {
   outline-color: var(--accent-ink);
 }
-.snap-client .snap-wins2,
-.snap-client .snap-leads {
-  gap: 0;
+.snap-client .snap-wins2 {
+  gap: 10px;
 }
-.snap-client .snap-win2,
-.snap-client .snap-lead {
-  padding: 12px 0;
+.snap-client .snap-win2 {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  gap: 12px;
 }
-.snap-client .snap-win2-mark { display: none; }
+.snap-client .snap-win2 + .snap-win2 {
+  border-top-color: var(--border);
+}
+.snap-client .snap-win2-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #e0a400 18%, var(--bg-elevated));
+  color: #c48a00;
+  font-size: 16px;
+}
+.snap-client .snap-win2 p {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.snap-client .snap-win2-date {
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
 .snap-client .snap-lead-tally,
 .snap-client .snap-lead-scope {
   font-size: 0.84rem;
@@ -17598,6 +17620,79 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   border-radius: 6px;
 }
 
+.snap-desk-win {
+  margin: 0 12px 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.snap-desk-win.is-needed {
+  border-color: color-mix(in srgb, #d97706 45%, var(--border));
+  box-shadow: inset 3px 0 0 #d97706;
+}
+
+.snap-desk-win.is-in {
+  border-color: color-mix(in srgb, #3f7d4e 40%, var(--border));
+}
+
+.snap-desk-win-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.snap-desk-win-head strong {
+  font-size: 13px;
+}
+
+.snap-desk-win-head span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-desk-win-list,
+.snap-desk-win-others {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snap-desk-win-list li {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.snap-desk-win-others li {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.snap-desk-win-others span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.snap-desk-win-form {
+  display: flex;
+  gap: 8px;
+}
+
+.snap-desk-win-form input {
+  flex: 1;
+  min-width: 0;
+}
+
 .snap-n-pane {
   padding: 12px;
   display: flex;
@@ -17808,9 +17903,50 @@ div.snap-n-title {
   color: inherit;
   font: inherit;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 4px 8px;
   border-radius: 4px;
+}
+
+.snap-n-status.status-not_started,
+.snap-n-pill.status-not_started {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+.snap-n-status.status-in_progress,
+.snap-n-pill.status-in_progress {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+
+.snap-n-status.status-scheduled,
+.snap-n-pill.status-scheduled {
+  background: color-mix(in srgb, #8b5cf6 22%, var(--bg-elevated));
+  color: var(--text);
+}
+
+.snap-n-status.status-sent_for_approval,
+.snap-n-status.status-shared,
+.snap-n-pill.status-sent_for_approval,
+.snap-n-pill.status-shared {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.snap-n-status.status-completed,
+.snap-n-status.status-approved,
+.snap-n-pill.status-completed,
+.snap-n-pill.status-approved {
+  background: var(--success-wash);
+  color: var(--success-ink);
+}
+
+.snap-n-status.status-canceled,
+.snap-n-pill.status-canceled {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 .snap-n-pill {

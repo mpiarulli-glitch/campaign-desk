@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SnapshotDeskClientView, SnapshotDeskWins } from "@/components/SnapshotDeskAccountViews";
+import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
 import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState, type SnapshotOverdueDetail } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
@@ -15,8 +15,10 @@ import {
   fillIsAccountManager,
   fillLane,
   fillPassSummary,
+  fillViewerSlug,
   filterFillRows,
   visibleFillRows,
+  winLoggedByMatches,
   type FillFilter,
   type FillViewer,
 } from "@/lib/snapshot-fill";
@@ -45,6 +47,7 @@ export default function SnapshotDeskPage() {
   const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
+  const [weekWins, setWeekWins] = useState<DeskWeekWin[]>([]);
 
   const fetchWeek = useCallback(
     async (w: string) => {
@@ -68,6 +71,7 @@ export default function SnapshotDeskPage() {
         }
         setRows(data.rows || []);
         setBehindById(next);
+        setWeekWins(data.wins || []);
         setWeekLoaded(w);
         setSaveState({});
         setFailedPatch({});
@@ -136,8 +140,24 @@ export default function SnapshotDeskPage() {
 
   const behindIds = useMemo(() => new Set(Object.keys(behindById)), [behindById]);
   const counts = fillCounts(clientScoped, behindIds);
+  const viewerSlug = fillViewerSlug(viewer);
+  const accountsMissingWin = useMemo(() => {
+    const ids = [...new Set(clientScoped.map((r) => r.client_id))];
+    if (!viewerSlug) return new Set(ids);
+    const have = new Set(
+      weekWins
+        .filter((w) => winLoggedByMatches(w.logged_by, viewerSlug))
+        .map((w) => w.client_id)
+    );
+    return new Set(ids.filter((id) => !have.has(id)));
+  }, [clientScoped, weekWins, viewerSlug]);
+  const winNeeded = accountsMissingWin.size;
   const filteredRows = filterFillRows(searched, fillFilter, behindIds);
   const passLine = fillPassSummary(counts, isCurrentWeek(week));
+  const winLine =
+    winNeeded === 0
+      ? "Your weekly win is in on every account in this list."
+      : `${winNeeded} account${winNeeded === 1 ? "" : "s"} still need your win this week.`;
   const scopeLabel = !viewerReady
     ? "Loading your list"
     : isAm
@@ -156,8 +176,10 @@ export default function SnapshotDeskPage() {
       }
       group.rows.push(row);
     }
-    return [...map.values()];
-  }, [searched]);
+    return [...map.values()].filter(
+      (group) => fillFilter !== "win" || accountsMissingWin.has(group.id)
+    );
+  }, [searched, fillFilter, accountsMissingWin]);
 
   useEffect(() => {
     if (weekLoaded !== week) return;
@@ -260,7 +282,7 @@ export default function SnapshotDeskPage() {
           <p className="ops-eyebrow">Weekly snapshots</p>
           <h1 className="ops-title">This week</h1>
           <p className="snap-n-view">All accounts</p>
-          <p className="ops-sub">{scopeLabel}. Update every client from this list.</p>
+          <p className="ops-sub">{scopeLabel}. Log your win on each account, then update the week.</p>
         </div>
         <div className="snap-desk-week">
           <button type="button" className="cal-nav-btn" aria-label="Previous week" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
@@ -275,8 +297,9 @@ export default function SnapshotDeskPage() {
       {error ? <p className="error">{error}</p> : null}
 
       {counts.total > 0 ? (
-        <div className={`ads-pass-banner ${counts.attention === 0 ? "is-clear" : "is-work"}`}>
+        <div className={`ads-pass-banner ${counts.attention === 0 && winNeeded === 0 ? "is-clear" : "is-work"}`}>
           <p className="ads-pass-banner-line">{passLine}</p>
+          <p className="ads-pass-banner-line">{winLine}</p>
         </div>
       ) : null}
 
@@ -287,6 +310,9 @@ export default function SnapshotDeskPage() {
           </button>
           <button type="button" className={fillFilter === "overdue" ? "is-on" : undefined} onClick={() => setFillFilter("overdue")}>
             Overdue <em>{counts.overdue}</em>
+          </button>
+          <button type="button" className={fillFilter === "win" ? "is-on" : undefined} onClick={() => setFillFilter("win")}>
+            Needs your win <em>{winNeeded}</em>
           </button>
           <button type="button" className={fillFilter === "done" ? "is-on" : undefined} onClick={() => setFillFilter("done")}>
             Logged <em>{counts.done}</em>
@@ -345,7 +371,9 @@ export default function SnapshotDeskPage() {
               ? "Nothing matches that search."
               : fillFilter === "todo"
                 ? "Clear — nothing left to update in this view."
-                : "Nothing in this filter."}
+                : fillFilter === "win"
+                  ? "Your weekly win is in on every account here."
+                  : "Nothing in this filter."}
           </p>
           {fillFilter !== "all" && !query.trim() ? (
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFillFilter("all")}>
@@ -379,15 +407,27 @@ export default function SnapshotDeskPage() {
                   </select>
                 </label>
               </div>
+              <SnapshotDeskWeeklyWin
+                clientId={group.id}
+                clientName={group.name}
+                weekStart={week}
+                viewerSlug={viewerSlug}
+                wins={weekWins.filter((w) => w.client_id === group.id)}
+                onAdded={(win) =>
+                  setWeekWins((cur) => (cur.some((w) => w.id === win.id) ? cur : [...cur, win]))
+                }
+              />
               {view === "wins" ? (
-                <SnapshotDeskWins clientId={group.id} />
+                <SnapshotDeskWins clientId={group.id} weekStart={week} />
               ) : view === "client" ? (
                 <SnapshotDeskClientView clientId={group.id} />
               ) : weekRows.length === 0 ? (
                 <p className="snap-n-pane-muted">
                   {fillFilter === "todo"
                     ? "Nothing left to update for this client in this filter."
-                    : "Nothing in this filter."}
+                    : fillFilter === "win"
+                      ? "Add your win above — deliverables for this client are already logged."
+                      : "Nothing in this filter."}
                 </p>
               ) : (
                 <>

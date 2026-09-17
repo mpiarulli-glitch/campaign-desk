@@ -32,7 +32,7 @@ export type FillOwnership = Team | "unknown";
 
 export type FillLane = "overdue" | "todo" | "done";
 
-export type FillFilter = "todo" | "overdue" | "done" | "all";
+export type FillFilter = "todo" | "overdue" | "done" | "win" | "all";
 
 export type FillViewer = {
   role: "admin" | "forecast" | null;
@@ -116,7 +116,7 @@ export function filterFillRows<T extends { status: FillStatus; deliverable_id: s
   filter: FillFilter,
   overdueIds: ReadonlySet<string>
 ): T[] {
-  if (filter === "all") return rows;
+  if (filter === "all" || filter === "win") return rows;
   if (filter === "todo") {
     return rows.filter((row) => fillLane(row, overdueIds) !== "done");
   }
@@ -416,6 +416,16 @@ export function visibleFillRows<T extends FillNamed>(
  * managers (Cassidy, Kyle Morris) are on client services but start unscoped
  * because isSnapshotAccountManager overrides the team filter.
  */
+export function fillViewerSlug(viewer: FillViewer): string {
+  if (viewer.owner || (viewer.role === "admin" && !viewer.person)) return OWNER_SLUG;
+  return viewer.person || "";
+}
+
+export function winLoggedByMatches(loggedBy: string, slug: string): boolean {
+  if (!slug) return false;
+  return (loggedBy || "").split(":")[0] === slug;
+}
+
 export function fillFocusTeam(viewer: FillViewer): Team | null {
   if (viewer.owner || (viewer.role === "admin" && !viewer.person)) {
     return personTeam(OWNER_SLUG);

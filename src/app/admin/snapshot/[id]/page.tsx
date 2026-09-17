@@ -344,7 +344,12 @@ export default function SnapshotEditorPage() {
     const res = await fetch("/api/snapshot/win", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId: id, body: nw.body, happenedOn: nw.happenedOn }),
+      body: JSON.stringify({
+        clientId: id,
+        body: nw.body,
+        happenedOn: nw.happenedOn,
+        weekStart: week,
+      }),
     });
     if (!res.ok) { setError("Could not add win."); return; }
     setNw({ body: "", happenedOn: "" });

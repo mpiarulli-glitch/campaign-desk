@@ -640,6 +640,8 @@ export interface SnapshotWin {
   client_id: string;
   body: string;
   happened_on: string;
+  week_start: string;
+  logged_by: string;
   sort_order: number;
   created_at: string;
 }
@@ -1690,6 +1692,8 @@ export function getDb(): Database.Database {
       client_id TEXT NOT NULL,
       body TEXT NOT NULL,
       happened_on TEXT NOT NULL DEFAULT '',
+      week_start TEXT NOT NULL DEFAULT '',
+      logged_by TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
@@ -3058,6 +3062,35 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE snapshot_entries ADD COLUMN logged_by TEXT NOT NULL DEFAULT ''`
     );
+  }
+
+  const snapWinCols = tableColumns(database, "snapshot_wins");
+  if (snapWinCols.length && !snapWinCols.includes("week_start")) {
+    database.exec(
+      `ALTER TABLE snapshot_wins ADD COLUMN week_start TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (snapWinCols.length && !snapWinCols.includes("logged_by")) {
+    database.exec(
+      `ALTER TABLE snapshot_wins ADD COLUMN logged_by TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (snapWinCols.length) {
+    const unlabeled = database
+      .prepare(
+        `SELECT id, happened_on, created_at FROM snapshot_wins WHERE week_start = ''`
+      )
+      .all() as Array<{ id: string; happened_on: string; created_at: string }>;
+    if (unlabeled.length) {
+      const upd = database.prepare(`UPDATE snapshot_wins SET week_start = ? WHERE id = ?`);
+      for (const row of unlabeled) {
+        const stamp = /^\d{4}-\d{2}-\d{2}$/.test(row.happened_on)
+          ? row.happened_on
+          : row.created_at.slice(0, 10);
+        const [y, m, d] = stamp.split("-").map(Number);
+        upd.run(mondayOf(new Date(y, (m || 1) - 1, d || 1)), row.id);
+      }
+    }
   }
 
   // One-time (and other) rows that got restamped onto a later week when someone
