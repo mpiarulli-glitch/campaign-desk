@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { teamLabel } from "@/lib/team";
+import { canSeeFridayAsk } from "@/lib/people";
 import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
 import {
@@ -178,6 +179,7 @@ export default function ClientServicesPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [role, setRole] = useState<"admin" | "forecast" | null>(null);
   const [person, setPerson] = useState<string | null>(null);
+  const [owner, setOwner] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [scope, setScope] = useState<"mine" | "all">("all");
   const [scopeTouched, setScopeTouched] = useState(false);
@@ -187,6 +189,8 @@ export default function ClientServicesPage() {
   const [saving, setSaving] = useState(false);
   const [sendingOn, setSendingOn] = useState(true);
   const isAdmin = role === "admin";
+  const fridayAsk = canSeeFridayAsk({ person, owner });
+  const view = fridayAsk ? tab : "accounts";
 
   async function load() {
     try {
@@ -225,6 +229,7 @@ export default function ClientServicesPage() {
         if (data?.authenticated) {
           setRole(data.role);
           setPerson(data.person || null);
+          setOwner(Boolean(data.owner));
         }
       })
       .catch(() => {});
@@ -465,7 +470,7 @@ export default function ClientServicesPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
           Behind report
         </Link>
-        {isAdmin && tab === "accounts" ? (
+        {isAdmin && view === "accounts" ? (
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
             {adding ? "Cancel" : "Add account"}
           </button>
@@ -486,26 +491,28 @@ export default function ClientServicesPage() {
           <button
             type="button"
             role="tab"
-            aria-selected={tab === "accounts"}
-            className={`tab ${tab === "accounts" ? "active" : ""}`}
+            aria-selected={view === "accounts"}
+            className={`tab ${view === "accounts" ? "active" : ""}`}
             onClick={() => setTab("accounts")}
           >
             Deliverable setup
             <span className="tab-count">{accounts.length}</span>
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "dashboard"}
-            className={`tab ${tab === "dashboard" ? "active" : ""}`}
-            onClick={() => setTab("dashboard")}
-          >
-            Friday ask
-            <span className="tab-count">{rows.length}</span>
-          </button>
+          {fridayAsk ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "dashboard"}
+              className={`tab ${view === "dashboard" ? "active" : ""}`}
+              onClick={() => setTab("dashboard")}
+            >
+              Friday ask
+              <span className="tab-count">{rows.length}</span>
+            </button>
+          ) : null}
         </div>
 
-        {!sendingOn ? (
+        {!sendingOn && fridayAsk ? (
           <div className="cs-disarmed">
             <strong>Sending is switched off.</strong>
             <span>
@@ -521,7 +528,7 @@ export default function ClientServicesPage() {
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success">{message}</p> : null}
 
-        {tab === "dashboard" ? (
+        {view === "dashboard" ? (
           loading ? (
             <p className="muted">Loading...</p>
           ) : (

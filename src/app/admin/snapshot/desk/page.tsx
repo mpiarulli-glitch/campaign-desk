@@ -7,7 +7,7 @@ import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type D
 import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState, type SnapshotOverdueDetail } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
-import { teamLabelFor } from "@/lib/people";
+import { canSeeFridayAsk, teamLabelFor } from "@/lib/people";
 import {
   fillCanSeeAll,
   fillCounts,
@@ -268,9 +268,11 @@ export default function SnapshotDeskPage() {
   return (
     <div className="ops-page snap-desk">
       <div className="page-actions">
-        <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
-          Friday ask
-        </Link>
+        {canSeeFridayAsk(viewer) ? (
+          <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
+            Friday ask
+          </Link>
+        ) : null}
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
           Behind report
         </Link>

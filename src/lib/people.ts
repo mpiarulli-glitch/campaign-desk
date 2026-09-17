@@ -212,6 +212,18 @@ export const PERSON_TEAM: Record<string, Team> = {
 /** Cassidy and Kyle Morris: every deliverable, Client Services rows first. */
 export const SNAPSHOT_ACCOUNT_MANAGERS = ["cassidy", "kyle_morris"] as const;
 
+/** Michael, Kyle Morris, and Jerald — Friday outreach from the snapshot desk. */
+export const FRIDAY_ASK_PEOPLE = [OWNER_SLUG, "kyle_morris", "jerald"] as const;
+
+export function canSeeFridayAsk(input: {
+  person?: string | null;
+  owner?: boolean;
+}): boolean {
+  if (input.owner) return true;
+  const slug = input.person || "";
+  return (FRIDAY_ASK_PEOPLE as readonly string[]).includes(slug);
+}
+
 export function isSnapshotAccountManager(slug: string | null): boolean {
   return Boolean(slug) && (SNAPSHOT_ACCOUNT_MANAGERS as readonly string[]).includes(slug!);
 }
