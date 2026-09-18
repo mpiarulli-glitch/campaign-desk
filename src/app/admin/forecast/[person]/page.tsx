@@ -571,76 +571,6 @@ function TodoPicker({
  * as the block's colour, so colour-coding a week by client or by kind of work
  * meant lying about urgency. Colour is now just colour.
  */
-/**
- * One dot showing a task's colour, which opens the palette when clicked.
- *
- * The palette used to sit inline on every row — eight circles per task, which
- * crowded the row for something you set once and then just read. The dot is the
- * reading state; the popup is the editing state.
- */
-function ColorDot({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (color: TaskColor) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const current = normalizeTaskColor(value);
-  const label = TASK_COLORS.find((c) => c.id === current)?.label || current;
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="fc-colordot" ref={wrapRef}>
-      <button
-        type="button"
-        className={`fc-swatch fc-color-select col-${current} is-on`}
-        aria-label={`Colour: ${label}. Change it`}
-        aria-expanded={open}
-        title={`${label} — click to change`}
-        onClick={() => setOpen((v) => !v)}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {label}
-      </button>
-      {open ? (
-        <div className="fc-colordot-menu" role="group" aria-label="Pick a colour">
-          {TASK_COLORS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`fc-swatch col-${c.id} ${current === c.id ? "is-on" : ""}`}
-              title={c.label}
-              aria-label={c.label}
-              aria-pressed={current === c.id}
-              onClick={() => {
-                onChange(c.id);
-                setOpen(false);
-              }}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function ColorPicker({
   value,
   onChange,
@@ -1136,7 +1066,7 @@ function parseForecastView(raw: string | null, weekStart: string): View {
  * wider. Rows like that already sit slightly out of step with each other for
  * the same reason, so the header follows the common case.
  *
- * Only Client, Task, Hours and Color get a label. The start time stays bare
+ * Only Client, Task and Hours get a label. The start time stays bare
  * on purpose: it is there to place the task on the calendar tab, not to be
  * read down the column.
  */
@@ -1147,7 +1077,6 @@ function ListColumnHeaders() {
       <span className="ops-list-head-client">Client</span>
       <span className="ops-list-head-task">Task</span>
       <span className="ops-list-head-hours">Hours</span>
-      <span className="ops-list-head-color">Color</span>
       <span className="ops-row-actions">
         <button type="button" className="fc-timer-btn" tabIndex={-1} disabled>
           <span className="fc-timer-icon" />
@@ -3414,7 +3343,6 @@ export default function PersonForecastPage() {
                             />
                             <span className="muted">h</span>
                           </div>
-                          <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
                           <span className="ops-row-actions">
                             <TimerButton task={t} />
                             <LogTime task={t} />
@@ -3775,7 +3703,6 @@ export default function PersonForecastPage() {
                               />
                               <span className="muted">h</span>
                             </div>
-                            <ColorDot value={t.color} onChange={(c) => setColor(t, c)} />
                             <span className="ops-row-actions">
                               <TimerButton task={t} />
                               <LogTime task={t} />

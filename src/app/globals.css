@@ -8034,51 +8034,6 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   .mood-grid { grid-template-columns: 1fr; }
 }
 
-/* A task's colour is a Notion-style select on the list, and a filled block
-   on the calendar. Tinting the whole list row drowned the week. */
-.ops-list-row .fc-colordot {
-  width: 100%;
-}
-.ops-list-row .fc-colordot > .fc-swatch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  height: 22px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  padding: 0 8px 0 7px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 1;
-  color: var(--text);
-  background: var(--bg-elevated);
-  opacity: 1;
-  transform: none;
-  text-align: left;
-  white-space: nowrap;
-}
-.ops-list-row .fc-colordot > .fc-swatch::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--fc-block);
-  flex: none;
-}
-.ops-list-row .fc-colordot > .fc-swatch:hover,
-.ops-list-row .fc-colordot > .fc-swatch.is-on {
-  opacity: 1;
-  transform: none;
-  color: var(--text);
-  background: var(--bg-soft);
-  border-color: var(--border-strong);
-}
-
 .fc-swatches { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .fc-swatch {
   width: 15px;
@@ -8759,7 +8714,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ops-list-stack {
-  --ops-list-cols: 16px minmax(140px, 1.1fr) minmax(180px, 1.7fr) 64px 92px minmax(220px, auto);
+  --ops-list-cols: 16px minmax(140px, 1.1fr) minmax(180px, 1.8fr) 64px minmax(220px, auto);
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg-elevated);
@@ -9053,9 +9008,6 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-head-hours {
   text-align: right;
 }
-.ops-list-head-color {
-  min-width: 0;
-}
 .ops-list-row > input[type="checkbox"],
 .ops-list-head > input[type="checkbox"] {
   grid-column: 1;
@@ -9067,11 +9019,9 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-head-task { grid-column: 3; }
 .ops-list-row > .ops-hrs,
 .ops-list-head-hours { grid-column: 4; }
-.ops-list-row > .fc-colordot,
-.ops-list-head-color { grid-column: 5; }
 .ops-list-row > .ops-row-actions,
 .ops-list-head > .ops-row-actions {
-  grid-column: 6;
+  grid-column: 5;
   margin-left: 0;
   justify-self: end;
 }
@@ -10219,7 +10169,6 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .ops-list-row input.client,
   .ops-list-row input.notes,
   .ops-list-row > .ops-hrs,
-  .ops-list-row > .fc-colordot,
   .ops-list-row > .ops-row-actions,
   .ops-list-row > .ops-subtasks {
     grid-column: auto;
@@ -10263,13 +10212,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
     order: 5;
     flex: none;
   }
-  .ops-list-row > .fc-colordot {
-    order: 6;
-    flex: none;
-    margin-left: auto;
-  }
   .ops-list-row > .ops-row-actions {
-    order: 7;
+    order: 6;
     flex: 1 1 100%;
     margin-left: 0;
     justify-content: flex-end;
