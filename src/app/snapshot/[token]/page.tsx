@@ -56,20 +56,6 @@ type Row = {
   notes: string;
 };
 
-type Overview = {
-  deliverable_id: string;
-  category: string;
-  name: string;
-  cadence: string;
-  kind: "recurring" | "one_time";
-  status: Status;
-  worked_ever: boolean;
-  last_work_done: string;
-  last_activity_week: string;
-  completed_on: string;
-};
-
-
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
 function ymdLabel(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -114,7 +100,6 @@ export default function SnapshotClientPage() {
   const [accountName, setAccountName] = useState("");
   const [launchDate, setLaunchDate] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
-  const [overview, setOverview] = useState<Overview[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
   const [metrics, setMetrics] = useState<MetricSeries[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -137,9 +122,6 @@ export default function SnapshotClientPage() {
   // Set after they submit, so the panel can thank them without a reload, and so
   // an already-answered month can still be reopened to correct the figure.
   const [revEditing, setRevEditing] = useState(false);
-  // Contracted deliverables is the longest section and the least urgent, so it
-  // starts folded away and opens on request.
-  const [showDeliverables, setShowDeliverables] = useState(false);
 
   const load = useCallback(
     async (w: string, scope: "week" | "all") => {
@@ -155,7 +137,6 @@ export default function SnapshotClientPage() {
           setAccountName(data.account.name);
           setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
           setRows(data.rows || []);
-          setOverview(data.overview || []);
           setWins(data.wins || []);
           setMetrics(data.metrics || []);
           if (data.bounds) setBounds(data.bounds);
@@ -269,9 +250,6 @@ export default function SnapshotClientPage() {
   const canGoBack = !bounds.earliest || week > bounds.earliest;
   const canGoForward = !bounds.latest || week < bounds.latest;
 
-  // Contract list: one-time setup that is finished sits after the rest.
-  const setupDone = overview.filter((o) => o.kind === "one_time" && !!o.completed_on);
-  const ongoing = overview.filter((o) => !(o.kind === "one_time" && o.completed_on));
   const hasMetrics = metrics.some((m) => m.points.length > 0);
 
   return (
@@ -545,83 +523,6 @@ export default function SnapshotClientPage() {
                 </div>
               )}
             </section>
-
-            {/* Contracted deliverables */}
-            {overview.length > 0 ? (
-              <section className="snap-panel t-deliv">
-                <header className="snap-sec-head">
-                  <h2>Contract</h2>
-                  <button
-                    type="button"
-                    className="snap-toggle"
-                    aria-expanded={showDeliverables}
-                    onClick={() => setShowDeliverables((v) => !v)}
-                  >
-                    {showDeliverables ? "Hide" : `Show ${overview.length}`}
-                  </button>
-                </header>
-                {showDeliverables ? (
-                <div className="snap-n-db">
-                  <div className="snap-n-cols snap-n-head snap-n-cols-contract" aria-hidden="true">
-                    <span>Deliverable</span>
-                    <span>Category</span>
-                    <span>Status</span>
-                  </div>
-                  {ongoing.map((o) => (
-                    <div key={o.deliverable_id} className="snap-n-row">
-                      <div className="snap-n-cols snap-n-cols-contract">
-                        <div className="snap-n-title">
-                          <span className="snap-n-ico" aria-hidden="true">
-                            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
-                              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
-                              <path d="M9.5 2.5V5.5h3" />
-                            </svg>
-                          </span>
-                          <span className="snap-n-name">{o.name}</span>
-                        </div>
-                        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(o.category || "Other")}`}>
-                          {o.category.trim() || "Other"}
-                        </span>
-                        <span className={`snap-n-pill status-${o.status}`}>{STATUS_LABEL(o.status)}</span>
-                      </div>
-                      <p className="snap-n-meta">
-                        {isSnapshotContractMet(o.status)
-                          ? "Delivered"
-                          : o.worked_ever
-                            ? "Work in progress"
-                            : "Not started yet"}
-                      </p>
-                    </div>
-                  ))}
-                  {setupDone.map((o) => (
-                    <div key={o.deliverable_id} className="snap-n-row is-met">
-                      <div className="snap-n-cols snap-n-cols-contract">
-                        <div className="snap-n-title">
-                          <span className="snap-n-ico" aria-hidden="true">
-                            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
-                              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
-                              <path d="M9.5 2.5V5.5h3" />
-                            </svg>
-                          </span>
-                          <span className="snap-n-name">{o.name}</span>
-                        </div>
-                        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(o.category || "Other")}`}>
-                          {o.category.trim() || "Other"}
-                        </span>
-                        <span className="snap-n-pill status-completed">Completed</span>
-                      </div>
-                      <p className="snap-n-meta">Completed · week of {weekLabel(o.completed_on)}</p>
-                    </div>
-                  ))}
-                </div>
-                ) : (
-                  <p className="muted" style={{ margin: 0 }}>
-                    {overview.length} contracted deliverable
-                    {overview.length === 1 ? "" : "s"} — open when you want the full list.
-                  </p>
-                )}
-              </section>
-            ) : null}
 
             {/* Performance */}
             {hasMetrics ? (
