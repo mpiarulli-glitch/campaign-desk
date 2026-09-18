@@ -8995,16 +8995,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 /* These copies exist only to reserve the width their real counterparts take up
    in a row. Nothing here is interactive or announced. */
-.ops-list-head .ops-row-handle,
 .ops-list-head input[type="checkbox"],
 .ops-list-head .fc-colordot,
 .ops-list-head .ops-row-actions {
   visibility: hidden;
-}
-.ops-list-head .ops-row-handle {
-  min-height: 0;
-  height: 12px;
-  align-self: center;
 }
 .ops-list-head-client {
   flex: 1 1 150px;

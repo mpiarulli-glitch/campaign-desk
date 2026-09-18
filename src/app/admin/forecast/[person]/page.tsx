@@ -1141,7 +1141,6 @@ function parseForecastView(raw: string | null, weekStart: string): View {
 function ListColumnHeaders() {
   return (
     <div className="ops-list-head" aria-hidden="true">
-      <span className="ops-row-handle" />
       <input type="checkbox" tabIndex={-1} disabled />
       <span className="ops-list-head-client">Client</span>
       <span className="ops-list-head-task">Task</span>
@@ -1248,18 +1247,6 @@ export default function PersonForecastPage() {
   // needed: the card dims itself, and only the hovered day highlights.
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
-  // Row a dragged task is hovering over, so a drop inserts before it instead of
-  // only moving the task to that day.
-  const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
-  // Touch/pen reordering is pointer-driven because HTML5 drag-and-drop never
-  // starts on iOS, and making the whole row draggable ate the scroll gesture.
-  // Held in a ref so move/up handlers see the grab that pointerdown stored,
-  // rather than a render-stale copy of dragId.
-  const pointerDrag = useRef<{
-    id: string;
-    date: string;
-    pointerId: number;
-  } | null>(null);
   // What the calendar is currently receiving: an existing row being moved, or a
   // Basecamp to-do being booked for the first time. Held here rather than on the
   // drag event because dragover can't read dataTransfer, and the grid needs to
@@ -1964,7 +1951,6 @@ export default function PersonForecastPage() {
   function onDragEnd() {
     setDragId(null);
     setDropDay(null);
-    setDropBeforeId(null);
     setDrag(null);
   }
 
@@ -1974,8 +1960,6 @@ export default function PersonForecastPage() {
     e.preventDefault();
     e.dataTransfer.dropEffect = drag?.kind === "todo" ? "copy" : "move";
     if (dropDay !== date) setDropDay(date);
-    // Hovering the day itself (not a row) means "put it at the end".
-    if (dropBeforeId) setDropBeforeId(null);
   }
 
   async function moveTask(id: string, date: string, startTime?: string | null) {
@@ -2393,7 +2377,6 @@ export default function PersonForecastPage() {
     const id = dragId || e.dataTransfer.getData("text/plain");
     setDragId(null);
     setDropDay(null);
-    setDropBeforeId(null);
     setDrag(null);
     // A day column has no hour under the cursor, so a to-do dropped here is
     // booked to that day and stays in the queue until it's given a time.
@@ -2417,150 +2400,6 @@ export default function PersonForecastPage() {
       },
       onDrop: (e: React.DragEvent) => onDayDrop(e, date),
     };
-  }
-
-  function onTaskDragOver(e: React.DragEvent, task: { id: string }, date: string) {
-    // A Basecamp to-do dropped on a row still books to the day, so leave that
-    // to the day container rather than stealing the drop here.
-    if (drag?.kind === "todo") return;
-    if (!dragId) return;
-    // Hovering the row being dragged must not bubble to the day, or a tiny
-    // drag that lands back on itself would read as "drop at the end".
-    if (dragId === task.id) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
-    if (dropBeforeId !== task.id) setDropBeforeId(task.id);
-    if (dropDay !== date) setDropDay(date);
-  }
-
-  async function onTaskDrop(e: React.DragEvent, before: { id: string }, date: string) {
-    if (drag?.kind === "todo") return;
-    e.preventDefault();
-    e.stopPropagation();
-    const id = dragId || e.dataTransfer.getData("text/plain");
-    setDragId(null);
-    setDropDay(null);
-    setDropBeforeId(null);
-    setDrag(null);
-    if (!id || id === before.id) return;
-    await placeTask(id, date, before.id);
-  }
-
-  // Drop target only: the handle is what starts a drag, so clicking an input
-  // or ticking complete never picks the row up, and a phone can still scroll.
-  function reorderProps(task: { id: string }, date: string) {
-    return {
-      "data-forecast-row": "",
-      "data-task-id": task.id,
-      "data-task-date": date,
-      onDragOver: (e: React.DragEvent) => onTaskDragOver(e, task, date),
-      onDrop: (e: React.DragEvent) => void onTaskDrop(e, task, date),
-    };
-  }
-
-  function rowFromPoint(x: number, y: number): { id: string; date: string } | null {
-    const el = document.elementFromPoint(x, y);
-    if (!(el instanceof Element)) return null;
-    const row = el.closest("[data-forecast-row]");
-    if (row instanceof HTMLElement && row.dataset.taskId && row.dataset.taskDate) {
-      return { id: row.dataset.taskId, date: row.dataset.taskDate };
-    }
-    const day = el.closest("[data-forecast-day]");
-    if (day instanceof HTMLElement && day.dataset.forecastDay) {
-      return { id: "", date: day.dataset.forecastDay };
-    }
-    return null;
-  }
-
-  function clearPointerDrag() {
-    pointerDrag.current = null;
-    setDragId(null);
-    setDropDay(null);
-    setDropBeforeId(null);
-  }
-
-  function onHandlePointerDown(
-    e: React.PointerEvent,
-    task: { id: string },
-    date: string
-  ) {
-    if (e.button !== 0) return;
-    // Mouse keeps HTML5 drag-and-drop so dropping on another day still works
-    // the way the week and list views already do.
-    if (e.pointerType === "mouse") return;
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    pointerDrag.current = { id: task.id, date, pointerId: e.pointerId };
-    setDragId(task.id);
-  }
-
-  function onHandlePointerMove(e: React.PointerEvent) {
-    const held = pointerDrag.current;
-    if (!held || e.pointerId !== held.pointerId) return;
-    const hit = rowFromPoint(e.clientX, e.clientY);
-    if (!hit) return;
-    if (dropDay !== hit.date) setDropDay(hit.date);
-    const before = hit.id && hit.id !== held.id ? hit.id : null;
-    if (dropBeforeId !== before) setDropBeforeId(before);
-  }
-
-  function onHandlePointerUp(e: React.PointerEvent) {
-    const held = pointerDrag.current;
-    if (!held || e.pointerId !== held.pointerId) return;
-    const hit = rowFromPoint(e.clientX, e.clientY);
-    clearPointerDrag();
-    if (!hit) return;
-    if (hit.id === held.id && hit.date === held.date) return;
-    const beforeId = hit.id && hit.id !== held.id ? hit.id : null;
-    void placeTask(held.id, hit.date, beforeId);
-  }
-
-  function onReorderKey(e: React.KeyboardEvent, id: string, date: string) {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    e.preventDefault();
-    const ids = (data?.tasks || [])
-      .filter((t) => t.task_date === date)
-      .map((t) => t.id);
-    const i = ids.indexOf(id);
-    if (i < 0) return;
-    const j = e.key === "ArrowUp" ? i - 1 : i + 1;
-    if (j < 0 || j >= ids.length) return;
-    const next = [...ids];
-    next.splice(i, 1);
-    next.splice(j, 0, id);
-    void placeTask(id, date, next[j + 1] || null);
-  }
-
-  function reorderHandle(task: { id: string }, date: string) {
-    return (
-      <span
-        className="ops-row-handle"
-        role="button"
-        tabIndex={0}
-        aria-label="Reorder task"
-        title="Drag to reorder"
-        draggable
-        onDragStart={(e) => {
-          e.stopPropagation();
-          onDragStart(e, task);
-          const row = (e.currentTarget as HTMLElement).closest("[data-forecast-row]");
-          if (row instanceof HTMLElement) {
-            e.dataTransfer.setDragImage(row, 24, 16);
-          }
-        }}
-        onDragEnd={onDragEnd}
-        onPointerDown={(e) => onHandlePointerDown(e, task, date)}
-        onPointerMove={onHandlePointerMove}
-        onPointerUp={onHandlePointerUp}
-        onPointerCancel={clearPointerDrag}
-        onKeyDown={(e) => onReorderKey(e, task.id, date)}
-      />
-    );
   }
 
   // Shared by the log pill and the finished-a-task prompt. See hoursToOffer.
@@ -3529,15 +3368,13 @@ export default function PersonForecastPage() {
                     {tasks.map((t) => (
                       <div
                         key={t.id}
-                        className={`ops-task-block ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
-                        {...reorderProps(t, today)}
+                        className="ops-task-block"
                       >
                         <div
                           className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
                             t.completed ? "is-done" : ""
-                          } ${dragId === t.id ? "is-dragging" : ""}`}
+                          }`}
                         >
-                          {reorderHandle(t, today)}
                           <input
                             type="checkbox"
                             checked={!!t.completed}
@@ -3892,15 +3729,13 @@ export default function PersonForecastPage() {
                       {tasks.map((t) => (
                         <div
                           key={t.id}
-                          className={`ops-task-block ${dropBeforeId === t.id ? "is-drop-before" : ""}`}
-                          {...reorderProps(t, date)}
+                          className="ops-task-block"
                         >
                           <div
                             className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
                               t.completed ? "is-done" : ""
-                            } ${dragId === t.id ? "is-dragging" : ""}`}
+                            }`}
                           >
-                            {reorderHandle(t, date)}
                             <input
                               type="checkbox"
                               checked={!!t.completed}
