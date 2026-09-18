@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { can, sessionActor } from "@/lib/auth";
-import { upsertEntry, type SnapshotBasecampTodoLink } from "@/lib/snapshot";
+import { getDeliverable, upsertEntry, type SnapshotBasecampTodoLink } from "@/lib/snapshot";
+import { getRevClient } from "@/lib/revenue";
 import { isYmd } from "@/lib/snapshot-entry-date";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,6 +55,26 @@ export async function POST(request: Request) {
       { error: "basecampTodo requires id, projectId, and title" },
       { status: 400 }
     );
+  }
+  if (basecampTodo) {
+    const deliverable = getDeliverable(deliverableId);
+    if (!deliverable) {
+      return NextResponse.json({ error: "Deliverable not found" }, { status: 404 });
+    }
+    const client = getRevClient(deliverable.client_id);
+    const linked = (client?.basecamp_project_id || "").trim();
+    if (!linked) {
+      return NextResponse.json(
+        { error: "This client has no Basecamp project linked." },
+        { status: 400 }
+      );
+    }
+    if (basecampTodo.projectId !== linked) {
+      return NextResponse.json(
+        { error: "That to-do is not from this client’s Basecamp project." },
+        { status: 400 }
+      );
+    }
   }
   const result = upsertEntry({
     deliverableId,

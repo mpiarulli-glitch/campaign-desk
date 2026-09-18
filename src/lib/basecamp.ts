@@ -768,6 +768,22 @@ export async function listProjectCompletedTodos(
   return walkProjectTodos(projectId, { identity, completed: true });
 }
 
+/** Project display name from Basecamp, or "" when unreachable. */
+export async function getBasecampProjectName(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<string> {
+  if (!projectId) return "";
+  try {
+    const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
+    if (!pr.ok) return "";
+    const project = await pr.json();
+    return String(project.name || project.title || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export type BcTodolist = {
   id: string;
   title: string;

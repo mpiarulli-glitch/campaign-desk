@@ -18531,6 +18531,14 @@ div.snap-n-title {
   margin: 0;
   font-size: 12px;
 }
+.snap-todo-project {
+  margin: 0;
+  font-size: 12px;
+}
+.snap-todo-hint.is-warn,
+.snap-todo-project.is-warn {
+  color: var(--warn, #e6a23c);
+}
 .snap-n-todo-meta {
   color: var(--text-muted);
 }

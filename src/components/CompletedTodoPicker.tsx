@@ -30,6 +30,8 @@ export function CompletedTodoPicker({
   selectedId,
   loading,
   reason,
+  projectName,
+  clientName,
   onSelect,
   onClear,
 }: {
@@ -37,6 +39,8 @@ export function CompletedTodoPicker({
   selectedId: string;
   loading?: boolean;
   reason?: string | null;
+  projectName?: string | null;
+  clientName?: string | null;
   onSelect: (todo: CompletedTodoOption) => void;
   onClear: () => void;
 }) {
@@ -135,19 +139,26 @@ export function CompletedTodoPicker({
   }
 
   const closedLabel = selected?.title || "";
+  const fromLine = projectName
+    ? `Basecamp project: ${projectName}`
+    : clientName
+      ? `Linked Basecamp project for ${clientName}`
+      : "";
   const hint = loading
     ? "Loading completed to-dos…"
     : reason === "no-project"
       ? "This client has no Basecamp project set."
       : reason === "not-connected"
         ? "Basecamp isn’t connected."
-        : reason === "no-todos"
-          ? "No completed Basecamp to-dos found here."
-          : reason === "failed"
-            ? "Could not load completed to-dos."
-            : todos.length
-              ? `${todos.length} completed to-do${todos.length === 1 ? "" : "s"}.`
-              : "";
+        : reason === "project-mismatch"
+          ? `Linked project “${projectName || "unknown"}” doesn’t look like ${clientName || "this client"}. Check the Basecamp project on the client record.`
+          : reason === "no-todos"
+            ? "No completed Basecamp to-dos found in this client’s project."
+            : reason === "failed"
+              ? "Could not load completed to-dos."
+              : todos.length
+                ? `${todos.length} completed to-do${todos.length === 1 ? "" : "s"} from this client’s project.`
+                : "";
 
   return (
     <div className="snap-completed-todo">
@@ -224,7 +235,16 @@ export function CompletedTodoPicker({
           Clear link
         </button>
       ) : null}
-      {hint ? <p className="snap-todo-hint muted">{hint}</p> : null}
+      {fromLine ? (
+        <p className={`snap-todo-project ${reason === "project-mismatch" ? "is-warn" : "muted"}`}>
+          {fromLine}
+        </p>
+      ) : null}
+      {hint ? (
+        <p className={`snap-todo-hint ${reason === "project-mismatch" ? "is-warn" : "muted"}`}>
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

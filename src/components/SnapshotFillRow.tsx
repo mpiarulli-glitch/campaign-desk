@@ -115,6 +115,8 @@ function todayYmd(): string {
 type TodoCache = {
   todos: CompletedTodoOption[];
   reason: string | null;
+  projectName: string | null;
+  clientName: string | null;
   loading: boolean;
 };
 
@@ -132,43 +134,85 @@ function loadCompletedTodos(clientId: string) {
   if (existing && (existing.loading || existing.todos.length || existing.reason)) {
     return;
   }
-  todoCache.set(clientId, { todos: existing?.todos || [], reason: null, loading: true });
+  todoCache.set(clientId, {
+    todos: existing?.todos || [],
+    reason: null,
+    projectName: existing?.projectName || null,
+    clientName: existing?.clientName || null,
+    loading: true,
+  });
   notifyTodoCache(clientId);
   fetch(`/api/snapshot/completed-todos?client=${encodeURIComponent(clientId)}`)
     .then(async (res) => {
       if (!res.ok) {
-        todoCache.set(clientId, { todos: [], reason: "failed", loading: false });
+        todoCache.set(clientId, {
+          todos: [],
+          reason: "failed",
+          projectName: null,
+          clientName: null,
+          loading: false,
+        });
         notifyTodoCache(clientId);
         return;
       }
       const data = await res.json();
+      const expectedProject =
+        typeof data.projectId === "string" ? data.projectId.trim() : "";
       const todos = Array.isArray(data.todos)
         ? (data.todos as CompletedTodoOption[]).filter(
-            (t) => t && typeof t.id === "string" && typeof t.title === "string"
+            (t) =>
+              t &&
+              typeof t.id === "string" &&
+              typeof t.title === "string" &&
+              // Drop anything that isn't from this client's linked project.
+              (!expectedProject || t.projectId === expectedProject)
           )
         : [];
       todoCache.set(clientId, {
         todos,
         reason: typeof data.reason === "string" ? data.reason : null,
+        projectName: typeof data.projectName === "string" ? data.projectName : null,
+        clientName: typeof data.clientName === "string" ? data.clientName : null,
         loading: false,
       });
       notifyTodoCache(clientId);
     })
     .catch(() => {
-      todoCache.set(clientId, { todos: [], reason: "failed", loading: false });
+      todoCache.set(clientId, {
+        todos: [],
+        reason: "failed",
+        projectName: null,
+        clientName: null,
+        loading: false,
+      });
       notifyTodoCache(clientId);
     });
 }
 
 function useCompletedTodos(clientId: string, enabled: boolean): TodoCache {
   const [state, setState] = useState<TodoCache>(
-    () => todoCache.get(clientId) || { todos: [], reason: null, loading: false }
+    () =>
+      todoCache.get(clientId) || {
+        todos: [],
+        reason: null,
+        projectName: null,
+        clientName: null,
+        loading: false,
+      }
   );
 
   useEffect(() => {
     if (!enabled || !clientId) return;
     const onChange = () => {
-      setState(todoCache.get(clientId) || { todos: [], reason: null, loading: false });
+      setState(
+        todoCache.get(clientId) || {
+          todos: [],
+          reason: null,
+          projectName: null,
+          clientName: null,
+          loading: false,
+        }
+      );
     };
     let listeners = todoListeners.get(clientId);
     if (!listeners) {
@@ -252,6 +296,13 @@ export function SnapshotFillRow({
   const todoState = useCompletedTodos(clientId, open);
 
   function selectCompletedTodo(todo: CompletedTodoOption) {
+    // Never attach a to-do from a different Basecamp project than this client.
+    if (
+      todoState.todos.length &&
+      !todoState.todos.some((t) => t.id === todo.id && t.projectId === todo.projectId)
+    ) {
+      return;
+    }
     const linkPatch: Partial<SnapshotFillRowData> = {
       basecamp_todo_id: todo.id,
       basecamp_project_id: todo.projectId,
@@ -552,6 +603,8 @@ export function SnapshotFillRow({
               selectedId={row.basecamp_todo_id}
               loading={todoState.loading}
               reason={todoState.reason}
+              projectName={todoState.projectName}
+              clientName={todoState.clientName}
               onSelect={selectCompletedTodo}
               onClear={clearCompletedTodo}
             />
