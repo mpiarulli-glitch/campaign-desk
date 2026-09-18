@@ -259,6 +259,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           </button>
         </div>
 
+        <ProductionSchedulingReminder />
+
         {data.extraRequests.length > 0 ? (
           <div className="sched-notice">
             <p className="muted" style={{ margin: 0 }}>
@@ -455,6 +457,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           ) : null}
         </div>
 
+        <ProductionSchedulingReminder />
+
         <ExtraRequestLink onClick={startExtraRequest} openWindow={data.extraWindow} />
 
         <div className="sched-referral">
@@ -625,6 +629,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           , with four-hour start times from 9 AM to 1 PM.
         </p>
       </div>
+
+      <ProductionSchedulingReminder />
 
       <div className="sched-grid-card">
         <div
@@ -940,6 +946,39 @@ function BriefFields({
         </div>
       </BriefSection>
     </>
+  );
+}
+
+// Standing cancel / reschedule policy shown on client-facing production
+// schedule pages (share link and dashboard schedule tab).
+function ProductionSchedulingReminder() {
+  return (
+    <aside className="sched-policy" aria-label="Production Scheduling Reminder">
+      <h2 className="sched-policy-title">Production Scheduling Reminder</h2>
+      <p>
+        To protect reserved production time and keep your content schedule on
+        track, please provide at least 48 hours&apos; notice if you need to
+        cancel or reschedule a confirmed video or photography shoot.
+      </p>
+      <p>
+        Cancellations or rescheduling requests made within 48 hours of the
+        scheduled shoot will count toward your contracted production allotment.
+        If an additional production is needed to replace the canceled shoot, it
+        can be scheduled at the applicable production rate and is subject to
+        crew availability.
+      </p>
+      <p>
+        Because production shoots provide many of the creative assets used to
+        fulfill your upcoming content deliverables, late cancellations may also
+        impact the timing, variety, or availability of content. Our team will
+        make every reasonable effort to minimize disruption using available
+        assets.
+      </p>
+      <p>
+        Thank you for helping us keep production and your content calendar on
+        schedule.
+      </p>
+    </aside>
   );
 }
 
