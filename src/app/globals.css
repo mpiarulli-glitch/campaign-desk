@@ -7541,10 +7541,8 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
+  opacity: 1;
 }
-.ops-list-row:hover .ops-row-remove,
-.ops-list-row:focus-within .ops-row-remove { opacity: 1; }
 .ops-row-remove:hover { background: var(--bg-soft); color: var(--danger); }
 
 /* Move a task somewhere else. Sits beside the log-time pill and matches it, so
@@ -20665,21 +20663,6 @@ div.snap-n-title {
 .ops-page[data-forecast-look="pages"] .fc-today-stat,
 .ops-page[data-forecast-look="pages"] .ops-list-day-meta {
   display: none;
-}
-
-.ops-page[data-forecast-look="quiet"] .ops-list-row .ops-row-actions,
-.ops-page[data-forecast-look="agenda"] .ops-list-row .ops-row-actions,
-.ops-page[data-forecast-look="pages"] .ops-list-row .ops-row-actions {
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-.ops-page[data-forecast-look="quiet"] .ops-list-row:hover .ops-row-actions,
-.ops-page[data-forecast-look="quiet"] .ops-list-row:focus-within .ops-row-actions,
-.ops-page[data-forecast-look="agenda"] .ops-list-row:hover .ops-row-actions,
-.ops-page[data-forecast-look="agenda"] .ops-list-row:focus-within .ops-row-actions,
-.ops-page[data-forecast-look="pages"] .ops-list-row:hover .ops-row-actions,
-.ops-page[data-forecast-look="pages"] .ops-list-row:focus-within .ops-row-actions {
-  opacity: 1;
 }
 
 .ops-page[data-forecast-look="pages"] .ops-list-stack {
