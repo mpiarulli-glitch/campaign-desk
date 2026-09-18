@@ -8714,12 +8714,12 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ops-list-stack {
-  --ops-list-cols: 16px minmax(0, 1.2fr) minmax(0, 1.8fr) 52px 348px;
+  --ops-list-cols: minmax(12rem, 20rem) minmax(10rem, 16rem) 52px minmax(348px, 1fr);
   --ops-list-actions: 92px 92px 68px 52px 20px;
   display: grid;
   grid-template-columns: var(--ops-list-cols);
   column-gap: 10px;
-  padding: 0 12px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg-elevated);
@@ -8738,7 +8738,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   min-height: 32px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-soft) 65%, var(--bg-elevated));
-  border-radius: 0;
+  border-radius: 4px 4px 0 0;
 }
 .ops-list-head,
 .ops-task-block,
@@ -8778,7 +8778,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   opacity: 0.55;
 }
 .ops-list-row.is-done input.client,
-.ops-list-row.is-done input.notes {
+.ops-list-row.is-done input.notes,
+.ops-list-row.is-done textarea.notes {
   text-decoration: line-through;
 }
 .ops-task-block {
@@ -8820,6 +8821,20 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   background: var(--bg-elevated);
   box-shadow: none;
 }
+.ops-list-add .btn {
+  background: var(--text);
+  color: var(--bg-elevated);
+  box-shadow: none;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  text-transform: none;
+}
+.ops-list-add .btn:hover {
+  background: var(--text);
+  color: var(--bg-elevated);
+  box-shadow: none;
+  transform: none;
+}
 .ops-list-stack + .ops-list-add {
   margin-top: 0;
   border-top: none;
@@ -8828,7 +8843,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: none;
 }
 .ops-list-row > .ops-subtasks {
-  grid-column: 2 / 4;
+  grid-column: 1 / 3;
 }
 .ops-subtasks {
   display: flex;
@@ -9002,9 +9017,44 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 /* These copies exist only to reserve the width their real counterparts take up
    in a row. Nothing here is interactive or announced. */
-.ops-list-head input[type="checkbox"],
 .ops-list-head .ops-row-actions {
   visibility: hidden;
+}
+.ops-list-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  grid-column: 1;
+  padding-left: 12px;
+  padding-top: 10px;
+  padding-bottom: 8px;
+}
+.ops-list-check-spacer {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.ops-list-lead > input[type="checkbox"] {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0;
+}
+.ops-list-lead > input.client,
+.ops-list-lead > input.notes,
+.ops-list-lead > textarea.notes,
+.ops-list-lead > .ops-list-head-client,
+.ops-list-lead > .ops-list-head-task {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  grid-column: auto;
+}
+.ops-list-head .ops-list-lead {
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .ops-list-head-client,
 .ops-list-head-task {
@@ -9015,20 +9065,18 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-head-hours {
   text-align: right;
 }
-.ops-list-row > input[type="checkbox"],
-.ops-list-head > input[type="checkbox"] {
-  grid-column: 1;
-  justify-self: center;
+.ops-list-row > input.client,
+.ops-list-row > input.notes,
+.ops-list-row > textarea.notes,
+.ops-list-head > .ops-list-head-client,
+.ops-list-head > .ops-list-head-task {
+  grid-column: 2;
 }
-.ops-list-row input.client,
-.ops-list-head-client { grid-column: 2; }
-.ops-list-row input.notes,
-.ops-list-head-task { grid-column: 3; }
 .ops-list-row > .ops-hrs,
-.ops-list-head-hours { grid-column: 4; }
+.ops-list-head-hours { grid-column: 3; }
 .ops-list-row > .ops-row-actions,
 .ops-list-head > .ops-row-actions {
-  grid-column: 5;
+  grid-column: 4;
   display: grid;
   grid-template-columns: var(--ops-list-actions);
   align-items: center;
@@ -9036,6 +9084,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   width: 100%;
   min-width: 0;
   margin-left: 0;
+  padding-right: 12px;
   justify-self: stretch;
 }
 .ops-list-row .fc-move > .fc-move-btn,
@@ -9100,7 +9149,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ops-list-row input.notes {
+.ops-list-row input.notes,
+.ops-list-row textarea.notes {
   width: 100%;
   min-width: 0;
   border: none;
@@ -9110,9 +9160,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   font-weight: 500;
   font-family: inherit;
   color: var(--text);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  resize: none;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-height: 1.35em;
 }
 .ops-list-row input.hrs {
   width: 100%;
@@ -9133,12 +9187,16 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   margin: 0;
 }
 /* Editable-in-place fields read as plain text until you touch them. */
-.ops-list-row input:hover { background: var(--bg-soft); border-radius: 5px; }
-.ops-list-row input:focus {
+.ops-list-row input:hover,
+.ops-list-row textarea:hover { background: var(--bg-soft); border-radius: 5px; }
+.ops-list-row input:focus,
+.ops-list-row textarea:focus {
   background: var(--bg-elevated);
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-radius: 5px;
+  overflow: visible;
+  text-overflow: clip;
 }
 .ops-list-row input[type="checkbox"] {
   margin: 0;
@@ -10213,9 +10271,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .ops-list-row > .ops-subtasks {
     grid-column: auto;
   }
-  .ops-list-row > input[type="checkbox"],
-  .ops-list-row input.client,
-  .ops-list-row input.notes,
+  .ops-list-row > .ops-list-lead,
+  .ops-list-row > input.client,
+  .ops-list-row > input.notes,
+  .ops-list-row > textarea.notes,
   .ops-list-row > .ops-hrs,
   .ops-list-row > .ops-row-actions,
   .ops-list-row > .ops-subtasks {
@@ -10227,28 +10286,35 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
     min-height: 36px;
     margin: -2px 0 -2px -6px;
   }
-  .ops-list-row > input[type="checkbox"] {
+  .ops-list-lead {
     order: 1;
-    flex: none;
+    flex: 1 1 calc(100% - 40px);
+    min-width: 0;
+  }
+  .ops-list-lead > input[type="checkbox"] {
     width: 20px;
     height: 20px;
-    /* The UA margin on a checkbox is what made the sum below overflow by 2px
-       and bounce the client name onto its own line. */
     margin: 0;
   }
-  /* Takes the rest of the first line, beside the handle and checkbox. */
-  .ops-list-row input.client {
-    order: 2;
-    flex: 1 1 calc(100% - 68px);
+  .ops-list-lead > input.client,
+  .ops-list-lead > input.notes,
+  .ops-list-lead > textarea.notes {
+    flex: 1 1 auto;
+    width: auto;
     min-width: 0;
+    max-width: none;
+    field-sizing: auto;
     font-size: 14px;
   }
-  /* A 150px flex basis on a 390px screen left the note unreadable, so it gets
-     its own line. */
-  .ops-list-row input.notes {
+  .ops-list-row > input.client,
+  .ops-list-row > input.notes,
+  .ops-list-row > textarea.notes {
     order: 3;
     flex: 1 1 100%;
+    width: 100%;
     min-width: 0;
+    max-width: none;
+    field-sizing: fixed;
     font-size: 13.5px;
   }
   .ops-list-row > .ops-time {
@@ -11064,6 +11130,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; width: min(1400px, calc(100% - 48px)); margin: 0 auto; padding: 14px 0 0; }
 .page-actions:empty { display: none; }
 .ops-scope .page-actions { width: min(1160px, calc(100% - 64px)); }
+.ops-scope .page-actions .btn {
+  color: var(--text-muted);
+  font-weight: 500;
+}
 
 /* The hamburger only exists under the mobile breakpoint, where the sidebar
    becomes a drawer. Hidden by default so desktop is untouched. */
@@ -20388,4 +20458,243 @@ div.snap-n-title {
 
 .snap-instr-card a:hover {
   text-decoration: underline;
+}
+
+/* Three local forecast looks. Production never sees the switcher. */
+/* Forecast page chrome — one type of control, no cyan pills. */
+.ops-page[data-forecast-look] {
+  padding-top: 8px;
+}
+.ops-page[data-forecast-look] .ops-title {
+  font-size: 22px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+.ops-page[data-forecast-look] .ops-page-head {
+  align-items: flex-start;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px 16px;
+}
+.ops-page[data-forecast-look] .view-toggle {
+  display: inline-flex;
+  gap: 18px;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  background: none;
+}
+.ops-page[data-forecast-look] .view-toggle-btn {
+  padding: 2px 0 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  box-shadow: none;
+}
+.ops-page[data-forecast-look] .view-toggle-btn + .view-toggle-btn {
+  border-left: none;
+}
+.ops-page[data-forecast-look] .view-toggle-btn.is-on {
+  background: none;
+  color: var(--text);
+  box-shadow: inset 0 -1px 0 currentColor;
+}
+.ops-page[data-forecast-look] .view-toggle-btn.is-on .fc-tasks-tab-count,
+.ops-page[data-forecast-look] .view-toggle-btn.is-on .fc-tasks-count {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+.ops-page[data-forecast-look] .ops-weeknav button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 4px;
+}
+.ops-page[data-forecast-look] .ops-weeknav button:hover {
+  color: var(--text);
+  background: var(--bg-soft);
+}
+.ops-page[data-forecast-look] .ops-weeknav strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.ops-page[data-forecast-look] .fc-look-tools .btn {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 12px;
+  padding: 0;
+  min-height: 0;
+}
+.ops-page[data-forecast-look] .fc-look-tools .btn:hover {
+  color: var(--text);
+  background: none;
+}
+.ops-page[data-forecast-look] .fc-mode-btn.is-on {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.fc-look-switch {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.fc-look-switch select {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 28px 5px 8px;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.fc-look-switch select:focus,
+.fc-look-switch select:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+.fc-look-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.fc-add-quiet {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.fc-add-quiet:hover { color: var(--text); background: var(--bg-soft); }
+.fc-add-cancel {
+  display: block;
+  margin-top: 6px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fc-week-notes {
+  margin-top: 18px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.fc-week-notes summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.fc-week-notes textarea {
+  margin-top: 8px;
+  width: 100%;
+  min-height: 72px;
+}
+
+.ops-page[data-forecast-look="quiet"] .ops-sub,
+.ops-page[data-forecast-look="quiet"] .fc-gauge,
+.ops-page[data-forecast-look="quiet"] .fc-today-stat,
+.ops-page[data-forecast-look="quiet"] .ops-list-day-meta,
+.ops-page[data-forecast-look="agenda"] .ops-sub,
+.ops-page[data-forecast-look="agenda"] .fc-gauge,
+.ops-page[data-forecast-look="agenda"] .fc-today-stat,
+.ops-page[data-forecast-look="agenda"] .ops-list-day-meta,
+.ops-page[data-forecast-look="pages"] .ops-sub,
+.ops-page[data-forecast-look="pages"] .fc-gauge,
+.ops-page[data-forecast-look="pages"] .fc-today-stat,
+.ops-page[data-forecast-look="pages"] .ops-list-day-meta {
+  display: none;
+}
+
+.ops-page[data-forecast-look="quiet"] .ops-list-row .ops-row-actions,
+.ops-page[data-forecast-look="agenda"] .ops-list-row .ops-row-actions,
+.ops-page[data-forecast-look="pages"] .ops-list-row .ops-row-actions {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ops-page[data-forecast-look="quiet"] .ops-list-row:hover .ops-row-actions,
+.ops-page[data-forecast-look="quiet"] .ops-list-row:focus-within .ops-row-actions,
+.ops-page[data-forecast-look="agenda"] .ops-list-row:hover .ops-row-actions,
+.ops-page[data-forecast-look="agenda"] .ops-list-row:focus-within .ops-row-actions,
+.ops-page[data-forecast-look="pages"] .ops-list-row:hover .ops-row-actions,
+.ops-page[data-forecast-look="pages"] .ops-list-row:focus-within .ops-row-actions {
+  opacity: 1;
+}
+
+.ops-page[data-forecast-look="pages"] .ops-list-stack {
+  --ops-list-cols: minmax(12rem, 22rem) minmax(10rem, 14rem) 52px minmax(348px, 1fr);
+}
+.ops-page[data-forecast-look="pages"] .ops-list-lead > .notes {
+  font-weight: 600;
+}
+.ops-page[data-forecast-look="pages"] .ops-list-row > input.client {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ops-page[data-forecast-look="agenda"] .ops-list-head { display: none; }
+.ops-page[data-forecast-look="agenda"] .ops-list-row > .ops-hrs,
+.ops-page[data-forecast-look="agenda"] .ops-list-head-hours { display: none; }
+.ops-page[data-forecast-look="agenda"] .ops-list-stack {
+  border: none;
+  background: transparent;
+  padding: 0;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 280px;
+}
+.ops-page[data-forecast-look="agenda"] .ops-list-row {
+  min-height: 44px;
+  padding: 4px 0;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+.ops-page[data-forecast-look="agenda"] .ops-list-row:hover { background: var(--bg-soft); }
+.ops-page[data-forecast-look="agenda"] .ops-list-row > .ops-row-actions,
+.ops-page[data-forecast-look="agenda"] .ops-list-head > .ops-row-actions {
+  grid-column: 3;
+}
+.ops-page[data-forecast-look="agenda"] .fc-today-day,
+.ops-page[data-forecast-look="agenda"] .ops-list-day-title {
+  font-size: 22px;
+  font-weight: 650;
+}
+.ops-page[data-forecast-look="agenda"] .ops-list-add,
+.ops-page[data-forecast-look="agenda"] .ops-list-stack:has(+ .ops-list-add) {
+  border: none;
+  box-shadow: none;
 }

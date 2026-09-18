@@ -912,7 +912,7 @@ function AddTaskForm({
   }
 
   return (
-    <div style={{ marginTop: 12 }}>
+    <div style={{ marginTop: 4 }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         {modeToggle}
         {meeting ? meetingField : clientSelect}
@@ -1070,12 +1070,33 @@ function parseForecastView(raw: string | null, weekStart: string): View {
  * on purpose: it is there to place the task on the calendar tab, not to be
  * read down the column.
  */
-function ListColumnHeaders() {
+type ForecastLook = "quiet" | "pages" | "agenda";
+
+const FORECAST_LOOKS: Array<{ id: ForecastLook; label: string; hint: string }> = [
+  { id: "quiet", label: "Quiet list", hint: "Work first, chrome later" },
+  { id: "pages", label: "Task first", hint: "Name, then client" },
+  { id: "agenda", label: "Day agenda", hint: "A day, not a spreadsheet" },
+];
+
+function fitTaskNotes(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+function ListColumnHeaders({ look }: { look: ForecastLook }) {
+  const taskFirst = look === "pages";
   return (
     <div className="ops-list-head" aria-hidden="true">
-      <input type="checkbox" tabIndex={-1} disabled />
-      <span className="ops-list-head-client">Client</span>
-      <span className="ops-list-head-task">Task</span>
+      <span className="ops-list-lead">
+        <span className="ops-list-check-spacer" />
+        <span className={taskFirst ? "ops-list-head-task" : "ops-list-head-client"}>
+          {taskFirst ? "Task" : "Client"}
+        </span>
+      </span>
+      <span className={taskFirst ? "ops-list-head-client" : "ops-list-head-task"}>
+        {taskFirst ? "Client" : "Task"}
+      </span>
       <span className="ops-list-head-hours">Hours</span>
       <span className="ops-row-actions">
         <button type="button" className="fc-timer-btn" tabIndex={-1} disabled>
@@ -1100,6 +1121,25 @@ function ListColumnHeaders() {
         </button>
       </span>
     </div>
+  );
+}
+
+function CollapsedAdd({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  if (open) {
+    return (
+      <div className="ops-list-add is-open">
+        {children}
+        <button type="button" className="fc-add-cancel" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button type="button" className="fc-add-quiet" onClick={() => setOpen(true)}>
+      Add a task
+    </button>
   );
 }
 
@@ -1203,6 +1243,7 @@ export default function PersonForecastPage() {
   const [planning, setPlanning] = useState(false);
   const [undoingPlan, setUndoingPlan] = useState(false);
   const [planNotice, setPlanNotice] = useState("");
+  const [look, setLook] = useState<ForecastLook>("quiet");
   // Everything Basecamp says is assigned to this person, across every project.
   // Fetched once per visit: it is one request and it backs the queue's default
   // view, so nobody has to pick a client to find their own work.
@@ -2961,6 +3002,107 @@ export default function PersonForecastPage() {
     load(week, { silent: true });
   }
 
+  const taskFirst = look === "pages";
+
+  // Not a nested component: those remount on every parent render (the running
+  // timer ticks once a second) and wipe in-progress name edits.
+  function listTaskRow(t: Task) {
+    const clientField = (
+      <input
+        key={`${t.id}-client`}
+        defaultValue={t.client}
+        onBlur={(e) => saveField(t, "client", e.target.value)}
+        placeholder="Client"
+        className="client"
+      />
+    );
+    const notesField = (
+      <textarea
+        key={`${t.id}-notes`}
+        defaultValue={t.notes}
+        onBlur={(e) => saveField(t, "notes", e.target.value)}
+        onInput={(e) => fitTaskNotes(e.currentTarget)}
+        ref={fitTaskNotes}
+        placeholder="Task notes"
+        className="notes"
+        rows={1}
+        title={
+          isForecastMeeting(t)
+            ? "Booked from a Basecamp meeting"
+            : t.basecamp_todo_id
+              ? "Linked to a Basecamp todo"
+              : undefined
+        }
+      />
+    );
+    return (
+      <div key={t.id} className="ops-task-block">
+        <div
+          className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
+            t.completed ? "is-done" : ""
+          }`}
+        >
+          <div className="ops-list-lead">
+            <input
+              type="checkbox"
+              checked={!!t.completed}
+              onChange={() => toggleCompleted(t)}
+              aria-label="Mark complete"
+            />
+            {taskFirst ? notesField : clientField}
+          </div>
+          {taskFirst ? clientField : notesField}
+          <div className="row ops-hrs" style={{ gap: 2 }}>
+            <input
+              key={`${t.id}-hours`}
+              defaultValue={t.hours}
+              onBlur={(e) => saveField(t, "hours", e.target.value)}
+              type="number"
+              min="0"
+              step="0.5"
+              className="hrs"
+            />
+            <span className="muted">h</span>
+          </div>
+          <span className="ops-row-actions">
+            <TimerButton task={t} />
+            <LogTime task={t} />
+            <ForecastSubtaskButton
+              open={Boolean(addingSubtask[t.id])}
+              onClick={() =>
+                setAddingSubtask((d) => ({
+                  ...d,
+                  [t.id]: !d[t.id],
+                }))
+              }
+            />
+            <MoveMenu task={t} />
+            <button
+              className="ops-row-remove"
+              aria-label="Remove task"
+              title="Remove task"
+              onClick={() => removeTask(t.id)}
+            >
+              ×
+            </button>
+          </span>
+          <ForecastSubtasks
+            person={person}
+            taskId={t.id}
+            subtasks={t.subtasks || []}
+            adding={Boolean(addingSubtask[t.id])}
+            onAddingChange={(open) =>
+              setAddingSubtask((d) => ({ ...d, [t.id]: open }))
+            }
+            hideTrigger
+            onChanged={() => load(week, { silent: true })}
+            onNotice={setError}
+          />
+        </div>
+      </div>
+    );
+  }
+
   const canSeeTeamBoard =
     forecastSubjects === "*" ||
     (Array.isArray(forecastSubjects) && forecastSubjects.length > 1);
@@ -2979,10 +3121,9 @@ export default function PersonForecastPage() {
         ) : null}
       </div>
 
-      <div className="ops-page">
+      <div className="ops-page" data-forecast-look={look}>
         <div className="ops-page-head">
           <div>
-            <p className="ops-eyebrow">Weekly forecast</p>
             <h1 className="ops-title">{data?.label || person}</h1>
             {switcherPeople.length > 1 ? (
               <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -2997,18 +3138,13 @@ export default function PersonForecastPage() {
                 ))}
               </div>
             ) : null}
-            {/* The calendar explains itself — a grid of hours with a queue beside
-                it does not need a sentence telling you to add work to it. */}
-            {view === "calendar" || view === "tasks" ? null : (
-              <p className="ops-sub">Add what you expect to work on each day this week.</p>
-            )}
             {view === "tasks" ? (
               <p className="ops-sub">
                 Open Basecamp work. Tick it off, change the date, or plan it onto a week.
               </p>
             ) : null}
           </div>
-          <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
+          <div className="fc-page-toolbar">
             <div className="view-toggle">
               <button className={`view-toggle-btn ${view === "today" ? "is-on" : ""}`} onClick={() => setView("today")}>
                 Today
@@ -3072,6 +3208,20 @@ export default function PersonForecastPage() {
                 </button>
               ) : null}
             </div>
+            <label className="fc-look-switch">
+              <select
+                value={look}
+                aria-label="Layout"
+                onChange={(e) => setLook(e.target.value as ForecastLook)}
+              >
+                {FORECAST_LOOKS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="fc-look-tools">
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -3114,6 +3264,7 @@ export default function PersonForecastPage() {
                 </button>
               </>
             )}
+            </div>
           </div>
         </div>
 
@@ -3293,97 +3444,12 @@ export default function PersonForecastPage() {
                   </p>
                 ) : (
                   <div className="ops-list-stack">
-                    <ListColumnHeaders />
-                    {tasks.map((t) => (
-                      <div
-                        key={t.id}
-                        className="ops-task-block"
-                      >
-                        <div
-                          className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
-                            t.completed ? "is-done" : ""
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!!t.completed}
-                            onChange={() => toggleCompleted(t)}
-                            aria-label="Mark complete"
-                          />
-                          <input
-                            key={`${t.id}-client`}
-                            defaultValue={t.client}
-                            onBlur={(e) => saveField(t, "client", e.target.value)}
-                            placeholder="Client"
-                            className="client"
-                          />
-                          <input
-                            key={`${t.id}-notes`}
-                            defaultValue={t.notes}
-                            onBlur={(e) => saveField(t, "notes", e.target.value)}
-                            placeholder="Task notes"
-                            className="notes"
-                            title={
-                              isForecastMeeting(t)
-                                ? "Booked from a Basecamp meeting"
-                                : t.basecamp_todo_id
-                                  ? "Linked to a Basecamp todo"
-                                  : undefined
-                            }
-                          />
-                          <div className="row ops-hrs" style={{ gap: 2 }}>
-                            <input
-                              key={`${t.id}-hours`}
-                              defaultValue={t.hours}
-                              onBlur={(e) => saveField(t, "hours", e.target.value)}
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              className="hrs"
-                            />
-                            <span className="muted">h</span>
-                          </div>
-                          <span className="ops-row-actions">
-                            <TimerButton task={t} />
-                            <LogTime task={t} />
-                            <ForecastSubtaskButton
-                              open={Boolean(addingSubtask[t.id])}
-                              onClick={() =>
-                                setAddingSubtask((d) => ({
-                                  ...d,
-                                  [t.id]: !d[t.id],
-                                }))
-                              }
-                            />
-                            <MoveMenu task={t} />
-                            <button
-                              className="ops-row-remove"
-                              aria-label="Remove task"
-                              title="Remove task"
-                              onClick={() => removeTask(t.id)}
-                            >
-                              ×
-                            </button>
-                          </span>
-                          <ForecastSubtasks
-                            person={person}
-                            taskId={t.id}
-                            subtasks={t.subtasks || []}
-                            adding={Boolean(addingSubtask[t.id])}
-                            onAddingChange={(open) =>
-                              setAddingSubtask((d) => ({ ...d, [t.id]: open }))
-                            }
-                            hideTrigger
-                            onChanged={() => load(week, { silent: true })}
-                            onNotice={setError}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                    <ListColumnHeaders look={look} />
+                    {tasks.map((t) => listTaskRow(t))}
                   </div>
                 )}
 
-                <div className="ops-list-add">
+                <CollapsedAdd>
                   <AddTaskForm
                     draft={draft}
                     patch={(p) => setDraft(today, p)}
@@ -3396,7 +3462,7 @@ export default function PersonForecastPage() {
                     layout="row"
                     busy={saving}
                   />
-                </div>
+                </CollapsedAdd>
               </div>
             );
           })()
@@ -3653,97 +3719,12 @@ export default function PersonForecastPage() {
                     </p>
                   ) : (
                     <div className="ops-list-stack">
-                      <ListColumnHeaders />
-                      {tasks.map((t) => (
-                        <div
-                          key={t.id}
-                          className="ops-task-block"
-                        >
-                          <div
-                            className={`ops-list-row col-${normalizeTaskColor(t.color)} ${
-                              t.completed ? "is-done" : ""
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!t.completed}
-                              onChange={() => toggleCompleted(t)}
-                              aria-label="Mark complete"
-                            />
-                            <input
-                              key={`${t.id}-client`}
-                              defaultValue={t.client}
-                              onBlur={(e) => saveField(t, "client", e.target.value)}
-                              placeholder="Client"
-                              className="client"
-                            />
-                            <input
-                              key={`${t.id}-notes`}
-                              defaultValue={t.notes}
-                              onBlur={(e) => saveField(t, "notes", e.target.value)}
-                              placeholder="Task notes"
-                              className="notes"
-                              title={
-                                isForecastMeeting(t)
-                                  ? "Booked from a Basecamp meeting"
-                                  : t.basecamp_todo_id
-                                    ? "Linked to a Basecamp todo"
-                                    : undefined
-                              }
-                            />
-                            <div className="row ops-hrs" style={{ gap: 2 }}>
-                              <input
-                                key={`${t.id}-hours`}
-                                defaultValue={t.hours}
-                                onBlur={(e) => saveField(t, "hours", e.target.value)}
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                className="hrs"
-                              />
-                              <span className="muted">h</span>
-                            </div>
-                            <span className="ops-row-actions">
-                              <TimerButton task={t} />
-                              <LogTime task={t} />
-                              <ForecastSubtaskButton
-                                open={Boolean(addingSubtask[t.id])}
-                                onClick={() =>
-                                  setAddingSubtask((d) => ({
-                                    ...d,
-                                    [t.id]: !d[t.id],
-                                  }))
-                                }
-                              />
-                              <MoveMenu task={t} />
-                              <button
-                                className="ops-row-remove"
-                                aria-label="Remove task"
-                                title="Remove task"
-                                onClick={() => removeTask(t.id)}
-                              >
-                                ×
-                              </button>
-                            </span>
-                            <ForecastSubtasks
-                              person={person}
-                              taskId={t.id}
-                              subtasks={t.subtasks || []}
-                              adding={Boolean(addingSubtask[t.id])}
-                              onAddingChange={(open) =>
-                                setAddingSubtask((d) => ({ ...d, [t.id]: open }))
-                              }
-                              hideTrigger
-                              onChanged={() => load(week, { silent: true })}
-                              onNotice={setError}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                      <ListColumnHeaders look={look} />
+                      {tasks.map((t) => listTaskRow(t))}
                     </div>
                   )}
 
-                  <div className="ops-list-add">
+                  <CollapsedAdd>
                     <AddTaskForm
                       draft={draft}
                       patch={(p) => setDraft(date, p)}
@@ -3756,7 +3737,7 @@ export default function PersonForecastPage() {
                       layout="row"
                       busy={saving}
                     />
-                  </div>
+                  </CollapsedAdd>
                 </section>
               );
             })}
@@ -3764,11 +3745,11 @@ export default function PersonForecastPage() {
         )}
 
         {data ? (
-          <label className="field" style={{ marginTop: 18 }}>
-            <span>
+          <details className="fc-week-notes">
+            <summary>
               Notes for this week
               {noteSaving ? " · saving…" : ""}
-            </span>
+            </summary>
             <textarea
               value={noteDraft}
               placeholder="Anything worth flagging for the week — PTO, a heads up on a client, blockers, whatever's useful."
@@ -3776,7 +3757,7 @@ export default function PersonForecastPage() {
               onBlur={saveNote}
               rows={3}
             />
-          </label>
+          </details>
         ) : null}
 
         {/* Week total lives in the capacity gauge at the top of the page now. */}
