@@ -26,12 +26,18 @@ import {
   type SnapshotOutreachChannel,
 } from "./db";
 import { listRevClients } from "./revenue";
+import { isSnapshotAllowlisted } from "./snapshot-allowlist";
 import {
   getOrCreateToken,
   listLeads,
   metricPeriodLabel,
   revenueAsk,
 } from "./snapshot";
+
+/** Same roster as Deliverable setup — not every revenue client. */
+function listFridayAskClients(): RevClient[] {
+  return listRevClients().filter((c) => isSnapshotAllowlisted(c.name));
+}
 import { slugForName, teamLabel } from "./team";
 import { getUser } from "./users";
 import { mondayOf } from "./week";
@@ -639,7 +645,7 @@ export async function runWeeklyAsks(opts?: {
     sendingEnabled: sendingEnabled(),
   };
 
-  for (const client of listRevClients()) {
+  for (const client of listFridayAskClients()) {
     if (opts?.only && client.id !== opts.only && client.name !== opts.only) continue;
     result.considered++;
     // Targeting a single client by hand lifts the pacing gates, so a test send
@@ -721,7 +727,7 @@ export function clientServiceRows(today?: string): ClientServiceRow[] {
   const outreach = outreachForWeek(weekStart);
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
 
-  return listRevClients().map((client) => {
+  return listFridayAskClients().map((client) => {
     const ask = weeklyAskFor(client.id, today);
     const mine = outreach.filter((row) => row.client_id === client.id);
     const email = mine.find((row) => row.channel === "email") || null;

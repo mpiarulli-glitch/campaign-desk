@@ -21,8 +21,9 @@ test("weekly snapshot outreach", async (t) => {
   const revenue = await import("../src/lib/revenue");
   const snapshot = await import("../src/lib/snapshot");
 
-  const acme = revenue.createRevClient({ name: "Acme Plumbing", businessModel: "home_service" });
-  const quiet = revenue.createRevClient({ name: "Quiet Co", businessModel: "home_service" });
+  // Names must match the snapshot allowlist — Friday ask only covers those accounts.
+  const acme = revenue.createRevClient({ name: "Guardian Plumbers", businessModel: "home_service" });
+  const quiet = revenue.createRevClient({ name: "Ecoworkz", businessModel: "home_service" });
   revenue.updateRevClient(acme.id, {
     contactName: "Tim Thompson",
     contactEmail: "tim@acme.test",
@@ -117,7 +118,7 @@ test("weekly snapshot outreach", async (t) => {
 
   await t.test("the pipeline advances as events arrive", () => {
     const weekStart = cs.currentWeekStart("2026-08-21");
-    // Give Quiet Co something outstanding so it is not short-circuited by
+    // Give Ecoworkz something outstanding so it is not short-circuited by
     // "submitted", which deliberately outranks every delivery state.
     snapshot.addLead({
       clientId: quiet.id,
@@ -133,7 +134,7 @@ test("weekly snapshot outreach", async (t) => {
 
     cs.recordOutreach({
       clientId: quiet.id,
-      clientName: "Quiet Co",
+      clientName: "Ecoworkz",
       weekStart,
       month: "2026-07",
       channel: "email",
@@ -273,7 +274,7 @@ test("weekly snapshot outreach", async (t) => {
   await t.test("the sweep does not ask the same client twice in a week", async () => {
     const before = cs.outreachForWeek(cs.currentWeekStart("2026-08-21")).length;
     const result = await cs.runWeeklyAsks({ dryRun: true, today: "2026-08-21" });
-    // Quiet Co was already contacted above; Acme has nothing outstanding.
+    // Ecoworkz was already contacted above; Guardian has nothing outstanding.
     assert.equal(result.skipped.alreadySent >= 1, true);
     assert.equal(
       cs.outreachForWeek(cs.currentWeekStart("2026-08-21")).length,

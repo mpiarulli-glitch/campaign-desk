@@ -1,10 +1,10 @@
-// Visible allowlist for team-facing account snapshots.
+// Visible allowlist for team-facing account snapshots and the Friday ask.
 //
 // Other clients stay in the database and in the rest of the app (revenue,
-// calendar, the weekly Client Services ask). They just do not appear on the
-// snapshot pick-list, the behind report, or the team fill desk until they are
-// added here. Phrases are what Michael typed; matching is fuzzy because the
-// stored name may differ in punctuation, spelling, or a word ("Medspa" vs "Spa").
+// calendar). They just do not appear on the snapshot pick-list, the behind
+// report, the team fill desk, or Friday outreach until they are added here.
+// Phrases are what Michael typed; matching is fuzzy because the stored name
+// may differ in punctuation, spelling, or a word ("Medspa" vs "Spa").
 
 export const SNAPSHOT_ALLOWLIST_NAMES = [
   "Betterlife Coach",
