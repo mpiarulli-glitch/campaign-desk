@@ -186,6 +186,8 @@ export function isThisWeeksWork(
     work_done?: string | null;
     next_steps?: string | null;
     notes?: string | null;
+    basecamp_todo_id?: string | null;
+    basecamp_todo_title?: string | null;
   },
   viewWeek: string
 ): boolean {
@@ -193,7 +195,9 @@ export function isThisWeeksWork(
     row.status !== "not_started" ||
     !!(row.work_done || "").trim() ||
     !!(row.next_steps || "").trim() ||
-    !!(row.notes || "").trim();
+    !!(row.notes || "").trim() ||
+    !!(row.basecamp_todo_id || "").trim() ||
+    !!(row.basecamp_todo_title || "").trim();
   if (!hasSignal || !row.week_start) return false;
 
   const updated = (row.updated_at || "").slice(0, 10);

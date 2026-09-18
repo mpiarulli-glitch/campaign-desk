@@ -613,6 +613,9 @@ export interface BcTodo {
   kind?: "todo" | "step";
   parentId?: string;
   parentTitle?: string;
+  // Set when listing completed to-dos (snapshot "what happened" picker).
+  completedAt?: string | null;
+  appUrl?: string;
 }
 
 interface BcTodoRaw {
@@ -620,6 +623,8 @@ interface BcTodoRaw {
   content?: string;
   title?: string;
   due_on?: string | null;
+  completed_at?: string | null;
+  app_url?: string;
   assignees?: Array<{ id: number }>;
 }
 
@@ -628,13 +633,21 @@ interface BcTodoRaw {
 // limit, but high enough to cover several todosets' worth.
 const MAX_TODO_LISTS = 60;
 
-// Every open todo in a project, across every todoset and todo list (including
-// grouped lists). Returns [] rather than throwing when the project has no
-// todoset or Basecamp is unreachable — the picker degrades to free text.
-export async function listProjectTodos(
+type ListProjectTodosOpts = {
+  identity?: BcIdentity;
+  /** When true, only completed to-dos (no open steps attached). */
+  completed?: boolean;
+};
+
+// Walk every todoset/list/group in a project and return its to-dos. Returns []
+// rather than throwing when the project has no todoset or Basecamp is
+// unreachable — pickers degrade to free text.
+async function walkProjectTodos(
   projectId: string,
-  identity: BcIdentity = SERVICE
+  opts: ListProjectTodosOpts = {}
 ): Promise<BcTodo[]> {
+  const identity = opts.identity || SERVICE;
+  const completed = Boolean(opts.completed);
   if (!projectId) return [];
   try {
     const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
@@ -650,9 +663,12 @@ export async function listProjectTodos(
     const todosets = dock.filter((d) => d.name === "todoset" && d.enabled !== false);
     if (!todosets.length) return [];
 
-    // Subtasks are a separate recording type (Kanban::Step). Fetch them while
-    // walking lists so the picker isn't another round trip later.
-    const stepsPromise = listOpenTodoSteps(projectId, identity);
+    // Subtasks are a separate recording type (Kanban::Step). Only attach open
+    // steps for the open-todo picker — completed checklist steps are not the
+    // "what happened" record the snapshot links.
+    const stepsPromise = completed
+      ? Promise.resolve([] as OpenTodoStep[])
+      : listOpenTodoSteps(projectId, identity);
 
     const listsPerSet = await Promise.all(
       todosets.map(async (set) => {
@@ -695,26 +711,61 @@ export async function listProjectTodos(
     const perList = await Promise.all(
       targets.map(async (target) => {
         // No ?completed param means Basecamp returns only open todos.
-        const todos = await bcCollection<BcTodoRaw>(
-          `/buckets/${projectId}/todolists/${target.id}/todos.json`,
-          2,
-          identity
-        );
+        // ?completed=true returns only completed ones (with completed_at).
+        const path = completed
+          ? `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`
+          : `/buckets/${projectId}/todolists/${target.id}/todos.json`;
+        // Completed lists grow forever; keep the walk short so the snapshot
+        // picker stays responsive.
+        const todos = await bcCollection<BcTodoRaw>(path, completed ? 1 : 2, identity);
         return todos.map((t) => ({
           id: String(t.id),
           title: (t.content || t.title || "").trim(),
           list: target.title,
           assigneeIds: (t.assignees || []).map((a) => a.id),
           dueOn: t.due_on || null,
+          completedAt: t.completed_at || null,
+          appUrl: t.app_url || undefined,
         }));
       })
     );
     const todos = perList.flat().filter((t) => t.title);
+    if (completed) {
+      // Newest completions first — staff usually want last week's work.
+      return todos.sort((a, b) => {
+        const ac = a.completedAt || "";
+        const bcAt = b.completedAt || "";
+        return bcAt.localeCompare(ac);
+      });
+    }
     const steps = await stepsPromise;
     return attachTodoSteps(todos, steps);
   } catch {
     return [];
   }
+}
+
+// Every open todo in a project, across every todoset and todo list (including
+// grouped lists). Returns [] rather than throwing when the project has no
+// todoset or Basecamp is unreachable — the picker degrades to free text.
+export async function listProjectTodos(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcTodo[]> {
+  return walkProjectTodos(projectId, { identity, completed: false });
+}
+
+/**
+ * Completed to-dos in a project, newest first.
+ *
+ * Used by the snapshot fill desk to pick a finished Basecamp to-do as the
+ * record of what happened under a deliverable. Open steps are not included.
+ */
+export async function listProjectCompletedTodos(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcTodo[]> {
+  return walkProjectTodos(projectId, { identity, completed: true });
 }
 
 export type BcTodolist = {

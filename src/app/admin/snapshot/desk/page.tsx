@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
-import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState, type SnapshotOverdueDetail } from "@/components/SnapshotFillRow";
+import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState, type SnapshotOverdueDetail, type SnapshotBasecampTodoPatch } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
 import { canSeeFridayAsk, teamLabelFor } from "@/lib/people";
@@ -210,7 +210,7 @@ export default function SnapshotDeskPage() {
   async function saveEntry(
     delivId: string,
     patch: Partial<SnapshotFillRowData>,
-    opts?: { loggedFor?: string }
+    opts?: { loggedFor?: string; basecampTodo?: SnapshotBasecampTodoPatch }
   ) {
     setSaveState((s) => ({ ...s, [delivId]: "saving" }));
     if (patch.status && fillLane({ deliverable_id: delivId, status: patch.status }, behindIds) === "done") {
@@ -218,19 +218,34 @@ export default function SnapshotDeskPage() {
       setOpenId(delivId);
     }
     const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
+    let basecampTodo = opts?.basecampTodo;
+    if (basecampTodo === undefined && Object.prototype.hasOwnProperty.call(patch, "basecamp_todo_id")) {
+      const id = (patch.basecamp_todo_id || "").trim();
+      basecampTodo = id
+        ? {
+            id,
+            projectId: (patch.basecamp_project_id || "").trim(),
+            title: (patch.basecamp_todo_title || "").trim(),
+            url: (patch.basecamp_todo_url || "").trim(),
+            completedAt: (patch.basecamp_todo_completed_at || "").trim(),
+          }
+        : null;
+    }
     try {
+      const body: Record<string, unknown> = {
+        deliverableId: delivId,
+        weekStart: week,
+        loggedFor,
+        status: patch.status,
+        workDone: patch.work_done,
+        nextSteps: patch.next_steps,
+        notes: patch.notes,
+      };
+      if (basecampTodo !== undefined) body.basecampTodo = basecampTodo;
       const res = await fetch("/api/snapshot/entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deliverableId: delivId,
-          weekStart: week,
-          loggedFor,
-          status: patch.status,
-          workDone: patch.work_done,
-          nextSteps: patch.next_steps,
-          notes: patch.notes,
-        }),
+        body: JSON.stringify(body),
       });
       if (res.status === 401) {
         router.push("/login");
@@ -452,6 +467,7 @@ export default function SnapshotDeskPage() {
                 <SnapshotFillRow
                   key={r.deliverable_id}
                   row={r}
+                  clientId={group.id}
                   viewWeek={week}
                   loggedFor={loggedForForRow(r.deliverable_id)}
                   overdue={behindIds.has(r.deliverable_id)}

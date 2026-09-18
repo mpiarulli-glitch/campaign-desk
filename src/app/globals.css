@@ -3706,6 +3706,25 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   color: var(--text-muted);
 }
 .snap-ro p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+.snap-ro-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.snap-ro-todo.is-extra {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.snap-ro-todo-title { font-weight: 600; }
+.snap-ro-todo-when {
+  font-size: 12px;
+  color: var(--text-muted);
+}
 
 .snap-deliv-edit {
   display: grid;
@@ -18479,6 +18498,41 @@ div.snap-n-title {
   font-size: 13px;
   background: var(--bg-elevated);
   color: var(--text);
+}
+
+.snap-todo-field {
+  grid-column: 1 / -1;
+}
+.snap-completed-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.snap-todo-combo > input {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.snap-todo-combo > input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
+}
+.snap-todo-clear {
+  align-self: flex-start;
+  font-size: 12px;
+}
+.snap-todo-hint {
+  margin: 0;
+  font-size: 12px;
+}
+.snap-n-todo-meta {
+  color: var(--text-muted);
 }
 
 .snap-desk-row {

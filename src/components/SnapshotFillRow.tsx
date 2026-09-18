@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SnapshotCatchUp } from "@/components/SnapshotCatchUp";
+import {
+  CompletedTodoPicker,
+  type CompletedTodoOption,
+} from "@/components/CompletedTodoPicker";
 import { weekLabel } from "@/lib/week";
 import { catchUpPeriodLabel } from "@/lib/snapshot-catchup";
 import {
@@ -40,7 +44,20 @@ export type SnapshotFillRowData = {
   notes: string;
   logged_by: string;
   updated_at: string;
+  basecamp_todo_id: string;
+  basecamp_project_id: string;
+  basecamp_todo_title: string;
+  basecamp_todo_url: string;
+  basecamp_todo_completed_at: string;
 };
+
+export type SnapshotBasecampTodoPatch = {
+  id: string;
+  projectId: string;
+  title: string;
+  url: string;
+  completedAt: string;
+} | null;
 
 export type SnapshotOverdueDetail = {
   due_date: string;
@@ -94,8 +111,84 @@ function todayYmd(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+
+type TodoCache = {
+  todos: CompletedTodoOption[];
+  reason: string | null;
+  loading: boolean;
+};
+
+const todoCache = new Map<string, TodoCache>();
+const todoListeners = new Map<string, Set<() => void>>();
+
+function notifyTodoCache(clientId: string) {
+  const listeners = todoListeners.get(clientId);
+  if (!listeners) return;
+  for (const fn of listeners) fn();
+}
+
+function loadCompletedTodos(clientId: string) {
+  const existing = todoCache.get(clientId);
+  if (existing && (existing.loading || existing.todos.length || existing.reason)) {
+    return;
+  }
+  todoCache.set(clientId, { todos: existing?.todos || [], reason: null, loading: true });
+  notifyTodoCache(clientId);
+  fetch(`/api/snapshot/completed-todos?client=${encodeURIComponent(clientId)}`)
+    .then(async (res) => {
+      if (!res.ok) {
+        todoCache.set(clientId, { todos: [], reason: "failed", loading: false });
+        notifyTodoCache(clientId);
+        return;
+      }
+      const data = await res.json();
+      const todos = Array.isArray(data.todos)
+        ? (data.todos as CompletedTodoOption[]).filter(
+            (t) => t && typeof t.id === "string" && typeof t.title === "string"
+          )
+        : [];
+      todoCache.set(clientId, {
+        todos,
+        reason: typeof data.reason === "string" ? data.reason : null,
+        loading: false,
+      });
+      notifyTodoCache(clientId);
+    })
+    .catch(() => {
+      todoCache.set(clientId, { todos: [], reason: "failed", loading: false });
+      notifyTodoCache(clientId);
+    });
+}
+
+function useCompletedTodos(clientId: string, enabled: boolean): TodoCache {
+  const [state, setState] = useState<TodoCache>(
+    () => todoCache.get(clientId) || { todos: [], reason: null, loading: false }
+  );
+
+  useEffect(() => {
+    if (!enabled || !clientId) return;
+    const onChange = () => {
+      setState(todoCache.get(clientId) || { todos: [], reason: null, loading: false });
+    };
+    let listeners = todoListeners.get(clientId);
+    if (!listeners) {
+      listeners = new Set();
+      todoListeners.set(clientId, listeners);
+    }
+    listeners.add(onChange);
+    onChange();
+    loadCompletedTodos(clientId);
+    return () => {
+      listeners?.delete(onChange);
+    };
+  }, [clientId, enabled]);
+
+  return state;
+}
+
 export function SnapshotFillRow({
   row,
+  clientId,
   viewWeek,
   loggedFor,
   overdue,
@@ -111,6 +204,7 @@ export function SnapshotFillRow({
   launchDate,
 }: {
   row: SnapshotFillRowData;
+  clientId: string;
   viewWeek: string;
   loggedFor: string;
   overdue: boolean;
@@ -120,7 +214,10 @@ export function SnapshotFillRow({
   onToggle: () => void;
   onPatch: (patch: Partial<SnapshotFillRowData>) => void;
   onLoggedForChange: (loggedFor: string) => void;
-  onSave: (patch: Partial<SnapshotFillRowData>, opts?: { loggedFor?: string }) => void;
+  onSave: (
+    patch: Partial<SnapshotFillRowData>,
+    opts?: { loggedFor?: string; basecampTodo?: SnapshotBasecampTodoPatch }
+  ) => void;
   onRetry: () => void;
   onCatchUpDone: () => void;
   launchDate: string | null;
@@ -152,6 +249,42 @@ export function SnapshotFillRow({
   const author = snapshotAuthorLabel(row.logged_by);
   const today = todayYmd();
   const shownStatus = pendingStatus ?? row.status;
+  const todoState = useCompletedTodos(clientId, open);
+
+  function selectCompletedTodo(todo: CompletedTodoOption) {
+    const linkPatch: Partial<SnapshotFillRowData> = {
+      basecamp_todo_id: todo.id,
+      basecamp_project_id: todo.projectId,
+      basecamp_todo_title: todo.title,
+      basecamp_todo_url: todo.url,
+      basecamp_todo_completed_at: todo.completedAt || "",
+    };
+    if (!row.work_done.trim()) {
+      linkPatch.work_done = todo.title;
+    }
+    onPatch(linkPatch);
+    onSave(linkPatch, {
+      basecampTodo: {
+        id: todo.id,
+        projectId: todo.projectId,
+        title: todo.title,
+        url: todo.url,
+        completedAt: todo.completedAt || "",
+      },
+    });
+  }
+
+  function clearCompletedTodo() {
+    const linkPatch: Partial<SnapshotFillRowData> = {
+      basecamp_todo_id: "",
+      basecamp_project_id: "",
+      basecamp_todo_title: "",
+      basecamp_todo_url: "",
+      basecamp_todo_completed_at: "",
+    };
+    onPatch(linkPatch);
+    onSave(linkPatch, { basecampTodo: null });
+  }
 
   function startAskWhen() {
     setPendingStatus("completed");
@@ -222,6 +355,11 @@ export function SnapshotFillRow({
               <p className="snap-n-meta">
                 {author}
                 {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
+              </p>
+            ) : null}
+            {row.basecamp_todo_title.trim() && !open ? (
+              <p className="snap-n-meta snap-n-todo-meta">
+                Linked: {row.basecamp_todo_title.trim()}
               </p>
             ) : null}
           </div>
@@ -407,13 +545,24 @@ export function SnapshotFillRow({
               keeps that week&apos;s note as it is.
             </p>
           ) : null}
+          <label className="snap-todo-field">
+            <span>Completed Basecamp to-do</span>
+            <CompletedTodoPicker
+              todos={todoState.todos}
+              selectedId={row.basecamp_todo_id}
+              loading={todoState.loading}
+              reason={todoState.reason}
+              onSelect={selectCompletedTodo}
+              onClear={clearCompletedTodo}
+            />
+          </label>
           <label>
             <span>What we did</span>
             <textarea
               value={row.work_done}
               onChange={(e) => onPatch({ work_done: e.target.value })}
               onBlur={(e) => onSave({ work_done: e.target.value })}
-              placeholder="What got done this week"
+              placeholder="What got done this week — or pick a completed to-do above"
             />
           </label>
           <label>

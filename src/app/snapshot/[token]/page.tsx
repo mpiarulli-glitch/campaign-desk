@@ -54,6 +54,9 @@ type Row = {
   work_done: string;
   next_steps: string;
   notes: string;
+  basecamp_todo_id?: string;
+  basecamp_todo_title?: string;
+  basecamp_todo_completed_at?: string;
 };
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
@@ -89,6 +92,17 @@ function money(n: number): string {
 
 function leadName(l: Lead): string {
   return [l.first_name, l.last_name].filter(Boolean).join(" ") || "Unnamed lead";
+}
+
+function completedTodoDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function hasUpdate(r: Row, viewWeek: string): boolean {
@@ -496,12 +510,33 @@ export default function SnapshotClientPage() {
                         </span>
                         <span className={`snap-n-pill status-${r.status}`}>{STATUS_LABEL(r.status)}</span>
                       </div>
-                      {r.work_done.trim() || r.next_steps.trim() || r.notes.trim() ? (
+                      {(() => {
+                        const todoTitle = (r.basecamp_todo_title || "").trim();
+                        const work = r.work_done.trim();
+                        const workIsJustTitle = Boolean(todoTitle && work === todoTitle);
+                        const showWork = Boolean(work && !workIsJustTitle);
+                        const showTodo = Boolean(todoTitle);
+                        const showWhat =
+                          showWork || showTodo || r.next_steps.trim() || r.notes.trim();
+                        if (!showWhat) return null;
+                        return (
                         <div className="snap-n-letter">
-                          {r.work_done.trim() ? (
+                          {showWork || showTodo ? (
                             <div className="snap-ro">
                               <span className="snap-ro-label">What we did</span>
-                              <p>{r.work_done}</p>
+                              {showWork ? <p>{work}</p> : null}
+                              {showTodo ? (
+                                <p className={`snap-ro-todo ${showWork ? "is-extra" : ""}`}>
+                                  <span className="snap-ro-todo-title">{todoTitle}</span>
+                                  {r.basecamp_todo_completed_at ? (
+                                    <span className="snap-ro-todo-when">
+                                      Completed {completedTodoDate(r.basecamp_todo_completed_at)}
+                                    </span>
+                                  ) : (
+                                    <span className="snap-ro-todo-when">Completed in Basecamp</span>
+                                  )}
+                                </p>
+                              ) : null}
                             </div>
                           ) : null}
                           {r.next_steps.trim() ? (
@@ -517,7 +552,8 @@ export default function SnapshotClientPage() {
                             </div>
                           ) : null}
                         </div>
-                      ) : null}
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

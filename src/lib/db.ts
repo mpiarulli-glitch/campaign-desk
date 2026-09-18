@@ -712,6 +712,15 @@ export interface SnapshotEntry {
   // actorLabel in ./people). Empty for entries logged before this was recorded
   // and for writes with no session behind them, such as a seed script.
   logged_by: string;
+  // Optional completed Basecamp to-do linked as the record of what happened.
+  // Empty strings when nothing is linked. Title/url/completed_at are snapshots
+  // of the to-do at link time so the client view stays readable if Basecamp
+  // later renames or archives it.
+  basecamp_todo_id: string;
+  basecamp_project_id: string;
+  basecamp_todo_title: string;
+  basecamp_todo_url: string;
+  basecamp_todo_completed_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -1676,6 +1685,11 @@ export function getDb(): Database.Database {
       next_steps TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       logged_by TEXT NOT NULL DEFAULT '',
+      basecamp_todo_id TEXT NOT NULL DEFAULT '',
+      basecamp_project_id TEXT NOT NULL DEFAULT '',
+      basecamp_todo_title TEXT NOT NULL DEFAULT '',
+      basecamp_todo_url TEXT NOT NULL DEFAULT '',
+      basecamp_todo_completed_at TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE (deliverable_id, week_start),
@@ -3062,6 +3076,20 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE snapshot_entries ADD COLUMN logged_by TEXT NOT NULL DEFAULT ''`
     );
+  }
+  // Completed Basecamp to-do linked as "what happened" under a deliverable week.
+  for (const col of [
+    "basecamp_todo_id",
+    "basecamp_project_id",
+    "basecamp_todo_title",
+    "basecamp_todo_url",
+    "basecamp_todo_completed_at",
+  ] as const) {
+    if (snapEntryCols.length && !snapEntryCols.includes(col)) {
+      database.exec(
+        `ALTER TABLE snapshot_entries ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`
+      );
+    }
   }
 
   const snapWinCols = tableColumns(database, "snapshot_wins");
