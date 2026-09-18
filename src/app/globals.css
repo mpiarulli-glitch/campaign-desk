@@ -12628,6 +12628,40 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   flex-wrap: wrap;
   align-items: center;
 }
+.pcon-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pcon-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+.pcon-toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pcon-fold {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.pcon-fold > summary {
+  cursor: pointer;
+  padding: 12px 16px;
+  font-weight: 650;
+  font-size: 13px;
+  list-style: none;
+}
+.pcon-fold > summary::-webkit-details-marker { display: none; }
+.pcon-fold[open] > summary { border-bottom: 1px solid var(--border); }
+.pcon-fold-body { padding: 14px 16px 16px; }
 .pcon-chip {
   display: flex;
   align-items: baseline;
@@ -12680,15 +12714,15 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 
 .pcon-in {
   display: grid;
-  /* The calendar track stays 190px so the strips line up down the page
-     (five 33px cells plus gaps). Name, facts, and actions share the rest so a
-     sidebar-narrowed pane does not force the last column to overflow left. */
-  grid-template-columns: minmax(0, 1.3fr) 190px minmax(0, 0.9fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1.5fr) minmax(9.5rem, 1.1fr) 4.75rem minmax(0, 1.15fr);
   gap: 14px 18px;
   align-items: center;
   padding: 15px 20px 15px 23px;
 }
 .pcon-in > * { min-width: 0; }
+.pcon-in-queue {
+  grid-template-columns: minmax(0, 1.3fr) 190px minmax(0, 0.9fr) minmax(0, 1.2fr);
+}
 
 .pcon-who h3 {
   margin: 0 0 3px;
@@ -12764,6 +12798,38 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .pcon-band[data-week="blue"] .pcon-cell.is-on { background: #3b82f6; }
 .pcon-band[data-week="green"] .pcon-cell.is-on { background: #22c55e; }
 .pcon-band[data-week=""] .pcon-cell.is-on { background: var(--text-muted); }
+
+.pcon-when-block,
+.pcon-count {
+  min-width: 0;
+}
+.pcon-k {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.pcon-when-block strong,
+.pcon-count strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: break-word;
+}
+.pcon-when-block .muted,
+.pcon-count .muted {
+  font-size: 12px;
+}
+.pcon-count strong {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  line-height: 1.1;
+}
 
 .pcon-when {
   font-family: var(--mono);
@@ -12874,21 +12940,27 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 /* Sidebar takes ~208px, so a 1100px window still has a ~860px list. Stack
    from the list's own width, not the viewport. */
 @container pcon (max-width: 880px) {
-  .pcon-in {
+  .pcon-in:not(.pcon-in-queue) {
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, 0.8fr);
+  }
+  .pcon-in:not(.pcon-in-queue) .pcon-who,
+  .pcon-in:not(.pcon-in-queue) .pcon-count { grid-column: 1; }
+  .pcon-in:not(.pcon-in-queue) .pcon-when-block,
+  .pcon-in:not(.pcon-in-queue) .pcon-act { grid-column: 2; }
+  .pcon-in-queue {
     grid-template-columns: minmax(0, 1fr) 190px;
   }
-  .pcon-who,
-  .pcon-facts { grid-column: 1; }
-  .pcon-strip,
-  .pcon-nowindow,
-  .pcon-act { grid-column: 2; }
+  .pcon-in-queue .pcon-who,
+  .pcon-in-queue .pcon-facts { grid-column: 1; }
+  .pcon-in-queue .pcon-strip,
+  .pcon-in-queue .pcon-nowindow,
+  .pcon-in-queue .pcon-act { grid-column: 2; }
 }
 @container pcon (max-width: 560px) {
   .pcon-in { grid-template-columns: 1fr; gap: 13px; }
   .pcon-who,
-  .pcon-facts,
-  .pcon-strip,
-  .pcon-nowindow,
+  .pcon-when-block,
+  .pcon-count,
   .pcon-act { grid-column: auto; }
   .pcon-act,
   .pcon-act-row { align-items: flex-start; justify-content: flex-start; }
@@ -12898,9 +12970,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 @media (max-width: 900px) {
   .pcon-in { grid-template-columns: 1fr; gap: 13px; }
   .pcon-who,
-  .pcon-facts,
-  .pcon-strip,
-  .pcon-nowindow,
+  .pcon-when-block,
+  .pcon-count,
   .pcon-act { grid-column: auto; }
   .pcon-act,
   .pcon-act-row { align-items: flex-start; justify-content: flex-start; }
@@ -17587,9 +17658,9 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px 8px;
+  padding: 12px 16px 10px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-soft);
+  background: var(--bg-elevated);
 }
 
 .snap-n-group a {
@@ -17621,11 +17692,11 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .snap-desk-win {
-  margin: 0 12px 10px;
+  margin: 10px 12px 12px;
   padding: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: var(--bg-elevated);
+  background: var(--bg-soft);
 }
 
 .snap-desk-win.is-needed {
@@ -17748,10 +17819,11 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 }
 
 .snap-n-db {
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
 }
 
 .snap-n-cols {
@@ -17773,7 +17845,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
   font-weight: 500;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-elevated);
 }
 
 .snap-n-row {

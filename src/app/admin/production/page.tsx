@@ -156,6 +156,10 @@ type Row = {
   currentReachoutCount: number;
   currentReachoutLast: { channel: ReachoutChannel; ymd: string } | null;
   openExtraRequest: OpenExtraRequest | null;
+  shoots?: {
+    had: number;
+    upcoming: { date: string; time: string; status: string } | null;
+  };
 };
 
 // Has this client been contacted about the window they are currently in?
@@ -259,28 +263,37 @@ const ACCOUNT_MANAGER_OPTIONS = [
   { value: "Luis", label: "Luis" },
 ];
 
-// Which group a client falls into, for the counts across the top. These are the
-// four questions actually asked of this page: who is waiting on us, who needs
-// booking now, who is already handled, and who was never set up.
-type StatusFilter = "all" | "waiting" | "asked" | "due" | "ahead" | "unset";
+// The desk answers three things: who still needs a shoot, when it is, and how
+// many they have already done. These buckets are those questions, not the
+// cadence engine's full status list.
+type StatusFilter = "all" | "need" | "asked" | "booked";
+type ViewBucket = "need" | "asked" | "booked" | "ok";
 
-function bucketOf(r: Row): Exclude<StatusFilter, "all"> {
-  if (!r.window) return "unset";
-  if (r.status === "requested") return "waiting";
-  // Asked and not booked. Distinct from "due" (never asked) and from "ahead"
-  // (nothing needed yet), because the next move is a chase rather than a first
-  // approach.
-  //
-  // "Asked" means contacted on any channel about THIS window. Keying this off
-  // the email count alone put clients we had already chased on Basecamp back in
-  // "due", so they read as never approached and got approached again.
-  // A hand-set "Outreach sent" counts the same as a logged one. It exists for
-  // outreach that happened off the app, so it has to land in the same bucket as
-  // the outreach the app did itself.
-  if (r.status === "outreach_sent") return "asked";
-  if (!r.existingSend && outreachCount(r) > 0) return "asked";
-  if (r.status === "due") return "due";
-  return "ahead";
+function viewBucket(r: Row): ViewBucket {
+  if (r.existingSend) return "booked";
+  if (!r.client.last_production_date) return "need";
+  if (r.status === "requested" || r.status === "due") return "need";
+  if (!r.window) return "need";
+  if (r.status === "outreach_sent" || outreachCount(r) > 0) return "asked";
+  return "ok";
+}
+
+function needLabel(r: Row): string {
+  if (r.existingSend) return "Booked";
+  if (!r.client.last_production_date) return "Needs first";
+  if (r.status === "requested") return "Waiting on us";
+  if (r.status === "due") return "Needs one";
+  if (!r.window) return "Not set up";
+  if (r.status === "outreach_sent" || outreachCount(r) > 0) return "Asked";
+  return "On cadence";
+}
+
+function needTone(r: Row): string {
+  const bucket = viewBucket(r);
+  if (bucket === "need") return "is-bad";
+  if (bucket === "asked") return "is-warn";
+  if (bucket === "booked") return "is-good";
+  return "is-quiet";
 }
 
 const TONE: Record<CycleStatus, string> = {
@@ -348,6 +361,45 @@ function fmtDate(ymd: string | null): string {
     timeZone: "UTC",
   });
 }
+
+function fmtWhen(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function whenCopy(r: Row, todayYmd: string): { title: string; sub: string } {
+  const booked = r.existingSend?.sendDate || r.shoots?.upcoming?.date || "";
+  const bookedTime = r.shoots?.upcoming?.time || "";
+  if (booked) {
+    return {
+      title: fmtWhen(booked),
+      sub: bookedTime ? fmtTime(bookedTime) : "Booked",
+    };
+  }
+  if (r.window) {
+    return { title: fmtWindow(r.window), sub: whenLabel(r.window, todayYmd) };
+  }
+  if (r.client.last_production_date) {
+    return { title: "No date set", sub: `Last ${fmtDate(r.client.last_production_date)}` };
+  }
+  return { title: "No date set", sub: "Never shot" };
+}
+
+function shootCount(r: Row): number {
+  return r.shoots?.had ?? 0;
+}
+
+const BUCKET_ORDER: Record<ViewBucket, number> = {
+  need: 0,
+  asked: 1,
+  booked: 2,
+  ok: 3,
+};
 
 // Status detail that used to live on a native `title` tooltip. Those hover
 // notes painted over the calendar because the pill itself had overflowed left
@@ -424,7 +476,7 @@ export default function ProductionPage() {
   // The server's business date. Used to mark the window strip, so "today" is
   // Pacific rather than whatever the viewer's machine says.
   const [today, setToday] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("need");
   const [openRow, setOpenRow] = useState<string | null>(null);
 
   // Per-cell inline editing.
@@ -1005,37 +1057,22 @@ export default function ProductionPage() {
 
   const enrolled = useMemo(() => rows.filter((r) => r.client.production_enrolled), [rows]);
   const removed = useMemo(() => rows.filter((r) => !r.client.production_enrolled), [rows]);
-  // Only people already on the production roster who have never shot. Dumping
-  // every unenrolled client here turned the page into a phone book.
-  const firstCandidates = useMemo(() => {
-    return enrolled
-      .filter(
-        (r) =>
-          (showInactive || r.client.active) && !r.client.last_production_date
-      )
-      .slice()
-      .sort((a, b) => a.client.name.localeCompare(b.client.name));
-  }, [enrolled, showInactive]);
-  // Ordered by what needs a person: waiting on us, then due, then booked ahead,
-  // then never set up. Within a group, the soonest window first.
-  const BUCKET_ORDER: Record<Exclude<StatusFilter, "all">, number> = {
-    waiting: 0, due: 1, asked: 2, ahead: 3, unset: 4,
-  };
   const visible = useMemo(
     () =>
       enrolled
         .filter((r) => (showInactive ? true : r.client.active))
         .filter((r) => (colorFilter === "all" ? true : r.client.color_week === colorFilter))
-        .filter((r) => (statusFilter === "all" ? true : bucketOf(r) === statusFilter))
+        .filter((r) => (statusFilter === "all" ? true : viewBucket(r) === statusFilter))
         .slice()
         .sort((a, b) => {
-          const d = BUCKET_ORDER[bucketOf(a)] - BUCKET_ORDER[bucketOf(b)];
+          const d = BUCKET_ORDER[viewBucket(a)] - BUCKET_ORDER[viewBucket(b)];
           if (d !== 0) return d;
-          const aw = a.window?.start || "9999-99-99";
-          const bw = b.window?.start || "9999-99-99";
-          return aw === bw ? a.client.name.localeCompare(b.client.name) : aw.localeCompare(bw);
+          const aw = a.existingSend?.sendDate || a.window?.start || "9999-99-99";
+          const bw = b.existingSend?.sendDate || b.window?.start || "9999-99-99";
+          return aw === bw
+            ? a.client.name.localeCompare(b.client.name)
+            : aw.localeCompare(bw);
         }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [enrolled, showInactive, colorFilter, statusFilter]
   );
 
@@ -1055,14 +1092,15 @@ export default function ProductionPage() {
   );
 
   const counts = useMemo(() => {
-    const base = { waiting: 0, due: 0, asked: 0, ahead: 0, unset: 0 };
+    const base = { need: 0, asked: 0, booked: 0 };
     for (const r of enrolled) {
       if (!showInactive && !r.client.active) continue;
-      base[bucketOf(r)]++;
+      const bucket = viewBucket(r);
+      if (bucket === "ok") continue;
+      base[bucket]++;
     }
     return base;
   }, [enrolled, showInactive]);
-  const activeCount = enrolled.filter((r) => r.client.active).length;
   const liveProductions = useMemo(
     () => productions.filter((production) => !production.cancelled_at),
     [productions]
@@ -1139,8 +1177,8 @@ export default function ProductionPage() {
       >
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
           {first
-            ? "Set color week, cadence, and when they can book. Sends Basecamp + email with the scheduling link."
-            : "Set when they can pick a day, then send Basecamp + email."}
+            ? "Color week, cadence, and booking dates. Sends the scheduling link."
+            : "Booking dates, then Basecamp + email."}
         </p>
         {first ? (
           <div className="rev-form-grid">
@@ -1305,13 +1343,21 @@ export default function ProductionPage() {
   return (
     <div className="app-shell">
       <main className="container container-wide stack">
-        <div className="page-hero">
-          <p className="eyebrow">Email department</p>
-          <h1 className="h1">Productions</h1>
-          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            See where every client stands, review new production requests, and
-            check what the scheduler has been sending.
-          </p>
+        <div className="page-hero pcon-hero">
+          <div>
+            <p className="eyebrow">Email department</p>
+            <h1 className="h1">Productions</h1>
+          </div>
+          {isAdmin && !manual && !logging ? (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-sm" onClick={() => openManualSchedule()}>
+                Schedule
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => openLog()}>
+                Log a shoot
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="tabs" role="tablist" aria-label="Production views">
@@ -1322,7 +1368,7 @@ export default function ProductionPage() {
             className={`tab ${tab === "setup" ? "active" : ""}`}
             onClick={() => setTab("setup")}
           >
-            Production dashboard
+            Clients
             <span className="tab-count">{enrolled.length}</span>
           </button>
           <button
@@ -1352,7 +1398,7 @@ export default function ProductionPage() {
             className={`tab ${tab === "awaiting" ? "active" : ""}`}
             onClick={() => setTab("awaiting")}
           >
-            Awaiting client
+            Awaiting
             <span className="tab-count">{awaiting.length}</span>
           </button>
           {cancelledProductions.length ? (
@@ -1689,16 +1735,7 @@ export default function ProductionPage() {
                 </button>
               </div>
             </form>
-          ) : (
-            <div className="row" style={{ justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btn-sm" onClick={() => openManualSchedule()}>
-                Schedule a production manually
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => openLog()}>
-                + Log a production
-              </button>
-            </div>
-          )
+          ) : null
         ) : null}
 
         {tab === "reachouts" ? (
@@ -1707,214 +1744,47 @@ export default function ProductionPage() {
 
         {tab === "setup" ? (
           <>
-        {/* Counts before the list, and each one filters. The question this page
-            answers is "who needs me", so that reads first. */}
-        <div className="pcon-chips">
-          {([
-            ["waiting", counts.waiting, "waiting on us"],
-            ["due", counts.due, "due now"],
-            ["asked", counts.asked, "asked, no booking"],
-            ["ahead", counts.ahead, "booked ahead"],
-            ["unset", counts.unset, "not set up"],
-          ] as Array<[Exclude<StatusFilter, "all">, number, string]>).map(([key, n, label]) => (
-            <button
-              key={key}
-              type="button"
-              className="pcon-chip"
-              aria-pressed={statusFilter === key}
-              onClick={() => setStatusFilter(statusFilter === key ? "all" : key)}
-            >
-              <span className="n">{n}</span> {label}
-            </button>
-          ))}
-          {statusFilter !== "all" ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStatusFilter("all")}>
-              Show all
-            </button>
-          ) : null}
-        </div>
-
-        {isAdmin && firstCandidates.length > 0 ? (
-          <div className="card card-pad stack">
-            <strong>First productions</strong>
-            <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
-              On the schedule, but no shoot yet. Invite them — sets expectations
-              and gets them on the cadence. For a link only, use Schedule a
-              production manually above.
-            </p>
-            <div className="stack" style={{ gap: 10 }}>
-              {firstCandidates.map((r) => {
-                const c = r.client;
-                const asking = extraAsk?.clientId === c.id && extraAsk.kind === "first";
-                return (
-                  <div key={c.id} className="stack" style={{ gap: 8 }}>
-                    <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                      <div>
-                        <strong>{c.name}</strong>
-                        <span className="muted" style={{ marginLeft: 8 }}>
-                          {c.color_week && c.production_cadence
-                            ? `${colorLabel(c.color_week)} · ${CADENCE_LABEL[c.production_cadence]}`
-                            : "color week and cadence still needed"}
-                        </span>
-                      </div>
-                      {r.openExtraRequest?.kind === "first" ? (
-                        <span className="pcon-pill is-warn">Invitation sent</span>
-                      ) : asking ? null : (
-                        <button
-                          className="btn btn-sm"
-                          type="button"
-                          onClick={() => openExtraAsk(c.id, "first")}
-                        >
-                          Invite first production
-                        </button>
-                      )}
-                    </div>
-                    {asking ? extraAskForm(c.id) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <span className="muted">
-            {colorFilter === "all"
-              ? `${activeCount} active · ${enrolled.length} in production`
-              : `${visible.length} ${colorLabel(colorFilter as ColorWeek)} client${visible.length === 1 ? "" : "s"}`}
-          </span>
-          <div className="row" style={{ gap: 16 }}>
-            <label className="row" style={{ gap: 8 }}>
-              <span className="muted">Color week</span>
-              <select
-                className="select-clean"
-                style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
-                value={colorFilter}
-                onChange={(e) => setColorFilter(e.target.value as ColorWeek | "all")}
+        <div className="pcon-toolbar">
+          <div className="pcon-chips">
+            {([
+              ["need", counts.need, "Needs a shoot"],
+              ["asked", counts.asked, "Asked"],
+              ["booked", counts.booked, "Booked"],
+              ["all", enrolled.filter((r) => showInactive || r.client.active).length, "All"],
+            ] as Array<[StatusFilter, number, string]>).map(([key, n, label]) => (
+              <button
+                key={key}
+                type="button"
+                className="pcon-chip"
+                aria-pressed={statusFilter === key}
+                onClick={() => setStatusFilter(key)}
               >
-                <option value="all">All colors</option>
-                <option value="purple">Purple</option>
-                <option value="red">Red</option>
-                <option value="blue">Blue</option>
-                <option value="green">Green</option>
-              </select>
-            </label>
+                <span className="n">{n}</span> {label}
+              </button>
+            ))}
+          </div>
+          <div className="pcon-toolbar-filters">
+            <select
+              className="select-clean"
+              aria-label="Color week"
+              style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+              value={colorFilter}
+              onChange={(e) => setColorFilter(e.target.value as ColorWeek | "all")}
+            >
+              <option value="all">All colors</option>
+              <option value="purple">Purple</option>
+              <option value="red">Red</option>
+              <option value="blue">Blue</option>
+              <option value="green">Green</option>
+            </select>
             <label className="row" style={{ gap: 8, cursor: "pointer" }}>
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-              <span className="muted">Show inactive</span>
+              <span className="muted">Inactive</span>
             </label>
           </div>
         </div>
 
-        <div className="stack" style={{ gap: 8 }}>
-          <div className="row" style={{ gap: 8 }}>
-            <span className="muted" style={{ fontSize: 13 }}>
-              Videographers
-            </span>
-            {isAdmin ? (
-              <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add videographer</button>
-            ) : null}
-            <span className="muted" style={{ fontSize: 12 }}>
-              One production per day each. A booked day blocks that videographer&apos;s other clients.
-            </span>
-          </div>
-          {videographers.length ? (
-            <div className="stack" style={{ gap: 6 }}>
-              {videographers.map((v) => {
-                const off = daysOff(v);
-                return (
-                  <div key={v.id} className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 13, minWidth: 120 }}>{v.name}</span>
-                    {isAdmin ? (
-                      <span className="row" style={{ gap: 6, alignItems: "center" }}>
-                        <span className="muted" style={{ fontSize: 12 }}>Shoots on</span>
-                        {WEEKDAYS.map((d) => {
-                          const available = !off.includes(d.n);
-                          return (
-                            <button
-                              key={d.n}
-                              type="button"
-                              className={`btn btn-sm ${available ? "btn-secondary" : "btn-ghost"}`}
-                              title={
-                                available
-                                  ? `${v.name} shoots on ${d.label}. Click to make it a standing day off.`
-                                  : `${v.name} never shoots on ${d.label}. Click to open it back up.`
-                              }
-                              style={available ? undefined : { textDecoration: "line-through", opacity: 0.5 }}
-                              onClick={() =>
-                                setDaysOff(
-                                  v.id,
-                                  available ? [...off, d.n] : off.filter((n) => n !== d.n)
-                                )
-                              }
-                            >
-                              {d.label}
-                            </button>
-                          );
-                        })}
-                      </span>
-                    ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        {off.length
-                          ? `No ${off.map((n) => WEEKDAYS.find((d) => d.n === n)?.label || n).join(", ")}`
-                          : "Every weekday"}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>None yet.</span>
-          )}
-        </div>
-
-        {bc ? (
-          <div className="card card-pad row" style={{ justifyContent: "space-between", gap: 12 }}>
-            <span className="row" style={{ gap: 8 }}>
-              <span
-                className="color-dot"
-                style={{ background: bc.connected ? "var(--success)" : "var(--border-strong)" }}
-              />
-              <strong>Basecamp</strong>
-              <span className="muted">
-                {bc.connected
-                  ? bc.identity
-                    ? `Reminders and approval cards post as ${bc.identity.name}.`
-                    : "Connected. Scheduling cards post to each client's project."
-                  : bc.configured
-                    ? "Not connected yet."
-                    : "Not configured. Add the Basecamp integration keys on the server."}
-              </span>
-              {/* The shared connection is supposed to be the mascot account. If
-                  it is somebody's own login, everything automated is going out
-                  under their name and they should know. */}
-              {bc.personalLoginInUse ? (
-                <span className="error" style={{ fontSize: 12 }}>
-                  This is {bc.personalLoginInUse.name}&apos;s personal Basecamp
-                  login. Reconnect as the mascot account so automated posts are
-                  not attributed to them.
-                </span>
-              ) : null}
-            </span>
-            {bc.configured && !bc.connected ? (
-              <a className="btn btn-sm" href="/api/basecamp/connect">Connect Basecamp</a>
-            ) : null}
-            {bc.connected ? (
-              <span className="row" style={{ gap: 8 }}>
-                <button className="btn btn-sm" onClick={autoMatch}>Auto-match projects</button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => runMatch({ createMissing: true, dryRun: true })}
-                >
-                  Import clients from Basecamp
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-        {matchMsg ? <p className="muted" style={{ marginTop: -6 }}>{matchMsg}</p> : null}
+        {matchMsg ? <p className="muted">{matchMsg}</p> : null}
 
         {importPreview ? (
           <div className="card card-pad" style={{ marginBottom: 16 }}>
@@ -1985,13 +1855,27 @@ export default function ProductionPage() {
         {loading ? (
           <p className="muted">Loading...</p>
         ) : visible.length === 0 ? (
-          <div className="empty"><p>No clients to show.</p></div>
+          <div className="empty">
+            <p>
+              {statusFilter === "need"
+                ? "Nobody needs a shoot right now."
+                : statusFilter === "asked"
+                  ? "Nobody is waiting on a booking."
+                  : statusFilter === "booked"
+                    ? "No shoots on the books."
+                    : "No clients to show."}
+            </p>
+          </div>
         ) : (
           <div className="pcon-list">
             {visible.map((r) => {
               const c = r.client;
               const open = openRow === c.id;
               const hint = rowHint(r, Boolean(c.outreach_paused));
+              const when = whenCopy(r, today);
+              const had = shootCount(r);
+              const first = !c.last_production_date;
+              const asking = extraAsk?.clientId === c.id && extraAsk.kind === "first";
               return (
                 <div
                   key={c.id}
@@ -2017,12 +1901,6 @@ export default function ProductionPage() {
                         )}
                         {" · "}
                         {editableField(
-                          r, "account_manager", "select", c.account_manager,
-                          <span>{c.account_manager || "no manager"}</span>,
-                          ACCOUNT_MANAGER_OPTIONS
-                        )}
-                        {" · "}
-                        {editableField(
                           r, "videographer_id", "select", c.videographer_id,
                           <span>{vidName(c.videographer_id) || "no videographer"}</span>,
                           vidOptions
@@ -2030,107 +1908,44 @@ export default function ProductionPage() {
                       </p>
                     </div>
 
-                    {r.window ? (
-                      <div className="pcon-strip">
-                        <div className="pcon-mon">{monthOf(r.window.start)}</div>
-                        <div className="pcon-cells">
-                          {windowDays(r.window).map((d, i) => {
-                            const booked = r.existingSend?.sendDate === d;
-                            const past = Boolean(today) && d < today;
-                            const cls = booked ? "is-on" : past ? "is-gone" : "is-open";
-                            return (
-                              <div
-                                key={d}
-                                className={`pcon-cell ${cls}`}
-                                title={
-                                  booked
-                                    ? `Booked ${fmtDate(d)}`
-                                    : past
-                                      ? `${fmtDate(d)} has passed`
-                                      : `${fmtDate(d)} is open`
-                                }
-                              >
-                                <span className="dow">{DOW_LETTER[i]}</span>
-                                <span className="dnum">{dayNumber(d)}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="pcon-when">{whenLabel(r.window, today)}</div>
-                      </div>
-                    ) : (
-                      <p className="pcon-nowindow">
-                        No window until a colour week and cadence are set.
-                      </p>
-                    )}
+                    <div className="pcon-when-block">
+                      <span className="pcon-k">When</span>
+                      <strong>{when.title}</strong>
+                      <span className="muted">{when.sub}</span>
+                    </div>
 
-                    <div className="pcon-facts">
-                      <div className="pcon-line">
-                        <span className="k">Last shoot</span>
-                        {editableField(
-                          r, "last_production_date", "date", c.last_production_date || "",
-                          <span className="v">{fmtDate(c.last_production_date)}</span>
-                        )}
-                      </div>
-                      {r.existingSend ? (
-                        <div className="pcon-line">
-                          <span className="k">Booked</span>
-                          <span className="v">{fmtDate(r.existingSend.sendDate)}</span>
-                        </div>
-                      ) : null}
-                      {outreachCount(r) > 0 ? (
-                        <div className="pcon-line">
-                          <span className="k">Outreach</span>
-                          <span className="v">
-                            {r.currentReachoutLast
-                              ? `${fmtDate(r.currentReachoutLast.ymd)} (${REACHOUT_LABEL[r.currentReachoutLast.channel]})`
-                              : r.lastEmailSent
-                                ? fmtDate(r.lastEmailSent)
-                                : "sent"}
-                            {outreachCount(r) > 1 ? `, ${outreachCount(r)}x` : ""}
-                          </span>
-                        </div>
-                      ) : null}
+                    <div className="pcon-count">
+                      <span className="pcon-k">Done</span>
+                      <strong>{had}</strong>
+                      <span className="muted">{had === 1 ? "shoot" : "shoots"}</span>
                     </div>
 
                     <div className="pcon-act">
                       <div className="pcon-act-row">
-                      {/* A client who has been asked and has not booked reads as
-                          "Not due yet" on status alone, which looks like nothing
-                          has happened. Say the ask happened instead: it is the
-                          thing you need to know when deciding whether to chase.
-                          Reminders start 21 days before a window opens, so this
-                          state is normal for three weeks while status still,
-                          truthfully, says the window has not started. */}
-                      {r.overridden ? (
-                        // Hand-set, so it wins over everything the row could
-                        // work out for itself. The real status stays in the
-                        // hint: a pinned row should never be able to lie
-                        // about what the cadence engine thinks.
-                        <span className={`pcon-pill ${TONE[r.status]}`}>
-                          {STATUS_LABEL[r.status]} (set)
-                        </span>
-                      ) : !r.existingSend && outreachCount(r) > 0 ? (
-                        <span className="pcon-pill is-warn">
-                          Outreach sent{outreachCount(r) > 1 ? ` ${outreachCount(r)}x` : ""}
-                        </span>
-                      ) : (
-                        <span className={`pcon-pill ${TONE[r.status]}`}>
-                          {STATUS_LABEL[r.status]}
-                        </span>
-                      )}
+                      <span className={`pcon-pill ${r.overridden ? TONE[r.status] : needTone(r)}`}>
+                        {r.overridden ? `${STATUS_LABEL[r.status]} (set)` : needLabel(r)}
+                      </span>
                       {c.outreach_paused ? (
-                        <span className="pcon-pill is-bad">
-                          Paused
-                        </span>
+                        <span className="pcon-pill is-bad">Paused</span>
                       ) : null}
-                      {r.existingSend ? (
+                      {r.openExtraRequest?.kind === "first" ? (
+                        <span className="pcon-pill is-warn">Invited</span>
+                      ) : null}
+                      {first && isAdmin && !r.openExtraRequest && !asking ? (
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          onClick={() => openExtraAsk(c.id, "first")}
+                        >
+                          Invite
+                        </button>
+                      ) : r.existingSend ? (
                         <Link className="btn btn-secondary btn-sm" href={`/admin/production/${r.existingSend.id}`}>
                           Open
                         </Link>
                       ) : isAdmin ? (
                         <button className="btn btn-secondary btn-sm" onClick={() => openLog(c.id)}>
-                          {r.window ? "Log a shoot" : "Request extra"}
+                          Log
                         </button>
                       ) : null}
                       <button
@@ -2146,9 +1961,54 @@ export default function ProductionPage() {
                       ) : null}
                     </div>
                   </div>
+                  {asking ? (
+                    <div className="pcon-more">{extraAskForm(c.id)}</div>
+                  ) : null}
 
                   {open ? (
                     <div className="pcon-more">
+                      {r.window ? (
+                        <div>
+                          <span className="k">Window</span>
+                          <div className="v">
+                            <div className="pcon-strip">
+                              <div className="pcon-mon">{monthOf(r.window.start)}</div>
+                              <div className="pcon-cells">
+                                {windowDays(r.window).map((d, i) => {
+                                  const booked = r.existingSend?.sendDate === d;
+                                  const past = Boolean(today) && d < today;
+                                  const cls = booked ? "is-on" : past ? "is-gone" : "is-open";
+                                  return (
+                                    <div key={d} className={`pcon-cell ${cls}`} title={fmtDate(d)}>
+                                      <span className="dow">{DOW_LETTER[i]}</span>
+                                      <span className="dnum">{dayNumber(d)}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div>
+                        <span className="k">Last shoot</span>
+                        <div className="v">
+                          {editableField(
+                            r, "last_production_date", "date", c.last_production_date || "",
+                            <span>{fmtDate(c.last_production_date)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">Manager</span>
+                        <div className="v">
+                          {editableField(
+                            r, "account_manager", "select", c.account_manager,
+                            <span>{c.account_manager || "Not set"}</span>,
+                            ACCOUNT_MANAGER_OPTIONS
+                          )}
+                        </div>
+                      </div>
                       <div>
                         <span className="k">Contact</span>
                         <div className="v">
@@ -2337,31 +2197,120 @@ export default function ProductionPage() {
           </div>
         )}
 
-        <div className="pcon-legend">
-          <span><i className="pcon-sw is-on" /> booked</span>
-          <span><i className="pcon-sw is-open" /> open to book</span>
-          <span><i className="pcon-sw is-gone" /> day has passed</span>
-          <span>The left edge of each row is the client&apos;s colour week.</span>
-        </div>
+        <details className="pcon-fold">
+          <summary>Crew and Basecamp</summary>
+          <div className="pcon-fold-body stack">
+            <div className="stack" style={{ gap: 8 }}>
+              <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                <strong style={{ fontSize: 13 }}>Videographers</strong>
+                {isAdmin ? (
+                  <button className="btn btn-ghost btn-sm" onClick={addVideographer}>+ Add</button>
+                ) : null}
+              </div>
+              {videographers.length ? (
+                <div className="stack" style={{ gap: 6 }}>
+                  {videographers.map((v) => {
+                    const off = daysOff(v);
+                    return (
+                      <div key={v.id} className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, minWidth: 120 }}>{v.name}</span>
+                        {isAdmin ? (
+                          <span className="row" style={{ gap: 6, alignItems: "center" }}>
+                            {WEEKDAYS.map((d) => {
+                              const available = !off.includes(d.n);
+                              return (
+                                <button
+                                  key={d.n}
+                                  type="button"
+                                  className={`btn btn-sm ${available ? "btn-secondary" : "btn-ghost"}`}
+                                  title={available ? `Shoots ${d.label}` : `Off ${d.label}`}
+                                  style={available ? undefined : { textDecoration: "line-through", opacity: 0.5 }}
+                                  onClick={() =>
+                                    setDaysOff(
+                                      v.id,
+                                      available ? [...off, d.n] : off.filter((n) => n !== d.n)
+                                    )
+                                  }
+                                >
+                                  {d.label}
+                                </button>
+                              );
+                            })}
+                          </span>
+                        ) : (
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {off.length
+                              ? `No ${off.map((n) => WEEKDAYS.find((d) => d.n === n)?.label || n).join(", ")}`
+                              : "Every weekday"}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className="muted" style={{ fontSize: 13 }}>None yet.</span>
+              )}
+            </div>
+            {bc ? (
+              <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <span
+                    className="color-dot"
+                    style={{ background: bc.connected ? "var(--success)" : "var(--border-strong)" }}
+                  />
+                  <strong>Basecamp</strong>
+                  <span className="muted">
+                    {bc.connected
+                      ? bc.identity
+                        ? `Posts as ${bc.identity.name}`
+                        : "Connected"
+                      : bc.configured
+                        ? "Not connected"
+                        : "Not configured"}
+                  </span>
+                  {bc.personalLoginInUse ? (
+                    <span className="error" style={{ fontSize: 12 }}>
+                      Using {bc.personalLoginInUse.name}&apos;s personal login.
+                    </span>
+                  ) : null}
+                </span>
+                {bc.configured && !bc.connected ? (
+                  <a className="btn btn-sm" href="/api/basecamp/connect">Connect</a>
+                ) : null}
+                {bc.connected ? (
+                  <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <button className="btn btn-sm" onClick={autoMatch}>Auto-match</button>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => runMatch({ createMissing: true, dryRun: true })}
+                    >
+                      Import clients
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </details>
 
         {isAdmin && removed.length > 0 ? (
-          <div className="card card-pad stack">
-            <strong>Removed from production ({removed.length})</strong>
-            <p className="muted" style={{ margin: 0 }}>
-              These clients are kept in full but don&apos;t get productions or reminders.
-              Add one back anytime.
-            </p>
-            <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-              {removed.map((r) => (
-                <span key={r.client.id} className="removed-chip">
-                  {r.client.name}
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEnrolled(r.client.id, true)}>
-                    Add to production
-                  </button>
-                </span>
-              ))}
+          <details className="pcon-fold">
+            <summary>Removed from production ({removed.length})</summary>
+            <div className="pcon-fold-body">
+              <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                {removed.map((r) => (
+                  <span key={r.client.id} className="removed-chip">
+                    {r.client.name}
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEnrolled(r.client.id, true)}>
+                      Add back
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          </details>
         ) : null}
           </>
         ) : tab === "awaiting" ? (
@@ -2373,11 +2322,6 @@ export default function ProductionPage() {
             </div>
           ) : (
             <>
-              <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
-                Asked and still not booked, most chased first. The tally counts
-                outreach for their current window only, so it resets when the
-                window moves on.
-              </p>
               <div className="pcon-list">
                 {awaiting.map((r) => {
                   const c = r.client;
@@ -2385,7 +2329,7 @@ export default function ProductionPage() {
                   return (
                     <div key={c.id} className="pcon-band" data-week={c.color_week}>
                       <div className="pcon-rail" aria-hidden="true" />
-                      <div className="pcon-in">
+                      <div className="pcon-in pcon-in-queue">
                         <div className="pcon-who">
                           <h3>{c.name}</h3>
                           <p className="pcon-meta">
@@ -2740,7 +2684,7 @@ function ProductionQueue({
         return (
           <div key={production.id} className="pcon-band">
             <div className="pcon-rail" aria-hidden="true" />
-            <div className="pcon-in">
+            <div className="pcon-in pcon-in-queue">
               <div className="pcon-who">
                 <h3>
                   {production.client_name}

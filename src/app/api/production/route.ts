@@ -10,7 +10,7 @@ import {
   reachoutsForWindow,
 } from "@/lib/reachouts";
 import { listVideographers } from "@/lib/videographers";
-import { listProductionSends } from "@/lib/calendar";
+import { listProductionSends, productionStatsByClient } from "@/lib/calendar";
 import { listOpenExtraRequests } from "@/lib/extra-requests";
 
 export async function GET() {
@@ -18,6 +18,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const today = todayYmd();
+  const shootStats = productionStatsByClient(today);
   const clients = listRevClients(true).map((client) => {
     const window = nextWindow(client, today);
     const { status, real: realStatus, overridden } = effectiveCycleStatus(
@@ -101,6 +102,7 @@ export async function GET() {
             kind: openExtraRequest.kind === "first" ? "first" : "extra",
           }
         : null,
+      shoots: shootStats.get(client.id) || { had: 0, upcoming: null },
     };
   });
   return NextResponse.json({

@@ -128,6 +128,49 @@ export interface ProductionSend extends ScheduledSend {
   videographer: string;
 }
 
+export type ClientProductionStats = {
+  had: number;
+  upcoming: { date: string; time: string; status: string } | null;
+};
+
+// Completed vs next booked shoot, per client. Powers the production desk so a
+// row can say "3 done · next Oct 9" without another round trip.
+export function productionStatsByClient(today: string): Map<string, ClientProductionStats> {
+  const rows = getDb()
+    .prepare(
+      `SELECT client_id, send_date, send_time, status
+         FROM scheduled_sends
+        WHERE client_id IS NOT NULL
+          AND client_id != ''
+          AND cancelled_at IS NULL
+          AND ${PRODUCTION_PREDICATE}
+        ORDER BY send_date ASC, send_time ASC`
+    )
+    .all() as Array<{
+    client_id: string;
+    send_date: string;
+    send_time: string;
+    status: string;
+  }>;
+
+  const map = new Map<string, ClientProductionStats>();
+  for (const row of rows) {
+    const cur = map.get(row.client_id) || { had: 0, upcoming: null };
+    const done = row.status === "sent" || row.send_date < today;
+    if (done) {
+      cur.had += 1;
+    } else if (!cur.upcoming) {
+      cur.upcoming = {
+        date: row.send_date,
+        time: row.send_time,
+        status: row.status,
+      };
+    }
+    map.set(row.client_id, cur);
+  }
+  return map;
+}
+
 function normalizeStatus(v: unknown): SendStatus {
   return STATUSES.includes(v as SendStatus) ? (v as SendStatus) : "planned";
 }
