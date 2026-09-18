@@ -4805,6 +4805,32 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .sched-disclaimer p + p {
   margin-top: 8px;
 }
+/* Standing cancel/reschedule policy on client production schedule pages. */
+.sched-policy {
+  margin: 4px 0 12px;
+  padding: 16px 18px;
+  max-width: 62ch;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.sched-policy-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.sched-policy p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.sched-policy p + p {
+  margin-top: 10px;
+}
 .sched-confirmed {
   text-align: center;
   padding: 40px 24px;
