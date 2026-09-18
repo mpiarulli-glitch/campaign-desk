@@ -8,6 +8,12 @@ export type ForecastSubtaskRow = {
   completed: number;
 };
 
+function fitSubtaskNotes(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 function noticeFromBasecamp(json: {
   basecamp?: {
     synced?: boolean;
@@ -142,9 +148,12 @@ export function ForecastSubtasks({
             onChange={() => void patch(s.id, { completed: !s.completed })}
             aria-label={s.completed ? "Mark subtask incomplete" : "Mark subtask complete"}
           />
-          <input
+          <textarea
             key={`${s.id}-notes`}
             defaultValue={s.notes}
+            rows={1}
+            ref={fitSubtaskNotes}
+            onInput={(e) => fitSubtaskNotes(e.currentTarget)}
             onBlur={(e) => {
               const next = e.target.value.trim();
               if (!next || next === s.notes) {
@@ -169,12 +178,17 @@ export function ForecastSubtasks({
 
       {showForm ? (
         <div className="ops-subtask is-add">
-          <input
+          <textarea
             autoFocus
+            rows={1}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            ref={fitSubtaskNotes}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              fitSubtaskNotes(e.currentTarget);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 void add();
               }
