@@ -421,14 +421,15 @@ export default function ClientDashboardPage() {
                       {view === "list" ? (
                         <div className="cal-list is-plain">
                           <div className="cal-list-head" aria-hidden="true">
+                            <span>Title</span>
                             <span>Date</span>
                             <span>Time</span>
                             <span>Type</span>
-                            <span>Title</span>
                           </div>
                           {listGroups.flatMap(([date, items]) =>
                             items.map((s) => (
                               <div key={s.id} className="cal-list-row is-static">
+                                <span className="cal-list-title">{s.title}</span>
                                 <span className="cal-list-date">{fmtListDay(date)}</span>
                                 <span className="cal-list-time">
                                   {s.send_time ? fmtTime(s.send_time) : "—"}
@@ -438,7 +439,6 @@ export default function ClientDashboardPage() {
                                     ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type
                                     : "—"}
                                 </span>
-                                <span className="cal-list-title">{s.title}</span>
                               </div>
                             ))
                           )}

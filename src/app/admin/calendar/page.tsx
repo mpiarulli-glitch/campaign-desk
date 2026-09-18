@@ -771,11 +771,11 @@ export default function CalendarPage() {
           hasVisibleSends ? (
             <div className="cal-list">
               <div className="cal-list-head" aria-hidden="true">
+                <span>Title</span>
                 <span>Date</span>
                 <span>Time</span>
                 <span>Client</span>
                 <span>Type</span>
-                <span>Title</span>
                 <span>Status</span>
               </div>
               {listGroups.flatMap(([, items]) => items).map((s) => (
@@ -789,18 +789,18 @@ export default function CalendarPage() {
                   onMouseEnter={(e) => showHover(e, s)}
                   onMouseLeave={hideHover}
                 >
-                  <span className="cal-list-date">{fmtListDay(s.send_date)}</span>
-                  <span className="cal-list-time">{s.send_time ? fmtTime(s.send_time) : "—"}</span>
-                  <span className="cal-list-client">{s.client_name || "—"}</span>
-                  <span className="cal-list-type">
-                    {s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : "—"}
-                  </span>
                   <span className="cal-list-title">
                     {isProduction(s) ? "🎥 " : ""}
                     {s.title}
                     {feedbackBySend.has(s.id) ? (
                       <span className="cal-chip-note" title="Client left a note">💬</span>
                     ) : null}
+                  </span>
+                  <span className="cal-list-date">{fmtListDay(s.send_date)}</span>
+                  <span className="cal-list-time">{s.send_time ? fmtTime(s.send_time) : "—"}</span>
+                  <span className="cal-list-client">{s.client_name || "—"}</span>
+                  <span className="cal-list-type">
+                    {s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : "—"}
                   </span>
                   <span className={`cal-pop-status chip-${s.status}`}>{STATUS_LABEL[s.status]}</span>
                 </button>
