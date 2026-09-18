@@ -610,7 +610,7 @@ function ColorDot({
     <div className="fc-colordot" ref={wrapRef}>
       <button
         type="button"
-        className={`fc-swatch col-${current} is-on`}
+        className={`fc-swatch fc-color-select col-${current} is-on`}
         aria-label={`Colour: ${label}. Change it`}
         aria-expanded={open}
         title={`${label} — click to change`}
@@ -1136,7 +1136,7 @@ function parseForecastView(raw: string | null, weekStart: string): View {
  * wider. Rows like that already sit slightly out of step with each other for
  * the same reason, so the header follows the common case.
  *
- * Only Client, Task and Forecasted Time get a label. The start time stays bare
+ * Only Client, Task, Hours and Color get a label. The start time stays bare
  * on purpose: it is there to place the task on the calendar tab, not to be
  * read down the column.
  */
@@ -1146,7 +1146,7 @@ function ListColumnHeaders() {
       <input type="checkbox" tabIndex={-1} disabled />
       <span className="ops-list-head-client">Client</span>
       <span className="ops-list-head-task">Task</span>
-      <span className="ops-list-head-hours">Forecasted Time</span>
+      <span className="ops-list-head-hours">Hours</span>
       <span className="ops-list-head-color">Color</span>
       <span className="ops-row-actions">
         <button type="button" className="fc-timer-btn" tabIndex={-1} disabled>

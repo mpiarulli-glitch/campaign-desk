@@ -6068,9 +6068,9 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 :root[data-theme="dark"] .ops-list-row .fc-move-btn,
 :root[data-theme="dark"] .ops-list-row .fc-subtask-btn,
 :root[data-theme="dark"] .ops-list-row .fc-log-pill {
-  background: #242428;
-  border-color: #55555c;
-  color: #f0f0f2;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
 }
 :root[data-theme="dark"] .ops-list-row .fc-timer-btn:hover,
 :root[data-theme="dark"] .ops-list-row .fc-move-btn:hover,
@@ -8036,30 +8036,47 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 
 /* A task's colour is a Notion-style select on the list, and a filled block
    on the calendar. Tinting the whole list row drowned the week. */
+.ops-list-row .fc-colordot {
+  width: 100%;
+}
 .ops-list-row .fc-colordot > .fc-swatch {
-  width: auto;
-  min-width: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
   height: 22px;
   border-radius: 4px;
-  border: none;
-  padding: 0 8px;
+  border: 1px solid var(--border);
+  padding: 0 8px 0 7px;
   font: inherit;
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0;
-  line-height: 22px;
-  color: var(--fc-block);
-  background: color-mix(in srgb, var(--fc-block) 16%, var(--bg-elevated));
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-elevated);
   opacity: 1;
   transform: none;
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
+}
+.ops-list-row .fc-colordot > .fc-swatch::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--fc-block);
+  flex: none;
 }
 .ops-list-row .fc-colordot > .fc-swatch:hover,
 .ops-list-row .fc-colordot > .fc-swatch.is-on {
   opacity: 1;
   transform: none;
-  background: color-mix(in srgb, var(--fc-block) 24%, var(--bg-elevated));
+  color: var(--text);
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
 }
 
 .fc-swatches { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
@@ -8742,6 +8759,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ops-list-stack {
+  --ops-list-cols: 16px minmax(140px, 1.1fr) minmax(180px, 1.7fr) 64px 92px minmax(220px, auto);
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg-elevated);
@@ -8756,20 +8774,21 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .ops-list-stack .ops-list-head {
   margin: 0;
-  padding: 0 10px;
-  min-height: 34px;
+  padding: 0 12px;
+  min-height: 32px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-soft) 65%, var(--bg-elevated));
   border-radius: 0;
 }
 .ops-list-row {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--ops-list-cols);
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 0 10px;
-  min-height: 38px;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 0 12px;
+  min-height: 36px;
   border-radius: 0;
   background: var(--bg-elevated);
   border: none;
@@ -8843,12 +8862,15 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   border-top-right-radius: 0;
   box-shadow: none;
 }
+.ops-list-row > .ops-subtasks {
+  grid-column: 1 / -1;
+}
 .ops-subtasks {
   display: flex;
   flex-direction: column;
   gap: 4px;
   flex: 1 1 100%;
-  margin: 2px 0 0 28px;
+  margin: 2px 0 6px 26px;
 }
 .ops-subtask {
   display: flex;
@@ -9003,12 +9025,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 /* Column headers above the list rows. Desktop only: under 721px the row
    reflows into stacked bands and there are no columns left to head. */
 .ops-list-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--ops-list-cols);
   align-items: center;
-  gap: 8px;
+  column-gap: 10px;
   padding: 0 12px;
-  min-height: 36px;
-  font-size: 12px;
+  min-height: 32px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
@@ -9021,54 +9044,82 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-head .ops-row-actions {
   visibility: hidden;
 }
-.ops-list-head-client {
-  flex: 1 1 150px;
-  min-width: 0;
-}
+.ops-list-head-client,
 .ops-list-head-task {
-  flex: 2 1 240px;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ops-list-head-hours {
-  flex: none;
-  width: 52px;
   text-align: right;
 }
 .ops-list-head-color {
-  flex: none;
-  min-width: 64px;
+  min-width: 0;
+}
+.ops-list-row > input[type="checkbox"],
+.ops-list-head > input[type="checkbox"] {
+  grid-column: 1;
+  justify-self: center;
+}
+.ops-list-row input.client,
+.ops-list-head-client { grid-column: 2; }
+.ops-list-row input.notes,
+.ops-list-head-task { grid-column: 3; }
+.ops-list-row > .ops-hrs,
+.ops-list-head-hours { grid-column: 4; }
+.ops-list-row > .fc-colordot,
+.ops-list-head-color { grid-column: 5; }
+.ops-list-row > .ops-row-actions,
+.ops-list-head > .ops-row-actions {
+  grid-column: 6;
+  margin-left: 0;
+  justify-self: end;
+}
+
+.ops-list-row .ops-hrs {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+.ops-list-row .ops-hrs .muted {
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .ops-list-row .fc-timer-btn,
 .ops-list-row .fc-move-btn,
 .ops-list-row .fc-subtask-btn,
 .ops-list-row .fc-log-pill {
+  height: 24px;
+  padding: 0 8px;
   border-radius: 4px;
   border-color: var(--border);
   background: transparent;
   font-weight: 500;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }
 .ops-list-row .fc-timer-btn.is-running,
 .ops-list-row .fc-log-pill.is-logged {
   background: color-mix(in srgb, var(--success) 12%, var(--bg-elevated));
+  color: var(--success);
 }
 .ops-list-row .fc-timer-btn.is-running {
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-elevated));
+  color: var(--danger);
 }
 
-/* The row is flex-wrap, and it breaks onto a second line well before the 720px
-   mobile rules take over: 950px with the usual controls, 960px once a row
-   carries a running timer and a logged-hours label. A wrapped row and a
-   wrapped header do not line up, so the header only appears above that, with
-   headroom for labels longer than the ones measured. */
-@media (max-width: 1009px) {
-  .ops-list-head { display: none; }
-}
+/* Grid keeps columns lined up, so the header can stay down to the stacked
+   mobile layout. */
 .ops-list-row input.client {
-  flex: 1 1 150px;
+  width: 100%;
   min-width: 0;
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text);
   border: none;
   background: none;
@@ -9076,18 +9127,18 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   font-family: inherit;
 }
 .ops-list-row input.notes {
-  flex: 2 1 240px;
+  width: 100%;
   min-width: 0;
   border: none;
   background: none;
   padding: 2px 0;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   font-family: inherit;
   color: var(--text);
 }
 .ops-list-row input.hrs {
-  width: 42px;
+  width: 36px;
   border: none;
   background: none;
   text-align: right;
@@ -10156,12 +10207,22 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
      do with it. Ordered flex rather than named grid areas, because siblings
      sharing one grid area stack on top of each other instead of sitting side
      by side. */
+  .ops-list-head { display: none; }
   .ops-list-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 7px 9px;
     padding: 12px 13px;
+  }
+  .ops-list-row > input[type="checkbox"],
+  .ops-list-row input.client,
+  .ops-list-row input.notes,
+  .ops-list-row > .ops-hrs,
+  .ops-list-row > .fc-colordot,
+  .ops-list-row > .ops-row-actions,
+  .ops-list-row > .ops-subtasks {
+    grid-column: auto;
   }
   .ops-list-row > .ops-row-handle {
     order: 0;
@@ -10815,6 +10876,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 
 /* Work vs Meeting switch on the forecast add form. */
 .fc-mode { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.ops-list-add .fc-mode { border-radius: 4px; }
 .fc-mode-btn {
   appearance: none;
   border: 0;
