@@ -20611,20 +20611,53 @@ div.snap-n-title {
   align-items: center;
 }
 .fc-add-quiet {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
-  margin-top: 4px;
-  padding: 8px 10px;
-  border: 0;
-  background: none;
-  color: var(--text-muted);
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border-strong);
+  background: color-mix(in srgb, var(--accent-wash) 70%, var(--bg-elevated));
+  color: var(--accent-ink);
   font: inherit;
   font-size: 13px;
-  text-align: left;
+  font-weight: 650;
+  text-align: center;
   cursor: pointer;
   border-radius: 4px;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
-.fc-add-quiet:hover { color: var(--text); background: var(--bg-soft); }
+.fc-add-quiet-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.fc-add-quiet:hover {
+  color: var(--text);
+  background: var(--accent-wash);
+  border-color: var(--accent-ink);
+}
+.fc-add-quiet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ops-list-stack + .fc-add-quiet,
+.fc-day-empty + .fc-add-quiet {
+  margin-top: 10px;
+}
 .fc-add-cancel {
   display: block;
   margin-top: 6px;
