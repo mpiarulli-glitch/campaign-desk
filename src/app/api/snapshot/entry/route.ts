@@ -69,6 +69,8 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    // The picker only offers to-dos from this client's linked project id; refuse
+    // anything else so a crafted request can't attach another client's work.
     if (basecampTodo.projectId !== linked) {
       return NextResponse.json(
         { error: "That to-do is not from this client’s Basecamp project." },

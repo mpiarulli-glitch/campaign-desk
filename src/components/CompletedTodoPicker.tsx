@@ -139,10 +139,12 @@ export function CompletedTodoPicker({
   }
 
   const closedLabel = selected?.title || "";
+  const scopeWarn =
+    reason === "project-mismatch" || reason === "not-client-project";
   const fromLine = projectName
-    ? `Basecamp project: ${projectName}`
+    ? `From Basecamp project: ${projectName}`
     : clientName
-      ? `Linked Basecamp project for ${clientName}`
+      ? `From the Basecamp project linked to ${clientName}`
       : "";
   const hint = loading
     ? "Loading completed to-dos…"
@@ -150,18 +152,25 @@ export function CompletedTodoPicker({
       ? "This client has no Basecamp project set."
       : reason === "not-connected"
         ? "Basecamp isn’t connected."
-        : reason === "project-mismatch"
-          ? `Linked project “${projectName || "unknown"}” doesn’t look like ${clientName || "this client"}. Check the Basecamp project on the client record.`
-          : reason === "no-todos"
-            ? "No completed Basecamp to-dos found in this client’s project."
-            : reason === "failed"
-              ? "Could not load completed to-dos."
-              : todos.length
-                ? `${todos.length} completed to-do${todos.length === 1 ? "" : "s"} from this client’s project.`
-                : "";
+        : reason === "not-client-project"
+          ? `“${projectName || "That project"}” is an internal/template Basecamp project, not ${clientName || "this client"}. Fix the Basecamp project on the client record.`
+          : reason === "project-mismatch"
+            ? `Linked project “${projectName || "unknown"}” doesn’t look like ${clientName || "this client"}. Check the Basecamp project on the client record.`
+            : reason === "no-todos"
+              ? "No completed Basecamp to-dos found in this client’s project."
+              : reason === "failed"
+                ? "Could not load completed to-dos."
+                : todos.length
+                  ? `${todos.length} completed to-do${todos.length === 1 ? "" : "s"} from this client’s project only.`
+                  : "";
 
   return (
     <div className="snap-completed-todo">
+      {fromLine ? (
+        <p className={`snap-todo-project ${scopeWarn ? "is-warn" : "muted"}`}>
+          {fromLine}
+        </p>
+      ) : null}
       <div className="fc-combo fc-combo-todos snap-todo-combo" ref={wrapRef}>
         <input
           value={open ? query : closedLabel}
@@ -178,9 +187,9 @@ export function CompletedTodoPicker({
           aria-autocomplete="list"
           aria-label="Completed Basecamp to-do"
           autoComplete="off"
-          disabled={loading}
+          disabled={loading || reason === "not-client-project"}
         />
-        {open ? (
+        {open && reason !== "not-client-project" ? (
           <ul className="fc-combo-list" id={listId} role="listbox">
             {groups.length === 0 ? (
               <li className="fc-combo-empty">
@@ -235,13 +244,8 @@ export function CompletedTodoPicker({
           Clear link
         </button>
       ) : null}
-      {fromLine ? (
-        <p className={`snap-todo-project ${reason === "project-mismatch" ? "is-warn" : "muted"}`}>
-          {fromLine}
-        </p>
-      ) : null}
       {hint ? (
-        <p className={`snap-todo-hint ${reason === "project-mismatch" ? "is-warn" : "muted"}`}>
+        <p className={`snap-todo-hint ${scopeWarn ? "is-warn" : "muted"}`}>
           {hint}
         </p>
       ) : null}
