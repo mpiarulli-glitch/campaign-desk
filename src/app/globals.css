@@ -15048,6 +15048,13 @@ button.am-node:hover .am-edit-cue,
   color: var(--text-muted);
 }
 
+.cs-edit-input {
+  width: 100%;
+  max-width: 220px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
 /* Something missing that would stop the ask working. Reads as a gap to fill
    rather than as an error, because none of these block the whole send. */
 .cs-gap {

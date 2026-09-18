@@ -28,6 +28,7 @@ import {
 } from "./extra-requests";
 import { isFirstProductionClient } from "./first-production";
 import { resolveMissedAllocatedWindow } from "./missed-production-window";
+import { syncProductionScheduleCard } from "./production-card-sync";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -498,6 +499,13 @@ export async function submitProductionBooking(
   await sendProductionRequestReceived(result.client, result.send, {
     first: isFirstProductionClient(result.client),
   });
+  // Fire-and-forget: booking already succeeded. Moves Needs Approval → Approved
+  // and clears the card due date on the Deliverables board.
+  void syncProductionScheduleCard({
+    client: result.client,
+    windowStart: result.send.cadence_window_start,
+    sendId: result.send.id,
+  });
 
   return result;
 }
@@ -695,6 +703,11 @@ export async function submitOutOfCycleBooking(
   await sendProductionRequestReceived(result.client, result.send, {
     first: Boolean(firstInvite),
   });
+  void syncProductionScheduleCard({
+    client: result.client,
+    windowStart: result.send.cadence_window_start,
+    sendId: result.send.id,
+  });
 
   return result;
 }
@@ -883,6 +896,12 @@ export async function recordManualProduction(
     await sendProductionRequestReceived(result.client, result.send);
   }
 
+  void syncProductionScheduleCard({
+    client: result.client,
+    windowStart: result.send.cadence_window_start,
+    sendId: result.send.id,
+  });
+
   return result;
 }
 
@@ -991,6 +1010,12 @@ export async function recordOutOfCycleProduction(
   if (body.notifyClient === true) {
     await sendProductionRequestReceived(result.client, result.send);
   }
+
+  void syncProductionScheduleCard({
+    client: result.client,
+    windowStart: result.send.cadence_window_start,
+    sendId: result.send.id,
+  });
 
   return result;
 }

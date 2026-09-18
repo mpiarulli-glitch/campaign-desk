@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { teamLabel } from "@/lib/team";
 import { canSeeFridayAsk } from "@/lib/people";
 import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
@@ -108,6 +108,15 @@ const STATUS_TONE: Record<AskStatus, string> = {
   submitted: "is-good",
 };
 
+const ACCOUNT_MANAGER_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "Kyle", label: "Kyle" },
+  { value: "Cassidy", label: "Cassidy" },
+  { value: "Luis", label: "Luis" },
+];
+
+type EditField = "contactEmail" | "contactName" | "accountManager";
+
 function fmtWhen(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -188,6 +197,9 @@ export default function ClientServicesPage() {
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const [sendingOn, setSendingOn] = useState(true);
+  const [edit, setEdit] = useState<{ id: string; field: EditField } | null>(null);
+  const [editVal, setEditVal] = useState("");
+  const skipEditCommit = useRef(false);
   const isAdmin = role === "admin";
   const fridayAsk = canSeeFridayAsk({ person, owner });
   const view = fridayAsk ? tab : "accounts";
@@ -254,6 +266,155 @@ export default function ClientServicesPage() {
   function chooseScope(next: "mine" | "all") {
     setScopeTouched(true);
     setScope(next);
+  }
+
+  function beginEdit(id: string, field: EditField, current: string) {
+    if (!isAdmin) return;
+    setError("");
+    setEdit({ id, field });
+    setEditVal(current);
+  }
+
+  function cancelEdit() {
+    skipEditCommit.current = true;
+    setEdit(null);
+  }
+
+  async function commitEdit(override?: string) {
+    if (skipEditCommit.current) {
+      skipEditCommit.current = false;
+      return;
+    }
+    if (!edit) return;
+    const { id, field } = edit;
+    const raw = override !== undefined ? override : editVal;
+    setEdit(null);
+    const res = await fetch(`/api/revenue/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: raw }),
+    });
+    if (!res.ok) {
+      setError("Could not save that change.");
+      return;
+    }
+    setMessage("Saved.");
+    await load();
+  }
+
+  function editableText(
+    row: Row,
+    field: EditField,
+    current: string,
+    display: React.ReactNode,
+    opts?: { type?: "text" | "email"; placeholder?: string }
+  ) {
+    if (!isAdmin) return display;
+    const active = edit?.id === row.clientId && edit?.field === field;
+    if (active) {
+      return (
+        <span className="cell-editing">
+          <input
+            autoFocus
+            type={opts?.type || "text"}
+            className="cell-input cs-edit-input"
+            value={editVal}
+            placeholder={opts?.placeholder}
+            onChange={(e) => setEditVal(e.target.value)}
+            onBlur={() => void commitEdit()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void commitEdit();
+              else if (e.key === "Escape") cancelEdit();
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </span>
+      );
+    }
+    return (
+      <span
+        className="cell-clickable"
+        title="Click to edit"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          beginEdit(row.clientId, field, current);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            beginEdit(row.clientId, field, current);
+          }
+        }}
+      >
+        {display}
+      </span>
+    );
+  }
+
+  function editableAccountManager(row: Row) {
+    if (!isAdmin) {
+      return row.accountManager ? (
+        <span>{row.accountManager}</span>
+      ) : (
+        <span className="cs-gap">Unassigned</span>
+      );
+    }
+    const active = edit?.id === row.clientId && edit?.field === "accountManager";
+    // Select value is the stored name (Kyle/Cassidy/Luis); display may be a
+    // fuller team label after save, so match by option label or value.
+    const selectValue =
+      ACCOUNT_MANAGER_OPTIONS.find(
+        (o) => o.label === row.accountManager || o.value === row.accountManager
+      )?.value ?? "";
+    if (active) {
+      return (
+        <span className="cell-editing">
+          <select
+            autoFocus
+            className="select-clean cell-input cs-edit-input"
+            value={editVal}
+            onChange={(e) => {
+              setEditVal(e.target.value);
+              void commitEdit(e.target.value);
+            }}
+            onBlur={() => void commitEdit()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") cancelEdit();
+            }}
+          >
+            {ACCOUNT_MANAGER_OPTIONS.map((o) => (
+              <option key={o.value || "none"} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </span>
+      );
+    }
+    return (
+      <span
+        className="cell-clickable"
+        title="Click to assign account manager"
+        role="button"
+        tabIndex={0}
+        onClick={() => beginEdit(row.clientId, "accountManager", selectValue)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            beginEdit(row.clientId, "accountManager", selectValue);
+          }
+        }}
+      >
+        {row.accountManager ? (
+          <span>{row.accountManager}</span>
+        ) : (
+          <span className="cs-gap">Unassigned</span>
+        )}
+      </span>
+    );
   }
 
   async function act(clientId: string, action: "send" | "pause" | "resume") {
@@ -715,9 +876,28 @@ export default function ClientServicesPage() {
                                 >
                                   {row.name}
                                 </button>
-                                {row.contactName ? (
-                                  <div className="cs-sub">{row.contactName}</div>
-                                ) : null}
+                                {editableText(
+                                  row,
+                                  "contactName",
+                                  row.contactName,
+                                  row.contactName ? (
+                                    <div className="cs-sub">{row.contactName}</div>
+                                  ) : isAdmin ? (
+                                    <div className="cs-sub cs-gap">Add contact name</div>
+                                  ) : null,
+                                  { placeholder: "Contact name" }
+                                )}
+                                {editableText(
+                                  row,
+                                  "contactEmail",
+                                  row.contactEmail,
+                                  row.contactEmail ? (
+                                    <div className="cs-sub">{row.contactEmail}</div>
+                                  ) : isAdmin ? (
+                                    <div className="cs-sub cs-gap">Add client email</div>
+                                  ) : null,
+                                  { type: "email", placeholder: "client@email.com" }
+                                )}
                                 {dead ? (
                                   <div className="cs-flag is-bad">
                                     No email, no Basecamp
@@ -729,11 +909,7 @@ export default function ClientServicesPage() {
                                 ) : null}
                               </td>
                               <td>
-                                {row.accountManager ? (
-                                  <span>{row.accountManager}</span>
-                                ) : (
-                                  <span className="cs-gap">Unassigned</span>
-                                )}
+                                {editableAccountManager(row)}
                                 {row.accountManager && !row.accountManagerEmail ? (
                                   <div
                                     className="cs-sub cs-gap"
