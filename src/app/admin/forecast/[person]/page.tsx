@@ -1138,6 +1138,9 @@ function CollapsedAdd({ children }: { children: React.ReactNode }) {
   }
   return (
     <button type="button" className="fc-add-quiet" onClick={() => setOpen(true)}>
+      <span className="fc-add-quiet-mark" aria-hidden="true">
+        +
+      </span>
       Add a task
     </button>
   );
