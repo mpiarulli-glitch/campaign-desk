@@ -196,7 +196,7 @@ test("weekly snapshot outreach", async (t) => {
       ask,
       link: "https://hub.example.com/snapshot/tok",
     });
-    assert.match(mail.subject, /July 2026/);
+    assert.equal(mail.subject, "Your New Weekly Snapshot is ready.");
     assert.match(mail.html, /Hi Tim,/);
     assert.match(mail.html, /https:\/\/hub\.example\.com\/snapshot\/tok/);
     assert.match(mail.text, /Cassidy/);

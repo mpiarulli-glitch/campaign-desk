@@ -318,12 +318,7 @@ export function weeklyAskEmail(args: {
     )
     .join("");
 
-  const subject =
-    leadCount > 0 && !ask.revenueIn
-      ? `Quick one: your leads and ${ask.monthLabel} revenue`
-      : leadCount > 0
-        ? "Quick one: did these leads turn into business?"
-        : `Quick one: what did ${ask.monthLabel} come to?`;
+  const subject = "Your New Weekly Snapshot is ready.";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
