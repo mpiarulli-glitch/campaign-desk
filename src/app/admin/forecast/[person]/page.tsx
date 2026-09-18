@@ -616,7 +616,9 @@ function ColorDot({
         title={`${label} — click to change`}
         onClick={() => setOpen((v) => !v)}
         onMouseDown={(e) => e.stopPropagation()}
-      />
+      >
+        {label}
+      </button>
       {open ? (
         <div className="fc-colordot-menu" role="group" aria-label="Pick a colour">
           {TASK_COLORS.map((c) => (
@@ -1145,9 +1147,7 @@ function ListColumnHeaders() {
       <span className="ops-list-head-client">Client</span>
       <span className="ops-list-head-task">Task</span>
       <span className="ops-list-head-hours">Forecasted Time</span>
-      <div className="fc-colordot">
-        <button type="button" className="fc-swatch is-on" tabIndex={-1} disabled />
-      </div>
+      <span className="ops-list-head-color">Color</span>
       <span className="ops-row-actions">
         <button type="button" className="fc-timer-btn" tabIndex={-1} disabled>
           <span className="fc-timer-icon" />

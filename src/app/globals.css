@@ -8034,10 +8034,33 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   .mood-grid { grid-template-columns: 1fr; }
 }
 
-/* A task's colour, carried by the card's leading rail only. Tinting the whole
-   row turned a normal week into a wall of colour and drowned out everything
-   else — the calendar is where a colour gets to be the whole block. */
-.ops-list-row[class*="col-"] { border-left-color: var(--fc-block); }
+/* A task's colour is a Notion-style select on the list, and a filled block
+   on the calendar. Tinting the whole list row drowned the week. */
+.ops-list-row .fc-colordot > .fc-swatch {
+  width: auto;
+  min-width: 64px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 22px;
+  color: var(--fc-block);
+  background: color-mix(in srgb, var(--fc-block) 16%, var(--bg-elevated));
+  opacity: 1;
+  transform: none;
+  text-align: center;
+  white-space: nowrap;
+}
+.ops-list-row .fc-colordot > .fc-swatch:hover,
+.ops-list-row .fc-colordot > .fc-swatch.is-on {
+  opacity: 1;
+  transform: none;
+  background: color-mix(in srgb, var(--fc-block) 24%, var(--bg-elevated));
+}
 
 .fc-swatches { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .fc-swatch {
@@ -8342,8 +8365,23 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 }
 .fc-tasks-row:first-child { border-top: none; }
 .fc-tasks-row:hover { background: color-mix(in srgb, var(--bg-soft) 40%, var(--bg-elevated)); }
+.fc-tasks-row.is-late {
+  background: color-mix(in srgb, var(--danger-wash) 42%, var(--bg-elevated));
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+.fc-tasks-row.is-late:hover {
+  background: color-mix(in srgb, var(--danger-wash) 58%, var(--bg-elevated));
+}
+.fc-tasks-row.is-today {
+  background: color-mix(in srgb, var(--warning-wash) 35%, var(--bg-elevated));
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+.fc-tasks-row.is-today:hover {
+  background: color-mix(in srgb, var(--warning-wash) 50%, var(--bg-elevated));
+}
 .fc-tasks-row.is-picking {
   background: color-mix(in srgb, var(--accent-wash) 45%, var(--bg-elevated));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .fc-tasks-row.is-done { opacity: 0.5; }
 .fc-tasks-row.is-done .fc-tasks-title { text-decoration: line-through; }
@@ -8704,12 +8742,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ops-list-stack {
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
   background: var(--bg-elevated);
-  box-shadow: var(--shadow);
-  /* Visible so Move / Log menus can escape the panel. Corners stay rounded
-     via the first and last children below. */
+  box-shadow: none;
   overflow: visible;
 }
 .ops-list-stack:has(+ .ops-list-add) {
@@ -8720,11 +8756,11 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .ops-list-stack .ops-list-head {
   margin: 0;
-  padding: 0 12px;
-  min-height: 36px;
+  padding: 0 10px;
+  min-height: 34px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
-  border-radius: 12px 12px 0 0;
+  border-radius: 0;
 }
 .ops-list-row {
   position: relative;
@@ -8732,13 +8768,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 0 12px;
-  min-height: 40px;
+  padding: 0 10px;
+  min-height: 38px;
   border-radius: 0;
   background: var(--bg-elevated);
   border: none;
   border-bottom: 1px solid var(--border);
-  box-shadow: inset 3px 0 0 var(--fc-rail);
+  box-shadow: none;
   transition: background 0.12s ease, opacity 0.15s ease;
   overflow: visible;
   z-index: 0;
@@ -8746,26 +8782,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-stack > .ops-task-block:last-child .ops-list-row {
   border-bottom: 0;
 }
-.ops-list-stack > .ops-task-block:first-child:last-child .ops-list-row {
-  border-radius: var(--radius);
-}
-.ops-list-stack > .ops-task-block:first-child:not(:last-child) .ops-list-row {
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-.ops-list-stack > .ops-list-head + .ops-task-block:last-child .ops-list-row,
-.ops-list-stack > .ops-task-block:last-child .ops-list-row {
-  border-radius: 0 0 var(--radius) var(--radius);
-}
-.ops-list-stack > .ops-list-head:first-child + .ops-task-block:last-child .ops-list-row {
-  border-radius: 0 0 var(--radius) var(--radius);
-}
 .ops-list-stack:has(+ .ops-list-add) > .ops-task-block:last-child .ops-list-row {
   border-bottom: 1px solid var(--border);
   border-radius: 0;
 }
 .ops-list-row:hover {
   background: var(--bg-soft);
-  box-shadow: inset 3px 0 0 var(--fc-rail);
+  box-shadow: none;
 }
 .ops-list-row.is-done {
   opacity: 0.55;
@@ -8798,8 +8821,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .fc-day-empty {
   margin: 0;
   padding: 18px 16px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
   background: color-mix(in srgb, var(--bg-elevated) 70%, transparent);
   color: var(--text-muted);
   font-size: 13px;
@@ -8807,11 +8830,11 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .ops-list-add {
   margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
   background: var(--bg-elevated);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 .ops-list-stack + .ops-list-add {
   margin-top: 0;
@@ -8962,8 +8985,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-row-handle:active { cursor: grabbing; }
 .ops-list-row.is-dragging {
   opacity: 0.5;
-  transform: scale(0.995) rotate(-0.4deg);
-  box-shadow: inset 3px 0 0 var(--fc-rail), var(--shadow-lift);
+  box-shadow: none;
   z-index: 2;
 }
 .ops-list-row.is-drop-before::before {
@@ -8996,7 +9018,6 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 /* These copies exist only to reserve the width their real counterparts take up
    in a row. Nothing here is interactive or announced. */
 .ops-list-head input[type="checkbox"],
-.ops-list-head .fc-colordot,
 .ops-list-head .ops-row-actions {
   visibility: hidden;
 }
@@ -9008,13 +9029,31 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   flex: 2 1 240px;
   min-width: 0;
 }
-/* Sits over the hours field and its "h" (42px input + 2px gap + the glyph).
-   Right-aligned so the label ends where the number does, and allowed to run
-   left into the gap rather than widening the column. */
 .ops-list-head-hours {
   flex: none;
   width: 52px;
   text-align: right;
+}
+.ops-list-head-color {
+  flex: none;
+  min-width: 64px;
+}
+
+.ops-list-row .fc-timer-btn,
+.ops-list-row .fc-move-btn,
+.ops-list-row .fc-subtask-btn,
+.ops-list-row .fc-log-pill {
+  border-radius: 4px;
+  border-color: var(--border);
+  background: transparent;
+  font-weight: 500;
+}
+.ops-list-row .fc-timer-btn.is-running,
+.ops-list-row .fc-log-pill.is-logged {
+  background: color-mix(in srgb, var(--success) 12%, var(--bg-elevated));
+}
+.ops-list-row .fc-timer-btn.is-running {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-elevated));
 }
 
 /* The row is flex-wrap, and it breaks onto a second line well before the 720px

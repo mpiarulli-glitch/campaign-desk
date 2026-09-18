@@ -243,6 +243,8 @@ export function ForecastTasksPanel({
                           "fc-tasks-row",
                           forecast?.completed ? "is-done" : "",
                           picking ? "is-picking" : "",
+                          tone === "late" ? "is-late" : "",
+                          tone === "today" ? "is-today" : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
