@@ -17756,7 +17756,7 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .snap-n-cols {
   display: grid;
-  grid-template-columns: minmax(160px, 1.7fr) minmax(92px, 0.7fr) minmax(118px, 0.75fr) minmax(90px, 0.65fr) auto;
+  grid-template-columns: minmax(180px, 1.7fr) minmax(92px, 0.7fr) minmax(118px, 0.75fr) minmax(100px, 0.7fr) 5.5rem;
   gap: 8px;
   align-items: center;
   padding: 0 12px;
@@ -17802,13 +17802,21 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 
 .snap-n-title-wrap {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
 
-.snap-n-title-wrap .snap-n-title {
+.snap-n-title-stack {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.snap-n-title-wrap .snap-n-title {
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -17975,12 +17983,13 @@ div.snap-n-title {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  flex-wrap: wrap;
+  min-width: 0;
+  width: 100%;
 }
 
 .snap-n-meta {
   margin: 0;
-  padding: 0 12px 8px 36px;
+  padding: 0 0 6px 24px;
   font-size: 12px;
   color: var(--text-muted);
 }

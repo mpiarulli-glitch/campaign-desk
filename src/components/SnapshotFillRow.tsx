@@ -208,15 +208,23 @@ export function SnapshotFillRow({
     <div className={`snap-n-row ${overdue ? "is-overdue" : ""} ${open ? "is-open" : ""} ${met ? "is-met" : ""}`}>
       <div className="snap-n-cols">
         <div className="snap-n-title-wrap">
-          <button type="button" className="snap-n-title" onClick={onToggle}>
-            <span className="snap-n-ico" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
-                <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
-                <path d="M9.5 2.5V5.5h3" />
-              </svg>
-            </span>
-            <span className="snap-n-name">{row.name}</span>
-          </button>
+          <div className="snap-n-title-stack">
+            <button type="button" className="snap-n-title" onClick={onToggle}>
+              <span className="snap-n-ico" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                  <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
+                  <path d="M9.5 2.5V5.5h3" />
+                </svg>
+              </span>
+              <span className="snap-n-name">{row.name}</span>
+            </button>
+            {author ? (
+              <p className="snap-n-meta">
+                {author}
+                {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
+              </p>
+            ) : null}
+          </div>
           {overdue ? (
             <button
               type="button"
@@ -315,12 +323,6 @@ export function SnapshotFillRow({
             </button>
           </div>
         </form>
-      ) : null}
-      {author ? (
-        <p className="snap-n-meta">
-          {author}
-          {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
-        </p>
       ) : null}
       {backdateOther ? (
         <p className="snap-backdate-hint">
