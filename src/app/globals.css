@@ -8660,11 +8660,11 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-body);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--text);
 }
 .ops-list-day.is-today .ops-list-day-title { color: var(--accent-ink); }
 .ops-list-day-date {
@@ -8704,41 +8704,47 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ops-list-stack {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
   background: var(--bg-elevated);
   box-shadow: var(--shadow);
   /* Visible so Move / Log menus can escape the panel. Corners stay rounded
      via the first and last children below. */
   overflow: visible;
 }
+.ops-list-stack:has(+ .ops-list-add) {
+  border-bottom: none;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-bottom: 0;
+}
 .ops-list-stack .ops-list-head {
   margin: 0;
-  padding: 10px 14px 8px 17px;
+  padding: 0 12px;
+  min-height: 36px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-soft) 45%, var(--bg-elevated));
-  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--bg-elevated);
+  border-radius: 12px 12px 0 0;
 }
 .ops-list-row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  padding: 11px 14px;
+  padding: 0 12px;
+  min-height: 40px;
   border-radius: 0;
   background: var(--bg-elevated);
   border: none;
-  border-top: 1px solid var(--border);
-  border-left: 3px solid var(--fc-rail);
-  box-shadow: none;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--fc-rail);
   transition: background 0.12s ease, opacity 0.15s ease;
   overflow: visible;
   z-index: 0;
 }
-.ops-list-stack > .ops-task-block:first-child .ops-list-row,
-.ops-list-stack > .ops-list-head + .ops-task-block .ops-list-row {
-  border-top: none;
+.ops-list-stack > .ops-task-block:last-child .ops-list-row {
+  border-bottom: 0;
 }
 .ops-list-stack > .ops-task-block:first-child:last-child .ops-list-row {
   border-radius: var(--radius);
@@ -8753,9 +8759,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-stack > .ops-list-head:first-child + .ops-task-block:last-child .ops-list-row {
   border-radius: 0 0 var(--radius) var(--radius);
 }
+.ops-list-stack:has(+ .ops-list-add) > .ops-task-block:last-child .ops-list-row {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
 .ops-list-row:hover {
-  background: color-mix(in srgb, var(--bg-soft) 55%, var(--bg-elevated));
-  box-shadow: none;
+  background: var(--bg-soft);
+  box-shadow: inset 3px 0 0 var(--fc-rail);
 }
 .ops-list-row.is-done {
   opacity: 0.55;
@@ -8797,10 +8807,18 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .ops-list-add {
   margin-top: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
   background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+.ops-list-stack + .ops-list-add {
+  margin-top: 0;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  box-shadow: none;
 }
 .ops-subtasks {
   display: flex;
@@ -8945,7 +8963,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-row.is-dragging {
   opacity: 0.5;
   transform: scale(0.995) rotate(-0.4deg);
-  box-shadow: var(--shadow-lift);
+  box-shadow: inset 3px 0 0 var(--fc-rail), var(--shadow-lift);
   z-index: 2;
 }
 .ops-list-row.is-drop-before::before {
@@ -8965,14 +8983,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  /* Mirrors .ops-list-row's 12px padding, plus its 3px left rail on the left
-     and 1px border on the right, so labels sit over the fields not the rail. */
-  padding: 2px 13px 7px 15px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  gap: 8px;
+  padding: 0 12px;
+  min-height: 36px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -9017,8 +9034,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-row input.client {
   flex: 1 1 150px;
   min-width: 0;
-  font-weight: 650;
-  font-size: 13.5px;
+  font-weight: 500;
+  font-size: 14px;
   color: var(--text);
   border: none;
   background: none;
@@ -9031,9 +9048,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   border: none;
   background: none;
   padding: 2px 0;
-  font-size: 13.5px;
+  font-size: 14px;
+  font-weight: 500;
   font-family: inherit;
-  color: var(--text-body);
+  color: var(--text);
 }
 .ops-list-row input.hrs {
   width: 42px;
@@ -9042,7 +9060,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   text-align: right;
   padding: 2px 0;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 500;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
