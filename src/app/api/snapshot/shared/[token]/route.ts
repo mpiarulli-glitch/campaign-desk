@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  deliverableOverview,
   getAccountByToken,
   listLeads,
   listWins,
@@ -37,7 +36,6 @@ export async function GET(request: Request, { params }: Params) {
     account: {
       name: account.name,
       launchDate: snapshotLaunchDateFor(account),
-      contractEnd: account.contract_end || null,
     },
     week,
     // Authorship stays internal. updated_at is kept so "this week's work" can
@@ -46,7 +44,7 @@ export async function GET(request: Request, { params }: Params) {
       void logged_by;
       return row;
     }),
-    overview: deliverableOverview(account.id),
+    // Full contract / deliverable overview is hidden from the client view for now.
     wins: listWins(account.id),
     metrics: metricsSeries(account.id),
     // Bounds for the week picker, so it stops rather than paging into empty
