@@ -4826,7 +4826,7 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .sched-policy p + p {
   margin-top: 10px;
