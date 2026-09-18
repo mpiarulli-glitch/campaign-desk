@@ -18534,6 +18534,37 @@ div.snap-n-title {
   align-self: flex-start;
   font-size: 12px;
 }
+.snap-todo-linked-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.snap-todo-linked-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+a.snap-todo-linked-title {
+  color: var(--accent-ink, var(--accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.snap-n-todo-linked {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.snap-n-todo-linked .snap-n-todo-meta {
+  margin: 0;
+}
+.snap-todo-unlink {
+  font-size: 12px;
+  flex-shrink: 0;
+}
 .snap-todo-hint {
   margin: 0;
   font-size: 12px;

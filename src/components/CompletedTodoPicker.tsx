@@ -28,6 +28,8 @@ function completedLabel(iso: string | null): string {
 export function CompletedTodoPicker({
   todos,
   selectedId,
+  selectedTitle,
+  selectedUrl,
   loading,
   reason,
   projectName,
@@ -37,6 +39,8 @@ export function CompletedTodoPicker({
 }: {
   todos: CompletedTodoOption[];
   selectedId: string;
+  selectedTitle?: string;
+  selectedUrl?: string;
   loading?: boolean;
   reason?: string | null;
   projectName?: string | null;
@@ -50,6 +54,8 @@ export function CompletedTodoPicker({
   const wrapRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const selected = todos.find((t) => t.id === selectedId);
+  const linkedTitle = (selected?.title || selectedTitle || "").trim();
+  const linkedUrl = (selected?.url || selectedUrl || "").trim();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -138,7 +144,7 @@ export function CompletedTodoPicker({
     }
   }
 
-  const closedLabel = selected?.title || "";
+  const closedLabel = linkedTitle || selected?.title || "";
   const scopeWarn =
     reason === "project-mismatch" || reason === "not-client-project";
   const fromLine = projectName
@@ -240,9 +246,25 @@ export function CompletedTodoPicker({
         ) : null}
       </div>
       {selectedId ? (
-        <button type="button" className="link-button snap-todo-clear" onClick={onClear}>
-          Clear link
-        </button>
+        <div className="snap-todo-linked-bar">
+          {linkedUrl ? (
+            <a
+              className="snap-todo-linked-title"
+              href={linkedUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Linked: {linkedTitle || "Basecamp to-do"}
+            </a>
+          ) : (
+            <span className="snap-todo-linked-title">
+              Linked: {linkedTitle || "Basecamp to-do"}
+            </span>
+          )}
+          <button type="button" className="btn btn-ghost btn-sm snap-todo-clear" onClick={onClear}>
+            Unlink
+          </button>
+        </div>
       ) : null}
       {hint ? (
         <p className={`snap-todo-hint ${scopeWarn ? "is-warn" : "muted"}`}>

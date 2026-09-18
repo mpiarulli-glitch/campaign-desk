@@ -409,9 +409,21 @@ export function SnapshotFillRow({
               </p>
             ) : null}
             {row.basecamp_todo_title.trim() && !open ? (
-              <p className="snap-n-meta snap-n-todo-meta">
-                Linked: {row.basecamp_todo_title.trim()}
-              </p>
+              <div className="snap-n-todo-linked">
+                <p className="snap-n-meta snap-n-todo-meta">
+                  Linked: {row.basecamp_todo_title.trim()}
+                </p>
+                <button
+                  type="button"
+                  className="link-button snap-todo-unlink"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearCompletedTodo();
+                  }}
+                >
+                  Unlink
+                </button>
+              </div>
             ) : null}
           </div>
           {overdue ? (
@@ -601,6 +613,8 @@ export function SnapshotFillRow({
             <CompletedTodoPicker
               todos={todoState.todos}
               selectedId={row.basecamp_todo_id}
+              selectedTitle={row.basecamp_todo_title}
+              selectedUrl={row.basecamp_todo_url}
               loading={todoState.loading}
               reason={todoState.reason}
               projectName={todoState.projectName}
