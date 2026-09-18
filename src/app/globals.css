@@ -8714,7 +8714,12 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ops-list-stack {
-  --ops-list-cols: 16px minmax(140px, 1.1fr) minmax(180px, 1.8fr) 64px minmax(220px, auto);
+  --ops-list-cols: 16px minmax(0, 1.2fr) minmax(0, 1.8fr) 52px 348px;
+  --ops-list-actions: 92px 92px 68px 52px 20px;
+  display: grid;
+  grid-template-columns: var(--ops-list-cols);
+  column-gap: 10px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg-elevated);
@@ -8729,20 +8734,25 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .ops-list-stack .ops-list-head {
   margin: 0;
-  padding: 0 12px;
+  padding: 0;
   min-height: 32px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-soft) 65%, var(--bg-elevated));
   border-radius: 0;
 }
+.ops-list-head,
+.ops-task-block,
+.ops-list-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  column-gap: 10px;
+}
 .ops-list-row {
   position: relative;
-  display: grid;
-  grid-template-columns: var(--ops-list-cols);
   align-items: center;
-  column-gap: 10px;
   row-gap: 2px;
-  padding: 0 12px;
+  padding: 0;
   min-height: 36px;
   border-radius: 0;
   background: var(--bg-elevated);
@@ -8818,14 +8828,14 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   box-shadow: none;
 }
 .ops-list-row > .ops-subtasks {
-  grid-column: 1 / -1;
+  grid-column: 2 / 4;
 }
 .ops-subtasks {
   display: flex;
   flex-direction: column;
   gap: 4px;
   flex: 1 1 100%;
-  margin: 2px 0 6px 26px;
+  margin: 0 0 8px;
 }
 .ops-subtask {
   display: flex;
@@ -8980,11 +8990,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 /* Column headers above the list rows. Desktop only: under 721px the row
    reflows into stacked bands and there are no columns left to head. */
 .ops-list-head {
-  display: grid;
-  grid-template-columns: var(--ops-list-cols);
   align-items: center;
-  column-gap: 10px;
-  padding: 0 12px;
+  padding: 0;
   min-height: 32px;
   font-size: 11px;
   font-weight: 500;
@@ -9022,22 +9029,33 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-row > .ops-row-actions,
 .ops-list-head > .ops-row-actions {
   grid-column: 5;
+  display: grid;
+  grid-template-columns: var(--ops-list-actions);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
   margin-left: 0;
-  justify-self: end;
+  justify-self: stretch;
+}
+.ops-list-row .fc-move > .fc-move-btn,
+.ops-list-row .fc-move > .fc-log-pill {
+  width: 100%;
 }
 
 .ops-list-row .ops-hrs {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12px;
   align-items: baseline;
-  justify-content: flex-end;
   flex-wrap: nowrap;
-  gap: 2px;
+  gap: 0;
   width: 100%;
   min-width: 0;
 }
 .ops-list-row .ops-hrs .muted {
   font-size: 11px;
   font-weight: 500;
+  text-align: left;
 }
 
 .ops-list-row .fc-timer-btn,
@@ -9045,13 +9063,16 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .ops-list-row .fc-subtask-btn,
 .ops-list-row .fc-log-pill {
   height: 24px;
-  padding: 0 8px;
+  width: 100%;
+  padding: 0 6px;
   border-radius: 4px;
   border-color: var(--border);
   background: transparent;
   font-weight: 500;
   font-size: 11.5px;
   color: var(--text-muted);
+  justify-content: center;
+  overflow: hidden;
 }
 .ops-list-row .fc-timer-btn.is-running,
 .ops-list-row .fc-log-pill.is-logged {
@@ -9073,22 +9094,29 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   color: var(--text);
   border: none;
   background: none;
-  padding: 2px 0;
+  padding: 2px 4px 2px 0;
   font-family: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ops-list-row input.notes {
   width: 100%;
   min-width: 0;
   border: none;
   background: none;
-  padding: 2px 0;
+  padding: 2px 4px 2px 0;
   font-size: 13.5px;
   font-weight: 500;
   font-family: inherit;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ops-list-row input.hrs {
-  width: 36px;
+  width: 100%;
+  min-width: 0;
   border: none;
   background: none;
   text-align: right;
@@ -9097,6 +9125,12 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   font-weight: 500;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+.ops-list-row input.hrs::-webkit-outer-spin-button,
+.ops-list-row input.hrs::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 /* Editable-in-place fields read as plain text until you touch them. */
 .ops-list-row input:hover { background: var(--bg-soft); border-radius: 5px; }
@@ -10158,12 +10192,26 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
      sharing one grid area stack on top of each other instead of sitting side
      by side. */
   .ops-list-head { display: none; }
+  .ops-list-stack {
+    display: block;
+    padding: 0;
+    grid-template-columns: none;
+  }
+  .ops-task-block {
+    display: block;
+    grid-column: auto;
+  }
   .ops-list-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 7px 9px;
     padding: 12px 13px;
+    grid-template-columns: none;
+    grid-column: auto;
+  }
+  .ops-list-row > .ops-subtasks {
+    grid-column: auto;
   }
   .ops-list-row > input[type="checkbox"],
   .ops-list-row input.client,
@@ -10214,7 +10262,9 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   }
   .ops-list-row > .ops-row-actions {
     order: 6;
+    display: flex;
     flex: 1 1 100%;
+    grid-template-columns: none;
     margin-left: 0;
     justify-content: flex-end;
     flex-wrap: wrap;
@@ -10222,6 +10272,13 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
     padding-top: 8px;
     margin-top: 2px;
     border-top: 1px solid var(--border);
+  }
+  .ops-list-row .ops-row-actions > .fc-timer-btn,
+  .ops-list-row .ops-row-actions > .fc-log-pill,
+  .ops-list-row .ops-row-actions > .fc-subtask-btn,
+  .ops-list-row .ops-row-actions > .fc-move,
+  .ops-list-row .ops-row-actions > .ops-row-remove {
+    width: auto;
   }
   .ops-list-row .ops-row-actions > * {
     opacity: 1 !important;
