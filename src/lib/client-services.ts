@@ -39,6 +39,7 @@ function listFridayAskClients(): RevClient[] {
   return listRevClients().filter((c) => isSnapshotAllowlisted(c.name));
 }
 import { slugForName, teamLabel } from "./team";
+import { basecampNameForManager } from "./people";
 import { getUser } from "./users";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
@@ -393,18 +394,58 @@ function resolveContact(client: RevClient, people: BcPerson[]): BcPerson | null 
   );
 }
 
+/**
+ * Find the client's account manager on a Basecamp project roster.
+ *
+ * Uses the explicit ACCOUNT_MANAGER_BASECAMP_NAME map (e.g. "Kyle" → "Morris
+ * Kyle") so a first-name store value cannot ping Kyle Onstott instead of
+ * Morris. Falls back to the team label only for an exact name match.
+ */
+export function resolveAccountManagerOnProject(
+  people: BcPerson[],
+  accountManager: string,
+  am?: AccountManager | null
+): BcPerson | null {
+  const raw = (accountManager || "").trim();
+  if (!raw && !am) return null;
+  const slug = am?.slug || slugForName(raw) || "";
+  const label = am?.label || (slug ? teamLabel(slug) : "") || raw;
+  const first = (label || raw).split(/\s+/)[0] || "";
+  const slugHead = slug.split("_")[0] || "";
+  const queries = [
+    basecampNameForManager(slugHead),
+    basecampNameForManager(first.toLowerCase()),
+    label,
+    raw,
+  ]
+    .map((v) => (v || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const q of [...new Set(queries)]) {
+    const hit = people.find((p) => p.name.trim().toLowerCase() === q);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 export function weeklyAskCardContent(args: {
   ask: WeeklyAsk;
   link: string;
   mention: string;
+  /** Real Basecamp @mention HTML for the account manager, when resolved. */
+  amMention?: string;
   amLabel: string;
 }): { title: string; body: string } {
   const { link, mention, amLabel } = args;
+  const amMention = (args.amMention || "").trim();
+  const thanks = amMention
+    ? `Thanks, ${amMention}`
+    : `Thanks, ${esc(amLabel)}`;
   const body =
     `<div>${mention} your weekly snapshot is ready to review.</div>` +
     `<div>See what went on across your account this week.</div>` +
     `<div><br><a href="${esc(link)}">Open your snapshot</a></div>` +
-    `<div><br>Thanks, ${esc(amLabel)}</div>`;
+    `<div><br>${thanks}</div>`;
   return { title: "Your weekly snapshot is ready", body };
 }
 
@@ -534,17 +575,25 @@ export async function sendWeeklyAsk(args: {
           hint: "Check the contact name matches their name in Basecamp exactly.",
         });
       } else {
+        const manager = resolveAccountManagerOnProject(
+          people,
+          client.account_manager || "",
+          am
+        );
         const { title, body } = weeklyAskCardContent({
           ask,
           link,
           mention: mentionHtml(contact),
+          amMention: manager ? mentionHtml(manager) : "",
           amLabel: am?.label || "Marketing Empire Group",
         });
+        const assigneeIds = [contact.id];
+        if (manager && manager.id !== contact.id) assigneeIds.push(manager.id);
         const r = await createScheduleCard(
           client.basecamp_project_id,
           title,
           body,
-          [contact.id]
+          assigneeIds
         );
         out.basecamp.ok = r.ok;
         if (r.ok) {

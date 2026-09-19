@@ -231,13 +231,49 @@ test("weekly snapshot outreach", async (t) => {
       ask: ask as never,
       link: "https://hub.example.com/snapshot/tok",
       mention: "@Tim",
-      amLabel: "Cassidy",
+      amMention: '<bc-attachment sgid="am-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
+      amLabel: "Kyle Morris",
     });
     assert.equal(card.title, "Your weekly snapshot is ready");
     assert.match(card.body, /ready to review/);
     assert.match(card.body, /See what went on across your account this week/);
+    assert.match(card.body, /am-sgid/);
+    assert.doesNotMatch(card.body, /Thanks, Kyle Morris/);
     assert.doesNotMatch(card.body, /lead/i);
     assert.doesNotMatch(card.body, /revenue/i);
+  });
+
+  await t.test("account manager resolves to the mapped Basecamp person", () => {
+    const people = [
+      {
+        id: 1,
+        name: "Kyle Onstott",
+        email_address: "kyle.o@test",
+        attachable_sgid: "wrong",
+      },
+      {
+        id: 2,
+        name: "Morris Kyle",
+        email_address: "kyle.m@test",
+        attachable_sgid: "morris",
+      },
+      {
+        id: 3,
+        name: "Cassidy Merideth",
+        email_address: "c@test",
+        attachable_sgid: "cass",
+      },
+    ];
+    const morris = cs.resolveAccountManagerOnProject(people as never[], "Kyle", {
+      slug: "kyle_morris",
+      label: "Kyle Morris",
+      email: "kyle@meg.test",
+    });
+    assert.equal(morris?.name, "Morris Kyle");
+    assert.equal(morris?.id, 2);
+
+    const cassidy = cs.resolveAccountManagerOnProject(people as never[], "Cassidy");
+    assert.equal(cassidy?.name, "Cassidy Merideth");
   });
 
   await t.test("sending is off unless explicitly switched on", () => {
