@@ -233,14 +233,22 @@ test("weekly snapshot outreach", async (t) => {
       mention: "@Tim",
       amMention: '<bc-attachment sgid="am-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
       amLabel: "Kyle Morris",
+      sylviaMention:
+        '<bc-attachment sgid="sylvia-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
     });
     assert.equal(card.title, "Your weekly snapshot is ready");
     assert.match(card.body, /ready to review/);
     assert.match(card.body, /See what went on across your account this week/);
     assert.match(card.body, /am-sgid/);
+    assert.match(card.body, /sylvia-sgid/);
+    assert.match(card.body, /CC:/);
     assert.doesNotMatch(card.body, /Thanks, Kyle Morris/);
     assert.doesNotMatch(card.body, /lead/i);
     assert.doesNotMatch(card.body, /revenue/i);
+  });
+
+  await t.test("weekly snapshot always CCs Sylvia's inbox", () => {
+    assert.equal(cs.WEEKLY_SNAPSHOT_CC_EMAIL, "sartiga@marketingempiregroup.com");
   });
 
   await t.test("account manager resolves to the mapped Basecamp person", () => {

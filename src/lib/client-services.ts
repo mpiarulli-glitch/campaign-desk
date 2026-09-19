@@ -40,6 +40,7 @@ function listFridayAskClients(): RevClient[] {
 }
 import { slugForName, teamLabel } from "./team";
 import { basecampNameForManager } from "./people";
+import { findSylviaOnRoster, sylviaCcHtml } from "./review-cc";
 import { getUser } from "./users";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
@@ -50,6 +51,9 @@ import {
   getProjectPeopleForMention,
   type BcPerson,
 } from "./basecamp";
+
+/** Always CC'd on Friday weekly snapshot emails. */
+export const WEEKLY_SNAPSHOT_CC_EMAIL = "sartiga@marketingempiregroup.com";
 
 function todayYmd(): string {
   return new Date().toISOString().slice(0, 10);
@@ -435,6 +439,8 @@ export function weeklyAskCardContent(args: {
   /** Real Basecamp @mention HTML for the account manager, when resolved. */
   amMention?: string;
   amLabel: string;
+  /** Real Basecamp @mention HTML for Sylvia's CC line, when resolved. */
+  sylviaMention?: string;
 }): { title: string; body: string } {
   const { link, mention, amLabel } = args;
   const amMention = (args.amMention || "").trim();
@@ -445,7 +451,8 @@ export function weeklyAskCardContent(args: {
     `<div>${mention} your weekly snapshot is ready to review.</div>` +
     `<div>See what went on across your account this week.</div>` +
     `<div><br><a href="${esc(link)}">Open your snapshot</a></div>` +
-    `<div><br>${thanks}</div>`;
+    `<div><br>${thanks}</div>` +
+    sylviaCcHtml(args.sylviaMention);
   return { title: "Your weekly snapshot is ready", body };
 }
 
@@ -525,6 +532,7 @@ export async function sendWeeklyAsk(args: {
       text,
       from,
       replyTo,
+      cc: WEEKLY_SNAPSHOT_CC_EMAIL,
     });
     out.email.ok = res.ok;
     if (res.ok) {
@@ -580,15 +588,24 @@ export async function sendWeeklyAsk(args: {
           client.account_manager || "",
           am
         );
+        const sylvia = findSylviaOnRoster(people);
         const { title, body } = weeklyAskCardContent({
           ask,
           link,
           mention: mentionHtml(contact),
           amMention: manager ? mentionHtml(manager) : "",
           amLabel: am?.label || "Marketing Empire Group",
+          sylviaMention: sylvia ? mentionHtml(sylvia) : "",
         });
         const assigneeIds = [contact.id];
         if (manager && manager.id !== contact.id) assigneeIds.push(manager.id);
+        if (
+          sylvia &&
+          sylvia.id !== contact.id &&
+          (!manager || sylvia.id !== manager.id)
+        ) {
+          assigneeIds.push(sylvia.id);
+        }
         const r = await createScheduleCard(
           client.basecamp_project_id,
           title,

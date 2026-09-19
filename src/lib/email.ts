@@ -26,6 +26,11 @@ export interface EmailInput {
   from?: string;
   /** Overrides EMAIL_REPLY_TO. Used to point replies at the account manager. */
   replyTo?: string;
+  /**
+   * Extra CC addresses for this send. Merged with EMAIL_CC when that env is
+   * set; duplicates (including the To address) are dropped.
+   */
+  cc?: string | string[];
 }
 
 export interface EmailResult {
@@ -79,11 +84,20 @@ export async function sendEmailWithId(input: EmailInput): Promise<EmailResult> {
   if (input.text) body.text = input.text;
   const replyTo = input.replyTo?.trim() || process.env.EMAIL_REPLY_TO;
   if (replyTo) body.reply_to = replyTo;
-  // Optional CC on every send (comma-separate for multiple addresses).
+  // Optional CC: per-send addresses plus EMAIL_CC (comma-separated).
+  const ccSet = new Set<string>();
+  const addCc = (raw: string) => {
+    const addr = raw.trim().toLowerCase();
+    if (!addr) return;
+    if (addr === input.to.trim().toLowerCase()) return;
+    ccSet.add(raw.trim());
+  };
+  if (typeof input.cc === "string") addCc(input.cc);
+  else if (Array.isArray(input.cc)) for (const c of input.cc) addCc(c);
   if (process.env.EMAIL_CC) {
-    const cc = process.env.EMAIL_CC.split(",").map((s) => s.trim()).filter(Boolean);
-    if (cc.length) body.cc = cc;
+    for (const c of process.env.EMAIL_CC.split(",")) addCc(c);
   }
+  if (ccSet.size) body.cc = [...ccSet];
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
