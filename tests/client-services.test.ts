@@ -198,28 +198,46 @@ test("weekly snapshot outreach", async (t) => {
     });
     assert.equal(mail.subject, "Your New Weekly Snapshot is ready.");
     assert.match(mail.html, /Hi Tim,/);
+    assert.match(mail.html, /ready to review/);
+    assert.match(mail.html, /See what went on across your account this week/);
     assert.match(mail.html, /https:\/\/hub\.example\.com\/snapshot\/tok/);
     assert.match(mail.text, /Cassidy/);
+    assert.doesNotMatch(mail.text, /lead/i);
+    assert.doesNotMatch(mail.text, /revenue/i);
     // The bulletproof button needs its VML twin to render in Outlook.
     assert.match(mail.html, /v:roundrect/);
   });
 
-  await t.test("the ask only mentions what is actually outstanding", () => {
+  await t.test("email and Basecamp never preview outstanding leads or revenue", () => {
     const client = revenue.getRevClient(acme.id)!;
+    const ask = {
+      month: "2026-07",
+      monthLabel: "July 2026",
+      unansweredLeads: [{ id: "l1" }] as never[],
+      revenueIn: false,
+      revenueAmount: null,
+    };
     const mail = cs.weeklyAskEmail({
       client,
       am: null,
-      ask: {
-        month: "2026-07",
-        monthLabel: "July 2026",
-        unansweredLeads: [],
-        revenueIn: true,
-        revenueAmount: 1000,
-      },
+      ask: ask as never,
       link: "https://hub.example.com/snapshot/tok",
     });
+    assert.match(mail.text, /ready to review/);
     assert.doesNotMatch(mail.text, /revenue/i);
     assert.doesNotMatch(mail.text, /lead/i);
+
+    const card = cs.weeklyAskCardContent({
+      ask: ask as never,
+      link: "https://hub.example.com/snapshot/tok",
+      mention: "@Tim",
+      amLabel: "Cassidy",
+    });
+    assert.equal(card.title, "Your weekly snapshot is ready");
+    assert.match(card.body, /ready to review/);
+    assert.match(card.body, /See what went on across your account this week/);
+    assert.doesNotMatch(card.body, /lead/i);
+    assert.doesNotMatch(card.body, /revenue/i);
   });
 
   await t.test("sending is off unless explicitly switched on", () => {

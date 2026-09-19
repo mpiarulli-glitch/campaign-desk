@@ -288,37 +288,13 @@ export function weeklyAskEmail(args: {
   ask: WeeklyAsk;
   link: string;
 }): { subject: string; html: string; text: string } {
-  const { client, am, ask, link } = args;
+  const { client, am, link } = args;
   const first = (client.contact_name || "").trim().split(/\s+/)[0];
   const greeting = first ? `Hi ${esc(first)},` : "Hi there,";
   const signer = am?.label || "Marketing Empire Group";
-  const leadCount = ask.unansweredLeads.length;
-
-  const bullets: string[] = [];
-  const textBullets: string[] = [];
-  if (leadCount > 0) {
-    const line =
-      leadCount === 1
-        ? "One lead we sent over is still waiting on a yes or no. Did it turn into business?"
-        : `${leadCount} leads we sent over are still waiting on a yes or no. Did any of them turn into business?`;
-    bullets.push(line);
-    textBullets.push(`- ${line}`);
-  }
-  if (!ask.revenueIn) {
-    const line = `What ${esc(ask.monthLabel)} came to in revenue.`;
-    bullets.push(line);
-    textBullets.push(`- What ${ask.monthLabel} came to in revenue.`);
-  }
-
-  const listHtml = bullets
-    .map(
-      (b) =>
-        `<tr><td valign="top" style="padding:0 10px 10px 0;font-size:16px;line-height:1.6;color:#333333;">&bull;</td>` +
-        `<td valign="top" style="padding:0 0 10px;font-size:16px;line-height:1.6;color:#333333;">${b}</td></tr>`
-    )
-    .join("");
-
   const subject = "Your New Weekly Snapshot is ready.";
+  const line1 = "Your weekly snapshot is ready to review.";
+  const line2 = "See what went on across your account this week.";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -336,7 +312,7 @@ export function weeklyAskEmail(args: {
 </style>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f4;">
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Two quick numbers and you are done for the week.</div>
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${esc(line1)} ${esc(line2)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
   <tr>
     <td align="center" style="padding:28px 12px;">
@@ -352,8 +328,8 @@ export function weeklyAskEmail(args: {
             <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${esc(client.name)}</p>
             <h1 class="h1" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Your weekly snapshot</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
-            <p style="margin:0 0 18px;font-size:16px;line-height:1.6;color:#333333;">Your snapshot is up to date with everything we worked on. Two things would help us read it properly:</p>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">${listHtml}</table>
+            <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#333333;">${esc(line1)}</p>
+            <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;">
               <tr><td>
                 <!--[if mso]>
@@ -369,7 +345,7 @@ export function weeklyAskEmail(args: {
                 <!--<![endif]-->
               </td></tr>
             </table>
-            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">It takes about a minute. Thanks,<br>${esc(signer)}</p>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Thanks,<br>${esc(signer)}</p>
           </td>
         </tr>
         <tr>
@@ -389,13 +365,12 @@ export function weeklyAskEmail(args: {
   const text = [
     greeting,
     "",
-    "Your snapshot is up to date with everything we worked on. Two things would help us read it properly:",
-    "",
-    ...textBullets,
+    line1,
+    line2,
     "",
     `Open your snapshot: ${link}`,
     "",
-    "It takes about a minute. Thanks,",
+    "Thanks,",
     signer,
   ].join("\n");
 
@@ -424,24 +399,13 @@ export function weeklyAskCardContent(args: {
   mention: string;
   amLabel: string;
 }): { title: string; body: string } {
-  const { ask, link, mention, amLabel } = args;
-  const parts: string[] = [];
-  if (ask.unansweredLeads.length > 0) {
-    parts.push(
-      ask.unansweredLeads.length === 1
-        ? "<li>One lead is still waiting on a yes or no. Did it turn into business?</li>"
-        : `<li>${ask.unansweredLeads.length} leads are still waiting on a yes or no. Did any turn into business?</li>`
-    );
-  }
-  if (!ask.revenueIn) {
-    parts.push(`<li>What ${esc(ask.monthLabel)} came to in revenue.</li>`);
-  }
+  const { link, mention, amLabel } = args;
   const body =
-    `<div>${mention} your weekly snapshot is up to date. Two things would help us read it properly:</div>` +
-    `<ul>${parts.join("")}</ul>` +
-    `<div><a href="${esc(link)}">Open your snapshot</a></div>` +
+    `<div>${mention} your weekly snapshot is ready to review.</div>` +
+    `<div>See what went on across your account this week.</div>` +
+    `<div><br><a href="${esc(link)}">Open your snapshot</a></div>` +
     `<div><br>Thanks, ${esc(amLabel)}</div>`;
-  return { title: "Weekly snapshot: leads and revenue", body };
+  return { title: "Your weekly snapshot is ready", body };
 }
 
 /* ------------------------------------------------------- the sweep */
