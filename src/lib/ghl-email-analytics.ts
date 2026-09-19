@@ -30,6 +30,7 @@ import {
   filterEventsByTouchLag,
 } from "./ghl-contact-email-touch";
 import {
+  campaignCountsInAttribution,
   campaignCountsInEmailTotals,
   isGhlCampaignNotYetSent,
   isGhlCampaignQueuedStatus,
@@ -38,6 +39,7 @@ import {
 
 export type { ListGrowthStats } from "./ghl-conversion-analytics";
 export {
+  campaignCountsInAttribution,
   campaignCountsInEmailTotals,
   formatGhlCampaignStatusLabel,
   isGhlCampaignDeadStatus,
@@ -925,7 +927,7 @@ export async function pullClientEmailAnalytics(
 
   const attributionSends: AttributionSend[] = [
     ...campaigns
-      .filter((row) => campaignCountsInEmailTotals(row))
+      .filter((row) => campaignCountsInAttribution(row))
       .map((row) => ({
         id: row.id,
         name: row.name,
@@ -933,7 +935,7 @@ export async function pullClientEmailAnalytics(
         channel: "campaign" as const,
       })),
     ...flows
-      .filter((row) => campaignCountsInEmailTotals(row))
+      .filter((row) => campaignCountsInAttribution(row))
       .map((row) => ({
         id: row.id,
         name: row.name,
@@ -1662,7 +1664,7 @@ export async function pullClientEmailJourneys(
 
   const sends: AttributionSend[] = [
     ...analytics.campaigns
-      .filter((row) => campaignCountsInEmailTotals(row))
+      .filter((row) => campaignCountsInAttribution(row))
       .map((row) => ({
         id: row.id,
         name: row.name,
@@ -1670,7 +1672,7 @@ export async function pullClientEmailJourneys(
         channel: "campaign" as const,
       })),
     ...analytics.flows
-      .filter((row) => campaignCountsInEmailTotals(row))
+      .filter((row) => campaignCountsInAttribution(row))
       .map((row) => ({
         id: row.id,
         name: row.name,

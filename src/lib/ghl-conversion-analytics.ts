@@ -569,11 +569,91 @@ async function hydrateWorkflowCampaign(
 }
 
 /**
+ * When Email Marketing and Automations both return the same flow, keep the
+ * richer stats row so Lifecycle shows real automation send volume.
+ */
+export function preferWorkflowEmailCampaign(
+  a: WorkflowEmailCampaign,
+  b: WorkflowEmailCampaign
+): WorkflowEmailCampaign {
+  const score = (row: WorkflowEmailCampaign) =>
+    (row.statsAvailable ? 1_000_000 : 0) +
+    row.sent * 100 +
+    row.opened * 10 +
+    row.clicked * 10 +
+    row.delivered;
+  return score(a) >= score(b) ? a : b;
+}
+
+function putWorkflowCampaign(
+  byKey: Map<string, WorkflowEmailCampaign>,
+  row: WorkflowEmailCampaign
+): void {
+  const keys = [row.id, row.sourceId].filter(
+    (key): key is string => Boolean(key)
+  );
+  let preferred = row;
+  for (const key of keys) {
+    const existing = byKey.get(key);
+    if (existing) preferred = preferWorkflowEmailCampaign(preferred, existing);
+  }
+  for (const key of keys) {
+    byKey.set(key, preferred);
+  }
+}
+
+async function hydrateAutomationWorkflow(
+  locationId: string,
+  workflow: {
+    id: string;
+    name: string;
+    status: string;
+    updatedAt: string;
+    createdAt: string;
+  }
+): Promise<WorkflowEmailCampaign> {
+  const stats = await fetchWorkflowCampaignStats(locationId, workflow.id);
+  const sent = num(stats?.sent);
+  const delivered = num(stats?.delivered) || num(stats?.accepted) || sent;
+  const opened = num(stats?.opened);
+  const clicked = num(stats?.clicked);
+  const bounced =
+    num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
+  const unsubscribed = num(stats?.unsubscribed);
+  const openRate =
+    stats?.openRate !== undefined && stats?.openRate !== null
+      ? num(stats.openRate)
+      : rate(opened, delivered);
+  const clickRate =
+    stats?.clickRate !== undefined && stats?.clickRate !== null
+      ? num(stats.clickRate)
+      : rate(clicked, delivered);
+  const sentOn = ymd(workflow.updatedAt) || ymd(workflow.createdAt) || null;
+  return {
+    id: workflow.id,
+    name: workflow.name,
+    status: workflow.status || "published",
+    sourceId: workflow.id,
+    sentOn,
+    sent,
+    delivered,
+    opened,
+    clicked,
+    bounced,
+    unsubscribed,
+    openRate,
+    clickRate,
+    statsAvailable: Boolean(stats),
+    abandonedRecovery: isAbandonedRecoveryFlowName(workflow.name),
+  };
+}
+
+/**
  * Workflow / automation email flows for the analytics dashboard.
  *
- * Prefer Email Marketing V2 workflow-campaign records (they carry send stats).
- * When that list is empty or blocked, fall back to published Automations
- * workflows so GHL flows still show up in Lifecycle.
+ * Prefer Email Marketing V2 workflow-campaign records (they carry send stats),
+ * and always union published Automations workflows. EM drafts alone used to
+ * skip Automations and leave Lifecycle missing real automation email data.
  */
 export async function listWorkflowEmailCampaigns(
   locationId: string
@@ -608,68 +688,39 @@ export async function listWorkflowEmailCampaigns(
   await pooled(marketingRows, async (raw) => {
     const row = await hydrateWorkflowCampaign(locationId, raw);
     if (!row) return;
-    byKey.set(row.sourceId || row.id, row);
-    byKey.set(row.id, row);
+    putWorkflowCampaign(byKey, row);
   });
 
-  // Automations fallback — classic GHL "flows" live here even when Email
-  // Marketing has no workflow-campaign records yet.
+  // Always merge Automations — classic GHL flows live here even when Email
+  // Marketing already returned draft/partial workflow-campaign rows.
+  let automationsError: unknown = null;
+  try {
+    const workflows = await listWorkflows(locationId);
+    const published = workflows.filter((w) => {
+      if (!w.id) return false;
+      const status = (w.status || "").toLowerCase();
+      return !status || status === "published" || status === "active";
+    });
+    await pooled(published, async (workflow) => {
+      const row = await hydrateAutomationWorkflow(locationId, workflow);
+      putWorkflowCampaign(byKey, row);
+    });
+  } catch (err) {
+    automationsError = err;
+  }
+
   if (byKey.size === 0) {
-    try {
-      const workflows = await listWorkflows(locationId);
-      const published = workflows.filter((w) => {
-        if (!w.id) return false;
-        const status = (w.status || "").toLowerCase();
-        return !status || status === "published" || status === "active";
-      });
-      await pooled(published, async (workflow) => {
-        const stats = await fetchWorkflowCampaignStats(locationId, workflow.id);
-        const sent = num(stats?.sent);
-        const delivered = num(stats?.delivered) || num(stats?.accepted) || sent;
-        const opened = num(stats?.opened);
-        const clicked = num(stats?.clicked);
-        const bounced =
-          num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
-        const unsubscribed = num(stats?.unsubscribed);
-        const openRate =
-          stats?.openRate !== undefined && stats?.openRate !== null
-            ? num(stats.openRate)
-            : rate(opened, delivered);
-        const clickRate =
-          stats?.clickRate !== undefined && stats?.clickRate !== null
-            ? num(stats.clickRate)
-            : rate(clicked, delivered);
-        const sentOn = ymd(workflow.updatedAt) || ymd(workflow.createdAt) || null;
-        byKey.set(workflow.id, {
-          id: workflow.id,
-          name: workflow.name,
-          status: workflow.status || "published",
-          sourceId: workflow.id,
-          sentOn,
-          sent,
-          delivered,
-          opened,
-          clicked,
-          bounced,
-          unsubscribed,
-          openRate,
-          clickRate,
-          statsAvailable: Boolean(stats),
-          abandonedRecovery: isAbandonedRecoveryFlowName(workflow.name),
-        });
-      });
-    } catch (err) {
-      if (
-        marketingError instanceof GhlError &&
-        (marketingError.status === 401 ||
-          marketingError.status === 403 ||
-          marketingError.status === 404)
-      ) {
-        return [];
-      }
-      if (marketingError) throw marketingError;
-      throw err;
+    if (
+      marketingError instanceof GhlError &&
+      (marketingError.status === 401 ||
+        marketingError.status === 403 ||
+        marketingError.status === 404) &&
+      automationsError
+    ) {
+      return [];
     }
+    if (marketingError) throw marketingError;
+    if (automationsError) throw automationsError;
   }
 
   const deduped = new Map<string, WorkflowEmailCampaign>();

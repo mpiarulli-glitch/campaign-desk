@@ -5,6 +5,7 @@ import {
   resolveAnalyticsRange,
 } from "../src/lib/ghl-email-analytics";
 import {
+  campaignCountsInAttribution,
   campaignCountsInEmailTotals,
   formatGhlCampaignStatusLabel,
   resolveGhlCampaignSentCount,
@@ -164,6 +165,41 @@ test("open-rate totals ignore scheduled and zero-engagement rows", () => {
   assert.equal(formatGhlCampaignStatusLabel("scheduled"), "Scheduled");
   assert.equal(formatGhlCampaignStatusLabel("complete"), "Sent");
   assert.equal(formatGhlCampaignStatusLabel("processing"), "Sending");
+});
+
+test("attribution includes sent automation flows even with zero opens", () => {
+  assert.equal(
+    campaignCountsInAttribution({
+      status: "published",
+      sent: 420,
+      statsAvailable: true,
+    }),
+    true
+  );
+  assert.equal(
+    campaignCountsInAttribution({
+      status: "complete",
+      sent: 6443,
+      statsAvailable: true,
+    }),
+    true
+  );
+  assert.equal(
+    campaignCountsInAttribution({
+      status: "draft",
+      sent: 0,
+      statsAvailable: false,
+    }),
+    false
+  );
+  assert.equal(
+    campaignCountsInAttribution({
+      status: "scheduled",
+      sent: 0,
+      statsAvailable: false,
+    }),
+    false
+  );
 });
 
 test("rollup open rate is not diluted by scheduled audience rows", () => {

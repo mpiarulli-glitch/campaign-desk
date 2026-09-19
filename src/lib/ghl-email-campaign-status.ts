@@ -127,6 +127,24 @@ export function campaignCountsInEmailTotals(row: {
   return true;
 }
 
+/**
+ * Whether a campaign/flow can receive conversion credit.
+ *
+ * Looser than open/click averages: real sends still count even when nobody
+ * opened yet, so automation flows with volume are not dropped from Outcomes.
+ */
+export function campaignCountsInAttribution(row: {
+  status: string;
+  sent: number;
+  statsAvailable?: boolean;
+}): boolean {
+  if (isGhlCampaignDeadStatus(row.status)) return false;
+  if (isGhlCampaignQueuedStatus(row.status)) return false;
+  if (row.sent <= 0) return false;
+  if (row.statsAvailable === false) return false;
+  return true;
+}
+
 export function formatGhlCampaignStatusLabel(status: string): string {
   const s = status.toLowerCase();
   if (s.includes("schedul") || s.includes("pending") || s.includes("queue")) {

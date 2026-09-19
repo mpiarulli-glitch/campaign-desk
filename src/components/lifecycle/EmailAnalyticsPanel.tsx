@@ -455,7 +455,7 @@ export function EmailAnalyticsPanel({
             ) : (
               <>
                 {attributionHonestyLine(data.attributionDays)} Opens and clicks
-                use sent campaigns only
+                use sent campaigns and flows with real engagement
                 {scheduledCount > 0
                   ? ` · ${scheduledCount} scheduled excluded`
                   : ""}
