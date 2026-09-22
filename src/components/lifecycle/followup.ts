@@ -6,6 +6,12 @@ export async function postCampaignFollowup(campaignId: string): Promise<{
   recipient?: string;
   followupCount?: number;
   followupLastAt?: string | null;
+  email?: {
+    ok?: boolean;
+    to?: string;
+    skipped?: string;
+    error?: string;
+  };
 }> {
   const res = await fetch(`/api/campaigns/${campaignId}/basecamp-followup`, {
     method: "POST",
@@ -21,5 +27,6 @@ export async function postCampaignFollowup(campaignId: string): Promise<{
       typeof data.followupCount === "number" ? data.followupCount : undefined,
     followupLastAt:
       typeof data.followupLastAt === "string" ? data.followupLastAt : null,
+    email: data.email,
   };
 }

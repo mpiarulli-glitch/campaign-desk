@@ -3311,9 +3311,21 @@ export default function AdminCampaignPage() {
                         campaignId={id}
                         className="btn btn-secondary btn-sm"
                         followupCount={basecampApproval.followupCount || 0}
-                        onDone={(recipient, nextCount) => {
+                        onDone={(recipient, nextCount, email) => {
+                          let emailNote = "";
+                          if (email?.ok && email.to) {
+                            emailNote = ` Emailed ${email.to}.`;
+                          } else if (email?.skipped === "no contact email") {
+                            emailNote =
+                              " No email sent — add a contact email on the client.";
+                          } else if (email && !email.ok) {
+                            emailNote = email.error
+                              ? ` Basecamp posted, but email failed: ${email.error}`
+                              : " Basecamp posted, but the email did not send.";
+                          }
                           setMessage(
-                            `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.`
+                            `Follow-up posted${recipient ? ` to ${recipient}` : ""} on the Basecamp card.` +
+                              emailNote
                           );
                           setBasecampApproval((prev) =>
                             prev

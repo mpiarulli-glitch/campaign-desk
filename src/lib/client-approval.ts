@@ -547,15 +547,32 @@ export function clientApprovalEmailText(
   customText?: string
 ): string {
   const source = (customText || "").trim() || clientApprovalMessageText(input);
-  const withoutCc = stripSylviaCcLines(source);
-  const adapted = withoutCc.replace(BASECAMP_REPLY_RE, EMAIL_REPLY_LINE);
-  // If the draft never had the Basecamp line (heavily edited), leave it alone.
-  return adapted.includes("reply to this email")
-    ? adapted
-    : withoutCc.replace(
-        /please reply on this Basecamp card[^\n]*/gi,
-        "please reply to this email to let us know it has been approved"
-      );
+  return adaptBasecampReplyForEmail(stripSylviaCcLines(source));
+}
+
+function adaptBasecampReplyForEmail(text: string): string {
+  return text
+    .replace(BASECAMP_REPLY_RE, EMAIL_REPLY_LINE)
+    .replace(
+      /After you approve in the app, reply on this Basecamp card to let us know\.?/gi,
+      "After you approve in the app, reply to this email to let us know."
+    )
+    .replace(
+      /please reply on this Basecamp card[^\n]*/gi,
+      "please reply to this email to let us know it has been approved"
+    );
+}
+
+export function clientReviewFollowupEmailSubject(
+  input: ClientApprovalMessageInput
+): string {
+  return `Following up: ${input.campaignTitle} is ready for your review`;
+}
+
+export function clientReviewFollowupEmailText(
+  input: ClientApprovalMessageInput
+): string {
+  return adaptBasecampReplyForEmail(clientReviewFollowupText(input));
 }
 
 function paragraphsToEmailHtml(text: string): string {
@@ -587,12 +604,17 @@ export function clientApprovalEmailBodies(args: {
   customText?: string;
   clientName: string;
   signer: string;
+  subject?: string;
+  headline?: string;
+  textBody?: string;
 }): { subject: string; html: string; text: string } {
   const { input, customText, clientName, signer } = args;
-  const subject = clientApprovalEmailSubject(input);
-  const textBody = clientApprovalEmailText(input, customText);
+  const subject = args.subject || clientApprovalEmailSubject(input);
+  const textBody =
+    args.textBody || clientApprovalEmailText(input, customText);
   const text = `${textBody}\n\nThanks,\n${signer}\n`;
   const cta = approveButtonLabel(input);
+  const headline = args.headline || "Ready for your review";
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -622,7 +644,7 @@ export function clientApprovalEmailBodies(args: {
         <tr>
           <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
             <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${escapeHtml(clientName)}</p>
-            <h1 class="h1" style="margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:1.25;color:#111111;font-weight:600;">Ready for your review</h1>
+            <h1 class="h1" style="margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:1.25;color:#111111;font-weight:600;">${escapeHtml(headline)}</h1>
             ${paragraphsToEmailHtml(textBody)}
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
               <tr><td>
@@ -645,4 +667,19 @@ export function clientApprovalEmailBodies(args: {
 </body>
 </html>`;
   return { subject, html, text };
+}
+
+export function clientReviewFollowupEmailBodies(args: {
+  input: ClientApprovalMessageInput;
+  clientName: string;
+  signer: string;
+}): { subject: string; html: string; text: string } {
+  return clientApprovalEmailBodies({
+    input: args.input,
+    clientName: args.clientName,
+    signer: args.signer,
+    subject: clientReviewFollowupEmailSubject(args.input),
+    headline: "Friendly follow-up",
+    textBody: clientReviewFollowupEmailText(args.input),
+  });
 }

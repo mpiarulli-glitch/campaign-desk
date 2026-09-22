@@ -5,6 +5,8 @@ import {
   clientApprovalEmailSubject,
   clientApprovalEmailText,
   clientApprovalMessageText,
+  clientReviewFollowupEmailBodies,
+  clientReviewFollowupEmailText,
 } from "../src/lib/client-approval";
 import {
   APPROVAL_EMAIL_CC,
@@ -98,4 +100,25 @@ test("sendApprovalEmail skips when there is no To address", async () => {
 test("approval emails CC Michael, not Sylvia", () => {
   assert.equal(APPROVAL_EMAIL_CC, "mpiarulli@marketingempiregroup.com");
   assert.notEqual(APPROVAL_EMAIL_CC, SYLVIA_CC_EMAIL);
+});
+
+test("follow-up email asks for a reply by email, not Basecamp", () => {
+  const text = clientReviewFollowupEmailText(input);
+  assert.match(text, /^Hi Katie,/);
+  assert.match(text, /friendly follow-up/);
+  assert.match(text, /reply to this email/);
+  assert.doesNotMatch(text, /Basecamp card/);
+});
+
+test("follow-up email bodies use a follow-up subject and headline", () => {
+  const { subject, html, text } = clientReviewFollowupEmailBodies({
+    input,
+    clientName: "Vitatherapy",
+    signer: "Kyle Morris",
+  });
+  assert.match(subject, /^Following up:/);
+  assert.match(html, /Friendly follow-up/);
+  assert.match(html, /Approve and notify email team/);
+  assert.doesNotMatch(html, /bc-attachment/);
+  assert.match(text, /Thanks,\nKyle Morris/);
 });

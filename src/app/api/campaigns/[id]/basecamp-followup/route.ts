@@ -10,6 +10,10 @@ import {
   hasConnection,
   mentionHtml,
 } from "@/lib/basecamp";
+import {
+  resolveApprovalEmailTo,
+  sendApprovalFollowupEmail,
+} from "@/lib/approval-email";
 import { getCampaignById, listEmails, recordBasecampFollowUp } from "@/lib/campaigns";
 import { approvalChannelForAssets, clientReviewFollowupHtml } from "@/lib/client-approval";
 import { recordFailure, clearFailure } from "@/lib/failures";
@@ -20,7 +24,8 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * Comment on the campaign's existing Basecamp approval card asking the client
- * to review. Does not create a card — send the approval first.
+ * to review, and email the same follow-up. Does not create a card — send the
+ * approval first.
  */
 export async function POST(_request: Request, { params }: Params) {
   if (!(await isAdminAuthenticated())) {
@@ -69,18 +74,17 @@ export async function POST(_request: Request, { params }: Params) {
     );
   }
 
-  const html = clientReviewFollowupHtml(
-    {
-      clientContactName: recipient.name || client.contact_name || client.name,
-      campaignTitle: campaign.title,
-      previewUrl: reviewUrl(campaign.external_token),
-      channel: approvalChannelForAssets(
-        listEmails(campaign.id).map((email) => email.kind)
-      ),
-      itemCount: listEmails(campaign.id).length,
-    },
-    mentionHtml(recipient)
-  );
+  const messageInput = {
+    clientContactName: recipient.name || client.contact_name || client.name,
+    campaignTitle: campaign.title,
+    previewUrl: reviewUrl(campaign.external_token),
+    channel: approvalChannelForAssets(
+      listEmails(campaign.id).map((email) => email.kind)
+    ),
+    itemCount: listEmails(campaign.id).length,
+  };
+
+  const html = clientReviewFollowupHtml(messageInput, mentionHtml(recipient));
 
   const result = await commentOnCard(
     client.basecamp_project_id,
@@ -105,11 +109,30 @@ export async function POST(_request: Request, { params }: Params) {
   if (campaign.client_id) markClientFollowUpSent(campaign.client_id);
   const updated = recordBasecampFollowUp(campaign.id);
 
+  const emailTo = resolveApprovalEmailTo({
+    contactEmail: client.contact_email,
+    rosterEmail: recipient.email_address,
+  });
+  const email = await sendApprovalFollowupEmail({
+    client,
+    to: emailTo,
+    messageInput,
+  });
+  if (!email.ok && !email.skipped) {
+    recordFailure({
+      kind: "email",
+      subject: email.to || client.name,
+      detail: email.error || "Could not send the follow-up email.",
+      hint: "The Basecamp follow-up posted. Fix email delivery, then follow up again if needed.",
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     recipient: recipient.name,
     cardUrl: result.url || campaign.basecamp_card_url,
     followupCount: updated?.basecamp_followup_count ?? 0,
     followupLastAt: updated?.basecamp_followup_last_at ?? null,
+    email,
   });
 }

@@ -13,7 +13,16 @@ export function FollowUpButton({
   campaignId: string;
   className?: string;
   followupCount?: number;
-  onDone?: (recipient?: string, nextCount?: number) => void;
+  onDone?: (
+    recipient?: string,
+    nextCount?: number,
+    email?: {
+      ok?: boolean;
+      to?: string;
+      skipped?: string;
+      error?: string;
+    }
+  ) => void;
   onError?: (error: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -31,7 +40,7 @@ export function FollowUpButton({
       return;
     }
     setDone(true);
-    onDone?.(result.recipient, result.followupCount);
+    onDone?.(result.recipient, result.followupCount, result.email);
   }
 
   const label =

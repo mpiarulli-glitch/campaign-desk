@@ -10,6 +10,7 @@ import {
 } from "./client-services";
 import {
   clientApprovalEmailBodies,
+  clientReviewFollowupEmailBodies,
   type ClientApprovalMessageInput,
 } from "./client-approval";
 import { emailConfigured, sendEmailWithId, type EmailResult } from "./email";
@@ -34,11 +35,11 @@ export function resolveApprovalEmailTo(args: {
   return (args.rosterEmail || "").trim();
 }
 
-export async function sendApprovalEmail(args: {
+async function sendBrandedApprovalEmail(args: {
   client: RevClient;
   to: string;
-  messageInput: ClientApprovalMessageInput;
-  customMessage?: string;
+  bodies: { subject: string; html: string; text: string };
+  failLabel: string;
 }): Promise<ApprovalEmailResult> {
   const to = args.to.trim();
   if (!to) {
@@ -54,18 +55,12 @@ export async function sendApprovalEmail(args: {
 
   const am = accountManagerFor(args.client);
   const { from, replyTo } = senderFor(am);
-  const { subject, html, text } = clientApprovalEmailBodies({
-    input: args.messageInput,
-    customText: args.customMessage,
-    clientName: args.client.name,
-    signer: am?.label || "Marketing Empire Group",
-  });
 
   const res: EmailResult = await sendEmailWithId({
     to,
-    subject,
-    html,
-    text,
+    subject: args.bodies.subject,
+    html: args.bodies.html,
+    text: args.bodies.text,
     from,
     replyTo,
     cc: APPROVAL_EMAIL_CC,
@@ -74,9 +69,47 @@ export async function sendApprovalEmail(args: {
     return {
       ok: false,
       to,
-      error: "Could not send the approval email.",
+      error: args.failLabel,
       id: res.id,
     };
   }
   return { ok: true, to, id: res.id };
+}
+
+export async function sendApprovalEmail(args: {
+  client: RevClient;
+  to: string;
+  messageInput: ClientApprovalMessageInput;
+  customMessage?: string;
+}): Promise<ApprovalEmailResult> {
+  const am = accountManagerFor(args.client);
+  return sendBrandedApprovalEmail({
+    client: args.client,
+    to: args.to,
+    bodies: clientApprovalEmailBodies({
+      input: args.messageInput,
+      customText: args.customMessage,
+      clientName: args.client.name,
+      signer: am?.label || "Marketing Empire Group",
+    }),
+    failLabel: "Could not send the approval email.",
+  });
+}
+
+export async function sendApprovalFollowupEmail(args: {
+  client: RevClient;
+  to: string;
+  messageInput: ClientApprovalMessageInput;
+}): Promise<ApprovalEmailResult> {
+  const am = accountManagerFor(args.client);
+  return sendBrandedApprovalEmail({
+    client: args.client,
+    to: args.to,
+    bodies: clientReviewFollowupEmailBodies({
+      input: args.messageInput,
+      clientName: args.client.name,
+      signer: am?.label || "Marketing Empire Group",
+    }),
+    failLabel: "Could not send the follow-up email.",
+  });
 }
