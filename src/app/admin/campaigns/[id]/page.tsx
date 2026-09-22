@@ -3512,7 +3512,7 @@ export default function AdminCampaignPage() {
                           rosterEmail.trim() ||
                           (basecampApproval.emailTo || "").trim();
                         return to
-                          ? `Posts the Deliverables card to Needs Approval and emails ${to} (Sylvia CC’d).`
+                          ? `Posts the Deliverables card to Needs Approval and emails ${to} (you’re CC’d).`
                           : `Posts the Deliverables card to Needs Approval. Add a contact email on the client to also email the ask.`;
                       })()
                     : basecampApproval.missing.includes("Basecamp project")

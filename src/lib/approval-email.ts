@@ -1,6 +1,7 @@
 // Email channel for campaign client approvals. Basecamp remains the workflow
 // of record (Deliverables → Needs Approval); this is the parallel inbox ping
 // so the contact sees the ask even when they are not watching Basecamp.
+// Approval emails CC Michael; Basecamp cards still CC Sylvia.
 
 import type { RevClient } from "./db";
 import {
@@ -12,7 +13,9 @@ import {
   type ClientApprovalMessageInput,
 } from "./client-approval";
 import { emailConfigured, sendEmailWithId, type EmailResult } from "./email";
-import { SYLVIA_CC_EMAIL } from "./review-cc";
+
+/** Always CC'd on campaign approval emails (inbox ping for Michael). */
+export const APPROVAL_EMAIL_CC = "mpiarulli@marketingempiregroup.com";
 
 export type ApprovalEmailResult = {
   ok: boolean;
@@ -65,9 +68,8 @@ export async function sendApprovalEmail(args: {
     text,
     from,
     replyTo,
-    cc: SYLVIA_CC_EMAIL,
+    cc: APPROVAL_EMAIL_CC,
   });
-
   if (!res.ok) {
     return {
       ok: false,

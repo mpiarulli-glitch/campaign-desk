@@ -7,6 +7,7 @@ import {
   clientApprovalMessageText,
 } from "../src/lib/client-approval";
 import {
+  APPROVAL_EMAIL_CC,
   resolveApprovalEmailTo,
   sendApprovalEmail,
 } from "../src/lib/approval-email";
@@ -94,6 +95,7 @@ test("sendApprovalEmail skips when there is no To address", async () => {
   assert.equal(result.skipped, "no contact email");
 });
 
-test("Sylvia's approval CC address is her MEG inbox", () => {
-  assert.equal(SYLVIA_CC_EMAIL, "sartiga@marketingempiregroup.com");
+test("approval emails CC Michael, not Sylvia", () => {
+  assert.equal(APPROVAL_EMAIL_CC, "mpiarulli@marketingempiregroup.com");
+  assert.notEqual(APPROVAL_EMAIL_CC, SYLVIA_CC_EMAIL);
 });
