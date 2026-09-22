@@ -4,7 +4,6 @@ import {
   clientApprovalEmailBodies,
   clientApprovalEmailSubject,
   clientApprovalEmailText,
-  clientApprovalMessageText,
   clientReviewFollowupEmailBodies,
   clientReviewFollowupEmailText,
 } from "../src/lib/client-approval";
@@ -21,43 +20,39 @@ const input = {
   previewUrl: "https://campaign-desk.example/review/client-token",
 };
 
-test("approval email subject names the campaign", () => {
+test("approval email uses the pending-campaign subject", () => {
   assert.equal(
-    clientApprovalEmailSubject(input),
-    "Vitatherapy Welcome Series is ready for your review"
+    clientApprovalEmailSubject(),
+    "Your Campaign Is Waiting For Approval"
   );
 });
 
-test("approval email text asks for a reply by email, not Basecamp", () => {
+test("approval email text matches the ops template", () => {
   const text = clientApprovalEmailText(input);
   assert.match(text, /^Hi Katie,/);
-  assert.match(text, /Here's what to check:/);
-  assert.match(text, /reply to this email/);
-  assert.doesNotMatch(text, /Basecamp card/);
-  assert.doesNotMatch(text, /CC: @Sylvia/);
-  assert.doesNotMatch(text, /bc-attachment/);
+  assert.match(text, /ready and waiting for your approval/);
+  assert.match(text, /Review Pending Campaign:/);
+  assert.match(text, /campaign-desk\.example\/review\/client-token/);
+  assert.match(text, /The Marketing Empire Group Team/);
+  assert.doesNotMatch(text, /Basecamp/);
+  assert.doesNotMatch(text, /Here's what to check/);
 });
 
-test("approval email adapts a custom Basecamp draft", () => {
-  const draft = clientApprovalMessageText(input);
-  const text = clientApprovalEmailText(input, draft);
-  assert.match(text, /reply to this email/);
-  assert.doesNotMatch(text, /Basecamp card/);
-});
-
-test("approval email bodies include a branded CTA and no Basecamp markup", () => {
+test("approval email HTML is the pending-campaign template", () => {
   const { subject, html, text } = clientApprovalEmailBodies({
     input,
     clientName: "Vitatherapy",
     signer: "Kyle Morris",
   });
-  assert.match(subject, /ready for your review/);
-  assert.match(html, /Ready for your review/);
-  assert.match(html, /Approve and notify email team/);
+  assert.equal(subject, "Your Campaign Is Waiting For Approval");
+  assert.match(html, /Review Pending Campaign/);
+  assert.match(html, /#00d4e8/);
   assert.match(html, /campaign-desk\.example\/review\/client-token/);
-  assert.match(html, /Kyle Morris/);
+  assert.match(html, /6916cb1921776f532bcab29e/);
+  assert.match(html, /Please review the campaign and approve it/);
   assert.doesNotMatch(html, /bc-attachment/);
-  assert.match(text, /Thanks,\nKyle Morris/);
+  assert.doesNotMatch(html, /\{\{contact\./);
+  assert.match(text, /Thank you,\nThe Marketing Empire Group Team/);
 });
 
 test("resolveApprovalEmailTo prefers the saved contact email", () => {
@@ -102,23 +97,20 @@ test("approval emails CC Michael, not Sylvia", () => {
   assert.notEqual(APPROVAL_EMAIL_CC, SYLVIA_CC_EMAIL);
 });
 
-test("follow-up email asks for a reply by email, not Basecamp", () => {
+test("follow-up email uses the quick-review subject and template", () => {
   const text = clientReviewFollowupEmailText(input);
   assert.match(text, /^Hi Katie,/);
   assert.match(text, /friendly follow-up/);
-  assert.match(text, /reply to this email/);
-  assert.doesNotMatch(text, /Basecamp card/);
-});
+  assert.match(text, /Review Pending Campaign:/);
+  assert.doesNotMatch(text, /Basecamp/);
 
-test("follow-up email bodies use a follow-up subject and headline", () => {
-  const { subject, html, text } = clientReviewFollowupEmailBodies({
+  const { subject, html } = clientReviewFollowupEmailBodies({
     input,
     clientName: "Vitatherapy",
     signer: "Kyle Morris",
   });
-  assert.match(subject, /^Following up:/);
-  assert.match(html, /Friendly follow-up/);
-  assert.match(html, /Approve and notify email team/);
+  assert.equal(subject, "Quick Review Needed For Your Campaign");
+  assert.match(html, /still ready and waiting for your approval/);
+  assert.match(html, /Review Pending Campaign/);
   assert.doesNotMatch(html, /bc-attachment/);
-  assert.match(text, /Thanks,\nKyle Morris/);
 });

@@ -524,148 +524,200 @@ export function campaignApprovalRevisionKey(
   return createHash("sha256").update(source).digest("hex");
 }
 
+
 /* ------------------------------------------------------- email channel */
 
-const BASECAMP_REPLY_RE =
-  /After you approve in the app, please reply on this Basecamp card to let us know it has been approved\.[^\n]*/g;
+// Pending-campaign approval email (MEG ops plain template). Basecamp still uses
+// the editable checklist; this is the fixed inbox copy.
 
-const EMAIL_REPLY_LINE =
-  "After you approve in the app, please reply to this email to let us know it has been approved. That helps us catch it quickly.";
+const APPROVAL_EMAIL_LOGO =
+  "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb1921776f532bcab29e.png";
 
-const LOGO =
-  "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
+const APPROVAL_EMAIL_PREVIEW =
+  "Please review the campaign and approve it or leave your feedback.";
 
-export function clientApprovalEmailSubject(
-  input: ClientApprovalMessageInput
-): string {
-  return `${input.campaignTitle} is ready for your review`;
+const FOLLOWUP_EMAIL_PREVIEW =
+  "Your campaign is ready for your approval before we move forward.";
+
+/** Optional agency mailing address for the email footer (GHL location.full_address). */
+function megMailingAddress(): string {
+  return (process.env.MEG_MAILING_ADDRESS || "").trim();
 }
 
-/** Plaintext for the email channel — same checklist, reply-by-email instead of Basecamp. */
+export function clientApprovalEmailSubject(): string {
+  return "Your Campaign Is Waiting For Approval";
+}
+
+export function clientReviewFollowupEmailSubject(): string {
+  return "Quick Review Needed For Your Campaign";
+}
+
+/** Plaintext twin of the pending-campaign approval email. */
 export function clientApprovalEmailText(
-  input: ClientApprovalMessageInput,
-  customText?: string
-): string {
-  const source = (customText || "").trim() || clientApprovalMessageText(input);
-  return adaptBasecampReplyForEmail(stripSylviaCcLines(source));
-}
-
-function adaptBasecampReplyForEmail(text: string): string {
-  return text
-    .replace(BASECAMP_REPLY_RE, EMAIL_REPLY_LINE)
-    .replace(
-      /After you approve in the app, reply on this Basecamp card to let us know\.?/gi,
-      "After you approve in the app, reply to this email to let us know."
-    )
-    .replace(
-      /please reply on this Basecamp card[^\n]*/gi,
-      "please reply to this email to let us know it has been approved"
-    );
-}
-
-export function clientReviewFollowupEmailSubject(
   input: ClientApprovalMessageInput
 ): string {
-  return `Following up: ${input.campaignTitle} is ready for your review`;
+  const name = firstName(input.clientContactName);
+  return `Hi ${name},
+
+Your campaign is ready and waiting for your approval.
+
+Please take a few minutes to review it. If everything looks good, approve it on the review page. If you would like any changes, leave your feedback there so our team can update it.
+
+Review Pending Campaign: ${input.previewUrl}
+
+Once it is approved, we can keep your campaign moving toward its scheduled send date.
+
+If you have any questions, just reply to this email and I will help.
+
+Thank you,
+The Marketing Empire Group Team`;
 }
 
 export function clientReviewFollowupEmailText(
   input: ClientApprovalMessageInput
 ): string {
-  return adaptBasecampReplyForEmail(clientReviewFollowupText(input));
+  const name = firstName(input.clientContactName);
+  return `Hi ${name},
+
+Just a friendly follow-up — your campaign is still ready and waiting for your approval.
+
+Please take a few minutes to review it. If everything looks good, approve it on the review page. If you would like any changes, leave your feedback there so our team can update it.
+
+Review Pending Campaign: ${input.previewUrl}
+
+Once it is approved, we can keep your campaign moving toward its scheduled send date.
+
+If you have any questions, just reply to this email and I will help.
+
+Thank you,
+The Marketing Empire Group Team`;
 }
 
-function paragraphsToEmailHtml(text: string): string {
-  const blocks = text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/);
-  return blocks
-    .map((block) => {
-      const lines = block
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const allBullets =
-        lines.length > 0 && lines.every((line) => /^[•\-*]\s+/.test(line));
-      if (allBullets) {
-        const items = lines
-          .map((line) => line.replace(/^[•\-*]\s+/, ""))
-          .map((line) => `<li style="margin:0 0 6px;">${linkifyEscaped(escapeHtml(line))}</li>`)
-          .join("");
-        return `<ul style="margin:0 0 16px;padding-left:22px;font-size:16px;line-height:1.55;color:#333333;">${items}</ul>`;
-      }
-      return `<p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${linkifyEscaped(
-        escapeHtml(block.trim())
-      ).replace(/\n/g, "<br>")}</p>`;
-    })
-    .join("");
+function pendingCampaignEmailHtml(args: {
+  firstName: string;
+  reviewUrl: string;
+  subject: string;
+  preview: string;
+  introHtml: string;
+}): string {
+  const name = escapeHtml(args.firstName);
+  const url = escapeHtml(args.reviewUrl);
+  const subject = escapeHtml(args.subject);
+  const preview = escapeHtml(args.preview);
+  const address = escapeHtml(megMailingAddress());
+  const addressBlock = address
+    ? `<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#777777;">${address}</p>`
+    : "";
+
+  return `<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>${subject}</title>
+  <style type="text/css">
+    @media screen and (max-width:600px) {
+      .main-container { width:100% !important; max-width:100% !important; }
+      .content-pad { padding-left:24px !important; padding-right:24px !important; }
+      .plain-copy { font-size:17px !important; line-height:1.65 !important; }
+      .cta-button { box-sizing:border-box !important; display:block !important; width:100% !important; max-width:100% !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;opacity:0;color:#ffffff;font-size:1px;line-height:1px;">
+    ${preview}
+  </div>
+
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="width:100%;background-color:#ffffff;">
+    <tr>
+      <td align="center" style="padding:0;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td>
+        <![endif]-->
+        <table class="main-container" role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="width:100%;max-width:620px;background-color:#ffffff;">
+          <tr>
+            <td class="content-pad" style="padding:32px 40px 20px;border-bottom:1px solid #eeeeee;">
+              <a href="https://www.marketingempiregroup.com" style="text-decoration:none;">
+                <img src="${APPROVAL_EMAIL_LOGO}" width="180" border="0" alt="Marketing Empire Group" style="display:block;width:180px;max-width:100%;height:auto;">
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="content-pad" style="padding:36px 40px;">
+              <p class="plain-copy" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Hi ${name},</p>
+
+              ${args.introHtml}
+
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" style="padding:0 0 26px;">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                      href="${url}" style="height:48px;v-text-anchor:middle;width:222px;" arcsize="8%"
+                      strokecolor="#00d4e8" fillcolor="#00d4e8">
+                      <w:anchorlock/>
+                      <center style="color:#111111;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">Review Pending Campaign</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <a class="cta-button" href="${url}" style="background-color:#00d4e8;border-radius:4px;color:#111111;display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;line-height:48px;text-align:center;text-decoration:none;width:222px;-webkit-text-size-adjust:none;">Review Pending Campaign</a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+
+              <p class="plain-copy" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Once it is approved, we can keep your campaign moving toward its scheduled send date.</p>
+
+              <p class="plain-copy" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">If you have any questions, just reply to this email and I will help.</p>
+
+              <p class="plain-copy" style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Thank you,<br>The Marketing Empire Group Team</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td class="content-pad" style="padding:24px 40px 32px;border-top:1px solid #eeeeee;">
+              <p style="margin:0 0 5px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#777777;">Marketing Empire Group</p>
+              ${addressBlock}
+            </td>
+          </tr>
+        </table>
+        <!--[if (gte mso 9)|(IE)]>
+        </td></tr></table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }
+
+const APPROVAL_INTRO_HTML = `<p class="plain-copy" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Your campaign is ready and waiting for your approval.</p>
+
+              <p class="plain-copy" style="margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Please take a few minutes to review it. If everything looks good, approve it on the review page. If you would like any changes, leave your feedback there so our team can update it.</p>`;
+
+const FOLLOWUP_INTRO_HTML = `<p class="plain-copy" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Just a friendly follow-up — your campaign is still ready and waiting for your approval.</p>
+
+              <p class="plain-copy" style="margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.7;color:#222222;">Please take a few minutes to review it. If everything looks good, approve it on the review page. If you would like any changes, leave your feedback there so our team can update it.</p>`;
 
 export function clientApprovalEmailBodies(args: {
   input: ClientApprovalMessageInput;
   customText?: string;
   clientName: string;
   signer: string;
-  subject?: string;
-  headline?: string;
-  textBody?: string;
 }): { subject: string; html: string; text: string } {
-  const { input, customText, clientName, signer } = args;
-  const subject = args.subject || clientApprovalEmailSubject(input);
-  const textBody =
-    args.textBody || clientApprovalEmailText(input, customText);
-  const text = `${textBody}\n\nThanks,\n${signer}\n`;
-  const cta = approveButtonLabel(input);
-  const headline = args.headline || "Ready for your review";
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="x-apple-disable-message-reformatting">
-<title>${escapeHtml(subject)}</title>
-<style>
-  @media screen and (max-width:600px){
-    .container{width:100% !important;}
-    .px{padding-left:24px !important;padding-right:24px !important;}
-    .h1{font-size:26px !important;}
-  }
-</style>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f4f4;">
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(subject)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
-  <tr>
-    <td align="center" style="padding:28px 12px;">
-      <table role="presentation" class="container" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;">
-        <tr>
-          <td align="center" style="background-color:#000000;padding:26px 30px;">
-            <img src="${LOGO}" alt="Marketing Empire Group" width="170" style="display:block;width:170px;max-width:60%;height:auto;border:0;">
-          </td>
-        </tr>
-        <tr>
-          <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${escapeHtml(clientName)}</p>
-            <h1 class="h1" style="margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:1.25;color:#111111;font-weight:600;">${escapeHtml(headline)}</h1>
-            ${paragraphsToEmailHtml(textBody)}
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
-              <tr><td>
-                <a href="${escapeHtml(input.previewUrl)}" style="background-color:#00a3b4;border-radius:6px;color:#ffffff;display:inline-block;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;line-height:50px;text-align:center;text-decoration:none;padding:0 28px;-webkit-text-size-adjust:none;">${escapeHtml(cta)}</a>
-              </td></tr>
-            </table>
-            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Thanks,<br>${escapeHtml(signer)}</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:22px 44px;background-color:#fafafa;border-top:1px solid #eeeeee;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:13px;line-height:1.6;color:#999999;">Just reply to this email with any questions.</p>
-            <p style="margin:10px 0 0;font-size:12px;color:#bbbbbb;">Marketing Empire Group</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-</body>
-</html>`;
+  const subject = clientApprovalEmailSubject();
+  const text = clientApprovalEmailText(args.input);
+  const html = pendingCampaignEmailHtml({
+    firstName: firstName(args.input.clientContactName),
+    reviewUrl: args.input.previewUrl,
+    subject,
+    preview: APPROVAL_EMAIL_PREVIEW,
+    introHtml: APPROVAL_INTRO_HTML,
+  });
   return { subject, html, text };
 }
 
@@ -674,12 +726,14 @@ export function clientReviewFollowupEmailBodies(args: {
   clientName: string;
   signer: string;
 }): { subject: string; html: string; text: string } {
-  return clientApprovalEmailBodies({
-    input: args.input,
-    clientName: args.clientName,
-    signer: args.signer,
-    subject: clientReviewFollowupEmailSubject(args.input),
-    headline: "Friendly follow-up",
-    textBody: clientReviewFollowupEmailText(args.input),
+  const subject = clientReviewFollowupEmailSubject();
+  const text = clientReviewFollowupEmailText(args.input);
+  const html = pendingCampaignEmailHtml({
+    firstName: firstName(args.input.clientContactName),
+    reviewUrl: args.input.previewUrl,
+    subject,
+    preview: FOLLOWUP_EMAIL_PREVIEW,
+    introHtml: FOLLOWUP_INTRO_HTML,
   });
+  return { subject, html, text };
 }
