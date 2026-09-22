@@ -40,7 +40,11 @@ function listFridayAskClients(): RevClient[] {
 }
 import { slugForName, teamLabel } from "./team";
 import { basecampNameForManager } from "./people";
-import { findSylviaOnRoster, sylviaCcHtml } from "./review-cc";
+import {
+  findSylviaOnRoster,
+  SYLVIA_CC_EMAIL,
+  sylviaCcHtml,
+} from "./review-cc";
 import { getUser } from "./users";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
@@ -53,7 +57,7 @@ import {
 } from "./basecamp";
 
 /** Always CC'd on Friday weekly snapshot emails. */
-export const WEEKLY_SNAPSHOT_CC_EMAIL = "sartiga@marketingempiregroup.com";
+export const WEEKLY_SNAPSHOT_CC_EMAIL = SYLVIA_CC_EMAIL;
 
 function todayYmd(): string {
   return new Date().toISOString().slice(0, 10);

@@ -221,13 +221,14 @@ test("campaign detail can open the Basecamp card after client approval is sent",
     path.join("src/app/admin/campaigns/[id]/page.tsx"),
     "utf8"
   );
-  const start = page.indexOf("client approval workflow");
+  const start = page.indexOf("Basecamp + email");
   const end = page.indexOf("Open Basecamp Deliverables card");
   assert.ok(start >= 0 && end > start);
   const header = page.slice(start, end);
   assert.match(header, /Open card/);
   assert.match(header, /basecampApproval\?\.cardUrl/);
   assert.match(header, /target="_blank"/);
+  assert.match(page, /Emailed \$\{email\.to\}/);
 });
 
 test("campaigns list filters status and kind with dropdowns", () => {

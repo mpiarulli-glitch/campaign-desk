@@ -9,6 +9,10 @@ import {
   hasConnection,
   sendApprovalToDeliverables,
 } from "@/lib/basecamp";
+import {
+  resolveApprovalEmailTo,
+  sendApprovalEmail,
+} from "@/lib/approval-email";
 import { clearFailure, recordFailure } from "@/lib/failures";
 import {
   getCampaignById,
@@ -27,6 +31,7 @@ import {
 } from "@/lib/client-approval";
 import { resolveCampaignClient } from "@/lib/campaign-card-sync";
 import { reconcileClients } from "@/lib/basecamp-clients";
+import { emailConfigured } from "@/lib/email";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -152,6 +157,14 @@ export async function GET(_request: Request, { params }: Params) {
     }
   }
 
+  const contactEmail = (state.client?.contact_email || "").trim();
+  const defaultRosterEmail =
+    people.find((person) => person.id === defaultRecipientId)?.email || "";
+  const emailTo = resolveApprovalEmailTo({
+    contactEmail,
+    rosterEmail: defaultRosterEmail,
+  });
+
   return NextResponse.json({
     ready: state.missing.length === 0,
     missing: state.missing,
@@ -161,6 +174,9 @@ export async function GET(_request: Request, { params }: Params) {
       state.client?.contact_name ||
       state.client?.contact_email ||
       "",
+    contactEmail,
+    emailTo,
+    emailConfigured: emailConfigured(),
     projectConfigured: Boolean(state.client?.basecamp_project_id),
     message: clientApprovalMessageText(state.messageInput),
     alreadySent: state.alreadySent,
@@ -326,6 +342,41 @@ export async function POST(request: Request, { params }: Params) {
     dueOn,
   });
 
+  // Email is the parallel inbox ping. Prefer the saved contact email; fall back
+  // to the selected Basecamp person's address when the account record is blank.
+  let rosterEmail = "";
+  if (!client.contact_email.trim() && recipientId) {
+    try {
+      const roster = await getProjectPeopleForMention(client.basecamp_project_id);
+      rosterEmail =
+        roster.find((person) => person.id === recipientId)?.email_address || "";
+    } catch {
+      // Leave blank; sendApprovalEmail will report the skip.
+    }
+  }
+  const emailTo = resolveApprovalEmailTo({
+    contactEmail: client.contact_email,
+    rosterEmail,
+  });
+  const email = await sendApprovalEmail({
+    client,
+    to: emailTo,
+    messageInput: {
+      ...state.messageInput,
+      clientContactName:
+        result.recipientName || state.messageInput.clientContactName,
+    },
+    customMessage: customMessage || undefined,
+  });
+  if (!email.ok && !email.skipped) {
+    recordFailure({
+      kind: "email",
+      subject: email.to || client.name,
+      detail: email.error || "Could not send the approval email.",
+      hint: "The Basecamp card went out. Fix email delivery, then resend if needed.",
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     created: result.created,
@@ -334,5 +385,6 @@ export async function POST(request: Request, { params }: Params) {
     status: campaign?.status || "in_review",
     sentAt: campaign?.basecamp_approval_sent_at,
     dueOn: campaign?.basecamp_due_on || "",
+    email,
   });
 }

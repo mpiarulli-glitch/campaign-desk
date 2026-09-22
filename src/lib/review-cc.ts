@@ -6,6 +6,9 @@ import { SYLVIA_BASECAMP_NAME } from "./people";
 
 export const SYLVIA_CC_TEXT = "CC: @Sylvia";
 
+/** Always CC'd on client-facing approval and weekly snapshot emails. */
+export const SYLVIA_CC_EMAIL = "sartiga@marketingempiregroup.com";
+
 export function findSylviaOnRoster<
   T extends { name: string; client?: boolean; isClient?: boolean },
 >(people: T[]): T | null {

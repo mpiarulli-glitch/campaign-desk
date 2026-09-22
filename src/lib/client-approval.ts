@@ -523,3 +523,126 @@ export function campaignApprovalRevisionKey(
   });
   return createHash("sha256").update(source).digest("hex");
 }
+
+/* ------------------------------------------------------- email channel */
+
+const BASECAMP_REPLY_RE =
+  /After you approve in the app, please reply on this Basecamp card to let us know it has been approved\.[^\n]*/g;
+
+const EMAIL_REPLY_LINE =
+  "After you approve in the app, please reply to this email to let us know it has been approved. That helps us catch it quickly.";
+
+const LOGO =
+  "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
+
+export function clientApprovalEmailSubject(
+  input: ClientApprovalMessageInput
+): string {
+  return `${input.campaignTitle} is ready for your review`;
+}
+
+/** Plaintext for the email channel — same checklist, reply-by-email instead of Basecamp. */
+export function clientApprovalEmailText(
+  input: ClientApprovalMessageInput,
+  customText?: string
+): string {
+  const source = (customText || "").trim() || clientApprovalMessageText(input);
+  const withoutCc = stripSylviaCcLines(source);
+  const adapted = withoutCc.replace(BASECAMP_REPLY_RE, EMAIL_REPLY_LINE);
+  // If the draft never had the Basecamp line (heavily edited), leave it alone.
+  return adapted.includes("reply to this email")
+    ? adapted
+    : withoutCc.replace(
+        /please reply on this Basecamp card[^\n]*/gi,
+        "please reply to this email to let us know it has been approved"
+      );
+}
+
+function paragraphsToEmailHtml(text: string): string {
+  const blocks = text.replace(/\r\n/g, "\n").trim().split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const lines = block
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const allBullets =
+        lines.length > 0 && lines.every((line) => /^[•\-*]\s+/.test(line));
+      if (allBullets) {
+        const items = lines
+          .map((line) => line.replace(/^[•\-*]\s+/, ""))
+          .map((line) => `<li style="margin:0 0 6px;">${linkifyEscaped(escapeHtml(line))}</li>`)
+          .join("");
+        return `<ul style="margin:0 0 16px;padding-left:22px;font-size:16px;line-height:1.55;color:#333333;">${items}</ul>`;
+      }
+      return `<p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${linkifyEscaped(
+        escapeHtml(block.trim())
+      ).replace(/\n/g, "<br>")}</p>`;
+    })
+    .join("");
+}
+
+export function clientApprovalEmailBodies(args: {
+  input: ClientApprovalMessageInput;
+  customText?: string;
+  clientName: string;
+  signer: string;
+}): { subject: string; html: string; text: string } {
+  const { input, customText, clientName, signer } = args;
+  const subject = clientApprovalEmailSubject(input);
+  const textBody = clientApprovalEmailText(input, customText);
+  const text = `${textBody}\n\nThanks,\n${signer}\n`;
+  const cta = approveButtonLabel(input);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<title>${escapeHtml(subject)}</title>
+<style>
+  @media screen and (max-width:600px){
+    .container{width:100% !important;}
+    .px{padding-left:24px !important;padding-right:24px !important;}
+    .h1{font-size:26px !important;}
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(subject)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+  <tr>
+    <td align="center" style="padding:28px 12px;">
+      <table role="presentation" class="container" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td align="center" style="background-color:#000000;padding:26px 30px;">
+            <img src="${LOGO}" alt="Marketing Empire Group" width="170" style="display:block;width:170px;max-width:60%;height:auto;border:0;">
+          </td>
+        </tr>
+        <tr>
+          <td class="px" style="padding:40px 44px 8px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#00a3b4;font-weight:bold;">${escapeHtml(clientName)}</p>
+            <h1 class="h1" style="margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:1.25;color:#111111;font-weight:600;">Ready for your review</h1>
+            ${paragraphsToEmailHtml(textBody)}
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
+              <tr><td>
+                <a href="${escapeHtml(input.previewUrl)}" style="background-color:#00a3b4;border-radius:6px;color:#ffffff;display:inline-block;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;line-height:50px;text-align:center;text-decoration:none;padding:0 28px;-webkit-text-size-adjust:none;">${escapeHtml(cta)}</a>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#333333;">Thanks,<br>${escapeHtml(signer)}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px 44px;background-color:#fafafa;border-top:1px solid #eeeeee;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:13px;line-height:1.6;color:#999999;">Just reply to this email with any questions.</p>
+            <p style="margin:10px 0 0;font-size:12px;color:#bbbbbb;">Marketing Empire Group</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
+  return { subject, html, text };
+}

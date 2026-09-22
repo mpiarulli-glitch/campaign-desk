@@ -218,6 +218,9 @@ type BasecampApprovalState = {
   clientId: string | null;
   clientName: string;
   recipient: string;
+  contactEmail?: string;
+  emailTo?: string;
+  emailConfigured?: boolean;
   projectConfigured: boolean;
   message: string;
   alreadySent: boolean;
@@ -1082,9 +1085,23 @@ export default function AdminCampaignPage() {
     }
 
     setStatus(data.status || "in_review");
+    const email = data.email as
+      | { ok?: boolean; to?: string; skipped?: string; error?: string }
+      | undefined;
+    let emailNote = "";
+    if (email?.ok && email.to) {
+      emailNote = ` Emailed ${email.to}.`;
+    } else if (email?.skipped === "no contact email") {
+      emailNote = " No email sent — add a contact email on the client to CC the inbox.";
+    } else if (email && !email.ok) {
+      emailNote = email.error
+        ? ` Basecamp posted, but email failed: ${email.error}`
+        : " Basecamp posted, but the email did not send.";
+    }
     setMessage(
       `Approval sent to ${data.recipient || "the client"} in Basecamp.` +
-        (data.dueOn ? ` Due ${data.dueOn}.` : "")
+        (data.dueOn ? ` Due ${data.dueOn}.` : "") +
+        emailNote
     );
     await load(activeEmailId);
     await loadBasecampApproval();
@@ -3239,8 +3256,8 @@ export default function AdminCampaignPage() {
                   onClick={() => setClientSendOpen((v) => !v)}
                 >
                   <span className="review-link-label">
-                    Basecamp{" "}
-                    <span className="muted">· client approval workflow</span>
+                    Client approval{" "}
+                    <span className="muted">· Basecamp + email</span>
                   </span>
                   <span className="bc-toggle-chevron" aria-hidden="true">
                     {clientSendOpen ? "▾" : "▸"}
@@ -3465,8 +3482,19 @@ export default function AdminCampaignPage() {
                 {approvalAssigneeIds.length
                   ? `, assign ${approvalAssigneeIds.length} more`
                   : ""}
-                {approvalDueOn ? `, due ${approvalDueOn}` : ""} and move its
-                Deliverables card to Needs Approval?
+                {approvalDueOn ? `, due ${approvalDueOn}` : ""}
+                {(() => {
+                  const rosterEmail =
+                    basecampApproval?.people.find(
+                      (person) => person.id === approvalRecipientId
+                    )?.email || "";
+                  const to =
+                    (basecampApproval?.contactEmail || "").trim() ||
+                    rosterEmail.trim() ||
+                    (basecampApproval?.emailTo || "").trim();
+                  return to ? ` and email ${to}` : "";
+                })()}
+                , and move its Deliverables card to Needs Approval?
               </p>
             ) : null}
 
@@ -3474,7 +3502,19 @@ export default function AdminCampaignPage() {
               <div className="bc-facts">
                 <p className="bc-fact">
                   {basecampApproval.ready
-                    ? `Sends to ${approvalRecipientName || "whoever you pick above"} and moves the Deliverables card to Needs Approval.`
+                    ? (() => {
+                        const rosterEmail =
+                          basecampApproval.people.find(
+                            (person) => person.id === approvalRecipientId
+                          )?.email || "";
+                        const to =
+                          (basecampApproval.contactEmail || "").trim() ||
+                          rosterEmail.trim() ||
+                          (basecampApproval.emailTo || "").trim();
+                        return to
+                          ? `Posts the Deliverables card to Needs Approval and emails ${to} (Sylvia CC’d).`
+                          : `Posts the Deliverables card to Needs Approval. Add a contact email on the client to also email the ask.`;
+                      })()
                     : basecampApproval.missing.includes("Basecamp project")
                       ? `No Basecamp project on ${
                           basecampApproval.clientName || "this client"
