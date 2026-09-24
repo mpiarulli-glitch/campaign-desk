@@ -1,7 +1,7 @@
 // The weekly Client Services ask: "here are the leads we sent you, did they
 // turn into anything, and what did the month do in revenue?"
 //
-// One ask goes out per client per week, from that client's account manager, on
+// One ask goes out per client per week, from Marketing Empire Group, on
 // two channels: an email and a Basecamp message on their project. Both point at
 // the same place the client already answers from, their snapshot share link, so
 // this adds a prompt rather than a second thing to fill in.
@@ -93,13 +93,13 @@ export interface AccountManager {
 }
 
 /**
- * Who the ask comes from.
+ * Who replies go to.
  *
  * rev_clients.account_manager is free text (a slug, a first name, an email), so
  * it is resolved through the same matcher the rest of the app uses and then
  * looked up in the users table for a reply-to address. An unmatched or
- * address-less manager is not an error: the ask still goes, it just falls back
- * to the agency's own from and reply-to.
+ * address-less manager is not an error: the ask still goes from Marketing
+ * Empire Group, it just falls back to the agency reply-to.
  */
 export function accountManagerFor(client: RevClient): AccountManager | null {
   const slug = slugForName(client.account_manager || "");
@@ -115,11 +115,9 @@ export function accountManagerFor(client: RevClient): AccountManager | null {
 /**
  * The From header for a client's ask.
  *
- * Resend will only send from a verified domain, so the account manager's own
- * address cannot go in From without every manager having a mailbox on that
- * domain. Their name does, and their address goes in Reply-To, which is what
- * actually decides where an answer lands. The inbox shows the manager; hitting
- * reply reaches the manager.
+ * Every email leaves as Marketing Empire Group on the verified address.
+ * The account manager's address goes in Reply-To, which is what decides
+ * where an answer lands.
  */
 export function senderFor(am: AccountManager | null): {
   from: string | undefined;
@@ -129,7 +127,7 @@ export function senderFor(am: AccountManager | null): {
   const address = base.match(/<([^>]+)>/)?.[1] || base;
   if (!am || !address) return { from: undefined, replyTo: undefined };
   return {
-    from: `${am.label} (Marketing Empire Group) <${address}>`,
+    from: `Marketing Empire Group <${address}>`,
     replyTo: am.email || undefined,
   };
 }

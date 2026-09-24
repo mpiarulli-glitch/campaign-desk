@@ -47,18 +47,21 @@ test("weekly snapshot outreach", async (t) => {
     assert.equal(cs.accountManagerFor(client), null);
   });
 
-  await t.test("the manager's name fronts the agency's verified address", () => {
+  await t.test("the ask is from Marketing Empire Group, replies go to the manager", () => {
     const sender = cs.senderFor({ slug: "cassidy", label: "Cassidy", email: "c@meg.test" });
     assert.equal(
       sender.from,
-      "Cassidy (Marketing Empire Group) <hello@marketingempiregroup.com>"
+      "Marketing Empire Group <hello@marketingempiregroup.com>"
     );
     assert.equal(sender.replyTo, "c@meg.test");
   });
 
   await t.test("a manager with no address still sends, with no reply-to", () => {
     const sender = cs.senderFor({ slug: "cassidy", label: "Cassidy", email: "" });
-    assert.match(sender.from || "", /^Cassidy /);
+    assert.equal(
+      sender.from,
+      "Marketing Empire Group <hello@marketingempiregroup.com>"
+    );
     assert.equal(sender.replyTo, undefined);
   });
 
