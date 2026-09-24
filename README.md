@@ -105,11 +105,11 @@ rather than a second thing to fill in. The ask names only what is actually
 outstanding: a client who already gave us the revenue is asked about leads
 alone, and a client who owes nothing is not contacted at all.
 
-**Who it comes from.** `rev_clients.account_manager` is free text, resolved to a
-team member with the same matcher the rest of the app uses. The manager's name
-goes in From and their address in Reply-To, because Resend will only send from
-the verified domain: the inbox shows the manager, and hitting reply reaches
-them. A manager with no email on their account still sends, just without the
+**Who it comes from.** Every email this app sends is from Marketing Empire
+Group, on the verified address in `EMAIL_FROM`. `rev_clients.account_manager`
+is free text, resolved to a team member with the same matcher the rest of the
+app uses. Their address goes in Reply-To, so hitting reply still reaches them.
+A manager with no email on their account still sends, just without the
 Reply-To, and the dashboard flags it as "No reply-to".
 
 **The pipeline column** shows the furthest point a client reached this week:

@@ -3,7 +3,7 @@
 // Sends over the Resend REST API with plain fetch, so there's no SDK
 // dependency. Configure with env vars:
 //   RESEND_API_KEY   API key from the Resend dashboard
-//   EMAIL_FROM       verified sender, e.g. "Marketing Empire <hello@yourdomain.com>"
+//   EMAIL_FROM       verified sender, e.g. "Marketing Empire Group <hello@yourdomain.com>"
 //   EMAIL_REPLY_TO   optional reply-to address
 //
 // Like the Campfire notifier, this never throws into a request: if the key is
@@ -18,10 +18,9 @@ export interface EmailInput {
   html: string;
   text?: string;
   /**
-   * Overrides EMAIL_FROM. Resend only accepts a sender on a verified domain,
-   * so this is for changing the display name and local part on that domain
-   * ("Cassidy (Marketing Empire Group) <hello@…>"), not for sending as an
-   * arbitrary address.
+   * Optional mailbox override. The display name is always Marketing Empire
+   * Group; only the address is taken from here or from EMAIL_FROM. Resend
+   * still requires that address to be on a verified domain.
    */
   from?: string;
   /** Overrides EMAIL_REPLY_TO. Used to point replies at the account manager. */
@@ -43,6 +42,27 @@ export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
 
+/** Display name on every message this app sends. */
+export const AGENCY_FROM_NAME = "Marketing Empire Group";
+
+/** Mailbox inside "Name <addr>" or a bare address. */
+export function emailAddressFrom(from: string): string {
+  const trimmed = (from || "").trim();
+  const angled = trimmed.match(/<([^>]+)>/);
+  if (angled) return angled[1].trim();
+  return trimmed;
+}
+
+/**
+ * Force the From display name to Marketing Empire Group.
+ * The verified mailbox is left as given.
+ */
+export function agencyFrom(from: string): string {
+  const address = emailAddressFrom(from);
+  if (!address) return (from || "").trim();
+  return `${AGENCY_FROM_NAME} <${address}>`;
+}
+
 /**
  * Boolean-returning send. This is what almost every caller wants and it is kept
  * as the default so the ~dozen existing call sites did not have to change.
@@ -60,7 +80,8 @@ export async function sendEmail(input: EmailInput): Promise<boolean> {
  */
 export async function sendEmailWithId(input: EmailInput): Promise<EmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = input.from?.trim() || process.env.EMAIL_FROM;
+  const rawFrom = input.from?.trim() || process.env.EMAIL_FROM || "";
+  const from = rawFrom ? agencyFrom(rawFrom) : "";
   if (!apiKey || !from) {
     console.warn(
       "[email] RESEND_API_KEY / EMAIL_FROM not set, skipping send to",
