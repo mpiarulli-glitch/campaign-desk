@@ -99,7 +99,7 @@ client, and the account snapshots that used to live at `/admin/snapshot` (that
 path now redirects here).
 
 **The weekly ask.** Every Friday at 8am Pacific, each active client gets one ask
-from their account manager, by email and as a card on their Basecamp project.
+from their account manager, by email and as a message on their Basecamp message board.
 Both point at the client's existing snapshot share link, so this is a prompt
 rather than a second thing to fill in. The ask names only what is actually
 outstanding: a client who already gave us the revenue is asked about leads

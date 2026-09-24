@@ -452,7 +452,7 @@ export function ClientServicePanel({
                     ? "Sending is switched off, so this reports what it would have done."
                     : asked
                       ? "Already asked this week. Sending again re-sends the same ask."
-                      : "Emails the contact and posts a Basecamp card where both are set."}
+                      : "Emails the contact and posts a Basecamp message where both are set."}
               </span>
             </div>
           ) : null}

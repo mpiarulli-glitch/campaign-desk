@@ -117,12 +117,17 @@ type OpenExtraRequest = {
   kind: "extra" | "first";
 };
 
-type ReachoutChannel = "email" | "basecamp_card" | "basecamp_comment";
+type ReachoutChannel =
+  | "email"
+  | "basecamp_card"
+  | "basecamp_comment"
+  | "basecamp_message";
 
 const REACHOUT_LABEL: Record<ReachoutChannel, string> = {
   email: "Email",
   basecamp_card: "Basecamp card",
   basecamp_comment: "Basecamp follow-up",
+  basecamp_message: "Basecamp message",
 };
 
 type Reachout = {

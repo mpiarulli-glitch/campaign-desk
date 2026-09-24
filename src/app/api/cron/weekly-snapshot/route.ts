@@ -43,10 +43,10 @@ async function handle(request: Request) {
 
   const result = await runWeeklyAsks({ dryRun, only, today });
   const emails = result.sent.filter((r) => r.email.ok && !r.email.skipped).length;
-  const cards = result.sent.filter((r) => r.basecamp.ok && !r.basecamp.skipped).length;
+  const posted = result.sent.filter((r) => r.basecamp.ok && !r.basecamp.skipped).length;
   console.log(
     `[cron] weekly-snapshot ${dryRun ? "(dry run) " : ""}week ${result.weekStart}: ` +
-      `${result.considered} considered, ${emails} emailed, ${cards} carded, ` +
+      `${result.considered} considered, ${emails} emailed, ${posted} posted, ` +
       `skipped ${result.skipped.paused} paused / ` +
       `${result.skipped.alreadySent} already sent / ` +
       `${result.skipped.nothingToAsk} nothing to ask`

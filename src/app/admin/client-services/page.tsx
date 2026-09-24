@@ -143,7 +143,7 @@ function fmtWeek(ymd: string): string {
 }
 
 /**
- * A send can email the contact, post a Basecamp card, or both. Missing an
+ * A send can email the contact, post a Basecamp message, or both. Missing an
  * email address only loses the email, so the row that genuinely cannot be
  * reached is the one missing both routes. Keyed off contact_email rather than
  * contact_name, because the name is not what the send reads.
@@ -152,7 +152,7 @@ function noRoute(row: Row): boolean {
   return !row.contactEmail.trim() && !row.hasBasecamp;
 }
 
-/** Emailing is off the table but a card can still land. */
+/** Emailing is off the table but a message board post can still land. */
 function cardOnly(row: Row): boolean {
   return !row.contactEmail.trim() && row.hasBasecamp;
 }
@@ -450,8 +450,8 @@ export default function ClientServicesPage() {
       const parts: string[] = [];
       if (r?.email?.ok) parts.push("emailed");
       else if (r?.email?.skipped) parts.push(`no email (${r.email.skipped})`);
-      if (r?.basecamp?.ok) parts.push("Basecamp card posted");
-      else if (r?.basecamp?.skipped) parts.push(`no card (${r.basecamp.skipped})`);
+      if (r?.basecamp?.ok) parts.push("Basecamp message posted");
+      else if (r?.basecamp?.skipped) parts.push(`no message (${r.basecamp.skipped})`);
       setMessage(
         sendingOn
           ? parts.length
@@ -678,7 +678,7 @@ export default function ClientServicesPage() {
             <strong>Sending is switched off.</strong>
             <span>
               The dashboard is live and the Friday sweep is not scheduled.
-              Nothing is emailed to a client and no Basecamp card is posted,
+              Nothing is emailed to a client and no Basecamp message is posted,
               including from <em>Send now</em>, which reports what it would have
               done instead. Set <code>CLIENT_SERVICES_SENDING=on</code> on the
               service to arm it.
@@ -904,7 +904,7 @@ export default function ClientServicesPage() {
                                   </div>
                                 ) : cardOnly(row) ? (
                                   <div className="cs-flag is-warn">
-                                    Basecamp card only
+                                    Basecamp message only
                                   </div>
                                 ) : null}
                               </td>

@@ -810,7 +810,11 @@ export interface ScheduleReminder {
   updated_at: string;
 }
 
-export type ReachoutChannel = "email" | "basecamp_card" | "basecamp_comment";
+export type ReachoutChannel =
+  | "email"
+  | "basecamp_card"
+  | "basecamp_comment"
+  | "basecamp_message";
 
 export interface Reachout {
   id: string;
@@ -1547,7 +1551,7 @@ export function getDb(): Database.Database {
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
       client_name TEXT NOT NULL,
-      channel TEXT NOT NULL, -- 'email' | 'basecamp_card' | 'basecamp_comment'
+      channel TEXT NOT NULL, -- 'email' | 'basecamp_card' | 'basecamp_comment' | 'basecamp_message'
       window_start TEXT,
       ymd TEXT NOT NULL, -- calendar date the contact went out
       detail TEXT,

@@ -269,6 +269,7 @@ export async function notifyReachouts(args: {
     email: "email",
     basecamp_card: "Basecamp card",
     basecamp_comment: "Basecamp follow-up",
+    basecamp_message: "Basecamp message",
   };
 
   // One line per client, listing every channel that reached them, so a client

@@ -7,6 +7,7 @@ import { findDeliverablesTables,
   approvalDueFields,
   resolveApprovalAssignees,
   findDeliverablesColumn,
+  messageBoardPostBody,
 } from "../src/lib/basecamp";
 
 // Client approvals must always land on the Deliverables card table. Projects
@@ -311,4 +312,21 @@ test("Needs Approval is never treated as Approved", () => {
     ),
     undefined
   );
+});
+
+test("a weekly snapshot message publishes and stays visible to the client", () => {
+  const body = messageBoardPostBody(
+    "Your weekly snapshot is ready",
+    "<div>Open your snapshot</div>",
+    [11, 22]
+  );
+  assert.equal(body.status, "active");
+  assert.equal(body.visible_to_clients, true);
+  assert.deepEqual(body.subscriptions, [11, 22]);
+  assert.equal(body.subject, "Your weekly snapshot is ready");
+});
+
+test("a message with no subscribers does not invent a list", () => {
+  const body = messageBoardPostBody("Hi", "<div>Hi</div>");
+  assert.equal("subscriptions" in body, false);
 });

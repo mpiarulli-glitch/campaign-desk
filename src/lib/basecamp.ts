@@ -328,6 +328,91 @@ export interface CampfireResult {
   url?: string;
 }
 
+export interface MessageResult {
+  ok: boolean;
+  error?: string;
+  url?: string;
+  messageId?: string;
+}
+
+/**
+ * Body for a published, client-visible message.
+ *
+ * Omitting `status` leaves a Basecamp draft, which posts nowhere and notifies
+ * no one. Omitting `subscriptions` notifies everyone on the project, so the
+ * caller passes the people who should hear about it. Client visibility
+ * defaults to hidden for a team caller, which would hide a client-facing
+ * snapshot post.
+ */
+export function messageBoardPostBody(
+  subject: string,
+  contentHtml: string,
+  subscriberIds?: number[]
+): {
+  subject: string;
+  content: string;
+  status: "active";
+  visible_to_clients: true;
+  subscriptions?: number[];
+} {
+  const body: {
+    subject: string;
+    content: string;
+    status: "active";
+    visible_to_clients: true;
+    subscriptions?: number[];
+  } = {
+    subject,
+    content: contentHtml,
+    status: "active",
+    visible_to_clients: true,
+  };
+  if (subscriberIds && subscriberIds.length) body.subscriptions = subscriberIds;
+  return body;
+}
+
+/**
+ * Post on the project's message board and publish it immediately.
+ *
+ * `subscriberIds` are the only people notified. Pass the client contact (and
+ * anyone else who should see the ping). An empty list falls back to Basecamp's
+ * default, which notifies the whole project.
+ */
+export async function createMessageBoardPost(
+  projectId: string,
+  subject: string,
+  contentHtml: string,
+  subscriberIds?: number[]
+): Promise<MessageResult> {
+  if (!projectId) return { ok: false, error: "No Basecamp project set" };
+  try {
+    const pr = await bc(`/projects/${projectId}.json`);
+    if (!pr.ok) return { ok: false, error: `project lookup ${pr.status}` };
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string; enabled?: boolean }> =
+      project.dock || [];
+    const board = dock.find((d) => d.name === "message_board" && d.enabled !== false);
+    if (!board) return { ok: false, error: "no message board in this project" };
+
+    const res = await bc(
+      `/buckets/${projectId}/message_boards/${board.id}/messages.json`,
+      {
+        method: "POST",
+        body: JSON.stringify(messageBoardPostBody(subject, contentHtml, subscriberIds)),
+      }
+    );
+    if (!res.ok) return { ok: false, error: `create message ${res.status}` };
+    const message = await res.json();
+    return {
+      ok: true,
+      url: message.app_url || message.url,
+      messageId: message.id ? String(message.id) : undefined,
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 export interface BcPerson {
   id: number;
   name: string;

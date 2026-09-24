@@ -1,7 +1,7 @@
 name: Weekly snapshot ask
 
 # Asks every active client about their leads and last month's revenue, from
-# their account manager, by email and on their Basecamp project.
+# their account manager, by email and as a message on their Basecamp message board.
 #
 # Live path (both required):
 #   1. CLIENT_SERVICES_SENDING=on on the Railway service (arms email + Basecamp).

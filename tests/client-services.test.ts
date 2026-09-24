@@ -227,7 +227,7 @@ test("weekly snapshot outreach", async (t) => {
     assert.doesNotMatch(mail.text, /revenue/i);
     assert.doesNotMatch(mail.text, /lead/i);
 
-    const card = cs.weeklyAskCardContent({
+    const card = cs.weeklyAskMessageContent({
       ask: ask as never,
       link: "https://hub.example.com/snapshot/tok",
       mention: "@Tim",

@@ -51,7 +51,7 @@ import { sendEmailWithId } from "./email";
 import { recordReachout } from "./reachouts";
 import { clearFailure, recordFailure } from "./failures";
 import {
-  createScheduleCard,
+  createMessageBoardPost,
   getProjectPeopleForMention,
   type BcPerson,
 } from "./basecamp";
@@ -69,7 +69,7 @@ function todayYmd(): string {
  * Off unless CLIENT_SERVICES_SENDING is explicitly turned on, so the feature
  * ships dark: the sweep, the cron route and the Send now button all run their
  * full logic and report what they would have done, but no client is emailed and
- * no Basecamp card is posted. Defaulting to off rather than on means forgetting
+ * no Basecamp message is posted. Defaulting to off rather than on means forgetting
  * to set it cannot mail the whole book by accident, which is the failure that
  * actually matters here.
  *
@@ -436,7 +436,7 @@ export function resolveAccountManagerOnProject(
   return null;
 }
 
-export function weeklyAskCardContent(args: {
+export function weeklyAskMessageContent(args: {
   ask: WeeklyAsk;
   link: string;
   mention: string;
@@ -573,17 +573,17 @@ export async function sendWeeklyAsk(args: {
     try {
       const people = await getProjectPeopleForMention(client.basecamp_project_id);
       const contact = resolveContact(client, people);
-      // An untagged card pings nobody, so it would sit on the board looking
-      // like the client was asked when they were not. Same rule the production
-      // sweep uses.
+      // An unmentioned message pings nobody, so it would sit on the board
+      // looking like the client was asked when they were not. Same rule the
+      // production sweep uses for cards.
       if (!contact) {
         out.basecamp.skipped = "contact not on the Basecamp project";
         recordFailure({
           kind: "contact_unresolved",
           subject: client.name,
           detail: client.contact_name
-            ? `No Basecamp person matches "${client.contact_name}", so no weekly snapshot card was posted.`
-            : "No contact name on this client, so no weekly snapshot card was posted.",
+            ? `No Basecamp person matches "${client.contact_name}", so no weekly snapshot message was posted.`
+            : "No contact name on this client, so no weekly snapshot message was posted.",
           hint: "Check the contact name matches their name in Basecamp exactly.",
         });
       } else {
@@ -593,7 +593,7 @@ export async function sendWeeklyAsk(args: {
           am
         );
         const sylvia = findSylviaOnRoster(people);
-        const { title, body } = weeklyAskCardContent({
+        const { title, body } = weeklyAskMessageContent({
           ask,
           link,
           mention: mentionHtml(contact),
@@ -601,20 +601,22 @@ export async function sendWeeklyAsk(args: {
           amLabel: am?.label || "Marketing Empire Group",
           sylviaMention: sylvia ? mentionHtml(sylvia) : "",
         });
-        const assigneeIds = [contact.id];
-        if (manager && manager.id !== contact.id) assigneeIds.push(manager.id);
+        // Notify the same people the card used to assign. Omitting this list
+        // would ping everyone on the project.
+        const subscriberIds = [contact.id];
+        if (manager && manager.id !== contact.id) subscriberIds.push(manager.id);
         if (
           sylvia &&
           sylvia.id !== contact.id &&
           (!manager || sylvia.id !== manager.id)
         ) {
-          assigneeIds.push(sylvia.id);
+          subscriberIds.push(sylvia.id);
         }
-        const r = await createScheduleCard(
+        const r = await createMessageBoardPost(
           client.basecamp_project_id,
           title,
           body,
-          assigneeIds
+          subscriberIds
         );
         out.basecamp.ok = r.ok;
         if (r.ok) {
@@ -631,7 +633,7 @@ export async function sendWeeklyAsk(args: {
           recordReachout({
             clientId: client.id,
             clientName: client.name,
-            channel: "basecamp_card",
+            channel: "basecamp_message",
             ymd: todayYmd(),
             detail: "Weekly snapshot ask",
           });
