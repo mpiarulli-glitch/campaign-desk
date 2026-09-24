@@ -67,6 +67,16 @@ export function isInternalProject(name: string): boolean {
   return INTERNAL_PROJECTS.has((name || "").trim().toLowerCase());
 }
 
+// Client projects the forecast todo picker should offer even when they are
+// not linked to a revenue client yet. Matched on the name with the Growth OS
+// suffix stripped, so "Temecula Limos Growth OS - Powered by…" still hits.
+// Membership still applies: only people on the Basecamp project see it.
+const FORECAST_EXTRA_PROJECTS = new Set(["temecula limos"]);
+
+export function isForecastExtraProject(name: string): boolean {
+  return FORECAST_EXTRA_PROJECTS.has(norm(name));
+}
+
 // Internal Basecamp projects exposed to the forecast todo picker, resolved by
 // name against the live project list rather than hardcoded ids so a project
 // getting recreated in Basecamp doesn't silently break the link.
@@ -74,7 +84,7 @@ export function filterInternalProjects(
   projects: Array<{ id: number | string; name: string }>
 ): Array<{ id: string; name: string }> {
   return projects
-    .filter((p) => isInternalProject(p.name))
+    .filter((p) => isInternalProject(p.name) || isForecastExtraProject(p.name))
     .map((p) => ({ id: String(p.id), name: p.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -124,9 +134,15 @@ export async function forecastPickerForPerson(person: string): Promise<{
 
   const projects = await listProjects(asPerson(person));
   const ids = new Set(projects.map((p) => String(p.id)));
+  const clients = listRevClients(false);
+  const linkedIds = new Set(
+    clients.map((c) => (c.basecamp_project_id || "").trim()).filter((id) => ids.has(id))
+  );
   return {
-    clients: clientsOnAccessibleProjects(listRevClients(false), ids),
-    internals: filterInternalProjects(projects),
+    clients: clientsOnAccessibleProjects(clients, ids),
+    // A linked client is already in the client list. Keep the extra project
+    // only when there is no client row pointing at that Basecamp project.
+    internals: filterInternalProjects(projects).filter((p) => !linkedIds.has(p.id)),
   };
 }
 

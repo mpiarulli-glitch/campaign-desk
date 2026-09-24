@@ -10,21 +10,36 @@ test("internal Basecamp projects stay out of client import and show in forecast"
   process.chdir(tmp);
 
   try {
-    const { isInternalProject, filterInternalProjects, clientNameFor, clientsOnAccessibleProjects } =
-      await import("../src/lib/basecamp-clients");
+    const {
+      isInternalProject,
+      isForecastExtraProject,
+      filterInternalProjects,
+      clientNameFor,
+      clientsOnAccessibleProjects,
+    } = await import("../src/lib/basecamp-clients");
 
     assert.equal(isInternalProject("Empire Leadership HQ"), true);
     assert.equal(isInternalProject("MEG Web HQ"), true);
     assert.equal(isInternalProject("Humble Somm Growth OS"), false);
+    assert.equal(isInternalProject("Temecula Limos"), false);
+    assert.equal(
+      isForecastExtraProject("Temecula Limos Growth OS - Powered by the Empire Method"),
+      true
+    );
 
     const visible = filterInternalProjects([
       { id: 1, name: "Empire Leadership HQ" },
       { id: 2, name: "Humble Somm Growth OS - Powered by the Empire Method" },
       { id: 3, name: "MEG Web HQ" },
+      { id: 4, name: "Temecula Limos Growth OS - Powered by the Empire Method" },
     ]);
     assert.deepEqual(
       visible.map((p) => p.name),
-      ["Empire Leadership HQ", "MEG Web HQ"]
+      [
+        "Empire Leadership HQ",
+        "MEG Web HQ",
+        "Temecula Limos Growth OS - Powered by the Empire Method",
+      ]
     );
 
     // A person who is only on Web HQ must not see Leadership HQ just because
