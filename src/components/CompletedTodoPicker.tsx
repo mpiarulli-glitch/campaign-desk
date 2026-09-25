@@ -19,11 +19,11 @@ function completedLabel(iso: string | null): string {
 }
 
 /**
- * Single-select picker for a completed Basecamp to-do.
+ * Single-select picker for a Basecamp to-do, open or completed.
  *
- * Used on the snapshot fill desk so staff can attach a finished to-do as the
- * record of what happened under a deliverable. Multi-select is deliberate
- * absence: one deliverable week gets one completion record.
+ * Used on the snapshot fill desk so staff can attach a to-do as the record of
+ * what happened under a deliverable. Multi-select is deliberate absence: one
+ * deliverable week gets one to-do.
  */
 export function CompletedTodoPicker({
   todos,
@@ -153,7 +153,7 @@ export function CompletedTodoPicker({
       ? `From the Basecamp project linked to ${clientName}`
       : "";
   const hint = loading
-    ? "Loading completed to-dos…"
+    ? "Loading Basecamp to-dos…"
     : reason === "no-project"
       ? "This client has no Basecamp project set."
       : reason === "not-connected"
@@ -163,11 +163,11 @@ export function CompletedTodoPicker({
           : reason === "project-mismatch"
             ? `Linked project “${projectName || "unknown"}” doesn’t look like ${clientName || "this client"}. Check the Basecamp project on the client record.`
             : reason === "no-todos"
-              ? "No completed Basecamp to-dos found in this client’s project."
+              ? "No Basecamp to-dos found in this client’s project."
               : reason === "failed"
-                ? "Could not load completed to-dos."
+                ? "Could not load Basecamp to-dos."
                 : todos.length
-                  ? `${todos.length} completed to-do${todos.length === 1 ? "" : "s"} from this client’s project only.`
+                  ? `${todos.length} Basecamp to-do${todos.length === 1 ? "" : "s"} from this client’s project, including ones that are still open.`
                   : "";
 
   return (
@@ -186,12 +186,12 @@ export function CompletedTodoPicker({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={closedLabel || "Pick a completed Basecamp to-do"}
+          placeholder={closedLabel || "Pick a Basecamp to-do"}
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-label="Completed Basecamp to-do"
+          aria-label="Basecamp to-do"
           autoComplete="off"
           disabled={loading || reason === "not-client-project"}
         />
@@ -212,7 +212,8 @@ export function CompletedTodoPicker({
                     {items.map((t, itemIndex) => {
                       const i = offset + itemIndex;
                       const picked = t.id === selectedId;
-                      const when = completedLabel(t.completedAt);
+                          const when = completedLabel(t.completedAt);
+                          const stateTag = when ? `done ${when}` : "open";
                       return (
                         <button
                           key={t.id}
@@ -230,7 +231,7 @@ export function CompletedTodoPicker({
                         >
                           <span className="fc-combo-todo">
                             {t.title}
-                            {when ? <span className="fc-combo-tag">done {when}</span> : null}
+                            <span className="fc-combo-tag">{stateTag}</span>
                             {query.trim() && t.list ? (
                               <span className="fc-combo-tag">{t.list}</span>
                             ) : null}

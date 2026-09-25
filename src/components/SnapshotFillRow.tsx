@@ -629,7 +629,7 @@ export function SnapshotFillRow({
               value={row.work_done}
               onChange={(e) => onPatch({ work_done: e.target.value })}
               onBlur={(e) => onSave({ work_done: e.target.value })}
-              placeholder="What got done this week — or pick a completed to-do above"
+              placeholder="What got done this week — or pick a Basecamp to-do above"
             />
           </label>
           <label>

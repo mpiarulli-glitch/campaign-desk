@@ -4,14 +4,14 @@ import {
   basecampConnected,
   basecampTodoAppUrl,
   getBasecampProjectName,
-  listProjectCompletedTodos,
+  listProjectSnapshotTodos,
 } from "@/lib/basecamp";
 import { getRevClient } from "@/lib/revenue";
 import { completedTodoScopeReason } from "@/lib/snapshot-completed-todo";
 
-// Completed Basecamp to-dos for one client's linked project only. Backs the
-// "what happened" picker on the snapshot fill desk. Failures answer 200 with
-// an empty list plus a reason so the UI can explain without a hard error.
+// Open and completed Basecamp to-dos for one client's linked project. Backs
+// the "what happened" picker on the snapshot fill desk. Failures answer 200
+// with an empty list plus a reason so the UI can explain without a hard error.
 export async function GET(request: Request) {
   if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const raw = await listProjectCompletedTodos(projectId);
+    const raw = await listProjectSnapshotTodos(projectId);
     // Always scope to this client's linked project id — never a shared bucket.
     const todos = raw.map((t) => ({
       id: t.id,

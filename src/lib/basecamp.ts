@@ -722,6 +722,11 @@ type ListProjectTodosOpts = {
   identity?: BcIdentity;
   /** When true, only completed to-dos (no open steps attached). */
   completed?: boolean;
+  /**
+   * Open and completed parent to-dos together. Used by the snapshot picker.
+   * Checklist steps stay out — those are not the record being linked.
+   */
+  both?: boolean;
 };
 
 // Walk every todoset/list/group in a project and return its to-dos. Returns []
@@ -732,7 +737,8 @@ async function walkProjectTodos(
   opts: ListProjectTodosOpts = {}
 ): Promise<BcTodo[]> {
   const identity = opts.identity || SERVICE;
-  const completed = Boolean(opts.completed);
+  const both = Boolean(opts.both);
+  const completed = Boolean(opts.completed) || both;
   if (!projectId) return [];
   try {
     const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
@@ -797,12 +803,29 @@ async function walkProjectTodos(
       targets.map(async (target) => {
         // No ?completed param means Basecamp returns only open todos.
         // ?completed=true returns only completed ones (with completed_at).
-        const path = completed
-          ? `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`
-          : `/buckets/${projectId}/todolists/${target.id}/todos.json`;
+        // The two sets do not overlap, so "both" fetches each.
+        const paths = both
+          ? [
+              `/buckets/${projectId}/todolists/${target.id}/todos.json`,
+              `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`,
+            ]
+          : [
+              completed
+                ? `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`
+                : `/buckets/${projectId}/todolists/${target.id}/todos.json`,
+            ];
         // Completed lists grow forever; keep the walk short so the snapshot
         // picker stays responsive.
-        const todos = await bcCollection<BcTodoRaw>(path, completed ? 1 : 2, identity);
+        const pages = await Promise.all(
+          paths.map((path) =>
+            bcCollection<BcTodoRaw>(
+              path,
+              path.includes("completed=true") ? 1 : 2,
+              identity
+            )
+          )
+        );
+        const todos = pages.flat();
         return todos.map((t) => ({
           id: String(t.id),
           title: (t.content || t.title || "").trim(),
@@ -814,7 +837,21 @@ async function walkProjectTodos(
         }));
       })
     );
-    const todos = perList.flat().filter((t) => t.title);
+    const seen = new Set<string>();
+    const todos = perList.flat().filter((t) => {
+      if (!t.title || seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+    if (both) {
+      // Unchecked first, then newest completions.
+      return todos.sort((a, b) => {
+        const aOpen = a.completedAt ? 1 : 0;
+        const bOpen = b.completedAt ? 1 : 0;
+        if (aOpen !== bOpen) return aOpen - bOpen;
+        return (b.completedAt || "").localeCompare(a.completedAt || "");
+      });
+    }
     if (completed) {
       // Newest completions first — staff usually want last week's work.
       return todos.sort((a, b) => {
@@ -851,6 +888,17 @@ export async function listProjectCompletedTodos(
   identity: BcIdentity = SERVICE
 ): Promise<BcTodo[]> {
   return walkProjectTodos(projectId, { identity, completed: true });
+}
+
+/**
+ * Open and completed parent to-dos for the snapshot picker.
+ * Unchecked items come first. Checklist steps are not included.
+ */
+export async function listProjectSnapshotTodos(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcTodo[]> {
+  return walkProjectTodos(projectId, { identity, both: true });
 }
 
 /** Project display name from Basecamp, or "" when unreachable. */
