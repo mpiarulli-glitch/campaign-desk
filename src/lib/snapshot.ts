@@ -479,11 +479,10 @@ export function deleteDeliverable(id: string): boolean {
 // A deliverable joined with its entry for the period the given week falls
 // in (defaults when the team hasn't logged anything for that period yet).
 // For a monthly/quarterly deliverable, later weeks in the same period still
-// show the latest status until someone logs that week. Notes do not: each
-// week that is edited keeps its own work-done / next-steps / notes, so going
-// back a week on the picker reads last week's note. One-time deliverables
-// aren't period-keyed at all: whatever was last logged for them (any week)
-// carries forward forever, same as the overview.
+// show the latest status until someone logs that week. Everything else is
+// new each week: what we did, next steps, notes, who logged it, and a linked
+// Basecamp to-do stay on the week they were written. One-time deliverables
+// aren't period-keyed: the single lifetime entry carries forward.
 export interface WeekRow {
   deliverable_id: string;
   category: string;
@@ -605,6 +604,18 @@ export function weekData(
       e = rangeStmt.get(d.id, period_start, end, weekStart) as typeof e;
     }
 
+    const filedThisWeek = Boolean(e && e.week_start === weekStart);
+    // Monthly/quarterly: a later week keeps the status and nothing else.
+    const statusOnly =
+      Boolean(e) && !filedThisWeek && kind !== "one_time" && cadence_unit !== "weekly";
+    const blank = {
+      basecamp_todo_id: "",
+      basecamp_project_id: "",
+      basecamp_todo_title: "",
+      basecamp_todo_url: "",
+      basecamp_todo_completed_at: "",
+    };
+
     return {
       deliverable_id: d.id,
       category: d.category,
@@ -615,19 +626,23 @@ export function weekData(
       cadence_unit,
       due_date: d.due_date || null,
       period_start,
-      week_start: e?.week_start ?? "",
-      created_at: e?.created_at ?? "",
+      week_start: statusOnly ? "" : (e?.week_start ?? ""),
+      created_at: statusOnly ? "" : (e?.created_at ?? ""),
       status: e?.status ?? "not_started",
-      work_done: e?.work_done ?? "",
-      next_steps: e?.next_steps ?? "",
-      notes: e?.notes ?? "",
-      logged_by: e?.logged_by ?? "",
-      updated_at: e?.updated_at ?? "",
-      basecamp_todo_id: e?.basecamp_todo_id ?? "",
-      basecamp_project_id: e?.basecamp_project_id ?? "",
-      basecamp_todo_title: e?.basecamp_todo_title ?? "",
-      basecamp_todo_url: e?.basecamp_todo_url ?? "",
-      basecamp_todo_completed_at: e?.basecamp_todo_completed_at ?? "",
+      work_done: statusOnly ? "" : (e?.work_done ?? ""),
+      next_steps: statusOnly ? "" : (e?.next_steps ?? ""),
+      notes: statusOnly ? "" : (e?.notes ?? ""),
+      logged_by: statusOnly ? "" : (e?.logged_by ?? ""),
+      updated_at: statusOnly ? "" : (e?.updated_at ?? ""),
+      ...(filedThisWeek && e
+        ? {
+            basecamp_todo_id: e.basecamp_todo_id,
+            basecamp_project_id: e.basecamp_project_id,
+            basecamp_todo_title: e.basecamp_todo_title,
+            basecamp_todo_url: e.basecamp_todo_url,
+            basecamp_todo_completed_at: e.basecamp_todo_completed_at,
+          }
+        : blank),
     };
   });
 }
@@ -827,9 +842,9 @@ export function upsertEntry(input: {
   //   - One-time items have a single lifetime entry, so whichever entry exists
   //     (any week) is the one updated.
   //   - Weekly items are one row per Monday.
-  //   - Monthly and quarterly items still *read* the latest row in the period
-  //     so status carries forward, but a write on a later week inserts its own
-  //     row. Editing this week's notes must not erase last week's.
+  //   - Monthly and quarterly items still *read* the latest status in the
+  //     period, but a write on a later week inserts its own row. Typed fields
+  //     from an earlier week are not copied onto it.
   const kind = normKind(deliverable.kind);
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const isOneTime = kind === "one_time";
@@ -904,14 +919,19 @@ export function upsertEntry(input: {
     basecamp_todo_url: "",
     basecamp_todo_completed_at: "",
   };
+  // A new week in the period inherits status only. Text, author, and a linked
+  // to-do stay on the week they were written.
+  const freshWeek = Boolean(inherit && !existing);
+  const textSource = freshWeek ? undefined : source;
+  const linkSource = freshWeek ? undefined : source;
   const linkFields =
     input.basecampTodo === undefined
       ? {
-          basecamp_todo_id: source?.basecamp_todo_id ?? "",
-          basecamp_project_id: source?.basecamp_project_id ?? "",
-          basecamp_todo_title: source?.basecamp_todo_title ?? "",
-          basecamp_todo_url: source?.basecamp_todo_url ?? "",
-          basecamp_todo_completed_at: source?.basecamp_todo_completed_at ?? "",
+          basecamp_todo_id: linkSource?.basecamp_todo_id ?? "",
+          basecamp_project_id: linkSource?.basecamp_project_id ?? "",
+          basecamp_todo_title: linkSource?.basecamp_todo_title ?? "",
+          basecamp_todo_url: linkSource?.basecamp_todo_url ?? "",
+          basecamp_todo_completed_at: linkSource?.basecamp_todo_completed_at ?? "",
         }
       : input.basecampTodo === null
         ? emptyLink
@@ -925,12 +945,12 @@ export function upsertEntry(input: {
 
   const merged = {
     status: normStatus(input.status ?? source?.status ?? "not_started"),
-    work_done: input.workDone ?? source?.work_done ?? "",
-    next_steps: input.nextSteps ?? source?.next_steps ?? "",
-    notes: input.notes ?? source?.notes ?? "",
+    work_done: input.workDone ?? textSource?.work_done ?? "",
+    next_steps: input.nextSteps ?? textSource?.next_steps ?? "",
+    notes: input.notes ?? textSource?.notes ?? "",
     // The last person to touch the row owns it. An undefined loggedBy is a caller
     // with no session (a seed script), which must not erase a real name.
-    logged_by: input.loggedBy ?? source?.logged_by ?? "",
+    logged_by: input.loggedBy ?? textSource?.logged_by ?? "",
     ...linkFields,
   };
 

@@ -56,11 +56,14 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
 
     const week1 = snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!;
     assert.equal(week1.status, "not_started", "earlier weeks in the month stay open");
-    for (const week of [WEEK_3, WEEK_4]) {
-      const row = snapshot.weekData(id, week).find((r) => r.deliverable_id === d.id)!;
-      assert.equal(row.status, "completed", `week of ${week}`);
-      assert.equal(row.work_done, "Sent it");
-    }
+    const logged = snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(logged.status, "completed");
+    assert.equal(logged.work_done, "Sent it");
+    const later = snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(later.status, "completed", "status carries to later weeks in the month");
+    assert.equal(later.work_done, "", "typed notes do not");
+    assert.equal(later.next_steps, "");
+    assert.equal(later.notes, "");
 
     // And it resets once a new month actually starts.
     const april = snapshot.weekData(id, APRIL).find((r) => r.deliverable_id === d.id)!;
@@ -130,11 +133,43 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
       snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!.work_done,
       "Wk3: pending access"
     );
-    assert.equal(
-      snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!.work_done,
-      "Wk3: pending access",
-      "unread later weeks still show the latest note in the month"
-    );
+    const unread = snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(unread.status, "in_progress");
+    assert.equal(unread.work_done, "", "a later week starts blank aside from status");
+    assert.equal(unread.week_start, "");
+  });
+
+  await t.test("saving only a status on a later week does not copy the earlier note", () => {
+    const id = client("per_status_only");
+    const d = snapshot.createDeliverable({
+      clientId: id,
+      category: "Email",
+      name: "Monthly newsletter",
+      cadence: "1 per month",
+      cadenceUnit: "monthly",
+    });
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: WEEK_1,
+      status: "in_progress",
+      workDone: "Wk1 note",
+      nextSteps: "Wait",
+      notes: "Client asked",
+    });
+    snapshot.upsertEntry({
+      deliverableId: d.id,
+      weekStart: WEEK_3,
+      status: "completed",
+    });
+    const later = snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(later.status, "completed");
+    assert.equal(later.work_done, "");
+    assert.equal(later.next_steps, "");
+    assert.equal(later.notes, "");
+    const earlier = snapshot.weekData(id, WEEK_1).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(earlier.work_done, "Wk1 note");
+    assert.equal(earlier.next_steps, "Wait");
+    assert.equal(earlier.notes, "Client asked");
   });
 
   await t.test("editing later weeks adds a row instead of rewriting the first", () => {

@@ -116,15 +116,15 @@ test("snapshot entry authorship and week bounds", async (t) => {
     assert.equal(row.updated_at, "");
   });
 
-  await t.test("the author travels with a monthly item across later weeks in the period", () => {
+  await t.test("a later week in the month keeps status and drops the author", () => {
     const id = client("auth_monthly");
     const d = deliverable(id, "Monthly newsletter", "monthly");
     snapshot.upsertEntry({
       deliverableId: d.id, weekStart: THIS_WEEK, status: "completed", loggedBy: "carlos",
     });
 
-    // Later weeks in the same month still show this row. Earlier weeks stay
-    // empty, so last week's note is not rewritten when someone logs this week.
+    // Later weeks in the same month still show the status. The author stays
+    // on the week that was logged. Earlier weeks stay empty.
     const later = addWeeks(THIS_WEEK, 1);
     const earlier = addWeeks(THIS_WEEK, -1);
     assert.equal(
@@ -132,10 +132,9 @@ test("snapshot entry authorship and week bounds", async (t) => {
       "carlos"
     );
     if (later.slice(0, 7) === THIS_WEEK.slice(0, 7)) {
-      assert.equal(
-        snapshot.weekData(id, later).find((r) => r.deliverable_id === d.id)!.logged_by,
-        "carlos"
-      );
+      const row = snapshot.weekData(id, later).find((r) => r.deliverable_id === d.id)!;
+      assert.equal(row.status, "completed");
+      assert.equal(row.logged_by, "");
     }
     if (earlier.slice(0, 7) === THIS_WEEK.slice(0, 7)) {
       assert.equal(
