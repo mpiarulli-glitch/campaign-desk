@@ -478,11 +478,9 @@ export function deleteDeliverable(id: string): boolean {
 
 // A deliverable joined with its entry for the period the given week falls
 // in (defaults when the team hasn't logged anything for that period yet).
-// For a monthly/quarterly deliverable, later weeks in the same period still
-// show the latest status until someone logs that week. Everything else is
-// new each week: what we did, next steps, notes, who logged it, and a linked
-// Basecamp to-do stay on the week they were written. One-time deliverables
-// aren't period-keyed: the single lifetime entry carries forward.
+// Later weeks still show the latest status. Everything else is new each week:
+// what we did, next steps, notes, who logged it, and a linked Basecamp to-do
+// stay on the week they were written. That includes one-time deliverables.
 export interface WeekRow {
   deliverable_id: string;
   category: string;
@@ -605,9 +603,8 @@ export function weekData(
     }
 
     const filedThisWeek = Boolean(e && e.week_start === weekStart);
-    // Monthly/quarterly: a later week keeps the status and nothing else.
-    const statusOnly =
-      Boolean(e) && !filedThisWeek && kind !== "one_time" && cadence_unit !== "weekly";
+    // A row filed on another week lends its status only.
+    const statusOnly = Boolean(e) && !filedThisWeek;
     const blank = {
       basecamp_todo_id: "",
       basecamp_project_id: "",
@@ -839,17 +836,14 @@ export function upsertEntry(input: {
 
   // A write lands on the week being edited:
   //
-  //   - One-time items have a single lifetime entry, so whichever entry exists
-  //     (any week) is the one updated.
   //   - Weekly items are one row per Monday.
-  //   - Monthly and quarterly items still *read* the latest status in the
-  //     period, but a write on a later week inserts its own row. Typed fields
-  //     from an earlier week are not copied onto it.
+  //   - Monthly, quarterly, and one-time items still *read* the latest status,
+  //     but a write on a later week inserts its own row. Typed fields from an
+  //     earlier week are not copied onto it, and are not rewritten.
   const kind = normKind(deliverable.kind);
   const unit = normCadenceUnit(deliverable.cadence_unit);
   const isOneTime = kind === "one_time";
   const periodKeyed = !isOneTime && unit !== "weekly";
-  const explicitLoggedFor = Boolean(input.loggedFor && input.loggedFor.trim());
   const anchor = (input.loggedFor || input.weekStart).trim();
   let writeKey = weekOfYmd(anchor);
   // Mondays of the week that contains the 1st can fall in the prior month.
@@ -883,18 +877,18 @@ export function upsertEntry(input: {
     )
     .get(input.deliverableId, writeKey) as Existing | undefined;
 
-  let existing: Existing | undefined = exact;
+  const existing: Existing | undefined = exact;
   let inherit: Existing | undefined;
 
-  if (isOneTime) {
-    existing = db
+  if (isOneTime && !existing) {
+    // Status can come from an earlier week. The text stays there.
+    inherit = db
       .prepare(
-        `SELECT * FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start DESC LIMIT 1`
+        `SELECT * FROM snapshot_entries
+         WHERE deliverable_id = ? AND week_start < ?
+         ORDER BY week_start DESC LIMIT 1`
       )
-      .get(input.deliverableId) as Existing | undefined;
-    // Viewing a later week to edit notes must not restamp a July setup as
-    // "logged for today". Only an explicit Logged-for date moves the row.
-    if (existing && !explicitLoggedFor) writeKey = existing.week_start;
+      .get(input.deliverableId, writeKey) as Existing | undefined;
   } else if (!existing && periodKeyed) {
     inherit = db
       .prepare(

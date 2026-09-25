@@ -259,19 +259,28 @@ test("monthly and quarterly deliverables across the weeks of a period", async (t
     assert.equal(week1.status, "not_started");
     const week3 = snapshot.weekData(id, WEEK_3).find((r) => r.deliverable_id === d.id)!;
     assert.equal(week3.status, "completed");
+    const beforeSave = snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!;
+    assert.equal(beforeSave.status, "completed");
+    assert.equal(beforeSave.work_done, "", "a new week does not show the earlier note");
     snapshot.upsertEntry({
       deliverableId: d.id,
       weekStart: WEEK_4,
       status: "completed",
-      workDone: "Installed",
     });
     const stored = getDb()
-      .prepare(`SELECT week_start FROM snapshot_entries WHERE deliverable_id = ?`)
-      .get(d.id) as { week_start: string };
-    assert.equal(stored.week_start, WEEK_3, "later-week save does not restamp a one-off");
+      .prepare(`SELECT week_start, work_done FROM snapshot_entries WHERE deliverable_id = ? ORDER BY week_start`)
+      .all(d.id) as Array<{ week_start: string; work_done: string }>;
+    assert.deepEqual(
+      stored.map((r) => r.week_start),
+      [WEEK_3, WEEK_4],
+      "a later week does not rewrite the earlier one-off note"
+    );
+    assert.equal(stored[0].work_done, "Installed");
+    assert.equal(stored[1].work_done, "");
     const later = snapshot.weekData(id, WEEK_4).find((r) => r.deliverable_id === d.id)!;
     assert.equal(later.status, "completed");
-    assert.equal(later.week_start, WEEK_3);
+    assert.equal(later.work_done, "");
+    assert.equal(later.week_start, WEEK_4);
   });
 });
 
