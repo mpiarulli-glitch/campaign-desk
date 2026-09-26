@@ -38,11 +38,27 @@ export const metadata: Metadata = {
   title: "Campaign Desk | Marketing Empire Group",
   description:
     "Upload HTML email campaigns, share a magic link, and collect feedback.",
+  applicationName: "Campaign Desk",
+  // Keep file-convention favicon/icon; point Apple home-screen (iPad) at the
+  // Empire spire so Add to Home Screen does not fall back to a generic mark.
+  icons: {
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Campaign Desk",
+    statusBarStyle: "black-translucent",
+  },
+  other: {
+    // iOS still reads this for Add to Home Screen / splash behavior.
+    "apple-mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  themeColor: "#0c0c0e",
 };
 
 export default function RootLayout({

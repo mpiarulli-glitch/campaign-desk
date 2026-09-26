@@ -10917,7 +10917,16 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .side.is-collapsed { width: 56px; }
 .side-brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; text-decoration: none; }
-.side-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(145deg, #00d4e8, #04808d); display: grid; place-items: center; color: #06222b; font-weight: 800; font-family: var(--font-head); flex: none; font-size: 14px; }
+/* Empire spire square — used when the rail is collapsed (default on iPad). */
+.side-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: block;
+  flex: none;
+  object-fit: cover;
+  background: #0e1117;
+}
 /* The MEG wordmark is white-on-transparent, drawn for a dark ground, so it sits
    on the sidebar as-is. Expanded shows the wordmark and hides the square mark;
    collapsed swaps them (see the is-collapsed and mobile rules below). */
@@ -10951,7 +10960,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .side.is-collapsed .nav-label { display: none; }
 .side.is-collapsed .side-logo { display: none; }
 .side.is-collapsed .side-brand-copy { display: none; }
-.side.is-collapsed .side-brand .side-mark { display: grid; }
+.side.is-collapsed .side-brand .side-mark { display: block; }
 .side.is-collapsed .side-brand { justify-content: center; padding: 16px 0 12px; }
 .side.is-collapsed .nav-i { justify-content: center; gap: 0; padding: 9px 0; }
 .side.is-collapsed .side-toggle { justify-content: center; gap: 0; }
@@ -11243,6 +11252,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .side-brand { justify-content: flex-start; padding: 16px 14px 12px; }
   .side.is-collapsed .side-brand .side-mark,
   .side .side-brand .side-mark { display: none; }
+  /* Drawer always shows the wordmark; keep the spire out of the way. */
   .side.is-collapsed .nav-i,
   .nav-i { justify-content: flex-start; gap: 11px; padding: 11px 10px; }
   /* Collapsing is meaningless for a drawer that is already full width. */

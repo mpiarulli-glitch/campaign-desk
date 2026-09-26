@@ -283,7 +283,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             sidebar's width, and the square mark carries the brand when it's
             collapsed to 56px, where a 4:1 wordmark would be illegible. */}
         <Link href="/admin/hub" className="side-brand" title="BUILD YOUR EMPIRE">
-          <span className="side-mark" aria-hidden="true">M</span>
+          {/* Collapsed rail (default on iPad/desktop): empire spire mark. The
+              wordmark is 4:1 and only fits the expanded sidebar. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/meg-mark.png"
+            alt=""
+            className="side-mark"
+            width={28}
+            height={28}
+            aria-hidden="true"
+          />
           <span className="side-brand-copy">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
