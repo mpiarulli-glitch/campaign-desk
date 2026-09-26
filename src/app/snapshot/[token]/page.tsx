@@ -56,7 +56,14 @@ type Row = {
   notes: string;
   basecamp_todo_id?: string;
   basecamp_todo_title?: string;
+  basecamp_todo_url?: string;
   basecamp_todo_completed_at?: string;
+  basecamp_todos?: Array<{
+    id: string;
+    title: string;
+    url: string;
+    completedAt: string;
+  }>;
 };
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
@@ -511,11 +518,24 @@ export default function SnapshotClientPage() {
                         <span className={`snap-n-pill status-${r.status}`}>{STATUS_LABEL(r.status)}</span>
                       </div>
                       {(() => {
-                        const todoTitle = (r.basecamp_todo_title || "").trim();
+                        const todos =
+                          r.basecamp_todos && r.basecamp_todos.length
+                            ? r.basecamp_todos
+                            : (r.basecamp_todo_title || "").trim()
+                              ? [
+                                  {
+                                    id: r.basecamp_todo_id || "todo",
+                                    title: (r.basecamp_todo_title || "").trim(),
+                                    url: r.basecamp_todo_url || "",
+                                    completedAt: r.basecamp_todo_completed_at || "",
+                                  },
+                                ]
+                              : [];
+                        const todoTitles = todos.map((t) => t.title.trim()).filter(Boolean).join("\n");
                         const work = r.work_done.trim();
-                        const workIsJustTitle = Boolean(todoTitle && work === todoTitle);
+                        const workIsJustTitle = Boolean(todoTitles && work === todoTitles);
                         const showWork = Boolean(work && !workIsJustTitle);
-                        const showTodo = Boolean(todoTitle);
+                        const showTodo = todos.length > 0;
                         const showWhat =
                           showWork || showTodo || r.next_steps.trim() || r.notes.trim();
                         if (!showWhat) return null;
@@ -525,18 +545,24 @@ export default function SnapshotClientPage() {
                             <div className="snap-ro">
                               <span className="snap-ro-label">What we did</span>
                               {showWork ? <p>{work}</p> : null}
-                              {showTodo ? (
-                                <p className={`snap-ro-todo ${showWork ? "is-extra" : ""}`}>
-                                  <span className="snap-ro-todo-title">{todoTitle}</span>
-                                  {r.basecamp_todo_completed_at ? (
+                              {todos.map((todo) => (
+                                <p key={todo.id} className={`snap-ro-todo ${showWork ? "is-extra" : ""}`}>
+                                  {todo.url ? (
+                                    <a className="snap-ro-todo-title" href={todo.url} target="_blank" rel="noreferrer">
+                                      {todo.title}
+                                    </a>
+                                  ) : (
+                                    <span className="snap-ro-todo-title">{todo.title}</span>
+                                  )}
+                                  {todo.completedAt ? (
                                     <span className="snap-ro-todo-when">
-                                      Completed {completedTodoDate(r.basecamp_todo_completed_at)}
+                                      Completed {completedTodoDate(todo.completedAt)}
                                     </span>
                                   ) : (
-                                    <span className="snap-ro-todo-when">Completed in Basecamp</span>
+                                    <span className="snap-ro-todo-when">In Basecamp</span>
                                   )}
                                 </p>
-                              ) : null}
+                              ))}
                             </div>
                           ) : null}
                           {r.next_steps.trim() ? (

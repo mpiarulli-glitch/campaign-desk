@@ -6,9 +6,11 @@ import {
   CompletedTodoPicker,
   type CompletedTodoOption,
 } from "@/components/CompletedTodoPicker";
+import { LoggedForRange, loggedRangeLabel } from "@/components/LoggedForRange";
 import { weekLabel } from "@/lib/week";
 import { catchUpPeriodLabel } from "@/lib/snapshot-catchup";
 import {
+  defaultLoggedForDate,
   loggedForTargetsOtherPeriod,
   periodStartFor,
 } from "@/lib/snapshot-entry-date";
@@ -44,20 +46,32 @@ export type SnapshotFillRowData = {
   notes: string;
   logged_by: string;
   updated_at: string;
+  basecamp_todos: SnapshotLinkedTodo[];
   basecamp_todo_id: string;
   basecamp_project_id: string;
   basecamp_todo_title: string;
   basecamp_todo_url: string;
   basecamp_todo_completed_at: string;
+  logged_from: string;
+  logged_to: string;
 };
 
-export type SnapshotBasecampTodoPatch = {
+export type SnapshotLinkedTodo = {
   id: string;
   projectId: string;
   title: string;
   url: string;
   completedAt: string;
-} | null;
+};
+
+export type SnapshotBasecampTodoPatch = SnapshotLinkedTodo | null;
+
+export type SnapshotFillSaveOpts = {
+  loggedFor?: string;
+  basecampTodo?: SnapshotBasecampTodoPatch;
+  basecampTodos?: SnapshotLinkedTodo[] | null;
+  loggedRange?: { from: string; to: string } | null;
+};
 
 export type SnapshotOverdueDetail = {
   due_date: string;
@@ -258,10 +272,7 @@ export function SnapshotFillRow({
   onToggle: () => void;
   onPatch: (patch: Partial<SnapshotFillRowData>) => void;
   onLoggedForChange: (loggedFor: string) => void;
-  onSave: (
-    patch: Partial<SnapshotFillRowData>,
-    opts?: { loggedFor?: string; basecampTodo?: SnapshotBasecampTodoPatch }
-  ) => void;
+  onSave: (patch: Partial<SnapshotFillRowData>, opts?: SnapshotFillSaveOpts) => void;
   onRetry: () => void;
   onCatchUpDone: () => void;
   launchDate: string | null;
@@ -295,46 +306,81 @@ export function SnapshotFillRow({
   const shownStatus = pendingStatus ?? row.status;
   const todoState = useCompletedTodos(clientId, open);
 
-  function selectCompletedTodo(todo: CompletedTodoOption) {
-    // Never attach a to-do from a different Basecamp project than this client.
+  function linkedTodos(): SnapshotLinkedTodo[] {
+    if (row.basecamp_todos?.length) return row.basecamp_todos;
+    if (!row.basecamp_todo_id || !row.basecamp_todo_title) return [];
+    return [
+      {
+        id: row.basecamp_todo_id,
+        projectId: row.basecamp_project_id,
+        title: row.basecamp_todo_title,
+        url: row.basecamp_todo_url,
+        completedAt: row.basecamp_todo_completed_at,
+      },
+    ];
+  }
+
+  function applyTodos(next: SnapshotLinkedTodo[]) {
+    const current = linkedTodos();
+    const prevTitles = current.map((t) => t.title.trim()).filter(Boolean).join("\n");
+    const nextTitles = next.map((t) => t.title.trim()).filter(Boolean).join("\n");
+    const first = next[0];
+    const linkPatch: Partial<SnapshotFillRowData> = {
+      basecamp_todos: next,
+      basecamp_todo_id: first?.id ?? "",
+      basecamp_project_id: first?.projectId ?? "",
+      basecamp_todo_title: first?.title ?? "",
+      basecamp_todo_url: first?.url ?? "",
+      basecamp_todo_completed_at: first?.completedAt ?? "",
+    };
+    if (!row.work_done.trim() || row.work_done.trim() === prevTitles) {
+      linkPatch.work_done = nextTitles;
+    }
+    onPatch(linkPatch);
+    onSave(linkPatch, { basecampTodos: next });
+  }
+
+  function toggleCompletedTodo(todo: CompletedTodoOption) {
     if (
       todoState.todos.length &&
       !todoState.todos.some((t) => t.id === todo.id && t.projectId === todo.projectId)
     ) {
       return;
     }
-    const linkPatch: Partial<SnapshotFillRowData> = {
-      basecamp_todo_id: todo.id,
-      basecamp_project_id: todo.projectId,
-      basecamp_todo_title: todo.title,
-      basecamp_todo_url: todo.url,
-      basecamp_todo_completed_at: todo.completedAt || "",
-    };
-    if (!row.work_done.trim()) {
-      linkPatch.work_done = todo.title;
-    }
-    onPatch(linkPatch);
-    onSave(linkPatch, {
-      basecampTodo: {
-        id: todo.id,
-        projectId: todo.projectId,
-        title: todo.title,
-        url: todo.url,
-        completedAt: todo.completedAt || "",
-      },
-    });
+    const current = linkedTodos();
+    const next = current.some((t) => t.id === todo.id)
+      ? current.filter((t) => t.id !== todo.id)
+      : [
+          ...current,
+          {
+            id: todo.id,
+            projectId: todo.projectId,
+            title: todo.title,
+            url: todo.url,
+            completedAt: todo.completedAt || "",
+          },
+        ];
+    applyTodos(next);
   }
 
-  function clearCompletedTodo() {
-    const linkPatch: Partial<SnapshotFillRowData> = {
-      basecamp_todo_id: "",
-      basecamp_project_id: "",
-      basecamp_todo_title: "",
-      basecamp_todo_url: "",
-      basecamp_todo_completed_at: "",
-    };
-    onPatch(linkPatch);
-    onSave(linkPatch, { basecampTodo: null });
+  function removeCompletedTodo(id: string) {
+    applyTodos(linkedTodos().filter((t) => t.id !== id));
+  }
+
+  function clearCompletedTodos() {
+    applyTodos([]);
+  }
+
+  function applyLoggedRange(range: { from: string; to: string } | null) {
+    const from = range?.from || "";
+    const to = range?.to || "";
+    const filed = from || defaultLoggedForDate(viewWeek);
+    onPatch({ logged_from: from, logged_to: to });
+    onLoggedForChange(filed);
+    onSave(
+      { logged_from: from, logged_to: to },
+      { loggedFor: filed, loggedRange: range }
+    );
   }
 
   function startAskWhen() {
@@ -408,22 +454,29 @@ export function SnapshotFillRow({
                 {row.updated_at ? ` · ${relativeTime(row.updated_at)}` : ""}
               </p>
             ) : null}
-            {row.basecamp_todo_title.trim() && !open ? (
+            {!open && linkedTodos().length ? (
               <div className="snap-n-todo-linked">
-                <p className="snap-n-meta snap-n-todo-meta">
-                  Linked: {row.basecamp_todo_title.trim()}
-                </p>
-                <button
-                  type="button"
-                  className="link-button snap-todo-unlink"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    clearCompletedTodo();
-                  }}
-                >
-                  Unlink
-                </button>
+                {linkedTodos().map((todo) => (
+                  <p key={todo.id} className="snap-n-meta snap-n-todo-meta">
+                    Linked: {todo.title.trim()}
+                    <button
+                      type="button"
+                      className="link-button snap-todo-unlink"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeCompletedTodo(todo.id);
+                      }}
+                    >
+                      Unlink
+                    </button>
+                  </p>
+                ))}
               </div>
+            ) : null}
+            {!open && row.logged_from ? (
+              <p className="snap-n-meta">
+                Logged {loggedRangeLabel(row.logged_from, row.logged_to)}
+              </p>
             ) : null}
           </div>
           {overdue ? (
@@ -609,18 +662,17 @@ export function SnapshotFillRow({
             </p>
           ) : null}
           <label className="snap-todo-field">
-            <span>Completed Basecamp to-do</span>
+            <span>Basecamp to-dos</span>
             <CompletedTodoPicker
               todos={todoState.todos}
-              selectedId={row.basecamp_todo_id}
-              selectedTitle={row.basecamp_todo_title}
-              selectedUrl={row.basecamp_todo_url}
+              selected={linkedTodos().map((t) => ({ id: t.id, title: t.title, url: t.url }))}
               loading={todoState.loading}
               reason={todoState.reason}
               projectName={todoState.projectName}
               clientName={todoState.clientName}
-              onSelect={selectCompletedTodo}
-              onClear={clearCompletedTodo}
+              onToggle={toggleCompletedTodo}
+              onRemove={removeCompletedTodo}
+              onClear={clearCompletedTodos}
             />
           </label>
           <label>
@@ -650,16 +702,14 @@ export function SnapshotFillRow({
               placeholder="Anything the client should know"
             />
           </label>
-          <label className="snap-logged-for snap-logged-for-field">
+          <div className="snap-logged-for snap-logged-for-field">
             <span>Logged for</span>
-            <input
-              type="date"
-              value={loggedFor}
-              aria-label="Logged for date"
-              title="When this work actually happened"
-              onChange={(e) => onLoggedForChange(e.target.value)}
+            <LoggedForRange
+              from={row.logged_from || ""}
+              to={row.logged_to || ""}
+              onChange={applyLoggedRange}
             />
-          </label>
+          </div>
         </div>
       ) : null}
     </div>

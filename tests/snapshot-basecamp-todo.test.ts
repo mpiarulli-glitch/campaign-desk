@@ -80,6 +80,134 @@ test("snapshot entry can link a completed Basecamp to-do", async (t) => {
   assert.equal(cleared.work_done, "Sent the September newsletter");
 });
 
+test("a deliverable week can link several todos and an optional logged date range", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-snap-todos-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const { closeDbForTests, getDb, nowIso } = await import("../src/lib/db");
+  closeDbForTests();
+  const snapshot = await import("../src/lib/snapshot");
+
+  t.after(() => {
+    closeDbForTests();
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  getDb()
+    .prepare(`INSERT INTO rev_clients (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`)
+    .run("c1", "Client One", now, now);
+  const d = snapshot.createDeliverable({
+    clientId: "c1",
+    category: "SEO",
+    name: "SEO Management",
+    cadence: "15 hours/month",
+    cadenceUnit: "monthly",
+  });
+  const week = "2026-09-14";
+  const later = "2026-09-21";
+  const audit = {
+    id: "todo-audit",
+    projectId: "proj-1",
+    title: "Organic Attribution Audit",
+    url: "https://3.basecamp.com/todo-audit",
+    completedAt: "2026-09-16T12:00:00.000Z",
+  };
+  const report = {
+    id: "todo-report",
+    projectId: "proj-1",
+    title: "September SEO report",
+    url: "https://3.basecamp.com/todo-report",
+    completedAt: "",
+  };
+
+  snapshot.upsertEntry({
+    deliverableId: d.id,
+    weekStart: week,
+    status: "in_progress",
+    loggedBy: "meg",
+    basecampTodos: [audit, report],
+    loggedRange: { from: "2026-09-14", to: "2026-09-18" },
+  });
+
+  const row = snapshot.weekData("c1", week).find((r) => r.deliverable_id === d.id)!;
+  assert.deepEqual(
+    row.basecamp_todos.map((todo) => todo.id),
+    ["todo-audit", "todo-report"]
+  );
+  assert.equal(row.basecamp_todo_id, "todo-audit");
+  assert.equal(row.basecamp_todo_title, "Organic Attribution Audit");
+  assert.equal(row.logged_from, "2026-09-14");
+  assert.equal(row.logged_to, "2026-09-18");
+
+  snapshot.upsertEntry({
+    deliverableId: d.id,
+    weekStart: week,
+    notes: "Still in progress",
+    loggedBy: "meg",
+  });
+  const kept = snapshot.weekData("c1", week).find((r) => r.deliverable_id === d.id)!;
+  assert.equal(kept.basecamp_todos.length, 2);
+  assert.equal(kept.logged_from, "2026-09-14");
+  assert.equal(kept.logged_to, "2026-09-18");
+  assert.equal(kept.notes, "Still in progress");
+
+  const next = snapshot.weekData("c1", later).find((r) => r.deliverable_id === d.id)!;
+  assert.equal(next.status, "in_progress");
+  assert.equal(next.basecamp_todos.length, 0);
+  assert.equal(next.basecamp_todo_title, "");
+  assert.equal(next.logged_from, "");
+  assert.equal(next.logged_to, "");
+  assert.equal(next.notes, "");
+
+  snapshot.upsertEntry({
+    deliverableId: d.id,
+    weekStart: week,
+    loggedBy: "meg",
+    basecampTodos: null,
+    loggedRange: null,
+  });
+  const cleared = snapshot.weekData("c1", week).find((r) => r.deliverable_id === d.id)!;
+  assert.equal(cleared.basecamp_todos.length, 0);
+  assert.equal(cleared.logged_from, "");
+  assert.equal(cleared.logged_to, "");
+});
+
+test("a single logged day stores no end date", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-snap-range-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+  const { closeDbForTests, getDb, nowIso } = await import("../src/lib/db");
+  closeDbForTests();
+  const snapshot = await import("../src/lib/snapshot");
+  t.after(() => {
+    closeDbForTests();
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+  const now = nowIso();
+  getDb()
+    .prepare(`INSERT INTO rev_clients (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`)
+    .run("c1", "Client One", now, now);
+  const d = snapshot.createDeliverable({
+    clientId: "c1",
+    category: "Email",
+    name: "Broadcast",
+    cadence: "",
+    cadenceUnit: "weekly",
+  });
+  snapshot.upsertEntry({
+    deliverableId: d.id,
+    weekStart: "2026-09-14",
+    loggedRange: { from: "2026-09-16", to: "2026-09-16" },
+  });
+  const row = snapshot.weekData("c1", "2026-09-14").find((r) => r.deliverable_id === d.id)!;
+  assert.equal(row.logged_from, "2026-09-16");
+  assert.equal(row.logged_to, "");
+});
+
 test("a linked completed to-do alone counts as this week's work", async () => {
   const { isThisWeeksWork } = await import("../src/lib/snapshot-status");
   assert.equal(

@@ -27,6 +27,31 @@ function parseBasecampTodo(raw: unknown): SnapshotBasecampTodoLink | null | unde
   };
 }
 
+function parseBasecampTodos(raw: unknown): SnapshotBasecampTodoLink[] | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (!Array.isArray(raw)) return undefined;
+  const todos: SnapshotBasecampTodoLink[] = [];
+  for (const item of raw) {
+    const todo = parseBasecampTodo(item);
+    if (!todo) return undefined;
+    todos.push(todo);
+  }
+  return todos;
+}
+
+function parseLoggedRange(body: Record<string, unknown>): { from: string; to: string } | null | undefined {
+  const hasFrom = Object.prototype.hasOwnProperty.call(body, "loggedFrom");
+  if (!hasFrom) return undefined;
+  const from = typeof body.loggedFrom === "string" ? body.loggedFrom.trim() : "";
+  const to = typeof body.loggedTo === "string" ? body.loggedTo.trim() : "";
+  if (!from && !to) return null;
+  if (from && !isYmd(from)) return undefined;
+  if (to && !isYmd(to)) return undefined;
+  if (!from && to) return undefined;
+  return { from, to };
+}
+
 export async function POST(request: Request) {
   if (!(await can("page.snapshot"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -56,7 +81,23 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (basecampTodo) {
+  const hasBasecampTodos = Object.prototype.hasOwnProperty.call(body, "basecampTodos");
+  const basecampTodos = hasBasecampTodos ? parseBasecampTodos(body.basecampTodos) : undefined;
+  if (hasBasecampTodos && body.basecampTodos != null && basecampTodos === undefined) {
+    return NextResponse.json(
+      { error: "basecampTodos requires id, projectId, and title on every item" },
+      { status: 400 }
+    );
+  }
+  const loggedRange = parseLoggedRange(body as Record<string, unknown>);
+  if (Object.prototype.hasOwnProperty.call(body, "loggedFrom") && loggedRange === undefined) {
+    return NextResponse.json(
+      { error: "loggedFrom and loggedTo must be YYYY-MM-DD when provided" },
+      { status: 400 }
+    );
+  }
+  const todosToCheck = basecampTodos ?? (basecampTodo ? [basecampTodo] : []);
+  if (todosToCheck.length) {
     const deliverable = getDeliverable(deliverableId);
     if (!deliverable) {
       return NextResponse.json({ error: "Deliverable not found" }, { status: 404 });
@@ -71,7 +112,7 @@ export async function POST(request: Request) {
     }
     // The picker only offers to-dos from this client's linked project id; refuse
     // anything else so a crafted request can't attach another client's work.
-    if (basecampTodo.projectId !== linked) {
+    if (todosToCheck.some((todo) => todo.projectId !== linked)) {
       return NextResponse.json(
         { error: "That to-do is not from this client’s Basecamp project." },
         { status: 400 }
@@ -89,7 +130,19 @@ export async function POST(request: Request) {
     // Taken from the session, never from the request body: an audit trail the
     // caller can set is not an audit trail.
     loggedBy: await sessionActor(),
-    basecampTodo: hasBasecampTodo ? (body.basecampTodo === null ? null : basecampTodo) : undefined,
+    basecampTodo: hasBasecampTodos
+      ? undefined
+      : hasBasecampTodo
+        ? body.basecampTodo === null
+          ? null
+          : basecampTodo
+        : undefined,
+    basecampTodos: hasBasecampTodos
+      ? body.basecampTodos === null
+        ? null
+        : basecampTodos
+      : undefined,
+    loggedRange,
   });
   if (!result.ok) {
     return NextResponse.json({ error: "Deliverable not found" }, { status: 404 });

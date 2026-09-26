@@ -479,8 +479,17 @@ export function deleteDeliverable(id: string): boolean {
 // A deliverable joined with its entry for the period the given week falls
 // in (defaults when the team hasn't logged anything for that period yet).
 // Later weeks still show the latest status. Everything else is new each week:
-// what we did, next steps, notes, who logged it, and a linked Basecamp to-do
-// stay on the week they were written. That includes one-time deliverables.
+// what we did, next steps, notes, who logged it, linked Basecamp to-dos, and
+// the logged date range stay on the week they were written. That includes
+// one-time deliverables.
+export interface SnapshotBasecampTodoLink {
+  id: string;
+  projectId: string;
+  title: string;
+  url: string;
+  completedAt: string;
+}
+
 export interface WeekRow {
   deliverable_id: string;
   category: string;
@@ -502,13 +511,147 @@ export interface WeekRow {
   // Team-side only: the client-facing page never shows internal names.
   logged_by: string;
   updated_at: string;
-  // Completed Basecamp to-do linked as the record of what happened. Empty when
-  // nothing is linked. Surfaced on the client snapshot under "What we did".
+  // Basecamp to-dos linked as the record of what happened. The single
+  // basecamp_todo_* fields mirror the first link so older readers still work.
+  basecamp_todos: SnapshotBasecampTodoLink[];
   basecamp_todo_id: string;
   basecamp_project_id: string;
   basecamp_todo_title: string;
   basecamp_todo_url: string;
   basecamp_todo_completed_at: string;
+  /** Inclusive start of the optional logged date range. Empty when unset. */
+  logged_from: string;
+  /** Inclusive end. Empty when the log is a single day or unset. */
+  logged_to: string;
+}
+
+function todoLinkFromRaw(raw: unknown): SnapshotBasecampTodoLink | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = typeof o.id === "string" ? o.id.trim() : "";
+  const projectId = typeof o.projectId === "string" ? o.projectId.trim() : "";
+  const title = typeof o.title === "string" ? o.title.trim() : "";
+  if (!id || !projectId || !title) return null;
+  return {
+    id,
+    projectId,
+    title,
+    url: typeof o.url === "string" ? o.url.trim() : "",
+    completedAt: typeof o.completedAt === "string" ? o.completedAt.trim() : "",
+  };
+}
+
+export function snapshotTodosFromStored(
+  raw: string | null | undefined,
+  legacy?: {
+    basecamp_todo_id?: string | null;
+    basecamp_project_id?: string | null;
+    basecamp_todo_title?: string | null;
+    basecamp_todo_url?: string | null;
+    basecamp_todo_completed_at?: string | null;
+  }
+): SnapshotBasecampTodoLink[] {
+  if (raw && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const todos = parsed
+          .map(todoLinkFromRaw)
+          .filter((t): t is SnapshotBasecampTodoLink => Boolean(t));
+        const seen = new Set<string>();
+        const unique = todos.filter((t) => {
+          if (seen.has(t.id)) return false;
+          seen.add(t.id);
+          return true;
+        });
+        if (unique.length) return unique;
+      }
+    } catch {
+      // Fall through to the single-column link written before lists existed.
+    }
+  }
+  const id = (legacy?.basecamp_todo_id || "").trim();
+  const title = (legacy?.basecamp_todo_title || "").trim();
+  const projectId = (legacy?.basecamp_project_id || "").trim();
+  if (!id || !title || !projectId) return [];
+  return [
+    {
+      id,
+      projectId,
+      title,
+      url: (legacy?.basecamp_todo_url || "").trim(),
+      completedAt: (legacy?.basecamp_todo_completed_at || "").trim(),
+    },
+  ];
+}
+
+function legacyTodoFields(todos: SnapshotBasecampTodoLink[]) {
+  const first = todos[0];
+  return {
+    basecamp_todos_json: JSON.stringify(todos),
+    basecamp_todo_id: first?.id ?? "",
+    basecamp_project_id: first?.projectId ?? "",
+    basecamp_todo_title: first?.title ?? "",
+    basecamp_todo_url: first?.url ?? "",
+    basecamp_todo_completed_at: first?.completedAt ?? "",
+  };
+}
+
+function normalizeTodoList(
+  todos: SnapshotBasecampTodoLink[] | null | undefined
+): SnapshotBasecampTodoLink[] {
+  if (!todos?.length) return [];
+  const seen = new Set<string>();
+  const out: SnapshotBasecampTodoLink[] = [];
+  for (const raw of todos) {
+    const todo = todoLinkFromRaw(raw);
+    if (!todo || seen.has(todo.id)) continue;
+    seen.add(todo.id);
+    out.push(todo);
+  }
+  return out;
+}
+
+function resolveNextTodos(
+  input: {
+    basecampTodo?: SnapshotBasecampTodoLink | null;
+    basecampTodos?: SnapshotBasecampTodoLink[] | null;
+  },
+  linkSource:
+    | {
+        basecamp_todos?: string | null;
+        basecamp_todo_id?: string | null;
+        basecamp_project_id?: string | null;
+        basecamp_todo_title?: string | null;
+        basecamp_todo_url?: string | null;
+        basecamp_todo_completed_at?: string | null;
+      }
+    | undefined
+): SnapshotBasecampTodoLink[] {
+  if (input.basecampTodos !== undefined) return normalizeTodoList(input.basecampTodos);
+  if (input.basecampTodo !== undefined) {
+    return input.basecampTodo === null ? [] : normalizeTodoList([input.basecampTodo]);
+  }
+  return snapshotTodosFromStored(linkSource?.basecamp_todos, linkSource);
+}
+
+function resolveLoggedRange(
+  range: { from: string; to: string } | null | undefined,
+  source: { logged_from?: string | null; logged_to?: string | null } | undefined
+): { from: string; to: string } {
+  if (range === undefined) {
+    return {
+      from: (source?.logged_from || "").trim(),
+      to: (source?.logged_to || "").trim(),
+    };
+  }
+  if (range === null) return { from: "", to: "" };
+  let from = range.from.trim();
+  let to = range.to.trim();
+  if (!from) return { from: "", to: "" };
+  if (to && to < from) [from, to] = [to, from];
+  if (to === from) to = "";
+  return { from, to };
 }
 
 // Existing entries predate cadence_unit and are keyed by whichever literal
@@ -549,7 +692,8 @@ export function weekData(
   if (!deliverables.length) return [];
 
   const FIELDS = `week_start, created_at, status, work_done, next_steps, notes, logged_by, updated_at,
-    basecamp_todo_id, basecamp_project_id, basecamp_todo_title, basecamp_todo_url, basecamp_todo_completed_at`;
+    basecamp_todo_id, basecamp_project_id, basecamp_todo_title, basecamp_todo_url, basecamp_todo_completed_at,
+    basecamp_todos, logged_from, logged_to`;
   const exactStmt = getDb().prepare(
     `SELECT ${FIELDS} FROM snapshot_entries
      WHERE deliverable_id = ? AND week_start = ?`
@@ -587,6 +731,9 @@ export function weekData(
           basecamp_todo_title: string;
           basecamp_todo_url: string;
           basecamp_todo_completed_at: string;
+          basecamp_todos: string;
+          logged_from: string;
+          logged_to: string;
         }
       | undefined;
     let period_start = "";
@@ -606,12 +753,19 @@ export function weekData(
     // A row filed on another week lends its status only.
     const statusOnly = Boolean(e) && !filedThisWeek;
     const blank = {
+      basecamp_todos: [] as SnapshotBasecampTodoLink[],
       basecamp_todo_id: "",
       basecamp_project_id: "",
       basecamp_todo_title: "",
       basecamp_todo_url: "",
       basecamp_todo_completed_at: "",
+      logged_from: "",
+      logged_to: "",
     };
+    const linked = e
+      ? snapshotTodosFromStored(e.basecamp_todos, e)
+      : [];
+    const first = linked[0];
 
     return {
       deliverable_id: d.id,
@@ -633,11 +787,14 @@ export function weekData(
       updated_at: statusOnly ? "" : (e?.updated_at ?? ""),
       ...(filedThisWeek && e
         ? {
-            basecamp_todo_id: e.basecamp_todo_id,
-            basecamp_project_id: e.basecamp_project_id,
-            basecamp_todo_title: e.basecamp_todo_title,
-            basecamp_todo_url: e.basecamp_todo_url,
-            basecamp_todo_completed_at: e.basecamp_todo_completed_at,
+            basecamp_todos: linked,
+            basecamp_todo_id: first?.id ?? "",
+            basecamp_project_id: first?.projectId ?? "",
+            basecamp_todo_title: first?.title ?? "",
+            basecamp_todo_url: first?.url ?? "",
+            basecamp_todo_completed_at: first?.completedAt ?? "",
+            logged_from: e.logged_from || "",
+            logged_to: e.logged_to || "",
           }
         : blank),
     };
@@ -800,14 +957,6 @@ export function backfillGridData(
   return { weeks, rows };
 }
 
-export type SnapshotBasecampTodoLink = {
-  id: string;
-  projectId: string;
-  title: string;
-  url: string;
-  completedAt: string;
-};
-
 export function upsertEntry(input: {
   deliverableId: string;
   weekStart: string;
@@ -825,9 +974,20 @@ export function upsertEntry(input: {
   loggedBy?: string;
   /**
    * Completed Basecamp to-do linked as what happened. Undefined leaves the
-   * existing link alone; null clears it; an object replaces it.
+   * existing link alone; null clears it; an object replaces the whole list
+   * with that one to-do. Prefer basecampTodos when linking more than one.
    */
   basecampTodo?: SnapshotBasecampTodoLink | null;
+  /**
+   * Full set of linked to-dos for this week. Undefined leaves them alone;
+   * null or [] clears them. Wins over basecampTodo when both are sent.
+   */
+  basecampTodos?: SnapshotBasecampTodoLink[] | null;
+  /**
+   * Optional logged date range. Undefined leaves the stored range alone;
+   * null clears it. `to` empty means a single day.
+   */
+  loggedRange?: { from: string; to: string } | null;
 }): SnapshotEntryResult {
   const deliverable = getDeliverable(input.deliverableId);
   if (!deliverable) return { ok: false };
@@ -869,6 +1029,9 @@ export function upsertEntry(input: {
     basecamp_todo_title: string;
     basecamp_todo_url: string;
     basecamp_todo_completed_at: string;
+    basecamp_todos: string;
+    logged_from: string;
+    logged_to: string;
   };
 
   const exact = db
@@ -906,36 +1069,15 @@ export function upsertEntry(input: {
   }
 
   const source = existing ?? inherit;
-  const emptyLink = {
-    basecamp_todo_id: "",
-    basecamp_project_id: "",
-    basecamp_todo_title: "",
-    basecamp_todo_url: "",
-    basecamp_todo_completed_at: "",
-  };
-  // A new week in the period inherits status only. Text, author, and a linked
-  // to-do stay on the week they were written.
+  // A new week in the period inherits status only. Text, author, linked
+  // to-dos, and the logged date range stay on the week they were written.
   const freshWeek = Boolean(inherit && !existing);
   const textSource = freshWeek ? undefined : source;
   const linkSource = freshWeek ? undefined : source;
-  const linkFields =
-    input.basecampTodo === undefined
-      ? {
-          basecamp_todo_id: linkSource?.basecamp_todo_id ?? "",
-          basecamp_project_id: linkSource?.basecamp_project_id ?? "",
-          basecamp_todo_title: linkSource?.basecamp_todo_title ?? "",
-          basecamp_todo_url: linkSource?.basecamp_todo_url ?? "",
-          basecamp_todo_completed_at: linkSource?.basecamp_todo_completed_at ?? "",
-        }
-      : input.basecampTodo === null
-        ? emptyLink
-        : {
-            basecamp_todo_id: input.basecampTodo.id.trim(),
-            basecamp_project_id: input.basecampTodo.projectId.trim(),
-            basecamp_todo_title: input.basecampTodo.title.trim(),
-            basecamp_todo_url: input.basecampTodo.url.trim(),
-            basecamp_todo_completed_at: input.basecampTodo.completedAt.trim(),
-          };
+  const nextTodos = resolveNextTodos(input, linkSource);
+  const linkFields = legacyTodoFields(nextTodos);
+  const dateSource = freshWeek ? undefined : source;
+  const loggedDates = resolveLoggedRange(input.loggedRange, dateSource);
 
   const merged = {
     status: normStatus(input.status ?? source?.status ?? "not_started"),
@@ -946,6 +1088,8 @@ export function upsertEntry(input: {
     // with no session (a seed script), which must not erase a real name.
     logged_by: input.loggedBy ?? textSource?.logged_by ?? "",
     ...linkFields,
+    logged_from: loggedDates.from,
+    logged_to: loggedDates.to,
   };
 
   if (existing) {
@@ -953,7 +1097,8 @@ export function upsertEntry(input: {
       `UPDATE snapshot_entries
        SET week_start = ?, status = ?, work_done = ?, next_steps = ?, notes = ?, logged_by = ?,
            basecamp_todo_id = ?, basecamp_project_id = ?, basecamp_todo_title = ?,
-           basecamp_todo_url = ?, basecamp_todo_completed_at = ?, updated_at = ?
+           basecamp_todo_url = ?, basecamp_todo_completed_at = ?, basecamp_todos = ?,
+           logged_from = ?, logged_to = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       writeKey,
@@ -967,6 +1112,9 @@ export function upsertEntry(input: {
       merged.basecamp_todo_title,
       merged.basecamp_todo_url,
       merged.basecamp_todo_completed_at,
+      merged.basecamp_todos_json,
+      merged.logged_from,
+      merged.logged_to,
       ts,
       existing.id
     );
@@ -975,8 +1123,8 @@ export function upsertEntry(input: {
       `INSERT INTO snapshot_entries
         (id, deliverable_id, client_id, week_start, status, work_done, next_steps, notes, logged_by,
          basecamp_todo_id, basecamp_project_id, basecamp_todo_title, basecamp_todo_url,
-         basecamp_todo_completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         basecamp_todo_completed_at, basecamp_todos, logged_from, logged_to, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       nanoid(12),
       input.deliverableId,
@@ -992,6 +1140,9 @@ export function upsertEntry(input: {
       merged.basecamp_todo_title,
       merged.basecamp_todo_url,
       merged.basecamp_todo_completed_at,
+      merged.basecamp_todos_json,
+      merged.logged_from,
+      merged.logged_to,
       ts,
       ts
     );

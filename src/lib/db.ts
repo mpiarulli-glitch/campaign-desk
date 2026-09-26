@@ -721,6 +721,11 @@ export interface SnapshotEntry {
   basecamp_todo_title: string;
   basecamp_todo_url: string;
   basecamp_todo_completed_at: string;
+  // JSON array of SnapshotBasecampTodoLink. The single columns above mirror
+  // the first item so older rows and readers stay valid.
+  basecamp_todos: string;
+  logged_from: string;
+  logged_to: string;
   created_at: string;
   updated_at: string;
 }
@@ -1694,6 +1699,9 @@ export function getDb(): Database.Database {
       basecamp_todo_title TEXT NOT NULL DEFAULT '',
       basecamp_todo_url TEXT NOT NULL DEFAULT '',
       basecamp_todo_completed_at TEXT NOT NULL DEFAULT '',
+      basecamp_todos TEXT NOT NULL DEFAULT '[]',
+      logged_from TEXT NOT NULL DEFAULT '',
+      logged_to TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE (deliverable_id, week_start),
@@ -3088,12 +3096,19 @@ function migrate(database: Database.Database) {
     "basecamp_todo_title",
     "basecamp_todo_url",
     "basecamp_todo_completed_at",
+    "logged_from",
+    "logged_to",
   ] as const) {
     if (snapEntryCols.length && !snapEntryCols.includes(col)) {
       database.exec(
         `ALTER TABLE snapshot_entries ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`
       );
     }
+  }
+  if (snapEntryCols.length && !snapEntryCols.includes("basecamp_todos")) {
+    database.exec(
+      `ALTER TABLE snapshot_entries ADD COLUMN basecamp_todos TEXT NOT NULL DEFAULT '[]'`
+    );
   }
 
   const snapWinCols = tableColumns(database, "snapshot_wins");

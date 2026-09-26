@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
-import { SnapshotFillRow, type SnapshotFillSaveState, type SnapshotBasecampTodoPatch } from "@/components/SnapshotFillRow";
+import { SnapshotFillRow, type SnapshotFillSaveOpts, type SnapshotFillSaveState, type SnapshotLinkedTodo } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
 import { TEAMS, teamLabelFor } from "@/lib/people";
@@ -122,11 +122,14 @@ type Row = {
   notes: string;
   logged_by: string;
   updated_at: string;
+  basecamp_todos: SnapshotLinkedTodo[];
   basecamp_todo_id: string;
   basecamp_project_id: string;
   basecamp_todo_title: string;
   basecamp_todo_url: string;
   basecamp_todo_completed_at: string;
+  logged_from: string;
+  logged_to: string;
 };
 
 // Per-row save state. A save that failed has to look different from one that
@@ -407,7 +410,7 @@ export default function SnapshotEditorPage() {
   async function saveEntry(
     delivId: string,
     patch: Partial<Row>,
-    opts?: { loggedFor?: string; basecampTodo?: SnapshotBasecampTodoPatch }
+    opts?: SnapshotFillSaveOpts
   ) {
     setSaveState((s) => ({ ...s, [delivId]: "saving" }));
     if (patch.status && fillLane({ deliverable_id: delivId, status: patch.status }, behindIds) === "done") {
@@ -416,7 +419,12 @@ export default function SnapshotEditorPage() {
     }
     const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
     let basecampTodo = opts?.basecampTodo;
-    if (basecampTodo === undefined && Object.prototype.hasOwnProperty.call(patch, "basecamp_todo_id")) {
+    const basecampTodos = opts?.basecampTodos;
+    if (
+      basecampTodos === undefined &&
+      basecampTodo === undefined &&
+      Object.prototype.hasOwnProperty.call(patch, "basecamp_todo_id")
+    ) {
       const id = (patch.basecamp_todo_id || "").trim();
       basecampTodo = id
         ? {
@@ -438,7 +446,12 @@ export default function SnapshotEditorPage() {
         nextSteps: patch.next_steps,
         notes: patch.notes,
       };
-      if (basecampTodo !== undefined) body.basecampTodo = basecampTodo;
+      if (basecampTodos !== undefined) body.basecampTodos = basecampTodos;
+      else if (basecampTodo !== undefined) body.basecampTodo = basecampTodo;
+      if (opts?.loggedRange !== undefined) {
+        body.loggedFrom = opts.loggedRange?.from || "";
+        body.loggedTo = opts.loggedRange?.to || "";
+      }
       const res = await fetch("/api/snapshot/entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
-import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveState, type SnapshotOverdueDetail, type SnapshotBasecampTodoPatch } from "@/components/SnapshotFillRow";
+import { SnapshotFillRow, type SnapshotFillRowData, type SnapshotFillSaveOpts, type SnapshotFillSaveState, type SnapshotOverdueDetail } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
 import { canSeeFridayAsk, teamLabelFor } from "@/lib/people";
@@ -210,7 +210,7 @@ export default function SnapshotDeskPage() {
   async function saveEntry(
     delivId: string,
     patch: Partial<SnapshotFillRowData>,
-    opts?: { loggedFor?: string; basecampTodo?: SnapshotBasecampTodoPatch }
+    opts?: SnapshotFillSaveOpts
   ) {
     setSaveState((s) => ({ ...s, [delivId]: "saving" }));
     if (patch.status && fillLane({ deliverable_id: delivId, status: patch.status }, behindIds) === "done") {
@@ -219,7 +219,12 @@ export default function SnapshotDeskPage() {
     }
     const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
     let basecampTodo = opts?.basecampTodo;
-    if (basecampTodo === undefined && Object.prototype.hasOwnProperty.call(patch, "basecamp_todo_id")) {
+    const basecampTodos = opts?.basecampTodos;
+    if (
+      basecampTodos === undefined &&
+      basecampTodo === undefined &&
+      Object.prototype.hasOwnProperty.call(patch, "basecamp_todo_id")
+    ) {
       const id = (patch.basecamp_todo_id || "").trim();
       basecampTodo = id
         ? {
@@ -241,7 +246,12 @@ export default function SnapshotDeskPage() {
         nextSteps: patch.next_steps,
         notes: patch.notes,
       };
-      if (basecampTodo !== undefined) body.basecampTodo = basecampTodo;
+      if (basecampTodos !== undefined) body.basecampTodos = basecampTodos;
+      else if (basecampTodo !== undefined) body.basecampTodo = basecampTodo;
+      if (opts?.loggedRange !== undefined) {
+        body.loggedFrom = opts.loggedRange?.from || "";
+        body.loggedTo = opts.loggedRange?.to || "";
+      }
       const res = await fetch("/api/snapshot/entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

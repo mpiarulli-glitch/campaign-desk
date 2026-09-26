@@ -18,34 +18,33 @@ function completedLabel(iso: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+export type LinkedTodoChip = { id: string; title: string; url: string };
+
 /**
- * Single-select picker for a Basecamp to-do, open or completed.
+ * Multi-select picker for Basecamp to-dos, open or completed.
  *
- * Used on the snapshot fill desk so staff can attach a to-do as the record of
- * what happened under a deliverable. Multi-select is deliberate absence: one
- * deliverable week gets one to-do.
+ * The list stays open so several to-dos can be linked in one pass. Each click
+ * toggles that to-do on the deliverable for this week.
  */
 export function CompletedTodoPicker({
   todos,
-  selectedId,
-  selectedTitle,
-  selectedUrl,
+  selected,
   loading,
   reason,
   projectName,
   clientName,
-  onSelect,
+  onToggle,
+  onRemove,
   onClear,
 }: {
   todos: CompletedTodoOption[];
-  selectedId: string;
-  selectedTitle?: string;
-  selectedUrl?: string;
+  selected: LinkedTodoChip[];
   loading?: boolean;
   reason?: string | null;
   projectName?: string | null;
   clientName?: string | null;
-  onSelect: (todo: CompletedTodoOption) => void;
+  onToggle: (todo: CompletedTodoOption) => void;
+  onRemove: (id: string) => void;
   onClear: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -53,9 +52,7 @@ export function CompletedTodoPicker({
   const [active, setActive] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const selected = todos.find((t) => t.id === selectedId);
-  const linkedTitle = (selected?.title || selectedTitle || "").trim();
-  const linkedUrl = (selected?.url || selectedUrl || "").trim();
+  const selectedIds = new Set(selected.map((t) => t.id));
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -108,9 +105,7 @@ export function CompletedTodoPicker({
   }, [open]);
 
   function pick(todo: CompletedTodoOption) {
-    onSelect(todo);
-    setOpen(false);
-    setQuery("");
+    onToggle(todo);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -144,7 +139,6 @@ export function CompletedTodoPicker({
     }
   }
 
-  const closedLabel = linkedTitle || selected?.title || "";
   const scopeWarn =
     reason === "project-mismatch" || reason === "not-client-project";
   const fromLine = projectName
@@ -179,24 +173,24 @@ export function CompletedTodoPicker({
       ) : null}
       <div className="fc-combo fc-combo-todos snap-todo-combo" ref={wrapRef}>
         <input
-          value={open ? query : closedLabel}
+          value={query}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={closedLabel || "Pick a Basecamp to-do"}
+          placeholder="Add Basecamp to-dos"
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-label="Basecamp to-do"
+          aria-label="Basecamp to-dos"
           autoComplete="off"
           disabled={loading || reason === "not-client-project"}
         />
         {open && reason !== "not-client-project" ? (
-          <ul className="fc-combo-list" id={listId} role="listbox">
+          <ul className="fc-combo-list" id={listId} role="listbox" aria-multiselectable="true">
             {groups.length === 0 ? (
               <li className="fc-combo-empty">
                 {loading ? "Loading…" : "No matches"}
@@ -211,7 +205,7 @@ export function CompletedTodoPicker({
                     )}
                     {items.map((t, itemIndex) => {
                       const i = offset + itemIndex;
-                      const picked = t.id === selectedId;
+                      const picked = selectedIds.has(t.id);
                           const when = completedLabel(t.completedAt);
                           const stateTag = when ? `done ${when}` : "open";
                       return (
@@ -246,26 +240,35 @@ export function CompletedTodoPicker({
           </ul>
         ) : null}
       </div>
-      {selectedId ? (
-        <div className="snap-todo-linked-bar">
-          {linkedUrl ? (
-            <a
-              className="snap-todo-linked-title"
-              href={linkedUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Linked: {linkedTitle || "Basecamp to-do"}
-            </a>
-          ) : (
-            <span className="snap-todo-linked-title">
-              Linked: {linkedTitle || "Basecamp to-do"}
-            </span>
-          )}
-          <button type="button" className="btn btn-ghost btn-sm snap-todo-clear" onClick={onClear}>
-            Unlink
-          </button>
-        </div>
+      {selected.length ? (
+        <ul className="snap-todo-chips">
+          {selected.map((todo) => (
+            <li key={todo.id} className="snap-todo-chip">
+              {todo.url ? (
+                <a href={todo.url} target="_blank" rel="noreferrer">
+                  {todo.title || "Basecamp to-do"}
+                </a>
+              ) : (
+                <span>{todo.title || "Basecamp to-do"}</span>
+              )}
+              <button
+                type="button"
+                className="snap-todo-chip-x"
+                aria-label={`Unlink ${todo.title || "to-do"}`}
+                onClick={() => onRemove(todo.id)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+          {selected.length > 1 ? (
+            <li>
+              <button type="button" className="btn btn-ghost btn-sm snap-todo-clear" onClick={onClear}>
+                Unlink all
+              </button>
+            </li>
+          ) : null}
+        </ul>
       ) : null}
       {hint ? (
         <p className={`snap-todo-hint ${scopeWarn ? "is-warn" : "muted"}`}>
