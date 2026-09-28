@@ -16520,6 +16520,8 @@ button.snap-pick-card.lh-pick-card.is-pace-met {
 .lh-detail-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .lh-detail-page .lh-detail {

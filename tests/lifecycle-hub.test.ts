@@ -77,6 +77,45 @@ test("automations-only clients join the hub without launch to-dos", async (t) =>
   assert.match(client.description, /Automations account/);
 });
 
+test("removing a hub client drops them from this month and later", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-rm-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const hub = await import("../src/lib/lifecycle-hub");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    )
+    .run("cl_gone", "Sunset Co", 2, now, now);
+
+  assert.deepEqual(hub.addClientToHub("cl_gone", null, "michael"), { ok: true });
+  assert.ok(hub.buildLifecycleHub().clients.some((c) => c.id === "cl_gone"));
+
+  assert.deepEqual(hub.removeClientFromHub("cl_gone"), { ok: true });
+
+  const snapshot = hub.buildLifecycleHub();
+  assert.equal(snapshot.clients.some((c) => c.id === "cl_gone"), false);
+  assert.ok(snapshot.available.some((c) => c.id === "cl_gone"));
+  assert.deepEqual(hub.removeClientFromHub("cl_gone"), {
+    ok: false,
+    error: "That client is not on Lifecycle.",
+  });
+  assert.deepEqual(hub.removeClientFromHub("missing"), {
+    ok: false,
+    error: "Unknown client.",
+  });
+});
+
 test("hub shows sent campaigns and calendar sends, and skips automation quota", async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-sent-"));
   const originalCwd = process.cwd();

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { can } from "@/lib/auth";
-import { setHubClientQuota } from "@/lib/lifecycle-hub";
+import { removeClientFromHub, setHubClientQuota } from "@/lib/lifecycle-hub";
 import { getRevClient } from "@/lib/revenue";
 
 export async function PATCH(
@@ -20,5 +20,21 @@ export async function PATCH(
   }
   const ok = setHubClientQuota(clientId, body.quota);
   if (!ok) return NextResponse.json({ error: "Could not save that quota." }, { status: 400 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ clientId: string }> }
+) {
+  if (!(await can("page.lifecycle"))) {
+    return NextResponse.json({ error: "Admins only" }, { status: 401 });
+  }
+  const { clientId } = await params;
+  const result = removeClientFromHub(clientId);
+  if (!result.ok) {
+    const status = result.error === "Unknown client." ? 404 : 400;
+    return NextResponse.json({ error: result.error }, { status });
+  }
   return NextResponse.json({ ok: true });
 }

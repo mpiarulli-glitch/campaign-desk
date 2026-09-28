@@ -475,12 +475,16 @@ function ClientDetail({
   client,
   today,
   onChanged,
+  onRemoved,
+  onBack,
   canSeeOwnerTools,
   onOpenTools,
 }: {
   client: HubClient;
   today: string;
   onChanged: () => void;
+  onRemoved: () => void;
+  onBack: () => void;
   canSeeOwnerTools: boolean;
   onOpenTools?: () => void;
 }) {
@@ -495,6 +499,8 @@ function ClientDetail({
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
   const [quotaError, setQuotaError] = useState("");
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState("");
   const [crmLinked, setCrmLinked] = useState(false);
   const [analyticsTick, setAnalyticsTick] = useState(0);
   const handleCrmChange = useCallback((linked: boolean) => {
@@ -627,6 +633,29 @@ function ClientDetail({
     onChanged();
   }
 
+  async function removeFromLifecycle() {
+    if (
+      !confirm(
+        `Take ${client.name} off Lifecycle? They keep every record and you can add them back. This month and later months drop them; earlier months stay as they were.`
+      )
+    ) {
+      return;
+    }
+    setRemoving(true);
+    setRemoveError("");
+    try {
+      const res = await fetch(`/api/lifecycle/hub/${client.id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setRemoveError(data.error || "Could not remove that client.");
+        return;
+      }
+      onRemoved();
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   const activity = client.activity || [];
   const thisMonth = activity.filter((a) => a.date);
   const inReview = activity.filter((a) => !a.date);
@@ -643,6 +672,20 @@ function ClientDetail({
 
   return (
     <div className="lh-detail">
+      <div className="lh-detail-bar">
+        <button type="button" className="btn btn-ghost" onClick={onBack}>
+          ← All clients
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={removing}
+          onClick={() => void removeFromLifecycle()}
+        >
+          {removing ? "Removing…" : "Remove from Lifecycle"}
+        </button>
+      </div>
+      {removeError ? <p className="lh-error">{removeError}</p> : null}
       <header className="lh-detail-head">
         <div>
           <h2>{client.name}</h2>
@@ -1072,15 +1115,15 @@ export function ClientHub({
   if (selected) {
     return (
       <div className="lh lh-detail-page">
-        <div className="lh-detail-bar">
-          <button type="button" className="btn btn-ghost" onClick={clearSelection}>
-            ← All clients
-          </button>
-        </div>
         <ClientDetail
           client={selected}
           today={data.today}
           onChanged={() => void load()}
+          onRemoved={() => {
+            clearSelection();
+            void load();
+          }}
+          onBack={clearSelection}
           canSeeOwnerTools={canSeeOwnerTools}
           onOpenTools={onOpenTools}
         />

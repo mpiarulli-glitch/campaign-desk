@@ -32,6 +32,7 @@ import {
 } from "./email-launch";
 import {
   addBoardCard,
+  deleteBoardCard,
   listBoardCards,
   logOffAppCampaign,
   type OffAppCampaignInput,
@@ -776,6 +777,34 @@ export function addClientToHub(
   if (wantsLaunch && platform) {
     createLaunchTodos(clientId, date, createdBy, platform);
   }
+  return { ok: true };
+}
+
+/**
+ * Take a client off the hub for this month and every month after. Same
+ * standing dismissal as the old board × — they stay in the client list and
+ * can be added back. Grouped accounts (same display name) come off together.
+ */
+export function removeClientFromHub(
+  clientId: string,
+  period = currentPeriod()
+): { ok: true } | { ok: false; error: string } {
+  if (!getRevClient(clientId)) return { ok: false, error: "Unknown client." };
+
+  const cards = listBoardCards(period);
+  const group = groupBoardCards(cards).find(
+    (g) => g.primary.clientId === clientId || g.memberIds.includes(clientId)
+  );
+  if (!group) return { ok: false, error: "That client is not on Lifecycle." };
+
+  let removed = false;
+  for (const id of group.memberIds) {
+    const card = cards.find((c) => c.clientId === id);
+    if (!card) continue;
+    deleteBoardCard(card.id);
+    removed = true;
+  }
+  if (!removed) return { ok: false, error: "That client is not on Lifecycle." };
   return { ok: true };
 }
 
