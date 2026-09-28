@@ -208,12 +208,31 @@ function PaceDot({ pace, launching }: { pace: PaceStatus; launching: boolean }) 
   return <span className={`lh-dot is-${tone}`} aria-hidden="true" />;
 }
 
+function confirmRemoveFromLifecycle(name: string): boolean {
+  return confirm(
+    `Take ${name} off Lifecycle? They keep every record and you can add them back. This month and later months drop them; earlier months stay as they were.`
+  );
+}
+
+async function requestRemoveFromLifecycle(
+  clientId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch(`/api/lifecycle/hub/${clientId}`, { method: "DELETE" });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) return { ok: false, error: data.error || "Could not remove that client." };
+  return { ok: true };
+}
+
 function ClientCards({
   clients,
+  removingId,
   onSelect,
+  onRemove,
 }: {
   clients: HubClient[];
+  removingId: string;
   onSelect: (id: string) => void;
+  onRemove: (client: HubClient) => void;
 }) {
   if (clients.length === 0) {
     return <p className="lh-empty">No clients match.</p>;
@@ -224,39 +243,52 @@ function ClientCards({
         const status = paceStatus(c);
         const pct =
           c.quota > 0 ? Math.min(100, Math.round((c.delivered / c.quota) * 100)) : 0;
+        const removing = removingId === c.id;
         return (
-          <button
+          <article
             key={c.id}
-            type="button"
             className={`snap-pick-card lh-pick-card is-pace-${c.pace}`}
-            onClick={() => onSelect(c.id)}
           >
-            <div className="snap-pick-card-head">
-              <ClientLogo name={c.name} logoUrl={c.logoUrl} />
-              <div className="snap-pick-card-title">
-                <h3>{c.name}</h3>
-                {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+            <button
+              type="button"
+              className="lh-pick-open"
+              onClick={() => onSelect(c.id)}
+            >
+              <div className="snap-pick-card-head">
+                <ClientLogo name={c.name} logoUrl={c.logoUrl} />
+                <div className="snap-pick-card-title">
+                  <h3>{c.name}</h3>
+                  {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+                </div>
+                <PaceDot pace={c.pace} launching={c.launch.open > 0} />
               </div>
-              <PaceDot pace={c.pace} launching={c.launch.open > 0} />
-            </div>
-            <p className="snap-pick-card-desc">{c.description}</p>
-            {c.quota > 0 ? (
-              <div
-                className={`lh-pick-bar is-${c.pace}`}
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={c.quota}
-                aria-valuenow={c.delivered}
-                aria-label={`${c.delivered} of ${c.quota} emails sent for approval`}
-              >
-                <div className="lh-pick-bar-fill" style={{ width: `${pct}%` }} />
-              </div>
-            ) : null}
+              <p className="snap-pick-card-desc">{c.description}</p>
+              {c.quota > 0 ? (
+                <div
+                  className={`lh-pick-bar is-${c.pace}`}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={c.quota}
+                  aria-valuenow={c.delivered}
+                  aria-label={`${c.delivered} of ${c.quota} emails sent for approval`}
+                >
+                  <div className="lh-pick-bar-fill" style={{ width: `${pct}%` }} />
+                </div>
+              ) : null}
+            </button>
             <div className="snap-pick-card-foot">
               <span className={`snap-pick-metric is-${c.pace}`}>{metricLabel(c)}</span>
               <span className={`snap-pick-status ${status.tone}`}>{status.label}</span>
+              <button
+                type="button"
+                className="lh-pick-remove"
+                disabled={removing}
+                onClick={() => onRemove(c)}
+              >
+                {removing ? "Removing…" : "Remove"}
+              </button>
             </div>
-          </button>
+          </article>
         );
       })}
     </div>
@@ -634,20 +666,13 @@ function ClientDetail({
   }
 
   async function removeFromLifecycle() {
-    if (
-      !confirm(
-        `Take ${client.name} off Lifecycle? They keep every record and you can add them back. This month and later months drop them; earlier months stay as they were.`
-      )
-    ) {
-      return;
-    }
+    if (!confirmRemoveFromLifecycle(client.name)) return;
     setRemoving(true);
     setRemoveError("");
     try {
-      const res = await fetch(`/api/lifecycle/hub/${client.id}`, { method: "DELETE" });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setRemoveError(data.error || "Could not remove that client.");
+      const result = await requestRemoveFromLifecycle(client.id);
+      if (!result.ok) {
+        setRemoveError(result.error);
         return;
       }
       onRemoved();
@@ -1027,6 +1052,7 @@ export function ClientHub({
   const [urlReady, setUrlReady] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [removingId, setRemovingId] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/lifecycle/hub");
@@ -1097,6 +1123,22 @@ export function ClientHub({
   function clearSelection() {
     setSelectedId("");
     writeClientParam("");
+  }
+
+  async function removeCard(client: HubClient) {
+    if (!confirmRemoveFromLifecycle(client.name)) return;
+    setRemovingId(client.id);
+    try {
+      const result = await requestRemoveFromLifecycle(client.id);
+      if (!result.ok) {
+        window.alert(result.error);
+        return;
+      }
+      if (selectedId === client.id) clearSelection();
+      await load();
+    } finally {
+      setRemovingId("");
+    }
   }
 
   if (denied) {
@@ -1177,7 +1219,12 @@ export function ClientHub({
           }}
         />
       </div>
-      <ClientCards clients={filtered} onSelect={select} />
+      <ClientCards
+        clients={filtered}
+        removingId={removingId}
+        onSelect={select}
+        onRemove={(c) => void removeCard(c)}
+      />
     </div>
   );
 }

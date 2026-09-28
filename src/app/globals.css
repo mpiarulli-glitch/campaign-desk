@@ -16433,23 +16433,69 @@ button.am-node:hover .am-edit-cue,
   justify-self: start;
 }
 
-button.snap-pick-card.lh-pick-card {
+button.snap-pick-card.lh-pick-card,
+article.snap-pick-card.lh-pick-card {
   appearance: none;
   width: 100%;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   font: inherit;
 }
 
-button.snap-pick-card.lh-pick-card .lh-dot {
+.lh-pick-open {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lh-pick-card .snap-pick-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.lh-pick-remove {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.lh-pick-remove:hover,
+.lh-pick-remove:focus-visible {
+  color: var(--danger-ink, var(--danger));
+}
+
+.lh-pick-remove:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.lh-pick-card .lh-dot {
   margin-top: 6px;
 }
 
-button.snap-pick-card.lh-pick-card.is-pace-behind {
+.lh-pick-card.is-pace-behind {
   border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
 }
 
-button.snap-pick-card.lh-pick-card.is-pace-met {
+.lh-pick-card.is-pace-met {
   border-color: color-mix(in srgb, var(--success) 40%, var(--border));
 }
 
