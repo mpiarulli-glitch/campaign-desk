@@ -169,6 +169,65 @@ test("a requested production stops all further outreach", async (t) => {
   assert.equal(after.skipped.alreadyBooked, 1);
 });
 
+// Out-of-cycle productions are stored with cadence_window_start null so they
+// do not advance the cadence anchor. When the shoot date is inside the window
+// the sweep is asking about, that is still a booking.
+test("an out-of-cycle production inside the window stops outreach", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-ooc-booked-test-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const { createRevClient, updateRevClient } = await import("../src/lib/revenue");
+  const { createSend } = await import("../src/lib/calendar");
+  const { runReminders } = await import("../src/lib/reminders");
+  const { nextWindow } = await import("../src/lib/cadence");
+  const { getRevClient } = await import("../src/lib/revenue");
+
+  const today = "2026-08-03";
+  const created = createRevClient({ name: "Off Cycle Co", businessModel: "home_service" });
+  t.after(() => {
+    updateRevClient(created.id, { productionEnrolled: false });
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+  updateRevClient(created.id, {
+    colorWeek: "red",
+    productionCadence: "monthly",
+    productionEnrolled: true,
+    contactName: "Sam Doe",
+    contactEmail: "sam@offcycle.co",
+  });
+
+  const client = getRevClient(created.id)!;
+  const window = nextWindow(client, today);
+  assert.equal(window?.start, "2026-08-03");
+
+  createSend({
+    clientId: client.id,
+    clientName: client.name,
+    title: "What's On Sale",
+    sendDate: "2026-08-04",
+    status: "planned",
+    assetType: "email_campaign",
+  });
+
+  const stillOpen = await runReminders({ today, dryRun: true, only: "Off Cycle Co" });
+  assert.equal(stillOpen.skipped.alreadyBooked, 0);
+  assert.equal(stillOpen.reachedOut.length, 1);
+
+  createSend({
+    clientId: client.id,
+    clientName: client.name,
+    title: "Off Cycle Co out-of-cycle production",
+    sendDate: "2026-08-06",
+    status: "scheduled",
+  });
+
+  const after = await runReminders({ today, dryRun: true, only: "Off Cycle Co" });
+  assert.equal(after.reachedOut.length, 0);
+  assert.equal(after.skipped.alreadyBooked, 1);
+});
+
 // The status pill reads off outreach for the CURRENT window, on any channel.
 // Krak Boba Corporate showed "Not due yet" while three Basecamp nudges had gone
 // out, because the pill counted emails only.

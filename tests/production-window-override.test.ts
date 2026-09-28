@@ -79,6 +79,31 @@ test("the window an override names", async (t) => {
     if (res.ok) deleteSend(res.send.id);
   });
 
+  await t.test("an out-of-cycle date inside the week is stored as that week", async () => {
+    const { recordOutOfCycleProduction } = await import("../src/lib/scheduling");
+    const res = await recordOutOfCycleProduction(client, {
+      date: "2026-08-12",
+      time: "09:00",
+      status: "scheduled",
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.send.cadence_window_start, "2026-08-10");
+    assert.equal(res.ok && res.send.title, "Window Test Co production");
+    if (res.ok) deleteSend(res.send.id);
+  });
+
+  await t.test("an out-of-cycle date outside every production week stays unlinked", async () => {
+    const { recordOutOfCycleProduction } = await import("../src/lib/scheduling");
+    const res = await recordOutOfCycleProduction(client, {
+      date: "2026-08-20",
+      time: "09:00",
+      status: "scheduled",
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.send.cadence_window_start, null);
+    if (res.ok) deleteSend(res.send.id);
+  });
+
   await t.test("a blank override still derives from the shoot date", async () => {
     assert.equal(await logThenClear({ date: "2026-08-13" }), "2026-08-10");
   });

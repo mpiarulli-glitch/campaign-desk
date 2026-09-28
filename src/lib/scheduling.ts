@@ -652,12 +652,22 @@ export async function submitOutOfCycleBooking(
       };
     }
 
+    const windowStart =
+      productionWindowForDate(currentClient.color_week, date)?.start || null;
+    if (windowStart && findSendForWindow(currentClient.id, windowStart)) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error: "That production week is already booked.",
+      };
+    }
     const send = createSend({
       clientId: currentClient.id,
       clientName: currentClient.name,
-      title:
-        firstInvite
-          ? `${currentClient.name} first production`
+      title: firstInvite
+        ? `${currentClient.name} first production`
+        : windowStart
+          ? `${currentClient.name} production`
           : `${currentClient.name} out-of-cycle production`,
       sendDate: date,
       sendTime: time,
@@ -665,9 +675,10 @@ export async function submitOutOfCycleBooking(
       status: "requested",
       note,
       productionBrief: JSON.stringify(brief),
-      cadenceWindowStart: firstInvite
-          ? productionWindowForDate(currentClient.color_week, date)?.start || null
-          : null,
+      // A date that lands in their color week is that week's shoot, even when
+      // they came in through the extra-production form. Leaving the window
+      // empty is what made the reminder sweep keep asking.
+      cadenceWindowStart: windowStart,
       requestedByClient: true,
     });
     return { ok: true, send, client: currentClient };
@@ -965,17 +976,29 @@ export async function recordOutOfCycleProduction(
     if (!currentClient) {
       return { ok: false, httpStatus: 404, error: "Client not found." };
     }
+    const windowStart =
+      productionWindowForDate(currentClient.color_week, date)?.start || "";
+    if (windowStart && findSendForWindow(currentClient.id, windowStart)) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        error:
+          "This production window already has a booking. Open it from the queue to edit instead.",
+      };
+    }
     const send = createSend({
       clientId: currentClient.id,
       clientName: currentClient.name,
-      title: `${currentClient.name} out-of-cycle production`,
+      title: windowStart
+        ? `${currentClient.name} production`
+        : `${currentClient.name} out-of-cycle production`,
       sendDate: date,
       sendTime: time,
       duration,
       status,
       note,
       productionBrief: JSON.stringify(brief),
-      cadenceWindowStart: null,
+      cadenceWindowStart: windowStart || null,
       requestedByClient: true,
     });
     return { ok: true, send, client: currentClient };

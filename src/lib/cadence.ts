@@ -176,21 +176,43 @@ export function isBlackout(date: string, client: RevClient): boolean {
 }
 
 // The existing send (if any) that fulfills a given cadence window.
+//
+// A row linked by cadence_window_start is the normal case. An out-of-cycle
+// production is stored with that column null so it does not move the cadence
+// anchor, but if its date falls on a day of this window it is still the shoot
+// for that week. Leaving those out made the reminder sweep email clients who
+// had already booked (Pipe It Right on 2026-09-30, Top Notch Auto on 2026-10-08).
+// Email-calendar rows share the table and often land on the same dates, so
+// only untitled-channel rows whose title is a production count.
 export function findSendForWindow(
   clientId: string,
   windowStart: string
 ): ScheduledSend | null {
+  const windowEnd = formatDate(addDays(new Date(`${windowStart}T00:00:00.000Z`), 4));
   return (
     (getDb()
       .prepare(
         // Cancelled rows are excluded on purpose: cancelling a production has
         // to hand the window back, otherwise the client stays "booked" forever
         // and never shows as needing one again.
+        // Prefer the cadence-linked row when both exist.
         `SELECT * FROM scheduled_sends
-         WHERE client_id = ? AND cadence_window_start = ? AND cancelled_at IS NULL
-         ORDER BY created_at DESC LIMIT 1`
+         WHERE client_id = ? AND cancelled_at IS NULL
+           AND (
+             cadence_window_start = ?
+             OR (
+               cadence_window_start IS NULL
+               AND asset_type = ''
+               AND title LIKE '%production%'
+               AND send_date >= ? AND send_date <= ?
+             )
+           )
+         ORDER BY CASE WHEN cadence_window_start IS NOT NULL THEN 0 ELSE 1 END,
+                  created_at DESC
+         LIMIT 1`
       )
-      .get(clientId, windowStart) as ScheduledSend | undefined) || null
+      .get(clientId, windowStart, windowStart, windowEnd) as ScheduledSend | undefined) ||
+    null
   );
 }
 

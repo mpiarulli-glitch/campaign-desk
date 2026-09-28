@@ -1557,7 +1557,7 @@ export default function ProductionPage() {
                 </h2>
                 <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
                   {logging.outOfCycle
-                    ? "An extra shoot outside the client's regular cadence — they fell behind, or just need something ad hoc. Never moves their cadence anchor or their next regular window."
+                    ? "An extra shoot. If the date falls in their production week, it is saved as that week and the scheduling reminders stop. A date outside that week does not move their cadence."
                     : "For a production booked over the phone or in another system. This records it against the client's cadence window, so it shows in the queue and stops their scheduling reminders."}
                 </p>
               </div>
@@ -1571,7 +1571,7 @@ export default function ProductionPage() {
                   }
                 />
                 <span className="muted">
-                  This is an out-of-cycle request (doesn&apos;t affect their regular schedule)
+                  Date is outside their regular week
                 </span>
               </label>
 
