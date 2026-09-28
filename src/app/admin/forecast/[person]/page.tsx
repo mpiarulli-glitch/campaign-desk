@@ -2106,7 +2106,40 @@ export default function PersonForecastPage() {
   }
 
   async function scheduleAssignedTask(todo: QueueTodo, date: string) {
+    const existing = forecastTaskByRecording.get(todo.id);
+    if (existing && existing.taskDate === date) return;
+
     setTasksSchedulingId(todo.id);
+    if (existing) {
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              tasks: d.tasks.map((t) =>
+                t.id === existing.id ? { ...t, task_date: date } : t
+              ),
+              bookings: (d.bookings || []).map((b) =>
+                b.id === existing.id ? { ...b, taskDate: date } : b
+              ),
+            }
+          : d
+      );
+      const res = await fetch(`/api/forecast/${person}/${existing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskDate: date }),
+      });
+      setTasksSchedulingId(null);
+      if (!res.ok) {
+        setError("Could not move that task.");
+        load(week, { silent: true });
+        return;
+      }
+      setError("");
+      load(week, { silent: true });
+      return;
+    }
+
     await bookTodo(todo, date, "");
     setTasksSchedulingId(null);
   }

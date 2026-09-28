@@ -8508,17 +8508,15 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   text-decoration: none;
 }
 .fc-tasks-row.is-picking .fc-tasks-schedule { color: var(--text-muted); }
-.fc-tasks-booked {
-  grid-area: action;
-  justify-self: end;
+.fc-tasks-schedule.is-booked {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
   max-width: 100%;
-  font-size: 12px;
   font-weight: 550;
   color: var(--text-muted);
-  text-align: right;
+}
+.fc-tasks-schedule.is-booked:hover:not(:disabled) {
+  color: var(--accent-ink);
 }
 .fc-tasks-toolbar-actions {
   display: flex;
@@ -8625,6 +8623,11 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .fc-tasks-day.is-today {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-ink);
+}
+.fc-tasks-day.is-planned {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent-ink);
 }
 .fc-tasks-day:disabled { opacity: 0.5; cursor: default; }

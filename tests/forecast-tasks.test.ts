@@ -6,6 +6,7 @@ import {
   groupAssignedTasks,
   groupAssignedTasksByDue,
   scheduleWeekDays,
+  scheduleWeekOffset,
 } from "../src/lib/forecast-tasks";
 import type { QueueTodo } from "../src/lib/forecast-queue";
 
@@ -77,6 +78,13 @@ test("scheduleWeekDays starts on this week's Monday and can look ahead", () => {
   const next = scheduleWeekDays("2026-09-16", 1);
   assert.equal(next.weekStart, "2026-09-21");
   assert.match(next.label, /Next week/);
+});
+
+test("scheduleWeekOffset opens the picker on the planned week", () => {
+  assert.equal(scheduleWeekOffset("2026-09-16", "2026-09-14"), 0);
+  assert.equal(scheduleWeekOffset("2026-09-16", "2026-09-25"), 1);
+  assert.equal(scheduleWeekOffset("2026-09-16", "2026-09-07"), 0);
+  assert.equal(scheduleWeekOffset("2026-09-16", "2026-11-16"), 8);
 });
 
 test("assignedTaskHref prefers appUrl and falls back for steps to the parent", () => {

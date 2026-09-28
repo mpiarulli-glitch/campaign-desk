@@ -7,6 +7,7 @@ import {
   groupAssignedTasks,
   groupAssignedTasksByDue,
   scheduleWeekDays,
+  scheduleWeekOffset,
   weekdayButtonLabel,
   type TasksFilter,
   type TasksLayout,
@@ -45,8 +46,9 @@ function dueDisplay(dueOn: string | null, today: string): string {
  * Top-level Tasks view: everything Basecamp has assigned to this person.
  *
  * Check one off to complete it in Basecamp (and any matching forecast row).
- * Schedule books it onto a weekday of this week or a later one. Due dates can
- * be edited here. New to-dos are created on this page, assigned as you.
+ * Schedule books it onto a weekday of this week or a later one. A planned day
+ * stays clickable so it can be moved. Due dates can be edited here. New to-dos
+ * are created on this page, assigned as you.
  */
 export function ForecastTasksPanel({
   person,
@@ -305,32 +307,35 @@ export function ForecastTasksPanel({
                           />
                         </label>
 
-                        {booked ? (
-                          <span className="fc-tasks-booked" title="Already on the forecast">
-                            {planned || "Planned"}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="fc-tasks-schedule"
-                            disabled={rowBusy}
-                            aria-expanded={picking}
-                            onClick={() => {
-                              setPickerWeek(0);
-                              setPickerFor((id) =>
-                                id === todo.id ? null : todo.id
-                              );
-                            }}
-                          >
-                            {schedulingId === todo.id
-                              ? "…"
-                              : picking
-                                ? "Close"
-                                : "Plan"}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className={`fc-tasks-schedule ${booked ? "is-booked" : ""}`}
+                          disabled={rowBusy}
+                          aria-expanded={picking}
+                          title={
+                            booked
+                              ? "Change the planned day"
+                              : "Plan this on a weekday"
+                          }
+                          onClick={() => {
+                            setPickerWeek(
+                              forecast?.taskDate
+                                ? scheduleWeekOffset(today, forecast.taskDate)
+                                : 0
+                            );
+                            setPickerFor((id) =>
+                              id === todo.id ? null : todo.id
+                            );
+                          }}
+                        >
+                          {schedulingId === todo.id
+                            ? "…"
+                            : picking
+                              ? "Close"
+                              : planned || (booked ? "Planned" : "Plan")}
+                        </button>
 
-                        {picking && !booked ? (
+                        {picking ? (
                           <div
                             className="fc-tasks-picker"
                             role="group"
@@ -367,11 +372,16 @@ export function ForecastTasksPanel({
                                 type="button"
                                 className={`fc-tasks-day ${
                                   day.ymd === today ? "is-today" : ""
+                                } ${
+                                  forecast?.taskDate === day.ymd
+                                    ? "is-planned"
+                                    : ""
                                 }`}
                                 disabled={rowBusy}
                                 onClick={() => {
                                   setPickerFor(null);
                                   setPickerWeek(0);
+                                  if (forecast?.taskDate === day.ymd) return;
                                   onSchedule(todo, day.ymd);
                                 }}
                               >

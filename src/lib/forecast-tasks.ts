@@ -110,6 +110,17 @@ export function mondayOfYmd(ymd: string): string {
   return mondayOf(d);
 }
 
+/** How many weeks ahead of this week `ymd` sits, clamped to the picker range. */
+export function scheduleWeekOffset(today: string, ymd: string): number {
+  const thisMonday = parseYmd(mondayOfYmd(today));
+  const targetMonday = parseYmd(mondayOfYmd(ymd));
+  if (!thisMonday || !targetMonday) return 0;
+  const weeks = Math.round(
+    (targetMonday.getTime() - thisMonday.getTime()) / (7 * 24 * 60 * 60 * 1000)
+  );
+  return Math.max(0, Math.min(8, weeks));
+}
+
 export function scheduleWeekDays(
   today: string,
   weekOffset: number
