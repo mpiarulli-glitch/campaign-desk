@@ -348,6 +348,8 @@ export interface BoardCampaignItem {
   isAutomation?: boolean;
   hasCard: boolean;
   loggedOffApp?: boolean;
+  /** Pinned onto this month from the month it was created. */
+  pinned?: boolean;
 }
 
 export interface BoardCard {

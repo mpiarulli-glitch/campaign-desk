@@ -233,3 +233,64 @@ test("board quota ticks when sent to the client, not at internal review or list 
   assert.equal(card.suggestedColumnKey, "deliverables_met");
 });
 
+test("a campaign sent early can be counted on the later month", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-board-pin-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const board = await import("../src/lib/lifecycle-board");
+  const campaigns = await import("../src/lib/campaigns");
+  const { shiftPeriod } = await import("../src/lib/period");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?)`
+  ).run("cl_pin", "Harbor", 4, now, now);
+
+  const october = board.currentPeriod();
+  const september = shiftPeriod(october, -1);
+  assert.equal(board.addBoardCard("cl_pin", september), true);
+  assert.equal(board.addBoardCard("cl_pin", october), true);
+
+  const sent = campaigns.createCampaign({
+    title: "October newsletter",
+    clientName: "Harbor",
+    clientId: "cl_pin",
+    htmlContent: "<p>Hi</p>",
+  });
+  db.prepare(`UPDATE campaigns SET status = 'sent', created_at = ? WHERE id = ?`).run(
+    `${september}-20T12:00:00.000Z`,
+    sent.id
+  );
+
+  const before = board.listBoardCards(october).find((c) => c.clientId === "cl_pin");
+  assert.ok(before);
+  assert.equal(before.delivered, 0);
+  const choices = board.listAssignableCampaigns(before.id);
+  assert.equal(choices.some((c) => c.id === sent.id), true);
+
+  const pinned = board.setCampaignBoardPeriod(before.id, sent.id, true);
+  assert.ok(pinned);
+  assert.equal(pinned.delivered, 1);
+  assert.equal(pinned.campaigns[0].pinned, true);
+
+  const sept = board.listBoardCards(september).find((c) => c.clientId === "cl_pin");
+  assert.ok(sept);
+  assert.equal(sept.delivered, 0);
+
+  const released = board.setCampaignBoardPeriod(before.id, sent.id, false);
+  assert.ok(released);
+  assert.equal(released.delivered, 0);
+  const back = board.listBoardCards(september).find((c) => c.clientId === "cl_pin");
+  assert.ok(back);
+  assert.equal(back.delivered, 1);
+});
+

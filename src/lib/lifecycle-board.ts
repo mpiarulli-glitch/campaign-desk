@@ -128,6 +128,8 @@ export interface BoardCampaignItem {
   hasCard: boolean;
   /** True when this send was logged from the board for work done off-app. */
   loggedOffApp: boolean;
+  /** True when this campaign was pinned onto this month instead of its created month. */
+  pinned: boolean;
 }
 
 export interface BoardCard {
@@ -260,7 +262,7 @@ export function listBoardCards(period: string): BoardCard[] {
   const campaignRows = db
     .prepare(
       `SELECT c.id, c.title, c.client_id, c.client_name, c.status, c.approved_channel, c.updated_at,
-              c.magic_token, c.basecamp_card_id, c.logged_off_app, c.presentation,
+              c.magic_token, c.basecamp_card_id, c.logged_off_app, c.presentation, c.board_period,
               SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
               SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
          FROM campaigns c
@@ -269,11 +271,14 @@ export function listBoardCards(period: string): BoardCard[] {
         WHERE c.archived_at IS NULL
           AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
           AND NOT (c.status = 'approved' AND ifnull(c.approved_channel, '') = 'internal')
-          AND strftime('%Y-%m', c.created_at) = ?
+          AND (
+            c.board_period = ?
+            OR (c.board_period IS NULL AND strftime('%Y-%m', c.created_at) = ?)
+          )
         GROUP BY c.id
         HAVING COUNT(e.id) > 0`
     )
-    .all(...DELIVERED_STATUSES, period) as Array<{
+    .all(...DELIVERED_STATUSES, period, period) as Array<{
     id: string;
     title: string;
     client_id: string | null;
@@ -285,6 +290,7 @@ export function listBoardCards(period: string): BoardCard[] {
     basecamp_card_id: string | null;
     logged_off_app: number;
     presentation: string | null;
+    board_period: string | null;
     email_count: number;
     sms_count: number;
   }>;
@@ -312,6 +318,7 @@ export function listBoardCards(period: string): BoardCard[] {
       isAutomation,
       hasCard: Boolean(r.basecamp_card_id),
       loggedOffApp: Boolean(r.logged_off_app),
+      pinned: r.board_period === period,
     };
     const owners = new Set<string>();
     if (r.client_id) owners.add(r.client_id);
@@ -406,6 +413,136 @@ export function logOffAppCampaign(
     return campaign.id;
   });
   run();
+
+  return listBoardCards(row.period).find((c) => c.id === cardId) ?? null;
+}
+
+export interface AssignableCampaign {
+  id: string;
+  title: string;
+  /** Month the campaign was created, YYYY-MM. */
+  createdPeriod: string;
+  emailCount: number;
+  smsCount: number;
+}
+
+function periodIndex(period: string): number {
+  const [y, m] = period.split("-").map(Number);
+  return y * 12 + (m - 1);
+}
+
+function campaignBelongsToClient(
+  row: { client_id: string | null; client_name: string },
+  clientId: string,
+  clientName: string,
+  namesToId: Map<string, string>
+): boolean {
+  if (row.client_id === clientId) return true;
+  const fallback = namesToId.get((row.client_name || "").trim().toLowerCase());
+  if (fallback === clientId) return true;
+  return sameLifecycleAccount(clientName, row.client_name || "");
+}
+
+/**
+ * Campaigns for this client that already reached the client, but count on a
+ * nearby month. Used to pin October work that was sent in September onto
+ * the October card.
+ */
+export function listAssignableCampaigns(cardId: string): AssignableCampaign[] {
+  const row = getCardRow(cardId);
+  if (!row || row.dismissed === 1) return [];
+  const client = listRevClients(true).find((c) => c.id === row.client_id);
+  if (!client) return [];
+
+  const allClients = listRevClients(true);
+  const namesToId = new Map(
+    allClients.map((c) => [c.name.trim().toLowerCase(), c.id] as const)
+  );
+  const here = periodIndex(row.period);
+  const db = getDb();
+  const candidates = db
+    .prepare(
+      `SELECT c.id, c.title, c.client_id, c.client_name, c.board_period, c.created_at,
+              SUM(CASE WHEN e.kind = 'email' THEN 1 ELSE 0 END) AS email_count,
+              SUM(CASE WHEN e.kind = 'sms'   THEN 1 ELSE 0 END) AS sms_count
+         FROM campaigns c
+         JOIN campaign_emails e
+           ON e.campaign_id = c.id AND e.kind IN ('email', 'sms')
+        WHERE c.archived_at IS NULL
+          AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
+          AND NOT (c.status = 'approved' AND ifnull(c.approved_channel, '') = 'internal')
+        GROUP BY c.id
+        HAVING COUNT(e.id) > 0`
+    )
+    .all(...DELIVERED_STATUSES) as Array<{
+    id: string;
+    title: string;
+    client_id: string | null;
+    client_name: string;
+    board_period: string | null;
+    created_at: string;
+    email_count: number;
+    sms_count: number;
+  }>;
+
+  const out: AssignableCampaign[] = [];
+  for (const c of candidates) {
+    if (!campaignBelongsToClient(c, client.id, client.name, namesToId)) continue;
+    const createdPeriod = c.created_at.slice(0, 7);
+    const effective = c.board_period || createdPeriod;
+    if (effective === row.period) continue;
+    if (Math.abs(periodIndex(effective) - here) > 2) continue;
+    out.push({
+      id: c.id,
+      title: c.title,
+      createdPeriod,
+      emailCount: c.email_count,
+      smsCount: c.sms_count,
+    });
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/**
+ * Count an already-sent campaign toward this board month. Clears it off the
+ * month it was created in. Passing assign=false puts it back.
+ */
+export function setCampaignBoardPeriod(
+  cardId: string,
+  campaignId: string,
+  assign: boolean
+): BoardCard | null {
+  const row = getCardRow(cardId);
+  if (!row || row.dismissed === 1) return null;
+  const client = listRevClients(true).find((c) => c.id === row.client_id);
+  if (!client) return null;
+  const id = campaignId.trim();
+  if (!id) return null;
+
+  const db = getDb();
+  const campaign = db
+    .prepare(
+      `SELECT id, client_id, client_name FROM campaigns WHERE id = ? AND archived_at IS NULL`
+    )
+    .get(id) as { id: string; client_id: string | null; client_name: string } | undefined;
+  if (!campaign) return null;
+
+  const namesToId = new Map(
+    listRevClients(true).map((c) => [c.name.trim().toLowerCase(), c.id] as const)
+  );
+  if (!campaignBelongsToClient(campaign, client.id, client.name, namesToId)) return null;
+
+  if (assign) {
+    db.prepare(`UPDATE campaigns SET board_period = ?, updated_at = ? WHERE id = ?`).run(
+      row.period,
+      nowIso(),
+      id
+    );
+  } else {
+    db.prepare(
+      `UPDATE campaigns SET board_period = NULL, updated_at = ? WHERE id = ? AND board_period = ?`
+    ).run(nowIso(), id, row.period);
+  }
 
   return listBoardCards(row.period).find((c) => c.id === cardId) ?? null;
 }

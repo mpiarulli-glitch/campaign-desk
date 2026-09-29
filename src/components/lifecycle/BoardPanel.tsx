@@ -27,6 +27,7 @@ interface CardHandlers {
     id: string,
     input: { title: string; sentOn?: string; status: "sent" | "approved" }
   ) => Promise<void>;
+  onAssignCampaign: (id: string, campaignId: string, assign: boolean) => Promise<void>;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }
@@ -50,6 +51,27 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
   const [logStatus, setLogStatus] = useState<"sent" | "approved">("sent");
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
+  const [elsewhere, setElsewhere] = useState<
+    Array<{ id: string; title: string; createdPeriod: string; emailCount: number; smsCount: number }>
+  >([]);
+  const [assignId, setAssignId] = useState("");
+  const [assigning, setAssigning] = useState(false);
+
+  useEffect(() => {
+    if (!h.isOpen) return;
+    let cancelled = false;
+    void fetch(`/api/lifecycle/board/cards/${card.id}/campaigns`)
+      .then((res) => (res.ok ? res.json() : { campaigns: [] }))
+      .then((data) => {
+        if (!cancelled) setElsewhere(data.campaigns || []);
+      })
+      .catch(() => {
+        if (!cancelled) setElsewhere([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [h.isOpen, card.id, card.campaigns.length]);
 
   async function submitLog(e: React.FormEvent) {
     e.preventDefault();
@@ -150,6 +172,9 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                 {camp.loggedOffApp ? (
                   <em className="hud-board-camp-off">Off-app</em>
                 ) : null}
+                {camp.pinned ? (
+                  <em className="hud-board-camp-off">Pinned</em>
+                ) : null}
                 {camp.emailCount > 1 ? (
                   <em className="hud-board-camp-n">×{camp.emailCount}</em>
                 ) : null}
@@ -163,6 +188,16 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                   onDone={() => h.onFollowedUp(card.id)}
                   onError={h.onFollowError}
                 />
+              ) : null}
+              {camp.pinned ? (
+                <button
+                  type="button"
+                  className="hud-btn hud-btn-quiet"
+                  title="Count this on the month it was created"
+                  onClick={() => void h.onAssignCampaign(card.id, camp.id, false)}
+                >
+                  Unpin
+                </button>
               ) : null}
               </span>
             );
@@ -241,6 +276,49 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
             </div>
             {logError ? <p className="hud-err">{logError}</p> : null}
           </form>
+
+          {elsewhere.length > 0 ? (
+            <form
+              className="hud-board-log"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!assignId) return;
+                setAssigning(true);
+                void h
+                  .onAssignCampaign(card.id, assignId, true)
+                  .then(() => setAssignId(""))
+                  .finally(() => setAssigning(false));
+              }}
+            >
+              <span className="hud-board-log-label">Already sent</span>
+              <div className="hud-board-log-row">
+                <select
+                  value={assignId}
+                  onChange={(e) => setAssignId(e.target.value)}
+                  aria-label="Campaign already sent"
+                >
+                  <option value="">Count toward this month…</option>
+                  {elsewhere.map((c) => {
+                    const bits = [
+                      c.emailCount > 0
+                        ? `${c.emailCount} email${c.emailCount === 1 ? "" : "s"}`
+                        : "",
+                      c.smsCount > 0 ? `${c.smsCount} SMS` : "",
+                    ].filter(Boolean);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.title} · {periodLabel(c.createdPeriod)}
+                        {bits.length ? ` · ${bits.join(", ")}` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <button className="hud-btn hud-btn-quiet" type="submit" disabled={assigning || !assignId}>
+                  {assigning ? "Saving" : "Count"}
+                </button>
+              </div>
+            </form>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -389,6 +467,27 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
     [load, period]
   );
 
+  const assignCampaign = useCallback(
+    async (cardId: string, campaignId: string, assign: boolean) => {
+      const res = await fetch(`/api/lifecycle/board/cards/${cardId}/campaigns`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId, assign }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : "Could not update that campaign.");
+        return;
+      }
+      if (data.card) {
+        setCards((prev) => prev.map((c) => (c.id === data.card.id ? data.card : c)));
+      } else {
+        void load(period);
+      }
+    },
+    [load, period]
+  );
+
   // Removing dismisses the card rather than deleting it, so the board's
   // per-client re-seed cannot bring it back on the next load. It also carries
   // into every later month, which past months never see.
@@ -442,6 +541,7 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
       onMove: (id, key) => void moveCard(id, key),
       onQuota: (id, q) => void saveQuota(id, q),
       onLogCampaign: logCampaign,
+      onAssignCampaign: assignCampaign,
       onRemove: (c) => void removeCard(c),
       onFollowedUp: (cardId) => {
         setError("");

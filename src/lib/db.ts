@@ -223,6 +223,12 @@ export interface Campaign {
   trigger_form_media_url: string | null;
   /** 1 when this row was logged from the board for work done outside Campaign Desk. */
   logged_off_app: number;
+  /**
+   * YYYY-MM this campaign counts toward on the deliverables board.
+   * Null means the month of created_at. Set when work for a later month
+   * was already sent to the client.
+   */
+  board_period: string | null;
   // When status is scheduled, the Pacific send instant (UTC ISO). Cron flips
   // scheduled → sent once this has passed. Kept after send as the paper trail.
   scheduled_send_at: string | null;
@@ -2655,6 +2661,9 @@ function migrate(database: Database.Database) {
     database.exec(
       `ALTER TABLE campaigns ADD COLUMN logged_off_app INTEGER NOT NULL DEFAULT 0`
     );
+  }
+  if (!campaignCols.includes("board_period")) {
+    database.exec(`ALTER TABLE campaigns ADD COLUMN board_period TEXT`);
   }
   if (!campaignCols.includes("scheduled_send_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN scheduled_send_at TEXT`);

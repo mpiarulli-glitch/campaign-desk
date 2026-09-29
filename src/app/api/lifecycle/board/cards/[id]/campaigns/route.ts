@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 import { can } from "@/lib/auth";
-import { logOffAppCampaign } from "@/lib/lifecycle-board";
+import {
+  listAssignableCampaigns,
+  logOffAppCampaign,
+  setCampaignBoardPeriod,
+} from "@/lib/lifecycle-board";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!(await can("page.lifecycle"))) {
+    return NextResponse.json({ error: "Admins only" }, { status: 401 });
+  }
+  const { id } = await params;
+  return NextResponse.json({ campaigns: listAssignableCampaigns(id) });
+}
 
 export async function POST(
   request: Request,
@@ -18,6 +33,24 @@ export async function POST(
   const sentOn = typeof body.sentOn === "string" ? body.sentOn : undefined;
   const status = body.status === "approved" ? "approved" : "sent";
   const card = logOffAppCampaign(id, { title, sentOn, status });
+  if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ card });
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!(await can("page.lifecycle"))) {
+    return NextResponse.json({ error: "Admins only" }, { status: 401 });
+  }
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const campaignId = typeof body.campaignId === "string" ? body.campaignId : "";
+  if (!campaignId.trim()) {
+    return NextResponse.json({ error: "Pick a campaign." }, { status: 400 });
+  }
+  const card = setCampaignBoardPeriod(id, campaignId, body.assign !== false);
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ card });
 }
