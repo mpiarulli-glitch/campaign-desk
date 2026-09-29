@@ -286,6 +286,15 @@ test("a campaign sent early can be counted on the later month", async (t) => {
   assert.ok(sept);
   assert.equal(sept.delivered, 0);
 
+  const fromSeptember = board.listBoardCards(september).find((c) => c.clientId === "cl_pin");
+  assert.ok(fromSeptember);
+  const moved = board.setCampaignBoardPeriod(fromSeptember.id, sent.id, true, october);
+  assert.ok(moved);
+  assert.equal(moved.delivered, 0);
+  const onOctober = board.listBoardCards(october).find((c) => c.clientId === "cl_pin");
+  assert.ok(onOctober);
+  assert.equal(onOctober.delivered, 1);
+
   const released = board.setCampaignBoardPeriod(before.id, sent.id, false);
   assert.ok(released);
   assert.equal(released.delivered, 0);

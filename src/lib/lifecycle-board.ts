@@ -510,7 +510,8 @@ export function listAssignableCampaigns(cardId: string): AssignableCampaign[] {
 export function setCampaignBoardPeriod(
   cardId: string,
   campaignId: string,
-  assign: boolean
+  assign: boolean,
+  targetPeriod?: string
 ): BoardCard | null {
   const row = getCardRow(cardId);
   if (!row || row.dismissed === 1) return null;
@@ -532,9 +533,11 @@ export function setCampaignBoardPeriod(
   );
   if (!campaignBelongsToClient(campaign, client.id, client.name, namesToId)) return null;
 
+  const destination =
+    assign && targetPeriod && /^\d{4}-\d{2}$/.test(targetPeriod) ? targetPeriod : row.period;
   if (assign) {
     db.prepare(`UPDATE campaigns SET board_period = ?, updated_at = ? WHERE id = ?`).run(
-      row.period,
+      destination,
       nowIso(),
       id
     );

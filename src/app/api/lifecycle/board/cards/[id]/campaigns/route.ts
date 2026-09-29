@@ -50,7 +50,8 @@ export async function PATCH(
   if (!campaignId.trim()) {
     return NextResponse.json({ error: "Pick a campaign." }, { status: 400 });
   }
-  const card = setCampaignBoardPeriod(id, campaignId, body.assign !== false);
+  const period = typeof body.period === "string" ? body.period : undefined;
+  const card = setCampaignBoardPeriod(id, campaignId, body.assign !== false, period);
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ card });
 }

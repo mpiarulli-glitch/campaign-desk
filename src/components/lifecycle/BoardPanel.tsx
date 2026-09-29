@@ -27,7 +27,12 @@ interface CardHandlers {
     id: string,
     input: { title: string; sentOn?: string; status: "sent" | "approved" }
   ) => Promise<void>;
-  onAssignCampaign: (id: string, campaignId: string, assign: boolean) => Promise<void>;
+  onAssignCampaign: (
+    id: string,
+    campaignId: string,
+    assign: boolean,
+    period?: string
+  ) => Promise<void>;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }
@@ -198,7 +203,23 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                 >
                   Unpin
                 </button>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  className="hud-btn hud-btn-quiet"
+                  title={`Count this toward ${periodLabel(shiftPeriod(card.period, 1))}`}
+                  onClick={() =>
+                    void h.onAssignCampaign(
+                      card.id,
+                      camp.id,
+                      true,
+                      shiftPeriod(card.period, 1)
+                    )
+                  }
+                >
+                  Count for {periodLabel(shiftPeriod(card.period, 1))}
+                </button>
+              )}
               </span>
             );
           })}
@@ -277,20 +298,20 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
             {logError ? <p className="hud-err">{logError}</p> : null}
           </form>
 
-          {elsewhere.length > 0 ? (
-            <form
-              className="hud-board-log"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!assignId) return;
-                setAssigning(true);
-                void h
-                  .onAssignCampaign(card.id, assignId, true)
-                  .then(() => setAssignId(""))
-                  .finally(() => setAssigning(false));
-              }}
-            >
-              <span className="hud-board-log-label">Already sent</span>
+          <form
+            className="hud-board-log"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!assignId) return;
+              setAssigning(true);
+              void h
+                .onAssignCampaign(card.id, assignId, true)
+                .then(() => setAssignId(""))
+                .finally(() => setAssigning(false));
+            }}
+          >
+            <span className="hud-board-log-label">Already sent</span>
+            {elsewhere.length > 0 ? (
               <div className="hud-board-log-row">
                 <select
                   value={assignId}
@@ -317,8 +338,10 @@ function Card({ card, ...h }: { card: BoardCard } & CardHandlers) {
                   {assigning ? "Saving" : "Count"}
                 </button>
               </div>
-            </form>
-          ) : null}
+            ) : (
+              <p className="hud-board-nocamp">No other sent campaigns nearby.</p>
+            )}
+          </form>
         </div>
       ) : null}
     </div>
@@ -468,11 +491,11 @@ export function BoardPanel({ clients }: { clients: ClientRef[] }) {
   );
 
   const assignCampaign = useCallback(
-    async (cardId: string, campaignId: string, assign: boolean) => {
+    async (cardId: string, campaignId: string, assign: boolean, targetPeriod?: string) => {
       const res = await fetch(`/api/lifecycle/board/cards/${cardId}/campaigns`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaignId, assign }),
+        body: JSON.stringify({ campaignId, assign, period: targetPeriod }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
