@@ -308,6 +308,10 @@ export async function PATCH(request: Request, { params }: Params) {
       typeof body.triggerFormMediaUrl === "string"
         ? body.triggerFormMediaUrl
         : undefined,
+    boardPeriod:
+      body.boardPeriod === null || typeof body.boardPeriod === "string"
+        ? body.boardPeriod
+        : undefined,
   });
 
   if (

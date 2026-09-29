@@ -707,6 +707,8 @@ export function updateCampaign(
     triggerFormFormat?: TriggerFormFormat;
     triggerFormHtml?: string;
     triggerFormMediaUrl?: string | null;
+    /** YYYY-MM this campaign counts toward on the deliverables board. Null uses the created month. */
+    boardPeriod?: string | null;
   }
 ): Campaign | null {
   const existing = getCampaignById(id);
@@ -758,6 +760,12 @@ export function updateCampaign(
       : existing.approved_channel;
   const clientChanged =
     updates.clientId !== undefined && updates.clientId !== existing.client_id;
+  const boardPeriod =
+    updates.boardPeriod !== undefined
+      ? updates.boardPeriod && /^\d{4}-\d{2}$/.test(updates.boardPeriod)
+        ? updates.boardPeriod
+        : null
+      : existing.board_period;
 
   db.prepare(
     `UPDATE campaigns
@@ -770,6 +778,7 @@ export function updateCampaign(
          approval_thank_you_sent_at = CASE WHEN ? THEN NULL ELSE approval_thank_you_sent_at END,
          basecamp_followup_count = CASE WHEN ? THEN 0 ELSE basecamp_followup_count END,
          basecamp_followup_last_at = CASE WHEN ? THEN NULL ELSE basecamp_followup_last_at END,
+         board_period = ?,
          updated_at = ?
      WHERE id = ?`
   ).run(
@@ -796,6 +805,7 @@ export function updateCampaign(
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
     clientChanged ? 1 : 0,
+    boardPeriod,
     ts,
     id
   );

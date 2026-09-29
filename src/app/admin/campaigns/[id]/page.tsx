@@ -16,7 +16,17 @@ import {
   operatorStatusValue,
 } from "@/lib/campaign-status";
 import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
-import { APP_TIME_ZONE } from "@/lib/period";
+import { APP_TIME_ZONE, currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
+
+function countMonthOptions(createdAt?: string, selected?: string | null): string[] {
+  const keys = new Set<string>();
+  const now = currentPeriod();
+  for (let i = -2; i <= 3; i++) keys.add(shiftPeriod(now, i));
+  const created = createdAt?.slice(0, 7) || "";
+  if (/^\d{4}-\d{2}$/.test(created)) keys.add(created);
+  if (selected && /^\d{4}-\d{2}$/.test(selected)) keys.add(selected);
+  return [...keys].sort();
+}
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
@@ -201,6 +211,8 @@ type Campaign = {
   trigger_form_media_url?: string | null;
   scheduled_send_at?: string | null;
   scheduled_send_id?: string | null;
+  created_at?: string;
+  board_period?: string | null;
   suggested_send?: SuggestedSend | null;
 };
 
@@ -1210,6 +1222,28 @@ export default function AdminCampaignPage() {
     return true;
   }
 
+  async function saveCountMonth(period: string) {
+    if (!campaign) return;
+    const created = campaign.created_at?.slice(0, 7) || "";
+    const boardPeriod = period === created ? null : period;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ boardPeriod }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) {
+      setError(data.error || "Could not update the month.");
+      return;
+    }
+    if (data.campaign) setCampaign(data.campaign);
+    setMessage(`Counts toward ${periodLabel(period)}.`);
+  }
+
   function openSchedulePrompt() {
     const hint = campaign?.suggested_send;
     const fallback = pacificDateTimeParts();
@@ -1906,6 +1940,26 @@ export default function AdminCampaignPage() {
               {OPERATOR_STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select-clean"
+              aria-label="Month this counts toward"
+              disabled={saving}
+              value={
+                campaign.board_period ||
+                campaign.created_at?.slice(0, 7) ||
+                currentPeriod()
+              }
+              onChange={(e) => void saveCountMonth(e.target.value)}
+            >
+              {countMonthOptions(
+                campaign.created_at,
+                campaign.board_period
+              ).map((period) => (
+                <option key={period} value={period}>
+                  Counts toward {periodLabel(period)}
                 </option>
               ))}
             </select>
