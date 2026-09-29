@@ -4,6 +4,7 @@ import {
   SERVICE,
   asPerson,
   basecampConnected,
+  basecampCardAppUrl,
   commentOnCard,
   findClientContact,
   getProjectPeopleForMention,
@@ -116,7 +117,15 @@ export async function POST(_request: Request, { params }: Params) {
   const email = await sendApprovalFollowupEmail({
     client,
     to: emailTo,
-    messageInput,
+    senderSlug: sender,
+    messageInput: {
+      ...messageInput,
+      previewUrl: basecampCardAppUrl(
+        client.basecamp_project_id,
+        campaign.basecamp_card_id,
+        result.url || campaign.basecamp_card_url
+      ),
+    },
   });
   if (!email.ok && !email.skipped) {
     recordFailure({

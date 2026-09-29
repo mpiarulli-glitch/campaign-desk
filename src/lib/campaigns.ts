@@ -1484,10 +1484,33 @@ export function markRevisionDone(campaignId: string): Campaign | null {
 /** Default delay before Michael's thank-you posts on the approval card. */
 export const APPROVAL_THANK_YOU_DELAY_MS = 3 * 60 * 1000;
 
+const APPROVAL_THANK_YOU_KINDS = new Set(["email", "cold_email", "sms", "linkedin", "blog"]);
+
+/** Client thank-you posts for email, SMS, LinkedIn, automation, and blog approvals. */
+export function clientApprovalGetsThankYou(
+  campaign: Pick<Campaign, "id" | "presentation">
+): boolean {
+  if (campaign.presentation === "automation") return true;
+  const assets = listEmails(campaign.id);
+  if (assets.length === 0) return true;
+  return assets.every((asset) => APPROVAL_THANK_YOU_KINDS.has(asset.kind));
+}
+
+/** Blog approvals thank the client as Carlos. Everything else posts as Michael. */
+export function approvalThankYouSenderSlug(
+  campaign: Pick<Campaign, "id" | "presentation">
+): "carlos" | "michael" {
+  if (campaign.presentation === "automation") return "michael";
+  const assets = listEmails(campaign.id);
+  if (assets.length > 0 && assets.every((asset) => asset.kind === "blog")) return "carlos";
+  return "michael";
+}
+
 export function scheduleApprovalThankYou(campaignId: string): void {
   const campaign = getCampaignById(campaignId);
   if (!campaign) return;
   if (campaign.approved_channel !== "client") return;
+  if (!clientApprovalGetsThankYou(campaign)) return;
   if (!campaign.basecamp_card_id) return;
   if (campaign.approval_thank_you_sent_at) return;
 

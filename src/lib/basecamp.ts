@@ -50,6 +50,17 @@ function apiBase(): string {
   return `https://3.basecampapi.com/${accountId()}`;
 }
 
+export function basecampCardAppUrl(
+  projectId: string,
+  cardId: string,
+  appUrl?: string | null
+): string {
+  const existing = (appUrl || "").trim();
+  if (existing && !existing.includes("basecampapi.com")) return existing;
+  if (!projectId.trim() || !cardId.trim()) return "";
+  return `https://3.basecamp.com/${accountId()}/buckets/${projectId}/card_tables/cards/${cardId}`;
+}
+
 export function basecampTodoAppUrl(
   projectId: string,
   todoId: string,

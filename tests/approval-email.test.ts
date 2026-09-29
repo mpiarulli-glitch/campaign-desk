@@ -9,6 +9,8 @@ import {
 } from "../src/lib/client-approval";
 import {
   APPROVAL_EMAIL_CC,
+  CARLOS_BLOG_APPROVAL_CC,
+  approvalEmailCc,
   resolveApprovalEmailTo,
   sendApprovalEmail,
 } from "../src/lib/approval-email";
@@ -95,6 +97,19 @@ test("sendApprovalEmail skips when there is no To address", async () => {
 test("approval emails CC Michael, not Sylvia", () => {
   assert.equal(APPROVAL_EMAIL_CC, "mpiarulli@marketingempiregroup.com");
   assert.notEqual(APPROVAL_EMAIL_CC, SYLVIA_CC_EMAIL);
+});
+
+test("Michael is CC'd on email and LinkedIn approvals, Carlos on blogs he sends", () => {
+  assert.deepEqual(approvalEmailCc({ senderSlug: "kyle", channel: "email" }), [
+    APPROVAL_EMAIL_CC,
+  ]);
+  assert.deepEqual(approvalEmailCc({ senderSlug: "kyle", channel: "linkedin" }), [
+    APPROVAL_EMAIL_CC,
+  ]);
+  assert.deepEqual(approvalEmailCc({ senderSlug: "carlos", channel: "blog" }), [
+    CARLOS_BLOG_APPROVAL_CC,
+  ]);
+  assert.deepEqual(approvalEmailCc({ senderSlug: "abel", channel: "blog" }), []);
 });
 
 test("follow-up email uses the quick-review subject and template", () => {

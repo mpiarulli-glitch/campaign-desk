@@ -3,6 +3,7 @@ import { isAdminAuthenticated, reviewUrl, sessionUserSlug } from "@/lib/auth";
 import {
   SERVICE,
   asPerson,
+  basecampCardAppUrl,
   basecampConnected,
   findClientContact,
   getProjectPeopleForMention,
@@ -361,8 +362,15 @@ export async function POST(request: Request, { params }: Params) {
   const email = await sendApprovalEmail({
     client,
     to: emailTo,
+    senderSlug: sender,
     messageInput: {
       ...state.messageInput,
+      // Inbox ping opens the Basecamp card. The card still links to the campaign.
+      previewUrl: basecampCardAppUrl(
+        client.basecamp_project_id,
+        result.cardId || "",
+        result.cardUrl
+      ),
       clientContactName:
         result.recipientName || state.messageInput.clientContactName,
     },

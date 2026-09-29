@@ -1,7 +1,8 @@
 // Email channel for campaign client approvals. Basecamp remains the workflow
 // of record (Deliverables → Needs Approval); this is the parallel inbox ping
 // so the contact sees the ask even when they are not watching Basecamp.
-// Approval emails CC Michael; Basecamp cards still CC Sylvia.
+// Email, automation, and LinkedIn approval emails CC Michael. A blog Carlos
+// sends CCs Carlos instead. Basecamp cards still CC Sylvia.
 
 import type { RevClient } from "./db";
 import {
@@ -15,8 +16,21 @@ import {
 } from "./client-approval";
 import { emailConfigured, sendEmailWithId, type EmailResult } from "./email";
 
-/** Always CC'd on campaign approval emails (inbox ping for Michael). */
+/** CC'd on email, automation, and LinkedIn approval emails. */
 export const APPROVAL_EMAIL_CC = "mpiarulli@marketingempiregroup.com";
+
+/** CC'd when Carlos sends a blog approval from his own login. */
+export const CARLOS_BLOG_APPROVAL_CC = "carlos@marketingempiregroup.com";
+
+export function approvalEmailCc(args: {
+  senderSlug?: string | null;
+  channel?: string | null;
+}): string[] {
+  if (args.channel === "blog") {
+    return args.senderSlug === "carlos" ? [CARLOS_BLOG_APPROVAL_CC] : [];
+  }
+  return [APPROVAL_EMAIL_CC];
+}
 
 export type ApprovalEmailResult = {
   ok: boolean;
@@ -40,6 +54,7 @@ async function sendBrandedApprovalEmail(args: {
   to: string;
   bodies: { subject: string; html: string; text: string };
   failLabel: string;
+  cc: string[];
 }): Promise<ApprovalEmailResult> {
   const to = args.to.trim();
   if (!to) {
@@ -63,7 +78,7 @@ async function sendBrandedApprovalEmail(args: {
     text: args.bodies.text,
     from,
     replyTo,
-    cc: APPROVAL_EMAIL_CC,
+    cc: args.cc,
   });
   if (!res.ok) {
     return {
@@ -81,6 +96,7 @@ export async function sendApprovalEmail(args: {
   to: string;
   messageInput: ClientApprovalMessageInput;
   customMessage?: string;
+  senderSlug?: string | null;
 }): Promise<ApprovalEmailResult> {
   const am = accountManagerFor(args.client);
   return sendBrandedApprovalEmail({
@@ -93,6 +109,10 @@ export async function sendApprovalEmail(args: {
       signer: am?.label || "Marketing Empire Group",
     }),
     failLabel: "Could not send the approval email.",
+    cc: approvalEmailCc({
+      senderSlug: args.senderSlug,
+      channel: args.messageInput.channel,
+    }),
   });
 }
 
@@ -100,6 +120,7 @@ export async function sendApprovalFollowupEmail(args: {
   client: RevClient;
   to: string;
   messageInput: ClientApprovalMessageInput;
+  senderSlug?: string | null;
 }): Promise<ApprovalEmailResult> {
   const am = accountManagerFor(args.client);
   return sendBrandedApprovalEmail({
@@ -111,5 +132,9 @@ export async function sendApprovalFollowupEmail(args: {
       signer: am?.label || "Marketing Empire Group",
     }),
     failLabel: "Could not send the follow-up email.",
+    cc: approvalEmailCc({
+      senderSlug: args.senderSlug,
+      channel: args.messageInput.channel,
+    }),
   });
 }

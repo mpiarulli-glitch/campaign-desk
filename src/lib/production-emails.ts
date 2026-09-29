@@ -14,6 +14,12 @@ import {
   isFirstProductionClient,
 } from "./first-production";
 
+/** CC'd on client production booking emails. */
+export const PRODUCTION_EMAIL_CC = [
+  "cmerideth@marketingempiregroup.com",
+  "kmorris@marketingempiregroup.com",
+] as const;
+
 const LOGO =
   "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
@@ -148,7 +154,13 @@ export async function sendProductionRequestReceived(
         ],
   });
 
-  return sendEmail({ to: client.contact_email, subject, html, text });
+  return sendEmail({
+    to: client.contact_email,
+    subject,
+    html,
+    text,
+    cc: [...PRODUCTION_EMAIL_CC],
+  });
 }
 
 // Fired when an admin locks a requested production in as scheduled/planned.
@@ -203,7 +215,13 @@ export async function sendProductionConfirmed(
         ],
   });
 
-  return sendEmail({ to: client.contact_email, subject, html, text });
+  return sendEmail({
+    to: client.contact_email,
+    subject,
+    html,
+    text,
+    cc: [...PRODUCTION_EMAIL_CC],
+  });
 }
 
 // The day-before "Your crew arrives tomorrow" email was removed 2026-08-10.

@@ -1,8 +1,9 @@
 // Delayed thank-you on the Basecamp approval card after a client approves.
 //
-// The client approves on the review link; a few minutes later Michael's
-// connection posts a short comment tagging them. Scheduling lives in the DB so
-// a cron sweep can send it without holding the approval request open.
+// The client approves on the review link; a few minutes later a short comment
+// tags them. Email, SMS, LinkedIn, and automation thank-yous post as Michael.
+// Blog thank-yous post as Carlos. Scheduling lives in the DB so a cron sweep
+// can send it without holding the approval request open.
 
 import {
   SERVICE,
@@ -17,6 +18,8 @@ import {
 import { clientApprovalThankYouHtml } from "./client-approval";
 import {
   cancelPendingApprovalThankYou,
+  approvalThankYouSenderSlug,
+  clientApprovalGetsThankYou,
   getCampaignById,
   listDueApprovalThankYous,
   markApprovalThankYouSent,
@@ -57,6 +60,11 @@ async function sendOne(campaign: Campaign): Promise<ApprovalThankYouResult> {
     return { ...base, ok: true, skipped: "no longer a client approval" };
   }
 
+  if (!clientApprovalGetsThankYou(fresh)) {
+    cancelPendingApprovalThankYou(campaign.id);
+    return { ...base, ok: true, skipped: "this approval does not get a thank-you" };
+  }
+
   if (!basecampConnected()) {
     return { ...base, error: "Basecamp isn't connected." };
   }
@@ -67,7 +75,9 @@ async function sendOne(campaign: Campaign): Promise<ApprovalThankYouResult> {
     return { ...base, ok: true, skipped: "no Basecamp project" };
   }
 
-  const identity = hasConnection(OWNER_SLUG) ? asPerson(OWNER_SLUG) : SERVICE;
+  const senderSlug = approvalThankYouSenderSlug(fresh);
+  const poster = senderSlug === "carlos" ? "carlos" : OWNER_SLUG;
+  const identity = hasConnection(poster) ? asPerson(poster) : SERVICE;
 
   let recipient;
   try {

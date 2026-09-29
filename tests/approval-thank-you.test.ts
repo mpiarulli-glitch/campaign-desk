@@ -83,6 +83,23 @@ test("scheduling approval thank-you", async (t) => {
     assert.equal(row.approval_thank_you_sent_at, null);
   });
 
+  await t.test("schedules a blog thank-you and posts it as Carlos", () => {
+    const blog = campaigns.createCampaign({
+      title: "Fall article",
+      clientName: "Vitatherapy",
+      htmlContent: "# Fall",
+      kind: "blog",
+    });
+    db.prepare(
+      `UPDATE campaigns SET status = 'approved', approved_channel = 'client', basecamp_card_id = ? WHERE id = ?`
+    ).run("card-blog", blog.id);
+    campaigns.scheduleApprovalThankYou(blog.id);
+    const row = campaigns.getCampaignById(blog.id)!;
+    assert.ok(row.approval_thank_you_due_at);
+    assert.equal(campaigns.approvalThankYouSenderSlug(row), "carlos");
+    assert.equal(campaigns.approvalThankYouSenderSlug(campaigns.getCampaignById("camp-1")!), "michael");
+  });
+
   await t.test("internal approval never schedules the client thank-you", () => {
     const internal = campaigns.createCampaign({
       title: "Boss review",
