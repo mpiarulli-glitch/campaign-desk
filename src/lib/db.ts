@@ -264,6 +264,7 @@ export interface CampaignEmail {
   // Pacific send instant as UTC ISO. Packages with more than one email
   // schedule each item, not the whole campaign as a single blast.
   scheduled_send_at: string | null;
+  ghl_schedule_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2765,6 +2766,9 @@ function migrate(database: Database.Database) {
   }
   if (!emailCols.includes("scheduled_send_at")) {
     database.exec(`ALTER TABLE campaign_emails ADD COLUMN scheduled_send_at TEXT`);
+  }
+  if (!emailCols.includes("ghl_schedule_id")) {
+    database.exec(`ALTER TABLE campaign_emails ADD COLUMN ghl_schedule_id TEXT`);
   }
 
   database.exec(`

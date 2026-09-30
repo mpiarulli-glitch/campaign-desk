@@ -520,6 +520,8 @@ export interface TemplatePush {
   templateId?: string;
   previewUrl?: string;
   error?: string;
+  scheduleId?: string;
+  scheduleError?: string;
 }
 
 /**
@@ -552,6 +554,64 @@ export async function pushEmailTemplate(args: {
     }
   );
   return { id: String(res.id || ""), previewUrl: String(res.previewUrl || "") };
+}
+
+export type GhlScheduleAudience =
+  | { type: "all" }
+  | { type: "tags"; tags: string[] };
+
+/** Body for POST /emails/schedule. Matches the shape ghl-cli create-campaign uses. */
+export function buildGhlScheduleBody(args: {
+  locationId: string;
+  templateId: string;
+  name: string;
+  subject: string;
+  fromName: string;
+  scheduledAt: string;
+  audience: GhlScheduleAudience;
+}): Record<string, unknown> {
+  const tags = args.audience.type === "tags" ? args.audience.tags : [];
+  const audiences =
+    args.audience.type === "all"
+      ? [{ id: "all", name: "All Contacts", type: "all" }]
+      : [
+          {
+            id: `tags_${tags.join("_")}`,
+            name: `Tags: ${tags.join(", ")}`,
+            type: "tags",
+            tagIds: tags,
+          },
+        ];
+  return {
+    name: args.name,
+    subject: args.subject,
+    fromName: args.fromName,
+    locationId: args.locationId,
+    status: "schedule_later",
+    templateId: args.templateId,
+    scheduledAt: args.scheduledAt,
+    audiences,
+  };
+}
+
+export async function scheduleGhlEmail(args: {
+  locationId: string;
+  templateId: string;
+  name: string;
+  subject: string;
+  fromName: string;
+  scheduledAt: string;
+  audience: GhlScheduleAudience;
+}): Promise<{ id: string }> {
+  const res = await ghlRequest<{ id?: string; _id?: string }>(
+    "POST",
+    "/emails/schedule",
+    {
+      locationId: args.locationId,
+      body: buildGhlScheduleBody(args),
+    }
+  );
+  return { id: String(res.id || res._id || "") };
 }
 
 /* ------------------------------------------- link locations to clients */

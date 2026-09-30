@@ -17,6 +17,7 @@ type Candidate = {
   kind: string;
   subject: string;
   hasSubject: boolean;
+  scheduledSendAt: string | null;
 };
 
 type Result = {
@@ -26,6 +27,8 @@ type Result = {
   templateId?: string;
   previewUrl?: string;
   error?: string;
+  scheduleId?: string;
+  scheduleError?: string;
 };
 
 export function PushToGhl({
@@ -43,6 +46,9 @@ export function PushToGhl({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [pushing, setPushing] = useState(false);
   const [results, setResults] = useState<Result[] | null>(null);
+  const [schedule, setSchedule] = useState(true);
+  const [audience, setAudience] = useState<"all" | "tags">("all");
+  const [tagText, setTagText] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,7 +97,15 @@ export function PushToGhl({
     const res = await fetch(`/api/campaigns/${campaignId}/push-to-ghl`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emailIds: [...picked] }),
+      body: JSON.stringify({
+        emailIds: [...picked],
+        schedule,
+        audience,
+        tags: tagText
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+      }),
     });
     const data = await res.json();
     setPushing(false);
@@ -132,8 +146,11 @@ export function PushToGhl({
                 <p className="pgh-sub">
                   Creates an email template per selection in{" "}
                   {clientName ? <strong>{clientName}</strong> : "the client"}
-                  &apos;s subaccount. Existing templates are not touched, so
-                  pushing twice makes two.
+                  &apos;s subaccount
+                  {schedule
+                    ? ", then schedules a send at the time already on each email"
+                    : ""}
+                  . Existing templates are not touched, so pushing twice makes two.
                 </p>
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
@@ -158,13 +175,21 @@ export function PushToGhl({
                   <div key={r.emailId} className={`pgh-result ${r.ok ? "is-ok" : "is-bad"}`}>
                     <span className="pgh-result-name">{r.title}</span>
                     {r.ok ? (
-                      r.previewUrl ? (
-                        <a href={r.previewUrl} target="_blank" rel="noreferrer">
-                          view in GHL
-                        </a>
-                      ) : (
-                        <span>pushed</span>
-                      )
+                      <span>
+                        {r.scheduleId
+                          ? "scheduled"
+                          : r.scheduleError
+                            ? r.scheduleError
+                            : "template only"}
+                        {r.previewUrl ? (
+                          <>
+                            {" · "}
+                            <a href={r.previewUrl} target="_blank" rel="noreferrer">
+                              view in GHL
+                            </a>
+                          </>
+                        ) : null}
+                      </span>
                     ) : (
                       <span className="pgh-result-err">{r.error}</span>
                     )}
@@ -196,10 +221,62 @@ export function PushToGhl({
                       </label>
                       <span className={`pgh-subject ${e.hasSubject ? "" : "is-fallback"}`}>
                         {e.hasSubject ? e.subject : `no subject set, will use "${e.title}"`}
+                        {e.scheduledSendAt
+                          ? ` · ${new Date(e.scheduledSendAt).toLocaleString()}`
+                          : " · no send time"}
                       </span>
                     </li>
                   ))}
                 </ul>
+
+                <div className="pgh-schedule">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={schedule}
+                      onChange={(e) => setSchedule(e.target.checked)}
+                    />
+                    Schedule the send in GoHighLevel
+                  </label>
+                  {schedule ? (
+                    <div className="pgh-audience">
+                      <label>
+                        <input
+                          type="radio"
+                          name="ghl-audience"
+                          checked={audience === "all"}
+                          onChange={() => setAudience("all")}
+                        />
+                        All contacts
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="ghl-audience"
+                          checked={audience === "tags"}
+                          onChange={() => setAudience("tags")}
+                        />
+                        Tags
+                      </label>
+                      {audience === "tags" ? (
+                        <input
+                          className="input"
+                          value={tagText}
+                          placeholder="tag names, comma separated"
+                          onChange={(e) => setTagText(e.target.value)}
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
+                {schedule &&
+                emails.some((e) => picked.has(e.id) && !e.scheduledSendAt) ? (
+                  <p className="pgh-warn">
+                    Emails without a send time are uploaded as templates only.
+                    Set a schedule on the package first if they should go out.
+                  </p>
+                ) : null}
 
                 {missingSubject.length ? (
                   <p className="pgh-warn">
@@ -220,7 +297,9 @@ export function PushToGhl({
                   >
                     {pushing
                       ? "Pushing..."
-                      : `Push ${picked.size} template${picked.size === 1 ? "" : "s"}`}
+                      : schedule
+                        ? `Push and schedule ${picked.size}`
+                        : `Push ${picked.size} template${picked.size === 1 ? "" : "s"}`}
                   </button>
                 </div>
               </>
