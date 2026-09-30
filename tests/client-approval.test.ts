@@ -26,6 +26,11 @@ test("client approval message uses the approved template without subject lines",
   assert.match(text, /Approve and notify email team/);
   assert.match(text, /reply on this Basecamp card/);
   assert.match(text, /one round of revisions per campaign/);
+  assert.match(
+    text,
+    /If we do not hear back from you in 5 business days, this email will be considered approved and will be scheduled to send\./
+  );
+  assert.match(text, /Welcome Series is ready for review/);
   assert.match(text, /CC: @Sylvia/);
   assert.doesNotMatch(text, /subject line/i);
   assert.doesNotMatch(text, /reply with "Approved"/);
@@ -47,6 +52,8 @@ test("Basecamp HTML escapes account data and links the external review", () => {
   assert.match(html, /Approve and notify email team/);
   assert.match(html, /reply on this Basecamp card/);
   assert.match(html, /CC: @Sylvia/);
+  assert.match(html, /5 business days/);
+  assert.match(html, /this email will be considered approved/);
   assert.doesNotMatch(html, /<Admin>/);
   assert.doesNotMatch(html, /reply with <strong>"Approved"/);
 });
@@ -196,6 +203,10 @@ test("LinkedIn outreach approval copy is not the email checklist", () => {
   assert.match(text, /15 to 20 a day/);
   assert.match(text, /respond within 24 hours/);
   assert.match(text, /widget\/bookings\/michael-piarullis-calendar/);
+  assert.match(
+    text,
+    /If we do not hear back from you in 5 business days, this LinkedIn outreach will be considered approved and will be scheduled to send\./
+  );
   assert.match(text, /CC: @Sylvia/);
   assert.doesNotMatch(text, /CTAs: are the calls to action/);
   assert.doesNotMatch(text, /Imagery: do the visuals/);
@@ -267,6 +278,56 @@ test("LinkedIn review follow-up talks about outreach, not email packaging", () =
   assert.doesNotMatch(text, /review everything, then type/);
 });
 
+test("more than one email uses are ready, and names the package", () => {
+  const text = clientApprovalMessageText({
+    ...input,
+    campaignTitle: "Superior Patios September 2026 emails",
+    itemCount: 3,
+  });
+  assert.match(text, /Superior Patios September 2026 emails are ready for review/);
+  assert.doesNotMatch(text, /emails is ready/);
+  assert.match(
+    text,
+    /these emails will be considered approved and will be scheduled to send/
+  );
+
+  const html = clientApprovalMessageHtml({
+    ...input,
+    campaignTitle: "Superior Patios September 2026 emails",
+    itemCount: 3,
+  });
+  assert.match(html, /emails are ready for review/);
+  assert.match(
+    html,
+    /<p><strong>★ If we do not hear back from you in 5 business days, these emails will be considered approved and will be scheduled to send\.<\/strong><\/p>/
+  );
+  const lookingForward = html.indexOf("Looking forward to hearing from you!");
+  const disclaimer = html.indexOf("5 business days");
+  assert.ok(lookingForward >= 0 && disclaimer > lookingForward);
+
+  const automation = clientApprovalMessageText({
+    ...input,
+    isAutomation: true,
+    itemCount: 4,
+  });
+  assert.match(automation, /Welcome Series are ready for review/);
+  assert.match(
+    automation,
+    /this automation will be considered approved and will be scheduled to send/
+  );
+
+  const sms = clientApprovalMessageText({
+    ...input,
+    itemCount: 2,
+    assetKinds: ["sms", "sms"],
+  });
+  assert.match(sms, /are ready for review/);
+  assert.match(
+    sms,
+    /these text messages will be considered approved and will be scheduled to send/
+  );
+});
+
 test("blog-only packages use a publish note, not the email checklist", () => {
   const blog = {
     ...input,
@@ -286,6 +347,7 @@ test("blog-only packages use a publish note, not the email checklist", () => {
   assert.doesNotMatch(text, /email team/i);
   assert.doesNotMatch(text, /CTAs: are the calls to action/);
   assert.doesNotMatch(text, /keep scheduling moving/);
+  assert.doesNotMatch(text, /5 business days/);
   assert.doesNotMatch(text, /item in the package/);
 
   const html = clientApprovalMessageHtml(blog);

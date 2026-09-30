@@ -33,6 +33,8 @@ export interface ClientApprovalMessageInput {
   isAutomation?: boolean;
   channel?: ClientApprovalChannel;
   itemCount?: number;
+  /** Asset kinds in the package, so SMS notes don't call texts "emails". */
+  assetKinds?: Array<string | null | undefined>;
 }
 
 export const LINKEDIN_SETUP_CALENDAR_URL =
@@ -46,6 +48,28 @@ function blogNoun(input: ClientApprovalMessageInput): string {
   return (input.itemCount ?? 1) === 1 ? "blog post" : "blog posts";
 }
 
+function readyVerb(input: ClientApprovalMessageInput): "is" | "are" {
+  return (input.itemCount ?? 1) === 1 ? "is" : "are";
+}
+
+function silenceSubject(input: ClientApprovalMessageInput): string {
+  const count = input.itemCount ?? 1;
+  if (input.isAutomation) return "this automation";
+  if (input.channel === "linkedin") return "this LinkedIn outreach";
+  const kinds = (input.assetKinds ?? []).filter(Boolean).map((kind) => String(kind));
+  const smsOnly = kinds.length > 0 && kinds.every((kind) => kind === "sms");
+  if (smsOnly) return count === 1 ? "this text message" : "these text messages";
+  return count === 1 ? "this email" : "these emails";
+}
+
+function silenceClause(input: ClientApprovalMessageInput): string {
+  return `★ If we do not hear back from you in 5 business days, ${silenceSubject(input)} will be considered approved and will be scheduled to send.`;
+}
+
+function silenceClauseHtml(input: ClientApprovalMessageInput): string {
+  return `<p><strong>${escapeHtml(silenceClause(input))}</strong></p>`;
+}
+
 export function clientApprovalMessageText(
   input: ClientApprovalMessageInput
 ): string {
@@ -57,7 +81,7 @@ export function clientApprovalMessageText(
     : "";
   return `Hi ${name},
 
-I hope you're doing well. Your ${input.campaignTitle} is ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.
+I hope you're doing well. Your ${input.campaignTitle} ${readyVerb(input)} ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.
 ${flowNote}
 Here's what to check:
 
@@ -81,6 +105,8 @@ One quick note: we accommodate one round of revisions per campaign, so please co
 After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep scheduling moving.
 
 Looking forward to hearing from you!
+
+${silenceClause(input)}
 
 ${SYLVIA_CC_TEXT}`;
 }
@@ -160,6 +186,8 @@ After you approve in the app, please reply on this Basecamp card to let us know 
 
 Looking forward to hearing from you!
 
+${silenceClause(input)}
+
 ${SYLVIA_CC_TEXT}`;
 }
 
@@ -188,6 +216,9 @@ function blocksToHtml(text: string): string {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
+      if (block.trim().startsWith("★")) {
+        return `<p><strong>${linkifyEscaped(escapeHtml(block.trim()))}</strong></p>`;
+      }
       const allBullets =
         lines.length > 0 && lines.every((line) => /^[•\-*]\s+/.test(line));
       if (allBullets) {
@@ -254,7 +285,7 @@ export function clientApprovalMessageHtml(
   // blocks sit flush against each other.
   const intro = [
     `<p>Hi ${name},</p>`,
-    `<p>I hope you're doing well. Your ${title} is ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.</p>`,
+    `<p>I hope you're doing well. Your ${title} ${readyVerb(input)} ready for review. Please take a look and let us know if everything looks good before we move forward with scheduling.</p>`,
     flowNote,
   ]
     .filter(Boolean)
@@ -290,6 +321,7 @@ export function clientApprovalMessageHtml(
     "<p><strong>One quick note:</strong> we accommodate one round of revisions per campaign, so please compile all your feedback before submitting. That way we can turn everything around in one pass.</p>",
     "<p>After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly and keep scheduling moving.</p>",
     "<p>Looking forward to hearing from you!</p>",
+    silenceClauseHtml(input),
     sylviaCcHtml(ccMention),
   ].join(BC_BLANK_LINE);
   return [intro, checklist, preview, howTo, close].join("<hr>");
@@ -402,6 +434,7 @@ function linkedinApprovalMessageHtml(
   const close = [
     "<p>After you approve in the app, please reply on this Basecamp card to let us know it has been approved. That helps us catch it quickly.</p>",
     "<p>Looking forward to hearing from you!</p>",
+    silenceClauseHtml(input),
     sylviaCcHtml(ccMention),
   ].join(BC_BLANK_LINE);
   return [intro, checklist, preview, howTo, after, close].join("<hr>");

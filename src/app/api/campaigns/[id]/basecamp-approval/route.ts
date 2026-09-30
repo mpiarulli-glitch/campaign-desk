@@ -55,6 +55,7 @@ function approvalState(id: string) {
     previewUrl,
     isAutomation: campaign.presentation === "automation",
     itemCount: emails.length,
+    assetKinds: emails.map((email) => email.kind),
     channel: approvalChannelForAssets(emails.map((email) => email.kind)),
   };
 
