@@ -11,6 +11,7 @@ process.env.GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "test-goo
 process.env.APP_TIME_ZONE = "America/Los_Angeles";
 
 import {
+  forecastGoogleEnabledFor,
   googleEventHasOtherAttendees,
   googleEventsAtSlot,
   mapGoogleEventToMeeting,
@@ -389,6 +390,18 @@ test("Google Calendar pull, push skip, and disconnect", async (t) => {
     assert.match(src, /isGoogleOverlay/);
     assert.match(src, /next=forecast/);
   });
+});
+
+test("an allowlist turns Google Calendar on for named people only", () => {
+  assert.equal(forecastGoogleEnabledFor("michael", { users: "michael" }), true);
+  assert.equal(forecastGoogleEnabledFor("cassidy", { users: "michael" }), false);
+  assert.equal(forecastGoogleEnabledFor(null, { users: "michael" }), false);
+  assert.equal(
+    forecastGoogleEnabledFor("cassidy", { flag: "1", users: "michael" }),
+    false
+  );
+  assert.equal(forecastGoogleEnabledFor("cassidy", { flag: "1" }), true);
+  assert.equal(forecastGoogleEnabledFor("michael", { users: " Michael " }), true);
 });
 
 test("OAuth state binds a Google code to the person who started the flow", async () => {

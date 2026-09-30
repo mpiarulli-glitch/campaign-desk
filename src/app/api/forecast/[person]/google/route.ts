@@ -13,10 +13,10 @@ type Params = { params: Promise<{ person: string }> };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request, { params }: Params) {
-  if (!forecastGoogleEnabled()) {
+  const { person } = await params;
+  if (!forecastGoogleEnabled(person)) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
-  const { person } = await params;
   if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -28,10 +28,10 @@ export async function GET(request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
-  if (!forecastGoogleEnabled()) {
+  const { person } = await params;
+  if (!forecastGoogleEnabled(person)) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
-  const { person } = await params;
   if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

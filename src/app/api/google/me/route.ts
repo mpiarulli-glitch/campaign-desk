@@ -7,14 +7,13 @@ import {
   googleConfigured,
   hasGoogleConnection,
 } from "@/lib/google-identity";
-
 export async function GET() {
-  if (!forecastGoogleEnabled()) {
-    return NextResponse.json({ error: "Not available" }, { status: 404 });
-  }
   const person = await sessionUserSlug();
   if (!person) {
     return NextResponse.json({ error: "Sign in as yourself." }, { status: 401 });
+  }
+  if (!forecastGoogleEnabled(person)) {
+    return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
   const configured = googleConfigured();
   const conn = getGoogleConnection(person);
@@ -33,12 +32,12 @@ export async function GET() {
 }
 
 export async function DELETE() {
-  if (!forecastGoogleEnabled()) {
-    return NextResponse.json({ error: "Not available" }, { status: 404 });
-  }
   const person = await sessionUserSlug();
   if (!person) {
     return NextResponse.json({ error: "Sign in as yourself." }, { status: 401 });
+  }
+  if (!forecastGoogleEnabled(person)) {
+    return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
   disconnectGoogle(person);
   return NextResponse.json({ ok: true });

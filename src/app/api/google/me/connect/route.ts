@@ -5,7 +5,7 @@ import { authorizeUrlFor, googleConfigured } from "@/lib/google-oauth";
 
 export async function GET(request: Request) {
   const person = await sessionUserSlug();
-  if (!forecastGoogleEnabled()) {
+  if (!forecastGoogleEnabled(person)) {
     const dest = person ? `/admin/forecast/${person}` : "/admin/hub";
     return NextResponse.redirect(`${getAppUrl()}${dest}`);
   }

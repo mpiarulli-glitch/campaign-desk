@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppUrl, sessionUserSlug } from "@/lib/auth";
+import { forecastGoogleEnabled } from "@/lib/forecast-google";
 import { completeConnect, readState } from "@/lib/google-oauth";
 
 export async function GET(request: Request) {
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
   }
   if (parsed.person !== person) {
     return NextResponse.redirect(backFor("google=mismatch"));
+  }
+  if (!forecastGoogleEnabled(person)) {
+    return NextResponse.redirect(`${getAppUrl()}/admin/hub`);
   }
   if (!code) {
     return NextResponse.redirect(backFor("google=denied"));

@@ -40,7 +40,7 @@ export async function GET(request: Request, { params }: Params) {
   const week = url.searchParams.get("week") || currentWeek();
   // Best-effort: a Google failure must not blank the week. Throttled so the
   // silent refetches after a checkbox tick do not hammer Calendar.
-  if (forecastGoogleEnabled()) {
+  if (forecastGoogleEnabled(person)) {
     await pullGoogleMeetingsForWeek(person, week).catch(() => null);
   }
   const tasks = listTasksForPersonWeek(person, week);

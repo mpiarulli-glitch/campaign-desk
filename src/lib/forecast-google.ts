@@ -19,9 +19,35 @@ import {
   type ForecastTask,
 } from "./forecast";
 
-/** Off until FORECAST_GOOGLE_CALENDAR=1 is set on the server. */
-export function forecastGoogleEnabled(): boolean {
-  return process.env.FORECAST_GOOGLE_CALENDAR === "1";
+/**
+ * Who may use Google Calendar.
+ *
+ * FORECAST_GOOGLE_CALENDAR_USERS is a comma-separated slug allowlist. When it
+ * is set, only those people see the feature — the global flag does not widen
+ * it. When the allowlist is empty, FORECAST_GOOGLE_CALENDAR=1 turns it on for
+ * everyone.
+ */
+export function forecastGoogleEnabledFor(
+  person: string | null | undefined,
+  env: { flag?: string; users?: string }
+): boolean {
+  const raw = env.users;
+  if (raw != null && raw.trim() !== "") {
+    const allow = raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (!person) return false;
+    return allow.includes(person.trim().toLowerCase());
+  }
+  return env.flag === "1";
+}
+
+export function forecastGoogleEnabled(person?: string | null): boolean {
+  return forecastGoogleEnabledFor(person, {
+    flag: process.env.FORECAST_GOOGLE_CALENDAR,
+    users: process.env.FORECAST_GOOGLE_CALENDAR_USERS,
+  });
 }
 import { isoToStartTime, isoToYmd, parseTimeInput, scheduleEntryTimes } from "./forecast-time";
 import { addWeeks } from "./week";
@@ -106,10 +132,9 @@ export function matchingClientName(text: string, clientNames: string[]): string 
 /**
  * Whether this Google event should appear on Forecast.
  *
- * Default: timed events with someone besides the owner, that they have not
- * declined. All-day OOO / focus time stay hidden. A title that names a known
- * client is enough even with no attendees. Missing a client call is worse
- * than showing a personal appointment that happened to have another person.
+ * Timed events the person has not declined. All-day, OOO, focus time, and
+ * working-location blocks stay hidden. Client name and other attendees are
+ * used for labeling, not as a gate — a new calendar event should show up.
  */
 export function shouldImportGoogleEvent(
   event: GoogleCalendarEvent,
@@ -266,7 +291,7 @@ export async function pullGoogleMeetings(
   opts?: { force?: boolean }
 ): Promise<PullGoogleResult> {
   const empty = { created: 0, updated: 0, linked: 0, removed: 0 };
-  if (!forecastGoogleEnabled()) {
+  if (!forecastGoogleEnabled(person)) {
     return { ok: true, skipped: "disabled", ...empty };
   }
   if (!googleConfigured()) {
@@ -368,7 +393,7 @@ export async function pushForecastMeetingToGoogle(
 ): Promise<PushGoogleResult> {
   const task = typeof taskOrId === "string" ? getTask(taskOrId) : taskOrId;
   if (!task) return { ok: false, error: "Not found" };
-  if (!forecastGoogleEnabled()) return { ok: true, skipped: "disabled" };
+  if (!forecastGoogleEnabled(task.person)) return { ok: true, skipped: "disabled" };
   const gate = shouldPushToGoogle(task);
   if (!gate.ok) return { ok: true, skipped: gate.reason };
   if (!hasGoogleConnection(task.person)) {
@@ -423,6 +448,7 @@ export async function deleteForecastGoogleEvent(
   task: ForecastTask
 ): Promise<{ ok: true; skipped?: string } | { ok: false; error: string }> {
   if (!task.google_event_id) return { ok: true, skipped: "none" };
+  if (!forecastGoogleEnabled(task.person)) return { ok: true, skipped: "disabled" };
   if (task.from_google || !task.google_managed) {
     return { ok: true, skipped: "not-managed" };
   }
@@ -445,7 +471,7 @@ export function googleStatusFor(
   error: string | null;
   canConnect: boolean;
 } | null {
-  if (!forecastGoogleEnabled()) return null;
+  if (!forecastGoogleEnabled(person)) return null;
   const configured = googleConfigured();
   const conn = getGoogleConnection(person);
   const connected = hasGoogleConnection(person);

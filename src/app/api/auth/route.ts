@@ -59,7 +59,7 @@ export async function GET() {
     // Drives the onboarding banner and the redirect out of the app shell.
     setupComplete: setup ? setup.complete : true,
     setupRemaining: setup ? setup.remaining : [],
-    forecastGoogle: forecastGoogleEnabled(),
+    forecastGoogle: Boolean(own) && forecastGoogleEnabled(own),
     campaignKind,
   });
 }
