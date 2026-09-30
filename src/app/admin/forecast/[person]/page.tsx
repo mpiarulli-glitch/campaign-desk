@@ -86,6 +86,10 @@ type Data = {
     taskDate: string;
     recordingId: string;
   }>;
+  google?: {
+    configured: boolean;
+    connected: boolean;
+  } | null;
 };
 
 type ClientOption = { id: string; name: string; internal?: boolean };
@@ -1182,6 +1186,7 @@ export default function PersonForecastPage() {
   // page is now the only place that cache is used.
   const [syncingEvents, setSyncingEvents] = useState(false);
   const [syncingProjects, setSyncingProjects] = useState(false);
+  const [syncingGoogle, setSyncingGoogle] = useState(false);
   // taskId -> hours typed into that task's "log time" box. Logging is explicit:
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
   // so ticking a task never posts on its own.
@@ -1498,6 +1503,23 @@ export default function PersonForecastPage() {
     },
     [person]
   );
+
+  async function resyncGoogle() {
+    setSyncingGoogle(true);
+    setError("");
+    const res = await fetch(`/api/forecast/${person}/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week }),
+    });
+    const json = await res.json().catch(() => null);
+    setSyncingGoogle(false);
+    if (!res.ok || json?.pull?.ok === false) {
+      setError(json?.pull?.error || json?.error || "Could not resync Google Calendar.");
+      return;
+    }
+    await load(week, { silent: true });
+  }
 
   async function syncMeetings() {
     setSyncingEvents(true);
@@ -3276,6 +3298,17 @@ export default function PersonForecastPage() {
                 title="Remove what Plan this week just added and put moved tasks back."
               >
                 {undoingPlan ? "Undoing…" : "Undo plan"}
+              </button>
+            ) : null}
+            {data?.google ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void resyncGoogle()}
+                disabled={syncingGoogle || loading}
+                title="Pull this week's meetings from Google Calendar again."
+              >
+                {syncingGoogle ? "Resyncing…" : "Resync Google Calendar"}
               </button>
             ) : null}
             {/* Both syncs live in the queue sidebar on the calendar, next to the
