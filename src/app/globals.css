@@ -16223,24 +16223,6 @@ button.am-node:hover .am-edit-cue,
   font-style: italic;
 }
 
-.pgh-schedule {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-}
-
-.pgh-schedule label,
-.pgh-audience {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .pgh-warn {
   margin: 0;
   padding: 9px 12px;

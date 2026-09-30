@@ -2,13 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { isGhlConfigured } from "@/lib/ghl";
 import { applyExactGhlLinks } from "@/lib/ghl-links";
-import {
-  pushEmailTemplate,
-  scheduleGhlEmail,
-  type GhlScheduleAudience,
-  type TemplatePush,
-} from "@/lib/ghl-tools";
-import { getDb, nowIso } from "@/lib/db";
+import { pushEmailTemplate, type TemplatePush } from "@/lib/ghl-tools";
 import { getCampaignById, listEmailsWithSubjects } from "@/lib/campaigns";
 import { getRevClient } from "@/lib/revenue";
 import { renderAssetDoc } from "@/lib/asset-kinds";
@@ -27,22 +21,6 @@ type Params = { params: Promise<{ id: string }> };
  * client's template list.
  */
 const PUSHABLE = new Set(["email", "interactive"]);
-
-function parseAudience(body: {
-  audience?: unknown;
-  tags?: unknown;
-}): GhlScheduleAudience | { error: string } {
-  if (body.audience === "tags") {
-    const tags = Array.isArray(body.tags)
-      ? body.tags.map((t) => String(t).trim()).filter(Boolean)
-      : [];
-    if (tags.length === 0) {
-      return { error: "Add at least one tag, or send to all contacts." };
-    }
-    return { type: "tags", tags };
-  }
-  return { type: "all" };
-}
 
 async function resolve(campaignId: string) {
   const campaign = getCampaignById(campaignId);
@@ -107,7 +85,6 @@ export async function GET(_request: Request, { params }: Params) {
         e.subjects[0]?.subject ||
         "",
       hasSubject: e.subjects.length > 0,
-      scheduledSendAt: e.scheduled_send_at || null,
     })),
   });
 }
@@ -131,8 +108,6 @@ export async function POST(request: Request, { params }: Params) {
 
   const body = await request.json().catch(() => ({}));
   const wanted: string[] = Array.isArray(body.emailIds) ? body.emailIds.map(String) : [];
-  const schedule = body.schedule === true;
-  const audience = parseAudience(body);
   if (wanted.length === 0) {
     return NextResponse.json({ error: "Pick at least one email" }, { status: 400 });
   }
@@ -144,10 +119,6 @@ export async function POST(request: Request, { params }: Params) {
       { error: "None of those are email assets." },
       { status: 400 }
     );
-  }
-
-  if (schedule && "error" in audience) {
-    return NextResponse.json({ error: audience.error }, { status: 400 });
   }
 
   const results: TemplatePush[] = [];
@@ -172,42 +143,12 @@ export async function POST(request: Request, { params }: Params) {
         subject,
         html,
       });
-      let scheduleId: string | undefined;
-      let scheduleError: string | undefined;
-      if (schedule && !("error" in audience)) {
-        if (!email.scheduled_send_at) {
-          scheduleError = "No send time on this email, so it was saved as a template only.";
-        } else {
-          try {
-            const scheduled = await scheduleGhlEmail({
-              locationId: r.locationId,
-              templateId: out.id,
-              name,
-              subject,
-              fromName: r.client?.name || r.campaign.title,
-              scheduledAt: email.scheduled_send_at,
-              audience,
-            });
-            scheduleId = scheduled.id;
-            getDb()
-              .prepare(
-                `UPDATE campaign_emails SET ghl_schedule_id = ?, updated_at = ? WHERE id = ?`
-              )
-              .run(scheduleId, nowIso(), email.id);
-          } catch (err) {
-            scheduleError =
-              err instanceof Error ? err.message : "Scheduling in GoHighLevel failed";
-          }
-        }
-      }
       results.push({
         emailId: email.id,
         title: email.title,
         ok: true,
         templateId: out.id,
         previewUrl: out.previewUrl,
-        scheduleId,
-        scheduleError,
       });
     } catch (err) {
       results.push({
