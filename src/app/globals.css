@@ -19630,14 +19630,51 @@ a.snap-todo-linked-title {
   align-items: end;
   min-height: 160px;
   padding: 8px 4px 0;
+  overflow: visible;
 }
 
 .lh-growth-col {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  cursor: default;
+}
+
+.lh-growth-tip {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 132px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 18%, transparent);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 2px));
+  transition: opacity 0.12s ease;
+}
+
+.lh-growth-tip strong {
+  font-size: 11px;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.lh-growth-col:hover .lh-growth-tip,
+.lh-growth-col:focus-visible .lh-growth-tip {
+  opacity: 1;
 }
 
 .lh-growth-bars {
@@ -20404,6 +20441,7 @@ a.snap-todo-linked-title {
   border: 0;
   background: none;
   box-shadow: none;
+  overflow: visible;
 }
 
 .lh-analytics-clean .lh-an-section-head {
@@ -20706,6 +20744,7 @@ a.snap-todo-linked-title {
 .lh-analytics-clean .lh-growth-chart {
   min-height: 140px;
   padding-top: 4px;
+  overflow: visible;
 }
 
 .lh-analytics-clean .lh-growth-bars {

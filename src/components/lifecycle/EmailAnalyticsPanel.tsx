@@ -857,33 +857,51 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
           role="img"
           aria-label="Weekly list growth versus unsubscribes"
         >
-          {growth.series.map((bucket) => (
-            <div key={bucket.weekStart} className="lh-growth-col">
-              <div className="lh-growth-bars">
-                <div
-                  className="lh-growth-bar is-join"
-                  style={{
-                    height: `${Math.max(
-                      bucket.contactsAdded > 0 ? 8 : 3,
-                      (bucket.contactsAdded / max) * 100
-                    )}%`,
-                  }}
-                  title={`${bucket.contactsAdded} joined`}
-                />
-                <div
-                  className="lh-growth-bar is-leave"
-                  style={{
-                    height: `${Math.max(
-                      bucket.unsubscribed > 0 ? 8 : 3,
-                      (bucket.unsubscribed / max) * 100
-                    )}%`,
-                  }}
-                  title={`${bucket.unsubscribed} unsubscribed`}
-                />
+          {growth.series.map((bucket) => {
+            const joined =
+              bucket.contactsAdded === 1
+                ? "1 contact joined"
+                : `${fmt(bucket.contactsAdded)} contacts joined`;
+            const left =
+              bucket.unsubscribed === 1
+                ? "1 unsubscribed"
+                : `${fmt(bucket.unsubscribed)} unsubscribed`;
+            return (
+              <div
+                key={bucket.weekStart}
+                className="lh-growth-col"
+                tabIndex={0}
+                aria-label={`${bucket.label}: ${joined}, ${left}`}
+              >
+                <div className="lh-growth-tip" role="tooltip">
+                  <strong>{bucket.label}</strong>
+                  <span>{joined}</span>
+                  <span>{left}</span>
+                </div>
+                <div className="lh-growth-bars">
+                  <div
+                    className="lh-growth-bar is-join"
+                    style={{
+                      height: `${Math.max(
+                        bucket.contactsAdded > 0 ? 8 : 3,
+                        (bucket.contactsAdded / max) * 100
+                      )}%`,
+                    }}
+                  />
+                  <div
+                    className="lh-growth-bar is-leave"
+                    style={{
+                      height: `${Math.max(
+                        bucket.unsubscribed > 0 ? 8 : 3,
+                        (bucket.unsubscribed / max) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <span className="lh-growth-label">{bucket.label}</span>
               </div>
-              <span className="lh-growth-label">{bucket.label}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

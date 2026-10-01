@@ -82,7 +82,7 @@ export const PAGES: Capability[] = [
     label: "MEG Team Hub",
     group: "page",
     href: "/admin/hub",
-    icon: "users",
+    icon: "home",
     blurb: "SOPs, training, HR and team sentiment. Where every sign in lands.",
     fixed: true,
   },
@@ -91,7 +91,7 @@ export const PAGES: Capability[] = [
     label: "Clients",
     group: "page",
     href: "/admin/clients",
-    icon: "clients",
+    icon: "users",
     blurb: "The client roster, briefs and strategy.",
   },
   {
@@ -99,7 +99,7 @@ export const PAGES: Capability[] = [
     label: "Campaigns",
     group: "page",
     href: "/admin/campaigns",
-    icon: "mail",
+    icon: "campaign",
     blurb:
       "Review packages and their approvals. Narrow which kinds below once this is on.",
   },
@@ -117,7 +117,7 @@ export const PAGES: Capability[] = [
     label: "Lifecycle",
     group: "page",
     href: "/admin/lifecycle",
-    icon: "funnel",
+    icon: "cycle",
     blurb: "Outreach, seats and per client economics.",
   },
   {
@@ -165,7 +165,7 @@ export const PAGES: Capability[] = [
     label: "Weekly Snapshots",
     group: "page",
     href: "/admin/snapshot/desk",
-    icon: "ring",
+    icon: "camera",
     blurb: "Update every client's weekly snapshot from one list.",
   },
   {
@@ -173,7 +173,7 @@ export const PAGES: Capability[] = [
     label: "Reports",
     group: "page",
     href: "/admin/reports",
-    icon: "note",
+    icon: "bars",
     blurb: "Rollups across every client and person.",
   },
   {
