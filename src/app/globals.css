@@ -8074,6 +8074,13 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 
 @media (max-width: 900px) {
   .mood-summary { flex-direction: column; align-items: stretch; gap: 14px; }
+  .mood-summary-bar {
+    flex: none;
+    width: 100%;
+    height: 10px;
+    min-height: 10px;
+    max-height: 10px;
+  }
   .mood-grid { grid-template-columns: 1fr; }
 }
 
@@ -10312,10 +10319,9 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
     padding: 11px 12px;
   }
 
-  /* The row becomes four bands: the task, its note, when it runs, then what to
-     do with it. Ordered flex rather than named grid areas, because siblings
-     sharing one grid area stack on top of each other instead of sitting side
-     by side. */
+  /* Compact card: task + hours on one line, client under it, actions in a
+     four-up strip. display:contents on the lead so the checkbox can sit
+     beside the task name instead of trapping Client on its own fat row. */
   .ops-list-head { display: none; }
   .ops-list-stack {
     display: block;
@@ -10327,88 +10333,86 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
     grid-column: auto;
   }
   .ops-list-row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "check title hours"
+      ".     meta  meta"
+      ".     subs  subs"
+      "act   act   act";
+    column-gap: 8px;
+    row-gap: 2px;
     align-items: center;
-    gap: 7px 9px;
-    padding: 12px 13px;
-    grid-template-columns: none;
+    padding: 10px 12px 8px;
     grid-column: auto;
-  }
-  .ops-list-row > .ops-subtasks {
-    grid-column: auto;
-  }
-  .ops-list-row > .ops-list-lead,
-  .ops-list-row > input.client,
-  .ops-list-row > input.notes,
-  .ops-list-row > textarea.notes,
-  .ops-list-row > .ops-hrs,
-  .ops-list-row > .ops-row-actions,
-  .ops-list-row > .ops-subtasks {
-    grid-column: auto;
-  }
-  .ops-list-row > .ops-row-handle {
-    order: 0;
-    width: 28px;
-    min-height: 36px;
-    margin: -2px 0 -2px -6px;
   }
   .ops-list-lead {
-    order: 1;
-    flex: 1 1 calc(100% - 40px);
-    min-width: 0;
+    display: contents;
   }
   .ops-list-lead > input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
+    grid-area: check;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
     margin: 0;
+    align-self: start;
+    margin-top: 4px;
   }
-  .ops-list-lead > input.client,
-  .ops-list-lead > input.notes,
-  .ops-list-lead > textarea.notes {
-    flex: 1 1 auto;
-    width: auto;
-    min-width: 0;
-    max-width: none;
-    field-sizing: auto;
-    font-size: 14px;
+  .ops-list-row textarea.notes,
+  .ops-list-lead > textarea.notes,
+  .ops-list-row input.notes,
+  .ops-list-lead > input.notes {
+    grid-area: title;
+    min-height: 0 !important;
+    max-height: none;
+    padding: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    field-sizing: content;
   }
   .ops-list-row > input.client,
-  .ops-list-row > input.notes,
-  .ops-list-row > textarea.notes {
-    order: 3;
-    flex: 1 1 100%;
-    width: 100%;
+  .ops-list-lead > input.client {
+    grid-area: meta;
+    min-height: 0 !important;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .ops-list-row > input.client:placeholder-shown,
+  .ops-list-lead > input.client:placeholder-shown {
+    opacity: 0.55;
+  }
+  .ops-list-row > .ops-hrs,
+  .ops-list-row > .row.ops-hrs {
+    grid-area: hours;
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    width: auto;
     min-width: 0;
-    max-width: none;
-    field-sizing: fixed;
-    font-size: 13.5px;
+    padding: 0;
+  }
+  .ops-list-row .ops-hrs input.hrs {
+    width: 2.4rem;
+    min-height: 0 !important;
+    font-size: 14px;
+    font-weight: 650;
   }
   .ops-list-row > .ops-subtasks {
-    order: 4;
-    flex: 1 1 100%;
-    padding-left: 28px;
-  }
-  .ops-list-row > .ops-time {
-    order: 4;
-    flex: none;
-  }
-  .ops-list-row > .row,
-  .ops-list-row > .ops-hrs {
-    order: 5;
-    flex: none;
+    grid-area: subs;
+    padding: 4px 0 0;
+    margin: 0;
   }
   .ops-list-row > .ops-row-actions {
-    order: 6;
-    display: flex;
-    flex: 1 1 100%;
-    grid-template-columns: none;
-    margin-left: 0;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-top: 8px;
-    margin-top: 2px;
+    grid-area: act;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto;
+    gap: 6px;
+    width: 100%;
+    margin: 6px 0 0;
+    padding: 8px 0 0;
     border-top: 1px solid var(--border);
   }
   .ops-list-row .ops-row-actions > .fc-timer-btn,
@@ -10417,21 +10421,24 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .ops-list-row .ops-row-actions > .fc-move,
   .ops-list-row .ops-row-actions > .ops-row-remove {
     width: auto;
+    min-width: 0;
+  }
+  .ops-list-row .fc-timer-btn,
+  .ops-list-row .fc-move-btn,
+  .ops-list-row .fc-subtask-btn,
+  .ops-list-row .fc-log-pill {
+    height: 36px;
+    width: 100%;
+    padding: 0 4px;
+    font-size: 11px;
   }
   .ops-list-row .ops-row-actions > * {
     opacity: 1 !important;
   }
-
-  /* Finger-sized. 20px was a mouse target. */
   .ops-row-remove {
-    width: 32px;
-    height: 32px;
-    font-size: 19px;
-  }
-  .fc-move-btn,
-  .fc-subtask-btn {
-    padding: 7px 13px;
-    font-size: 12.5px;
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
   }
 
   /* The move menu is anchored to the right of a button that now sits near the
@@ -10445,12 +10452,51 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .fc-move-menu > button {
     padding: 9px 10px;
   }
+
+  /* Agenda / pages looks re-grid the list after this file's phone rules. */
+  .ops-page[data-forecast-look="agenda"] .ops-list-stack,
+  .ops-page[data-forecast-look="pages"] .ops-list-stack {
+    display: block;
+    grid-template-columns: none;
+    border: 1px solid var(--border);
+    padding: 0;
+  }
+  .ops-page[data-forecast-look="agenda"] .ops-list-row,
+  .ops-page[data-forecast-look="pages"] .ops-list-row {
+    display: grid;
+    min-height: 0;
+    padding: 10px 12px 8px;
+  }
+  .ops-page[data-forecast-look="agenda"] .ops-list-row > .ops-hrs {
+    display: flex;
+  }
+
+  .fc-cal {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 0 16px;
+  }
+  .fc-cal-grid {
+    min-width: 560px;
+  }
+  .fc-cal-hour-label {
+    font-size: 10px;
+  }
+  .fc-cal-block-tools {
+    opacity: 1;
+  }
+  .fc-queue {
+    max-height: none;
+  }
 }
 
 @media (max-width: 420px) {
-  /* Spread the actions instead of crowding them at the right edge. */
-  .ops-list-row > .ops-row-actions {
-    justify-content: space-between;
+  .ops-list-row .fc-timer-btn,
+  .ops-list-row .fc-move-btn,
+  .ops-list-row .fc-subtask-btn,
+  .ops-list-row .fc-log-pill {
+    font-size: 10px;
+    padding: 0 2px;
   }
   .fc-today {
     padding: 0;
@@ -12449,6 +12495,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   input.ops-time {
     min-height: 38px;
   }
+  .ops-list-row input,
+  .ops-list-row textarea {
+    min-height: 0;
+  }
 
   /* --- 2. Small print --------------------------------------------------- */
   /* 12px floor. The selectors are written to match the specificity of the rules
@@ -12490,7 +12540,43 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .ops-page-head > div { justify-content: flex-start; }
 
   /* Page gutters: 28px each side costs 14% of the screen. */
-  .ops-page { padding-left: 16px; padding-right: 16px; }
+  .ops-page {
+    width: 100%;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .mood-summary-legend {
+    flex-wrap: wrap;
+  }
+  .mood-summary-legend span {
+    white-space: normal;
+  }
+
+  .fc-page-toolbar {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .fc-page-toolbar .view-toggle {
+    width: 100%;
+    max-width: 100%;
+  }
+  .fc-look-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+  .ops-page[data-forecast-look] .fc-look-tools .btn {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+  .fc-look-switch select {
+    width: 100%;
+  }
+  .fc-mini-gauges {
+    width: 100%;
+  }
 
   /* The shared action strip is right-aligned, which on a phone leaves the
      primary button hanging above the heading with nothing under it. Left-align
@@ -20554,6 +20640,43 @@ a.snap-todo-linked-title {
   color: var(--accent-ink, var(--text));
 }
 
+.lh-analytics-clean .lh-an-flow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.lh-analytics-clean .lh-an-flow-head h4 {
+  margin-right: auto;
+}
+
+.lh-flow-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.lh-flow-range label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lh-flow-range input[type="date"] {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
 .lh-analytics-clean .lh-an-flow-list {
   display: flex;
   flex-direction: column;
@@ -20610,14 +20733,16 @@ a.snap-todo-linked-title {
 
 .lh-analytics-clean .lh-an-flow-stats {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  justify-content: flex-end;
 }
 
 .lh-analytics-clean .lh-an-flow-stats > span {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  min-width: 3.2rem;
+  min-width: 2.7rem;
   text-align: right;
 }
 
@@ -20787,6 +20912,15 @@ a.snap-todo-linked-title {
   .lh-analytics-clean .lh-an-metrics.is-quiet {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+  }
+
+  .lh-flow-range {
+    flex: 1 1 100%;
+  }
+
+  .lh-flow-range input[type="date"] {
+    min-height: 44px;
+    font-size: 16px;
   }
 
   .lh-analytics-clean .lh-an-flow {
@@ -21227,4 +21361,48 @@ a.snap-todo-linked-title {
 .ops-page[data-forecast-look="agenda"] .ops-list-stack:has(+ .ops-list-add) {
   border: none;
   box-shadow: none;
+}
+
+@media (max-width: 760px) {
+  .ops-page[data-forecast-look] .ops-page-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .fc-page-toolbar {
+    justify-content: flex-start;
+  }
+  .ops-page[data-forecast-look] .view-toggle {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 16px;
+  }
+  .ops-page[data-forecast-look] .view-toggle-btn {
+    padding: 8px 0;
+    min-height: 44px;
+  }
+  .ops-page[data-forecast-look] .fc-look-tools .btn {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+  .fc-look-switch,
+  .fc-look-switch select {
+    width: 100%;
+  }
+  .ops-page[data-forecast-look="agenda"] .ops-list-stack,
+  .ops-page[data-forecast-look="pages"] .ops-list-stack {
+    display: block;
+    grid-template-columns: none;
+  }
+  .ops-page[data-forecast-look="agenda"] .ops-list-row,
+  .ops-page[data-forecast-look="pages"] .ops-list-row {
+    display: grid;
+    flex-wrap: unset;
+    padding: 10px 12px 8px;
+  }
+  .ops-page[data-forecast-look="agenda"] .ops-list-row > .ops-row-actions,
+  .ops-page[data-forecast-look="agenda"] .ops-list-head > .ops-row-actions {
+    grid-column: auto;
+  }
 }

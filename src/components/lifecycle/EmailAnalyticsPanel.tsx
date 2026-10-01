@@ -85,6 +85,18 @@ function flowScore(row: GhlCampaignRow): number {
   return row.attributedAppointments * 100 + row.formFills * 10 + row.clicked;
 }
 
+function flowInDateRange(
+  sentOn: string | null,
+  from: string,
+  to: string
+): boolean {
+  if (!from && !to) return true;
+  if (!sentOn) return false;
+  if (from && sentOn < from) return false;
+  if (to && sentOn > to) return false;
+  return true;
+}
+
 export function EmailAnalyticsPanel({
   clientId,
   memberIds = [],
@@ -116,6 +128,8 @@ export function EmailAnalyticsPanel({
   const [journeysLoading, setJourneysLoading] = useState(false);
   const [journeysError, setJourneysError] = useState("");
   const [savingTicket, setSavingTicket] = useState(false);
+  const [flowFrom, setFlowFrom] = useState("");
+  const [flowTo, setFlowTo] = useState("");
 
   const tips = useMemo(
     () => (data ? buildEmailRecommendations(data) : []),
@@ -124,8 +138,10 @@ export function EmailAnalyticsPanel({
 
   const rankedFlows = useMemo(() => {
     if (!data) return [];
-    return [...data.flows].sort((a, b) => flowScore(b) - flowScore(a));
-  }, [data]);
+    return [...data.flows]
+      .filter((row) => flowInDateRange(row.sentOn, flowFrom, flowTo))
+      .sort((a, b) => flowScore(b) - flowScore(a));
+  }, [data, flowFrom, flowTo]);
 
   const attributed = useMemo(() => {
     if (!data) return { forms: 0, appointments: 0 };
@@ -544,19 +560,53 @@ export function EmailAnalyticsPanel({
 
           <div className="lh-an-split">
             <div className="lh-an-main">
-              <header className="lh-an-section-head">
+              <header className="lh-an-section-head lh-an-flow-head">
                 <h4>Flows</h4>
                 <span className="lh-an-count">{rankedFlows.length}</span>
+                <div className="lh-flow-range">
+                  <label>
+                    <span>From</span>
+                    <input
+                      type="date"
+                      value={flowFrom}
+                      onChange={(e) => setFlowFrom(e.target.value)}
+                      aria-label="Flows from date"
+                    />
+                  </label>
+                  <label>
+                    <span>To</span>
+                    <input
+                      type="date"
+                      value={flowTo}
+                      onChange={(e) => setFlowTo(e.target.value)}
+                      aria-label="Flows to date"
+                    />
+                  </label>
+                  {flowFrom || flowTo ? (
+                    <button
+                      type="button"
+                      className="lh-link"
+                      onClick={() => {
+                        setFlowFrom("");
+                        setFlowTo("");
+                      }}
+                    >
+                      All dates
+                    </button>
+                  ) : null}
+                </div>
               </header>
               {rankedFlows.length === 0 ? (
                 <p className="lh-card-note">
                   {data.flowsError
                     ? `Could not load flows: ${data.flowsError}`
-                    : "No flows in this location yet."}
+                    : flowFrom || flowTo
+                      ? "No flows in this date range."
+                      : "No flows in this location yet."}
                 </p>
               ) : (
                 <div className="lh-an-flow-list">
-                  {rankedFlows.slice(0, 8).map((flow, index) => (
+                  {rankedFlows.map((flow, index) => (
                     <FlowRow
                       key={flow.id || flow.name}
                       flow={flow}
@@ -929,6 +979,18 @@ function FlowRow({
       </div>
       <div className="lh-an-flow-stats">
         <span>
+          <em>Sent</em>
+          <strong>{fmtSent(flow)}</strong>
+        </span>
+        <span>
+          <em>Open</em>
+          <strong>{fmtEngagement(flow, flow.openRate)}</strong>
+        </span>
+        <span>
+          <em>Click</em>
+          <strong>{fmtEngagement(flow, flow.clickRate)}</strong>
+        </span>
+        <span>
           <em>Booked</em>
           <strong>{fmt(flow.attributedAppointments)}</strong>
         </span>
@@ -939,14 +1001,6 @@ function FlowRow({
               ? "—"
               : fmtMoney(flow.attributedAppointments * ticket)}
           </strong>
-        </span>
-        <span>
-          <em>Forms</em>
-          <strong>{fmt(flow.formFills)}</strong>
-        </span>
-        <span>
-          <em>Click</em>
-          <strong>{fmtPct(flow.clickRate)}</strong>
         </span>
       </div>
     </article>
