@@ -137,6 +137,17 @@ export interface ClientEmailAnalytics {
   listGrowth: ListGrowthStats | null;
   /** Present for ecommerce clients — orders + revenue in the window. */
   commerce: CommerceAnalytics | null;
+  /**
+   * Home service / B2B: bookings × ticket, and that total divided by sent
+   * campaign emails. Null for ecommerce.
+   */
+  serviceMoney: {
+    ticket: number | null;
+    ticketSource: "set" | "metrics" | "missing";
+    estimatedRevenue: number | null;
+    sentEmails: number;
+    revenuePerEmail: number | null;
+  } | null;
   attributionDays: number;
 }
 
@@ -1042,6 +1053,7 @@ export async function pullClientEmailAnalytics(
     abandonedRecovery,
     listGrowth,
     commerce: null,
+    serviceMoney: null,
     attributionDays,
   };
 }
@@ -1575,6 +1587,7 @@ export function emptyClientEmailAnalytics(
     abandonedRecovery: null,
     listGrowth: null,
     commerce: null,
+    serviceMoney: null,
     attributionDays: DEFAULT_ATTRIBUTION_DAYS,
   };
 }

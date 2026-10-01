@@ -11,11 +11,11 @@ import {
   type PaceStatus,
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
-import { EmailAnalyticsPanel } from "./EmailAnalyticsPanel";
+import { ChannelAnalyticsPanel } from "./ChannelAnalyticsPanel";
 import { ClientIntegrationsPanel } from "./ClientIntegrationsPanel";
 import { ChecklistBlock } from "./ChecklistBlock";
 import { ClientWorkflowsPanel } from "./ClientWorkflowsPanel";
-import { LinkedInAnalyticsPanel } from "./LinkedInAnalyticsPanel";
+import { HubFoldCard } from "./HubFoldCard";
 
 type HubWorkKind = "campaign" | "automation";
 
@@ -321,69 +321,6 @@ function PlatformSelect({
   );
 }
 
-function LaunchForm({
-  today,
-  busy,
-  error,
-  submitLabel,
-  onCreate,
-  onCancel,
-}: {
-  today: string;
-  busy: boolean;
-  error: string;
-  submitLabel?: string;
-  onCreate: (launchDate: string, platform: EmailPlatform) => void;
-  onCancel?: () => void;
-}) {
-  const [launchDate, setLaunchDate] = useState(today);
-  const [platform, setPlatform] = useState<EmailPlatform | "">("");
-  const preview = previewLaunchTodos(launchDate);
-  return (
-    <form
-      className="lh-launch-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!launchDate || !platform) return;
-        onCreate(launchDate, platform);
-      }}
-    >
-      <label className="lh-field">
-        <span>Launch date</span>
-        <input
-          type="date"
-          required
-          value={launchDate}
-          onChange={(e) => setLaunchDate(e.target.value)}
-        />
-      </label>
-      <label className="lh-field">
-        <span>Platform</span>
-        <PlatformSelect value={platform} onChange={setPlatform} />
-      </label>
-      <ul className="lh-preview">
-        {preview.map((item) => (
-          <li key={item.title}>
-            <span>{item.title}</span>
-            <span>{prettyDate(item.dueDate)}</span>
-          </li>
-        ))}
-      </ul>
-      {error ? <p className="lh-error">{error}</p> : null}
-      <div className="lh-actions">
-        <button type="submit" className="btn" disabled={busy || !platform || preview.length === 0}>
-          {busy ? "Adding…" : submitLabel || "Add client"}
-        </button>
-        {onCancel ? (
-          <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-        ) : null}
-      </div>
-    </form>
-  );
-}
-
 function AddClientForm({
   available,
   today,
@@ -437,75 +374,96 @@ function AddClientForm({
   }
 
   return (
-    <form className="lh-add" onSubmit={(e) => void submit(e)}>
-      <p className="lh-add-label">Add a client</p>
-      <div className="lh-add-modes">
-        <button
-          type="button"
-          className={`lh-add-mode ${mode === "launch" ? "on" : ""}`}
-          onClick={() => setMode("launch")}
-        >
-          Campaign launch
-        </button>
-        <button
-          type="button"
-          className={`lh-add-mode ${mode === "automations" ? "on" : ""}`}
-          onClick={() => setMode("automations")}
-        >
-          Automations only
-        </button>
-      </div>
-      <select value={clientId} onChange={(e) => setClientId(e.target.value)} required>
-        <option value="">Pick a client…</option>
-        {available.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-      {mode === "launch" ? (
-        <>
+    <details className="lh-card lh-fold lh-add">
+      <summary className="lh-card-head">
+        <span className="lh-fold-title">Add a client</span>
+        <span className="muted">{available.length} waiting</span>
+      </summary>
+      <form
+        className={`lh-add-form${mode === "automations" ? " is-automations" : ""}`}
+        onSubmit={(e) => void submit(e)}
+      >
+        <div className="lh-add-setup" role="group" aria-label="How to add them">
+          <button
+            type="button"
+            className={`lh-add-mode ${mode === "launch" ? "on" : ""}`}
+            onClick={() => setMode("launch")}
+          >
+            Campaign launch
+          </button>
+          <button
+            type="button"
+            className={`lh-add-mode ${mode === "automations" ? "on" : ""}`}
+            onClick={() => setMode("automations")}
+          >
+            Automations only
+          </button>
+        </div>
+
+        <div className="lh-add-row">
           <label className="lh-field">
-            <span>Launch date</span>
-            <input
-              type="date"
+            <span>Client</span>
+            <select
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
               required
-              value={launchDate}
-              onChange={(e) => setLaunchDate(e.target.value)}
-            />
-          </label>
-          <label className="lh-field">
-            <span>Platform</span>
-            <PlatformSelect value={platform} onChange={setPlatform} />
-          </label>
-          {clientId && preview.length ? (
-            <ul className="lh-preview">
-              {preview.map((item) => (
-                <li key={item.title}>
-                  <span>{item.title}</span>
-                  <span>{prettyDate(item.dueDate)}</span>
-                </li>
+              aria-label="Client"
+            >
+              <option value="">Pick a client…</option>
+              {available.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
-            </ul>
+            </select>
+          </label>
+          {mode === "launch" ? (
+            <>
+              <label className="lh-field">
+                <span>Launch date</span>
+                <input
+                  type="date"
+                  required
+                  value={launchDate}
+                  onChange={(e) => setLaunchDate(e.target.value)}
+                />
+              </label>
+              <label className="lh-field">
+                <span>Platform</span>
+                <PlatformSelect value={platform} onChange={setPlatform} />
+              </label>
+            </>
           ) : null}
-        </>
-      ) : (
-        <p className="lh-card-note lh-add-hint">
-          Adds them to Lifecycle without launch to-dos. Open the client to pull live GHL
-          workflows.
-        </p>
-      )}
-      {error ? <p className="lh-error">{error}</p> : null}
-      <button type="submit" className="btn btn-sm" disabled={!canSubmit}>
-        {busy ? "Adding…" : "Add"}
-      </button>
-    </form>
+          <button type="submit" className="btn" disabled={!canSubmit}>
+            {busy ? "Adding…" : "Add"}
+          </button>
+        </div>
+
+        {mode === "launch" && clientId && preview.length ? (
+          <p className="lh-add-preview">
+            Creates{" "}
+            {preview.map((item, i) => (
+              <span key={item.title}>
+                {i ? " · " : ""}
+                {item.title.toLowerCase()} ({prettyDate(item.dueDate)})
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {mode === "automations" ? (
+          <p className="lh-add-hint">
+            Adds them to Lifecycle with no launch to-dos. Open the client to pull live
+            workflows.
+          </p>
+        ) : null}
+        {error ? <p className="lh-error">{error}</p> : null}
+      </form>
+    </details>
   );
 }
 
 function ClientDetail({
   client,
-  today,
   onChanged,
   onRemoved,
   onBack,
@@ -513,17 +471,12 @@ function ClientDetail({
   onOpenTools,
 }: {
   client: HubClient;
-  today: string;
   onChanged: () => void;
   onRemoved: () => void;
   onBack: () => void;
   canSeeOwnerTools: boolean;
   onOpenTools?: () => void;
 }) {
-  const [launching, setLaunching] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [missingPlatform, setMissingPlatform] = useState<EmailPlatform | "">("");
   const [quotaDraft, setQuotaDraft] = useState(String(client.quota || ""));
   const [logTitle, setLogTitle] = useState("");
   const [logDate, setLogDate] = useState("");
@@ -614,57 +567,6 @@ function ClientDetail({
     }
   }
 
-  async function createLaunch(startDate: string, platform: EmailPlatform) {
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/lifecycle/hub/${client.id}/launch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ launchDate: startDate, platform }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok && res.status !== 409) {
-        setError(data.error || "Could not create those to-dos.");
-        return;
-      }
-      setLaunching(false);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function savePlatform(platform: EmailPlatform) {
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/lifecycle/hub/${client.id}/launch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(data.error || "Could not save that platform.");
-        return;
-      }
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleTodo(todo: HubLaunchTodo) {
-    const next = todo.status === "done" ? "open" : "done";
-    await fetch(`/api/todos/${todo.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    onChanged();
-  }
-
   async function removeFromLifecycle() {
     if (!confirmRemoveFromLifecycle(client.name)) return;
     setRemoving(true);
@@ -720,7 +622,7 @@ function ClientDetail({
       </header>
 
       <div className="lh-detail-layout">
-      <EmailAnalyticsPanel
+      <ChannelAnalyticsPanel
         key={`email-${client.id}-${analyticsTick}`}
         clientId={client.id}
         memberIds={client.memberIds || []}
@@ -730,10 +632,7 @@ function ClientDetail({
         onOpenTools={onOpenTools}
       />
 
-      <section className="lh-card lh-quota">
-        <div className="lh-card-head">
-          <h3>Deliverables</h3>
-        </div>
+      <HubFoldCard className="lh-quota" title="Deliverables">
         {client.quota > 0 ? (
           <>
             <p className="lh-quota-num">
@@ -862,11 +761,12 @@ function ClientDetail({
             {logError ? <p className="lh-error">{logError}</p> : null}
           </form>
         </div>
-      </section>
+      </HubFoldCard>
 
-      <section className="lh-card lh-month-card">
-        <div className="lh-card-head">
-          <h3>This month</h3>
+      <HubFoldCard
+        className="lh-month-card"
+        title="This month"
+        actions={
           <span className="lh-card-links">
             {canSeeOwnerTools ? (
               <Link href="/admin/calendar" className="lh-link">
@@ -877,7 +777,8 @@ function ClientDetail({
               Campaigns
             </Link>
           </span>
-        </div>
+        }
+      >
         {thisMonth.length === 0 && inReview.length === 0 ? (
           <p className="lh-card-note">Nothing sent or scheduled yet this month.</p>
         ) : (
@@ -897,88 +798,7 @@ function ClientDetail({
             </ul>
           </>
         ) : null}
-      </section>
-
-      <section className="lh-card lh-launch-card">
-        <div className="lh-card-head">
-          <h3>Launch</h3>
-          {!client.launch.started && !launching ? (
-            <button type="button" className="lh-link" onClick={() => setLaunching(true)}>
-              Set launch date
-            </button>
-          ) : client.launch.started ? (
-            <span className="muted">
-              {client.launch.open
-                ? `${client.launch.open} of ${client.launch.total} open`
-                : "Done"}
-            </span>
-          ) : null}
-        </div>
-        {client.launch.started ? (
-          <>
-            {!client.platform ? (
-              <form
-                className="lh-launch-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!missingPlatform) return;
-                  void savePlatform(missingPlatform);
-                }}
-              >
-                <label className="lh-field">
-                  <span>Platform</span>
-                  <PlatformSelect value={missingPlatform} onChange={setMissingPlatform} />
-                </label>
-                {error ? <p className="lh-error">{error}</p> : null}
-                <div className="lh-actions">
-                  <button type="submit" className="btn btn-sm" disabled={busy || !missingPlatform}>
-                    {busy ? "Saving…" : "Save platform"}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-            <ul className="lh-todos">
-              {client.launch.todos.map((t) => {
-                const overdue = t.status === "open" && t.dueDate && t.dueDate < today;
-                return (
-                  <li key={t.id} className={t.status === "done" ? "is-done" : ""}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={t.status === "done"}
-                        onChange={() => void toggleTodo(t)}
-                      />
-                      <span>{t.title}</span>
-                    </label>
-                    {t.dueDate ? (
-                      <span className={`lh-due ${overdue ? "is-overdue" : ""}`}>
-                        {prettyDate(t.dueDate)}
-                      </span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </>
-        ) : launching ? (
-          <LaunchForm
-            today={today}
-            busy={busy}
-            error={error}
-            submitLabel="Create to-dos"
-            onCreate={(d, platform) => void createLaunch(d, platform)}
-            onCancel={() => {
-              setLaunching(false);
-              setError("");
-            }}
-          />
-        ) : (
-          <p className="lh-card-note">
-            Set a launch date and platform to create the calendar, first campaigns, and automations
-            to-dos.
-          </p>
-        )}
-      </section>
+      </HubFoldCard>
 
       <ClientWorkflowsPanel
         key={`wf-${client.id}`}
@@ -986,12 +806,6 @@ function ClientDetail({
         memberIds={client.memberIds || []}
         ghlLinked={Boolean(client.ghlLinked)}
         onOpenTools={onOpenTools}
-      />
-
-      <LinkedInAnalyticsPanel
-        key={`li-${client.id}`}
-        clientId={client.id}
-        memberIds={client.memberIds || []}
       />
 
       <ClientIntegrationsPanel
@@ -1159,7 +973,6 @@ export function ClientHub({
       <div className="lh lh-detail-page">
         <ClientDetail
           client={selected}
-          today={data.today}
           onChanged={() => void load()}
           onRemoved={() => {
             clearSelection();

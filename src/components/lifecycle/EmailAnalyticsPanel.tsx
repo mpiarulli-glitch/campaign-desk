@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   AnalyticsPreset,
   ClientEmailAnalytics,
@@ -92,6 +92,7 @@ export function EmailAnalyticsPanel({
   crmLinked = false,
   businessModel = "home_service",
   onOpenTools,
+  title,
 }: {
   clientId: string;
   memberIds?: string[];
@@ -99,6 +100,7 @@ export function EmailAnalyticsPanel({
   crmLinked?: boolean;
   businessModel?: "ecomm" | "b2b" | "home_service";
   onOpenTools?: () => void;
+  title?: ReactNode;
 }) {
   const commerceClient = businessModel === "ecomm";
   const [preset, setPreset] = useState<AnalyticsPreset>("1m");
@@ -113,6 +115,7 @@ export function EmailAnalyticsPanel({
   const [journeys, setJourneys] = useState<EmailJourneyRow[] | null>(null);
   const [journeysLoading, setJourneysLoading] = useState(false);
   const [journeysError, setJourneysError] = useState("");
+  const [savingTicket, setSavingTicket] = useState(false);
 
   const tips = useMemo(
     () => (data ? buildEmailRecommendations(data) : []),
@@ -181,6 +184,27 @@ export function EmailAnalyticsPanel({
     }
   }, [canPull, clientId, from, memberIds, preset, to]);
 
+  async function saveTicket(raw: string) {
+    const trimmed = raw.trim();
+    const ticket = trimmed === "" ? null : Number(trimmed.replace(/[$,]/g, ""));
+    if (trimmed !== "" && !Number.isFinite(ticket)) return;
+    setSavingTicket(true);
+    try {
+      const res = await fetch("/api/lifecycle/campaign-revenue", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          ticket,
+          attributedAppointments: attributed.appointments,
+        }),
+      });
+      if (res.ok) await pull();
+    } finally {
+      setSavingTicket(false);
+    }
+  }
+
   const openJourneys = useCallback(
     async (kind: EmailJourneyKind) => {
       if (!canPull || !ghlLinked) return;
@@ -229,7 +253,7 @@ export function EmailAnalyticsPanel({
     return (
       <section className="lh-card lh-analytics">
         <div className="lh-card-head">
-          <h3>Email & revenue</h3>
+          {title ?? <h3>Email &amp; revenue</h3>}
         </div>
         <p className="lh-card-note">
           Link GoHighLevel to pull forms, bookings, and send health for this
@@ -254,7 +278,7 @@ export function EmailAnalyticsPanel({
     <section className="lh-card lh-analytics lh-analytics-clean">
       <div className="lh-an-toolbar">
         <div className="lh-an-title">
-          <h3>Email & revenue</h3>
+          {title ?? <h3>Email &amp; revenue</h3>}
           {data ? (
             <p className="lh-an-sub">{prettyRange(data.start, data.end)}</p>
           ) : (
@@ -395,6 +419,35 @@ export function EmailAnalyticsPanel({
                       ) : null}
                     </em>
                   </button>
+                  {data.serviceMoney ? (
+                    <>
+                      <div className="lh-an-metric">
+                        <span>Campaign $</span>
+                        <strong>
+                          {data.serviceMoney.estimatedRevenue == null
+                            ? "—"
+                            : fmtMoney(data.serviceMoney.estimatedRevenue)}
+                        </strong>
+                        <em>
+                          {data.serviceMoney.ticket
+                            ? `Booked × ${fmtMoney(data.serviceMoney.ticket)} ticket`
+                            : "Set a ticket to turn bookings into dollars"}
+                        </em>
+                      </div>
+                      <div className="lh-an-metric">
+                        <span>$ / email</span>
+                        <strong>
+                          {data.serviceMoney.revenuePerEmail == null
+                            ? "—"
+                            : fmtMoney(data.serviceMoney.revenuePerEmail)}
+                        </strong>
+                        <em>
+                          {fmt(data.serviceMoney.sentEmails)} sent campaign
+                          {data.serviceMoney.sentEmails === 1 ? "" : "s"}
+                        </em>
+                      </div>
+                    </>
+                  ) : null}
                 </>
               )}
               <div className="lh-an-metric">
@@ -464,6 +517,29 @@ export function EmailAnalyticsPanel({
             )}
           </p>
 
+          {data.serviceMoney ? (
+            <p className="lh-card-note">
+              Avg ticket{" "}
+              <input
+                className="lh-ticket-input"
+                defaultValue={data.serviceMoney.ticket ?? ""}
+                key={String(data.serviceMoney.ticket ?? "none")}
+                inputMode="decimal"
+                placeholder="e.g. 450"
+                disabled={savingTicket}
+                aria-label="Average ticket"
+                onBlur={(e) => void saveTicket(e.target.value)}
+              />
+              {data.serviceMoney.ticketSource === "metrics"
+                ? " · from past jobs"
+                : data.serviceMoney.ticket
+                  ? " · saved"
+                  : " · needed for $ / email"}
+              . Each sent campaign’s revenue is bookings on that email × this
+              ticket.
+            </p>
+          ) : null}
+
           {growth ? <GrowthChart growth={growth} /> : null}
 
           <div className="lh-an-split">
@@ -485,6 +561,7 @@ export function EmailAnalyticsPanel({
                       key={flow.id || flow.name}
                       flow={flow}
                       rank={index + 1}
+                      ticket={data.serviceMoney?.ticket ?? null}
                     />
                   ))}
                 </div>
@@ -512,6 +589,7 @@ export function EmailAnalyticsPanel({
                         <th>Click</th>
                         <th>Forms</th>
                         <th>Booked</th>
+                        <th>Revenue</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -544,6 +622,14 @@ export function EmailAnalyticsPanel({
                             <td>{pending ? "—" : fmt(c.formFills)}</td>
                             <td>
                               {pending ? "—" : fmt(c.attributedAppointments)}
+                            </td>
+                            <td>
+                              {pending || !data.serviceMoney?.ticket
+                                ? "—"
+                                : fmtMoney(
+                                    c.attributedAppointments *
+                                      data.serviceMoney.ticket
+                                  )}
                             </td>
                           </tr>
                         );
@@ -804,7 +890,15 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
   );
 }
 
-function FlowRow({ flow, rank }: { flow: GhlCampaignRow; rank: number }) {
+function FlowRow({
+  flow,
+  rank,
+  ticket,
+}: {
+  flow: GhlCampaignRow;
+  rank: number;
+  ticket: number | null;
+}) {
   return (
     <article className="lh-an-flow">
       <span className="lh-an-flow-rank">{rank}</span>
@@ -819,6 +913,14 @@ function FlowRow({ flow, rank }: { flow: GhlCampaignRow; rank: number }) {
         <span>
           <em>Booked</em>
           <strong>{fmt(flow.attributedAppointments)}</strong>
+        </span>
+        <span>
+          <em>Revenue</em>
+          <strong>
+            {ticket == null
+              ? "—"
+              : fmtMoney(flow.attributedAppointments * ticket)}
+          </strong>
         </span>
         <span>
           <em>Forms</em>

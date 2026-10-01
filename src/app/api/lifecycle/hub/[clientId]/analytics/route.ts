@@ -16,6 +16,7 @@ import {
   commerceRollupForRange,
   getRevClient,
 } from "@/lib/revenue";
+import { attachServiceMoney } from "@/lib/campaign-revenue";
 
 const PRESETS = new Set<AnalyticsPreset>(["1m", "3m", "6m", "12m", "custom"]);
 
@@ -50,6 +51,16 @@ function attachCommerce(
   };
 }
 
+function attachMoney(
+  analytics: ClientEmailAnalytics,
+  clientId: string,
+  moneyMode: ClientEmailAnalytics["moneyMode"]
+): ClientEmailAnalytics {
+  const withCommerce = attachCommerce(analytics, clientId, moneyMode);
+  if (moneyMode !== "service") return withCommerce;
+  return attachServiceMoney(withCommerce, clientId);
+}
+
 async function crmFallback(
   clientId: string,
   memberIds: string[],
@@ -67,7 +78,7 @@ async function crmFallback(
   return NextResponse.json({
     clientId,
     clientName: getRevClient(clientId)?.name || "",
-    analytics: attachCommerce(analytics, clientId, moneyMode),
+    analytics: attachMoney(analytics, clientId, moneyMode),
     crmSources: sources,
     ...(warning ? { warning } : {}),
   });
@@ -136,7 +147,7 @@ export async function GET(
     }
 
     if (moneyMode === "commerce") {
-      const analytics = attachCommerce(
+      const analytics = attachMoney(
         emptyClientEmailAnalytics(start, end, "commerce"),
         clientId,
         "commerce"
@@ -175,7 +186,7 @@ export async function GET(
     }
 
     if (moneyMode === "commerce") {
-      const analytics = attachCommerce(
+      const analytics = attachMoney(
         emptyClientEmailAnalytics(start, end, "commerce"),
         clientId,
         "commerce"
@@ -194,7 +205,7 @@ export async function GET(
   }
 
   try {
-    const analytics = attachCommerce(
+    const analytics = attachMoney(
       await pullClientEmailAnalytics(locationId, start, end),
       clientId,
       moneyMode
@@ -226,7 +237,7 @@ export async function GET(
 
     if (moneyMode === "commerce") {
       // Still surface store sales if the GHL pull fails.
-      const analytics = attachCommerce(
+      const analytics = attachMoney(
         emptyClientEmailAnalytics(start, end, "commerce"),
         clientId,
         "commerce"

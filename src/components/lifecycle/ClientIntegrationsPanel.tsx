@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ClientIntegration, IntegrationProvider } from "@/lib/client-integrations";
+import { HubFoldCard } from "./HubFoldCard";
 
 type ProviderMeta = {
   id: IntegrationProvider;
@@ -116,11 +117,20 @@ export function ClientIntegrationsPanel({
     }
   }
 
+  const linkedCount = providers.filter((p) => p.integration?.linked).length;
+
   return (
-    <section className="lh-card lh-integrations">
-      <div className="lh-card-head">
-        <h3>CRM connections</h3>
-      </div>
+    <HubFoldCard
+      className="lh-integrations"
+      title="CRM connections"
+      actions={
+        !loading && providers.length > 0 ? (
+          <span className="muted">
+            {linkedCount ? `${linkedCount} linked` : "Not connected"}
+          </span>
+        ) : null
+      }
+    >
       <p className="lh-card-note">
         Optional. Use when this client tracks jobs or leads outside GoHighLevel —
         Housecall Pro for home service, HubSpot for forms and deals.
@@ -227,6 +237,6 @@ export function ClientIntegrationsPanel({
           })}
         </ul>
       )}
-    </section>
+    </HubFoldCard>
   );
 }

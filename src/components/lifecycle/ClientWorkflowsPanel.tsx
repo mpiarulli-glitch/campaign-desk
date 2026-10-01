@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { HubFoldCard } from "./HubFoldCard";
 
 type WorkflowRow = {
   id: string;
@@ -84,10 +85,11 @@ export function ClientWorkflowsPanel({
   }, [clientId, ghlLinked, pull]);
 
   return (
-    <section className="lh-card lh-workflows">
-      <div className="lh-card-head">
-        <h3>Live workflows</h3>
-        {ghlLinked ? (
+    <HubFoldCard
+      className="lh-workflows"
+      title="Live workflows"
+      actions={
+        ghlLinked ? (
           <button
             type="button"
             className="lh-link"
@@ -96,9 +98,9 @@ export function ClientWorkflowsPanel({
           >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
-        ) : null}
-      </div>
-
+        ) : null
+      }
+    >
       {!ghlLinked ? (
         <>
           <p className="lh-card-note">
@@ -151,6 +153,6 @@ export function ClientWorkflowsPanel({
           )}
         </>
       ) : null}
-    </section>
+    </HubFoldCard>
   );
 }

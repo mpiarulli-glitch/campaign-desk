@@ -11165,6 +11165,18 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.app-notif-setting {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 15px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  flex: none;
+}
+.app-notif-setting input { margin-top: 2px; }
 .app-notif-foot {
   display: block;
   padding: 11px 15px;
@@ -16402,35 +16414,49 @@ button.am-node:hover .am-edit-cue,
 
 .lh-grid-toolbar .lh-add {
   flex: 1 1 100%;
-  display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) repeat(2, minmax(120px, 0.8fr)) auto;
-  align-items: end;
-  gap: 8px 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
 }
 
-.lh-grid-toolbar .lh-add-label {
-  grid-column: 1 / -1;
+.lh-grid-toolbar .lh-add > summary.lh-card-head {
+  list-style: none;
+  cursor: pointer;
+  margin-bottom: 0;
+  align-items: center;
 }
 
-.lh-grid-toolbar .lh-add .lh-preview,
-.lh-grid-toolbar .lh-add .lh-error {
-  grid-column: 1 / -1;
+.lh-grid-toolbar .lh-add > summary.lh-card-head::-webkit-details-marker,
+.lh-grid-toolbar .lh-add > summary.lh-card-head::marker {
+  display: none;
 }
 
-.lh-grid-toolbar .lh-add > select,
+.lh-grid-toolbar .lh-add > summary.lh-card-head .lh-fold-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lh-grid-toolbar .lh-add > summary.lh-card-head .lh-fold-title::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.lh-grid-toolbar .lh-add[open] > summary.lh-card-head {
+  margin-bottom: 12px;
+}
+
+.lh-grid-toolbar .lh-add[open] > summary.lh-card-head .lh-fold-title::before {
+  transform: rotate(90deg);
+}
+
 .lh-grid-toolbar .lh-add .lh-field,
 .lh-grid-toolbar .lh-add .lh-field input,
 .lh-grid-toolbar .lh-add .lh-field select {
   width: 100%;
   max-width: none;
-}
-
-.lh-grid-toolbar .lh-add > .btn {
-  justify-self: start;
 }
 
 button.snap-pick-card.lh-pick-card,
@@ -16744,14 +16770,64 @@ article.snap-pick-card.lh-pick-card {
   flex: 1;
 }
 
-.lh-add {
-  flex: none;
-  padding: 12px 14px 16px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.lh-add-form {
+  display: grid;
+  gap: 12px;
+}
+
+.lh-add-setup {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+}
+
+.lh-add-mode {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lh-add-mode.on {
   background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 18, 24, 0.08);
+}
+
+.lh-add-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr) auto;
+  gap: 10px 12px;
+  align-items: end;
+}
+
+.lh-add-form.is-automations .lh-add-row {
+  grid-template-columns: minmax(220px, 1.6fr) auto;
+}
+
+.lh-add-row > .btn {
+  height: 38px;
+  padding: 0 16px;
+}
+
+.lh-add-hint,
+.lh-add-preview {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 .lh-add-label {
@@ -16761,34 +16837,6 @@ article.snap-pick-card.lh-pick-card {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-}
-
-.lh-add-modes {
-  display: flex;
-  gap: 4px;
-}
-
-.lh-add-mode {
-  flex: 1;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-muted);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.lh-add-mode.on {
-  border-color: var(--accent, #2563eb);
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent, #2563eb) 12%, var(--bg));
-}
-
-.lh-add-hint {
-  margin: 0;
-  font-size: 12px;
 }
 
 .lh-workflows-summary {
@@ -16851,26 +16899,10 @@ article.snap-pick-card.lh-pick-card {
   }
 }
 
-.lh-add select,
 .lh-add .lh-field select,
-.lh-add input[type="date"] {
+.lh-add .lh-field input[type="date"] {
   width: 100%;
   max-width: none;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 13px;
-}
-
-.lh-add .lh-preview {
-  padding: 8px 10px;
-}
-
-.lh-add .lh-preview li {
-  font-size: 12px;
 }
 
 .lh-list-item {
@@ -16995,9 +17027,110 @@ article.snap-pick-card.lh-pick-card {
   margin-bottom: 10px;
 }
 
+.lh-fold > .lh-card-head {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.lh-fold.is-open > .lh-card-head {
+  margin-bottom: 10px;
+}
+
+.lh-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lh-fold-title {
+  font-family: var(--font-head, inherit);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.lh-fold-caret {
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.lh-fold-caret.is-open {
+  transform: rotate(90deg);
+}
+
 .lh-card-links {
   display: flex;
   gap: 12px;
+}
+
+.lh-channel-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  min-width: 0;
+}
+
+.lh-channel-select {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+}
+
+.lh-channel-select::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -2px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-muted);
+  pointer-events: none;
+}
+
+.lh-channel-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  field-sizing: content;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 18px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-head, inherit);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.lh-channel-select select:hover {
+  color: var(--accent-ink);
+}
+
+.lh-channel-select select:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .lh-quota-num {
@@ -17759,8 +17892,12 @@ article.snap-pick-card.lh-pick-card {
     grid-template-rows: minmax(200px, 34vh) 1fr;
   }
   .lh-rail { border-right: 0; border-bottom: 1px solid var(--border); }
-  .lh-grid-toolbar .lh-add {
+  .lh-grid-toolbar .lh-add-row,
+  .lh-add-form.is-automations .lh-add-row {
     grid-template-columns: 1fr;
+  }
+  .lh-add-row > .btn {
+    width: 100%;
   }
   .lh-time-row {
     grid-template-columns: 72px 1fr;
@@ -19919,7 +20056,8 @@ a.snap-todo-linked-title {
   border-bottom: 1px solid var(--border-subtle, var(--border));
 }
 
-.lh-analytics-clean .lh-an-title h3 {
+.lh-analytics-clean .lh-an-title h3,
+.lh-analytics-clean .lh-channel-select select {
   margin: 0;
   font-size: 1.14rem;
   font-weight: 650;
@@ -20512,6 +20650,15 @@ a.snap-todo-linked-title {
   font-weight: 600;
   color: var(--text);
   line-height: 1.3;
+}
+
+.lh-ticket-input {
+  width: 7.5rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .lh-analytics-clean .lh-an-table tr.is-pending .lh-an-name {

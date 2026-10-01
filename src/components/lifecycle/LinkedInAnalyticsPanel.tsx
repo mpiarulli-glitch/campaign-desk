@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type {
   ClientLinkedInAnalytics,
   LinkedInPreset,
@@ -36,9 +36,11 @@ function prettyRange(start: string | null, end: string, days: number | null): st
 export function LinkedInAnalyticsPanel({
   clientId,
   memberIds = [],
+  title,
 }: {
   clientId: string;
   memberIds?: string[];
+  title?: ReactNode;
 }) {
   const [preset, setPreset] = useState<LinkedInPreset>("30d");
   const [loading, setLoading] = useState(false);
@@ -87,7 +89,7 @@ export function LinkedInAnalyticsPanel({
   return (
     <section className="lh-card lh-linkedin">
       <div className="lh-card-head">
-        <h3>LinkedIn</h3>
+        {title ?? <h3>LinkedIn</h3>}
         <button
           type="button"
           className="lh-link"
