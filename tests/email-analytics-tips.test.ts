@@ -23,6 +23,7 @@ function sample(partial: Partial<ClientEmailAnalytics> & {
     attributionDays: 5,
     moneyMode: "service",
     commerce: null,
+    serviceMoney: null,
     ...partial,
   };
 }

@@ -850,7 +850,10 @@ export async function pullClientEmailAnalytics(
   let flows: GhlCampaignRow[] = [];
   let flowsError: string | null = null;
   try {
-    const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
+    const workflowCampaigns = await listWorkflowEmailCampaigns(locationId, {
+      start,
+      end,
+    });
     flows = workflowCampaigns.map((flow) => ({
       id: flow.id,
       name: flow.name,
@@ -1015,7 +1018,7 @@ export async function pullClientEmailAnalytics(
       start,
       end,
       [...campaigns, ...flows].map((row) => ({
-        at: row.sentOn,
+        at: row.channel === "flow" ? end : row.sentOn,
         count: row.unsubscribed,
       })),
       finalizedTotals.delivered
@@ -1125,7 +1128,10 @@ export async function pullClientAttributionSummary(
       abandonedRecovery: boolean;
     }> = [];
     try {
-      const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
+      const workflowCampaigns = await listWorkflowEmailCampaigns(locationId, {
+      start,
+      end,
+    });
       flowRows = workflowCampaigns.map((flow) => ({
         id: flow.id,
         name: flow.name,
@@ -1346,7 +1352,10 @@ export async function pullClientAttributionCuts(
       abandonedRecovery: boolean;
     }> = [];
     try {
-      const workflowCampaigns = await listWorkflowEmailCampaigns(locationId);
+      const workflowCampaigns = await listWorkflowEmailCampaigns(locationId, {
+      start,
+      end,
+    });
       flowRows = workflowCampaigns.map((flow) => ({
         id: flow.id,
         name: flow.name,

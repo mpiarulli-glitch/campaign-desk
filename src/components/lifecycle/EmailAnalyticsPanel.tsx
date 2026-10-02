@@ -85,18 +85,6 @@ function flowScore(row: GhlCampaignRow): number {
   return row.attributedAppointments * 100 + row.formFills * 10 + row.clicked;
 }
 
-function flowInDateRange(
-  sentOn: string | null,
-  from: string,
-  to: string
-): boolean {
-  if (!from && !to) return true;
-  if (!sentOn) return false;
-  if (from && sentOn < from) return false;
-  if (to && sentOn > to) return false;
-  return true;
-}
-
 export function EmailAnalyticsPanel({
   clientId,
   memberIds = [],
@@ -128,8 +116,6 @@ export function EmailAnalyticsPanel({
   const [journeysLoading, setJourneysLoading] = useState(false);
   const [journeysError, setJourneysError] = useState("");
   const [savingTicket, setSavingTicket] = useState(false);
-  const [flowFrom, setFlowFrom] = useState("");
-  const [flowTo, setFlowTo] = useState("");
 
   const tips = useMemo(
     () => (data ? buildEmailRecommendations(data) : []),
@@ -138,10 +124,8 @@ export function EmailAnalyticsPanel({
 
   const rankedFlows = useMemo(() => {
     if (!data) return [];
-    return [...data.flows]
-      .filter((row) => flowInDateRange(row.sentOn, flowFrom, flowTo))
-      .sort((a, b) => flowScore(b) - flowScore(a));
-  }, [data, flowFrom, flowTo]);
+    return [...data.flows].sort((a, b) => flowScore(b) - flowScore(a));
+  }, [data]);
 
   const attributed = useMemo(() => {
     if (!data) return { forms: 0, appointments: 0 };
@@ -501,7 +485,7 @@ export function EmailAnalyticsPanel({
               <div className="lh-an-metric">
                 <span>Open rate</span>
                 <strong>{fmtPct(totals.openRate)}</strong>
-                <em>Sent campaigns only</em>
+                <em>Sends in this window</em>
               </div>
               <div className="lh-an-metric">
                 <span>Click rate</span>
@@ -514,8 +498,8 @@ export function EmailAnalyticsPanel({
           <p className="lh-an-footnote">
             {data.moneyMode === "commerce" ? (
               <>
-                Store revenue from monthly metrics. Opens and clicks use sent
-                campaigns only
+                Store revenue from monthly metrics. Opens and clicks use
+                campaign and flow sends in this window
                 {scheduledCount > 0
                   ? ` · ${scheduledCount} scheduled excluded`
                   : ""}
@@ -524,7 +508,7 @@ export function EmailAnalyticsPanel({
             ) : (
               <>
                 {attributionHonestyLine(data.attributionDays)} Opens and clicks
-                use sent campaigns only
+                use campaign and flow sends in this window
                 {scheduledCount > 0
                   ? ` · ${scheduledCount} scheduled excluded`
                   : ""}
@@ -560,49 +544,15 @@ export function EmailAnalyticsPanel({
 
           <div className="lh-an-split">
             <div className="lh-an-main">
-              <header className="lh-an-section-head lh-an-flow-head">
+              <header className="lh-an-section-head">
                 <h4>Flows</h4>
                 <span className="lh-an-count">{rankedFlows.length}</span>
-                <div className="lh-flow-range">
-                  <label>
-                    <span>From</span>
-                    <input
-                      type="date"
-                      value={flowFrom}
-                      onChange={(e) => setFlowFrom(e.target.value)}
-                      aria-label="Flows from date"
-                    />
-                  </label>
-                  <label>
-                    <span>To</span>
-                    <input
-                      type="date"
-                      value={flowTo}
-                      onChange={(e) => setFlowTo(e.target.value)}
-                      aria-label="Flows to date"
-                    />
-                  </label>
-                  {flowFrom || flowTo ? (
-                    <button
-                      type="button"
-                      className="lh-link"
-                      onClick={() => {
-                        setFlowFrom("");
-                        setFlowTo("");
-                      }}
-                    >
-                      All dates
-                    </button>
-                  ) : null}
-                </div>
               </header>
               {rankedFlows.length === 0 ? (
                 <p className="lh-card-note">
                   {data.flowsError
                     ? `Could not load flows: ${data.flowsError}`
-                    : flowFrom || flowTo
-                      ? "No flows in this date range."
-                      : "No flows in this location yet."}
+                    : "No flows in this location yet."}
                 </p>
               ) : (
                 <div className="lh-an-flow-list">
@@ -612,6 +562,8 @@ export function EmailAnalyticsPanel({
                       flow={flow}
                       rank={index + 1}
                       ticket={data.serviceMoney?.ticket ?? null}
+                      windowStart={data.start}
+                      windowEnd={data.end}
                     />
                   ))}
                 </div>
@@ -962,10 +914,14 @@ function FlowRow({
   flow,
   rank,
   ticket,
+  windowStart,
+  windowEnd,
 }: {
   flow: GhlCampaignRow;
   rank: number;
   ticket: number | null;
+  windowStart: string;
+  windowEnd: string;
 }) {
   return (
     <article className="lh-an-flow">
@@ -974,7 +930,7 @@ function FlowRow({
         <strong>{flow.name}</strong>
         <span className="lh-an-meta">
           {flow.abandonedRecovery ? "Recovery · " : ""}
-          {flow.sentOn || "—"}
+          {prettyRange(windowStart, windowEnd)}
         </span>
       </div>
       <div className="lh-an-flow-stats">
