@@ -53,22 +53,23 @@ function displayTitle(title: string): string {
   return trimmed || "Untitled";
 }
 
+function wordCount(body: string): string {
+  const count = body.trim() ? body.trim().split(/\s+/).length : 0;
+  return count === 1 ? "1 word" : `${count} words`;
+}
+
 export function NotesDesk({ locked }: { locked: boolean }) {
   if (locked) {
     return (
       <div className="notes-page">
-        <header className="notes-head">
-          <div>
-            <p className="eyebrow">Personal tools</p>
-            <h1 className="h1">Notes</h1>
-          </div>
-        </header>
-        <div className="card card-pad stack">
-          <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+        <div className="notes-locked">
+          <p className="notes-kicker">Personal tools</p>
+          <h1 className="notes-title-page">Notes</h1>
+          <p className="notes-lead">
             Sign in as yourself to use your notes. Viewing the app as someone else
             keeps their notebook closed.
           </p>
-          <Link href="/admin/hub" className="btn" style={{ width: "fit-content" }}>
+          <Link href="/admin/hub" className="btn">
             Back to Campaign Desk
           </Link>
         </div>
@@ -343,28 +344,33 @@ function Desk() {
   });
   const selected = notes.find((note) => note.id === selectedId) ?? null;
 
+  const statusClass =
+    status === "error" ? " is-error" : status === "saving" ? " is-saving" : status === "saved" ? " is-saved" : "";
+
   return (
     <div className={`notes-page${reading ? " is-reading" : ""}`}>
-      <header className="notes-head">
-        <div>
-          <p className="eyebrow">Personal tools</p>
-          <h1 className="h1">Notes</h1>
-          <p className="notes-lead">Private to you. Nobody else on the team can open these.</p>
-        </div>
-      </header>
-
       {loadError ? (
-        <div className="card card-pad stack">
-          <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>{loadError}</p>
-          <button type="button" className="btn" style={{ width: "fit-content" }} onClick={() => window.location.reload()}>
+        <div className="notes-locked">
+          <p className="notes-kicker">Personal tools</p>
+          <h1 className="notes-title-page">Notes</h1>
+          <p className="notes-lead">{loadError}</p>
+          <button type="button" className="btn" onClick={() => window.location.reload()}>
             Try again
           </button>
         </div>
       ) : (
         <div className="notes-shell">
           <aside className="notes-list">
+            <div className="notes-brand">
+              <p className="notes-kicker">Personal tools</p>
+              <div className="notes-brand-row">
+                <h1 className="notes-title-page">Notes</h1>
+                <span className="notes-count">{loading ? "—" : notes.length}</span>
+              </div>
+              <p className="notes-lead">Private to you. Nobody else on the team can open these.</p>
+            </div>
             <div className="notes-list-tools">
-              <button type="button" className="btn btn-sm" disabled={creating || loading} onClick={createNote}>
+              <button type="button" className="btn btn-sm notes-new" disabled={creating || loading} onClick={createNote}>
                 {creating ? "Starting…" : "New note"}
               </button>
               <input
@@ -393,16 +399,20 @@ function Desk() {
                       <li key={note.id}>
                         <button
                           type="button"
-                          className={`notes-item${on ? " is-on" : ""}`}
+                          className={`notes-item${on ? " is-on" : ""}${note.pinned ? " is-pinned" : ""}`}
                           aria-current={on ? "true" : undefined}
                           onClick={() => void openNote(note)}
                         >
-                          <span className="notes-item-title">
-                            {note.pinned ? <span className="notes-pin">Pinned</span> : null}
-                            <span>{displayTitle(title)}</span>
+                          <span className="notes-item-top">
+                            <span className="notes-item-title">
+                              {note.pinned ? <span className="notes-pin" aria-hidden="true" /> : null}
+                              <span>{displayTitle(title)}</span>
+                            </span>
+                            <time className="notes-item-meta" dateTime={note.updated_at}>
+                              {updatedLabel(note.updated_at)}
+                            </time>
                           </span>
                           <span className="notes-item-preview">{preview(body)}</span>
-                          <span className="notes-item-meta">{updatedLabel(note.updated_at)}</span>
                         </button>
                       </li>
                     );
@@ -419,7 +429,8 @@ function Desk() {
                   <button type="button" className="btn btn-ghost btn-sm notes-back" onClick={() => setReading(false)}>
                     All notes
                   </button>
-                  <span className={`notes-status${status === "error" ? " is-error" : ""}`} role="status">
+                  <span className={`notes-status${statusClass}`} role="status">
+                    {statusText ? <span className="notes-dot" aria-hidden="true" /> : null}
                     {statusText}
                   </span>
                   <span className="notes-editor-spacer" />
@@ -435,38 +446,50 @@ function Desk() {
                     Delete
                   </button>
                 </div>
-                <input
-                  ref={titleRef}
-                  className="notes-title"
-                  value={draft.title}
-                  aria-label="Title"
-                  placeholder="Untitled"
-                  maxLength={200}
-                  onChange={(event) => schedule({ ...draft, title: event.target.value })}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      bodyRef.current?.focus();
-                    }
-                  }}
-                />
-                <textarea
-                  ref={bodyRef}
-                  className="notes-body"
-                  value={draft.body}
-                  aria-label="Note"
-                  placeholder="Write something you want to remember."
-                  onChange={(event) => schedule({ ...draft, body: event.target.value })}
-                />
+                <div className="notes-sheet">
+                  <input
+                    ref={titleRef}
+                    className="notes-title"
+                    value={draft.title}
+                    aria-label="Title"
+                    placeholder="Untitled"
+                    maxLength={200}
+                    onChange={(event) => schedule({ ...draft, title: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        bodyRef.current?.focus();
+                      }
+                    }}
+                  />
+                  <p className="notes-meta-line">
+                    <span>{updatedLabel(selected.updated_at)}</span>
+                    <span className="notes-meta-sep" aria-hidden="true" />
+                    <span>{wordCount(draft.body)}</span>
+                  </p>
+                  <textarea
+                    ref={bodyRef}
+                    className="notes-body"
+                    value={draft.body}
+                    aria-label="Note"
+                    placeholder="Write something you want to remember."
+                    onChange={(event) => schedule({ ...draft, body: event.target.value })}
+                  />
+                </div>
               </>
             ) : (
               <div className="notes-empty-editor">
-                <div>
-                  <p className="notes-empty-title">{loading ? "Loading your notes…" : "Nothing open"}</p>
-                  <p className="muted">
-                    {loading ? "One moment." : "Start a note, or pick one from the list."}
-                  </p>
+                <div className="notes-empty-mark" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" fill="none">
+                    <path d="M14 10h24l12 12v32a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V14a4 4 0 0 1 4-4z" stroke="currentColor" strokeWidth="2.4" />
+                    <path d="M38 10v12h12" stroke="currentColor" strokeWidth="2.4" />
+                    <path d="M20 34h24M20 42h16" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                  </svg>
                 </div>
+                <p className="notes-empty-title">{loading ? "Loading your notes…" : "A blank page"}</p>
+                <p className="notes-empty-copy">
+                  {loading ? "One moment." : "Start a note, or pick one from the list."}
+                </p>
               </div>
             )}
           </section>
