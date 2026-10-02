@@ -369,6 +369,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                   <div className="app-menu-sec">Personal tools</div>
                   <Link href={forecastHref} className="app-menu-i" onClick={() => setMenuOpen(false)}><Svg name="forecast" />Forecast</Link>
+                  {session.impersonating ? null : (
+                    <Link href="/admin/notes" className="app-menu-i" onClick={() => setMenuOpen(false)}>
+                      <Svg name="note" />Notes
+                    </Link>
+                  )}
                   {/* Hidden while impersonating: the password isn't theirs to change. */}
                   {session.impersonating ? null : (
                     <Link href="/account/password" className="app-menu-i" onClick={() => setMenuOpen(false)}>

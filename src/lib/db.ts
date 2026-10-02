@@ -2496,6 +2496,22 @@ export function getDb(): Database.Database {
       ON users(invite_token) WHERE invite_token IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
       ON users(email) WHERE email IS NOT NULL;
+
+    /* Private notes for the signed-in person. owner is a users.slug. No
+       foreign key: tests and a half-seeded database still have to be able to
+       write a row, and the queries always filter by owner themselves. */
+    CREATE TABLE IF NOT EXISTS personal_notes (
+      id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_personal_notes_owner
+      ON personal_notes(owner, pinned, updated_at);
       `);
     } catch (err) {
       console.error(
@@ -3586,6 +3602,22 @@ function migrate(database: Database.Database) {
       ON client_integrations(client_id);
     CREATE INDEX IF NOT EXISTS idx_client_integrations_provider
       ON client_integrations(provider, status);
+  `);
+
+  // Personal notes. Also in the bootstrap blob; repeated here so a database
+  // whose bootstrap stopped early still grows the table on the next boot.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS personal_notes (
+      id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_personal_notes_owner
+      ON personal_notes(owner, pinned, updated_at);
   `);
 }
 

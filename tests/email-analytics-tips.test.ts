@@ -24,6 +24,7 @@ function sample(partial: Partial<ClientEmailAnalytics> & {
     moneyMode: "service",
     commerce: null,
     ...partial,
+    serviceMoney: partial.serviceMoney ?? null,
   };
 }
 

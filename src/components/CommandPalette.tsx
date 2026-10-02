@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { hasOwnerToolsAccess } from "@/lib/people";
 
 type Hit = {
-  kind: "client" | "campaign" | "social";
+  kind: "client" | "campaign" | "social" | "page";
   id: string;
   title: string;
   subtitle: string;
@@ -38,6 +38,21 @@ const SOCIAL_QA_QUICK_LINK: Hit = {
   href: "/admin/social-qa",
 };
 
+const NOTES_QUICK_LINK: Hit = {
+  kind: "page",
+  id: "nav-notes",
+  title: "Notes",
+  subtitle: "Personal tools",
+  href: "/admin/notes",
+};
+
+function kindLabel(kind: Hit["kind"]): string {
+  if (kind === "campaign") return "Campaign";
+  if (kind === "social") return "Social";
+  if (kind === "page") return "Page";
+  return "Client";
+}
+
 function quickLinksForSession(session: {
   role: "admin" | "forecast" | null;
   person: string | null;
@@ -45,18 +60,14 @@ function quickLinksForSession(session: {
   impersonating?: boolean;
   capabilities?: Record<string, boolean>;
 } | null): Hit[] {
-  const extras: Hit[] = [];
-  if (hasOwnerToolsAccess(session)) extras.push(CALENDAR_QUICK_LINK);
+  const links: Hit[] = [BASE_QUICK_LINKS[0]];
+  if (!session?.impersonating) links.push(NOTES_QUICK_LINK);
+  if (hasOwnerToolsAccess(session)) links.push(CALENDAR_QUICK_LINK);
   if (session?.capabilities?.["page.social_qa"] || session?.owner) {
-    extras.push(SOCIAL_QA_QUICK_LINK);
+    links.push(SOCIAL_QA_QUICK_LINK);
   }
-  if (extras.length === 0) return BASE_QUICK_LINKS;
-  return [
-    BASE_QUICK_LINKS[0],
-    BASE_QUICK_LINKS[1],
-    ...extras,
-    ...BASE_QUICK_LINKS.slice(2),
-  ];
+  links.push(...BASE_QUICK_LINKS.slice(1));
+  return links;
 }
 
 export function CommandPalette() {
@@ -124,13 +135,21 @@ export function CommandPalette() {
       setActive(0);
       return;
     }
+    const needle = query.toLowerCase();
+    const local = quickLinks.filter(
+      (hit) =>
+        hit.title.toLowerCase().includes(needle) ||
+        hit.subtitle.toLowerCase().includes(needle)
+    );
     const id = ++reqId.current;
+    setHits(local);
+    setActive(0);
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(query)}`)
         .then((r) => (r.ok ? r.json() : { hits: [] }))
         .then((data) => {
           if (id !== reqId.current) return;
-          setHits(data.hits || []);
+          setHits([...local, ...(data.hits || [])]);
           setActive(0);
         })
         .catch(() => {});
@@ -182,7 +201,7 @@ export function CommandPalette() {
                 onClick={() => go(hit)}
               >
                 <span className={`cmdk-kind cmdk-kind-${hit.kind}`}>
-                  {hit.kind === "campaign" ? "Campaign" : "Client"}
+                  {kindLabel(hit.kind)}
                 </span>
                 <span className="cmdk-title">{hit.title}</span>
                 <span className="cmdk-sub">{hit.subtitle}</span>
