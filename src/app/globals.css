@@ -20653,32 +20653,6 @@ a.snap-todo-linked-title {
   margin-right: auto;
 }
 
-.lh-flow-range {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-}
-
-.lh-flow-range label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.lh-flow-range input[type="date"] {
-  min-height: 32px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-}
-
 .lh-analytics-clean .lh-an-flow-list {
   display: flex;
   flex-direction: column;
@@ -20914,15 +20888,6 @@ a.snap-todo-linked-title {
   .lh-analytics-clean .lh-an-metrics.is-quiet {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-  }
-
-  .lh-flow-range {
-    flex: 1 1 100%;
-  }
-
-  .lh-flow-range input[type="date"] {
-    min-height: 44px;
-    font-size: 16px;
   }
 
   .lh-analytics-clean .lh-an-flow {

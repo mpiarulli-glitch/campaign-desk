@@ -3,6 +3,7 @@
  * contacts, booked appointment events, and workflow (flow) email campaigns.
  */
 
+import { zonedLocalToUtc } from "./forecast-time";
 import { ghlRequest, GhlError, listWorkflows } from "./ghl";
 import {
   ABANDONED_BOOKING_TAGS,
@@ -18,6 +19,7 @@ import {
 const SEARCH_PAGE = 100;
 const WORKFLOW_PAGE = 20;
 const DAY_MS = 86_400_000;
+const STATS_TIME_ZONE = process.env.APP_TIME_ZONE || "America/Los_Angeles";
 
 export type BookedAppointmentEvent = {
   id: string;
@@ -41,6 +43,11 @@ export function isDiscoveryMeeting(parts: {
   const haystack = `${parts.calendarName || ""} ${parts.title || ""}`.toLowerCase();
   return /\bdiscovery\b/.test(haystack);
 }
+
+export type AnalyticsDateRange = {
+  start: string;
+  end: string;
+};
 
 export type WorkflowEmailCampaign = {
   id: string;
@@ -444,6 +451,80 @@ export async function listBookedAppointmentEvents(
   return out;
 }
 
+/**
+ * Query params GHL's workflow stats UI sends for Last 30 days / custom ranges.
+ * Unix-ms start/end of the local calendar days — omitting them returns lifetime.
+ */
+export function ghlWorkflowStatsDateParams(
+  range?: AnalyticsDateRange | null
+): Record<string, string | number> {
+  if (!range) return {};
+  const startAt = zonedLocalToUtc(range.start, "00:00", STATS_TIME_ZONE);
+  const endAt = zonedLocalToUtc(range.end, "23:59", STATS_TIME_ZONE);
+  if (startAt && endAt) {
+    return {
+      startDate: startAt.getTime(),
+      endDate: endAt.getTime() + 59_000,
+    };
+  }
+  return { startDate: range.start, endDate: range.end };
+}
+
+export function workflowCampaignStatsFromPayload(
+  stats: Record<string, unknown> | null
+): Pick<
+  WorkflowEmailCampaign,
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "unsubscribed"
+  | "openRate"
+  | "clickRate"
+  | "statsAvailable"
+> {
+  if (!stats) {
+    return {
+      sent: 0,
+      delivered: 0,
+      opened: 0,
+      clicked: 0,
+      bounced: 0,
+      unsubscribed: 0,
+      openRate: 0,
+      clickRate: 0,
+      statsAvailable: false,
+    };
+  }
+  const sent = num(stats.sent);
+  const delivered = num(stats.delivered) || num(stats.accepted) || sent;
+  const opened = num(stats.opened);
+  const clicked = num(stats.clicked);
+  const bounced =
+    num(stats.bounced) || num(stats.permanentFail) + num(stats.temporaryFail);
+  const unsubscribed = num(stats.unsubscribed);
+  const openRate =
+    stats.openRate !== undefined && stats.openRate !== null
+      ? num(stats.openRate)
+      : rate(opened, delivered);
+  const clickRate =
+    stats.clickRate !== undefined && stats.clickRate !== null
+      ? num(stats.clickRate)
+      : rate(clicked, delivered);
+  return {
+    sent,
+    delivered,
+    opened,
+    clicked,
+    bounced,
+    unsubscribed,
+    openRate,
+    clickRate,
+    statsAvailable: true,
+  };
+}
+
 function unwrapStats(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== "object") return null;
   const obj = payload as Record<string, unknown>;
@@ -458,17 +539,23 @@ function unwrapStats(payload: unknown): Record<string, unknown> | null {
 
 async function fetchWorkflowCampaignStats(
   locationId: string,
-  sourceId: string
+  sourceId: string,
+  range?: AnalyticsDateRange | null
 ): Promise<Record<string, unknown> | null> {
   try {
     const result = await ghlRequest(
       "GET",
       `/emails/locations/${locationId}/campaigns/stats/workflow-campaigns/${sourceId}`,
-      { locationId, version: "v3" }
+      {
+        locationId,
+        version: "v3",
+        params: ghlWorkflowStatsDateParams(range),
+      }
     );
     return unwrapStats(result);
   } catch {
     // Stats are best-effort — never abort the whole flows list for one miss.
+    // Do not retry without dates: lifetime totals would leak into a month view.
     return null;
   }
 }
@@ -518,31 +605,20 @@ async function listEmailMarketingWorkflowCampaigns(
 
 async function hydrateWorkflowCampaign(
   locationId: string,
-  raw: Record<string, unknown>
+  raw: Record<string, unknown>,
+  range?: AnalyticsDateRange | null
 ): Promise<WorkflowEmailCampaign | null> {
   const id = String(raw.id || raw._id || "");
   const name = String(raw.name || "").trim();
   if (!id && !name) return null;
   const sourceId = String(raw.sourceId || raw.source_id || id);
-  let stats = sourceId ? await fetchWorkflowCampaignStats(locationId, sourceId) : null;
+  let stats = sourceId
+    ? await fetchWorkflowCampaignStats(locationId, sourceId, range)
+    : null;
   if (!stats && id && id !== sourceId) {
-    stats = await fetchWorkflowCampaignStats(locationId, id);
+    stats = await fetchWorkflowCampaignStats(locationId, id, range);
   }
-  const sent = num(stats?.sent);
-  const delivered = num(stats?.delivered) || num(stats?.accepted) || sent;
-  const opened = num(stats?.opened);
-  const clicked = num(stats?.clicked);
-  const bounced =
-    num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
-  const unsubscribed = num(stats?.unsubscribed);
-  const openRate =
-    stats?.openRate !== undefined && stats?.openRate !== null
-      ? num(stats.openRate)
-      : rate(opened, delivered);
-  const clickRate =
-    stats?.clickRate !== undefined && stats?.clickRate !== null
-      ? num(stats.clickRate)
-      : rate(clicked, delivered);
+  const metrics = workflowCampaignStatsFromPayload(stats);
   const sentOn =
     ymd(String(raw.updatedAt || raw.updated_at || "")) ||
     ymd(String(raw.createdAt || raw.created_at || "")) ||
@@ -555,15 +631,7 @@ async function hydrateWorkflowCampaign(
     status: String(raw.status || "published"),
     sourceId: sourceId || null,
     sentOn,
-    sent,
-    delivered,
-    opened,
-    clicked,
-    bounced,
-    unsubscribed,
-    openRate,
-    clickRate,
-    statsAvailable: Boolean(stats),
+    ...metrics,
     abandonedRecovery: isAbandonedRecoveryFlowName(name || "Untitled flow"),
   };
 }
@@ -574,9 +642,13 @@ async function hydrateWorkflowCampaign(
  * Prefer Email Marketing V2 workflow-campaign records (they carry send stats).
  * When that list is empty or blocked, fall back to published Automations
  * workflows so GHL flows still show up in Lifecycle.
+ *
+ * Pass `range` so send/open/click are the selected window, not lifetime.
+ * The GHL stats endpoint returns all-time totals when start/end are omitted.
  */
 export async function listWorkflowEmailCampaigns(
-  locationId: string
+  locationId: string,
+  range?: AnalyticsDateRange | null
 ): Promise<WorkflowEmailCampaign[]> {
   const byKey = new Map<string, WorkflowEmailCampaign>();
 
@@ -606,7 +678,7 @@ export async function listWorkflowEmailCampaigns(
   }
 
   await pooled(marketingRows, async (raw) => {
-    const row = await hydrateWorkflowCampaign(locationId, raw);
+    const row = await hydrateWorkflowCampaign(locationId, raw, range);
     if (!row) return;
     byKey.set(row.sourceId || row.id, row);
     byKey.set(row.id, row);
@@ -623,22 +695,12 @@ export async function listWorkflowEmailCampaigns(
         return !status || status === "published" || status === "active";
       });
       await pooled(published, async (workflow) => {
-        const stats = await fetchWorkflowCampaignStats(locationId, workflow.id);
-        const sent = num(stats?.sent);
-        const delivered = num(stats?.delivered) || num(stats?.accepted) || sent;
-        const opened = num(stats?.opened);
-        const clicked = num(stats?.clicked);
-        const bounced =
-          num(stats?.bounced) || num(stats?.permanentFail) + num(stats?.temporaryFail);
-        const unsubscribed = num(stats?.unsubscribed);
-        const openRate =
-          stats?.openRate !== undefined && stats?.openRate !== null
-            ? num(stats.openRate)
-            : rate(opened, delivered);
-        const clickRate =
-          stats?.clickRate !== undefined && stats?.clickRate !== null
-            ? num(stats.clickRate)
-            : rate(clicked, delivered);
+        const stats = await fetchWorkflowCampaignStats(
+          locationId,
+          workflow.id,
+          range
+        );
+        const metrics = workflowCampaignStatsFromPayload(stats);
         const sentOn = ymd(workflow.updatedAt) || ymd(workflow.createdAt) || null;
         byKey.set(workflow.id, {
           id: workflow.id,
@@ -646,15 +708,7 @@ export async function listWorkflowEmailCampaigns(
           status: workflow.status || "published",
           sourceId: workflow.id,
           sentOn,
-          sent,
-          delivered,
-          opened,
-          clicked,
-          bounced,
-          unsubscribed,
-          openRate,
-          clickRate,
-          statsAvailable: Boolean(stats),
+          ...metrics,
           abandonedRecovery: isAbandonedRecoveryFlowName(workflow.name),
         });
       });

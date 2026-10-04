@@ -202,3 +202,32 @@ test("rollup open rate is not diluted by scheduled audience rows", () => {
   assert.equal(rollup.openRate, 40.8);
   assert.equal(rollup.clickRate, 4.1);
 });
+
+test("all-time Welcome volume is not rolled into a month with no campaign sends", () => {
+  const lifetimeWelcome = {
+    status: "published",
+    sent: 1055,
+    delivered: 1049,
+    opened: 635,
+    clicked: 160,
+    bounced: 6,
+    unsubscribed: 0,
+    statsAvailable: true,
+  };
+  const polluted = rollupEmailEngagement([lifetimeWelcome]);
+  assert.equal(polluted.sent, 1055);
+  assert.equal(polluted.openRate, 60.5);
+
+  const windowedEmpty = rollupEmailEngagement([
+    {
+      ...lifetimeWelcome,
+      sent: 0,
+      delivered: 0,
+      opened: 0,
+      clicked: 0,
+      statsAvailable: false,
+    },
+  ]);
+  assert.equal(windowedEmpty.sent, 0);
+  assert.equal(windowedEmpty.openRate, 0);
+});
