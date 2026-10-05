@@ -67,38 +67,43 @@ test("internal Basecamp projects stay out of client import and show in forecast"
       "Humble Somm"
     );
     assert.equal(
-      clientNameFor("Krak Boba Piscataway Growth OS - Powered by the Empire Method"),
+      clientNameFor("Krak Boba Piscataway Growth OS – Powered by the Empire Method"),
       "Krak Boba Piscataway"
     );
 
     const {
-      pickBasecampProjectForClient,
-      upsertForecastClientForProject,
+      pickKrakBobaPiscatawayGrowthOsProject,
+      isKrakBobaPiscatawayGrowthOsProject,
+      bindForecastClientToExactProject,
       KRAK_BOBA_PISCATAWAY_CLIENT_NAME,
     } = await import("../src/lib/basecamp-clients");
     const { listRevClients } = await import("../src/lib/revenue");
 
-    const piscataway = pickBasecampProjectForClient(
-      [
-        { id: 1, name: "Krak Boba Corporate Growth OS - Powered by the Empire Method" },
-        { id: 2, name: "Krak Boba Piscataway Growth OS - Powered by the Empire Method" },
-        { id: 3, name: "Krak Boba Oceanside Growth OS - Powered by the Empire Method" },
-      ],
-      KRAK_BOBA_PISCATAWAY_CLIENT_NAME
-    );
+    const roster = [
+      { id: 1, name: "Krak Boba Corporate Growth OS - Powered by the Empire Method" },
+      { id: 2, name: "Krak Boba Piscataway Growth OS – Powered by the Empire Method" },
+      { id: 3, name: "Krak Boba Oceanside Growth OS - Powered by the Empire Method" },
+      { id: 4, name: "Krak Boba Piscataway" },
+    ];
+    assert.equal(isKrakBobaPiscatawayGrowthOsProject(roster[1].name), true);
+    assert.equal(isKrakBobaPiscatawayGrowthOsProject(roster[0].name), false);
+    assert.equal(isKrakBobaPiscatawayGrowthOsProject(roster[3].name), false);
+
+    const piscataway = pickKrakBobaPiscatawayGrowthOsProject(roster);
     assert.deepEqual(piscataway, {
       id: "2",
-      name: "Krak Boba Piscataway Growth OS - Powered by the Empire Method",
+      name: "Krak Boba Piscataway Growth OS – Powered by the Empire Method",
     });
+    assert.equal(pickKrakBobaPiscatawayGrowthOsProject([roster[0], roster[3]]), null);
     assert.equal(
-      pickBasecampProjectForClient(
-        [{ id: 1, name: "Krak Boba Corporate Growth OS" }],
-        KRAK_BOBA_PISCATAWAY_CLIENT_NAME
-      ),
+      pickKrakBobaPiscatawayGrowthOsProject([
+        roster[1],
+        { id: 9, name: "Krak Boba Piscataway Growth OS (copy)" },
+      ]),
       null
     );
 
-    const upserted = upsertForecastClientForProject(
+    const upserted = bindForecastClientToExactProject(
       piscataway!,
       KRAK_BOBA_PISCATAWAY_CLIENT_NAME
     );
@@ -110,12 +115,14 @@ test("internal Basecamp projects stay out of client import and show in forecast"
     assert.equal(row?.basecamp_project_id, "2");
     assert.equal(row?.production_enrolled, 0);
 
-    const again = upsertForecastClientForProject(
+    const before = listRevClients(true).length;
+    const again = bindForecastClientToExactProject(
       piscataway!,
       KRAK_BOBA_PISCATAWAY_CLIENT_NAME
     );
     assert.equal(again.created, false);
     assert.equal(again.clientId, upserted.clientId);
+    assert.equal(listRevClients(true).length, before);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(tmp, { recursive: true, force: true });

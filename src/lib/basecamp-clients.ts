@@ -77,44 +77,47 @@ export function isForecastExtraProject(name: string): boolean {
   return FORECAST_EXTRA_PROJECTS.has(norm(name));
 }
 
-// Canonical Forecast / revenue-client name. Location splits follow
-// "Krak Boba Oceanside" / "Krak Boba Temecula" / "Krak Boba Corporate".
+// Forecast display name after stripping the Growth OS suffix, same casing as
+// Krak Boba Oceanside / Temecula / Corporate.
 export const KRAK_BOBA_PISCATAWAY_CLIENT_NAME = "Krak Boba Piscataway";
 
-/**
- * Pick the Basecamp project that should become this Forecast client.
- *
- * Exact match on the Growth-OS-stripped name wins. A single project whose
- * stripped name contains the client name is accepted so "Krak Boba Piscataway
- * Growth OS - Powered by…" still hits. Containing the other way
- * ("Krak Boba" inside "Krak Boba Piscataway") is not enough — that would
- * steal a location project for the generic brand row.
- */
-export function pickBasecampProjectForClient(
-  projects: Array<{ id: number | string; name: string }>,
-  clientName: string
-): { id: string; name: string } | null {
-  const wanted = norm(clientName);
-  if (!wanted) return null;
-  const mapped = projects.map((p) => ({
-    id: String(p.id),
-    name: p.name,
-    n: norm(p.name),
-  }));
-  const exact = mapped.filter((p) => p.n === wanted);
-  if (exact.length === 1) return { id: exact[0].id, name: exact[0].name };
-  if (exact.length > 1) return null;
-  const contains = mapped.filter((p) => p.n.includes(wanted));
-  if (contains.length === 1) return { id: contains[0].id, name: contains[0].name };
-  return null;
+// Screenshot title: "Krak Boba Piscataway Growth OS – Powered by th…".
+// Matching requires those Growth OS words so Corporate / Oceanside / a
+// non-Growth-OS Krak project cannot be chosen.
+export const KRAK_BOBA_PISCATAWAY_GROWTH_OS_PREFIX = "Krak Boba Piscataway Growth OS";
+
+function foldProjectTitle(name: string): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isKrakBobaPiscatawayGrowthOsProject(name: string): boolean {
+  return foldProjectTitle(name).startsWith(foldProjectTitle(KRAK_BOBA_PISCATAWAY_GROWTH_OS_PREFIX));
 }
 
 /**
- * Create or link a Forecast client for one Basecamp project the same way
- * reconcileClients({ createMissing: true }) does: home_service, off the
- * production schedule, project id filled only when blank.
+ * The one Basecamp project Forecast should bind: Krak Boba Piscataway Growth OS.
+ * Returns null when it is missing or when more than one title matches.
  */
-export function upsertForecastClientForProject(
+export function pickKrakBobaPiscatawayGrowthOsProject(
+  projects: Array<{ id: number | string; name: string }>
+): { id: string; name: string } | null {
+  const hits = projects
+    .filter((p) => isKrakBobaPiscatawayGrowthOsProject(p.name))
+    .map((p) => ({ id: String(p.id), name: p.name }));
+  if (hits.length !== 1) return null;
+  return hits[0];
+}
+
+/**
+ * Bind one Forecast client to one exact Basecamp project. Creates a row only
+ * when no rev_client already has this name or this project id. Never overwrites
+ * a project id that is already set, and never imports any other project.
+ */
+export function bindForecastClientToExactProject(
   project: { id: string; name: string },
   canonicalName: string
 ): {
@@ -449,9 +452,9 @@ export async function runBasecampClientBackfillOnce(): Promise<void> {
   }
 }
 
-/* -------------------------------- Krak Boba Piscataway one-shot import */
+/* -------------------- Krak Boba Piscataway Growth OS one-shot import */
 
-const PISCATAWAY_KEY = "forecast_client_krak_boba_piscataway_v1";
+const PISCATAWAY_GROWTH_OS_KEY = "forecast_client_krak_boba_piscataway_growth_os_v1";
 
 function settingDone(key: string): boolean {
   const row = getDb()
@@ -470,36 +473,38 @@ function markSetting(key: string, summary: string) {
 }
 
 /**
- * Import Krak Boba Piscataway as a Forecast client after the original
- * Basecamp backfill already ran. Same create/link path as automatch
- * `{ createMissing: true }`. Retries on later boots if Basecamp is down or
- * the project is not in the list yet.
+ * Bind Forecast to the Krak Boba Piscataway Growth OS Basecamp project only.
+ * Does not import any other missing projects. Creates a rev_client only when
+ * none already exists for that name or that project id.
  */
-export async function ensureKrakBobaPiscatawayForecastClient(): Promise<void> {
+export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
   try {
-    if (settingDone(PISCATAWAY_KEY)) return;
+    if (settingDone(PISCATAWAY_GROWTH_OS_KEY)) return;
     const projects = (await listProjects()).map((p) => ({
       id: String(p.id),
       name: p.name,
     }));
     if (!projects.length) {
       console.log(
-        "[forecast-client] no projects returned; will retry Krak Boba Piscataway next boot"
+        "[forecast-client] no projects returned; will retry Krak Boba Piscataway Growth OS next boot"
       );
       return;
     }
-    const match = pickBasecampProjectForClient(projects, KRAK_BOBA_PISCATAWAY_CLIENT_NAME);
+    const match = pickKrakBobaPiscatawayGrowthOsProject(projects);
     if (!match) {
       console.log(
-        "[forecast-client] Krak Boba Piscataway Basecamp project not found; will retry next boot"
+        "[forecast-client] Krak Boba Piscataway Growth OS project not found uniquely; will retry next boot"
       );
       return;
     }
-    const result = upsertForecastClientForProject(match, KRAK_BOBA_PISCATAWAY_CLIENT_NAME);
-    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} created=${result.created} linked=${result.linked} at=${nowIso()}`;
-    markSetting(PISCATAWAY_KEY, summary);
+    const result = bindForecastClientToExactProject(match, KRAK_BOBA_PISCATAWAY_CLIENT_NAME);
+    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} name=${JSON.stringify(match.name)} created=${result.created} linked=${result.linked} at=${nowIso()}`;
+    markSetting(PISCATAWAY_GROWTH_OS_KEY, summary);
     console.log(`[forecast-client] ${summary}`);
   } catch (err) {
-    console.error("[forecast-client] Krak Boba Piscataway import failed", (err as Error).message);
+    console.error(
+      "[forecast-client] Krak Boba Piscataway Growth OS import failed",
+      (err as Error).message
+    );
   }
 }

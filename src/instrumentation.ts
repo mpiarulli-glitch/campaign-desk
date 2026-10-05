@@ -13,10 +13,10 @@ export async function register() {
 
   // Both call Basecamp, so deliberately not awaited — a slow or unreachable
   // Basecamp must not hold up the server coming online.
-  const { runBasecampClientBackfillOnce, ensureKrakBobaPiscatawayForecastClient } =
+  const { runBasecampClientBackfillOnce, ensureKrakBobaPiscatawayGrowthOsClient } =
     await import("./lib/basecamp-clients");
   void runBasecampClientBackfillOnce();
-  void ensureKrakBobaPiscatawayForecastClient();
+  void ensureKrakBobaPiscatawayGrowthOsClient();
 
   // Exact GoHighLevel location matches, the ones Find matches would pre-tick.
   // Without this, clients like Ecoworkz stay unlinked until someone opens Tools.
