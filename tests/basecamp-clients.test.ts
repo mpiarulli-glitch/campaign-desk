@@ -66,6 +66,56 @@ test("internal Basecamp projects stay out of client import and show in forecast"
       clientNameFor("Humble Somm Growth OS - Powered by the Empire Method"),
       "Humble Somm"
     );
+    assert.equal(
+      clientNameFor("Krak Boba Piscataway Growth OS - Powered by the Empire Method"),
+      "Krak Boba Piscataway"
+    );
+
+    const {
+      pickBasecampProjectForClient,
+      upsertForecastClientForProject,
+      KRAK_BOBA_PISCATAWAY_CLIENT_NAME,
+    } = await import("../src/lib/basecamp-clients");
+    const { listRevClients } = await import("../src/lib/revenue");
+
+    const piscataway = pickBasecampProjectForClient(
+      [
+        { id: 1, name: "Krak Boba Corporate Growth OS - Powered by the Empire Method" },
+        { id: 2, name: "Krak Boba Piscataway Growth OS - Powered by the Empire Method" },
+        { id: 3, name: "Krak Boba Oceanside Growth OS - Powered by the Empire Method" },
+      ],
+      KRAK_BOBA_PISCATAWAY_CLIENT_NAME
+    );
+    assert.deepEqual(piscataway, {
+      id: "2",
+      name: "Krak Boba Piscataway Growth OS - Powered by the Empire Method",
+    });
+    assert.equal(
+      pickBasecampProjectForClient(
+        [{ id: 1, name: "Krak Boba Corporate Growth OS" }],
+        KRAK_BOBA_PISCATAWAY_CLIENT_NAME
+      ),
+      null
+    );
+
+    const upserted = upsertForecastClientForProject(
+      piscataway!,
+      KRAK_BOBA_PISCATAWAY_CLIENT_NAME
+    );
+    assert.equal(upserted.created, true);
+    assert.equal(upserted.linked, true);
+    assert.equal(upserted.clientName, "Krak Boba Piscataway");
+    const row = listRevClients(true).find((c) => c.id === upserted.clientId);
+    assert.equal(row?.name, "Krak Boba Piscataway");
+    assert.equal(row?.basecamp_project_id, "2");
+    assert.equal(row?.production_enrolled, 0);
+
+    const again = upsertForecastClientForProject(
+      piscataway!,
+      KRAK_BOBA_PISCATAWAY_CLIENT_NAME
+    );
+    assert.equal(again.created, false);
+    assert.equal(again.clientId, upserted.clientId);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(tmp, { recursive: true, force: true });

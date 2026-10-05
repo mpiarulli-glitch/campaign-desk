@@ -77,6 +77,106 @@ export function isForecastExtraProject(name: string): boolean {
   return FORECAST_EXTRA_PROJECTS.has(norm(name));
 }
 
+// Canonical Forecast / revenue-client name. Location splits follow
+// "Krak Boba Oceanside" / "Krak Boba Temecula" / "Krak Boba Corporate".
+export const KRAK_BOBA_PISCATAWAY_CLIENT_NAME = "Krak Boba Piscataway";
+
+/**
+ * Pick the Basecamp project that should become this Forecast client.
+ *
+ * Exact match on the Growth-OS-stripped name wins. A single project whose
+ * stripped name contains the client name is accepted so "Krak Boba Piscataway
+ * Growth OS - Powered by…" still hits. Containing the other way
+ * ("Krak Boba" inside "Krak Boba Piscataway") is not enough — that would
+ * steal a location project for the generic brand row.
+ */
+export function pickBasecampProjectForClient(
+  projects: Array<{ id: number | string; name: string }>,
+  clientName: string
+): { id: string; name: string } | null {
+  const wanted = norm(clientName);
+  if (!wanted) return null;
+  const mapped = projects.map((p) => ({
+    id: String(p.id),
+    name: p.name,
+    n: norm(p.name),
+  }));
+  const exact = mapped.filter((p) => p.n === wanted);
+  if (exact.length === 1) return { id: exact[0].id, name: exact[0].name };
+  if (exact.length > 1) return null;
+  const contains = mapped.filter((p) => p.n.includes(wanted));
+  if (contains.length === 1) return { id: contains[0].id, name: contains[0].name };
+  return null;
+}
+
+/**
+ * Create or link a Forecast client for one Basecamp project the same way
+ * reconcileClients({ createMissing: true }) does: home_service, off the
+ * production schedule, project id filled only when blank.
+ */
+export function upsertForecastClientForProject(
+  project: { id: string; name: string },
+  canonicalName: string
+): {
+  clientId: string;
+  clientName: string;
+  created: boolean;
+  linked: boolean;
+} {
+  const pid = String(project.id).trim();
+  const name = canonicalName.trim();
+  const clients = listRevClients(true);
+  const byProject = clients.find((c) => (c.basecamp_project_id || "").trim() === pid);
+  if (byProject) {
+    if (byProject.name.trim() !== name) {
+      updateRevClient(byProject.id, { name });
+    }
+    if (!byProject.active) {
+      updateRevClient(byProject.id, { active: true });
+    }
+    return {
+      clientId: byProject.id,
+      clientName: name,
+      created: false,
+      linked: false,
+    };
+  }
+  const byName = clients.find((c) => norm(c.name) === norm(name));
+  if (byName) {
+    if (!(byName.basecamp_project_id || "").trim()) {
+      updateRevClient(byName.id, {
+        name,
+        basecampProjectId: pid,
+        productionEnrolled: false,
+        active: true,
+      });
+      return {
+        clientId: byName.id,
+        clientName: name,
+        created: false,
+        linked: true,
+      };
+    }
+    return {
+      clientId: byName.id,
+      clientName: byName.name,
+      created: false,
+      linked: false,
+    };
+  }
+  const created = createRevClient({ name, businessModel: "home_service" });
+  updateRevClient(created.id, {
+    basecampProjectId: pid,
+    productionEnrolled: false,
+  });
+  return {
+    clientId: created.id,
+    clientName: name,
+    created: true,
+    linked: true,
+  };
+}
+
 // Internal Basecamp projects exposed to the forecast todo picker, resolved by
 // name against the live project list rather than hardcoded ids so a project
 // getting recreated in Basecamp doesn't silently break the link.
@@ -346,5 +446,60 @@ export async function runBasecampClientBackfillOnce(): Promise<void> {
     }
   } catch (err) {
     console.error("[basecamp-backfill] failed", (err as Error).message);
+  }
+}
+
+/* -------------------------------- Krak Boba Piscataway one-shot import */
+
+const PISCATAWAY_KEY = "forecast_client_krak_boba_piscataway_v1";
+
+function settingDone(key: string): boolean {
+  const row = getDb()
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(key) as { value: string } | undefined;
+  return Boolean(row?.value);
+}
+
+function markSetting(key: string, summary: string) {
+  getDb()
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .run(key, summary, nowIso());
+}
+
+/**
+ * Import Krak Boba Piscataway as a Forecast client after the original
+ * Basecamp backfill already ran. Same create/link path as automatch
+ * `{ createMissing: true }`. Retries on later boots if Basecamp is down or
+ * the project is not in the list yet.
+ */
+export async function ensureKrakBobaPiscatawayForecastClient(): Promise<void> {
+  try {
+    if (settingDone(PISCATAWAY_KEY)) return;
+    const projects = (await listProjects()).map((p) => ({
+      id: String(p.id),
+      name: p.name,
+    }));
+    if (!projects.length) {
+      console.log(
+        "[forecast-client] no projects returned; will retry Krak Boba Piscataway next boot"
+      );
+      return;
+    }
+    const match = pickBasecampProjectForClient(projects, KRAK_BOBA_PISCATAWAY_CLIENT_NAME);
+    if (!match) {
+      console.log(
+        "[forecast-client] Krak Boba Piscataway Basecamp project not found; will retry next boot"
+      );
+      return;
+    }
+    const result = upsertForecastClientForProject(match, KRAK_BOBA_PISCATAWAY_CLIENT_NAME);
+    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} created=${result.created} linked=${result.linked} at=${nowIso()}`;
+    markSetting(PISCATAWAY_KEY, summary);
+    console.log(`[forecast-client] ${summary}`);
+  } catch (err) {
+    console.error("[forecast-client] Krak Boba Piscataway import failed", (err as Error).message);
   }
 }
