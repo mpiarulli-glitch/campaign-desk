@@ -7,18 +7,6 @@ export async function register() {
   // Only the Node runtime can reach SQLite; skip the edge runtime pass.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  try {
-    const fs = await import("fs");
-    const path = await import("path");
-    const line = `${new Date().toISOString()} instrumentation\n`;
-    for (const dir of [path.join(process.cwd(), "data"), "/app/data"]) {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.appendFileSync(path.join(dir, "swing-inn-cafe-import.txt"), line);
-    }
-  } catch {
-    // A status-file failure must not stop boot.
-  }
-
   // Local and synchronous, so it finishes before the server takes traffic.
   const { runClientCleanupOnce } = await import("./lib/client-cleanup");
   runClientCleanupOnce();

@@ -3,8 +3,6 @@
 // Shared by the admin automatch endpoint and the one-time startup backfill, so
 // both take exactly the same code path and produce the same report.
 
-import fs from "fs";
-import path from "path";
 import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
@@ -536,34 +534,9 @@ export const SWING_INN_CAFE_CLIENT_NAME = "Swing Inn Cafe";
  * the client only when that name and project id are both missing, then seats
  * them on the Lifecycle hub with no launch checklist.
  */
-function writeSwingInnStatus(line: string) {
-  const text = `${new Date().toISOString()} ${line}\n`;
-  const dirs = [path.join(process.cwd(), "data"), "/app/data"];
-  for (const dir of dirs) {
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.appendFileSync(path.join(dir, "swing-inn-cafe-import.txt"), text);
-    } catch (err) {
-      console.error("[lifecycle-client] could not write Swing Inn status", dir, (err as Error).message);
-    }
-  }
-}
-
-export async function ensureSwingInnCafeClient(): Promise<string> {
-  writeSwingInnStatus("entered");
+export async function ensureSwingInnCafeClient(): Promise<void> {
   try {
-    if (settingDone(SWING_INN_CAFE_KEY)) {
-      const existing = listRevClients(true).find(
-        (c) =>
-          (c.basecamp_project_id || "").trim() === SWING_INN_CAFE_PROJECT_ID ||
-          norm(c.name) === norm(SWING_INN_CAFE_CLIENT_NAME)
-      );
-      const line = existing
-        ? `done id=${existing.id} name=${existing.name} project=${existing.basecamp_project_id}`
-        : "flag set but client row missing";
-      writeSwingInnStatus(line);
-      return line;
-    }
+    if (settingDone(SWING_INN_CAFE_KEY)) return;
 
     const project = { id: SWING_INN_CAFE_PROJECT_ID, name: SWING_INN_CAFE_CLIENT_NAME };
     const result = bindForecastClientToExactProject(project, SWING_INN_CAFE_CLIENT_NAME);
@@ -582,13 +555,8 @@ export async function ensureSwingInnCafeClient(): Promise<string> {
 
     const summary = `client=${result.clientName} id=${result.clientId} project=${project.id} period=${period} created=${result.created} linked=${result.linked} at=${ts}`;
     markSetting(SWING_INN_CAFE_KEY, summary);
-    writeSwingInnStatus(`done ${summary}`);
     console.log(`[lifecycle-client] ${summary}`);
-    return summary;
   } catch (err) {
-    const line = `failed: ${(err as Error).message}`;
-    writeSwingInnStatus(line);
     console.error("[lifecycle-client] Swing Inn Cafe import failed", (err as Error).message);
-    return line;
   }
 }
