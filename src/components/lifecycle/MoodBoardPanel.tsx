@@ -300,7 +300,7 @@ function MoodTile({
         <div className="lh-mood-tile-body">
           <h3>{item.title}</h3>
           {item.note ? <p className="lh-mood-note">{item.note}</p> : null}
-          {host ? <p className="lh-mood-host">{host}</p> : null}
+          {!showImage && host ? <p className="lh-mood-host">{host}</p> : null}
           <div className="lh-mood-actions">
             <a href={item.url} target="_blank" rel="noreferrer">
               Open

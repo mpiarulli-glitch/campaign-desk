@@ -140,7 +140,6 @@ export function BrandGuidePanel({ clientId }: { clientId: string }) {
   return (
     <div className="lh-studio">
       <article className="lh-doc">
-        <p className="lh-kicker">Brand guide</p>
         <h3>Brand guide</h3>
         <p className="lh-doc-url">{brand.url}</p>
         {when ? <p className="lh-studio-lead">Last set {when}</p> : null}
