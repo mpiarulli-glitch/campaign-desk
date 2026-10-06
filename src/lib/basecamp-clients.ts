@@ -5,9 +5,11 @@
 
 import fs from "fs";
 import path from "path";
+import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
 import { OWNER_SLUG } from "./people";
+import { currentPeriod } from "./period";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
 
 // Client projects are named "<Client> Growth OS - Powered by the Empire
@@ -535,16 +537,20 @@ export const SWING_INN_CAFE_CLIENT_NAME = "Swing Inn Cafe";
  * them on the Lifecycle hub with no launch checklist.
  */
 function writeSwingInnStatus(line: string) {
-  try {
-    const dir = path.join(process.cwd(), "data");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "swing-inn-cafe-import.txt"), `${line}\n`);
-  } catch (err) {
-    console.error("[lifecycle-client] could not write Swing Inn status", (err as Error).message);
+  const text = `${new Date().toISOString()} ${line}\n`;
+  const dirs = [path.join(process.cwd(), "data"), "/app/data"];
+  for (const dir of dirs) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(path.join(dir, "swing-inn-cafe-import.txt"), text);
+    } catch (err) {
+      console.error("[lifecycle-client] could not write Swing Inn status", dir, (err as Error).message);
+    }
   }
 }
 
 export async function ensureSwingInnCafeClient(): Promise<void> {
+  writeSwingInnStatus("entered");
   try {
     if (settingDone(SWING_INN_CAFE_KEY)) {
       const existing = listRevClients(true).find(
@@ -562,16 +568,20 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
 
     const project = { id: SWING_INN_CAFE_PROJECT_ID, name: SWING_INN_CAFE_CLIENT_NAME };
     const result = bindForecastClientToExactProject(project, SWING_INN_CAFE_CLIENT_NAME);
-    const { addClientToHub } = await import("./lifecycle-hub");
-    const hub = addClientToHub(result.clientId, null, "michael");
-    if (!hub.ok) {
-      writeSwingInnStatus(`saved id=${result.clientId} hub error: ${hub.error}`);
-      console.log(
-        `[lifecycle-client] Swing Inn Cafe saved (${result.clientId}) but not on the hub: ${hub.error}`
-      );
-      return;
-    }
-    const summary = `client=${result.clientName} id=${result.clientId} project=${project.id} created=${result.created} linked=${result.linked} at=${nowIso()}`;
+    const period = currentPeriod();
+    const ts = nowIso();
+    getDb()
+      .prepare(
+        `INSERT INTO lifecycle_board_cards
+           (id, client_id, period, column_key, sort_order, notes, dismissed, created_at, updated_at)
+         VALUES (?, ?, ?, 'triage', 0, '', 0, ?, ?)
+         ON CONFLICT(client_id, period) DO UPDATE SET
+           dismissed = 0,
+           updated_at = excluded.updated_at`
+      )
+      .run(nanoid(12), result.clientId, period, ts, ts);
+
+    const summary = `client=${result.clientName} id=${result.clientId} project=${project.id} period=${period} created=${result.created} linked=${result.linked} at=${ts}`;
     markSetting(SWING_INN_CAFE_KEY, summary);
     writeSwingInnStatus(`done ${summary}`);
     console.log(`[lifecycle-client] ${summary}`);
