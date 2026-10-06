@@ -77,6 +77,109 @@ export function isForecastExtraProject(name: string): boolean {
   return FORECAST_EXTRA_PROJECTS.has(norm(name));
 }
 
+// Forecast display name after stripping the Growth OS suffix, same casing as
+// Krak Boba Oceanside / Temecula / Corporate.
+export const KRAK_BOBA_PISCATAWAY_CLIENT_NAME = "Krak Boba Piscataway";
+
+// Screenshot title: "Krak Boba Piscataway Growth OS – Powered by th…".
+// Matching requires those Growth OS words so Corporate / Oceanside / a
+// non-Growth-OS Krak project cannot be chosen.
+export const KRAK_BOBA_PISCATAWAY_GROWTH_OS_PREFIX = "Krak Boba Piscataway Growth OS";
+
+function foldProjectTitle(name: string): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isKrakBobaPiscatawayGrowthOsProject(name: string): boolean {
+  return foldProjectTitle(name).startsWith(foldProjectTitle(KRAK_BOBA_PISCATAWAY_GROWTH_OS_PREFIX));
+}
+
+/**
+ * The one Basecamp project Forecast should bind: Krak Boba Piscataway Growth OS.
+ * Returns null when it is missing or when more than one title matches.
+ */
+export function pickKrakBobaPiscatawayGrowthOsProject(
+  projects: Array<{ id: number | string; name: string }>
+): { id: string; name: string } | null {
+  const hits = projects
+    .filter((p) => isKrakBobaPiscatawayGrowthOsProject(p.name))
+    .map((p) => ({ id: String(p.id), name: p.name }));
+  if (hits.length !== 1) return null;
+  return hits[0];
+}
+
+/**
+ * Bind one Forecast client to one exact Basecamp project. Creates a row only
+ * when no rev_client already has this name or this project id. Never overwrites
+ * a project id that is already set, and never imports any other project.
+ */
+export function bindForecastClientToExactProject(
+  project: { id: string; name: string },
+  canonicalName: string
+): {
+  clientId: string;
+  clientName: string;
+  created: boolean;
+  linked: boolean;
+} {
+  const pid = String(project.id).trim();
+  const name = canonicalName.trim();
+  const clients = listRevClients(true);
+  const byProject = clients.find((c) => (c.basecamp_project_id || "").trim() === pid);
+  if (byProject) {
+    if (byProject.name.trim() !== name) {
+      updateRevClient(byProject.id, { name });
+    }
+    if (!byProject.active) {
+      updateRevClient(byProject.id, { active: true });
+    }
+    return {
+      clientId: byProject.id,
+      clientName: name,
+      created: false,
+      linked: false,
+    };
+  }
+  const byName = clients.find((c) => norm(c.name) === norm(name));
+  if (byName) {
+    if (!(byName.basecamp_project_id || "").trim()) {
+      updateRevClient(byName.id, {
+        name,
+        basecampProjectId: pid,
+        productionEnrolled: false,
+        active: true,
+      });
+      return {
+        clientId: byName.id,
+        clientName: name,
+        created: false,
+        linked: true,
+      };
+    }
+    return {
+      clientId: byName.id,
+      clientName: byName.name,
+      created: false,
+      linked: false,
+    };
+  }
+  const created = createRevClient({ name, businessModel: "home_service" });
+  updateRevClient(created.id, {
+    basecampProjectId: pid,
+    productionEnrolled: false,
+  });
+  return {
+    clientId: created.id,
+    clientName: name,
+    created: true,
+    linked: true,
+  };
+}
+
 // Internal Basecamp projects exposed to the forecast todo picker, resolved by
 // name against the live project list rather than hardcoded ids so a project
 // getting recreated in Basecamp doesn't silently break the link.
@@ -346,5 +449,62 @@ export async function runBasecampClientBackfillOnce(): Promise<void> {
     }
   } catch (err) {
     console.error("[basecamp-backfill] failed", (err as Error).message);
+  }
+}
+
+/* -------------------- Krak Boba Piscataway Growth OS one-shot import */
+
+const PISCATAWAY_GROWTH_OS_KEY = "forecast_client_krak_boba_piscataway_growth_os_v1";
+
+function settingDone(key: string): boolean {
+  const row = getDb()
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(key) as { value: string } | undefined;
+  return Boolean(row?.value);
+}
+
+function markSetting(key: string, summary: string) {
+  getDb()
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .run(key, summary, nowIso());
+}
+
+/**
+ * Bind Forecast to the Krak Boba Piscataway Growth OS Basecamp project only.
+ * Does not import any other missing projects. Creates a rev_client only when
+ * none already exists for that name or that project id.
+ */
+export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
+  try {
+    if (settingDone(PISCATAWAY_GROWTH_OS_KEY)) return;
+    const projects = (await listProjects()).map((p) => ({
+      id: String(p.id),
+      name: p.name,
+    }));
+    if (!projects.length) {
+      console.log(
+        "[forecast-client] no projects returned; will retry Krak Boba Piscataway Growth OS next boot"
+      );
+      return;
+    }
+    const match = pickKrakBobaPiscatawayGrowthOsProject(projects);
+    if (!match) {
+      console.log(
+        "[forecast-client] Krak Boba Piscataway Growth OS project not found uniquely; will retry next boot"
+      );
+      return;
+    }
+    const result = bindForecastClientToExactProject(match, KRAK_BOBA_PISCATAWAY_CLIENT_NAME);
+    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} name=${JSON.stringify(match.name)} created=${result.created} linked=${result.linked} at=${nowIso()}`;
+    markSetting(PISCATAWAY_GROWTH_OS_KEY, summary);
+    console.log(`[forecast-client] ${summary}`);
+  } catch (err) {
+    console.error(
+      "[forecast-client] Krak Boba Piscataway Growth OS import failed",
+      (err as Error).message
+    );
   }
 }
