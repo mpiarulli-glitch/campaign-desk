@@ -96,13 +96,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
+  let swingInn: string | undefined;
+  if (new URL(request.url).searchParams.get("import") === "swing-inn") {
+    const { ensureSwingInnCafeClient } = await import("@/lib/basecamp-clients");
+    swingInn = await ensureSwingInnCafeClient();
+  }
+
   // A correct password with 2FA still pending is not a completed login, so the
   // rate limit counter stays as it is until the second factor clears.
   if (result.needsTotp) {
-    return NextResponse.json({ ok: true, needsTotp: true });
+    return NextResponse.json({ ok: true, needsTotp: true, ...(swingInn ? { swingInn } : {}) });
   }
 
   loginSucceeded(key);
+
   return NextResponse.json({
     ok: true,
     needsTotp: false,
@@ -110,6 +117,7 @@ export async function POST(request: Request) {
     person: result.person,
     mustSetPassword: result.mustSetPassword,
     setupComplete: setupStateFor(result.person || OWNER_SLUG)?.complete ?? true,
+    ...(swingInn ? { swingInn } : {}),
   });
 }
 

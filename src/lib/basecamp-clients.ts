@@ -549,7 +549,7 @@ function writeSwingInnStatus(line: string) {
   }
 }
 
-export async function ensureSwingInnCafeClient(): Promise<void> {
+export async function ensureSwingInnCafeClient(): Promise<string> {
   writeSwingInnStatus("entered");
   try {
     if (settingDone(SWING_INN_CAFE_KEY)) {
@@ -558,12 +558,11 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
           (c.basecamp_project_id || "").trim() === SWING_INN_CAFE_PROJECT_ID ||
           norm(c.name) === norm(SWING_INN_CAFE_CLIENT_NAME)
       );
-      writeSwingInnStatus(
-        existing
-          ? `done id=${existing.id} name=${existing.name} project=${existing.basecamp_project_id}`
-          : "flag set but client row missing"
-      );
-      return;
+      const line = existing
+        ? `done id=${existing.id} name=${existing.name} project=${existing.basecamp_project_id}`
+        : "flag set but client row missing";
+      writeSwingInnStatus(line);
+      return line;
     }
 
     const project = { id: SWING_INN_CAFE_PROJECT_ID, name: SWING_INN_CAFE_CLIENT_NAME };
@@ -585,8 +584,11 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
     markSetting(SWING_INN_CAFE_KEY, summary);
     writeSwingInnStatus(`done ${summary}`);
     console.log(`[lifecycle-client] ${summary}`);
+    return summary;
   } catch (err) {
-    writeSwingInnStatus(`failed: ${(err as Error).message}`);
+    const line = `failed: ${(err as Error).message}`;
+    writeSwingInnStatus(line);
     console.error("[lifecycle-client] Swing Inn Cafe import failed", (err as Error).message);
+    return line;
   }
 }
