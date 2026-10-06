@@ -95,7 +95,11 @@ function foldProjectTitle(name: string): string {
 }
 
 export function isKrakBobaPiscatawayGrowthOsProject(name: string): boolean {
-  return foldProjectTitle(name).startsWith(foldProjectTitle(KRAK_BOBA_PISCATAWAY_GROWTH_OS_PREFIX));
+  const folded = foldProjectTitle(name);
+  const prefix = foldProjectTitle(KRAK_BOBA_PISCATAWAY_GROWTH_OS_PREFIX);
+  // startsWith or contains, so a status emoji or account prefix cannot hide
+  // the screenshot title. Growth OS must still be in the name.
+  return folded.startsWith(prefix) || folded.includes(prefix);
 }
 
 /**
@@ -492,8 +496,11 @@ export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
     }
     const match = pickKrakBobaPiscatawayGrowthOsProject(projects);
     if (!match) {
+      const piscatawayish = projects
+        .filter((p) => foldProjectTitle(p.name).includes("piscataway"))
+        .map((p) => `${p.id}:${p.name}`);
       console.log(
-        "[forecast-client] Krak Boba Piscataway Growth OS project not found uniquely; will retry next boot"
+        `[forecast-client] Krak Boba Piscataway Growth OS project not found uniquely; piscatawayTitles=${JSON.stringify(piscatawayish)}; will retry next boot`
       );
       return;
     }
