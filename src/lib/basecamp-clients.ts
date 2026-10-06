@@ -3,6 +3,8 @@
 // Shared by the admin automatch endpoint and the one-time startup backfill, so
 // both take exactly the same code path and produce the same report.
 
+import fs from "fs";
+import path from "path";
 import { getDb, nowIso } from "./db";
 import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
 import { OWNER_SLUG } from "./people";
@@ -531,9 +533,31 @@ export const SWING_INN_CAFE_CLIENT_NAME = "Swing Inn Cafe";
  * only when that name and project id are both missing, then seats them on the
  * Lifecycle hub with no launch checklist. Does not import any other project.
  */
+function writeSwingInnStatus(line: string) {
+  try {
+    const dir = path.join(process.cwd(), "data");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "swing-inn-cafe-import.txt"), `${line}\n`);
+  } catch (err) {
+    console.error("[lifecycle-client] could not write Swing Inn status", (err as Error).message);
+  }
+}
+
 export async function ensureSwingInnCafeClient(): Promise<void> {
   try {
-    if (settingDone(SWING_INN_CAFE_KEY)) return;
+    if (settingDone(SWING_INN_CAFE_KEY)) {
+      const existing = listRevClients(true).find(
+        (c) =>
+          (c.basecamp_project_id || "").trim() === SWING_INN_CAFE_PROJECT_ID ||
+          norm(c.name) === norm(SWING_INN_CAFE_CLIENT_NAME)
+      );
+      writeSwingInnStatus(
+        existing
+          ? `done id=${existing.id} name=${existing.name} project=${existing.basecamp_project_id}`
+          : "flag set but client row missing"
+      );
+      return;
+    }
 
     const identities = hasConnection(OWNER_SLUG)
       ? [asPerson(OWNER_SLUG), SERVICE]
@@ -551,10 +575,12 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
       if (match) break;
     }
     if (!sawProjects) {
+      writeSwingInnStatus("waiting: no Basecamp projects returned");
       console.log("[lifecycle-client] no Basecamp projects returned; will retry Swing Inn Cafe next boot");
       return;
     }
     if (!match) {
+      writeSwingInnStatus(`waiting: project ${SWING_INN_CAFE_PROJECT_ID} not on the connected roster`);
       console.log(
         `[lifecycle-client] Basecamp project ${SWING_INN_CAFE_PROJECT_ID} not on the connected roster; will retry Swing Inn Cafe next boot`
       );
@@ -565,6 +591,7 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
     const { addClientToHub } = await import("./lifecycle-hub");
     const hub = addClientToHub(result.clientId, null, "michael");
     if (!hub.ok) {
+      writeSwingInnStatus(`saved id=${result.clientId} hub error: ${hub.error}`);
       console.log(
         `[lifecycle-client] Swing Inn Cafe saved (${result.clientId}) but not on the hub: ${hub.error}`
       );
@@ -572,8 +599,10 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
     }
     const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} name=${JSON.stringify(match.name)} created=${result.created} linked=${result.linked} at=${nowIso()}`;
     markSetting(SWING_INN_CAFE_KEY, summary);
+    writeSwingInnStatus(`done ${summary}`);
     console.log(`[lifecycle-client] ${summary}`);
   } catch (err) {
+    writeSwingInnStatus(`failed: ${(err as Error).message}`);
     console.error("[lifecycle-client] Swing Inn Cafe import failed", (err as Error).message);
   }
 }
