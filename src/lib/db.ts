@@ -3619,6 +3619,50 @@ function migrate(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_personal_notes_owner
       ON personal_notes(owner, pinned, updated_at);
   `);
+
+  // Per-client brand guide, mood board, and offers. One brand URL per client.
+  // Mood references and offers are lists. At most one offer is this month's
+  // focus; the write path clears the previous one, and the partial index is
+  // the backstop.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS client_brand_guides (
+      client_id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS client_mood_references (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_mood_references_client
+      ON client_mood_references(client_id, sort_order, created_at);
+
+    CREATE TABLE IF NOT EXISTS client_offers (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      is_focus INTEGER NOT NULL DEFAULT 0 CHECK (is_focus IN (0, 1)),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_offers_client
+      ON client_offers(client_id, sort_order, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_client_offers_one_focus
+      ON client_offers(client_id) WHERE is_focus = 1;
+  `);
 }
 
 // Insert a login row for every person in the code roster who does not have one
