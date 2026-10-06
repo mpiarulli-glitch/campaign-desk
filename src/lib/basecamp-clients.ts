@@ -4,7 +4,8 @@
 // both take exactly the same code path and produce the same report.
 
 import { getDb, nowIso } from "./db";
-import { asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
+import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
+import { OWNER_SLUG } from "./people";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
 
 // Client projects are named "<Client> Growth OS - Powered by the Empire
@@ -484,13 +485,14 @@ function markSetting(key: string, summary: string) {
 export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
   try {
     if (settingDone(PISCATAWAY_GROWTH_OS_KEY)) return;
-    const projects = (await listProjects()).map((p) => ({
+    const identity = hasConnection(OWNER_SLUG) ? asPerson(OWNER_SLUG) : SERVICE;
+    const projects = (await listProjects(identity)).map((p) => ({
       id: String(p.id),
       name: p.name,
     }));
     if (!projects.length) {
       console.log(
-        "[forecast-client] no projects returned; will retry Krak Boba Piscataway Growth OS next boot"
+        `[forecast-client] no projects returned as ${hasConnection(OWNER_SLUG) ? OWNER_SLUG : "service"}; will retry Krak Boba Piscataway Growth OS next boot`
       );
       return;
     }
