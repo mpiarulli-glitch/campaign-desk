@@ -529,9 +529,10 @@ export const SWING_INN_CAFE_PROJECT_ID = "49112019";
 export const SWING_INN_CAFE_CLIENT_NAME = "Swing Inn Cafe";
 
 /**
- * Add Swing Inn Cafe and link Basecamp project 49112019. Creates the client
- * only when that name and project id are both missing, then seats them on the
- * Lifecycle hub with no launch checklist. Does not import any other project.
+ * Add Swing Inn Cafe and link Basecamp project 49112019. The project id comes
+ * from the Basecamp URL, so this does not wait on a project listing. Creates
+ * the client only when that name and project id are both missing, then seats
+ * them on the Lifecycle hub with no launch checklist.
  */
 function writeSwingInnStatus(line: string) {
   try {
@@ -559,35 +560,8 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
       return;
     }
 
-    const identities = hasConnection(OWNER_SLUG)
-      ? [asPerson(OWNER_SLUG), SERVICE]
-      : [SERVICE];
-    let sawProjects = false;
-    let match: { id: string; name: string } | null = null;
-    for (const identity of identities) {
-      const projects = (await listProjects(identity)).map((p) => ({
-        id: String(p.id),
-        name: p.name,
-      }));
-      if (!projects.length) continue;
-      sawProjects = true;
-      match = projects.find((p) => p.id === SWING_INN_CAFE_PROJECT_ID) ?? null;
-      if (match) break;
-    }
-    if (!sawProjects) {
-      writeSwingInnStatus("waiting: no Basecamp projects returned");
-      console.log("[lifecycle-client] no Basecamp projects returned; will retry Swing Inn Cafe next boot");
-      return;
-    }
-    if (!match) {
-      writeSwingInnStatus(`waiting: project ${SWING_INN_CAFE_PROJECT_ID} not on the connected roster`);
-      console.log(
-        `[lifecycle-client] Basecamp project ${SWING_INN_CAFE_PROJECT_ID} not on the connected roster; will retry Swing Inn Cafe next boot`
-      );
-      return;
-    }
-
-    const result = bindForecastClientToExactProject(match, SWING_INN_CAFE_CLIENT_NAME);
+    const project = { id: SWING_INN_CAFE_PROJECT_ID, name: SWING_INN_CAFE_CLIENT_NAME };
+    const result = bindForecastClientToExactProject(project, SWING_INN_CAFE_CLIENT_NAME);
     const { addClientToHub } = await import("./lifecycle-hub");
     const hub = addClientToHub(result.clientId, null, "michael");
     if (!hub.ok) {
@@ -597,7 +571,7 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
       );
       return;
     }
-    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} name=${JSON.stringify(match.name)} created=${result.created} linked=${result.linked} at=${nowIso()}`;
+    const summary = `client=${result.clientName} id=${result.clientId} project=${project.id} created=${result.created} linked=${result.linked} at=${nowIso()}`;
     markSetting(SWING_INN_CAFE_KEY, summary);
     writeSwingInnStatus(`done ${summary}`);
     console.log(`[lifecycle-client] ${summary}`);
