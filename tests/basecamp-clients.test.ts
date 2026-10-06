@@ -123,6 +123,25 @@ test("internal Basecamp projects stay out of client import and show in forecast"
     assert.equal(again.created, false);
     assert.equal(again.clientId, upserted.clientId);
     assert.equal(listRevClients(true).length, before);
+
+    const { SWING_INN_CAFE_CLIENT_NAME, SWING_INN_CAFE_PROJECT_ID } = await import(
+      "../src/lib/basecamp-clients"
+    );
+    const swing = bindForecastClientToExactProject(
+      { id: SWING_INN_CAFE_PROJECT_ID, name: "Swing Inn Cafe" },
+      SWING_INN_CAFE_CLIENT_NAME
+    );
+    assert.equal(swing.created, true);
+    assert.equal(swing.clientName, "Swing Inn Cafe");
+    const swingRow = listRevClients(true).find((c) => c.id === swing.clientId);
+    assert.equal(swingRow?.basecamp_project_id, "49112019");
+    assert.equal(swingRow?.production_enrolled, 0);
+    const swingAgain = bindForecastClientToExactProject(
+      { id: SWING_INN_CAFE_PROJECT_ID, name: "Swing Inn Cafe" },
+      SWING_INN_CAFE_CLIENT_NAME
+    );
+    assert.equal(swingAgain.created, false);
+    assert.equal(swingAgain.clientId, swing.clientId);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(tmp, { recursive: true, force: true });

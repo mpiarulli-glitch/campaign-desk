@@ -517,3 +517,63 @@ export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
     );
   }
 }
+
+/* -------------------------------------------- Swing Inn Cafe one-shot import */
+
+const SWING_INN_CAFE_KEY = "lifecycle_client_swing_inn_cafe_v1";
+
+// https://3.basecamp.com/5338018/projects/49112019
+export const SWING_INN_CAFE_PROJECT_ID = "49112019";
+export const SWING_INN_CAFE_CLIENT_NAME = "Swing Inn Cafe";
+
+/**
+ * Add Swing Inn Cafe and link Basecamp project 49112019. Creates the client
+ * only when that name and project id are both missing, then seats them on the
+ * Lifecycle hub with no launch checklist. Does not import any other project.
+ */
+export async function ensureSwingInnCafeClient(): Promise<void> {
+  try {
+    if (settingDone(SWING_INN_CAFE_KEY)) return;
+
+    const identities = hasConnection(OWNER_SLUG)
+      ? [asPerson(OWNER_SLUG), SERVICE]
+      : [SERVICE];
+    let sawProjects = false;
+    let match: { id: string; name: string } | null = null;
+    for (const identity of identities) {
+      const projects = (await listProjects(identity)).map((p) => ({
+        id: String(p.id),
+        name: p.name,
+      }));
+      if (!projects.length) continue;
+      sawProjects = true;
+      match = projects.find((p) => p.id === SWING_INN_CAFE_PROJECT_ID) ?? null;
+      if (match) break;
+    }
+    if (!sawProjects) {
+      console.log("[lifecycle-client] no Basecamp projects returned; will retry Swing Inn Cafe next boot");
+      return;
+    }
+    if (!match) {
+      console.log(
+        `[lifecycle-client] Basecamp project ${SWING_INN_CAFE_PROJECT_ID} not on the connected roster; will retry Swing Inn Cafe next boot`
+      );
+      return;
+    }
+
+    const result = bindForecastClientToExactProject(match, SWING_INN_CAFE_CLIENT_NAME);
+    const { addClientToHub } = await import("./lifecycle-hub");
+    const hub = addClientToHub(result.clientId, null, "michael");
+    if (!hub.ok) {
+      console.log(
+        `[lifecycle-client] Swing Inn Cafe saved (${result.clientId}) but not on the hub: ${hub.error}`
+      );
+      return;
+    }
+    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} name=${JSON.stringify(match.name)} created=${result.created} linked=${result.linked} at=${nowIso()}`;
+    markSetting(SWING_INN_CAFE_KEY, summary);
+    console.log(`[lifecycle-client] ${summary}`);
+  } catch (err) {
+    console.error("[lifecycle-client] Swing Inn Cafe import failed", (err as Error).message);
+  }
+}
