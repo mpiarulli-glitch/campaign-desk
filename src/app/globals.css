@@ -2344,6 +2344,67 @@ button {
   padding: 14px 16px;
 }
 
+.cd-send-plan {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cd-send-plan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cd-send-plan-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.cd-send-plan-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.cd-send-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cd-send-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 11.5rem 8.5rem;
+  gap: 10px;
+  align-items: end;
+}
+
+.cd-send-plan-name {
+  min-width: 0;
+  padding-bottom: 9px;
+  font-size: 14px;
+}
+
+.cd-send-plan-source {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.cd-send-plan-row .field {
+  gap: 4px;
+}
+
+.cd-send-plan-row .field input {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
 .cd-pkg-work {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.88fr);
@@ -11904,6 +11965,64 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   text-wrap: pretty;
 }
 
+.rv-send-plan {
+  padding: 16px 18px 6px;
+}
+
+.rv-send-plan-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rv-send-plan-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.rv-send-plan-zone {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rv-send-plan-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.rv-send-plan-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.rv-send-plan-row:first-child {
+  border-top: 0;
+}
+
+.rv-send-plan-name {
+  min-width: 0;
+  color: var(--text);
+}
+
+.rv-send-plan-when {
+  flex: none;
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.rv-send-plan-when.is-open {
+  color: var(--text-muted);
+}
+
 /* --- Item switcher ------------------------------------------------------- */
 
 .rv-switch {
@@ -12413,6 +12532,21 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 
   .rv-hero .h1 {
     font-size: 27px;
+  }
+
+  .rv-send-plan-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .cd-send-plan-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cd-send-plan-name {
+    grid-column: 1 / -1;
+    padding-bottom: 0;
   }
 
   .rv-switch-nav {

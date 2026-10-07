@@ -27,6 +27,7 @@ import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
 import { MAX_QUOTE_CHARS, quotedFeedback } from "@/lib/copy-quote";
 import { notifyClientFeedback } from "@/lib/notify";
 import { statusAfterReviewLinkView } from "@/lib/campaign-status";
+import { publicSendScheduleForToken } from "@/lib/client-send-schedule";
 
 const ALLOWED_IMAGE_MIME = new Set([
   "image/png",
@@ -136,6 +137,9 @@ export async function GET(_request: Request, { params }: Params) {
   // Only filter open-comment counts for the external link; internal keeps
   // seeing the full total across both channels.
   const countChannel = channel === "external" ? channel : undefined;
+  const plannedSend = new Map(
+    (publicSendScheduleForToken(token) || []).map((row) => [row.id, row.scheduledSendAt])
+  );
   const emails = listEmailsWithSubjects(fresh.id).map((e) => ({
     id: e.id,
     title: e.title,
@@ -161,6 +165,7 @@ export async function GET(_request: Request, { params }: Params) {
       preview_text: s.preview_text,
     })),
     open_comments: countOpenComments(fresh.id, e.id, countChannel),
+    scheduled_send_at: plannedSend.get(e.id) ?? null,
   }));
   if (fresh.presentation === "automation") {
     ensureAutomationFlow(fresh.id);

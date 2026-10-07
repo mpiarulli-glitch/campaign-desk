@@ -175,6 +175,8 @@ type EmailItem = {
   html_content_b?: string;
   ab_hypothesis?: string;
   scheduled_send_at?: string | null;
+  planned_send_at?: string | null;
+  planned_send_source?: "email" | "calendar" | null;
 };
 
 type SuggestedSend = {
@@ -330,6 +332,28 @@ function isSchedulableKind(kind?: string | null): boolean {
   return k === "email" || k === "interactive";
 }
 
+function sendPlanFromEmails(list: EmailItem[]): Array<{
+  id: string;
+  title: string;
+  sendDate: string;
+  sendTime: string;
+  source: "email" | "calendar" | null;
+}> {
+  return list.map((email) => {
+    const iso = email.planned_send_at || "";
+    const when = iso ? new Date(iso) : null;
+    const parts =
+      when && !Number.isNaN(when.getTime()) ? pacificDateTimeParts(when) : null;
+    return {
+      id: email.id,
+      title: email.title,
+      sendDate: parts?.date || "",
+      sendTime: parts?.time || "",
+      source: email.planned_send_source || null,
+    };
+  });
+}
+
 function sendLabel(iso: string): string {
   const parts = pacificDateTimeParts(new Date(iso));
   return `${fmtYmd(parts.date)} at ${formatTimeLabel(parts.time)} PT`;
@@ -452,6 +476,16 @@ export default function AdminCampaignPage() {
   >([]);
   const [ghlChecking, setGhlChecking] = useState(false);
   const [ghlHint, setGhlHint] = useState("");
+  const [sendPlan, setSendPlan] = useState<
+    Array<{
+      id: string;
+      title: string;
+      sendDate: string;
+      sendTime: string;
+      source: "email" | "calendar" | null;
+    }>
+  >([]);
+  const [sendPlanDirty, setSendPlanDirty] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -525,6 +559,15 @@ export default function AdminCampaignPage() {
   useEffect(() => {
     load();
   }, [id]);
+
+  const sendPlanSignature = emails
+    .map((email) => `${email.id}|${email.title}|${email.planned_send_at || ""}|${email.planned_send_source || ""}`)
+    .join("\n");
+
+  useEffect(() => {
+    if (sendPlanDirty) return;
+    setSendPlan(sendPlanFromEmails(emails));
+  }, [sendPlanSignature, sendPlanDirty, emails]);
 
   useEffect(() => {
     if (!schedulePromptOpen) return;
@@ -1244,6 +1287,34 @@ export default function AdminCampaignPage() {
     setMessage(`Counts toward ${periodLabel(period)}.`);
   }
 
+  async function saveSendPlan() {
+    if (!campaign) return;
+    const rows = sendPlan.length === emails.length ? sendPlan : sendPlanFromEmails(emails);
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        setSendSchedule: rows.map((row) => ({
+          emailId: row.id,
+          sendDate: row.sendDate,
+          sendTime: row.sendTime,
+        })),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) {
+      setError(data.error || "Could not save send times.");
+      return;
+    }
+    setSendPlanDirty(false);
+    if (data.emails) setEmails(data.emails);
+    setMessage("Send times saved. The client review link shows these.");
+  }
+
   function openSchedulePrompt() {
     const hint = campaign?.suggested_send;
     const fallback = pacificDateTimeParts();
@@ -1825,6 +1896,8 @@ export default function AdminCampaignPage() {
     )?.name ||
     basecampApproval?.recipient ||
     "";
+  const planRows =
+    sendPlan.length === emails.length ? sendPlan : sendPlanFromEmails(emails);
   const isAutomation = campaign.presentation === "automation";
   const isLinkedInPackage =
     emails.length > 0 && emails.every((email) => email.kind === "linkedin");
@@ -2259,6 +2332,81 @@ export default function AdminCampaignPage() {
             </form>
           ) : null}
         </div>
+
+        <section className="card cd-send-plan" aria-labelledby="pkg-send-plan-heading">
+          <div className="cd-send-plan-head">
+            <div>
+              <h2 id="pkg-send-plan-heading" className="cd-send-plan-title">
+                When these go out
+              </h2>
+              <p className="muted cd-send-plan-note">
+                Pacific. This is what the client sees on the review link.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void saveSendPlan()}
+              disabled={saving || planRows.length === 0}
+            >
+              {saving ? "Saving..." : "Save times"}
+            </button>
+          </div>
+          <div className="cd-send-plan-list">
+            {planRows.map((row) => (
+              <div key={row.id} className="cd-send-plan-row">
+                <div className="cd-send-plan-name">
+                  {row.title}
+                  {row.source === "calendar" ? (
+                    <span className="cd-send-plan-source">On the calendar</span>
+                  ) : null}
+                </div>
+                <div className="field">
+                  <label htmlFor={`plan-date-${row.id}`}>Date</label>
+                  <input
+                    id={`plan-date-${row.id}`}
+                    type="date"
+                    value={row.sendDate}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSendPlanDirty(true);
+                      setSendPlan((prev) => {
+                        const base =
+                          prev.length === emails.length ? prev : sendPlanFromEmails(emails);
+                        return base.map((item) =>
+                          item.id === row.id
+                            ? { ...item, sendDate: value, source: null }
+                            : item
+                        );
+                      });
+                    }}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor={`plan-time-${row.id}`}>Time</label>
+                  <input
+                    id={`plan-time-${row.id}`}
+                    type="time"
+                    value={row.sendTime}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSendPlanDirty(true);
+                      setSendPlan((prev) => {
+                        const base =
+                          prev.length === emails.length ? prev : sendPlanFromEmails(emails);
+                        return base.map((item) =>
+                          item.id === row.id
+                            ? { ...item, sendTime: value, source: null }
+                            : item
+                        );
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <div className="cd-pkg-work">
           <div className="cd-pkg-editor">

@@ -22,6 +22,7 @@ import {
 } from "@/lib/asset-kinds";
 import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
 import { isCopyQuote } from "@/lib/copy-quote";
+import { formatPacificSend } from "@/lib/period";
 
 type Attachment = {
   id: string;
@@ -140,6 +141,7 @@ type EmailItem = {
   subjects?: SubjectOption[];
   delay_ms?: number;
   purpose?: string;
+  scheduled_send_at?: string | null;
 };
 
 type Campaign = {
@@ -619,6 +621,34 @@ export default function ReviewPage() {
             </p>
           ) : null}
         </div>
+
+        <section className="card rv-send-plan" aria-labelledby="send-schedule-heading">
+          <div className="rv-send-plan-head">
+            <h2 id="send-schedule-heading" className="rv-send-plan-title">
+              When these go out
+            </h2>
+            <p className="rv-send-plan-zone">Pacific</p>
+          </div>
+          <ul className="rv-send-plan-list">
+            {emails.map((email) => {
+              const when = email.scheduled_send_at
+                ? formatPacificSend(email.scheduled_send_at)
+                : "";
+              return (
+                <li key={email.id} className="rv-send-plan-row">
+                  <span className="rv-send-plan-name">{email.title}</span>
+                  <span
+                    className={
+                      when ? "rv-send-plan-when" : "rv-send-plan-when is-open"
+                    }
+                  >
+                    {when || "Not scheduled yet"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
 
         {isAutomation ? (
           <div className="card card-pad am-map-card">

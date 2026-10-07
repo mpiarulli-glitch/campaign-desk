@@ -57,3 +57,26 @@ export function periodLabel(period: string): string {
   const [y, m] = period.split("-").map(Number);
   return MONTH_LABEL.format(new Date(Date.UTC(y, m - 1, 1)));
 }
+
+/**
+ * A planned send, written for a client. The zone is named once beside the
+ * list ("Pacific"), so this string is the date and time only.
+ * "Wed, Oct 14, 2026 at 9:00 AM"
+ */
+export function formatPacificSend(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const date = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+  return `${date} at ${time}`;
+}

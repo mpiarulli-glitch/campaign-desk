@@ -32,6 +32,11 @@ import {
 import { isOperatorCampaignStatus } from "@/lib/campaign-status";
 import { scheduleCampaign, suggestedSendForCampaign } from "@/lib/campaign-schedule";
 import {
+  listClientSendSchedule,
+  setClientSendSchedule,
+  type SendScheduleUpdate,
+} from "@/lib/client-send-schedule";
+import {
   actorBasecampIdentity,
   syncCampaignDeliverablesCard,
 } from "@/lib/campaign-card-sync";
@@ -49,6 +54,21 @@ type Params = { params: Promise<{ id: string }> };
 async function internalApproverLabel(): Promise<string> {
   const tag = await sessionActor();
   return tag ? actorLabel(tag) : "Admin";
+}
+
+function emailsForAdmin(id: string) {
+  const planned = new Map(
+    listClientSendSchedule(id).map((row) => [row.emailId, row])
+  );
+  return listEmailsWithSubjects(id).map((email) => {
+    const row = planned.get(email.id);
+    return {
+      ...email,
+      open_comments: countOpenComments(id, email.id),
+      planned_send_at: row?.scheduledSendAt ?? null,
+      planned_send_source: row?.source ?? null,
+    };
+  });
 }
 
 async function syncCard(id: string, column: "approved" | "scheduled") {
@@ -77,10 +97,7 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const emails = listEmailsWithSubjects(id).map((e) => ({
-    ...e,
-    open_comments: countOpenComments(id, e.id),
-  }));
+  const emails = emailsForAdmin(id);
   if (campaign.presentation === "automation") {
     ensureAutomationFlow(id);
   }
@@ -140,12 +157,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!approved && existing.status === "approved") {
       unapproveCampaign(id);
     }
-    return NextResponse.json({
-      emails: listEmailsWithSubjects(id).map((e) => ({
-        ...e,
-        open_comments: countOpenComments(id, e.id),
-      })),
-    });
+    return NextResponse.json({ emails: emailsForAdmin(id) });
   }
 
   // Save the subject-line / preview-text options for one email.
@@ -161,12 +173,30 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: "emailId required" }, { status: 400 });
     }
     setEmailSubjects(emailId, id, options);
-    return NextResponse.json({
-      emails: listEmailsWithSubjects(id).map((e) => ({
-        ...e,
-        open_comments: countOpenComments(id, e.id),
-      })),
-    });
+    return NextResponse.json({ emails: emailsForAdmin(id) });
+  }
+
+  if (Array.isArray(body.setSendSchedule)) {
+    const updates: SendScheduleUpdate[] = [];
+    for (const item of body.setSendSchedule) {
+      if (!item || typeof item !== "object") {
+        return NextResponse.json({ error: "Invalid send schedule." }, { status: 400 });
+      }
+      const row = item as Record<string, unknown>;
+      if (typeof row.emailId !== "string" || !row.emailId) {
+        return NextResponse.json({ error: "emailId is required" }, { status: 400 });
+      }
+      updates.push({
+        emailId: row.emailId,
+        sendDate: typeof row.sendDate === "string" ? row.sendDate : "",
+        sendTime: typeof row.sendTime === "string" ? row.sendTime : "",
+      });
+    }
+    const saved = setClientSendSchedule(id, updates);
+    if ("error" in saved) {
+      return NextResponse.json({ error: saved.error }, { status: 400 });
+    }
+    return NextResponse.json({ emails: emailsForAdmin(id) });
   }
 
   if (typeof body.archived === "boolean") {
