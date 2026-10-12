@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { operatorStatusLabel } from "@/lib/campaign-status";
 import {
   EMAIL_PLATFORMS,
@@ -11,11 +11,15 @@ import {
   type PaceStatus,
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
+import { BrandGuidePanel } from "./BrandGuidePanel";
 import { ChannelAnalyticsPanel } from "./ChannelAnalyticsPanel";
 import { ClientIntegrationsPanel } from "./ClientIntegrationsPanel";
 import { ChecklistBlock } from "./ChecklistBlock";
+import { ClientSectionNav, type ClientView } from "./ClientSectionNav";
 import { ClientWorkflowsPanel } from "./ClientWorkflowsPanel";
 import { HubFoldCard } from "./HubFoldCard";
+import { MoodBoardPanel } from "./MoodBoardPanel";
+import { OffersPanel } from "./OffersPanel";
 
 type HubWorkKind = "campaign" | "automation";
 
@@ -196,11 +200,24 @@ function readClientParam(): string {
   return new URLSearchParams(window.location.search).get("client") || "";
 }
 
-function writeClientParam(id: string) {
+function readViewParam(): ClientView {
+  if (typeof window === "undefined") return "month";
+  const raw = new URLSearchParams(window.location.search).get("view");
+  if (raw === "brand" || raw === "mood" || raw === "offers") return raw;
+  return "month";
+}
+
+function writeDeskUrl(id: string, view: ClientView, mode: "push" | "replace") {
   const url = new URL(window.location.href);
   if (id) url.searchParams.set("client", id);
   else url.searchParams.delete("client");
-  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  if (id && view !== "month") url.searchParams.set("view", view);
+  else url.searchParams.delete("view");
+  const next = `${url.pathname}${url.search}`;
+  const current = `${window.location.pathname}${window.location.search}`;
+  if (next === current) return;
+  if (mode === "push") window.history.pushState(null, "", next);
+  else window.history.replaceState(null, "", next);
 }
 
 function PaceDot({ pace, launching }: { pace: PaceStatus; launching: boolean }) {
@@ -464,6 +481,8 @@ function AddClientForm({
 
 function ClientDetail({
   client,
+  view,
+  onView,
   onChanged,
   onRemoved,
   onBack,
@@ -471,6 +490,8 @@ function ClientDetail({
   onOpenTools,
 }: {
   client: HubClient;
+  view: ClientView;
+  onView: (view: ClientView) => void;
   onChanged: () => void;
   onRemoved: () => void;
   onBack: () => void;
@@ -617,10 +638,12 @@ function ClientDetail({
         <div>
           <h2>{client.name}</h2>
           {headerBits.length ? <p className="muted">{headerBits.join(" · ")}</p> : null}
+          <ClientSectionNav view={view} onView={onView} />
         </div>
         <span className={`lh-pace is-${client.pace}`}>{client.paceLabel}</span>
       </header>
 
+      {view === "month" ? (
       <div className="lh-detail-layout">
       <ChannelAnalyticsPanel
         key={`email-${client.id}-${analyticsTick}`}
@@ -814,6 +837,13 @@ function ClientDetail({
         onChange={handleCrmChange}
       />
       </div>
+      ) : view === "brand" ? (
+        <BrandGuidePanel key={client.id} clientId={client.id} />
+      ) : view === "mood" ? (
+        <MoodBoardPanel key={client.id} clientId={client.id} />
+      ) : (
+        <OffersPanel key={client.id} clientId={client.id} />
+      )}
     </div>
   );
 }
@@ -863,6 +893,8 @@ export function ClientHub({
   const [denied, setDenied] = useState(false);
   const [canSeeOwnerTools, setCanSeeOwnerTools] = useState(false);
   const [selectedId, setSelectedId] = useState("");
+  const [view, setView] = useState<ClientView>("month");
+  const viewRef = useRef<ClientView>("month");
   const [urlReady, setUrlReady] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -901,13 +933,16 @@ export function ClientHub({
   }, []);
 
   useEffect(() => {
-    setSelectedId(readClientParam());
-    setUrlReady(true);
-    function onPopState() {
+    function syncFromUrl() {
+      const nextView = readViewParam();
+      viewRef.current = nextView;
+      setView(nextView);
       setSelectedId(readClientParam());
     }
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    syncFromUrl();
+    setUrlReady(true);
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
   }, []);
 
   const filtered = useMemo(() => {
@@ -926,17 +961,26 @@ export function ClientHub({
     if (!data || !urlReady || !selectedId) return;
     if (data.clients.some((c) => matchesClient(c, selectedId))) return;
     setSelectedId("");
-    writeClientParam("");
+    writeDeskUrl("", "month", "replace");
   }, [data, selectedId, urlReady]);
 
   function select(id: string) {
+    const nextView = viewRef.current;
     setSelectedId(id);
-    writeClientParam(id);
+    setView(nextView);
+    writeDeskUrl(id, nextView, "push");
   }
 
   function clearSelection() {
     setSelectedId("");
-    writeClientParam("");
+    writeDeskUrl("", viewRef.current, "push");
+  }
+
+  function openView(next: ClientView) {
+    if (next === view) return;
+    viewRef.current = next;
+    setView(next);
+    writeDeskUrl(selectedId, next, "push");
   }
 
   async function removeCard(client: HubClient) {
@@ -973,6 +1017,8 @@ export function ClientHub({
       <div className="lh lh-detail-page">
         <ClientDetail
           client={selected}
+          view={view}
+          onView={openView}
           onChanged={() => void load()}
           onRemoved={() => {
             clearSelection();
