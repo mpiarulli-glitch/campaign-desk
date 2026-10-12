@@ -4,10 +4,12 @@ export async function register() {
     // Root instrumentation.ts is the file Next.js loads. The Basecamp Forecast
     // bind lives here so it actually runs in production (src/instrumentation.ts
     // is not this entry).
-    const { ensureKrakBobaPiscatawayGrowthOsClient } = await import(
-      "./src/lib/basecamp-clients"
-    );
+    const {
+      ensureKrakBobaPiscatawayGrowthOsClient,
+      ensureFloorCoDesignGrowthOsClient,
+    } = await import("./src/lib/basecamp-clients");
     void ensureKrakBobaPiscatawayGrowthOsClient();
+    void ensureFloorCoDesignGrowthOsClient();
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

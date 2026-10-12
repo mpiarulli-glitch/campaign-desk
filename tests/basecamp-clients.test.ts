@@ -70,6 +70,10 @@ test("internal Basecamp projects stay out of client import and show in forecast"
       clientNameFor("Krak Boba Piscataway Growth OS – Powered by the Empire Method"),
       "Krak Boba Piscataway"
     );
+    assert.equal(
+      clientNameFor("FloorCo Design Growth OS – Powered by the Empire Method™"),
+      "FloorCo Design"
+    );
 
     const {
       pickKrakBobaPiscatawayGrowthOsProject,
@@ -142,6 +146,69 @@ test("internal Basecamp projects stay out of client import and show in forecast"
     );
     assert.equal(swingAgain.created, false);
     assert.equal(swingAgain.clientId, swing.clientId);
+
+    const {
+      pickFloorCoDesignGrowthOsProject,
+      isFloorCoDesignGrowthOsProject,
+      FLOORCO_DESIGN_CLIENT_NAME,
+    } = await import("../src/lib/basecamp-clients");
+    const { addClientToHub } = await import("../src/lib/lifecycle-hub");
+    const { listBoardCards } = await import("../src/lib/lifecycle-board");
+    const { currentPeriod } = await import("../src/lib/period");
+
+    const floorcoRoster = [
+      { id: 10, name: "FloorCo Design" },
+      {
+        id: 11,
+        name: "FloorCo Design Growth OS – Powered by the Empire Method™",
+      },
+      { id: 12, name: "Humble Somm Growth OS - Powered by the Empire Method" },
+    ];
+    assert.equal(isFloorCoDesignGrowthOsProject(floorcoRoster[1].name), true);
+    assert.equal(isFloorCoDesignGrowthOsProject(floorcoRoster[0].name), false);
+    assert.equal(isFloorCoDesignGrowthOsProject(floorcoRoster[2].name), false);
+
+    const floorco = pickFloorCoDesignGrowthOsProject(floorcoRoster);
+    assert.deepEqual(floorco, {
+      id: "11",
+      name: "FloorCo Design Growth OS – Powered by the Empire Method™",
+    });
+    assert.equal(pickFloorCoDesignGrowthOsProject([floorcoRoster[0]]), null);
+    assert.equal(
+      pickFloorCoDesignGrowthOsProject([
+        floorcoRoster[1],
+        { id: 99, name: "FloorCo Design Growth OS (copy)" },
+      ]),
+      null
+    );
+
+    const floorcoUpserted = bindForecastClientToExactProject(
+      floorco!,
+      FLOORCO_DESIGN_CLIENT_NAME
+    );
+    assert.equal(floorcoUpserted.created, true);
+    assert.equal(floorcoUpserted.linked, true);
+    assert.equal(floorcoUpserted.clientName, "FloorCo Design");
+    const floorcoRow = listRevClients(true).find((c) => c.id === floorcoUpserted.clientId);
+    assert.equal(floorcoRow?.name, "FloorCo Design");
+    assert.equal(floorcoRow?.basecamp_project_id, "11");
+    assert.equal(floorcoRow?.production_enrolled, 0);
+
+    const hub = addClientToHub(floorcoUpserted.clientId, null, "michael");
+    assert.equal(hub.ok, true);
+    const onHub = listBoardCards(currentPeriod()).some(
+      (card) => card.clientId === floorcoUpserted.clientId
+    );
+    assert.equal(onHub, true);
+
+    const floorcoBefore = listRevClients(true).length;
+    const floorcoAgain = bindForecastClientToExactProject(
+      floorco!,
+      FLOORCO_DESIGN_CLIENT_NAME
+    );
+    assert.equal(floorcoAgain.created, false);
+    assert.equal(floorcoAgain.clientId, floorcoUpserted.clientId);
+    assert.equal(listRevClients(true).length, floorcoBefore);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -16,10 +16,12 @@ export async function register() {
   const {
     runBasecampClientBackfillOnce,
     ensureKrakBobaPiscatawayGrowthOsClient,
+    ensureFloorCoDesignGrowthOsClient,
     ensureSwingInnCafeClient,
   } = await import("./lib/basecamp-clients");
   void runBasecampClientBackfillOnce();
   void ensureKrakBobaPiscatawayGrowthOsClient();
+  void ensureFloorCoDesignGrowthOsClient();
   void ensureSwingInnCafeClient();
 
   // Exact GoHighLevel location matches, the ones Find matches would pre-tick.
