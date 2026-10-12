@@ -6,6 +6,7 @@
 import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
+import { addClientToHub } from "./lifecycle-hub";
 import { OWNER_SLUG } from "./people";
 import { currentPeriod } from "./period";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
@@ -114,6 +115,34 @@ export function pickKrakBobaPiscatawayGrowthOsProject(
 ): { id: string; name: string } | null {
   const hits = projects
     .filter((p) => isKrakBobaPiscatawayGrowthOsProject(p.name))
+    .map((p) => ({ id: String(p.id), name: p.name }));
+  if (hits.length !== 1) return null;
+  return hits[0];
+}
+
+// Screenshot title: "FloorCo Design Growth OS – Powered by the Empire Method™".
+// Matching requires those Growth OS words so a FloorCo title without Growth OS
+// cannot be chosen. Do not bulk-import other missing Basecamp projects.
+export const FLOORCO_DESIGN_CLIENT_NAME = "FloorCo Design";
+export const FLOORCO_DESIGN_GROWTH_OS_PREFIX = "FloorCo Design Growth OS";
+export const FLOORCO_DESIGN_POC_NAME = "Andy Mohajeri";
+export const FLOORCO_DESIGN_POC_EMAIL = "floorcodesignusa@gmail.com";
+
+export function isFloorCoDesignGrowthOsProject(name: string): boolean {
+  const folded = foldProjectTitle(name);
+  const prefix = foldProjectTitle(FLOORCO_DESIGN_GROWTH_OS_PREFIX);
+  return folded.startsWith(prefix) || folded.includes(prefix);
+}
+
+/**
+ * The one Basecamp project Forecast and Lifecycle should bind: FloorCo Design
+ * Growth OS. Returns null when it is missing or when more than one title matches.
+ */
+export function pickFloorCoDesignGrowthOsProject(
+  projects: Array<{ id: number | string; name: string }>
+): { id: string; name: string } | null {
+  const hits = projects
+    .filter((p) => isFloorCoDesignGrowthOsProject(p.name))
     .map((p) => ({ id: String(p.id), name: p.name }));
   if (hits.length !== 1) return null;
   return hits[0];
@@ -515,6 +544,65 @@ export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
   } catch (err) {
     console.error(
       "[forecast-client] Krak Boba Piscataway Growth OS import failed",
+      (err as Error).message
+    );
+  }
+}
+
+/* -------------------- FloorCo Design Growth OS one-shot import */
+
+const FLOORCO_DESIGN_GROWTH_OS_KEY = "forecast_client_floorco_design_growth_os_v1";
+
+/**
+ * Bind Forecast and Lifecycle to the FloorCo Design Growth OS Basecamp project
+ * only. Does not import any other missing projects. Creates a rev_client only
+ * when none already exists for that name or that project id. Seats the client
+ * on the Lifecycle hub with no launch checklist so Michael can run the account.
+ */
+export async function ensureFloorCoDesignGrowthOsClient(): Promise<void> {
+  try {
+    if (settingDone(FLOORCO_DESIGN_GROWTH_OS_KEY)) return;
+    const identity = hasConnection(OWNER_SLUG) ? asPerson(OWNER_SLUG) : SERVICE;
+    const projects = (await listProjects(identity)).map((p) => ({
+      id: String(p.id),
+      name: p.name,
+    }));
+    if (!projects.length) {
+      console.log(
+        `[forecast-client] no projects returned as ${hasConnection(OWNER_SLUG) ? OWNER_SLUG : "service"}; will retry FloorCo Design Growth OS next boot`
+      );
+      return;
+    }
+    const match = pickFloorCoDesignGrowthOsProject(projects);
+    if (!match) {
+      const floorcoish = projects
+        .filter((p) => foldProjectTitle(p.name).includes("floorco"))
+        .map((p) => `${p.id}:${p.name}`);
+      console.log(
+        `[forecast-client] FloorCo Design Growth OS project not found uniquely; floorcoTitles=${JSON.stringify(floorcoish)}; will retry next boot`
+      );
+      return;
+    }
+    const result = bindForecastClientToExactProject(match, FLOORCO_DESIGN_CLIENT_NAME);
+    updateRevClient(result.clientId, {
+      contactName: FLOORCO_DESIGN_POC_NAME,
+      contactEmail: FLOORCO_DESIGN_POC_EMAIL,
+      poc: FLOORCO_DESIGN_POC_NAME,
+      active: true,
+    });
+    const hub = addClientToHub(result.clientId, null, OWNER_SLUG);
+    if (!hub.ok) {
+      console.log(
+        `[forecast-client] FloorCo Design bound but Lifecycle hub failed (${hub.error}); will retry next boot`
+      );
+      return;
+    }
+    const summary = `client=${result.clientName} id=${result.clientId} project=${match.id} name=${JSON.stringify(match.name)} created=${result.created} linked=${result.linked} hub=true at=${nowIso()}`;
+    markSetting(FLOORCO_DESIGN_GROWTH_OS_KEY, summary);
+    console.log(`[forecast-client] ${summary}`);
+  } catch (err) {
+    console.error(
+      "[forecast-client] FloorCo Design Growth OS import failed",
       (err as Error).message
     );
   }
