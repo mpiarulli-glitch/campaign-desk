@@ -3712,6 +3712,47 @@ function migrate(database: Database.Database) {
 
   // Personal notes. Also in the bootstrap blob; repeated here so a database
   // whose bootstrap stopped early still grows the table on the next boot.
+  // SEO Ops Center forecast sync. Runs are immutable receipts. A week's live
+  // allocations are the newest accepted run that names that Monday. Deleting
+  // a run reveals the previous accepted run for the weeks it owned.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS seo_ops_forecast_runs (
+      run_id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      canonical_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS seo_ops_forecast_weeks (
+      run_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      basis TEXT NOT NULL,
+      PRIMARY KEY (run_id, week_start),
+      FOREIGN KEY (run_id) REFERENCES seo_ops_forecast_runs(run_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_seo_ops_weeks_start
+      ON seo_ops_forecast_weeks(week_start, run_id);
+
+    CREATE TABLE IF NOT EXISTS seo_ops_forecast_allocations (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      person_email TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      client_id TEXT,
+      client_name TEXT NOT NULL,
+      bucket TEXT NOT NULL,
+      source TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      hours TEXT NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES seo_ops_forecast_runs(run_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_seo_ops_alloc_week
+      ON seo_ops_forecast_allocations(week_start, run_id);
+  `);
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS personal_notes (
       id TEXT PRIMARY KEY,
