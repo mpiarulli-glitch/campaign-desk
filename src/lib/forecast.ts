@@ -12,6 +12,7 @@ import { normalizeTaskColor } from "./forecast-colors";
 import { parseTimeInput } from "./forecast-time";
 import { runningSeconds } from "./forecast-timer";
 import { addWeeks } from "./week";
+import { WEEKLY_CAPACITY_HOURS } from "./forecast-capacity";
 
 export { weekdays } from "./week";
 
@@ -22,8 +23,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type ForecastTaskWithSubtasks = ForecastTask & { subtasks: ForecastSubtask[] };
 
-export const WEEKLY_CAPACITY_HOURS = 40;
-export const DAILY_CAPACITY_HOURS = WEEKLY_CAPACITY_HOURS / 5;
+export { DAILY_CAPACITY_HOURS, WEEKLY_CAPACITY_HOURS } from "./forecast-capacity";
 
 export type RecordingBooking = {
   id: string;

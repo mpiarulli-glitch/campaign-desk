@@ -43,6 +43,7 @@ import {
   shouldAskToLogOnComplete,
   trackedSeconds,
 } from "@/lib/forecast-timer";
+import { DAILY_CAPACITY_HOURS } from "@/lib/forecast-capacity";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type Task = {
@@ -1185,6 +1186,52 @@ function TrackedWeekBar({
       >
         <div className="fc-tracked-fill" style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  );
+}
+
+function TrackedDayBars({
+  days,
+  loggedByDate,
+}: {
+  days: string[];
+  loggedByDate: Record<string, number>;
+}) {
+  const capacity = DAILY_CAPACITY_HOURS;
+  return (
+    <div className="fc-tracked-days">
+      {days.map((date) => {
+        const logged = loggedByDate[date] || 0;
+        const shown = formatTrackedHours(logged);
+        const pct = capacity ? Math.min(100, (logged / capacity) * 100) : 0;
+        const full = logged >= capacity;
+        const over = logged > capacity;
+        const name = dayName(date);
+        return (
+          <div
+            key={date}
+            className={`fc-tracked fc-tracked-day ${over ? "is-over" : full ? "is-full" : ""}`}
+          >
+            <div className="fc-tracked-head">
+              <span className="fc-tracked-label">
+                {name.slice(0, 3)}
+                <span className="fc-tracked-date">{dayShortDate(date)}</span>
+              </span>
+              <strong>
+                <b>{shown}</b>
+                <span> / {capacity}h</span>
+              </strong>
+            </div>
+            <div
+              className="fc-tracked-track"
+              role="img"
+              aria-label={`${shown} of ${capacity} hours tracked ${name}`}
+            >
+              <div className="fc-tracked-fill" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -3378,12 +3425,15 @@ export default function PersonForecastPage() {
         </div>
 
         {!loading && data ? (
-          <TrackedWeekBar
-            loggedHours={gauge.loggedHours}
-            capacity={gauge.capacity}
-            pct={gauge.trackedPct}
-            weekText={weekLabel(week)}
-          />
+          <>
+            <TrackedWeekBar
+              loggedHours={gauge.loggedHours}
+              capacity={gauge.capacity}
+              pct={gauge.trackedPct}
+              weekText={weekLabel(week)}
+            />
+            <TrackedDayBars days={days} loggedByDate={data.loggedByDate || {}} />
+          </>
         ) : null}
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
