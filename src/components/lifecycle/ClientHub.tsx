@@ -35,6 +35,8 @@ type HubCampaign = {
   status: string;
   approvedChannel: string | null;
   updatedAt: string;
+  kind?: HubWorkKind;
+  delivered?: boolean;
 };
 
 type HubActivity = {
@@ -223,13 +225,19 @@ async function requestRemoveFromLifecycle(
   return { ok: true };
 }
 
+function monthCampaigns(c: HubClient): HubCampaign[] {
+  return c.campaigns.filter((camp) => camp.kind !== "automation" && camp.delivered === true);
+}
+
 function ClientCards({
   clients,
+  periodLabel,
   removingId,
   onSelect,
   onRemove,
 }: {
   clients: HubClient[];
+  periodLabel: string;
   removingId: string;
   onSelect: (id: string) => void;
   onRemove: (client: HubClient) => void;
@@ -244,6 +252,11 @@ function ClientCards({
         const pct =
           c.quota > 0 ? Math.min(100, Math.round((c.delivered / c.quota) * 100)) : 0;
         const removing = removingId === c.id;
+        const done = monthCampaigns(c);
+        const needed =
+          c.quota > 0
+            ? `${c.quota} campaign${c.quota === 1 ? "" : "s"} needed`
+            : "No campaign quota";
         return (
           <article
             key={c.id}
@@ -254,27 +267,49 @@ function ClientCards({
               className="lh-pick-open"
               onClick={() => onSelect(c.id)}
             >
-              <div className="snap-pick-card-head">
-                <ClientLogo name={c.name} logoUrl={c.logoUrl} />
-                <div className="snap-pick-card-title">
-                  <h3>{c.name}</h3>
-                  {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+              <div className="lh-pick-flip">
+                <div className="lh-pick-flip-inner">
+                  <div className="lh-pick-face lh-pick-front">
+                    <div className="snap-pick-card-head">
+                      <ClientLogo name={c.name} logoUrl={c.logoUrl} />
+                      <div className="snap-pick-card-title">
+                        <h3>{c.name}</h3>
+                        {c.category ? <p className="snap-pick-card-cat">{c.category}</p> : null}
+                      </div>
+                      <PaceDot pace={c.pace} launching={c.launch.open > 0} />
+                    </div>
+                    <p className="snap-pick-card-desc">{c.description}</p>
+                    {c.quota > 0 ? (
+                      <div
+                        className={`lh-pick-bar is-${c.pace}`}
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={c.quota}
+                        aria-valuenow={c.delivered}
+                        aria-label={`${c.delivered} of ${c.quota} emails sent for approval`}
+                      >
+                        <div className="lh-pick-bar-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="lh-pick-face lh-pick-back" aria-hidden="true">
+                    <p className="lh-pick-back-kicker">{periodLabel}</p>
+                    <p className="lh-pick-back-needed">{needed}</p>
+                    <p className="lh-pick-back-done">
+                      {done.length === 0
+                        ? "None logged this month"
+                        : `${done.length} done this month`}
+                    </p>
+                    {done.length > 0 ? (
+                      <ul className="lh-pick-back-list">
+                        {done.map((camp) => (
+                          <li key={camp.id}>{camp.title}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
                 </div>
-                <PaceDot pace={c.pace} launching={c.launch.open > 0} />
               </div>
-              <p className="snap-pick-card-desc">{c.description}</p>
-              {c.quota > 0 ? (
-                <div
-                  className={`lh-pick-bar is-${c.pace}`}
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={c.quota}
-                  aria-valuenow={c.delivered}
-                  aria-label={`${c.delivered} of ${c.quota} emails sent for approval`}
-                >
-                  <div className="lh-pick-bar-fill" style={{ width: `${pct}%` }} />
-                </div>
-              ) : null}
             </button>
             <div className="snap-pick-card-foot">
               <span className={`snap-pick-metric is-${c.pace}`}>{metricLabel(c)}</span>
@@ -1034,6 +1069,7 @@ export function ClientHub({
       </div>
       <ClientCards
         clients={filtered}
+        periodLabel={data.periodLabel}
         removingId={removingId}
         onSelect={select}
         onRemove={(c) => void removeCard(c)}
