@@ -10,7 +10,9 @@ import {
   internalReviewTodoHtmlFromText,
   internalReviewTodoMessageText,
   parseInternalReviewDueOn,
+  findMappedAccountManager,
   pickDefaultInternalReviewer,
+  reviewersForInternalReview,
   teamPeopleForInternalReview,
   withInternalReviewGreeting,
 } from "../src/lib/internal-review";
@@ -132,6 +134,53 @@ test("default internal reviewer prefers the mapped account manager", () => {
   assert.equal(pickDefaultInternalReviewer(people, "cassidy")?.id, 2);
   assert.equal(pickDefaultInternalReviewer(people, "kyle")?.id, 3);
   assert.equal(pickDefaultInternalReviewer(people, "")?.id, undefined);
+});
+
+test("saved account manager stays selectable when the project roster is only a client", () => {
+  const project = [
+    { id: 44, name: "Dean Client", email_address: "dean@swinginn.com", client: true },
+    {
+      id: 9,
+      name: "Cassidy Client",
+      email_address: "guest@swinginn.com",
+      client: true,
+    },
+  ];
+  const company = [
+    {
+      id: 2,
+      name: "Cassidy Merideth",
+      email_address: "cassidy@meg.com",
+      client: true,
+      employee: false,
+      attachable_sgid: "sgid-cassidy",
+    },
+    {
+      id: 9,
+      name: "Cassidy Client",
+      email_address: "guest@swinginn.com",
+      client: true,
+    },
+    {
+      id: 3,
+      name: "Morris Kyle",
+      email_address: "kyle@meg.com",
+      client: false,
+      employee: true,
+    },
+  ];
+  const mapped = findMappedAccountManager(company, "Cassidy");
+  assert.equal(mapped?.id, 2);
+  assert.equal(mapped?.isClient, true);
+  assert.equal(findMappedAccountManager(project, "Cassidy"), null);
+
+  const reviewers = reviewersForInternalReview(project, company);
+  assert.deepEqual(
+    reviewers.map((person) => person.id),
+    [2, 3]
+  );
+  assert.equal(reviewers.find((person) => person.id === 2)?.isClient, false);
+  assert.equal(pickDefaultInternalReviewer(reviewers, "Cassidy")?.id, 2);
 });
 
 test("internal review follow-up copy nudges the AM", () => {
@@ -431,6 +480,76 @@ https://desk.example/review/custom`,
     const state = await internal.internalReviewState(created.id);
     assert.equal(state?.accountManager, "Kyle");
     assert.equal(state?.people.some((p) => p.id === 3 && p.name === "Morris Kyle"), true);
+  });
+
+  await t.test("Cassidy is selectable when the project roster has no teammates", async () => {
+    const previous = globalThis.fetch;
+    const grants: number[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || "GET").toUpperCase();
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.includes("/circles/people.json")) {
+        return json([
+          {
+            id: 2,
+            name: "Cassidy Merideth",
+            email_address: "cassidy@meg.com",
+            client: true,
+            employee: false,
+            attachable_sgid: "sgid-cassidy",
+          },
+        ]);
+      }
+      if (url.includes("/people/users.json") && method === "PUT") {
+        const ids = JSON.parse(String(init?.body || "{}")).grant as number[];
+        grants.push(...ids);
+        return json({ granted: ids });
+      }
+      if (url.includes("/people.json")) {
+        return json([
+          {
+            id: 44,
+            name: "Dean Client",
+            email_address: "dean@swinginn.com",
+            client: true,
+            employee: false,
+          },
+        ]);
+      }
+      return previous(input, init);
+    }) as typeof fetch;
+
+    try {
+      const { updateRevClient } = await import("../src/lib/revenue");
+      updateRevClient(client.id, { accountManager: "Cassidy" });
+      const state = await internal.internalReviewState(created.id);
+      assert.ok(state);
+      assert.equal(state.accountManager, "Cassidy");
+      assert.equal(state.peopleReason, "");
+      assert.equal(state.ready, true);
+      assert.equal(state.defaultReviewerId, 2);
+      assert.equal(
+        state.people.some((person) => person.id === 2 && person.name === "Cassidy Merideth"),
+        true
+      );
+
+      const sent = await internal.sendCampaignForInternalReview({
+        campaignId: created.id,
+        reviewerId: 2,
+        dueOn: "2026-10-20",
+      });
+      assert.equal(sent.ok, true);
+      if (!sent.ok) return;
+      assert.equal(sent.reviewerName, "Cassidy Merideth");
+      assert.deepEqual(grants, [2]);
+    } finally {
+      globalThis.fetch = previous;
+    }
   });
 });
 
