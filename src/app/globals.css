@@ -16951,7 +16951,277 @@ article.snap-pick-card.lh-pick-card:hover {
 }
 
 .lh-studio-cover:hover {
-  border-color: color-mix(in srgb, var(--text) 35%, var(--border));
+  border-color: color-mix(in srgb, var(--lh-heat, var(--text)) 55%, var(--border));
+}
+
+.lh-branded {
+  --lh-heat: #d24719;
+  --lh-ink: #111111;
+  --lh-on-heat: #fff7f2;
+}
+
+.lh-branded .lh-studio-cover {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--lh-heat) 28%, var(--border));
+}
+
+.lh-branded .lh-studio-cover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--lh-heat);
+}
+
+.lh-branded .lh-studio-cover span {
+  color: var(--lh-heat);
+}
+
+.lh-branded .lh-fold-title {
+  color: var(--text);
+}
+
+.lh-branded .btn:not(.btn-ghost) {
+  background: var(--lh-heat);
+  border-color: var(--lh-heat);
+  color: var(--lh-on-heat);
+}
+
+.lh-kit {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.lh-kit-ribbon {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--lh-heat) 40%, var(--border));
+}
+
+.lh-kit-ribbon i {
+  flex: 1;
+  display: block;
+}
+
+.lh-kit-kicker {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lh-heat);
+}
+
+.lh-kit-voice {
+  margin: 0;
+  max-width: 38rem;
+  font-size: clamp(26px, 3vw, 40px);
+  font-weight: 560;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+}
+
+.lh-kit-fonts {
+  margin: 12px 0 0;
+  max-width: 36rem;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.lh-kit-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lh-kit-swatches figure {
+  margin: 0;
+  min-width: 148px;
+  min-height: 92px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  display: flex;
+  align-items: flex-end;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 12%, transparent);
+}
+
+.lh-kit-swatches figcaption {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-kit-meta {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  max-width: 42rem;
+}
+
+.lh-kit-meta dt {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lh-heat);
+}
+
+.lh-kit-meta dd {
+  margin: 0;
+  font-size: 15px;
+}
+
+.lh-kit-rules {
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--lh-heat) 16%, transparent), transparent 42%),
+    var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--lh-heat) 35%, var(--border));
+}
+
+.lh-kit-rules h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lh-heat);
+}
+
+.lh-kit-rules p {
+  margin: 0;
+  max-width: 46rem;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.lh-kit-edit {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.lh-branded .lh-persona,
+.lh-branded .lh-offer,
+.lh-branded .lh-capture,
+.lh-branded .lh-ab-card {
+  position: relative;
+  padding: 18px 18px 16px 20px;
+  border-radius: 16px;
+  border-color: color-mix(in srgb, var(--lh-heat) 28%, var(--border));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--lh-heat) 18%, transparent), transparent 18px),
+    var(--bg-soft);
+}
+
+.lh-persona-num {
+  display: inline-flex;
+  margin-right: 10px;
+  color: var(--lh-heat);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.lh-branded .lh-persona h4,
+.lh-branded .lh-offer h4,
+.lh-branded .lh-capture h4,
+.lh-branded .lh-ab-card h4 {
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.lh-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.lh-facts > div.is-wide {
+  grid-column: 1 / -1;
+}
+
+.lh-facts span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--lh-heat);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.lh-facts p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.lh-branded .lh-offer.is-lead {
+  background: var(--lh-heat);
+  color: var(--lh-on-heat);
+  border-color: transparent;
+}
+
+.lh-branded .lh-offer.is-lead .lh-pb-tag,
+.lh-branded .lh-offer.is-lead .lh-pb-code {
+  background: color-mix(in srgb, var(--lh-on-heat) 12%, transparent);
+  color: var(--lh-on-heat);
+  border-color: color-mix(in srgb, var(--lh-on-heat) 28%, transparent);
+}
+
+.lh-branded .lh-offer.is-lead .lh-pb-body,
+.lh-branded .lh-offer.is-lead .lh-pb-meta,
+.lh-branded .lh-offer.is-lead .lh-link,
+.lh-branded .lh-offer.is-lead .lh-todo-remove {
+  color: var(--lh-on-heat);
+}
+
+.lh-branded .lh-offer.is-lead .lh-pb-status-select {
+  background: color-mix(in srgb, #000 28%, transparent);
+  color: var(--lh-on-heat);
+  border-color: color-mix(in srgb, var(--lh-on-heat) 40%, transparent);
+}
+
+.lh-branded .lh-cal-day.is-on {
+  background: color-mix(in srgb, var(--lh-heat) 12%, transparent);
+}
+
+.lh-branded .lh-cal-day em {
+  background: var(--lh-heat);
+  color: var(--lh-on-heat);
+  border-left: 0;
+}
+
+.lh-branded .lh-ab-variant.is-winner {
+  border-color: var(--lh-heat);
+  background: color-mix(in srgb, var(--lh-heat) 16%, var(--bg-elevated));
+}
+
+.lh-branded .lh-ab-winner.is-pending {
+  color: var(--lh-heat);
+}
+
+@media (max-width: 720px) {
+  .lh-facts {
+    grid-template-columns: 1fr;
+  }
 }
 
 .lh-studio.is-page {
@@ -17132,7 +17402,8 @@ article.snap-pick-card.lh-pick-card:hover {
   line-height: 1.25;
   padding: 2px 4px;
   border-radius: 4px;
-  background: color-mix(in srgb, #d24719 18%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--lh-heat, #d24719) 22%, var(--bg-elevated));
+  border-left: 2px solid var(--lh-heat, #d24719);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;

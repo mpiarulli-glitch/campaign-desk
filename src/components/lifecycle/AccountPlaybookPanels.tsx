@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import type {
   AccountAbTest,
   AccountBrandGuidelines,
@@ -70,6 +70,51 @@ const WINNER_LABELS: Record<AccountAbTest["winner"], string> = {
   inconclusive: "Inconclusive",
 };
 
+const HEX_RE = /#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+
+function expandHex(raw: string): string {
+  const h = raw.toLowerCase();
+  if (h.length === 4) return `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}`;
+  return h;
+}
+
+function brandHexes(colors: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of colors.match(HEX_RE) || []) {
+    const hex = expandHex(raw);
+    if (seen.has(hex)) continue;
+    seen.add(hex);
+    out.push(hex);
+  }
+  return out;
+}
+
+function luminance(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function brandStyle(colors: string): CSSProperties {
+  const hexes = brandHexes(colors);
+  const heat =
+    hexes.find((h) => {
+      const l = luminance(h);
+      return l > 0.08 && l < 0.92;
+    }) ||
+    hexes[0] ||
+    "#d24719";
+  const ink = hexes.find((h) => luminance(h) <= 0.18) || "#111111";
+  return {
+    ["--lh-heat" as string]: heat,
+    ["--lh-ink" as string]: ink,
+    ["--lh-on-heat" as string]: luminance(heat) > 0.62 ? "#161616" : "#fff7f2",
+  };
+}
+
 export function AccountPlaybookPanels({
   clientId,
   memberIds = [],
@@ -132,9 +177,11 @@ export function AccountPlaybookPanels({
     { id: "ab" as const, label: "Results", index: "07", line: data.abTests.length ? `${data.abTests.length} tests in the log.` : "No results yet." },
   ];
 
+  const palette = brandStyle(data.brand.colors);
+
   if (!page) {
     return (
-      <div className="lh-studio-index">
+      <div className="lh-studio-index lh-branded" style={palette}>
         {pages.map((p) => (
           <button key={p.id} type="button" className="lh-studio-cover" onClick={() => setPage(p.id)}>
             <span>{p.index}</span>
@@ -147,7 +194,7 @@ export function AccountPlaybookPanels({
   }
 
   return (
-    <div className="lh-studio is-page">
+    <div className="lh-studio is-page lh-branded" style={palette}>
       <div className="lh-studio-stage">
       <button type="button" className="lh-studio-back" onClick={() => setPage(null)}>
         ← Pages
@@ -232,6 +279,7 @@ function BrandGuidelinesCard({
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     setVoiceTone(brand.voiceTone);
@@ -280,12 +328,16 @@ function BrandGuidelinesCard({
         return;
       }
       setSavedMsg("Saved");
+      setEditing(false);
       setTimeout(() => setSavedMsg(""), 2000);
       onSaved();
     } finally {
       setSaving(false);
     }
   }
+
+  const swatches = brandHexes(colors);
+  const shownSwatches = swatches.length ? swatches : brandHexes(brand.colors);
 
   return (
     <HubFoldCard
@@ -298,9 +350,77 @@ function BrandGuidelinesCard({
         </span>
       }
     >
-      <p className="lh-card-note">
-        Voice, colors, typography, sender details, and copy guardrails for this account.
-      </p>
+      {!editing ? (
+        <div className="lh-kit">
+          <div className="lh-kit-ribbon" aria-hidden="true">
+            {(shownSwatches.length ? shownSwatches : ["var(--lh-heat)"]).map((hex) => (
+              <i key={hex} style={{ background: hex }} />
+            ))}
+          </div>
+          <div className="lh-kit-id">
+            <p className="lh-kit-kicker">{brand.senderName || "This account"}</p>
+            {voiceTone ? <blockquote className="lh-kit-voice">{voiceTone}</blockquote> : (
+              <p className="lh-card-note">Voice is not written yet.</p>
+            )}
+            {fonts ? <p className="lh-kit-fonts">{fonts}</p> : null}
+          </div>
+          {shownSwatches.length ? (
+            <div className="lh-kit-swatches">
+              {shownSwatches.map((hex) => (
+                <figure
+                  key={hex}
+                  style={{
+                    background: hex,
+                    color: luminance(hex) > 0.62 ? "#161616" : "#fff7f2",
+                  }}
+                >
+                  <figcaption>{hex}</figcaption>
+                </figure>
+              ))}
+            </div>
+          ) : null}
+          <dl className="lh-kit-meta">
+            {senderName ? (
+              <>
+                <dt>From</dt>
+                <dd>{senderName}</dd>
+              </>
+            ) : null}
+            {replyToEmail ? (
+              <>
+                <dt>Reply</dt>
+                <dd>{replyToEmail}</dd>
+              </>
+            ) : null}
+            {logoAssetsUrl ? (
+              <>
+                <dt>Kit</dt>
+                <dd>
+                  <a href={logoAssetsUrl} target="_blank" rel="noreferrer" className="lh-link">
+                    Open brand kit ↗
+                  </a>
+                </dd>
+              </>
+            ) : null}
+            {footerNotes ? (
+              <>
+                <dt>Footer</dt>
+                <dd>{footerNotes}</dd>
+              </>
+            ) : null}
+          </dl>
+          {dosAndDonts ? (
+            <section className="lh-kit-rules">
+              <h3>Guardrails</h3>
+              <p>{dosAndDonts}</p>
+            </section>
+          ) : null}
+          <button type="button" className="lh-kit-edit" onClick={() => setEditing(true)}>
+            Edit the kit
+          </button>
+        </div>
+      ) : null}
+      {editing ? (
       <form className="lh-pb-form" onSubmit={(e) => void save(e)}>
         <div className="lh-pb-grid-2">
           <label className="lh-field">
@@ -386,19 +506,17 @@ function BrandGuidelinesCard({
           <button type="submit" className="btn btn-sm" disabled={saving}>
             {saving ? "Saving…" : "Save brand guidelines"}
           </button>
-          {logoAssetsUrl ? (
-            <a
-              href={logoAssetsUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="lh-link"
-            >
-              Open brand kit ↗
-            </a>
-          ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setEditing(false)}
+          >
+            Cancel
+          </button>
           {savedMsg ? <span className="lh-pb-saved">{savedMsg}</span> : null}
         </div>
       </form>
+      ) : null}
     </HubFoldCard>
   );
 }
@@ -473,7 +591,7 @@ function IcpsCard({
     <HubFoldCard
       open
       className="lh-playbook-card"
-      title="ICPs (Ideal Customer Profiles)"
+      title="Audiences"
       actions={
         <span className="muted">
           {icps.length ? `${icps.length} profile${icps.length === 1 ? "" : "s"}` : "None yet"}
@@ -486,10 +604,13 @@ function IcpsCard({
         </p>
       ) : (
         <div className="lh-pb-stack">
-          {icps.map((icp) => (
-            <article key={icp.id} className="lh-pb-item">
+          {icps.map((icp, index) => (
+            <article key={icp.id} className="lh-pb-item lh-persona">
               <div className="lh-pb-item-head">
-                <h4>{icp.name}</h4>
+                <h4>
+                  <span className="lh-persona-num">{String(index + 1).padStart(2, "0")}</span>
+                  {icp.name}
+                </h4>
                 <button
                   type="button"
                   className="lh-todo-remove"
@@ -498,38 +619,38 @@ function IcpsCard({
                   Remove
                 </button>
               </div>
-              <dl className="lh-pb-dl">
+              <div className="lh-facts">
                 {icp.painPoints ? (
-                  <>
-                    <dt>Pain points</dt>
-                    <dd>{icp.painPoints}</dd>
-                  </>
+                  <div>
+                    <span>Pain</span>
+                    <p>{icp.painPoints}</p>
+                  </div>
                 ) : null}
                 {icp.desires ? (
-                  <>
-                    <dt>Goals &amp; desires</dt>
-                    <dd>{icp.desires}</dd>
-                  </>
+                  <div>
+                    <span>Wants</span>
+                    <p>{icp.desires}</p>
+                  </div>
                 ) : null}
                 {icp.objections ? (
-                  <>
-                    <dt>Objections</dt>
-                    <dd>{icp.objections}</dd>
-                  </>
+                  <div>
+                    <span>Objections</span>
+                    <p>{icp.objections}</p>
+                  </div>
                 ) : null}
                 {icp.triggers ? (
-                  <>
-                    <dt>Buying triggers</dt>
-                    <dd>{icp.triggers}</dd>
-                  </>
+                  <div>
+                    <span>Triggers</span>
+                    <p>{icp.triggers}</p>
+                  </div>
                 ) : null}
                 {icp.messagingAngle ? (
-                  <>
-                    <dt>Messaging angle</dt>
-                    <dd>{icp.messagingAngle}</dd>
-                  </>
+                  <div className="is-wide">
+                    <span>Write it like this</span>
+                    <p>{icp.messagingAngle}</p>
+                  </div>
                 ) : null}
-              </dl>
+              </div>
             </article>
           ))}
         </div>
@@ -719,7 +840,14 @@ function OffersCard({
       ) : (
         <div className="lh-pb-stack">
           {offers.map((offer) => (
-            <article key={offer.id} className="lh-pb-item">
+            <article
+              key={offer.id}
+              className={`lh-pb-item lh-offer${
+                offer.status === "active" && offers.find((o) => o.status === "active")?.id === offer.id
+                  ? " is-lead"
+                  : ""
+              }`}
+            >
               <div className="lh-pb-item-head">
                 <div className="lh-pb-title-row">
                   <span className="lh-pb-tag">
@@ -941,7 +1069,7 @@ function OptInsCard({
     <HubFoldCard
       open
       className="lh-playbook-card"
-      title="Opt-in methods"
+      title="Capture"
       actions={
         <span className="muted">
           {optIns.length ? `${liveCount} live · ${optIns.length} total` : "None yet"}
@@ -955,7 +1083,7 @@ function OptInsCard({
       ) : (
         <div className="lh-pb-stack">
           {optIns.map((opt) => (
-            <article key={opt.id} className="lh-pb-item">
+            <article key={opt.id} className="lh-pb-item lh-capture">
               <div className="lh-pb-item-head">
                 <div className="lh-pb-title-row">
                   <span className="lh-pb-tag">
@@ -987,30 +1115,30 @@ function OptInsCard({
                   </button>
                 </div>
               </div>
-              <dl className="lh-pb-dl">
+              <div className="lh-facts">
                 {opt.incentive ? (
-                  <>
-                    <dt>Incentive / Hook</dt>
-                    <dd>{opt.incentive}</dd>
-                  </>
+                  <div>
+                    <span>Hook</span>
+                    <p>{opt.incentive}</p>
+                  </div>
                 ) : null}
                 {opt.destinationList ? (
-                  <>
-                    <dt>Destination list / tag</dt>
-                    <dd>{opt.destinationList}</dd>
-                  </>
+                  <div>
+                    <span>Lands in</span>
+                    <p>{opt.destinationList}</p>
+                  </div>
                 ) : null}
                 {opt.url ? (
-                  <>
-                    <dt>Page URL</dt>
-                    <dd>
+                  <div className="is-wide">
+                    <span>Page</span>
+                    <p>
                       <a href={opt.url} target="_blank" rel="noreferrer" className="lh-link">
                         {opt.url} ↗
                       </a>
-                    </dd>
-                  </>
+                    </p>
+                  </div>
                 ) : null}
-              </dl>
+              </div>
             </article>
           ))}
         </div>
@@ -1566,7 +1694,7 @@ function AbTestingLogCard({
     <HubFoldCard
       open
       className="lh-playbook-card"
-      title="A/B testing log & results"
+      title="Results"
       actions={
         <span className="muted">
           {tests.length
