@@ -3,6 +3,7 @@ import { isAdminAuthenticated, sessionUserSlug } from "@/lib/auth";
 import { asPerson, hasConnection, SERVICE } from "@/lib/basecamp";
 import {
   INTERNAL_REVIEW_MESSAGE_MAX_CHARS,
+  assignCampaignAccountManager,
   internalReviewState,
   sendCampaignForInternalReview,
 } from "@/lib/internal-review";
@@ -67,4 +68,25 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
   return NextResponse.json(result);
+}
+
+export async function PATCH(request: Request, { params }: Params) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const accountManager = typeof body.accountManager === "string" ? body.accountManager : "";
+  const sender = await sessionUserSlug();
+  const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
+  const result = await assignCampaignAccountManager({
+    campaignId: id,
+    accountManager,
+    identity,
+  });
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+  const state = await internalReviewState(id);
+  return NextResponse.json({ ...result, state });
 }

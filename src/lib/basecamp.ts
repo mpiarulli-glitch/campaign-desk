@@ -2810,6 +2810,17 @@ export async function findPersonByEmail(
   );
 }
 
+export async function findPersonByName(
+  name: string,
+  identity: BcIdentity = SERVICE
+): Promise<BcPerson | null> {
+  const want = name.trim().toLowerCase();
+  if (!want) return null;
+  const all = await getPingablePeople(identity);
+  if (!all.length) return null;
+  return all.find((person) => person.name.trim().toLowerCase() === want) || null;
+}
+
 export interface GrantAccessResult {
   ok: boolean;
   error?: string;

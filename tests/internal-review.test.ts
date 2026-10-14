@@ -245,7 +245,18 @@ test("sending a campaign for internal review", async (t) => {
           employee: true,
           attachable_sgid: "sgid-sylvia",
         },
+        {
+          id: 3,
+          name: "Morris Kyle",
+          email_address: "kyle@meg.com",
+          client: false,
+          employee: true,
+          attachable_sgid: "sgid-kyle",
+        },
       ]);
+    }
+    if (url.includes("/people/users.json") && method === "PUT") {
+      return json({ granted: JSON.parse(String(init?.body || "{}")).grant });
     }
     if (url.includes("/projects/") && method === "GET") {
       return json({ dock: [{ id: 9, name: "todoset", enabled: true }] });
@@ -404,6 +415,23 @@ https://desk.example/review/custom`,
       /please review this campaign internally before it goes to the client/
     );
   });
+
+  await t.test("assigning an account manager from the campaign adds them to the project", async () => {
+    const result = await internal.assignCampaignAccountManager({
+      campaignId: created.id,
+      accountManager: "Kyle",
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.accountManager, "Kyle");
+    assert.equal(result.addedToProject, true);
+    assert.equal(result.basecampName, "Morris Kyle");
+    const saved = revenue.getRevClient(client.id);
+    assert.equal(saved?.account_manager, "Kyle");
+    const state = await internal.internalReviewState(created.id);
+    assert.equal(state?.accountManager, "Kyle");
+    assert.equal(state?.people.some((p) => p.id === 3 && p.name === "Morris Kyle"), true);
+  });
 });
 
 test("campaign detail shows a Basecamp to-do link after internal review", () => {
@@ -411,14 +439,15 @@ test("campaign detail shows a Basecamp to-do link after internal review", () => 
     path.join("src/app/admin/campaigns/[id]/page.tsx"),
     "utf8"
   );
-  const start = page.indexOf("Internal review");
-  const end = page.indexOf("client approval workflow");
+  const start = page.indexOf('Internal review{"');
+  const end = page.indexOf('Client approval{"');
   assert.ok(start >= 0 && end > start);
   const panel = page.slice(start, end);
 
   assert.match(panel, /Open to-do/);
   assert.match(panel, /Follow-up with/);
   assert.match(panel, /internalReview\?\.todoUrl/);
+  assert.match(panel, /Add to this account/);
   assert.match(panel, /To-do note/);
   assert.match(panel, /internal-review-message/);
   assert.match(panel, /internalReviewMessage/);

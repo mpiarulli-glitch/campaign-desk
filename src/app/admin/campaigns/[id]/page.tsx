@@ -253,6 +253,7 @@ type InternalReviewState = {
   missing: string[];
   clientName: string;
   accountManager: string;
+  managerChoices?: Array<{ value: string; label: string }>;
   people: Array<{ id: number; name: string; email: string; isClient: boolean }>;
   peopleReason: string;
   defaultReviewerId: number | null;
@@ -448,6 +449,8 @@ export default function AdminCampaignPage() {
     null
   );
   const [internalReviewerId, setInternalReviewerId] = useState<number | "">("");
+  const [managerChoice, setManagerChoice] = useState("");
+  const [savingManager, setSavingManager] = useState(false);
   const [internalReviewDueOn, setInternalReviewDueOn] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -606,8 +609,48 @@ export default function AdminCampaignPage() {
     setInternalReviewerId((current) =>
       current === "" ? (data.defaultReviewerId ?? "") : current
     );
+    setManagerChoice((current) => {
+      if (current) return current;
+      const saved = data.accountManager.trim().toLowerCase();
+      const hit = (data.managerChoices || []).find(
+        (m) => m.value.toLowerCase() === saved || m.label.toLowerCase() === saved
+      );
+      return hit?.value || "";
+    });
     setInternalReviewMessage((current) =>
       current ? current : data.message || ""
+    );
+  }
+
+  async function saveAccountManager() {
+    if (!managerChoice) {
+      setError("Choose Kyle, Cassidy, or Luis.");
+      return;
+    }
+    setSavingManager(true);
+    setError("");
+    const res = await fetch(`/api/campaigns/${id}/internal-review`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountManager: managerChoice }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingManager(false);
+    if (!res.ok) {
+      setError(data.error || "Could not save the account manager.");
+      return;
+    }
+    if (data.state) {
+      setInternalReview(data.state);
+      setInternalReviewerId(data.state.defaultReviewerId ?? "");
+      setInternalReviewMessage((current) => current || data.state.message || "");
+    } else {
+      await loadInternalReview();
+    }
+    setMessage(
+      data.addedToProject
+        ? `${data.basecampName || managerChoice} is the account manager on this account and on the Basecamp project.`
+        : data.warning || `${managerChoice} is saved on this account.`
     );
   }
 
@@ -3340,6 +3383,41 @@ export default function AdminCampaignPage() {
             {internalSendOpen ? (
             <>
             <div className="bc-form">
+              {!internalReview?.people.length || !internalReview.accountManager ? (
+                <div className="field">
+                  <label htmlFor="account-manager-choice">Who runs this account</label>
+                  <div className="bc-form-row" style={{ alignItems: "end" }}>
+                    <select
+                      id="account-manager-choice"
+                      value={managerChoice}
+                      onChange={(e) => setManagerChoice(e.target.value)}
+                      disabled={savingManager}
+                    >
+                      <option value="">Choose Kyle, Cassidy, or Luis</option>
+                      {(internalReview?.managerChoices || [
+                        { value: "Kyle", label: "Kyle" },
+                        { value: "Cassidy", label: "Cassidy" },
+                        { value: "Luis", label: "Luis" },
+                      ]).map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={!managerChoice || savingManager}
+                      onClick={() => void saveAccountManager()}
+                    >
+                      {savingManager ? "Adding…" : "Add to this account"}
+                    </button>
+                  </div>
+                  <span className="field-hint">
+                    Saves them on the account and adds them to the Basecamp project, so this review can be assigned to them.
+                  </span>
+                </div>
+              ) : null}
               <div className="bc-form-row">
                 <div className="field">
                   <label htmlFor="internal-reviewer">Account manager</label>
