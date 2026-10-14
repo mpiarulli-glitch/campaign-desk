@@ -76,10 +76,22 @@ test("per-person access", async (t) => {
     assert.equal(access.allows(jack, "page.snapshot"), true);
   });
 
+  await t.test("Reports and Social QA stay off the sidebar", () => {
+    for (const key of ["page.reports", "page.social_qa"] as const) {
+      const cap = access.capability(key);
+      assert.ok(cap, `${key} should exist`);
+      assert.equal(cap!.href, undefined);
+      assert.ok(!access.visiblePages(owner).some((p) => p.key === key));
+    }
+    assert.equal(access.allows(sylvia, "page.reports"), true);
+    assert.equal(access.allows(owner, "page.social_qa"), true);
+  });
+
   await t.test("the new pages on main are in the registry", () => {
     const hrefs = access.PAGES.map((p) => p.href);
     assert.ok(hrefs.includes("/admin/snapshot/desk"));
-    assert.ok(hrefs.includes("/admin/social-qa"));
+    assert.ok(!hrefs.includes("/admin/social-qa"));
+    assert.ok(!hrefs.includes("/admin/reports"));
   });
 
   await t.test("fixed capabilities are not grantable", () => {
