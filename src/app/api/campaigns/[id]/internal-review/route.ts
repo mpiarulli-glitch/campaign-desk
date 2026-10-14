@@ -15,7 +15,9 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const state = await internalReviewState(id);
+  const sender = await sessionUserSlug();
+  const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
+  const state = await internalReviewState(id, identity);
   if (!state) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -87,6 +89,6 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  const state = await internalReviewState(id);
+  const state = await internalReviewState(id, identity);
   return NextResponse.json({ ...result, state });
 }

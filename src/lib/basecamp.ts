@@ -483,7 +483,7 @@ export async function getProjectPeople(
   }
 }
 
-async function getPingablePeople(
+export async function listPingablePeople(
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
   try {
@@ -541,7 +541,7 @@ export async function getProjectPeopleForMention(
   const members = await getProjectPeople(projectId, identity);
   if (!members.length) return members;
   try {
-    const pingable = await getPingablePeople(identity);
+    const pingable = await listPingablePeople(identity);
     if (!pingable.length) return members;
     return mergePingableDetails(members, pingable);
   } catch {
@@ -568,7 +568,7 @@ export async function resolveSylviaMention(
   let sylvia = findSylviaOnRoster(people);
   if (!sylvia?.attachable_sgid) {
     try {
-      const fromAccount = findSylviaOnRoster(await getPingablePeople(identity));
+      const fromAccount = findSylviaOnRoster(await listPingablePeople(identity));
       if (fromAccount?.attachable_sgid) sylvia = fromAccount;
       else if (!sylvia) sylvia = fromAccount;
     } catch {
@@ -2801,7 +2801,7 @@ export async function findPersonByEmail(
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson | null> {
   if (!email.trim()) return null;
-  const all = await getPingablePeople(identity);
+  const all = await listPingablePeople(identity);
   if (!all.length) return null;
   const want = email.trim().toLowerCase();
   return (
@@ -2816,7 +2816,7 @@ export async function findPersonByName(
 ): Promise<BcPerson | null> {
   const want = name.trim().toLowerCase();
   if (!want) return null;
-  const all = await getPingablePeople(identity);
+  const all = await listPingablePeople(identity);
   if (!all.length) return null;
   return all.find((person) => person.name.trim().toLowerCase() === want) || null;
 }

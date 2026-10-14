@@ -7,6 +7,7 @@ import {
   findPersonByName,
   getProjectPeopleForMention,
   grantProjectAccess,
+  listPingablePeople,
   mentionHtml,
   resolveSylviaMention,
   type BcIdentity,
@@ -204,19 +205,85 @@ export function internalReviewTodoHtmlFromText(
     .join(BC_BLANK_LINE);
 }
 
+type ReviewRosterPerson = Pick<
+  BcPerson,
+  "id" | "name" | "email_address" | "client" | "employee" | "attachable_sgid"
+>;
+
+function toReviewPerson(person: ReviewRosterPerson): InternalReviewPerson {
+  return {
+    id: person.id,
+    name: person.name,
+    email: person.email_address || "",
+    isClient: Boolean(person.client),
+    attachableSgid: person.attachable_sgid || "",
+  };
+}
+
 export function teamPeopleForInternalReview(
-  people: Array<Pick<BcPerson, "id" | "name" | "email_address" | "client" | "employee" | "attachable_sgid">>
+  people: ReviewRosterPerson[]
 ): InternalReviewPerson[] {
   return people
     .filter((person) => !person.client)
-    .map((person) => ({
-      id: person.id,
-      name: person.name,
-      email: person.email_address || "",
-      isClient: Boolean(person.client),
-      attachableSgid: person.attachable_sgid || "",
-    }))
+    .map(toReviewPerson)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Exact mapped name or email matches even when Basecamp marks the person as a
+// client. A first-name fallback only counts when one non-client (or one
+// employee) matches, so a client contact named Cassidy cannot be assigned.
+export function findMappedAccountManager(
+  people: ReviewRosterPerson[],
+  accountManager: string
+): InternalReviewPerson | null {
+  const raw = (accountManager || "").trim();
+  if (!raw) return null;
+
+  const mapped = basecampNameForManager(raw);
+  const slug = slugForName(raw);
+  const label = slug ? teamLabel(slug) : "";
+  const queries = [mapped, label, raw]
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const query of queries) {
+    const exact = people.find(
+      (person) =>
+        (person.name || "").trim().toLowerCase() === query ||
+        (person.email_address || "").trim().toLowerCase() === query
+    );
+    if (exact) return toReviewPerson(exact);
+  }
+
+  const first = raw.toLowerCase().split(/\s+/)[0];
+  if (!first) return null;
+  const byFirst = people.filter(
+    (person) => (person.name || "").toLowerCase().split(/\s+/)[0] === first
+  );
+  const staff = byFirst.filter((person) => !person.client);
+  const pool = staff.length ? staff : byFirst.filter((person) => person.employee);
+  return pool.length === 1 ? toReviewPerson(pool[0]) : null;
+}
+
+// Project teammates, plus Kyle, Cassidy, and Luis when they exist on the
+// company directory. The account manager stays selectable after they are saved
+// even if Basecamp has not put them on the project roster yet.
+export function reviewersForInternalReview(
+  projectPeople: ReviewRosterPerson[],
+  companyPeople: ReviewRosterPerson[]
+): InternalReviewPerson[] {
+  const byId = new Map<number, InternalReviewPerson>();
+  for (const person of teamPeopleForInternalReview(projectPeople)) {
+    byId.set(person.id, person);
+  }
+  for (const manager of CAMPAIGN_ACCOUNT_MANAGERS) {
+    const found =
+      findMappedAccountManager(companyPeople, manager.value) ||
+      findMappedAccountManager(projectPeople, manager.value);
+    if (!found || byId.has(found.id)) continue;
+    byId.set(found.id, { ...found, isClient: false });
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // Prefer the mapped Basecamp display name for this client's AM, then a unique
@@ -348,8 +415,9 @@ export async function sendCampaignForInternalReview(input: {
       status: 502,
     };
   }
+  const company = await listPingablePeople(identity);
 
-  const team = teamPeopleForInternalReview(roster);
+  const team = reviewersForInternalReview(roster, company);
   const reviewer = team.find((person) => person.id === input.reviewerId);
   if (!reviewer) {
     return {
@@ -359,7 +427,22 @@ export async function sendCampaignForInternalReview(input: {
     };
   }
 
-  const reviewerPerson = roster.find((person) => person.id === reviewer.id);
+  const onProject = roster.some((person) => person.id === reviewer.id);
+  if (!onProject) {
+    const grant = await grantProjectAccess(client.basecamp_project_id, reviewer.id, identity);
+    if (!grant.ok) {
+      return {
+        ok: false,
+        error:
+          "Basecamp did not add that account manager to the project, so the review could not be assigned.",
+        status: 502,
+      };
+    }
+  }
+
+  const reviewerPerson =
+    roster.find((person) => person.id === reviewer.id) ||
+    company.find((person) => person.id === reviewer.id);
   const content = internalReviewTodoContent({
     campaignTitle: campaign.title,
     clientName: campaign.client_name || client.name,
@@ -527,7 +610,10 @@ export async function assignCampaignAccountManager(input: {
   };
 }
 
-export async function internalReviewState(campaignId: string): Promise<
+export async function internalReviewState(
+  campaignId: string,
+  identity: BcIdentity = SERVICE
+): Promise<
   | {
       ready: boolean;
       missing: string[];
@@ -561,8 +647,9 @@ export async function internalReviewState(campaignId: string): Promise<
   let peopleReason = "";
   if (client?.basecamp_project_id && basecampConnected()) {
     try {
-      const roster = await getProjectPeopleForMention(client.basecamp_project_id);
-      people = teamPeopleForInternalReview(roster);
+      const roster = await getProjectPeopleForMention(client.basecamp_project_id, identity);
+      const company = await listPingablePeople(identity);
+      people = reviewersForInternalReview(roster, company);
       if (!people.length) {
         peopleReason =
           "Nobody from our team is on that Basecamp project, so there is no one to assign.";
@@ -653,7 +740,7 @@ export async function followUpInternalReview(
     };
   }
 
-  const state = await internalReviewState(campaignId);
+  const state = await internalReviewState(campaignId, identity);
   const todoId = state?.todoId || campaign.internal_review_todo_id;
   if (!todoId) {
     return {
@@ -673,7 +760,8 @@ export async function followUpInternalReview(
       status: 502,
     };
   }
-  const team = teamPeopleForInternalReview(roster);
+  const company = await listPingablePeople(identity);
+  const team = reviewersForInternalReview(roster, company);
   const reviewer =
     pickDefaultInternalReviewer(team, state?.assigneeSlug || client.account_manager) ||
     team.find((person) => String(person.id) && state?.defaultReviewerId === person.id) ||
@@ -685,7 +773,9 @@ export async function followUpInternalReview(
       status: 400,
     };
   }
-  const reviewerPerson = roster.find((person) => person.id === reviewer.id);
+  const reviewerPerson =
+    roster.find((person) => person.id === reviewer.id) ||
+    company.find((person) => person.id === reviewer.id);
   const html = internalReviewFollowupHtml({
     reviewerName: reviewer.name,
     campaignTitle: campaign.title,
