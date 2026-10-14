@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { DailyNote } from "@/components/hub/DailyNote";
 import { AssignTodoPanel } from "@/components/AssignTodoPanel";
+import { currentWeek } from "@/lib/week";
 
 type Section = "resources" | "sops" | "training" | "sentiment";
 type Sop = { id: string; title: string; category: string };
@@ -32,6 +34,55 @@ function Icon({ name }: { name: string }) {
   );
 }
 
+type DeckTarget =
+  | { label: string; href: string; keys: string[] }
+  | { label: string; section: Section; keys: string[] };
+
+const DECK_TARGETS: DeckTarget[] = [
+  { label: "Forecast", href: "/admin/forecast", keys: ["forecast", "hours", "capacity"] },
+  { label: "Lifecycle", href: "/admin/lifecycle", keys: ["lifecycle", "clients", "accounts"] },
+  { label: "Production", href: "/admin/production", keys: ["production", "shoot", "shoots"] },
+  { label: "Campaigns", href: "/admin/campaigns", keys: ["campaign", "campaigns", "reviews"] },
+  { label: "Onboarding", href: "/admin/onboarding", keys: ["onboarding", "new client"] },
+  { label: "Calendar", href: "/admin/calendar", keys: ["calendar", "sends"] },
+  { label: "Whiteboard", href: "/admin/whiteboard", keys: ["whiteboard", "board"] },
+  { label: "Weekly Snapshots", href: "/admin/snapshot/desk", keys: ["snapshot", "snapshots", "weekly"] },
+  { label: "SOPs", section: "sops", keys: ["sop", "sops"] },
+  { label: "Training", section: "training", keys: ["training", "course", "courses"] },
+  { label: "Team pulse", section: "sentiment", keys: ["pulse", "sentiment", "mood"] },
+  { label: "Resources", section: "resources", keys: ["resources", "docs", "files"] },
+];
+
+const QUICK = DECK_TARGETS.filter((t) => "href" in t).slice(0, 4);
+
+function matchTarget(raw: string): DeckTarget | null {
+  const q = raw.trim().toLowerCase();
+  if (!q) return null;
+  return (
+    DECK_TARGETS.find((t) => t.keys.some((k) => q === k || q.includes(k))) || null
+  );
+}
+
+function usePacificClock(): string {
+  const [label, setLabel] = useState("");
+  useEffect(() => {
+    const tick = () => {
+      setLabel(
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/Los_Angeles",
+          weekday: "short",
+          hour: "numeric",
+          minute: "2-digit",
+        }).format(new Date())
+      );
+    };
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return label;
+}
+
 export function HubHome({
   onOpen,
   isAdmin,
@@ -41,6 +92,12 @@ export function HubHome({
   isAdmin: boolean;
   person: string | null;
 }) {
+  const router = useRouter();
+  const clock = usePacificClock();
+  const [command, setCommand] = useState("");
+  const [reply, setReply] = useState("");
+  const [running, setRunning] = useState(false);
+  const [teamPct, setTeamPct] = useState<number | null>(null);
   const [sops, setSops] = useState<Sop[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -57,6 +114,16 @@ export function HubHome({
         setCheckins(d.all ?? null);
         setMyScore(d.mine?.score ?? null);
       });
+    if (!isAdmin) return;
+    fetch(`/api/forecast?week=${currentWeek()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { people?: Array<{ hours: number; capacity: number }> } | null) => {
+        const people = d?.people || [];
+        const hours = people.reduce((sum, p) => sum + (p.hours || 0), 0);
+        const capacity = people.reduce((sum, p) => sum + (p.capacity || 0), 0);
+        setTeamPct(capacity ? Math.round((hours / capacity) * 100) : null);
+      })
+      .catch(() => setTeamPct(null));
   }, [isAdmin]);
 
   const pulseAvg = checkins && checkins.length ? checkins.reduce((s, c) => s + c.score, 0) / checkins.length : null;
@@ -66,19 +133,104 @@ export function HubHome({
 
   const firstName = person ? person.split("_")[0].replace(/^\w/, (c) => c.toUpperCase()) : null;
 
-  return (
-    <div>
-      <div className="hq-hero">
-        <p className="ops-eyebrow empire-mark">BUILD YOUR EMPIRE</p>
-        <h1>{greeting()}{firstName ? `, ${firstName}` : ""}.</h1>
-        <p>
-          The team&apos;s home base.{" "}
-          {pulseAvg != null ? <>This month&apos;s pulse sits at <b>{pulseAvg.toFixed(1)}</b>.</> : null}
-        </p>
-      </div>
+  const briefing = useMemo(() => {
+    const who = firstName || "there";
+    const bits = [`${greeting()}, ${who}. The house is online.`];
+    if (teamPct != null) bits.push(`The team is ${teamPct}% forecasted this week.`);
+    if (pulseAvg != null && checkins) {
+      bits.push(
+        `Pulse is ${pulseAvg.toFixed(1)} from ${checkins.length} check-in${checkins.length === 1 ? "" : "s"}.`
+      );
+    } else if (myScore != null) {
+      bits.push(`Your pulse this month is ${myScore}.`);
+    }
+    if (sops.length) bits.push(`${sops.length} SOP${sops.length === 1 ? "" : "s"} on file.`);
+    bits.push("Name a system, or a client, and I'll open it.");
+    return bits.join(" ");
+  }, [firstName, teamPct, pulseAvg, checkins, myScore, sops.length]);
 
-      <div className="hq-pulse">
-        <div className="hq-pulse-item"><span className="hq-pulse-dot" style={{ background: "#c25d8a" }} /><span className="n">{pulseAvg != null ? pulseAvg.toFixed(1) : myScore != null ? myScore : "—"}</span><span className="l">team pulse</span></div>
+  function openTarget(target: DeckTarget) {
+    setReply(`Opening ${target.label}.`);
+    if ("href" in target) router.push(target.href);
+    else onOpen(target.section);
+  }
+
+  async function runCommand(e: React.FormEvent) {
+    e.preventDefault();
+    const raw = command.trim();
+    if (!raw || running) return;
+    const target = matchTarget(raw);
+    if (target) {
+      openTarget(target);
+      return;
+    }
+    setRunning(true);
+    setReply("Looking.");
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(raw)}`);
+      const data = res.ok ? await res.json() : { hits: [] };
+      const hit = (data.hits || [])[0] as { title?: string; href?: string } | undefined;
+      if (hit?.href && hit.title) {
+        setReply(`Opening ${hit.title}.`);
+        router.push(hit.href);
+        return;
+      }
+      setReply("Nothing by that name. Try forecast, lifecycle, production, or a client.");
+    } catch {
+      setReply("I couldn't reach search. Try one of the systems below.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const coreRead = pulseAvg != null ? pulseAvg.toFixed(1) : teamPct != null ? `${teamPct}%` : "ON";
+  const coreLabel = pulseAvg != null ? "pulse" : teamPct != null ? "forecast" : "online";
+
+  return (
+    <div className="deck">
+      <div className="deck-top">
+        <div className="deck-brief">
+          <p className="deck-kicker">
+            <span className="deck-live" aria-hidden />
+            Marketing Empire · Command
+            {clock ? <span className="deck-clock">{clock} PT</span> : null}
+          </p>
+          <h1>{greeting()}{firstName ? `, ${firstName}` : ""}.</h1>
+          <p>{briefing}</p>
+          <form className="deck-command" onSubmit={(e) => void runCommand(e)}>
+            <label htmlFor="deck-command">Command</label>
+            <div className="deck-command-row">
+              <input
+                id="deck-command"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="Forecast, lifecycle, Swing Inn…"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button type="submit" disabled={running || !command.trim()}>
+                {running ? "…" : "Open"}
+              </button>
+            </div>
+          </form>
+          {reply ? <p className="deck-reply" role="status">{reply}</p> : null}
+          <div className="deck-quick">
+            {QUICK.map((t) => (
+              <button key={t.label} type="button" onClick={() => openTarget(t)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="deck-core" aria-hidden="true">
+          <span className="deck-ring r1" />
+          <span className="deck-ring r2" />
+          <span className="deck-ring r3" />
+          <span className="deck-core-read">
+            <b>{coreRead}</b>
+            <span>{coreLabel}</span>
+          </span>
+        </div>
       </div>
 
       <div className="hq-bento">
