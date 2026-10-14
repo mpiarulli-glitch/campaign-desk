@@ -601,10 +601,9 @@ function addDays(ymd: string, n: number): string {
 
 /* ------------------------------------------------------ start / stop timer */
 
-// Two at once is enough to split attention without leaving a night of timers
-// running on every task you touched. Oldest first, so a third start knows which
-// one to bank.
-export const MAX_RUNNING_TIMERS = 2;
+// Several tasks can be timed at once. Starting one never stops another; each
+// timer is stopped on its own row.
+export const MAX_RUNNING_TIMERS = 12;
 
 export function runningTasksForPerson(person: string): ForecastTask[] {
   return getDb()
@@ -632,10 +631,10 @@ export function stopTimer(id: string, now = Date.now()): ForecastTask | null {
 /**
  * Start timing a task.
  *
- * Up to MAX_RUNNING_TIMERS can run at once for the same person. Starting a
- * second does not touch the first. Starting past that limit banks the oldest
- * running timer (it keeps the time it measured) and returns it in `stopped` so
- * the page can say which task gave way.
+ * Up to MAX_RUNNING_TIMERS can run at once for the same person. Starting
+ * another does not touch the ones already going. Past that limit, the oldest
+ * running timer is banked (it keeps the time it measured) and returned in
+ * `stopped` so the page can say which task gave way.
  */
 export function startTimer(
   person: string,
