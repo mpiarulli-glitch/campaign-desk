@@ -9558,6 +9558,64 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .fc-gauge-figure.fc-gauge-logged.is-caught b { color: var(--success); }
 .fc-gauge-legend span.is-short { color: var(--warning); }
 
+/* Hours written to the timesheet this week, as a share of the 40h week.
+   The planned-hours gauge above compares logged time to the plan; this bar
+   always totals to capacity so last week and this week read the same way. */
+.fc-tracked {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px 16px 15px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.fc-tracked-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fc-tracked-label {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fc-tracked-head strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  font-weight: 650;
+}
+.fc-tracked-head strong b {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.fc-tracked-head strong span {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+.fc-tracked-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.fc-tracked-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 320ms var(--fc-ease, ease);
+}
+.fc-tracked.is-full .fc-tracked-fill { background: var(--success); }
+.fc-tracked.is-full .fc-tracked-head strong b { color: var(--success); }
+.fc-tracked.is-over .fc-tracked-fill { background: var(--danger); }
+.fc-tracked.is-over .fc-tracked-head strong b { color: var(--danger); }
+
 .fc-today {
   background: transparent;
   border: none;
