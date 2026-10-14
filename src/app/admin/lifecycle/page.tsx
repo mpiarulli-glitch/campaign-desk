@@ -72,14 +72,29 @@ export default function LifecyclePage() {
   const refresh = useCallback(() => void loadTools(false), [loadTools]);
 
   return (
-    <div className="lh-page">
-      <header className="lh-page-bar">
-        <div>
+    <div className="lh-page stark">
+      <header className="lh-page-bar stark-hero">
+        <div className="stark-title">
+          <div className="deck-core stark-core" aria-hidden="true">
+            <span className="deck-ring r1" />
+            <span className="deck-ring r2" />
+            <span className="deck-ring r3" />
+            <span className="deck-core-read">
+              <b>ON</b>
+              <span>live</span>
+            </span>
+          </div>
+          <div>
+          <p className="deck-kicker">
+            <span className="deck-live" aria-hidden />
+            Systems · Lifecycle
+          </p>
           <h1>Lifecycle</h1>
           <p className="muted">
             Email cadence, attributed bookings and forms, and what still needs
             to launch.
           </p>
+          </div>
         </div>
         <div className="lh-page-bar-right">
           {tool ? (
