@@ -9616,6 +9616,37 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .fc-tracked.is-over .fc-tracked-fill { background: var(--danger); }
 .fc-tracked.is-over .fc-tracked-head strong b { color: var(--danger); }
 
+.fc-tracked-days {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: -6px 0 18px;
+}
+.fc-tracked.fc-tracked-day {
+  margin: 0;
+  padding: 10px 12px 12px;
+  gap: 8px;
+}
+.fc-tracked-day .fc-tracked-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  letter-spacing: 0.06em;
+}
+.fc-tracked-date {
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+.fc-tracked-day .fc-tracked-head strong b { font-size: 16px; }
+.fc-tracked-day .fc-tracked-head strong span { font-size: 12px; }
+.fc-tracked-day .fc-tracked-track { height: 8px; }
+@media (max-width: 900px) {
+  .fc-tracked-days { grid-template-columns: 1fr; }
+}
+
 .fc-today {
   background: transparent;
   border: none;
