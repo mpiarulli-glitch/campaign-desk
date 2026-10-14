@@ -38,8 +38,8 @@ const OPT_IN_CHANNEL_LABELS: Record<string, string> = {
   landing_page: "Landing page",
   quiz: "Quiz / Assessment",
   sms_keyword: "SMS keyword",
-  giveaway: "Giveaway",
   lead_ad: "Paid lead form",
+  giveaway: "Giveaway",
 };
 
 const AB_VARIABLE_LABELS: Record<string, string> = {
@@ -80,6 +80,9 @@ export function AccountPlaybookPanels({
   const [data, setData] = useState<AccountPlaybook | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState<
+    "brand" | "icps" | "offers" | "optins" | "calendar" | "testing" | "ab"
+  >("brand");
 
   const membersParam = memberIds.join(",");
 
@@ -113,50 +116,89 @@ export function AccountPlaybookPanels({
     return error ? <p className="lh-error">{error}</p> : null;
   }
 
+  const pages = [
+    { id: "brand", label: "Brand", index: "01" },
+    { id: "icps", label: "Audiences", index: "02" },
+    { id: "offers", label: "Offers", index: "03" },
+    { id: "optins", label: "Capture", index: "04" },
+    { id: "calendar", label: "Calendar", index: "05" },
+    { id: "testing", label: "Test plan", index: "06" },
+    { id: "ab", label: "Results", index: "07" },
+  ] as const;
+
   return (
-    <>
+    <div className="lh-studio">
+      <nav className="lh-studio-nav" aria-label="Account pages">
+        {pages.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={page === p.id ? "is-on" : ""}
+            onClick={() => setPage(p.id)}
+          >
+            <span>{p.index}</span>
+            {p.label}
+          </button>
+        ))}
+      </nav>
+      <div className="lh-studio-stage">
+      {page === "brand" ? (
       <BrandGuidelinesCard
         clientId={clientId}
         brand={data.brand}
         onSaved={() => void load()}
       />
+      ) : null}
+      {page === "icps" ? (
       <IcpsCard
         clientId={clientId}
         icps={data.icps}
         onChanged={() => void load()}
       />
+      ) : null}
+      {page === "offers" ? (
       <OffersCard
         clientId={clientId}
         offers={data.offers}
         onChanged={() => void load()}
       />
+      ) : null}
+      {page === "optins" ? (
       <OptInsCard
         clientId={clientId}
         optIns={data.optIns}
         onChanged={() => void load()}
       />
+      ) : null}
+      {page === "calendar" ? (
       <CalendarCard
         clientId={clientId}
         kind="campaign"
         title="Campaign calendar"
-        subtitle="Planned email & SMS sends, promos, audience targets, and angles."
+        subtitle="The month of sends. Dean Days, giveaways, and the emails that bring people through the door."
         items={data.campaignCalendar}
         onChanged={() => void load()}
       />
+      ) : null}
+      {page === "testing" ? (
       <CalendarCard
         clientId={clientId}
         kind="testing"
-        title="Testing calendar"
-        subtitle="Upcoming experiments queued across subject lines, offers, send times, and flows."
+        title="Test plan"
+        subtitle="Experiments queued before they earn a result."
         items={data.testingCalendar}
         onChanged={() => void load()}
       />
+      ) : null}
+      {page === "ab" ? (
       <AbTestingLogCard
         clientId={clientId}
         tests={data.abTests}
         onChanged={() => void load()}
       />
-    </>
+      ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -237,6 +279,7 @@ function BrandGuidelinesCard({
 
   return (
     <HubFoldCard
+      open
       className="lh-playbook-card"
       title="Brand guidelines"
       actions={
@@ -418,6 +461,7 @@ function IcpsCard({
 
   return (
     <HubFoldCard
+      open
       className="lh-playbook-card"
       title="ICPs (Ideal Customer Profiles)"
       actions={
@@ -649,6 +693,7 @@ function OffersCard({
 
   return (
     <HubFoldCard
+      open
       className="lh-playbook-card"
       title="Offers"
       actions={
@@ -884,6 +929,7 @@ function OptInsCard({
 
   return (
     <HubFoldCard
+      open
       className="lh-playbook-card"
       title="Opt-in methods"
       actions={
@@ -1062,6 +1108,104 @@ function OptInsCard({
   );
 }
 
+function MonthGrid({ items }: { items: AccountCalendarItem[] }) {
+  const dated = items.filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.plannedDate));
+  const first = dated.map((item) => item.plannedDate).sort()[0];
+  const initial = first ? first.slice(0, 7) : new Date().toISOString().slice(0, 7);
+  const [month, setMonth] = useState(initial);
+  const [selected, setSelected] = useState(first || "");
+  const [year, mon] = month.split("-").map(Number);
+  const start = new Date(year, mon - 1, 1);
+  const daysInMonth = new Date(year, mon, 0).getDate();
+  const lead = start.getDay();
+  const cells: Array<number | null> = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const label = start.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  function shift(delta: number) {
+    const next = new Date(year, mon - 1 + delta, 1);
+    const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+    setMonth(key);
+    setSelected("");
+  }
+
+  function ymd(day: number) {
+    return `${month}-${String(day).padStart(2, "0")}`;
+  }
+
+  const selectedItems = items.filter((item) => item.plannedDate === selected);
+  const undated = items.filter((item) => !item.plannedDate);
+
+  return (
+    <div className="lh-cal">
+      <div className="lh-cal-board">
+        <div className="lh-cal-head">
+          <button type="button" onClick={() => shift(-1)} aria-label="Previous month">
+            ‹
+          </button>
+          <h3>{label}</h3>
+          <button type="button" onClick={() => shift(1)} aria-label="Next month">
+            ›
+          </button>
+        </div>
+        <div className="lh-cal-weekdays">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            <span key={d}>{d}</span>
+          ))}
+        </div>
+        <div className="lh-cal-grid">
+          {cells.map((day, i) => {
+            if (!day) return <div key={`e-${i}`} className="lh-cal-day is-empty" />;
+            const key = ymd(day);
+            const dayItems = items.filter((item) => item.plannedDate === key);
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`lh-cal-day${selected === key ? " is-on" : ""}${dayItems.length ? " has-work" : ""}`}
+                onClick={() => setSelected(key)}
+              >
+                <b>{day}</b>
+                {dayItems.slice(0, 3).map((item) => (
+                  <em key={item.id}>{item.title}</em>
+                ))}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <aside className="lh-cal-aside">
+        <p className="lh-cal-aside-kicker">
+          {selected ? prettyDate(selected) : "This month"}
+        </p>
+        {selectedItems.length === 0 ? (
+          <p className="lh-card-note">Nothing scheduled on this day.</p>
+        ) : (
+          selectedItems.map((item) => (
+            <article key={item.id}>
+              <h4>{item.title}</h4>
+              {item.audienceOrTarget ? <p>{item.audienceOrTarget}</p> : null}
+              {item.offerOrVariable ? <p>{item.offerOrVariable}</p> : null}
+              {item.notes ? <p>{item.notes}</p> : null}
+            </article>
+          ))
+        )}
+        {undated.length > 0 ? (
+          <div className="lh-cal-undated">
+            <p className="lh-cal-aside-kicker">Not dated yet</p>
+            {undated.map((item) => (
+              <p key={item.id}>{item.title}</p>
+            ))}
+          </div>
+        ) : null}
+      </aside>
+    </div>
+  );
+}
+
 function CalendarCard({
   clientId,
   kind,
@@ -1146,6 +1290,7 @@ function CalendarCard({
 
   return (
     <HubFoldCard
+      open
       className="lh-playbook-card"
       title={title}
       actions={
@@ -1155,7 +1300,8 @@ function CalendarCard({
       }
     >
       <p className="lh-card-note">{subtitle}</p>
-      {items.length > 0 ? (
+      {kind === "campaign" ? <MonthGrid items={items} /> : null}
+      {items.length > 0 && kind !== "campaign" ? (
         <ul className="lh-pb-cal-list">
           {items.map((item) => (
             <li key={item.id} className="lh-pb-cal-row">
@@ -1408,6 +1554,7 @@ function AbTestingLogCard({
 
   return (
     <HubFoldCard
+      open
       className="lh-playbook-card"
       title="A/B testing log & results"
       actions={

@@ -16908,6 +16908,214 @@ article.snap-pick-card.lh-pick-card:hover {
   font-size: 13px;
 }
 
+.lh-studio {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.lh-studio-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 12px;
+}
+
+.lh-studio-nav button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-left: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lh-studio-nav button span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.lh-studio-nav button.is-on {
+  color: var(--text);
+  border-left-color: var(--text);
+}
+
+.lh-studio-stage .lh-fold-toggle {
+  pointer-events: none;
+}
+
+.lh-studio-stage .lh-fold-caret {
+  display: none;
+}
+
+.lh-studio-stage .lh-playbook-card {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.lh-studio-stage .lh-card-head {
+  margin-bottom: 18px;
+}
+
+.lh-studio-stage .lh-fold-title {
+  font-size: 28px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.lh-cal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 18px;
+  margin: 8px 0 20px;
+}
+
+.lh-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.lh-cal-head h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.lh-cal-head button {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.lh-cal-weekdays,
+.lh-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.lh-cal-weekdays span {
+  padding: 0 8px 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lh-cal-day {
+  min-height: 108px;
+  padding: 8px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lh-cal-grid .lh-cal-day:nth-child(7n) {
+  border-right: 1px solid var(--border);
+}
+
+.lh-cal-grid .lh-cal-day:nth-last-child(-n + 7) {
+  border-bottom: 1px solid var(--border);
+}
+
+.lh-cal-day.is-empty {
+  cursor: default;
+  background: color-mix(in srgb, var(--bg-soft) 65%, transparent);
+}
+
+.lh-cal-day b {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-cal-day em {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.25;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, #d24719 18%, var(--bg-elevated));
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-cal-day.is-on {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.lh-cal-aside {
+  padding-top: 42px;
+}
+
+.lh-cal-aside-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lh-cal-aside article {
+  margin-bottom: 14px;
+}
+
+.lh-cal-aside h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.lh-cal-aside p {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .lh-studio,
+  .lh-cal {
+    grid-template-columns: 1fr;
+  }
+
+  .lh-studio-nav {
+    position: static;
+    flex-direction: row;
+    overflow: auto;
+  }
+
+  .lh-cal-day {
+    min-height: 72px;
+  }
+}
+
 .lh-playbook-card .lh-pb-form {
   display: flex;
   flex-direction: column;

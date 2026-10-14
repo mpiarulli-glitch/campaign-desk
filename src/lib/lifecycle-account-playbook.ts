@@ -827,10 +827,128 @@ export function deleteAccountAbTest(id: string): boolean {
   return res.changes > 0;
 }
 
+function seedSwingInn(clientId: string): void {
+  const client = getRevClient(clientId);
+  if (!client || !/swing inn/i.test(client.name)) return;
+  const existing = getAccountBrandGuidelines(clientId);
+  if (existing.voiceTone.trim() || listAccountIcps(clientId).length) return;
+
+  saveAccountBrandGuidelines(clientId, {
+    voiceTone:
+      "Fun, bold, a little larger-than-life. Hollywood personality meets Texas pitmaster. Warm and welcoming, never stiff or corporate.",
+    colors: "#D24719  ·  #000000",
+    fonts: "Swing Inn mark. Real photography of Dean, the smoker, the 1927 counter, and the Old Town sign.",
+    senderName: "Swing Inn Cafe & BBQ",
+    replyToEmail: "",
+    logoAssetsUrl: "https://swinginncafe.com",
+    dosAndDonts:
+      "Meeting Dean is for customers — say so plainly, and never promise he is there beyond a confirmed Dean Day. Every call to action captures an email or phone number first. Do not ask people only to follow. Review requests are never incentivized. Free cinnamon roll is one per person, with an entrée, redeemed by showing the email at the register. SMS goes only to opted-in contacts, with STOP and HELP. Client-facing creative uses Swing Inn red and black, not Marketing Empire Group branding. Giveaway rules include no-purchase-necessary language.",
+    footerNotes:
+      "Swing Inn Cafe & BBQ · Old Town Temecula. Giveaway official rules required. Dean’s likeness and the cardboard cutout need client approval before they go out.",
+  });
+
+  const icps = [
+    ["Weekend visitors from LA, OC, and SD", "The drive into Old Town needs a reason to stop.", "A meal worth posting, and maybe Dean in the room.", "Dean might not be there, and Old Town has plenty of other doors.", "A TikTok, a Google Maps search on the drive, or a Dean Days alert.", "Swing Inn is the Old Town stop you’ll post about — and this month you could win dinner with Dean."],
+    ["Local regulars", "The first visit doesn’t give them a reason to come back.", "A place that still feels like theirs when the hype shows up.", "It can feel like a tourist stop.", "A Dean Day on the calendar, or a welcome offer they can actually use.", "Come back for the plate, not the viral clip."],
+    ["Dean fans", "They want a real connection, not a sighting from the sidewalk.", "Dinner with Dean, a photo, something signed.", "No guarantee he is working the room.", "The monthly dinner prize, or a confirmed Dean Day.", "Meeting Dean is for customers. Grab a plate and come say hi."],
+    ["BBQ people", "A lot of places claim craft without the pit.", "Award-caliber Texas BBQ, brisket sliced in front of them.", "Another Old Town option that looks the same online.", "Pitmaster credibility in the content.", "A 1927 diner and a real smoker, not a themed restaurant."],
+    ["Catering buyers", "An event has to run smoothly, especially with a famous name attached.", "A memorable, reliable event.", "They need confidence on date, headcount, and follow-through.", "A holiday, a company dinner, a gathering that should be talked about.", "Celebrity-owned catering that still shows up like a working BBQ house."],
+  ] as const;
+  for (const [name, painPoints, desires, objections, triggers, messagingAngle] of icps) {
+    addAccountIcp(clientId, { name, painPoints, desires, objections, triggers, messagingAngle });
+  }
+
+  addAccountOffer(clientId, {
+    name: "Win Dinner with Dean",
+    offerType: "seasonal",
+    details:
+      "Monthly giveaway. Entries reset each month. 1st: dinner for up to 4, a photo with Dean, and an autographed item. 2nd: $100 gift card. 3rd: $50 gift card. Enter, then visit, then upload a Cardboard Dean selfie and a receipt for bonus entries.",
+    status: "active",
+  });
+  addAccountOffer(clientId, {
+    name: "Free cinnamon roll",
+    offerType: "lead_magnet",
+    details:
+      "Every signup on the website or SweepWidget gets one free cinnamon roll. One per person, with the purchase of an entrée. Redeem by showing the email at the register.",
+    status: "active",
+  });
+  addAccountOffer(clientId, {
+    name: "Dean Days",
+    offerType: "core",
+    details:
+      "Dean is home all of October. Meeting him is for customers. First confirmed day is Saturday, October 10. Copy states his hours and never extends the promise past a confirmed date.",
+    status: "active",
+  });
+  addAccountOffer(clientId, {
+    name: "Catering",
+    offerType: "core",
+    details:
+      "Expansion offer. Celebrity-owned catering for a memorable, reliable event. Holiday catering belongs on the Q4 calendar.",
+    status: "upcoming",
+  });
+
+  addAccountOptIn(clientId, {
+    name: "SweepWidget — Win Dinner with Dean",
+    channel: "giveaway",
+    incentive: "Dinner with Dean, plus gift-card runners-up",
+    destinationList: "Giveaway entries, reset monthly",
+    conversionRate: "",
+    url: "",
+    status: "live",
+  });
+  addAccountOptIn(clientId, {
+    name: "Website cinnamon roll signup",
+    channel: "embedded_form",
+    incentive: "Free cinnamon roll",
+    destinationList: "Welcome flow — same offer as SweepWidget",
+    url: "https://swinginncafe.com",
+    status: "draft",
+  });
+  addAccountOptIn(clientId, {
+    name: "Cardboard Dean QR",
+    channel: "landing_page",
+    incentive: "Bonus entries for a cutout photo and a receipt",
+    destinationList: "SweepWidget upload",
+    status: "draft",
+  });
+
+  const campaignDays: Array<[string, string, string, string, string]> = [
+    ["2026-10-06", "Campaign brief locked", "All departments", "Empire Method brief", "Blueprint approved. Agreement signed October 1."],
+    ["2026-10-07", "Dean Days #1 email drafted", "Dean fans and visitors", "Dean Days", "Michael drafts. Alignment call the same day."],
+    ["2026-10-08", "Dean Days #1 email sends", "Opted-in email", "Dean will be in the house — grab a plate and come say hi", "Bridget approves Thursday morning. Send the same day."],
+    ["2026-10-10", "Dean Days #1", "Customers in the house", "SMS reminder that morning", "Saturday. SMS to opted-in contacts only. Meeting Dean is for customers."],
+    ["2026-10-15", "Welcome flow", "Every new signup", "Free cinnamon roll", "Fires for website and SweepWidget signups. How to redeem, then a nudge toward the cutout photo and the receipt."],
+    ["2026-10-22", "Giveaway launch email", "Segmented: visitor, local, Dean fan", "Enter to win dinner with Dean", "Not a mass blast. Entries reset monthly."],
+    ["2026-10-29", "Winners and re-entry", "Last month’s entrants", "Announce the winner, then ask them to enter again", "Email and SMS."],
+  ];
+  for (const [plannedDate, title, audienceOrTarget, offerOrVariable, notes] of campaignDays) {
+    addAccountCalendarItem(clientId, {
+      calendarKind: "campaign",
+      title,
+      plannedDate,
+      audienceOrTarget,
+      offerOrVariable,
+      notes,
+      status: plannedDate <= "2026-10-10" ? "scheduled" : "planned",
+    });
+  }
+
+  addAccountCalendarItem(clientId, {
+    calendarKind: "testing",
+    title: "Welcome subject: cinnamon roll vs dinner with Dean",
+    plannedDate: "2026-10-15",
+    audienceOrTarget: "Welcome email 1",
+    offerOrVariable: "Subject line",
+    notes: "Which promise gets the open, and which one gets the visit.",
+    status: "planned",
+  });
+}
+
 export function buildAccountPlaybook(
   clientId: string,
   memberIds: string[] = []
 ): AccountPlaybook {
+  seedSwingInn(clientId);
   const calendar = listAccountCalendarItems(clientId, memberIds);
   return {
     clientId,
