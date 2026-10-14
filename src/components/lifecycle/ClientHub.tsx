@@ -11,6 +11,8 @@ import {
   type PaceStatus,
 } from "@/lib/email-launch";
 import { hasOwnerToolsAccess } from "@/lib/people";
+import { currentPeriod, shiftPeriod } from "@/lib/period";
+import { AccountPlaybookPanels } from "./AccountPlaybookPanels";
 import { ChannelAnalyticsPanel } from "./ChannelAnalyticsPanel";
 import { ClientIntegrationsPanel } from "./ClientIntegrationsPanel";
 import { ChecklistBlock } from "./ChecklistBlock";
@@ -125,6 +127,7 @@ type HubPayload = {
 };
 
 type Filter = "all" | "behind" | "on_track" | "launching";
+type SortOrder = "pace" | "remaining" | "next_send" | "alpha";
 
 function prettyDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -229,22 +232,76 @@ function monthCampaigns(c: HubClient): HubCampaign[] {
   return c.campaigns.filter((camp) => camp.kind !== "automation" && camp.delivered === true);
 }
 
+function buildMonthlyRecap(c: HubClient, periodLabel: string): string {
+  const done = monthCampaigns(c);
+  const quotaPart =
+    c.quota > 0
+      ? `${c.delivered}/${c.quota} campaigns delivered in ${periodLabel}`
+      : `${done.length} campaign${done.length === 1 ? "" : "s"} delivered in ${periodLabel}`;
+  const names = done.length ? `: ${done.map((camp) => camp.title).join(", ")}` : ".";
+  const nextPart = c.nextSend
+    ? ` Next scheduled send: ${c.nextSend.title} (${prettyDate(c.nextSend.date)}).`
+    : "";
+  return `${c.name} — ${quotaPart}${names}${nextPart}`;
+}
+
 function ClientCards({
   clients,
+  period,
   periodLabel,
   removingId,
   onSelect,
   onRemove,
+  onChanged,
 }: {
   clients: HubClient[];
+  period: string;
   periodLabel: string;
   removingId: string;
   onSelect: (id: string) => void;
   onRemove: (client: HubClient) => void;
+  onChanged: () => void;
 }) {
+  const [copiedId, setCopiedId] = useState("");
+  const [loggingClientId, setLoggingClientId] = useState("");
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+
   if (clients.length === 0) {
     return <p className="lh-empty">No clients match.</p>;
   }
+
+  async function copyRecap(c: HubClient) {
+    try {
+      await navigator.clipboard.writeText(buildMonthlyRecap(c, periodLabel));
+      setCopiedId(c.id);
+      setTimeout(() => setCopiedId((prev) => (prev === c.id ? "" : prev)), 1800);
+    } catch {
+      // ignore clipboard errors
+    }
+  }
+
+  async function submitQuickLog(e: FormEvent, clientId: string) {
+    e.preventDefault();
+    const title = quickTitle.trim();
+    if (!title) return;
+    setQuickSaving(true);
+    try {
+      const res = await fetch(`/api/lifecycle/hub/${clientId}/campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, status: "sent", period }),
+      });
+      if (res.ok) {
+        setQuickTitle("");
+        setLoggingClientId("");
+        onChanged();
+      }
+    } finally {
+      setQuickSaving(false);
+    }
+  }
+
   return (
     <div className="snap-pick-grid">
       {clients.map((c) => {
@@ -257,15 +314,28 @@ function ClientCards({
           c.quota > 0
             ? `${c.quota} campaign${c.quota === 1 ? "" : "s"} needed`
             : "No campaign quota";
+        const isLogging = loggingClientId === c.id;
         return (
           <article
             key={c.id}
-            className={`snap-pick-card lh-pick-card is-pace-${c.pace}`}
+            className={`snap-pick-card lh-pick-card is-pace-${c.pace}${isLogging ? " is-flipped" : ""}`}
           >
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               className="lh-pick-open"
-              onClick={() => onSelect(c.id)}
+              onClick={(e) => {
+                const target = e.target as HTMLElement | null;
+                if (target?.closest("a, button, input, form, select")) return;
+                onSelect(c.id);
+              }}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(c.id);
+                }
+              }}
             >
               <div className="lh-pick-flip">
                 <div className="lh-pick-flip-inner">
@@ -293,24 +363,91 @@ function ClientCards({
                     ) : null}
                   </div>
                   <div className="lh-pick-face lh-pick-back" aria-hidden="true">
-                    <p className="lh-pick-back-kicker">{periodLabel}</p>
+                    <div className="lh-pick-back-top">
+                      <p className="lh-pick-back-kicker">{periodLabel}</p>
+                      <button
+                        type="button"
+                        className="lh-pick-mini-btn"
+                        onClick={() => void copyRecap(c)}
+                        title="Copy monthly campaign recap"
+                      >
+                        {copiedId === c.id ? "Copied" : "Copy recap"}
+                      </button>
+                    </div>
                     <p className="lh-pick-back-needed">{needed}</p>
                     <p className="lh-pick-back-done">
                       {done.length === 0
                         ? "None logged this month"
                         : `${done.length} done this month`}
+                      {c.quota > 0 && c.remaining > 0 ? ` · ${c.remaining} left` : ""}
                     </p>
                     {done.length > 0 ? (
                       <ul className="lh-pick-back-list">
                         {done.map((camp) => (
-                          <li key={camp.id}>{camp.title}</li>
+                          <li key={camp.id}>
+                            <Link
+                              href={`/admin/campaigns/${camp.id}`}
+                              className="lh-pick-camp-link"
+                            >
+                              {camp.title}
+                            </Link>
+                            <span className="lh-pick-camp-tag">
+                              {operatorStatusLabel(camp.status, camp.approvedChannel)}
+                            </span>
+                          </li>
                         ))}
                       </ul>
                     ) : null}
+                    {c.nextSend ? (
+                      <p className="lh-pick-back-next">
+                        Next up: <strong>{c.nextSend.title}</strong> ·{" "}
+                        {prettyDate(c.nextSend.date)}
+                      </p>
+                    ) : null}
+                    {isLogging ? (
+                      <form
+                        className="lh-pick-quicklog"
+                        onSubmit={(e) => void submitQuickLog(e, c.id)}
+                      >
+                        <input
+                          type="text"
+                          value={quickTitle}
+                          onChange={(e) => setQuickTitle(e.target.value)}
+                          placeholder="Campaign name…"
+                          autoFocus
+                        />
+                        <button type="submit" className="lh-pick-mini-btn" disabled={quickSaving}>
+                          {quickSaving ? "…" : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          className="lh-pick-mini-btn"
+                          onClick={() => {
+                            setLoggingClientId("");
+                            setQuickTitle("");
+                          }}
+                        >
+                          ×
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="lh-pick-back-foot">
+                        <button
+                          type="button"
+                          className="lh-pick-mini-btn"
+                          onClick={() => {
+                            setLoggingClientId(c.id);
+                            setQuickTitle("");
+                          }}
+                        >
+                          + Log campaign
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            </button>
+            </div>
             <div className="snap-pick-card-foot">
               <span className={`snap-pick-metric is-${c.pace}`}>{metricLabel(c)}</span>
               <span className={`snap-pick-status ${status.tone}`}>{status.label}</span>
@@ -835,6 +972,12 @@ function ClientDetail({
         ) : null}
       </HubFoldCard>
 
+      <AccountPlaybookPanels
+        key={`pb-${client.id}`}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
+      />
+
       <ClientWorkflowsPanel
         key={`wf-${client.id}`}
         clientId={client.id}
@@ -901,10 +1044,12 @@ export function ClientHub({
   const [urlReady, setUrlReady] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("pace");
+  const [period, setPeriod] = useState<string>(() => currentPeriod());
   const [removingId, setRemovingId] = useState("");
 
-  const load = useCallback(async () => {
-    const res = await fetch("/api/lifecycle/hub");
+  const load = useCallback(async (targetPeriod = period) => {
+    const res = await fetch(`/api/lifecycle/hub?period=${encodeURIComponent(targetPeriod)}`);
     if (res.status === 401) {
       setDenied(true);
       setLoading(false);
@@ -912,11 +1057,11 @@ export function ClientHub({
     }
     if (res.ok) setData(await res.json());
     setLoading(false);
-  }, []);
+  }, [period]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(period);
+  }, [load, period]);
 
   useEffect(() => {
     fetch("/api/auth")
@@ -948,14 +1093,30 @@ export function ClientHub({
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = query.trim().toLowerCase();
-    return data.clients.filter((c) => {
+    const list = data.clients.filter((c) => {
       if (q && !c.name.toLowerCase().includes(q)) return false;
       if (filter === "behind") return c.pace === "behind";
       if (filter === "on_track") return c.pace === "on_track" || c.pace === "met";
       if (filter === "launching") return c.launch.open > 0;
       return true;
     });
-  }, [data, query, filter]);
+    if (sortOrder === "alpha") {
+      return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    if (sortOrder === "remaining") {
+      return [...list].sort(
+        (a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name)
+      );
+    }
+    if (sortOrder === "next_send") {
+      return [...list].sort((a, b) => {
+        const da = a.nextSend?.date || "9999-99-99";
+        const db = b.nextSend?.date || "9999-99-99";
+        return da.localeCompare(db) || a.name.localeCompare(b.name);
+      });
+    }
+    return list;
+  }, [data, query, filter, sortOrder]);
 
   useEffect(() => {
     if (!data || !urlReady || !selectedId) return;
@@ -1021,11 +1182,42 @@ export function ClientHub({
     );
   }
 
+  const nowPeriod = currentPeriod();
+
   return (
     <div className="lh lh-grid-page">
       <div className="lh-grid-toolbar">
         <div>
-          <p className="lh-kicker">{data.periodLabel}</p>
+          <div className="lh-month-switch">
+            <button
+              type="button"
+              className="lh-month-btn"
+              onClick={() => setPeriod((p) => shiftPeriod(p, -1))}
+              aria-label="Previous month"
+              title="Previous month"
+            >
+              ‹
+            </button>
+            <p className="lh-kicker">{data.periodLabel}</p>
+            <button
+              type="button"
+              className="lh-month-btn"
+              onClick={() => setPeriod((p) => shiftPeriod(p, 1))}
+              aria-label="Next month"
+              title="Next month"
+            >
+              ›
+            </button>
+            {data.period !== nowPeriod ? (
+              <button
+                type="button"
+                className="lh-month-today"
+                onClick={() => setPeriod(nowPeriod)}
+              >
+                This month
+              </button>
+            ) : null}
+          </div>
           <p className="lh-counts">
             {counts.behind} behind · {counts.onTrack} on track · {counts.met} met
             {counts.launching ? ` · ${counts.launching} launching` : ""}
@@ -1038,6 +1230,19 @@ export function ClientHub({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <label className="lh-sort-pick">
+          <span className="sr-only">Sort clients</span>
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+            aria-label="Sort clients"
+          >
+            <option value="pace">Sort: Pace (worst first)</option>
+            <option value="remaining">Sort: Most remaining</option>
+            <option value="next_send">Sort: Next send date</option>
+            <option value="alpha">Sort: A–Z</option>
+          </select>
+        </label>
         <div className="lh-filters" role="tablist" aria-label="Filter clients">
           {(
             [
@@ -1069,10 +1274,12 @@ export function ClientHub({
       </div>
       <ClientCards
         clients={filtered}
+        period={data.period}
         periodLabel={data.periodLabel}
         removingId={removingId}
         onSelect={select}
         onRemove={(c) => void removeCard(c)}
+        onChanged={() => void load(data.period)}
       />
     </div>
   );

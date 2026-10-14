@@ -2309,6 +2309,112 @@ export function getDb(): Database.Database {
       FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
     );
 
+    -- Account-level Lifecycle strategy & playbook data: brand guidelines,
+    -- ICPs, offers, opt-in methods, campaign calendar, testing calendar,
+    -- and A/B testing log with results.
+    CREATE TABLE IF NOT EXISTS lifecycle_account_brand (
+      client_id TEXT PRIMARY KEY,
+      voice_tone TEXT NOT NULL DEFAULT '',
+      colors TEXT NOT NULL DEFAULT '',
+      fonts TEXT NOT NULL DEFAULT '',
+      logo_assets_url TEXT NOT NULL DEFAULT '',
+      dos_and_donts TEXT NOT NULL DEFAULT '',
+      sender_name TEXT NOT NULL DEFAULT '',
+      reply_to_email TEXT NOT NULL DEFAULT '',
+      footer_notes TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS lifecycle_account_icps (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      pain_points TEXT NOT NULL DEFAULT '',
+      desires TEXT NOT NULL DEFAULT '',
+      objections TEXT NOT NULL DEFAULT '',
+      triggers TEXT NOT NULL DEFAULT '',
+      messaging_angle TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_icps_client ON lifecycle_account_icps(client_id);
+
+    CREATE TABLE IF NOT EXISTS lifecycle_account_offers (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      offer_type TEXT NOT NULL DEFAULT 'core',
+      details TEXT NOT NULL DEFAULT '',
+      promo_code TEXT NOT NULL DEFAULT '',
+      cta_url TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_offers_client ON lifecycle_account_offers(client_id);
+
+    CREATE TABLE IF NOT EXISTS lifecycle_account_opt_ins (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT 'popup',
+      incentive TEXT NOT NULL DEFAULT '',
+      destination_list TEXT NOT NULL DEFAULT '',
+      conversion_rate TEXT NOT NULL DEFAULT '',
+      url TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'live',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_opt_ins_client ON lifecycle_account_opt_ins(client_id);
+
+    CREATE TABLE IF NOT EXISTS lifecycle_account_calendar_items (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      calendar_kind TEXT NOT NULL DEFAULT 'campaign',
+      title TEXT NOT NULL,
+      planned_date TEXT NOT NULL DEFAULT '',
+      audience_or_target TEXT NOT NULL DEFAULT '',
+      offer_or_variable TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'planned',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_cal_client ON lifecycle_account_calendar_items(client_id, calendar_kind);
+
+    CREATE TABLE IF NOT EXISTS lifecycle_account_ab_tests (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      campaign_or_flow TEXT NOT NULL DEFAULT '',
+      variable TEXT NOT NULL DEFAULT 'subject_line',
+      hypothesis TEXT NOT NULL DEFAULT '',
+      variant_a TEXT NOT NULL DEFAULT '',
+      variant_b TEXT NOT NULL DEFAULT '',
+      metric TEXT NOT NULL DEFAULT 'open_rate',
+      result_a TEXT NOT NULL DEFAULT '',
+      result_b TEXT NOT NULL DEFAULT '',
+      winner TEXT NOT NULL DEFAULT 'pending',
+      takeaway TEXT NOT NULL DEFAULT '',
+      tested_on TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'running',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lc_ab_client ON lifecycle_account_ab_tests(client_id);
+
     -- Login accounts. The roster itself still lives in code (admin-people.ts,
     -- people.ts) because client components import it at module scope; this
     -- table owns credentials and identity only, and is seeded from those
