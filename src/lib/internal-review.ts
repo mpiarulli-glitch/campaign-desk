@@ -4,7 +4,9 @@ import {
   commentOnCard,
   createAssignedTodo,
   findOpenTodoOnNamedList,
+  findPersonByName,
   getProjectPeopleForMention,
+  grantProjectAccess,
   mentionHtml,
   resolveSylviaMention,
   type BcIdentity,
@@ -17,11 +19,23 @@ import {
   recordInternalReviewTodo,
 } from "./campaigns";
 import { resolveCampaignClient } from "./campaign-card-sync";
+import { updateRevClient } from "./revenue";
 import { adminCampaignUrl, reviewUrl } from "./auth";
 import { getDb } from "./db";
 import { basecampNameForManager } from "./people";
 import { slugForName, teamLabel } from "./team";
 import { stripSylviaCcLines, SYLVIA_CC_TEXT, sylviaCcHtml } from "./review-cc";
+
+export const CAMPAIGN_ACCOUNT_MANAGERS = [
+  { value: "Kyle", label: "Kyle" },
+  { value: "Cassidy", label: "Cassidy" },
+  { value: "Luis", label: "Luis" },
+] as const;
+
+export function canonicalAccountManager(value: string): string | null {
+  const v = value.trim().toLowerCase();
+  return CAMPAIGN_ACCOUNT_MANAGERS.find((m) => m.value.toLowerCase() === v)?.value ?? null;
+}
 
 export type InternalReviewPerson = {
   id: number;
@@ -416,12 +430,110 @@ export async function sendCampaignForInternalReview(input: {
   };
 }
 
+export async function assignCampaignAccountManager(input: {
+  campaignId: string;
+  accountManager: string;
+  identity?: BcIdentity;
+}): Promise<
+  | {
+      ok: true;
+      accountManager: string;
+      addedToProject: boolean;
+      basecampName: string;
+      warning: string;
+    }
+  | { ok: false; error: string; status: number }
+> {
+  const name = canonicalAccountManager(input.accountManager);
+  if (!name) {
+    return { ok: false, error: "Choose Kyle, Cassidy, or Luis.", status: 400 };
+  }
+  const campaign = getCampaignById(input.campaignId);
+  if (!campaign) return { ok: false, error: "Not found", status: 404 };
+  const client = resolveCampaignClient(campaign);
+  if (!client) {
+    return {
+      ok: false,
+      error: "This campaign needs a linked client account.",
+      status: 400,
+    };
+  }
+
+  const saved = updateRevClient(client.id, { accountManager: name });
+  if (!saved) {
+    return { ok: false, error: "Could not save the account manager.", status: 500 };
+  }
+
+  const basecampName = basecampNameForManager(name);
+  if (!client.basecamp_project_id) {
+    return {
+      ok: true,
+      accountManager: name,
+      addedToProject: false,
+      basecampName,
+      warning:
+        "Saved on the account. Link a Basecamp project before this review can be assigned.",
+    };
+  }
+  if (!basecampConnected()) {
+    return {
+      ok: true,
+      accountManager: name,
+      addedToProject: false,
+      basecampName,
+      warning: "Saved on the account. Connect Basecamp to add them to the project.",
+    };
+  }
+
+  const identity = input.identity ?? SERVICE;
+  let person: BcPerson | null = null;
+  try {
+    person = await findPersonByName(basecampName, identity);
+  } catch {
+    return {
+      ok: true,
+      accountManager: name,
+      addedToProject: false,
+      basecampName,
+      warning: "Saved on the account. Could not reach Basecamp to add them to the project.",
+    };
+  }
+  if (!person) {
+    return {
+      ok: true,
+      accountManager: name,
+      addedToProject: false,
+      basecampName,
+      warning: `Saved ${name} on the account. Basecamp has no one named ${basecampName}, so they still need a company person before this review can be assigned.`,
+    };
+  }
+
+  const grant = await grantProjectAccess(client.basecamp_project_id, person.id, identity);
+  if (!grant.ok) {
+    return {
+      ok: true,
+      accountManager: name,
+      addedToProject: false,
+      basecampName: person.name,
+      warning: `Saved ${name} on the account. Basecamp did not add them to the project.`,
+    };
+  }
+  return {
+    ok: true,
+    accountManager: name,
+    addedToProject: true,
+    basecampName: person.name,
+    warning: "",
+  };
+}
+
 export async function internalReviewState(campaignId: string): Promise<
   | {
       ready: boolean;
       missing: string[];
       clientName: string;
       accountManager: string;
+      managerChoices: Array<{ value: string; label: string }>;
       people: InternalReviewPerson[];
       peopleReason: string;
       defaultReviewerId: number | null;
@@ -502,6 +614,7 @@ export async function internalReviewState(campaignId: string): Promise<
     missing,
     clientName: client?.name || campaign.client_name || "",
     accountManager: client?.account_manager || "",
+    managerChoices: CAMPAIGN_ACCOUNT_MANAGERS.map((m) => ({ value: m.value, label: m.label })),
     people,
     peopleReason,
     defaultReviewerId: defaultReviewer?.id ?? null,
