@@ -944,11 +944,128 @@ function seedSwingInn(clientId: string): void {
   });
 }
 
+function addOnce(
+  existingTitles: Set<string>,
+  title: string,
+  add: () => void
+) {
+  const key = title.trim().toLowerCase();
+  if (existingTitles.has(key)) return;
+  add();
+  existingTitles.add(key);
+}
+
+/** Fills any Swing Inn page that is still empty, without duplicating what is already there. */
+function completeSwingInn(clientId: string): void {
+  const client = getRevClient(clientId);
+  if (!client || !/swing inn/i.test(client.name)) return;
+  seedSwingInn(clientId);
+
+  const tests = new Set(
+    listAccountCalendarItems(clientId, [], "testing").map((item) => item.title.trim().toLowerCase())
+  );
+  const testRows: Array<[string, string, string, string, string]> = [
+    ["2026-10-15", "Welcome subject: cinnamon roll vs dinner with Dean", "Welcome email 1", "Subject line", "Which promise gets the open, and which one gets the visit."],
+    ["2026-10-22", "Giveaway CTA: enter to win vs free cinnamon roll", "Giveaway launch", "Call to action", "Every CTA has to capture an email or a phone number first."],
+    ["2026-11-05", "Dean Days subject: in the house vs Old Town stop", "Dean Days email", "Subject line", "Copy must say meeting Dean is for customers."],
+    ["2026-11-12", "Send time: Thursday midday vs Saturday morning SMS", "Dean Day reminder", "Send time", "SMS only to opted-in contacts."],
+  ];
+  for (const [plannedDate, title, audienceOrTarget, offerOrVariable, notes] of testRows) {
+    addOnce(tests, title, () => {
+      addAccountCalendarItem(clientId, {
+        calendarKind: "testing",
+        title,
+        plannedDate,
+        audienceOrTarget,
+        offerOrVariable,
+        notes,
+        status: "planned",
+      });
+    });
+  }
+
+  const campaigns = new Set(
+    listAccountCalendarItems(clientId, [], "campaign").map((item) => item.title.trim().toLowerCase())
+  );
+  const moreDays: Array<[string, string, string, string, string]> = [
+    ["2026-11-06", "New cutout look", "Past visitors", "Cardboard Dean photo corner", "Bonus entries for the selfie and the receipt."],
+    ["2026-11-20", "Post-visit thank you", "People who dined", "Review request, never incentivized", "Automation 2. Ask for the review. Do not attach a prize."],
+    ["2026-12-03", "Holiday catering", "Catering buyers", "Celebrity-owned catering", "Q4 push. Follow-up is date, headcount, location, budget, occasion."],
+    ["2026-12-10", "60-day win-back", "Quiet contacts", "Birthday perk and a reason to come back", "Automation 3. Segment visitor, local, Dean fan, and catering. No mass blast."],
+  ];
+  for (const [plannedDate, title, audienceOrTarget, offerOrVariable, notes] of moreDays) {
+    addOnce(campaigns, title, () => {
+      addAccountCalendarItem(clientId, {
+        calendarKind: "campaign",
+        title,
+        plannedDate,
+        audienceOrTarget,
+        offerOrVariable,
+        notes,
+        status: "planned",
+      });
+    });
+  }
+
+  const logged = new Set(listAccountAbTests(clientId).map((test) => test.title.trim().toLowerCase()));
+  const testsToLog: Array<Parameters<typeof addAccountAbTest>[1]> = [
+    {
+      title: "Welcome subject: cinnamon roll vs dinner with Dean",
+      campaignOrFlow: "Welcome email 1",
+      variable: "subject_line",
+      hypothesis: "The dinner prize gets the open. The cinnamon roll gets the visit.",
+      variantA: "Your free cinnamon roll is waiting in Old Town",
+      variantB: "This month, you could win dinner with Dean",
+      metric: "conversion_rate",
+      status: "idea",
+      testedOn: "2026-10-15",
+    },
+    {
+      title: "Giveaway CTA: enter to win vs free cinnamon roll",
+      campaignOrFlow: "Giveaway launch",
+      variable: "cta",
+      hypothesis: "Leading with the cinnamon roll captures more emails than leading with the prize.",
+      variantA: "Enter to win dinner with Dean",
+      variantB: "Sign up, get a free cinnamon roll, and enter to win",
+      metric: "conversion_rate",
+      status: "idea",
+      testedOn: "2026-10-22",
+    },
+    {
+      title: "Dean Days subject: in the house vs Old Town stop",
+      campaignOrFlow: "Dean Days",
+      variable: "subject_line",
+      hypothesis: "Saying Dean is in the house outperforms a generic Old Town invitation, as long as the copy says the visit is for customers.",
+      variantA: "Dean will be in the house Saturday. Grab a plate and come say hi.",
+      variantB: "Swing Inn is the Old Town stop you’ll post about",
+      metric: "open_rate",
+      status: "idea",
+      testedOn: "2026-11-05",
+    },
+    {
+      title: "Dean Day reminder: Thursday email vs Saturday SMS",
+      campaignOrFlow: "Dean Days reminder",
+      variable: "send_time",
+      hypothesis: "The Saturday-morning SMS brings more of the opted-in list through the door than another Thursday email.",
+      variantA: "Thursday email, day before is too early for a drive from LA",
+      variantB: "Saturday morning SMS to opted-in contacts only",
+      metric: "conversion_rate",
+      status: "idea",
+      testedOn: "2026-11-12",
+    },
+  ];
+  for (const input of testsToLog) {
+    addOnce(logged, input.title, () => {
+      addAccountAbTest(clientId, input);
+    });
+  }
+}
+
 export function buildAccountPlaybook(
   clientId: string,
   memberIds: string[] = []
 ): AccountPlaybook {
-  seedSwingInn(clientId);
+  completeSwingInn(clientId);
   const calendar = listAccountCalendarItems(clientId, memberIds);
   return {
     clientId,
