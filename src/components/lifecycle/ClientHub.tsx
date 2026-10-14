@@ -39,6 +39,7 @@ type HubCampaign = {
   updatedAt: string;
   kind?: HubWorkKind;
   delivered?: boolean;
+  countsOnPeriod?: boolean;
 };
 
 type HubActivity = {
@@ -229,7 +230,12 @@ async function requestRemoveFromLifecycle(
 }
 
 function monthCampaigns(c: HubClient): HubCampaign[] {
-  return c.campaigns.filter((camp) => camp.kind !== "automation" && camp.delivered === true);
+  return c.campaigns.filter(
+    (camp) =>
+      camp.kind !== "automation" &&
+      camp.delivered === true &&
+      camp.countsOnPeriod !== false
+  );
 }
 
 function buildMonthlyRecap(c: HubClient, periodLabel: string): string {
@@ -312,8 +318,22 @@ function ClientCards({
         const done = monthCampaigns(c);
         const needed =
           c.quota > 0
-            ? `${c.quota} campaign${c.quota === 1 ? "" : "s"} needed`
-            : "No campaign quota";
+            ? `${c.delivered} of ${c.quota}`
+            : done.length === 1
+              ? "1 campaign"
+              : done.length > 1
+                ? `${done.length} campaigns`
+                : "No campaign quota";
+        const paceLine =
+          c.quota <= 0
+            ? done.length === 0
+              ? "None logged this month"
+              : "Logged this month"
+            : c.remaining === 0
+              ? "Contract met"
+              : c.remaining === 1
+                ? "1 still needed"
+                : `${c.remaining} still needed`;
         const isLogging = loggingClientId === c.id;
         return (
           <article
@@ -376,10 +396,8 @@ function ClientCards({
                     </div>
                     <p className="lh-pick-back-needed">{needed}</p>
                     <p className="lh-pick-back-done">
-                      {done.length === 0
-                        ? "None logged this month"
-                        : `${done.length} done this month`}
-                      {c.quota > 0 && c.remaining > 0 ? ` · ${c.remaining} left` : ""}
+                      {paceLine}
+                      {done.length === 0 && c.quota > 0 ? " · none logged" : ""}
                     </p>
                     {done.length > 0 ? (
                       <ul className="lh-pick-back-list">

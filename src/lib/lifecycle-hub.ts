@@ -134,6 +134,8 @@ export interface HubCampaign {
   countsTowardQuota: boolean;
   /** True once this campaign's emails count against the monthly contract. */
   delivered: boolean;
+  /** True when this campaign is assigned to the month being viewed. */
+  countsOnPeriod: boolean;
 }
 
 export interface HubActivity {
@@ -404,7 +406,7 @@ function campaignsByClient(
   const rows = getDb()
     .prepare(
       `SELECT c.id, c.client_id, c.client_name, c.title, c.status, c.approved_channel,
-              c.updated_at, c.created_at, c.presentation,
+              c.updated_at, c.created_at, c.presentation, c.board_period,
               (SELECT COUNT(*) FROM campaign_emails e
                 WHERE e.campaign_id = c.id AND e.kind = 'email') AS email_count
          FROM campaigns c
@@ -436,6 +438,7 @@ function campaignsByClient(
     updated_at: string;
     created_at: string;
     presentation: string | null;
+    board_period: string | null;
     email_count: number;
   }>;
   const idSet = new Set(clientIds);
@@ -460,6 +463,9 @@ function campaignsByClient(
       kind: counts ? "campaign" : "automation",
       countsTowardQuota: counts,
       delivered: counts && campaignReachedClient(r.status, r.approved_channel),
+      countsOnPeriod:
+        r.board_period === period ||
+        (!r.board_period && r.created_at.slice(0, 7) === period),
     };
     if (r.client_id && idSet.has(r.client_id)) {
       add(r.client_id, campaign);
