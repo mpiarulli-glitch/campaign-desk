@@ -43,6 +43,8 @@ test("Team Hub is home, and leadership slugs still use the leadership roster", (
   );
   assert.match(adminHome, /redirect\("\/admin\/hub"\)/);
   assert.match(hubHome, /AssignTodoPanel/);
+  assert.match(hubHome, /deck-command/);
+  assert.match(hubHome, /The house is online/);
   assert.equal(usesLeadershipHome("sylvia"), true);
   assert.equal(usesLeadershipHome("kyle_onstott"), true);
   assert.equal(usesLeadershipHome("luis_romero"), true);
