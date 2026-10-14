@@ -1150,6 +1150,45 @@ function CollapsedAdd({ children }: { children: React.ReactNode }) {
   );
 }
 
+function formatTrackedHours(n: number): string {
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function TrackedWeekBar({
+  loggedHours,
+  capacity,
+  pct,
+  weekText,
+}: {
+  loggedHours: number;
+  capacity: number;
+  pct: number;
+  weekText: string;
+}) {
+  const shown = formatTrackedHours(loggedHours);
+  const full = capacity > 0 && loggedHours >= capacity;
+  const over = capacity > 0 && loggedHours > capacity;
+  return (
+    <div className={`fc-tracked ${over ? "is-over" : full ? "is-full" : ""}`}>
+      <div className="fc-tracked-head">
+        <span className="fc-tracked-label">Tracked · {weekText}</span>
+        <strong>
+          <b>{shown}</b>
+          <span> / {capacity}h</span>
+        </strong>
+      </div>
+      <div
+        className="fc-tracked-track"
+        role="img"
+        aria-label={`${shown} of ${capacity} hours tracked this week`}
+      >
+        <div className="fc-tracked-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export default function PersonForecastPage() {
   const router = useRouter();
   const { person } = useParams<{ person: string }>();
@@ -1626,6 +1665,8 @@ export default function PersonForecastPage() {
       donePct: capacity ? Math.min(100, (doneHours / capacity) * 100) : 0,
       openPct: capacity ? Math.min(100 - Math.min(100, (doneHours / capacity) * 100), (openHours / capacity) * 100) : 0,
       loggedPct: totalHours > 0 ? Math.min(100, (loggedHours / totalHours) * 100) : 0,
+      // Timesheet hours against the 40h week, independent of how many hours were planned.
+      trackedPct: capacity ? Math.min(100, (loggedHours / capacity) * 100) : 0,
       over: totalHours > capacity,
       // Short of this week's planned hours — not of the 40h capacity, which is
       // a load target, not a timesheet quota.
@@ -3336,6 +3377,15 @@ export default function PersonForecastPage() {
             </div>
           </div>
         </div>
+
+        {!loading && data ? (
+          <TrackedWeekBar
+            loggedHours={gauge.loggedHours}
+            capacity={gauge.capacity}
+            pct={gauge.trackedPct}
+            weekText={weekLabel(week)}
+          />
+        ) : null}
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
 
