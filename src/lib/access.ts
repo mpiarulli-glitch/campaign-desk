@@ -90,9 +90,8 @@ export const PAGES: Capability[] = [
     key: "page.clients",
     label: "Clients",
     group: "page",
-    href: "/admin/clients",
-    icon: "users",
-    blurb: "The client roster, briefs and strategy.",
+    blurb:
+      "The old All clients roster. Off the sidebar: client work lives on Lifecycle and each client's dashboard.",
   },
   {
     key: "page.campaigns",

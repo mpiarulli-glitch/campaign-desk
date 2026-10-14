@@ -19,7 +19,6 @@ const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-campaigns", title: "Campaigns", subtitle: "All campaigns", href: "/admin/campaigns" },
   { kind: "client", id: "nav-production", title: "Production", subtitle: "Scheduler", href: "/admin/production" },
   { kind: "client", id: "nav-forecast", title: "Forecast", subtitle: "Team allocation", href: "/admin/forecast" },
-  { kind: "client", id: "nav-clients", title: "Clients", subtitle: "All clients", href: "/admin/clients" },
 ];
 
 const CALENDAR_QUICK_LINK: Hit = {

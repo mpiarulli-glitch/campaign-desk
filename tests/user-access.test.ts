@@ -58,6 +58,14 @@ test("per-person access", async (t) => {
     assert.ok(!hrefs.includes("/admin/ads"));
   });
 
+  await t.test("All clients is gateable but stays off the sidebar", () => {
+    const clients = access.capability("page.clients");
+    assert.ok(clients, "page.clients should exist");
+    assert.equal(clients!.href, undefined);
+    assert.ok(!access.visiblePages(owner).some((p) => p.key === "page.clients"));
+    assert.equal(access.allows(sylvia, "page.clients"), true);
+  });
+
   await t.test("Snapshots is gateable but stays off the sidebar", () => {
     // Client Services replaced it in the nav. It must remain gateable, because
     // the page and its API are still live for anyone with a saved link.
