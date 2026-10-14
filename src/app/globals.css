@@ -16908,6 +16908,77 @@ article.snap-pick-card.lh-pick-card:hover {
   font-size: 13px;
 }
 
+.lh-studio-index {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.lh-studio-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 148px;
+  padding: 18px 16px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lh-studio-cover span {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.lh-studio-cover strong {
+  font-size: 22px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.lh-studio-cover em {
+  font-style: normal;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.lh-studio-cover:hover {
+  border-color: color-mix(in srgb, var(--text) 35%, var(--border));
+}
+
+.lh-studio.is-page {
+  grid-template-columns: 1fr;
+}
+
+.lh-studio-back {
+  margin-bottom: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lh-studio-back:hover {
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .lh-studio-index {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .lh-studio {
   grid-column: 1 / -1;
   display: grid;

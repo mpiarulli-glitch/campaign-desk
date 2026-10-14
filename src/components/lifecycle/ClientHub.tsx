@@ -675,6 +675,7 @@ function ClientDetail({
   const [logError, setLogError] = useState("");
   const [quotaError, setQuotaError] = useState("");
   const [removing, setRemoving] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
   const [removeError, setRemoveError] = useState("");
   const [crmLinked, setCrmLinked] = useState(false);
   const [analyticsTick, setAnalyticsTick] = useState(0);
@@ -811,6 +812,14 @@ function ClientDetail({
         <span className={`lh-pace is-${client.pace}`}>{client.paceLabel}</span>
       </header>
 
+      <AccountPlaybookPanels
+        key={`pb-${client.id}`}
+        clientId={client.id}
+        memberIds={client.memberIds || []}
+        onOpenChange={setStudioOpen}
+      />
+
+      {!studioOpen ? (
       <div className="lh-detail-layout">
       <ChannelAnalyticsPanel
         key={`email-${client.id}-${analyticsTick}`}
@@ -990,12 +999,6 @@ function ClientDetail({
         ) : null}
       </HubFoldCard>
 
-      <AccountPlaybookPanels
-        key={`pb-${client.id}`}
-        clientId={client.id}
-        memberIds={client.memberIds || []}
-      />
-
       <ClientWorkflowsPanel
         key={`wf-${client.id}`}
         clientId={client.id}
@@ -1010,6 +1013,7 @@ function ClientDetail({
         onChange={handleCrmChange}
       />
       </div>
+      ) : null}
     </div>
   );
 }

@@ -73,16 +73,18 @@ const WINNER_LABELS: Record<AccountAbTest["winner"], string> = {
 export function AccountPlaybookPanels({
   clientId,
   memberIds = [],
+  onOpenChange,
 }: {
   clientId: string;
   memberIds?: string[];
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [data, setData] = useState<AccountPlaybook | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState<
-    "brand" | "icps" | "offers" | "optins" | "calendar" | "testing" | "ab"
-  >("brand");
+    "brand" | "icps" | "offers" | "optins" | "calendar" | "testing" | "ab" | null
+  >(null);
 
   const membersParam = memberIds.join(",");
 
@@ -108,6 +110,10 @@ export function AccountPlaybookPanels({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    onOpenChange?.(page !== null);
+  }, [page, onOpenChange]);
+
   if (loading && !data) {
     return <p className="lh-card-note">Loading account strategy &amp; testing logs…</p>;
   }
@@ -117,31 +123,35 @@ export function AccountPlaybookPanels({
   }
 
   const pages = [
-    { id: "brand", label: "Brand", index: "01" },
-    { id: "icps", label: "Audiences", index: "02" },
-    { id: "offers", label: "Offers", index: "03" },
-    { id: "optins", label: "Capture", index: "04" },
-    { id: "calendar", label: "Calendar", index: "05" },
-    { id: "testing", label: "Test plan", index: "06" },
-    { id: "ab", label: "Results", index: "07" },
-  ] as const;
+    { id: "brand" as const, label: "Brand", index: "01", line: data.brand.voiceTone ? "Voice, color, and the rules nothing ships without." : "Not written yet." },
+    { id: "icps" as const, label: "Audiences", index: "02", line: data.icps.length ? `${data.icps.length} people we are writing to.` : "No audiences yet." },
+    { id: "offers" as const, label: "Offers", index: "03", line: data.offers.length ? data.offers.map((o) => o.name).slice(0, 3).join(" · ") : "No offers yet." },
+    { id: "optins" as const, label: "Capture", index: "04", line: data.optIns.length ? `${data.optIns.length} ways onto the list.` : "No capture yet." },
+    { id: "calendar" as const, label: "Calendar", index: "05", line: data.campaignCalendar.length ? `${data.campaignCalendar.length} sends on the month grid.` : "Empty calendar." },
+    { id: "testing" as const, label: "Test plan", index: "06", line: data.testingCalendar.length ? `${data.testingCalendar.length} experiments dated.` : "No tests queued." },
+    { id: "ab" as const, label: "Results", index: "07", line: data.abTests.length ? `${data.abTests.length} tests in the log.` : "No results yet." },
+  ];
 
-  return (
-    <div className="lh-studio">
-      <nav className="lh-studio-nav" aria-label="Account pages">
+  if (!page) {
+    return (
+      <div className="lh-studio-index">
         {pages.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={page === p.id ? "is-on" : ""}
-            onClick={() => setPage(p.id)}
-          >
+          <button key={p.id} type="button" className="lh-studio-cover" onClick={() => setPage(p.id)}>
             <span>{p.index}</span>
-            {p.label}
+            <strong>{p.label}</strong>
+            <em>{p.line}</em>
           </button>
         ))}
-      </nav>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lh-studio is-page">
       <div className="lh-studio-stage">
+      <button type="button" className="lh-studio-back" onClick={() => setPage(null)}>
+        ← Pages
+      </button>
       {page === "brand" ? (
       <BrandGuidelinesCard
         clientId={clientId}
@@ -1300,8 +1310,8 @@ function CalendarCard({
       }
     >
       <p className="lh-card-note">{subtitle}</p>
-      {kind === "campaign" ? <MonthGrid items={items} /> : null}
-      {items.length > 0 && kind !== "campaign" ? (
+      {kind === "campaign" || kind === "testing" ? <MonthGrid items={items} /> : null}
+      {items.length > 0 && kind !== "campaign" && kind !== "testing" ? (
         <ul className="lh-pb-cal-list">
           {items.map((item) => (
             <li key={item.id} className="lh-pb-cal-row">
