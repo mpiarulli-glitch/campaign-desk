@@ -106,10 +106,8 @@ export const PAGES: Capability[] = [
     key: "page.social_qa",
     label: "Social QA",
     group: "page",
-    href: "/admin/social-qa",
-    icon: "social",
     blurb:
-      "Social post batches, Sprout links, internal QA and named sign-off.",
+      "Social post batches. Off the sidebar: a saved batch link still opens that batch.",
   },
   {
     key: "page.lifecycle",
@@ -171,9 +169,7 @@ export const PAGES: Capability[] = [
     key: "page.reports",
     label: "Reports",
     group: "page",
-    href: "/admin/reports",
-    icon: "bars",
-    blurb: "Rollups across every client and person.",
+    blurb: "Rollups across every client and person. Off the sidebar.",
   },
   {
     key: "page.activity",

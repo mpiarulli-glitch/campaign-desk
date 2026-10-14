@@ -29,14 +29,6 @@ const CALENDAR_QUICK_LINK: Hit = {
   href: "/admin/calendar",
 };
 
-const SOCIAL_QA_QUICK_LINK: Hit = {
-  kind: "social",
-  id: "nav-social-qa",
-  title: "Social QA",
-  subtitle: "Social post batches",
-  href: "/admin/social-qa",
-};
-
 const NOTES_QUICK_LINK: Hit = {
   kind: "page",
   id: "nav-notes",
@@ -62,9 +54,6 @@ function quickLinksForSession(session: {
   const links: Hit[] = [BASE_QUICK_LINKS[0]];
   if (!session?.impersonating) links.push(NOTES_QUICK_LINK);
   if (hasOwnerToolsAccess(session)) links.push(CALENDAR_QUICK_LINK);
-  if (session?.capabilities?.["page.social_qa"] || session?.owner) {
-    links.push(SOCIAL_QA_QUICK_LINK);
-  }
   links.push(...BASE_QUICK_LINKS.slice(1));
   return links;
 }
