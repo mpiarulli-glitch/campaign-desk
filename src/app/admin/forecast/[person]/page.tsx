@@ -2535,8 +2535,7 @@ export default function PersonForecastPage() {
   /**
    * Start or stop timing a task.
    *
-   * Two timers can run at once. Starting a third banks the oldest one's time
-   * and says which task stopped. A task with no slot on the calendar is placed
+   * Several timers can run at once. A task with no slot on the calendar is placed
    * at the current hour when its timer starts, so the block that grows as you
    * work is somewhere you can see it.
    */
@@ -2568,7 +2567,7 @@ export default function PersonForecastPage() {
     const json = await res.json().catch(() => null);
     if (json?.stopped) {
       const what = json.stopped.notes || json.stopped.client || "the oldest task";
-      setError(`Two timers already running. ${what} stopped and kept its time.`);
+      setError(`Too many timers already running. ${what} stopped and kept its time.`);
     } else {
       setError("");
     }
