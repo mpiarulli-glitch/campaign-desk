@@ -23212,3 +23212,199 @@ a.snap-todo-linked-title {
   .notes-body { padding: 12px 18px 24px 46px; }
   .notes-sheet::before { left: 22px; }
 }
+
+/* Campaigns and Lifecycle command surface. Same gold and arc language as the
+   home deck, scoped so the rest of the app stays as it is. */
+.stark {
+  --gold: #e4c27a;
+  --arc: #7ad7ff;
+  position: relative;
+  color: #e8eef4;
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(122, 215, 255, 0.16), transparent 42%),
+    radial-gradient(ellipse at 90% 8%, rgba(228, 194, 122, 0.12), transparent 34%),
+    linear-gradient(180deg, #101820 0%, #070b10 100%);
+}
+.stark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(122, 215, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(122, 215, 255, 0.045) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse at 20% 0%, #000 8%, transparent 70%);
+  pointer-events: none;
+}
+.stark > * { position: relative; }
+.stark .h1,
+.stark h1,
+.stark h2,
+.stark h3,
+.stark .h2 {
+  color: #f7fbff;
+}
+.stark .muted,
+.stark .meta,
+.stark .campaign-date-label,
+.stark .ads-search-label {
+  color: rgba(232, 238, 244, 0.62);
+}
+.stark .page-hero {
+  border-bottom-color: rgba(228, 194, 122, 0.22);
+}
+.stark-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.stark-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.stark-hero-copy { min-width: 0; }
+.stark .deck-kicker { margin-bottom: 8px; }
+.stark-core {
+  width: 108px;
+  height: 108px;
+  flex: none;
+}
+.stark-core .deck-core-read b { font-size: 22px; }
+.stark .page-actions .btn,
+.stark .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger) {
+  background: rgba(122, 215, 255, 0.14);
+  color: #d7f4ff;
+  border-color: rgba(122, 215, 255, 0.55);
+  box-shadow: none;
+}
+.stark .page-actions .btn:hover,
+.stark .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):hover {
+  background: rgba(122, 215, 255, 0.24);
+  color: #f7fbff;
+}
+.stark .btn-secondary,
+.stark .btn-ghost {
+  background: transparent;
+  color: var(--gold);
+  border-color: rgba(228, 194, 122, 0.45);
+}
+.stark .btn-ghost { border-color: transparent; }
+.stark .btn-secondary:hover,
+.stark .btn-ghost:hover {
+  background: rgba(228, 194, 122, 0.1);
+  color: var(--gold);
+}
+.stark .btn-danger {
+  background: transparent;
+  color: #ffb4b4;
+  border-color: rgba(255, 140, 140, 0.45);
+}
+.stark .tab,
+.stark .preview-device-btn,
+.stark .lh-pick-mini-btn {
+  background: rgba(4, 10, 16, 0.55);
+  color: rgba(232, 238, 244, 0.78);
+  border-color: rgba(122, 215, 255, 0.28);
+}
+.stark .tab.active,
+.stark .preview-device-btn.active {
+  background: rgba(122, 215, 255, 0.16);
+  color: #d7f4ff;
+  border-color: rgba(122, 215, 255, 0.7);
+}
+.stark .tab.active .tab-count {
+  background: rgba(4, 10, 16, 0.55);
+  color: var(--gold);
+}
+.stark input,
+.stark select,
+.stark textarea {
+  background: rgba(4, 10, 16, 0.72);
+  color: #f4f8fb;
+  border-color: rgba(122, 215, 255, 0.35);
+}
+.stark input:focus,
+.stark select:focus,
+.stark textarea:focus {
+  outline: none;
+  border-color: var(--arc);
+  box-shadow: 0 0 0 3px rgba(122, 215, 255, 0.16);
+}
+.stark .campaign-filter-select,
+.stark .lh-tools-pick select,
+.stark .lh-sort-pick select {
+  background-color: rgba(4, 10, 16, 0.72);
+  color: #f4f8fb;
+  border-color: rgba(228, 194, 122, 0.4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23e4c27a' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
+}
+.stark .lh-filters button {
+  background: rgba(4, 10, 16, 0.55);
+  color: rgba(232, 238, 244, 0.78);
+  border-color: rgba(122, 215, 255, 0.28);
+}
+.stark .lh-filters button.on {
+  background: rgba(122, 215, 255, 0.16);
+  color: #d7f4ff;
+  border-color: rgba(122, 215, 255, 0.7);
+}
+.stark .campaign-item,
+.stark .folder-header,
+.stark .card,
+.stark .empty,
+.stark .snap-pick-card,
+.stark .lh-card,
+.stark .lh {
+  background: rgba(6, 12, 18, 0.72);
+  border-color: rgba(228, 194, 122, 0.22);
+  color: #e8eef4;
+  box-shadow: none;
+}
+.stark .campaign-item::before { background: var(--arc); }
+.stark .campaign-item:hover,
+.stark .folder-header:hover,
+.stark .snap-pick-card:hover {
+  border-color: rgba(122, 215, 255, 0.55);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+.stark .lh.lh-grid-page,
+.stark .lh.lh-detail-page {
+  background: transparent;
+  border: 0;
+}
+.stark .snap-pick-card-cat,
+.stark .snap-pick-card-desc,
+.stark .lh-pick-back-kicker,
+.stark .lh-pick-back-done,
+.stark .lh-pick-camp-tag {
+  color: rgba(232, 238, 244, 0.62);
+}
+.stark .lh-pick-back-needed,
+.stark .lh-pick-back-next strong { color: #f7fbff; }
+.stark .activity-sidebar-line,
+.stark .activity-sidebar-text { color: #e8eef4; }
+.stark .hud {
+  --void: transparent;
+  --hull: rgba(6, 12, 18, 0.72);
+  --hull-lift: rgba(4, 10, 16, 0.72);
+  --seam: rgba(228, 194, 122, 0.22);
+  --seam-lit: rgba(122, 215, 255, 0.45);
+  --arc: #7ad7ff;
+  --arc-deep: #e4c27a;
+  --ink: #e8eef4;
+  --ghost: rgba(232, 238, 244, 0.78);
+  --ghost-dim: rgba(232, 238, 244, 0.62);
+  background: transparent;
+  color: #e8eef4;
+}
+@media (max-width: 800px) {
+  .stark-core { width: 84px; height: 84px; }
+  .stark-core .deck-core-read b { font-size: 18px; }
+}

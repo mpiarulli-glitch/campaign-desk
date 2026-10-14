@@ -418,7 +418,7 @@ export default function AdminPage() {
   }, []);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell stark">
       <div className="page-actions">
         <Link className="btn" href="/admin/new">
           {kindScope === "blog" ? "New blog post" : "New campaign"}
@@ -426,9 +426,22 @@ export default function AdminPage() {
       </div>
 
       <main className="container container-wide stack">
-        <div className="page-hero campaign-hero">
-          <div>
+        <div className="page-hero campaign-hero stark-hero">
+          <div className="stark-hero-copy">
+            <p className="deck-kicker">
+              <span className="deck-live" aria-hidden />
+              Systems · Campaigns
+            </p>
             <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
+          </div>
+          <div className="deck-core stark-core" aria-hidden="true">
+            <span className="deck-ring r1" />
+            <span className="deck-ring r2" />
+            <span className="deck-ring r3" />
+            <span className="deck-core-read">
+              <b>{loading ? "—" : visible.length}</b>
+              <span>live</span>
+            </span>
           </div>
           <label className="cs-search campaign-search">
             <span className="ads-search-label">Search</span>
