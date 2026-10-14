@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { can, getSession } from "@/lib/auth";
 import { addClientToHub, buildLifecycleHub } from "@/lib/lifecycle-hub";
 import { isEmailPlatform, isYmd } from "@/lib/email-launch";
+import { isValidPeriod } from "@/lib/period";
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!(await can("page.lifecycle"))) {
     return NextResponse.json({ error: "Admins only" }, { status: 401 });
   }
-  return NextResponse.json(buildLifecycleHub());
+  const url = new URL(request.url);
+  const periodParam = url.searchParams.get("period");
+  const period = isValidPeriod(periodParam) ? periodParam : undefined;
+  return NextResponse.json(buildLifecycleHub(period));
 }
 
 export async function POST(request: Request) {
@@ -19,6 +23,7 @@ export async function POST(request: Request) {
   const mode = body.mode === "automations" ? "automations" : "launch";
   const launchDate = typeof body.launchDate === "string" ? body.launchDate : "";
   const platform = isEmailPlatform(body.platform) ? body.platform : null;
+  const period = isValidPeriod(body.period) ? body.period : undefined;
   if (!clientId) {
     return NextResponse.json({ error: "Pick a client." }, { status: 400 });
   }
@@ -37,11 +42,11 @@ export async function POST(request: Request) {
     clientId,
     mode === "automations" ? null : launchDate,
     session?.person || "michael",
-    undefined,
+    period,
     mode === "automations" ? null : platform
   );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  return NextResponse.json(buildLifecycleHub());
+  return NextResponse.json(buildLifecycleHub(period));
 }

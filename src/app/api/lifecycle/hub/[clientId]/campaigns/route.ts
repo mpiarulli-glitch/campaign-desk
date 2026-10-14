@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { can } from "@/lib/auth";
 import { logHubCampaign } from "@/lib/lifecycle-hub";
+import { isValidPeriod } from "@/lib/period";
 import { getRevClient } from "@/lib/revenue";
 
 export async function POST(
@@ -21,7 +22,8 @@ export async function POST(
   }
   const sentOn = typeof body.sentOn === "string" ? body.sentOn : undefined;
   const status = body.status === "approved" ? "approved" : "sent";
-  const result = logHubCampaign(clientId, { title, sentOn, status });
+  const period = isValidPeriod(body.period) ? body.period : undefined;
+  const result = logHubCampaign(clientId, { title, sentOn, status }, period);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

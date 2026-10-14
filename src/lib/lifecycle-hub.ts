@@ -37,7 +37,7 @@ import {
   logOffAppCampaign,
   type OffAppCampaignInput,
 } from "./lifecycle-board";
-import { currentPeriod, periodLabel } from "./period";
+import { currentPeriod, isValidPeriod, periodLabel } from "./period";
 import { todayYmd } from "./cadence";
 import { createTodo, listTodos, type TodoView } from "./todos";
 import {
@@ -410,8 +410,14 @@ function campaignsByClient(
          FROM campaigns c
         WHERE c.archived_at IS NULL
           AND (
-            strftime('%Y-%m', c.created_at) = ?
-            OR (c.status = 'sent' AND strftime('%Y-%m', c.updated_at) = ?)
+            c.board_period = ?
+            OR (
+              c.board_period IS NULL
+              AND (
+                strftime('%Y-%m', c.created_at) = ?
+                OR (c.status = 'sent' AND strftime('%Y-%m', c.updated_at) = ?)
+              )
+            )
           )
           AND (c.client_id IN (${clientIds.map(() => "?").join(",")}) ${nameClause})
           AND EXISTS (
@@ -420,7 +426,7 @@ function campaignsByClient(
           )
         ORDER BY c.updated_at DESC`
     )
-    .all(period, period, ...clientIds, ...nameKeys) as Array<{
+    .all(period, period, period, ...clientIds, ...nameKeys) as Array<{
     id: string;
     client_id: string | null;
     client_name: string;
@@ -576,15 +582,19 @@ function toHubClient(
   deliverables: HubLaunchTodo[],
   automations: HubLaunchTodo[]
 ): HubClient {
-  const dayOfMonth = Number(today.slice(8, 10));
+  const currentMonth = today.slice(0, 7);
+  const totalDays = daysInPeriod(period);
+  const dayOfMonth =
+    period < currentMonth ? totalDays : period > currentMonth ? 1 : Number(today.slice(8, 10));
   const automationTotal = automations.length;
   const automationDone = automations.filter((t) => t.status === "done").length;
   const automationRemaining = automationTotal - automationDone;
   const pace =
     group.quota > 0
-      ? contractPace(group.quota, group.delivered, dayOfMonth, daysInPeriod(period))
+      ? contractPace(group.quota, group.delivered, dayOfMonth, totalDays)
       : automationPace(automationTotal, automationDone);
-  const upcoming = sends.filter((s) => s.status !== "sent" && s.date >= today);
+  const minUpcomingDate = period > currentMonth ? `${period}-01` : today;
+  const upcoming = sends.filter((s) => s.status !== "sent" && s.date >= minUpcomingDate);
   const launchOpen = launch.filter((t) => t.status === "open").length;
   const status: "active" | "behind" = pace.status === "behind" ? "behind" : "active";
   return {
@@ -630,8 +640,15 @@ function toHubClient(
   };
 }
 
-export function buildLifecycleHub(now = new Date()): LifecycleHub {
-  const period = currentPeriod(now);
+export function buildLifecycleHub(
+  nowOrPeriod: Date | string = new Date()
+): LifecycleHub {
+  const period =
+    typeof nowOrPeriod === "string"
+      ? isValidPeriod(nowOrPeriod)
+        ? nowOrPeriod
+        : currentPeriod()
+      : currentPeriod(nowOrPeriod);
   const today = todayYmd();
   const groups = groupBoardCards(listBoardCards(period));
   const { start, end } = monthWindow(period);

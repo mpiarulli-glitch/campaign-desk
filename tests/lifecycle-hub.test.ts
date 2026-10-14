@@ -454,3 +454,112 @@ test("automations-only hub clients track a set list as the deliverable", async (
   assert.match(client.description, /All contracted automations are set up/);
 });
 
+test("account playbook stores brand guidelines, ICPs, offers, opt-ins, calendars, and A/B test results", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-hub-playbook-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+
+  const playbook = await import("../src/lib/lifecycle-account-playbook");
+  const { getDb, nowIso } = await import("../src/lib/db");
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const now = nowIso();
+  getDb()
+    .prepare(
+      `INSERT INTO rev_clients (id, name, active, monthly_email_quota, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    )
+    .run("cl_pb", "Apex Roofing", 4, now, now);
+
+  const brand = playbook.saveAccountBrandGuidelines("cl_pb", {
+    voiceTone: "Direct, trustworthy, neighbourly",
+    colors: "#0F172A, #F97316",
+    fonts: "Space Grotesk / Inter",
+    senderName: "Mike at Apex Roofing",
+    replyToEmail: "hello@apexroofing.com",
+  });
+  assert.ok(brand);
+  assert.equal(brand.voiceTone, "Direct, trustworthy, neighbourly");
+
+  const icp = playbook.addAccountIcp("cl_pb", {
+    name: "Storm-damaged homeowners",
+    painPoints: "Leaks and insurance confusion",
+    desires: "Fast inspection and warranty-backed repair",
+    objections: "Out-of-pocket cost",
+    triggers: "Hail storm within 48 hours",
+    messagingAngle: "Free 24-hour drone inspection",
+  });
+  assert.ok(icp);
+
+  const offer = playbook.addAccountOffer("cl_pb", {
+    name: "$250 Off Full Roof Replacement",
+    offerType: "seasonal",
+    promoCode: "FALL250",
+    status: "active",
+  });
+  assert.ok(offer);
+
+  const optIn = playbook.addAccountOptIn("cl_pb", {
+    name: "Storm Checklist Exit Popup",
+    channel: "popup",
+    incentive: "Free Hail Damage Checklist",
+    destinationList: "GHL Storm Leads",
+    conversionRate: "5.2%",
+  });
+  assert.ok(optIn);
+
+  const campCal = playbook.addAccountCalendarItem("cl_pb", {
+    calendarKind: "campaign",
+    title: "Pre-Winter Gutter & Roof Check",
+    plannedDate: "2026-10-22",
+    audienceOrTarget: "All homeowners",
+    offerOrVariable: "$99 Tune-Up",
+  });
+  assert.ok(campCal);
+
+  const testCal = playbook.addAccountCalendarItem("cl_pb", {
+    calendarKind: "testing",
+    title: "Subject line: City name vs Urgency",
+    plannedDate: "2026-10-25",
+    audienceOrTarget: "Welcome Series #1",
+    offerOrVariable: "Subject line",
+  });
+  assert.ok(testCal);
+
+  const abTest = playbook.addAccountAbTest("cl_pb", {
+    title: "Local city callout vs generic subject",
+    campaignOrFlow: "October Broadcast #1",
+    variable: "subject_line",
+    hypothesis: "City name increases open rate",
+    variantA: "Is your roof ready for winter?",
+    variantB: "Denver homeowners: is your roof ready for winter?",
+    metric: "open_rate",
+  });
+  assert.ok(abTest);
+  assert.equal(abTest.status, "running");
+
+  const updatedAb = playbook.updateAccountAbTest(abTest.id, {
+    resultA: "34.1% open",
+    resultB: "43.8% open",
+    winner: "b",
+    takeaway: "Localized subject lines lifted opens by +9.7 pts.",
+  });
+  assert.ok(updatedAb);
+  assert.equal(updatedAb.winner, "b");
+  assert.equal(updatedAb.status, "completed");
+
+  const full = playbook.buildAccountPlaybook("cl_pb");
+  assert.equal(full.brand.senderName, "Mike at Apex Roofing");
+  assert.equal(full.icps.length, 1);
+  assert.equal(full.offers.length, 1);
+  assert.equal(full.optIns.length, 1);
+  assert.equal(full.campaignCalendar.length, 1);
+  assert.equal(full.testingCalendar.length, 1);
+  assert.equal(full.abTests.length, 1);
+  assert.equal(full.abTests[0].winner, "b");
+});
+
