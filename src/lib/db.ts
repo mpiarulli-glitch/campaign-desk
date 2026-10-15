@@ -3751,6 +3751,36 @@ function migrate(database: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_seo_ops_alloc_week
       ON seo_ops_forecast_allocations(week_start, run_id);
+
+    -- Per-day items for a version-2 run. Kept out of forecast_tasks so they
+    -- cannot be timed, edited, logged to Basecamp, or undone by Plan this week.
+    -- The live set is the newest accepted run for that Monday, same as allocations.
+    CREATE TABLE IF NOT EXISTS seo_ops_forecast_items (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      person_email TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      item_date TEXT NOT NULL,
+      item_key TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      bucket TEXT NOT NULL,
+      seo_ops_client_id TEXT,
+      rev_client_id TEXT,
+      client_name TEXT NOT NULL,
+      unmatched INTEGER NOT NULL DEFAULT 0,
+      title TEXT NOT NULL,
+      source TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      hours TEXT NOT NULL,
+      start_time TEXT,
+      source_ids_json TEXT NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES seo_ops_forecast_runs(run_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_seo_ops_items_week
+      ON seo_ops_forecast_items(week_start, run_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_ops_items_key
+      ON seo_ops_forecast_items(run_id, person_id, item_date, item_key);
   `);
 
   database.exec(`

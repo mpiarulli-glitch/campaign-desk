@@ -21,7 +21,11 @@ import {
   pushForecastMeetingToGoogle,
 } from "@/lib/forecast-google";
 import { bookTypedMeetingOnBasecamp } from "@/lib/forecast-schedule";
-import { forecastSyncHoursForPerson } from "@/lib/forecast-sync";
+import {
+  forecastSyncHoursByDate,
+  forecastSyncHoursForPerson,
+  forecastSyncItemsForPerson,
+} from "@/lib/forecast-sync";
 import { parseTimeInput } from "@/lib/forecast-time";
 import { addWeeks, currentWeek } from "@/lib/week";
 
@@ -46,12 +50,14 @@ export async function GET(request: Request, { params }: Params) {
   }
   const tasks = listTasksForPersonWeek(person, week);
   const taskHours = tasks.reduce((sum, t) => sum + t.hours, 0);
-  // SEO Ops actuals for a week that has started, estimates for a later week.
-  // The run is weekly, so tracked days stay on the timesheet log.
+  // SEO Ops totals come from the newest run. Version 2 derives them from
+  // items, so they are added once here and not again from the day bars.
   const sync = forecastSyncHoursForPerson(person, week);
   const hours = Math.round((taskHours + sync.forecastHours) * 100) / 100;
   // Logged totals are keyed by the day the hours were written, not where the
   // task currently sits — so a Monday log still counts on Monday after a move.
+  // Synced items stay in syncByDate. Folding them into loggedByDate would
+  // count them twice, because the week gauge already adds syncTrackedHours.
   const loggedByDate = loggedHoursByDate(person, week, addWeeks(week, 1));
   const self = await sessionUserSlug();
   return NextResponse.json({
@@ -61,6 +67,8 @@ export async function GET(request: Request, { params }: Params) {
     tasks,
     hours,
     loggedByDate,
+    syncItems: forecastSyncItemsForPerson(person, week),
+    syncByDate: forecastSyncHoursByDate(person, week),
     syncTrackedHours: sync.trackedHours,
     syncForecastHours: sync.forecastHours,
     syncInternalHours: sync.internalHours,

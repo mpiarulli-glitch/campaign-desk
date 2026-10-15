@@ -10,6 +10,12 @@ import {
   ForecastSubtasks,
 } from "@/components/ForecastSubtasks";
 import { ForecastTasksPanel } from "@/components/ForecastTasksPanel";
+import { SyncedForecastRows } from "@/components/SyncedForecastItems";
+import {
+  dayBarHours,
+  type ForecastSyncDayHours,
+  type ForecastSyncItemView,
+} from "@/lib/forecast-sync-view";
 import {
   TASK_COLORS,
   normalizeTaskColor,
@@ -81,7 +87,11 @@ type Data = {
   // Hours logged to Basecamp, keyed by the day they were written (not the
   // task's current slot). Week/day gauges read this so a move cannot steal them.
   loggedByDate?: Record<string, number>;
-  // SEO Ops actuals for this week. Weekly, so they join the week total only.
+  // SEO Ops items for this week. Read-only, and not part of loggedByDate.
+  syncItems?: ForecastSyncItemView[];
+  // Mon–Fri slice of those items. The week gauge already counts the total.
+  syncByDate?: Record<string, ForecastSyncDayHours>;
+  // SEO Ops actuals for this week. Added once to the week total.
   syncTrackedHours?: number;
   // Estimate hours for a later week, or the same actuals once the week has started.
   syncForecastHours?: number;
@@ -1206,20 +1216,34 @@ function TrackedWeekBar({
 function TrackedDayBars({
   days,
   loggedByDate,
+  syncByDate,
 }: {
   days: string[];
   loggedByDate: Record<string, number>;
+  syncByDate: Record<string, ForecastSyncDayHours>;
 }) {
   const capacity = DAILY_CAPACITY_HOURS;
   return (
     <div className="fc-tracked-days">
       {days.map((date) => {
         const logged = loggedByDate[date] || 0;
-        const shown = formatTrackedHours(logged);
-        const pct = capacity ? Math.min(100, (logged / capacity) * 100) : 0;
-        const full = logged >= capacity;
-        const over = logged > capacity;
+        const sync = syncByDate[date]?.hours || 0;
+        const internal = Math.min(sync, syncByDate[date]?.internalHours || 0);
+        const clientSync = Math.max(0, Math.round((sync - internal) * 100) / 100);
+        const total = dayBarHours(logged, sync);
+        const shown = formatTrackedHours(total);
+        const loggedPct = capacity ? Math.min(100, (logged / capacity) * 100) : 0;
+        const clientPct = capacity
+          ? Math.min(Math.max(0, 100 - loggedPct), (clientSync / capacity) * 100)
+          : 0;
+        const internalPct = capacity
+          ? Math.min(Math.max(0, 100 - loggedPct - clientPct), (internal / capacity) * 100)
+          : 0;
+        const full = total >= capacity;
+        const over = total > capacity;
         const name = dayName(date);
+        const syncNote =
+          sync > 0 ? `, including ${formatTrackedHours(sync)} synced from SEO Ops` : "";
         return (
           <div
             key={date}
@@ -1238,9 +1262,17 @@ function TrackedDayBars({
             <div
               className="fc-tracked-track"
               role="img"
-              aria-label={`${shown} of ${capacity} hours tracked ${name}`}
+              aria-label={`${shown} of ${capacity} hours on ${name}${syncNote}`}
             >
-              <div className="fc-tracked-fill" style={{ width: `${pct}%` }} />
+              {loggedPct > 0 ? (
+                <div className="fc-tracked-fill" style={{ width: `${loggedPct}%` }} />
+              ) : null}
+              {clientPct > 0 ? (
+                <div className="fc-tracked-fill is-sync" style={{ width: `${clientPct}%` }} />
+              ) : null}
+              {internalPct > 0 ? (
+                <div className="fc-tracked-fill is-internal" style={{ width: `${internalPct}%` }} />
+              ) : null}
             </div>
           </div>
         );
@@ -1705,8 +1737,9 @@ export default function PersonForecastPage() {
   //
   // `loggedHours` is Basecamp timesheet time on days in this week, keyed by
   // the day the hours were written — not where the task currently sits. The
-  // local timer is tracked_seconds and is ignored here. SEO Ops actuals are
-  // weekly, so they add to this total and not to a single day.
+  // local timer is tracked_seconds and is ignored here. SEO Ops actuals add
+  // once, from syncTrackedHours. The day bars draw syncByDate beside the
+  // timesheet and that slice is not added again here.
   const gauge = useMemo(() => {
     const all = data?.tasks || [];
     const capacity = data?.capacity || 40;
@@ -1747,6 +1780,15 @@ export default function PersonForecastPage() {
       const list = map.get(t.task_date) || [];
       list.push(t);
       map.set(t.task_date, list);
+    }
+    return map;
+  }, [data]);
+  const syncItemsByDay = useMemo(() => {
+    const map = new Map<string, ForecastSyncItemView[]>();
+    for (const item of data?.syncItems || []) {
+      const list = map.get(item.date) || [];
+      list.push(item);
+      map.set(item.date, list);
     }
     return map;
   }, [data]);
@@ -3452,7 +3494,11 @@ export default function PersonForecastPage() {
               weekText={weekLabel(week)}
               internalHours={(data.syncTrackedHours || 0) > 0 ? data.syncInternalHours || 0 : 0}
             />
-            <TrackedDayBars days={days} loggedByDate={data.loggedByDate || {}} />
+            <TrackedDayBars
+              days={days}
+              loggedByDate={data.loggedByDate || {}}
+              syncByDate={data.syncByDate || {}}
+            />
           </>
         ) : null}
 
@@ -3577,9 +3623,13 @@ export default function PersonForecastPage() {
         ) : view === "today" ? (
           (() => {
             const tasks = tasksByDay.get(today) || [];
+            const synced = syncItemsByDay.get(today) || [];
             const inWeek = days.includes(today);
-            const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
-            const dayLogged = data?.loggedByDate?.[today] || 0;
+            const dayHours =
+              tasks.reduce((sum, t) => sum + t.hours, 0) +
+              synced.reduce((sum, item) => sum + item.hours, 0);
+            const daySync = data?.syncByDate?.[today]?.hours || 0;
+            const dayLogged = dayBarHours(data?.loggedByDate?.[today] || 0, daySync);
             const dayLoggedShort = dayHours > 0 && dayLogged < dayHours;
             const doneToday = tasks.filter((t) => t.completed).length;
             const draft = draftFor(today);
@@ -3620,9 +3670,11 @@ export default function PersonForecastPage() {
                             : ""
                       }`}
                       title={
-                        dayLoggedShort
-                          ? `${Math.round(dayLogged * 10) / 10}h on the Basecamp timesheet today, ${Math.round((dayHours - dayLogged) * 10) / 10}h short of today's plan`
-                          : `${Math.round(dayLogged * 10) / 10}h logged to Basecamp today`
+                        daySync > 0
+                          ? `${Math.round(dayLogged * 10) / 10}h tracked today, including ${Math.round(daySync * 10) / 10}h synced from SEO Ops`
+                          : dayLoggedShort
+                            ? `${Math.round(dayLogged * 10) / 10}h on the Basecamp timesheet today, ${Math.round((dayHours - dayLogged) * 10) / 10}h short of today's plan`
+                            : `${Math.round(dayLogged * 10) / 10}h logged to Basecamp today`
                       }
                     >
                       <strong>{Math.round(dayLogged * 10) / 10}h</strong> logged
@@ -3630,7 +3682,7 @@ export default function PersonForecastPage() {
                   </div>
                 </div>
 
-                {tasks.length === 0 ? (
+                {tasks.length === 0 && synced.length === 0 ? (
                   <p className="fc-day-empty">
                     {dragId
                       ? "Drop here to move it to today."
@@ -3640,6 +3692,7 @@ export default function PersonForecastPage() {
                   <div className="ops-list-stack">
                     <ListColumnHeaders look={look} />
                     {tasks.map((t) => listTaskRow(t))}
+                    <SyncedForecastRows items={synced} taskFirst={taskFirst} />
                   </div>
                 )}
 
@@ -3735,6 +3788,7 @@ export default function PersonForecastPage() {
               }}
               timerBusyId={timerBusy}
               nowMs={nowMs}
+              syncItemsByDay={syncItemsByDay}
             />
             {editingTask ? (
               <SlotPopover
@@ -3871,13 +3925,17 @@ export default function PersonForecastPage() {
             onUpdate={(todo, patch) => void updateAssignedTask(todo, patch)}
             onCreate={(input) => createAssignedTask(input)}
             onRefresh={() => void loadAssigned()}
+            syncItems={data?.syncItems || []}
           />
         ) : (
           <div className="fc-list">
             <AssignedStrip />
             {days.map((date) => {
               const tasks = tasksByDay.get(date) || [];
-              const dayHours = tasks.reduce((sum, t) => sum + t.hours, 0);
+              const synced = syncItemsByDay.get(date) || [];
+              const dayHours =
+                tasks.reduce((sum, t) => sum + t.hours, 0) +
+                synced.reduce((sum, item) => sum + item.hours, 0);
               const doneCount = tasks.filter((t) => t.completed).length;
               const draft = draftFor(date);
               return (
@@ -3905,7 +3963,7 @@ export default function PersonForecastPage() {
                     </div>
                   </header>
 
-                  {tasks.length === 0 ? (
+                  {tasks.length === 0 && synced.length === 0 ? (
                     <p className="fc-day-empty">
                       {dragId
                         ? "Drop here to move it to this day."
@@ -3915,6 +3973,7 @@ export default function PersonForecastPage() {
                     <div className="ops-list-stack">
                       <ListColumnHeaders look={look} />
                       {tasks.map((t) => listTaskRow(t))}
+                      <SyncedForecastRows items={synced} taskFirst={taskFirst} />
                     </div>
                   )}
 

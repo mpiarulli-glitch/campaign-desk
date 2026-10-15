@@ -14,6 +14,8 @@ import {
 } from "@/lib/forecast-tasks";
 import { sortQueueTodos, type QueueTodo } from "@/lib/forecast-queue";
 import type { AssignedSource } from "./ForecastQueue";
+import { SyncedForecastSection } from "./SyncedForecastItems";
+import type { ForecastSyncItemView } from "@/lib/forecast-sync-view";
 
 export type TaskClientOption = { id: string; name: string };
 
@@ -64,6 +66,7 @@ export function ForecastTasksPanel({
   onUpdate,
   onCreate,
   onRefresh,
+  syncItems = [],
 }: {
   person: string;
   assigned: AssignedSource;
@@ -83,6 +86,7 @@ export function ForecastTasksPanel({
     dueOn: string | null;
   }) => Promise<boolean>;
   onRefresh: () => void;
+  syncItems?: ForecastSyncItemView[];
 }) {
   const [filter, setFilter] = useState<TasksFilter>("all");
   const [layout, setLayout] = useState<TasksLayout>("due");
@@ -186,6 +190,8 @@ export function ForecastTasksPanel({
           }}
         />
       ) : null}
+
+      <SyncedForecastSection items={syncItems} />
 
       {assigned.loading && assigned.assignments.length === 0 ? (
         <p className="fc-tasks-empty">Loading your Basecamp tasks…</p>
