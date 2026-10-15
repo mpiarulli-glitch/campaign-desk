@@ -5,15 +5,22 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { DailyNote } from "@/components/hub/DailyNote";
 import { AssignTodoPanel } from "@/components/AssignTodoPanel";
+import { OWNER_SLUG } from "@/lib/people";
+import {
+  formatTrackedHours,
+  trackedHoursFromForecast,
+  trackedHoursSentence,
+} from "@/lib/tracked-hours";
 import { currentWeek } from "@/lib/week";
 
 type Section = "resources" | "sops" | "training" | "sentiment";
 type Sop = { id: string; title: string; category: string };
 type Post = { id: string; title: string; kind: string; created_at: string };
 type Course = { id: string; slug: string; title: string; kind: string; lesson_count: number };
-type Checkin = { person: string; score: number };
-
-const FACES = ["😞", "😕", "😐", "🙂", "😄"];
+type HoursRead =
+  | { status: "loading" }
+  | { status: "ready"; hours: number }
+  | { status: "unavailable" };
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -24,7 +31,6 @@ const ICONS: Record<string, React.ReactNode> = {
   res: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
   sop: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M9 13h6M9 17h6" /></>,
   train: <><path d="M12 2L2 7l10 5 10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></>,
-  senti: <><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" /></>,
 };
 function Icon({ name }: { name: string }) {
   return (
@@ -97,36 +103,36 @@ export function HubHome({
   const [command, setCommand] = useState("");
   const [reply, setReply] = useState("");
   const [running, setRunning] = useState(false);
-  const [teamPct, setTeamPct] = useState<number | null>(null);
+  const [hoursRead, setHoursRead] = useState<HoursRead>({ status: "loading" });
   const [sops, setSops] = useState<Sop[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [checkins, setCheckins] = useState<Checkin[] | null>(null);
-  const [myScore, setMyScore] = useState<number | null>(null);
+  const hoursSlug = person || OWNER_SLUG;
 
   useEffect(() => {
     fetch("/api/hub/sops").then((r) => (r.ok ? r.json() : { sops: [] })).then((d) => setSops(d.sops || []));
     fetch("/api/hub/training").then((r) => (r.ok ? r.json() : { posts: [] })).then((d) => setPosts(d.posts || []));
     fetch("/api/hub/courses").then((r) => (r.ok ? r.json() : { courses: [] })).then((d) => setCourses(d.courses || []));
-    fetch("/api/hub/sentiment")
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((d: { all?: Checkin[] | null; mine?: { score: number } | null }) => {
-        setCheckins(d.all ?? null);
-        setMyScore(d.mine?.score ?? null);
-      });
-    if (!isAdmin) return;
-    fetch(`/api/forecast?week=${currentWeek()}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { people?: Array<{ hours: number; capacity: number }> } | null) => {
-        const people = d?.people || [];
-        const hours = people.reduce((sum, p) => sum + (p.hours || 0), 0);
-        const capacity = people.reduce((sum, p) => sum + (p.capacity || 0), 0);
-        setTeamPct(capacity ? Math.round((hours / capacity) * 100) : null);
-      })
-      .catch(() => setTeamPct(null));
-  }, [isAdmin]);
+  }, []);
 
-  const pulseAvg = checkins && checkins.length ? checkins.reduce((s, c) => s + c.score, 0) / checkins.length : null;
+  useEffect(() => {
+    let cancelled = false;
+    setHoursRead({ status: "loading" });
+    fetch(`/api/forecast/${encodeURIComponent(hoursSlug)}?week=${currentWeek()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { loggedByDate?: Record<string, number>; syncTrackedHours?: number } | null) => {
+        if (cancelled) return;
+        const hours = trackedHoursFromForecast(d);
+        setHoursRead(hours == null ? { status: "unavailable" } : { status: "ready", hours });
+      })
+      .catch(() => {
+        if (!cancelled) setHoursRead({ status: "unavailable" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hoursSlug]);
+
   const latestPost = posts[0] || null;
   const featuredCourse = courses[0] || null;
   const courseCount = courses.length;
@@ -136,18 +142,11 @@ export function HubHome({
   const briefing = useMemo(() => {
     const who = firstName || "there";
     const bits = [`${greeting()}, ${who}. The house is online.`];
-    if (teamPct != null) bits.push(`The team is ${teamPct}% forecasted this week.`);
-    if (pulseAvg != null && checkins) {
-      bits.push(
-        `Pulse is ${pulseAvg.toFixed(1)} from ${checkins.length} check-in${checkins.length === 1 ? "" : "s"}.`
-      );
-    } else if (myScore != null) {
-      bits.push(`Your pulse this month is ${myScore}.`);
-    }
+    if (hoursRead.status === "ready") bits.push(trackedHoursSentence(hoursRead.hours));
     if (sops.length) bits.push(`${sops.length} SOP${sops.length === 1 ? "" : "s"} on file.`);
     bits.push("Name a system, or a client, and I'll open it.");
     return bits.join(" ");
-  }, [firstName, teamPct, pulseAvg, checkins, myScore, sops.length]);
+  }, [firstName, hoursRead, sops.length]);
 
   function openTarget(target: DeckTarget) {
     setReply(`Opening ${target.label}.`);
@@ -183,8 +182,15 @@ export function HubHome({
     }
   }
 
-  const coreRead = pulseAvg != null ? pulseAvg.toFixed(1) : teamPct != null ? `${teamPct}%` : "ON";
-  const coreLabel = pulseAvg != null ? "pulse" : teamPct != null ? "forecast" : "online";
+  const coreRead =
+    hoursRead.status === "ready" ? formatTrackedHours(hoursRead.hours) : hoursRead.status === "loading" ? "…" : "—";
+  const coreLabel = "tracked";
+  const hoursLabel =
+    hoursRead.status === "ready"
+      ? `${formatTrackedHours(hoursRead.hours)} hours tracked this week`
+      : hoursRead.status === "loading"
+        ? "Loading hours tracked this week"
+        : "Hours tracked this week are unavailable";
 
   return (
     <div className="deck">
@@ -222,13 +228,13 @@ export function HubHome({
             ))}
           </div>
         </div>
-        <div className="deck-core" aria-hidden="true">
-          <span className="deck-ring r1" />
-          <span className="deck-ring r2" />
-          <span className="deck-ring r3" />
-          <span className="deck-core-read">
-            <b>{coreRead}</b>
-            <span>{coreLabel}</span>
+        <div className="deck-core">
+          <span className="deck-ring r1" aria-hidden="true" />
+          <span className="deck-ring r2" aria-hidden="true" />
+          <span className="deck-ring r3" aria-hidden="true" />
+          <span className="deck-core-read" role="img" aria-label={hoursLabel}>
+            <b aria-hidden="true">{coreRead}</b>
+            <span aria-hidden="true">{coreLabel}</span>
           </span>
         </div>
       </div>
@@ -295,39 +301,6 @@ export function HubHome({
             </>
           ) : (
             <p className="muted" style={{ margin: 0 }}>Nothing posted yet.</p>
-          )}
-        </button>
-
-        {/* SENTIMENT */}
-        <button className="hq-card t-senti" onClick={() => onOpen("sentiment")}>
-          <div className="hq-card-head">
-            <span className="hq-icon"><Icon name="senti" /></span>
-            <div><h3 className="hq-card-title">Team Pulse</h3><p className="hq-card-desc">This month&apos;s check-in</p></div>
-            <span className="hq-arrow">→</span>
-          </div>
-          <div className="hq-divider" />
-          {isAdmin && pulseAvg != null ? (
-            <div className="hq-senti-row">
-              <div className="hq-ring">
-                <svg width="74" height="74">
-                  <circle cx="37" cy="37" r="31" fill="none" stroke="var(--border)" strokeWidth="6" />
-                  <circle cx="37" cy="37" r="31" fill="none" stroke="#c25d8a" strokeWidth="6" strokeLinecap="round"
-                    strokeDasharray={2 * Math.PI * 31}
-                    strokeDashoffset={2 * Math.PI * 31 * (1 - pulseAvg / 5)} />
-                </svg>
-                <div className="val">{pulseAvg.toFixed(1)}</div>
-              </div>
-              <div>
-                <div className="muted">{checkins!.length} checked in</div>
-                <div className="hq-faces">{FACES.map((f, i) => <span key={i} className={Math.round(pulseAvg) === i + 1 ? "on" : ""}>{f}</span>)}</div>
-              </div>
-            </div>
-          ) : myScore != null ? (
-            <div className="hq-senti-row">
-              <div className="hq-faces" style={{ marginTop: 0 }}>{FACES.map((f, i) => <span key={i} className={myScore === i + 1 ? "on" : ""}>{f}</span>)}</div>
-            </div>
-          ) : (
-            <p className="muted" style={{ margin: 0 }}>You haven&apos;t checked in this month. Tap to share how it&apos;s going.</p>
           )}
         </button>
 

@@ -45,6 +45,14 @@ test("Team Hub is home, and leadership slugs still use the leadership roster", (
   assert.match(hubHome, /AssignTodoPanel/);
   assert.match(hubHome, /deck-command/);
   assert.match(hubHome, /The house is online/);
+  assert.match(hubHome, /trackedHoursFromForecast/);
+  assert.match(hubHome, /OWNER_SLUG/);
+  assert.match(hubHome, /Team pulse/);
+  assert.doesNotMatch(hubHome, /Team Pulse/);
+  assert.doesNotMatch(hubHome, /pulseAvg/);
+  assert.doesNotMatch(hubHome, /The team is/);
+  assert.doesNotMatch(hubHome, /\/api\/hub\/sentiment/);
+  assert.doesNotMatch(hubHome, /\/api\/forecast\?/);
   assert.equal(usesLeadershipHome("sylvia"), true);
   assert.equal(usesLeadershipHome("kyle_onstott"), true);
   assert.equal(usesLeadershipHome("luis_romero"), true);
