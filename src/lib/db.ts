@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import type { AssetKind, AssetType, BodyFormat } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
+import { KNOWN_FORECAST_SYNC_EMAILS } from "./forecast-sync-mailboxes";
 import { PEOPLE, OWNER_SLUG } from "./people";
 import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
@@ -3827,6 +3828,23 @@ export function seedUsers(database: Database.Database) {
   );
   for (const p of ADMIN_PEOPLE) {
     promote.run(p.label, now, p.slug);
+  }
+
+  // SEO Ops matches these mailboxes. PR #48 stopped shipping them as a
+  // hard-coded list and read users.email instead, but the addresses were
+  // never stored, so GET /v1/people came back empty. Fill a blank account
+  // only. An email already on this slug, or already on someone else, stays.
+  const taken = database.prepare(`SELECT slug FROM users WHERE lower(email) = ?`);
+  const fillEmail = database.prepare(
+    `UPDATE users
+        SET email = ?, updated_at = ?
+      WHERE slug = ?
+        AND (email IS NULL OR TRIM(email) = '')`
+  );
+  for (const [slug, email] of Object.entries(KNOWN_FORECAST_SYNC_EMAILS)) {
+    const owner = taken.get(email) as { slug: string } | undefined;
+    if (owner && owner.slug !== slug) continue;
+    fillEmail.run(email, now, slug);
   }
 }
 

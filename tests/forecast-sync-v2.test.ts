@@ -494,7 +494,16 @@ test("SEO Ops forecast sync v2", async (t) => {
       new Request("http://desk.example/v1/people", { headers: auth() })
     );
     const listed = (await people.json()) as { people: Array<{ id: string; email: string }> };
+    assert.ok(listed.people.length > 0);
     assert.equal(listed.people.find((p) => p.id === "desk_roy")?.email, "roy@marketingempiregroup.com");
+    assert.equal(
+      listed.people.find((p) => p.email === "cmorones@marketingempiregroup.com")?.id,
+      "desk_carlos"
+    );
+    assert.equal(
+      listed.people.find((p) => p.email === "amiranda@marketingempiregroup.com")?.id,
+      "desk_abel"
+    );
     assert.equal(sync.forecastSyncHoursByDate("roy", WEEK, WEEK)["2026-10-14"].hours, 1);
     assert.equal(sync.forecastSyncItemsForPerson("carlos", WEEK, WEEK).length, 0);
 
@@ -504,6 +513,6 @@ test("SEO Ops forecast sync v2", async (t) => {
     const rejected = await put(clash.runId, clash);
     assert.equal(rejected.status, 422);
     const abel = db.prepare(`SELECT email FROM users WHERE slug = ?`).get("abel") as { email: string | null };
-    assert.equal(abel.email, null);
+    assert.equal(abel.email, "amiranda@marketingempiregroup.com");
   });
 });
