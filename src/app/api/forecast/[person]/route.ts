@@ -21,6 +21,7 @@ import {
   pushForecastMeetingToGoogle,
 } from "@/lib/forecast-google";
 import { bookTypedMeetingOnBasecamp } from "@/lib/forecast-schedule";
+import { forecastSyncHoursForPerson } from "@/lib/forecast-sync";
 import { parseTimeInput } from "@/lib/forecast-time";
 import { addWeeks, currentWeek } from "@/lib/week";
 
@@ -44,7 +45,11 @@ export async function GET(request: Request, { params }: Params) {
     await pullGoogleMeetingsForWeek(person, week).catch(() => null);
   }
   const tasks = listTasksForPersonWeek(person, week);
-  const hours = tasks.reduce((sum, t) => sum + t.hours, 0);
+  const taskHours = tasks.reduce((sum, t) => sum + t.hours, 0);
+  // SEO Ops actuals for a week that has started, estimates for a later week.
+  // The run is weekly, so tracked days stay on the timesheet log.
+  const sync = forecastSyncHoursForPerson(person, week);
+  const hours = Math.round((taskHours + sync.forecastHours) * 100) / 100;
   // Logged totals are keyed by the day the hours were written, not where the
   // task currently sits — so a Monday log still counts on Monday after a move.
   const loggedByDate = loggedHoursByDate(person, week, addWeeks(week, 1));
@@ -56,6 +61,9 @@ export async function GET(request: Request, { params }: Params) {
     tasks,
     hours,
     loggedByDate,
+    syncTrackedHours: sync.trackedHours,
+    syncForecastHours: sync.forecastHours,
+    syncInternalHours: sync.internalHours,
     capacity: WEEKLY_CAPACITY_HOURS,
     allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
     note: getWeekNote(person, week),
