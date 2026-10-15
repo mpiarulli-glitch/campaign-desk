@@ -5,6 +5,10 @@
 import { randomBytes } from "crypto";
 import { getDb, nowIso, type User, type UserRole } from "./db";
 import {
+  KNOWN_FORECAST_SYNC_EMAILS,
+  SeoOpsEmailLocked,
+} from "./forecast-sync-mailboxes";
+import {
   burnPasswordCheck,
   hashPassword,
   passwordProblem,
@@ -421,6 +425,11 @@ export function setUserActive(slug: string, active: boolean): void {
 export function setUserEmail(slug: string, email: string): void {
   const now = nowIso();
   const value = email.trim().toLowerCase() || null;
+  const known = (KNOWN_FORECAST_SYNC_EMAILS[slug] || "").trim().toLowerCase();
+  // Carlos's SEO Ops sync matches these mailboxes. A different address stored
+  // on the account would replace what GET /v1/people returns, so the only
+  // write allowed here is the mailbox the sync already uses.
+  if (known && value !== known) throw new SeoOpsEmailLocked(slug);
   getDb()
     .prepare(`UPDATE users SET email = ?, updated_at = ? WHERE slug = ?`)
     .run(value, now, slug);
