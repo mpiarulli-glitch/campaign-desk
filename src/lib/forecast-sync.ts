@@ -2,6 +2,7 @@ import { timingSafeEqual } from "crypto";
 import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import { PEOPLE } from "./people";
+import { currentWeek } from "./week";
 
 // Mailboxes SEO Ops matches before it sends hours. The id is stable:
 // `desk_` plus the forecast slug. People with no mailbox are omitted; a
@@ -436,4 +437,86 @@ export function activeForecastSyncAllocations(weekStart: string): ForecastSyncAl
     minutes: row.minutes,
     hours: row.hours,
   }));
+}
+
+export type ForecastSyncPersonHours = {
+  person: string;
+  /** Hours for the Weekly forecast. Actuals before this week ends, estimates after. */
+  forecastHours: number;
+  /** Tracked time. Zero for a future week, which is still an estimate. */
+  trackedHours: number;
+  /** Meeting time already included above. Those lines are named Internal. */
+  internalHours: number;
+};
+
+const EMPTY_SYNC_HOURS = {
+  forecastHours: 0,
+  trackedHours: 0,
+  internalHours: 0,
+} as const;
+
+function slugFromSyncPersonId(personId: string): string | null {
+  const prefix = "desk_";
+  if (!personId.startsWith(prefix)) return null;
+  const slug = personId.slice(prefix.length);
+  return PEOPLE.some((person) => person.slug === slug) ? slug : null;
+}
+
+/**
+ * Hours the Weekly forecast and Tracked views should read for one Monday.
+ *
+ * The newest accepted run owns the week, so a re-sync replaces that week
+ * instead of stacking on the previous body. Deleting a run drops it here; if
+ * it was the newest, the previous accepted run for that week comes back.
+ *
+ * A week that has already started counts its `actual` lines as tracked time
+ * and as the forecast. A later week counts its `estimate` lines as forecast
+ * only. Meetings stay in the Internal bucket. Anything else (a break, which
+ * SEO Ops does not send) is ignored, and a week with no lines stays empty
+ * rather than becoming a fake zero.
+ */
+export function forecastSyncHoursForWeek(
+  weekStart: string,
+  asOfWeek = currentWeek()
+): ForecastSyncPersonHours[] {
+  const future = weekStart > asOfWeek;
+  const wanted = future ? "estimate" : "actual";
+  const byPerson = new Map<string, { minutes: number; internal: number }>();
+  for (const line of activeForecastSyncAllocations(weekStart)) {
+    if (line.source !== wanted) continue;
+    if (line.bucket !== "client" && line.bucket !== "internal") continue;
+    const person = slugFromSyncPersonId(line.personId);
+    if (!person) continue;
+    const row = byPerson.get(person) || { minutes: 0, internal: 0 };
+    row.minutes += line.minutes;
+    if (line.bucket === "internal") row.internal += line.minutes;
+    byPerson.set(person, row);
+  }
+
+  const out: ForecastSyncPersonHours[] = [];
+  for (const [person, row] of byPerson) {
+    if (row.minutes <= 0) continue;
+    const hours = Number(hoursForMinutes(row.minutes));
+    out.push({
+      person,
+      forecastHours: hours,
+      trackedHours: future ? 0 : hours,
+      internalHours: Number(hoursForMinutes(row.internal)),
+    });
+  }
+  out.sort((a, b) => a.person.localeCompare(b.person));
+  return out;
+}
+
+export function forecastSyncHoursForPerson(
+  person: string,
+  weekStart: string,
+  asOfWeek = currentWeek()
+): ForecastSyncPersonHours {
+  return (
+    forecastSyncHoursForWeek(weekStart, asOfWeek).find((row) => row.person === person) || {
+      person,
+      ...EMPTY_SYNC_HOURS,
+    }
+  );
 }

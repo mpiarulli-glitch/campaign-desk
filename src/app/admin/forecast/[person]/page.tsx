@@ -81,6 +81,12 @@ type Data = {
   // Hours logged to Basecamp, keyed by the day they were written (not the
   // task's current slot). Week/day gauges read this so a move cannot steal them.
   loggedByDate?: Record<string, number>;
+  // SEO Ops actuals for this week. Weekly, so they join the week total only.
+  syncTrackedHours?: number;
+  // Estimate hours for a later week, or the same actuals once the week has started.
+  syncForecastHours?: number;
+  // Meeting portion of those hours. The client name is Internal.
+  syncInternalHours?: number;
   bookings?: Array<{
     id: string;
     completed: boolean;
@@ -1161,11 +1167,13 @@ function TrackedWeekBar({
   capacity,
   pct,
   weekText,
+  internalHours = 0,
 }: {
   loggedHours: number;
   capacity: number;
   pct: number;
   weekText: string;
+  internalHours?: number;
 }) {
   const shown = formatTrackedHours(loggedHours);
   const full = capacity > 0 && loggedHours >= capacity;
@@ -1173,7 +1181,12 @@ function TrackedWeekBar({
   return (
     <div className={`fc-tracked ${over ? "is-over" : full ? "is-full" : ""}`}>
       <div className="fc-tracked-head">
-        <span className="fc-tracked-label">Tracked · {weekText}</span>
+        <span className="fc-tracked-label">
+          Tracked · {weekText}
+          {internalHours > 0 ? (
+            <span className="muted"> · {formatTrackedHours(internalHours)}h Internal</span>
+          ) : null}
+        </span>
         <strong>
           <b>{shown}</b>
           <span> / {capacity}h</span>
@@ -1692,13 +1705,19 @@ export default function PersonForecastPage() {
   //
   // `loggedHours` is Basecamp timesheet time on days in this week, keyed by
   // the day the hours were written — not where the task currently sits. The
-  // local timer is tracked_seconds and is ignored here.
+  // local timer is tracked_seconds and is ignored here. SEO Ops actuals are
+  // weekly, so they add to this total and not to a single day.
   const gauge = useMemo(() => {
     const all = data?.tasks || [];
     const capacity = data?.capacity || 40;
-    const doneHours = all.filter((t) => t.completed).reduce((s, t) => s + t.hours, 0);
-    const totalHours = all.reduce((s, t) => s + t.hours, 0);
-    const loggedHours = Object.values(data?.loggedByDate || {}).reduce((s, n) => s + n, 0);
+    const taskDone = all.filter((t) => t.completed).reduce((s, t) => s + t.hours, 0);
+    const taskHours = all.reduce((s, t) => s + t.hours, 0);
+    const syncTracked = data?.syncTrackedHours || 0;
+    const syncForecast = data?.syncForecastHours || 0;
+    const doneHours = Math.round((taskDone + syncTracked) * 100) / 100;
+    const totalHours = Math.round((taskHours + syncForecast) * 100) / 100;
+    const loggedFromDays = Object.values(data?.loggedByDate || {}).reduce((s, n) => s + n, 0);
+    const loggedHours = Math.round((loggedFromDays + syncTracked) * 100) / 100;
     const openHours = totalHours - doneHours;
     const pct = capacity ? Math.round((totalHours / capacity) * 100) : 0;
     return {
@@ -3431,6 +3450,7 @@ export default function PersonForecastPage() {
               capacity={gauge.capacity}
               pct={gauge.trackedPct}
               weekText={weekLabel(week)}
+              internalHours={(data.syncTrackedHours || 0) > 0 ? data.syncInternalHours || 0 : 0}
             />
             <TrackedDayBars days={days} loggedByDate={data.loggedByDate || {}} />
           </>
@@ -3476,7 +3496,10 @@ export default function PersonForecastPage() {
           </p>
         ) : null}
 
-        {!loading && progress.total > 0 && view !== "calendar" && view !== "tasks" ? (
+        {!loading &&
+        (progress.total > 0 || (data?.syncForecastHours || 0) > 0) &&
+        view !== "calendar" &&
+        view !== "tasks" ? (
           <div
             className={`fc-gauge ${gauge.over ? "is-over" : ""} ${gauge.clear ? "is-clear" : ""}`}
           >
@@ -3534,6 +3557,9 @@ export default function PersonForecastPage() {
                 <span>
                   {progress.done} of {progress.total} tasks
                 </span>
+                {(data?.syncInternalHours || 0) > 0 && !(data?.syncTrackedHours || 0) ? (
+                  <span>{data?.syncInternalHours}h Internal</span>
+                ) : null}
               </div>
             </div>
             <div className="fc-gauge-note">

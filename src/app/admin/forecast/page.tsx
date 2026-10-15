@@ -17,6 +17,8 @@ type PersonSummary = {
   donePct: number;
   taskCount: number;
   doneCount: number;
+  // Meeting time already included in `hours`.
+  internalHours?: number;
 };
 
 function allocationColor(pct: number): string {
@@ -210,6 +212,7 @@ export default function ForecastDashboardPage() {
                       </span>
                       <span className="muted">
                         {p.hours}h · {allocationLabel(p.allocationPct)}
+                        {(p.internalHours || 0) > 0 ? ` · ${p.internalHours}h Internal` : ""}
                       </span>
                     </div>
                     {p.hours > 0 ? (

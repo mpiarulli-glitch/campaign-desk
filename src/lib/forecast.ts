@@ -13,6 +13,7 @@ import { parseTimeInput } from "./forecast-time";
 import { runningSeconds } from "./forecast-timer";
 import { addWeeks } from "./week";
 import { WEEKLY_CAPACITY_HOURS } from "./forecast-capacity";
+import { forecastSyncHoursForPerson, forecastSyncHoursForWeek } from "./forecast-sync";
 
 export { weekdays } from "./week";
 
@@ -590,7 +591,10 @@ export function loggedHoursOnDate(person: string, date: string): number {
 
 export function loggedHoursForWeek(person: string, weekStart: string): number {
   const byDate = loggedHoursByDate(person, weekStart, addWeeks(weekStart, 1));
-  return Object.values(byDate).reduce((s, n) => s + n, 0);
+  const logged = Object.values(byDate).reduce((s, n) => s + n, 0);
+  // SEO Ops actuals are weekly, so they join the week total and not a day.
+  const sync = forecastSyncHoursForPerson(person, weekStart).trackedHours;
+  return Math.round((logged + sync) * 100) / 100;
 }
 
 function addDays(ymd: string, n: number): string {
@@ -784,10 +788,15 @@ export interface PersonWeekSummary {
   donePct: number;
   taskCount: number;
   doneCount: number;
+  // Meeting time already included in `hours`. The client name on those lines
+  // is Internal; breaks never arrive from SEO Ops.
+  internalHours: number;
 }
 
 // Total forecasted hours per person for a week, against the flat weekly
-// capacity, for the master allocation dashboard.
+// capacity, for the master allocation dashboard. Hand-built tasks and the
+// latest SEO Ops run for the week both count. A week that has started uses
+// actual tracked time; a later week uses estimates.
 export function weekSummaryForAllPeople(weekStart: string): PersonWeekSummary[] {
   const end = addWeeks(weekStart, 1);
   const rows = getDb()
@@ -816,19 +825,30 @@ export function weekSummaryForAllPeople(weekStart: string): PersonWeekSummary[] 
     done_hours: number;
   }>;
   const progressByPerson = new Map(progressRows.map((r) => [r.person, r]));
+  const syncByPerson = new Map(
+    forecastSyncHoursForWeek(weekStart).map((row) => [row.person, row])
+  );
 
   return PEOPLE.map((p) => {
-    const hours = byPerson.get(p.slug) || 0;
+    const taskHours = byPerson.get(p.slug) || 0;
+    const sync = syncByPerson.get(p.slug);
+    const syncForecast = sync?.forecastHours || 0;
+    const syncTracked = sync?.trackedHours || 0;
+    const hours = Math.round((taskHours + syncForecast) * 100) / 100;
     const progress = progressByPerson.get(p.slug);
+    // Actual synced time is already done. Estimates are still ahead, so they
+    // stay in the total and out of the done share.
+    const doneHours = Math.round(((progress?.done_hours || 0) + syncTracked) * 100) / 100;
     return {
       person: p.slug,
       label: p.label,
       hours,
       capacity: WEEKLY_CAPACITY_HOURS,
       allocationPct: Math.round((hours / WEEKLY_CAPACITY_HOURS) * 100),
-      donePct: hours ? Math.round(((progress?.done_hours || 0) / hours) * 100) : 0,
+      donePct: hours ? Math.round((doneHours / hours) * 100) : 0,
       taskCount: progress?.tasks || 0,
       doneCount: progress?.done || 0,
+      internalHours: sync?.internalHours || 0,
     };
   });
 }
