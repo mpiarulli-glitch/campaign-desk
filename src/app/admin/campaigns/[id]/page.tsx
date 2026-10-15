@@ -489,6 +489,7 @@ export default function AdminCampaignPage() {
     }>
   >([]);
   const [sendPlanDirty, setSendPlanDirty] = useState(false);
+  const [sendPlanOpen, setSendPlanOpen] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -2376,14 +2377,30 @@ export default function AdminCampaignPage() {
           ) : null}
         </div>
 
-        <section className="card cd-send-plan" aria-labelledby="pkg-send-plan-heading">
+        <section
+          className={`card cd-send-plan${sendPlanOpen ? "" : " is-collapsed"}`}
+          aria-labelledby="pkg-send-plan-heading"
+        >
           <div className="cd-send-plan-head">
             <div>
               <h2 id="pkg-send-plan-heading" className="cd-send-plan-title">
-                When these go out
+                <button
+                  type="button"
+                  className="cd-send-plan-toggle"
+                  aria-expanded={sendPlanOpen}
+                  aria-controls="pkg-send-plan-list"
+                  onClick={() => setSendPlanOpen((open) => !open)}
+                >
+                  <span className="cd-send-plan-chevron" aria-hidden="true">
+                    {sendPlanOpen ? "▾" : "▸"}
+                  </span>
+                  When these go out
+                </button>
               </h2>
               <p className="muted cd-send-plan-note">
-                Pacific. This is what the client sees on the review link.
+                {planRows.length} {planRows.length === 1 ? "email" : "emails"} · Pacific.
+                This is what the client sees on the review link.
+                {sendPlanDirty ? " Unsaved changes." : ""}
               </p>
             </div>
             <button
@@ -2395,7 +2412,11 @@ export default function AdminCampaignPage() {
               {saving ? "Saving..." : "Save times"}
             </button>
           </div>
-          <div className="cd-send-plan-list">
+          <div
+            className="cd-send-plan-list"
+            id="pkg-send-plan-list"
+            hidden={!sendPlanOpen}
+          >
             {planRows.map((row) => (
               <div key={row.id} className="cd-send-plan-row">
                 <div className="cd-send-plan-name">

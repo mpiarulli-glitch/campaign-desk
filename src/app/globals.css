@@ -2358,10 +2358,39 @@ button {
   gap: 12px;
 }
 
+.cd-send-plan.is-collapsed {
+  gap: 0;
+  padding-bottom: 14px;
+}
+
 .cd-send-plan-title {
   margin: 0;
   font-size: 15px;
   font-weight: 650;
+}
+
+.cd-send-plan-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cd-send-plan-toggle:hover {
+  color: var(--accent-ink);
+}
+
+.cd-send-plan-chevron {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
 }
 
 .cd-send-plan-note {
@@ -2373,6 +2402,10 @@ button {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.cd-send-plan-list[hidden] {
+  display: none;
 }
 
 .cd-send-plan-row {
