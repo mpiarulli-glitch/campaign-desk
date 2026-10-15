@@ -182,7 +182,20 @@ test("SEO Ops forecast sync receiver", async (t) => {
     assert.equal(text.includes(SECRET), false);
   });
 
-  await t.test("Carlos and Abel come back with stable ids", async () => {
+  await t.test("people come from stored emails, with stable desk ids", async () => {
+    const users = await import("../src/lib/users");
+    const empty = await peopleRoute.GET(
+      new Request("http://desk.example/v1/people", { headers: auth() })
+    );
+    assert.equal(empty.status, 200);
+    const nobody = (await empty.json()) as { people: Array<{ id: string; email: string }> };
+    assert.equal(
+      nobody.people.some((p) => p.email === "cmorones@marketingempiregroup.com"),
+      false
+    );
+
+    users.setUserEmail("carlos", "cmorones@marketingempiregroup.com");
+    users.setUserEmail("abel", "amiranda@marketingempiregroup.com");
     const first = await peopleRoute.GET(
       new Request("http://desk.example/v1/people", { headers: auth() })
     );

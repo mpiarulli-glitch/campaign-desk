@@ -592,7 +592,8 @@ export function loggedHoursOnDate(person: string, date: string): number {
 export function loggedHoursForWeek(person: string, weekStart: string): number {
   const byDate = loggedHoursByDate(person, weekStart, addWeeks(weekStart, 1));
   const logged = Object.values(byDate).reduce((s, n) => s + n, 0);
-  // SEO Ops actuals are weekly, so they join the week total and not a day.
+  // SEO Ops actuals join the week total once. Day bars read the items on
+  // their own and must not be added here as well.
   const sync = forecastSyncHoursForPerson(person, weekStart).trackedHours;
   return Math.round((logged + sync) * 100) / 100;
 }
@@ -788,8 +789,8 @@ export interface PersonWeekSummary {
   donePct: number;
   taskCount: number;
   doneCount: number;
-  // Meeting time already included in `hours`. The client name on those lines
-  // is Internal; breaks never arrive from SEO Ops.
+  // Internal bucket already included in `hours`. Client work, including a
+  // client meeting from SEO Ops, is not in this number.
   internalHours: number;
 }
 

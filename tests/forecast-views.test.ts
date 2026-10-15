@@ -30,6 +30,17 @@ test("the person forecast page keeps Today, List, Calendar, and Tasks — not We
   );
 });
 
+test("synced SEO Ops hours are included in the Mon–Fri bars", () => {
+  const src = fs.readFileSync(
+    path.join("src/app/admin/forecast/[person]/page.tsx"),
+    "utf8"
+  );
+  assert.match(src, /syncByDate/);
+  assert.match(src, /dayBarHours\(logged, sync\)/);
+  assert.match(src, /SyncedForecastRows/);
+  assert.match(src, /syncItemsByDay/);
+});
+
 test("the calendar task editor starts the same timer as the list rows", () => {
   const src = fs.readFileSync(
     path.join("src/app/admin/forecast/[person]/page.tsx"),

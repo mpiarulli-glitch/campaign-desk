@@ -23,6 +23,11 @@ import {
   trackedSeconds,
 } from "@/lib/forecast-timer";
 import { normalizeTaskColor } from "@/lib/forecast-colors";
+import {
+  SEO_OPS_SYNC_MARKER,
+  UNMATCHED_CLIENT_LABEL,
+  type ForecastSyncItemView,
+} from "@/lib/forecast-sync-view";
 
 export type CalendarTask = {
   id: string;
@@ -96,6 +101,7 @@ export function ForecastCalendar({
   onToggleTimer,
   timerBusyId,
   nowMs,
+  syncItemsByDay,
 }: {
   days: string[];
   today: string;
@@ -124,12 +130,16 @@ export function ForecastCalendar({
   timerBusyId: string | null;
   // Ticking clock, owned by the page so one timer drives every view at once.
   nowMs: number;
+  // SEO Ops items for this week. Read-only: they are not tasks and cannot be
+  // dragged, timed, or logged.
+  syncItemsByDay?: { get(date: string): ForecastSyncItemView[] | undefined };
 }) {
   const hours: number[] = [];
   for (let h = CAL_START_HOUR; h < CAL_END_HOUR; h++) hours.push(h);
   const gridHeight = (CAL_END_HOUR - CAL_START_HOUR) * CAL_PX_PER_HOUR;
   const nowOffset = useNowOffset();
   const dragId = drag?.kind === "task" ? drag.id : null;
+  const syncedFor = syncItemsByDay || { get: () => undefined };
 
   // Live resize: which block is being stretched and what it currently reads, so
   // the block shows its new length under the cursor and only saves on release.
@@ -171,8 +181,12 @@ export function ForecastCalendar({
         <div className="fc-cal-gutter-head" />
         {days.map((date) => {
           const all = tasksByDay.get(date) || [];
-          const dayHours = all.reduce((s, t) => s + t.hours, 0);
-          const unplaced = all.filter((t) => !t.start_time).length;
+          const synced = syncedFor.get(date) || [];
+          const dayHours =
+            all.reduce((s, t) => s + t.hours, 0) + synced.reduce((s, item) => s + item.hours, 0);
+          const unplaced =
+            all.filter((t) => !t.start_time).length +
+            synced.filter((item) => !item.startTime || !isOnGrid(item.startTime)).length;
           return (
             <div
               key={`h-${date}`}
@@ -186,6 +200,18 @@ export function ForecastCalendar({
                 {dayHours ? `${Math.round(dayHours * 10) / 10}h` : ""}
                 {unplaced ? <em> · {unplaced} queued</em> : null}
               </span>
+              {synced
+                .filter((item) => !item.startTime || !isOnGrid(item.startTime))
+                .map((item) => (
+                  <div key={item.id} className="fc-cal-sync-chip" title={item.title}>
+                    <strong>{item.title}</strong>
+                    <span>
+                      {item.clientName}
+                      {item.unmatched ? ` · ${UNMATCHED_CLIENT_LABEL}` : ""}
+                    </span>
+                    <em>{SEO_OPS_SYNC_MARKER}</em>
+                  </div>
+                ))}
             </div>
           );
         })}
@@ -200,6 +226,9 @@ export function ForecastCalendar({
 
         {days.map((date) => {
           const all = tasksByDay.get(date) || [];
+          const synced = (syncedFor.get(date) || []).filter(
+            (item) => item.startTime && isOnGrid(item.startTime)
+          );
           const timed = all.filter((t) => t.start_time);
           // Measured time, not the estimate: a task that has run long overlaps
           // whatever was planned after it, and should be columned accordingly.
@@ -245,6 +274,47 @@ export function ForecastCalendar({
               {date === today && nowOffset != null ? (
                 <div className="fc-cal-now" style={{ top: nowOffset }} aria-hidden="true" />
               ) : null}
+              {layoutTimedBlocks(
+                synced,
+                (item) => item.startTime || "",
+                (item) => item.hours
+              ).map((b) => {
+                const top = ((b.startMin - CAL_START_HOUR * 60) / 60) * CAL_PX_PER_HOUR;
+                const height = Math.max(28, b.item.hours * CAL_PX_PER_HOUR);
+                const slot = 100 / b.cols;
+                const widthPct = Math.min(slot * 1.8, 100 - slot * b.col);
+                const end = addHoursToTime(b.item.startTime || "", b.item.hours);
+                return (
+                  <div
+                    key={b.item.id}
+                    className={`fc-cal-block is-synced ${
+                      b.item.bucket === "internal" ? "is-internal" : ""
+                    } ${height < COMPACT_BLOCK_PX ? "is-compact" : ""}`}
+                    style={{
+                      top: Math.max(0, top),
+                      height,
+                      left: `calc(${slot * b.col}% + 2px)`,
+                      width: `calc(${widthPct}% - 4px)`,
+                      zIndex: 2 + b.col,
+                    }}
+                    title={`${b.item.title} · ${b.item.clientName} · ${SEO_OPS_SYNC_MARKER}`}
+                  >
+                    <div className="fc-cal-block-main">
+                      <strong className="fc-cal-block-title">{b.item.title}</strong>
+                      {height < COMPACT_BLOCK_PX ? null : (
+                        <span className="fc-cal-block-when">
+                          {formatTimeLabel(b.item.startTime || "")}
+                          {end ? ` – ${formatTimeLabel(end)}` : ""}
+                        </span>
+                      )}
+                      <span className="fc-cal-block-client">{SEO_OPS_SYNC_MARKER}</span>
+                      {b.item.unmatched ? (
+                        <span className="fc-sync-unmatched">{UNMATCHED_CLIENT_LABEL}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
               {blocks.map((b) => {
                 // A running or overrun task draws as long as it has actually
                 // taken, so the calendar shows the day that happened. Resizing
