@@ -20,6 +20,13 @@ Authentication is unchanged: `Authorization: Bearer <CAMPAIGN_DESK_API_TOKEN>`.
 The id is `desk_` plus the forecast slug. Accounts with no email are omitted.
 A duplicate email is omitted. The list is not limited to Carlos and Abel.
 
+When `carlos` or `abel` still has a blank email, Campaign Desk stores
+`cmorones@marketingempiregroup.com` on `carlos` (`desk_carlos`) and
+`amiranda@marketingempiregroup.com` on `abel` (`desk_abel`). An email already
+on the account is left alone, including a different address. Other roster
+accounts appear once their email is stored, including an email saved from the
+sender.
+
 `GET /v1/clients` returns `{ "clients": [{ "id": "rc_…", "name": "Pipe It Right" }] }`,
 active clients only, sorted by name. `id` is the Campaign Desk client id to send
 back as `campaignDeskClientId`.
@@ -145,6 +152,8 @@ Match order, for `bucket: "client"` only:
 
 - Email already on that account: accepted.
 - Account has no email yet: the email is saved on that account. No password is set.
+  `carlos` and `abel` are filled on boot when blank (see above), so a sync for
+  those mailboxes matches the stored row instead of waiting for the first write.
 - Account row missing: a roster row is created with the same role the app already seeds, still with no password, and the email is saved.
 - Email belongs to someone else, or this account already has a different email: `422`. The stored email is not overwritten.
 

@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { ADMIN_PEOPLE } from "./admin-people";
 import { getDb, nowIso } from "./db";
 import type { ForecastSyncDayHours, ForecastSyncItemView } from "./forecast-sync-view";
+import { KNOWN_FORECAST_SYNC_EMAILS } from "./forecast-sync-mailboxes";
 import { OWNER_SLUG, PEOPLE, personLabel } from "./people";
 import { setUserEmail } from "./users";
 import { currentWeek, weekdays } from "./week";
@@ -197,18 +198,32 @@ export function listForecastSyncPeople(): ForecastSyncPerson[] {
   const rows = getDb()
     .prepare(`SELECT slug, email, active FROM users`)
     .all() as Array<{ slug: string; email: string | null; active: number }>;
-  const stored = new Map<string, string>();
+  const activeEmail = new Map<string, string>();
+  const ownerByEmail = new Map<string, string>();
+  const activeBySlug = new Map<string, boolean>();
   for (const row of rows) {
-    if (!row.active) continue;
+    activeBySlug.set(row.slug, Boolean(row.active));
     const email = (row.email || "").trim().toLowerCase();
-    if (email) stored.set(row.slug, email);
+    if (!email) continue;
+    ownerByEmail.set(email, row.slug);
+    if (row.active) activeEmail.set(row.slug, email);
   }
 
   const people: ForecastSyncPerson[] = [];
   const seen = new Map<string, number>();
   for (const person of PEOPLE) {
-    const email = stored.get(person.slug) || "";
-    if (!email) continue;
+    let email = activeEmail.get(person.slug) || "";
+    if (!email) {
+      // Blank accounts still answer with the mailbox SEO Ops already uses.
+      // A different address stored on the account wins, and an address that
+      // belongs to someone else is left off this slug.
+      if (activeBySlug.get(person.slug) === false) continue;
+      const known = (KNOWN_FORECAST_SYNC_EMAILS[person.slug] || "").trim().toLowerCase();
+      if (!known) continue;
+      const owner = ownerByEmail.get(known);
+      if (owner && owner !== person.slug) continue;
+      email = known;
+    }
     people.push({ id: forecastSyncPersonId(person.slug), email });
     seen.set(email, (seen.get(email) || 0) + 1);
   }

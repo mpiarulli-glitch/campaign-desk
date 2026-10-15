@@ -182,20 +182,8 @@ test("SEO Ops forecast sync receiver", async (t) => {
     assert.equal(text.includes(SECRET), false);
   });
 
-  await t.test("people come from stored emails, with stable desk ids", async () => {
+  await t.test("people with emails are returned, including the known mailboxes", async () => {
     const users = await import("../src/lib/users");
-    const empty = await peopleRoute.GET(
-      new Request("http://desk.example/v1/people", { headers: auth() })
-    );
-    assert.equal(empty.status, 200);
-    const nobody = (await empty.json()) as { people: Array<{ id: string; email: string }> };
-    assert.equal(
-      nobody.people.some((p) => p.email === "cmorones@marketingempiregroup.com"),
-      false
-    );
-
-    users.setUserEmail("carlos", "cmorones@marketingempiregroup.com");
-    users.setUserEmail("abel", "amiranda@marketingempiregroup.com");
     const first = await peopleRoute.GET(
       new Request("http://desk.example/v1/people", { headers: auth() })
     );
@@ -205,6 +193,7 @@ test("SEO Ops forecast sync receiver", async (t) => {
     assert.equal(first.status, 200);
     const a = (await first.json()) as { people: Array<{ id: string; email: string }> };
     const b = (await second.json()) as { people: Array<{ id: string; email: string }> };
+    assert.ok(a.people.length > 0);
     assert.deepEqual(b.people, a.people);
     const carlos = a.people.find(
       (p: { email: string }) => p.email === "cmorones@marketingempiregroup.com"
@@ -216,6 +205,33 @@ test("SEO Ops forecast sync receiver", async (t) => {
     assert.equal(abel?.id, "desk_abel");
     const emails = a.people.map((p: { email: string }) => p.email);
     assert.equal(new Set(emails).size, emails.length);
+
+    users.setUserEmail("roy", "roy@marketingempiregroup.com");
+    const withRoy = await peopleRoute.GET(
+      new Request("http://desk.example/v1/people", { headers: auth() })
+    );
+    const listed = (await withRoy.json()) as { people: Array<{ id: string; email: string }> };
+    assert.ok(listed.people.length > 0);
+    assert.equal(
+      listed.people.find((p) => p.id === "desk_roy")?.email,
+      "roy@marketingempiregroup.com"
+    );
+    assert.equal(
+      listed.people.find((p) => p.id === "desk_carlos")?.email,
+      "cmorones@marketingempiregroup.com"
+    );
+
+    users.setUserEmail("carlos", "carlos.other@marketingempiregroup.com");
+    const replaced = await peopleRoute.GET(
+      new Request("http://desk.example/v1/people", { headers: auth() })
+    );
+    const other = (await replaced.json()) as { people: Array<{ id: string; email: string }> };
+    assert.ok(other.people.length > 0);
+    assert.equal(
+      other.people.find((p) => p.id === "desk_carlos")?.email,
+      "carlos.other@marketingempiregroup.com"
+    );
+    users.setUserEmail("carlos", "cmorones@marketingempiregroup.com");
   });
 
   await t.test("the sample run stores once and a repeat does not double hours", async () => {
