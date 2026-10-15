@@ -10,6 +10,7 @@
 
 import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
+import { uploadedBrandGuide } from "./lifecycle-brand-guides";
 import { getRevClient } from "./revenue";
 
 export interface AccountBrandGuidelines {
@@ -955,6 +956,27 @@ function addOnce(
   existingTitles.add(key);
 }
 
+/** Writes an uploaded brand kit only when every field on the account is still blank. */
+function seedUploadedBrandGuide(clientId: string): void {
+  const client = getRevClient(clientId);
+  if (!client) return;
+  const guide = uploadedBrandGuide(client.name);
+  if (!guide) return;
+  const existing = getAccountBrandGuidelines(clientId);
+  const filled = [
+    existing.voiceTone,
+    existing.colors,
+    existing.fonts,
+    existing.logoAssetsUrl,
+    existing.dosAndDonts,
+    existing.senderName,
+    existing.replyToEmail,
+    existing.footerNotes,
+  ].some((value) => value.trim());
+  if (filled) return;
+  saveAccountBrandGuidelines(clientId, guide);
+}
+
 /** Fills any Swing Inn page that is still empty, without duplicating what is already there. */
 function completeSwingInn(clientId: string): void {
   const client = getRevClient(clientId);
@@ -1065,6 +1087,7 @@ export function buildAccountPlaybook(
   clientId: string,
   memberIds: string[] = []
 ): AccountPlaybook {
+  seedUploadedBrandGuide(clientId);
   completeSwingInn(clientId);
   const calendar = listAccountCalendarItems(clientId, memberIds);
   return {
