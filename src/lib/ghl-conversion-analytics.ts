@@ -230,17 +230,19 @@ export async function listFormSubmissionEvents(
     for (const raw of batch) {
       const contactId = String(raw.contactId || raw.contact_id || "").trim();
       if (!contactId) continue;
-      const at =
-        ymd(String(raw.createdAt || raw.dateAdded || raw.submittedAt || "")) ||
-        null;
-      if (!inRange(at, start, end)) continue;
-      const id = String(raw.id || raw._id || `formsub:${contactId}:${at}`);
+      const rawAt = String(
+        raw.createdAt || raw.dateAdded || raw.submittedAt || ""
+      ).trim();
+      const day = ymd(rawAt);
+      if (!inRange(day, start, end)) continue;
+      const at = /T\d/.test(rawAt) ? rawAt : day!;
+      const id = String(raw.id || raw._id || `formsub:${contactId}:${day}`);
       const prev = seen.get(contactId);
-      if (!prev || at! > prev.at) {
+      if (!prev || at > prev.at) {
         seen.set(contactId, {
           id: `form:${id}`,
           contactId,
-          at: at!,
+          at,
           kind: "form_fill",
         });
       }

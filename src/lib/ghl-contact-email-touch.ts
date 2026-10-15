@@ -60,6 +60,28 @@ function isOutbound(direction: unknown): boolean {
   return d === "outbound" || d === "outgoing" || d === "out";
 }
 
+/** Any outbound email on the contact, whatever the source label. */
+export function isOutboundEmailMessage(msg: Record<string, unknown>): boolean {
+  return isEmailMessage(msg) && isOutbound(msg.direction);
+}
+
+/**
+ * The email has to land before the form. A full timestamp beats a same-day
+ * confirmation that went out after the fill. Date-only forms keep same-day mail.
+ */
+export function outboundEmailIsBefore(messageAt: string, conversionAt: string): boolean {
+  const conversionHasTime = /T\d/.test(conversionAt);
+  const msgMs = Date.parse(messageAt);
+  const convMs = Date.parse(conversionAt);
+  if (conversionHasTime && Number.isFinite(msgMs) && Number.isFinite(convMs)) {
+    return msgMs < convMs;
+  }
+  const msgDay = ymd(messageAt);
+  const convDay = ymd(conversionAt);
+  if (!msgDay || !convDay) return false;
+  return msgDay <= convDay;
+}
+
 function isEmailMessage(msg: Record<string, unknown>): boolean {
   const messageType = String(msg.messageType || msg.type || "").toLowerCase();
   if (messageType.includes("email")) return true;
@@ -367,7 +389,12 @@ export async function latestOutboundMarketingEmailTouch(
   contactId: string,
   onOrBefore: string,
   attributionDays: number,
-  options: { strictSource?: boolean; formFilledAt?: string | null } = {}
+  options: {
+    strictSource?: boolean;
+    formFilledAt?: string | null;
+    /** Any outbound email, not only campaign / workflow mail. */
+    anyOutbound?: boolean;
+  } = {}
 ): Promise<EmailTouchRef | null> {
   const before = ymd(onOrBefore);
   if (!before || !contactId) return null;
@@ -387,17 +414,16 @@ export async function latestOutboundMarketingEmailTouch(
   for (const msg of messages) {
     const owner = messageContactId(msg);
     if (owner && owner !== contactId) continue;
-    if (
-      !isOutboundMarketingTouchMessage(msg, {
-        strict: strictSource,
-        formFilledAt,
-      })
-    ) {
-      continue;
-    }
+    const qualifies = options.anyOutbound
+      ? isOutboundEmailMessage(msg)
+      : isOutboundMarketingTouchMessage(msg, {
+          strict: strictSource,
+          formFilledAt,
+        });
+    if (!qualifies) continue;
     const rawAt = String(msg.dateAdded || msg.createdAt || "");
     const day = ymd(rawAt);
-    if (!day || day > before) continue;
+    if (!day || !outboundEmailIsBefore(rawAt, onOrBefore)) continue;
     const lag = dayDiff(before, day);
     if (lag < 0 || lag > attributionDays) continue;
     const at = Date.parse(rawAt);
@@ -425,7 +451,11 @@ export async function latestOutboundMarketingEmailDay(
   contactId: string,
   onOrBefore: string,
   attributionDays: number,
-  options: { strictSource?: boolean; formFilledAt?: string | null } = {}
+  options: {
+    strictSource?: boolean;
+    formFilledAt?: string | null;
+    anyOutbound?: boolean;
+  } = {}
 ): Promise<string | null> {
   const touch = await latestOutboundMarketingEmailTouch(
     locationId,
@@ -463,6 +493,8 @@ export async function filterConversionsWithEmailTouch(
     strictSource?: boolean;
     /** Latest in-window form day per contact — used for appointment honesty. */
     formFilledAtByContactId?: Record<string, string>;
+    /** Form fills: any outbound email before the form. */
+    anyOutbound?: boolean;
   } = {}
 ): Promise<EmailTouchFilterResult> {
   const withContact = events.filter((e) => Boolean(e.contactId));
@@ -480,8 +512,8 @@ export async function filterConversionsWithEmailTouch(
   const seenDay = new Map<string, string | null>();
   for (const event of withContact) {
     const contactId = event.contactId as string;
-    const at = ymd(event.at);
-    if (!at) continue;
+    const at = event.at.trim();
+    if (!ymd(at)) continue;
     const formFilledAt =
       event.kind === "appointment"
         ? ymd(formByContact[contactId])
@@ -498,15 +530,19 @@ export async function filterConversionsWithEmailTouch(
       contactId,
       at,
       attributionDays,
-      { strictSource: options.strictSource, formFilledAt }
+      {
+        strictSource: options.strictSource,
+        formFilledAt,
+        anyOutbound: options.anyOutbound,
+      }
     );
     dayTouch.set(`${contactId}:${at}:${formFilledAt || ""}`, touch);
   });
 
   const kept: ConversionEvent[] = [];
   for (const event of withContact) {
-    const at = ymd(event.at);
-    if (!at || !event.contactId) continue;
+    const at = event.at.trim();
+    if (!ymd(at) || !event.contactId) continue;
     const formFilledAt =
       event.kind === "appointment"
         ? ymd(formByContact[event.contactId])

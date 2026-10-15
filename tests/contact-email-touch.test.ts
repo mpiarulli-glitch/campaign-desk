@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isMarketingEmailSource,
+  isOutboundEmailMessage,
   isOutboundMarketingTouchMessage,
   isPostFormWorkflowAutomation,
   isTransactionalEmailContent,
   isTransactionalEmailSubject,
+  outboundEmailIsBefore,
   formFilledAtByContactId,
 } from "../src/lib/ghl-contact-email-touch";
 
@@ -358,6 +360,47 @@ describe("formFilledAtByContactId", () => {
         },
       ]),
       { a: "2026-08-25" }
+    );
+  });
+});
+
+describe("outbound email before the form", () => {
+  it("counts any outbound email message", () => {
+    assert.equal(
+      isOutboundEmailMessage({
+        messageType: "TYPE_EMAIL",
+        direction: "outbound",
+        body: "View this email in browser https://link.msgsndr.co/x",
+      }),
+      true
+    );
+    assert.equal(
+      isOutboundEmailMessage({
+        messageType: "TYPE_EMAIL",
+        direction: "inbound",
+      }),
+      false
+    );
+  });
+
+  it("requires the email to land before a timed form fill", () => {
+    assert.equal(
+      outboundEmailIsBefore(
+        "2026-10-13T15:00:00.000Z",
+        "2026-10-13T18:00:00.000Z"
+      ),
+      true
+    );
+    assert.equal(
+      outboundEmailIsBefore(
+        "2026-10-13T19:00:00.000Z",
+        "2026-10-13T18:00:00.000Z"
+      ),
+      false
+    );
+    assert.equal(
+      outboundEmailIsBefore("2026-10-13T19:00:00.000Z", "2026-10-13"),
+      true
     );
   });
 });

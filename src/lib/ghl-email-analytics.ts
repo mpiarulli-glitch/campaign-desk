@@ -932,14 +932,21 @@ export async function pullClientEmailAnalytics(
     })),
   ];
 
-  // Date-proximity alone over-counts (Eric Smith: form → confirmation email →
-  // booked, no marketing blast). Only credit a campaign when that contact's
-  // thread email matches the send subject. A same-day blast with a different
-  // subject stays off that campaign.
+  // Forms: any outbound email on that contact before the fill.
+  // Bookings: marketing email only, so a post-form confirmation does not count.
   const formDays = formFilledAtByContactId(formEvents);
+  const formTouch = await filterConversionsWithEmailTouch(
+    locationId,
+    formEvents,
+    attributionDays,
+    { anyOutbound: true }
+  );
+  const appointmentOnly = conversionEvents.filter(
+    (event) => event.kind === "appointment"
+  );
   const touch = await filterConversionsWithEmailTouch(
     locationId,
-    conversionEvents,
+    appointmentOnly,
     attributionDays,
     { strictSource: true, formFilledAtByContactId: formDays }
   );
@@ -971,9 +978,7 @@ export async function pullClientEmailAnalytics(
     attributionDays,
     touch.touchByEventId
   );
-  const emailDrivenFormFills = attributableEvents.filter(
-    (event) => event.kind === "form_fill"
-  ).length;
+  const emailDrivenFormFills = formTouch.kept.length;
   const emailDrivenAppointments = attributableEvents.filter(
     (event) => event.kind === "appointment"
   ).length;
@@ -982,7 +987,7 @@ export async function pullClientEmailAnalytics(
     const counts = attributed.get(row.id);
     return {
       ...row,
-      formFills: counts?.formFills || 0,
+      formFills: 0,
       attributedAppointments: counts?.appointments || 0,
     };
   });
@@ -990,7 +995,7 @@ export async function pullClientEmailAnalytics(
     const counts = attributed.get(row.id);
     return {
       ...row,
-      formFills: counts?.formFills || 0,
+      formFills: 0,
       attributedAppointments: counts?.appointments || 0,
     };
   });
@@ -1201,21 +1206,34 @@ export async function pullClientAttributionSummary(
 
     let attributableEvents = conversionEvents;
     let touchByEventId: Record<string, EmailTouchRef> | undefined;
+    let outboundFormFills = 0;
     if (requireEmailTouch) {
       const formDays = formFilledAtByContactId(formEvents);
-      const touch = await filterConversionsWithEmailTouch(
-        locationId,
-        conversionEvents,
-        attributionDays,
-        { strictSource: true, formFilledAtByContactId: formDays }
+      const appointmentOnly = conversionEvents.filter(
+        (event) => event.kind === "appointment"
       );
+      const [touch, formTouch] = await Promise.all([
+        filterConversionsWithEmailTouch(
+          locationId,
+          appointmentOnly,
+          attributionDays,
+          { strictSource: true, formFilledAtByContactId: formDays }
+        ),
+        filterConversionsWithEmailTouch(
+          locationId,
+          formEvents,
+          attributionDays,
+          { anyOutbound: true }
+        ),
+      ]);
       emailTouch = {
-        checked: touch.checked,
-        touched: touch.touched,
-        skippedNoContact: touch.skippedNoContact,
+        checked: touch.checked + formTouch.checked,
+        touched: touch.touched + formTouch.touched,
+        skippedNoContact: touch.skippedNoContact + formTouch.skippedNoContact,
       };
       attributableEvents = touch.kept;
       touchByEventId = touch.touchByEventId;
+      outboundFormFills = formTouch.kept.length;
     }
 
     const attributionSends: AttributionSend[] = [
@@ -1241,11 +1259,7 @@ export async function pullClientAttributionSummary(
     );
 
     if (requireEmailTouch) {
-      // Account totals count every proven marketing email, including threads
-      // whose subject did not match a campaign. Campaign pins stay stricter.
-      attributedFormFills = attributableEvents.filter(
-        (event) => event.kind === "form_fill"
-      ).length;
+      attributedFormFills = outboundFormFills;
       attributedAppointments = attributableEvents.filter(
         (event) => event.kind === "appointment"
       ).length;
@@ -1690,8 +1704,8 @@ async function resolveContactProfiles(
 
 /**
  * Per-contact journeys behind Email → forms / Email → booked.
- * A campaign is named only when its subject matches the email on that contact.
- * Other marketing emails on the thread stay in the list under their own subject.
+ * A form journey is an outbound email on that contact before the fill.
+ * A booking journey still names a marketing email when the subject matches.
  */
 export async function pullClientEmailJourneys(
   locationId: string,
@@ -1761,13 +1775,49 @@ export async function pullClientEmailJourneys(
   const formDays = formFilledAtByContactId(formEvents);
   const formDayByContact = new Map(Object.entries(formDays));
 
-  const events =
-    kind === "form_fill"
-      ? formEvents
-      : appointmentEvents;
+  if (kind === "form_fill") {
+    const touch = await filterConversionsWithEmailTouch(
+      locationId,
+      formEvents,
+      attributionDays,
+      { anyOutbound: true }
+    );
+    const contactIds = touch.kept
+      .map((event) => event.contactId)
+      .filter((id): id is string => Boolean(id));
+    const profiles = await resolveContactProfiles(locationId, contactIds);
+    const journeys: EmailJourneyRow[] = touch.kept
+      .map((event) => {
+        const evidence = touch.touchByEventId[event.id];
+        const day = evidence?.day || event.at.slice(0, 10);
+        const contactId = event.contactId;
+        const profile = contactId ? profiles.get(contactId) : null;
+        return {
+          kind,
+          contactId,
+          contactName: profile?.name || null,
+          contactEmail: profile?.email || null,
+          conversionAt: event.at.slice(0, 10),
+          formFilledAt: event.at.slice(0, 10),
+          sendId: `outbound:${event.id}`,
+          sendName: "Outbound email",
+          sendChannel: "thread" as const,
+          sendOn: day,
+          subject: null,
+          emailTouchDay: evidence?.day || null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.conversionAt.localeCompare(a.conversionAt) ||
+          (a.contactName || "").localeCompare(b.contactName || "")
+      );
+    return { kind, start, end, attributionDays, journeys };
+  }
 
-  // Same honesty gate as the Outcomes tiles: no marketing email touch → no journey.
-  // For bookings, also ignore post-form workflow confirmations (form → email → booked).
+  const events = appointmentEvents;
+
+  // Bookings still ignore post-form confirmation mail.
   const touch = await filterConversionsWithEmailTouch(
     locationId,
     events,
