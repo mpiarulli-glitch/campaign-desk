@@ -18,7 +18,7 @@ export function attributionJourneySubtitle(
   days: number = DEFAULT_ATTRIBUTION_DAYS
 ): string {
   const event = kind === "appointment" ? "booking" : "form fill";
-  return `Last marketing email before the ${event} (within ${days} days). Confirmation-only paths stay out.`;
+  return `Marketing email on that contact before the ${event} (within ${days} days). A campaign is named only when its subject matches that email.`;
 }
 
 /** Pre-load / empty-state note for portfolio scans. */

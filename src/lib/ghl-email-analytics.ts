@@ -13,8 +13,10 @@ import {
   attributeConversionsToJourneys,
   attributeConversionsToSends,
   summarizeAbandonedRecovery,
+  threadEmailLabel,
   type AttributionSend,
   type ConversionEvent,
+  type EmailTouchRef,
 } from "./email-conversion-attribution";
 import {
   listAbandonedBookingContacts,
@@ -149,6 +151,14 @@ export interface ClientEmailAnalytics {
     revenuePerEmail: number | null;
   } | null;
   attributionDays: number;
+  /**
+   * Form fills with a marketing email on that contact. Includes fills whose
+   * thread email did not match a campaign subject, so the hero can stay in
+   * step with the journey list while campaign rows stay subject-matched.
+   */
+  emailDrivenFormFills?: number;
+  /** Bookings with a marketing email on that contact. */
+  emailDrivenAppointments?: number;
 }
 
 interface RawSchedule {
@@ -923,8 +933,9 @@ export async function pullClientEmailAnalytics(
   ];
 
   // Date-proximity alone over-counts (Eric Smith: form → confirmation email →
-  // booked, no marketing blast). Only credit conversions with a real outbound
-  // marketing email touch on that contact before the conversion.
+  // booked, no marketing blast). Only credit a campaign when that contact's
+  // thread email matches the send subject. A same-day blast with a different
+  // subject stays off that campaign.
   const formDays = formFilledAtByContactId(formEvents);
   const touch = await filterConversionsWithEmailTouch(
     locationId,
@@ -940,6 +951,7 @@ export async function pullClientEmailAnalytics(
       .map((row) => ({
         id: row.id,
         name: row.name,
+        subject: row.subject,
         sentOn: row.sentOn,
         channel: "campaign" as const,
       })),
@@ -948,6 +960,7 @@ export async function pullClientEmailAnalytics(
       .map((row) => ({
         id: row.id,
         name: row.name,
+        subject: row.subject,
         sentOn: row.sentOn,
         channel: "flow" as const,
       })),
@@ -955,8 +968,15 @@ export async function pullClientEmailAnalytics(
   const attributed = attributeConversionsToSends(
     attributionSends,
     attributableEvents,
-    attributionDays
+    attributionDays,
+    touch.touchByEventId
   );
+  const emailDrivenFormFills = attributableEvents.filter(
+    (event) => event.kind === "form_fill"
+  ).length;
+  const emailDrivenAppointments = attributableEvents.filter(
+    (event) => event.kind === "appointment"
+  ).length;
 
   campaigns = campaigns.map((row) => {
     const counts = attributed.get(row.id);
@@ -1055,6 +1075,8 @@ export async function pullClientEmailAnalytics(
     commerce: null,
     serviceMoney: null,
     attributionDays,
+    emailDrivenFormFills,
+    emailDrivenAppointments,
   };
 }
 
@@ -1112,6 +1134,7 @@ export async function pullClientAttributionSummary(
       .map((s) => ({
         id: String(s.id || s._id || ""),
         name: String(s.name || "Untitled campaign"),
+        subject: scheduleSubject(s),
         sentOn: campaignSentOn(s),
         channel: "campaign" as const,
       }))
@@ -1177,6 +1200,7 @@ export async function pullClientAttributionSummary(
     ];
 
     let attributableEvents = conversionEvents;
+    let touchByEventId: Record<string, EmailTouchRef> | undefined;
     if (requireEmailTouch) {
       const formDays = formFilledAtByContactId(formEvents);
       const touch = await filterConversionsWithEmailTouch(
@@ -1191,10 +1215,17 @@ export async function pullClientAttributionSummary(
         skippedNoContact: touch.skippedNoContact,
       };
       attributableEvents = touch.kept;
+      touchByEventId = touch.touchByEventId;
     }
 
     const attributionSends: AttributionSend[] = [
-      ...campaignRows,
+      ...campaignRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        subject: row.subject,
+        sentOn: row.sentOn,
+        channel: row.channel,
+      })),
       ...flowRows.map(({ id, name, sentOn, channel }) => ({
         id,
         name,
@@ -1205,12 +1236,24 @@ export async function pullClientAttributionSummary(
     const attributed = attributeConversionsToSends(
       attributionSends,
       attributableEvents,
-      attributionDays
+      attributionDays,
+      touchByEventId
     );
 
-    for (const counts of attributed.values()) {
-      attributedAppointments += counts.appointments;
-      attributedFormFills += counts.formFills;
+    if (requireEmailTouch) {
+      // Account totals count every proven marketing email, including threads
+      // whose subject did not match a campaign. Campaign pins stay stricter.
+      attributedFormFills = attributableEvents.filter(
+        (event) => event.kind === "form_fill"
+      ).length;
+      attributedAppointments = attributableEvents.filter(
+        (event) => event.kind === "appointment"
+      ).length;
+    } else {
+      for (const counts of attributed.values()) {
+        attributedAppointments += counts.appointments;
+        attributedFormFills += counts.formFills;
+      }
     }
 
     // Abandoned-recovery tag bump is not email proof — skip when requiring touch.
@@ -1605,9 +1648,11 @@ export type EmailJourneyRow = {
   formFilledAt: string | null;
   sendId: string;
   sendName: string;
-  sendChannel: "campaign" | "flow";
-  /** Credited campaign/flow send day. */
+  /** `thread` = marketing email on the contact that did not match a campaign subject. */
+  sendChannel: "campaign" | "flow" | "thread";
+  /** Credited campaign/flow send day, or the thread email day when unmatched. */
   sendOn: string;
+  /** Subject actually on the contact, or the matched campaign subject. */
   subject: string | null;
   /**
    * Day that contact actually received an outbound marketing email (Conversations),
@@ -1645,8 +1690,8 @@ async function resolveContactProfiles(
 
 /**
  * Per-contact journeys behind Email → forms / Email → booked.
- * Matches the panel's date-proximity last-touch counts, then enriches with
- * contact name/email and (when found) the outbound marketing email day.
+ * A campaign is named only when its subject matches the email on that contact.
+ * Other marketing emails on the thread stay in the list under their own subject.
  */
 export async function pullClientEmailJourneys(
   locationId: string,
@@ -1679,6 +1724,7 @@ export async function pullClientEmailJourneys(
       .map((row) => ({
         id: row.id,
         name: row.name,
+        subject: row.subject,
         sentOn: row.sentOn,
         channel: "campaign" as const,
       })),
@@ -1687,6 +1733,7 @@ export async function pullClientEmailJourneys(
       .map((row) => ({
         id: row.id,
         name: row.name,
+        subject: row.subject,
         sentOn: row.sentOn,
         channel: "flow" as const,
       })),
@@ -1735,41 +1782,91 @@ export async function pullClientEmailJourneys(
   const matched = attributeConversionsToJourneys(
     sends,
     touch.kept,
-    attributionDays
-  ).sort((a, b) => b.event.at.localeCompare(a.event.at));
+    attributionDays,
+    touch.touchByEventId
+  );
+  const matchedIds = new Set(matched.map((j) => j.event.id));
+  const threadOnly = touch.kept.filter((event) => !matchedIds.has(event.id));
 
-  const contactIds = matched
-    .map((j) => j.event.contactId)
+  const contactIds = [...matched.map((j) => j.event.contactId), ...threadOnly.map((event) => event.contactId)]
     .filter((id): id is string => Boolean(id));
   const profiles = await resolveContactProfiles(locationId, contactIds);
 
-  const journeys: EmailJourneyRow[] = matched.map((j) => {
-    const contactId = j.event.contactId;
+  function rowFor(
+    event: ConversionEvent,
+    send: {
+      id: string;
+      name: string;
+      channel: EmailJourneyRow["sendChannel"];
+      sendOn: string;
+      subject: string | null;
+    },
+    emailTouchDay: string | null
+  ): EmailJourneyRow {
+    const contactId = event.contactId;
     const profile = contactId ? profiles.get(contactId) : null;
     const formFilledAt =
       kind === "appointment" && contactId
         ? formDayByContact.get(contactId) || null
         : kind === "form_fill"
-          ? j.event.at.slice(0, 10)
+          ? event.at.slice(0, 10)
           : null;
     return {
       kind,
       contactId,
       contactName: profile?.name || null,
       contactEmail: profile?.email || null,
-      conversionAt: j.event.at.slice(0, 10),
+      conversionAt: event.at.slice(0, 10),
       formFilledAt:
-        formFilledAt && formFilledAt <= j.event.at.slice(0, 10)
+        formFilledAt && formFilledAt <= event.at.slice(0, 10)
           ? formFilledAt
           : null,
-      sendId: j.send.id,
-      sendName: j.send.name,
-      sendChannel: j.send.channel,
-      sendOn: j.sendOn,
-      subject: subjectById.get(j.send.id) || null,
-      emailTouchDay: touchDayByEventId[j.event.id] || null,
+      sendId: send.id,
+      sendName: send.name,
+      sendChannel: send.channel,
+      sendOn: send.sendOn,
+      subject: send.subject,
+      emailTouchDay,
     };
-  });
+  }
+
+  const journeys: EmailJourneyRow[] = [
+    ...matched.map((j) => {
+      const evidence = touch.touchByEventId[j.event.id];
+      const threadSubject = evidence?.subject?.trim() || "";
+      return rowFor(
+        j.event,
+        {
+          id: j.send.id,
+          name: j.send.name,
+          channel: j.send.channel,
+          sendOn: j.sendOn,
+          subject:
+            threadSubject ||
+            subjectById.get(j.send.id) ||
+            j.send.subject?.trim() ||
+            j.send.name,
+        },
+        evidence?.day || touchDayByEventId[j.event.id] || null
+      );
+    }),
+    ...threadOnly.map((event) => {
+      const evidence = touch.touchByEventId[event.id];
+      const label = evidence ? threadEmailLabel(evidence) : "Marketing email";
+      const day = evidence?.day || event.at.slice(0, 10);
+      return rowFor(
+        event,
+        {
+          id: `thread:${event.id}`,
+          name: label,
+          channel: "thread",
+          sendOn: day,
+          subject: label,
+        },
+        evidence?.day || null
+      );
+    }),
+  ].sort((a, b) => b.conversionAt.localeCompare(a.conversionAt) || a.sendName.localeCompare(b.sendName));
 
   return {
     kind,

@@ -4,8 +4,11 @@ import {
   DEFAULT_ATTRIBUTION_DAYS,
   attributeConversionsToJourneys,
   attributeConversionsToSends,
+  emailLabelsMatch,
   isAbandonedRecoveryFlowName,
+  pickSendForEmailTouch,
   summarizeAbandonedRecovery,
+  threadEmailLabel,
 } from "../src/lib/email-conversion-attribution";
 
 test("default attribution window is 5 days", () => {
@@ -122,4 +125,113 @@ test("summarizeAbandonedRecovery counts recovered and still-open abandoners", ()
   assert.equal(summary.recovered, 2);
   assert.equal(summary.stillAbandoned, 1);
   assert.equal(summary.recoveredInWindow, 2);
+});
+
+test("emailLabelsMatch requires the send subject, not a short shared word", () => {
+  assert.equal(
+    emailLabelsMatch(
+      "What a Bad Gutter Actually Costs",
+      "What a Bad Gutter Actually Costs"
+    ),
+    true
+  );
+  assert.equal(
+    emailLabelsMatch("Re: What a Bad Gutter Actually Costs", "What a Bad Gutter Actually Costs"),
+    true
+  );
+  assert.equal(emailLabelsMatch("Your inspection is booked", "update"), false);
+  assert.equal(emailLabelsMatch("", "What a Bad Gutter Actually Costs"), false);
+});
+
+test("pickSendForEmailTouch does not credit a same-day blast with a different subject", () => {
+  const gutter = {
+    id: "gutter",
+    name: "September blast",
+    subject: "What a Bad Gutter Actually Costs",
+    sentOn: "2026-09-23",
+    channel: "campaign" as const,
+  };
+  const eventAt = "2026-09-23";
+  const missed = pickSendForEmailTouch(
+    [gutter],
+    eventAt,
+    {
+      day: "2026-09-23",
+      subject: "Thanks for requesting a gutter inspection",
+      text: "We received your form and will call shortly.",
+      campaignId: "",
+    }
+  );
+  assert.equal(missed, null);
+
+  const hit = pickSendForEmailTouch(
+    [gutter],
+    eventAt,
+    {
+      day: "2026-09-23",
+      subject: "What a Bad Gutter Actually Costs",
+      text: "",
+      campaignId: "",
+    }
+  );
+  assert.equal(hit?.send.id, "gutter");
+});
+
+test("attributeConversionsToJourneys keeps a thread email off the wrong campaign", () => {
+  const sends = [
+    {
+      id: "gutter",
+      name: "September blast",
+      subject: "What a Bad Gutter Actually Costs",
+      sentOn: "2026-09-23",
+      channel: "campaign" as const,
+    },
+  ];
+  const events = [
+    {
+      id: "form-gabriel",
+      contactId: "gabriel",
+      at: "2026-09-23",
+      kind: "form_fill" as const,
+    },
+  ];
+  const touches = {
+    "form-gabriel": {
+      day: "2026-09-23",
+      subject: "",
+      text: "Here is your onsite visit window for next Tuesday morning.",
+      campaignId: "",
+    },
+  };
+
+  const dated = attributeConversionsToJourneys(sends, events);
+  assert.equal(dated.length, 1);
+  assert.equal(dated[0].send.id, "gutter");
+
+  const matched = attributeConversionsToJourneys(sends, events, 5, touches);
+  assert.equal(matched.length, 0);
+
+  const counts = attributeConversionsToSends(sends, events, 5, touches);
+  assert.equal(counts.get("gutter")?.formFills, 0);
+});
+
+test("threadEmailLabel prefers the subject and otherwise previews the body", () => {
+  assert.equal(
+    threadEmailLabel({
+      day: "2026-09-23",
+      subject: "Thanks for requesting a gutter inspection",
+      text: "ignored body",
+      campaignId: "",
+    }),
+    "Thanks for requesting a gutter inspection"
+  );
+  assert.equal(
+    threadEmailLabel({
+      day: "2026-09-23",
+      subject: "",
+      text: "",
+      campaignId: "",
+    }),
+    "Marketing email"
+  );
 });

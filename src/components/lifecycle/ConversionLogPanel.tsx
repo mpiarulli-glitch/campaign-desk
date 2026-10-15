@@ -287,7 +287,11 @@ export function ConversionLogPanel() {
                       <td>
                         <span className="lh-an-name">{row.sendName}</span>
                         <div className="lh-an-meta">
-                          {row.sendChannel === "flow" ? "Flow" : "Campaign"}
+                          {row.sendChannel === "flow"
+                            ? "Flow"
+                            : row.sendChannel === "thread"
+                              ? "On their thread"
+                              : "Campaign"}
                           {row.emailTouchDay
                             ? ` · touch ${prettyDay(row.emailTouchDay)}`
                             : row.sendOn

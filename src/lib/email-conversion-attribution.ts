@@ -25,6 +25,23 @@ export type AttributionSend = {
   name: string;
   sentOn: string | null;
   channel: SendChannel;
+  /** Email subject line when the schedule exposes one. */
+  subject?: string | null;
+};
+
+/**
+ * Proof of the marketing email on a contact's thread.
+ * Campaign credit uses this — a nearby send date is not enough.
+ */
+export type EmailTouchRef = {
+  /** YYYY-MM-DD the contact received the email. */
+  day: string;
+  /** Subject line from the conversation. Empty when GHL omitted it. */
+  subject: string;
+  /** Plain body, used only when the subject is empty. */
+  text: string;
+  /** Campaign / bulk id stamped on the message, when GHL sends one. */
+  campaignId: string;
 };
 
 export type ConversionEvent = {
@@ -108,14 +125,98 @@ export type AttributionJourney = {
   sendOn: string;
 };
 
+const MIN_SUBJECT_MATCH = 16;
+
+/** Lowercase, strip reply prefixes, collapse punctuation. */
+export function normalizeEmailLabel(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/g, "")
+    .replace(/&amp;/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * True when the contact's email text is the send's subject or name.
+ * Short labels are ignored so a word like "update" cannot claim a thread.
+ */
+export function emailLabelsMatch(touchText: string, sendLabel: string): boolean {
+  const send = normalizeEmailLabel(sendLabel);
+  const touch = normalizeEmailLabel(touchText);
+  if (!send || !touch || send.length < MIN_SUBJECT_MATCH) return false;
+  if (touch === send) return true;
+  if (touch.includes(send)) return true;
+  return touch.length >= MIN_SUBJECT_MATCH && send.includes(touch);
+}
+
+function sendMatchesTouch(send: AttributionSend, touch: EmailTouchRef): boolean {
+  if (touch.campaignId && touch.campaignId === send.id) return true;
+  const haystack = touch.subject.trim() ? touch.subject : touch.text;
+  if (!haystack.trim()) return false;
+  const labels = [send.subject, send.name].filter(
+    (label): label is string => Boolean(label && label.trim())
+  );
+  return labels.some((label) => emailLabelsMatch(haystack, label));
+}
+
+/**
+ * Campaign to credit for one contact email.
+ * The send subject (or name) has to match the message on the thread.
+ * Among matches, the send closest to the day they received it wins.
+ */
+export function pickSendForEmailTouch(
+  sends: AttributionSend[],
+  eventAt: string,
+  touch: EmailTouchRef,
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+): { send: AttributionSend; sendOn: string } | null {
+  const at = ymd(eventAt);
+  const touchDay = ymd(touch.day);
+  if (!at || !touchDay) return null;
+  let best: { send: AttributionSend; on: string; distance: number } | null = null;
+  for (const send of sends) {
+    const on = ymd(send.sentOn);
+    if (!on || on > at) continue;
+    const lag = dayDiff(at, on);
+    if (lag < 0 || lag > attributionDays) continue;
+    if (!sendMatchesTouch(send, touch)) continue;
+    const distance = Math.abs(dayDiff(touchDay, on));
+    if (
+      !best ||
+      distance < best.distance ||
+      (distance === best.distance && on > best.on)
+    ) {
+      best = { send, on, distance };
+    }
+  }
+  return best ? { send: best.send, sendOn: best.on } : null;
+}
+
+/** Label for a thread email that did not match a campaign subject. */
+export function threadEmailLabel(touch: EmailTouchRef): string {
+  const subject = touch.subject.trim();
+  if (subject) return subject;
+  const preview = touch.text.replace(/\s+/g, " ").trim();
+  if (preview.length >= 24) {
+    return preview.length > 90 ? `${preview.slice(0, 87).trimEnd()}…` : preview;
+  }
+  return "Marketing email";
+}
+
 /**
  * Pair each conversion with the latest send on or before the event, within
  * `attributionDays`. One conversion → one journey (no double counting).
+ *
+ * Pass `touchByEventId` to require the credited send's subject to match the
+ * email on that contact. A same-day blast with a different subject is skipped.
  */
 export function attributeConversionsToJourneys(
   sends: AttributionSend[],
   events: ConversionEvent[],
-  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS,
+  touchByEventId?: Record<string, EmailTouchRef>
 ): AttributionJourney[] {
   const dated = sends
     .map((s) => ({ send: s, on: ymd(s.sentOn) }))
@@ -126,6 +227,14 @@ export function attributeConversionsToJourneys(
   for (const event of events) {
     const at = ymd(event.at);
     if (!at) continue;
+    if (touchByEventId) {
+      const touch = touchByEventId[event.id];
+      if (!touch) continue;
+      const picked = pickSendForEmailTouch(sends, at, touch, attributionDays);
+      if (!picked) continue;
+      journeys.push({ event, send: picked.send, sendOn: picked.sendOn });
+      continue;
+    }
     let best: { send: AttributionSend; on: string } | null = null;
     for (const row of dated) {
       if (row.on > at) continue;
@@ -146,7 +255,8 @@ export function attributeConversionsToJourneys(
 export function attributeConversionsToSends(
   sends: AttributionSend[],
   events: ConversionEvent[],
-  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS,
+  touchByEventId?: Record<string, EmailTouchRef>
 ): Map<string, SendConversionCounts> {
   const counts = new Map<string, SendConversionCounts>();
   for (const send of sends) {
@@ -156,7 +266,8 @@ export function attributeConversionsToSends(
   for (const journey of attributeConversionsToJourneys(
     sends,
     events,
-    attributionDays
+    attributionDays,
+    touchByEventId
   )) {
     const bucket = counts.get(journey.send.id) || {
       formFills: 0,

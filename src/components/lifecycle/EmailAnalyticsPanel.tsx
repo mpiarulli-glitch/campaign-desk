@@ -146,12 +146,22 @@ export function EmailAnalyticsPanel({
   const attributed = useMemo(() => {
     if (!data) return { forms: 0, appointments: 0 };
     const rows = [...data.campaigns, ...data.flows];
-    return {
+    const summed = {
       forms: rows.reduce((n, row) => n + (row.formFills || 0), 0),
       appointments: rows.reduce(
         (n, row) => n + (row.attributedAppointments || 0),
         0
       ),
+    };
+    return {
+      forms:
+        typeof data.emailDrivenFormFills === "number"
+          ? data.emailDrivenFormFills
+          : summed.forms,
+      appointments:
+        typeof data.emailDrivenAppointments === "number"
+          ? data.emailDrivenAppointments
+          : summed.appointments,
     };
   }, [data]);
 
@@ -767,6 +777,13 @@ function prettyDay(value: string | null | undefined): string {
   );
 }
 
+function journeyEmailLabel(row: EmailJourneyRow): string {
+  const subject = row.subject?.trim();
+  if (subject) return subject;
+  if (row.sendChannel === "thread") return "Marketing email";
+  return row.sendName;
+}
+
 function contactLabel(row: EmailJourneyRow): string {
   if (row.contactName?.trim()) return row.contactName.trim();
   if (row.contactEmail?.trim()) return row.contactEmail.trim();
@@ -857,11 +874,9 @@ function JourneyPanel({
                       {prettyDay(row.emailTouchDay || row.sendOn)}
                     </strong>
                     <span className="lh-an-meta">
-                      {row.subject || row.sendName}
+                      {journeyEmailLabel(row)}
                       {row.sendChannel === "flow" ? " · flow" : ""}
-                      {!row.emailTouchDay && row.sendOn
-                        ? " · credited send"
-                        : ""}
+                      {row.sendChannel === "thread" ? " · on their thread" : ""}
                     </span>
                   </li>
                   {kind === "appointment" && row.formFilledAt ? (

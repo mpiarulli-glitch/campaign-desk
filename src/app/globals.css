@@ -22050,7 +22050,7 @@ a.snap-todo-linked-title {
 
 .lh-analytics-clean .lh-an-journey-steps li {
   display: grid;
-  grid-template-columns: 64px auto;
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 2px 10px;
   align-items: baseline;
 }
@@ -22074,6 +22074,8 @@ a.snap-todo-linked-title {
 
 .lh-analytics-clean .lh-an-journey-steps .lh-an-meta {
   grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .lh-analytics-clean .lh-an-inline {

@@ -12,7 +12,7 @@
  */
 
 import { ghlRequest } from "./ghl";
-import type { ConversionEvent } from "./email-conversion-attribution";
+import type { ConversionEvent, EmailTouchRef } from "./email-conversion-attribution";
 
 const DAY_MS = 86_400_000;
 const TOUCH_CONCURRENCY = 4;
@@ -209,6 +209,30 @@ function messageContentText(msg: Record<string, unknown>): string {
   return [messageSubject(msg), messageBodyText(msg)].filter(Boolean).join("\n");
 }
 
+function plainMessageBody(msg: Record<string, unknown>): string {
+  return messageBodyText(msg)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 2000);
+}
+
+function messageCampaignId(msg: Record<string, unknown>): string {
+  const meta = asRecord(msg.meta);
+  return pickString(
+    msg.campaignId,
+    msg.bulkRequestId,
+    msg.emailCampaignId,
+    meta?.campaignId,
+    meta?.bulkRequestId,
+    meta?.emailCampaignId
+  );
+}
+
+function messageContactId(msg: Record<string, unknown>): string {
+  return String(msg.contactId || msg.contact_id || "").trim();
+}
+
 /**
  * Form → workflow email → booked: the post-form automation is not a marketing
  * touch that drove the booking (Eric Smith path). Campaign/bulk after a form
@@ -276,9 +300,12 @@ async function findConversationId(
       params: { locationId, contactId, limit: 5 },
     });
     const rows = result.conversations || result.data || [];
-    const hit =
-      rows.find((c) => String(c.contactId || "") === contactId) || rows[0];
-    return hit?.id ? String(hit.id) : null;
+    const exact = rows.find((c) => String(c.contactId || "") === contactId);
+    if (exact?.id) return String(exact.id);
+    // Trust the contactId query only when the payload does not name someone else.
+    const unlabeled = rows.filter((c) => !String(c.contactId || "").trim());
+    if (unlabeled.length === 1 && unlabeled[0]?.id) return String(unlabeled[0].id);
+    return null;
   } catch {
     return null;
   }
@@ -326,19 +353,22 @@ async function listConversationMessages(
 }
 
 /**
- * Latest outbound marketing-email day for a contact on/before `onOrBefore`,
+ * Latest outbound marketing email for a contact on/before `onOrBefore`,
  * within `attributionDays`. Null when none found.
+ *
+ * The result includes the subject (and body, when the subject is missing) so
+ * callers can avoid crediting a different blast that merely went out the same day.
  *
  * Pass `formFilledAt` for appointment checks so post-form workflow mail
  * (confirmations) does not count as the marketing touch.
  */
-export async function latestOutboundMarketingEmailDay(
+export async function latestOutboundMarketingEmailTouch(
   locationId: string,
   contactId: string,
   onOrBefore: string,
   attributionDays: number,
   options: { strictSource?: boolean; formFilledAt?: string | null } = {}
-): Promise<string | null> {
+): Promise<EmailTouchRef | null> {
   const before = ymd(onOrBefore);
   if (!before || !contactId) return null;
   const conversationId = await findConversationId(locationId, contactId);
@@ -353,8 +383,10 @@ export async function latestOutboundMarketingEmailDay(
 
   const strictSource = Boolean(options.strictSource);
   const formFilledAt = ymd(options.formFilledAt);
-  let best: string | null = null;
+  let best: { at: number; touch: EmailTouchRef } | null = null;
   for (const msg of messages) {
+    const owner = messageContactId(msg);
+    if (owner && owner !== contactId) continue;
     if (
       !isOutboundMarketingTouchMessage(msg, {
         strict: strictSource,
@@ -363,19 +395,54 @@ export async function latestOutboundMarketingEmailDay(
     ) {
       continue;
     }
-    const day = ymd(String(msg.dateAdded || msg.createdAt || ""));
+    const rawAt = String(msg.dateAdded || msg.createdAt || "");
+    const day = ymd(rawAt);
     if (!day || day > before) continue;
     const lag = dayDiff(before, day);
     if (lag < 0 || lag > attributionDays) continue;
-    if (!best || day > best) best = day;
+    const at = Date.parse(rawAt);
+    const when = Number.isFinite(at) ? at : Date.parse(`${day}T12:00:00.000Z`);
+    if (best && when <= best.at) continue;
+    best = {
+      at: when,
+      touch: {
+        day,
+        subject: messageSubject(msg),
+        text: plainMessageBody(msg),
+        campaignId: messageCampaignId(msg),
+      },
+    };
   }
-  return best;
+  return best?.touch || null;
+}
+
+/**
+ * Latest outbound marketing-email day for a contact on/before `onOrBefore`,
+ * within `attributionDays`. Null when none found.
+ */
+export async function latestOutboundMarketingEmailDay(
+  locationId: string,
+  contactId: string,
+  onOrBefore: string,
+  attributionDays: number,
+  options: { strictSource?: boolean; formFilledAt?: string | null } = {}
+): Promise<string | null> {
+  const touch = await latestOutboundMarketingEmailTouch(
+    locationId,
+    contactId,
+    onOrBefore,
+    attributionDays,
+    options
+  );
+  return touch?.day || null;
 }
 
 export type EmailTouchFilterResult = {
   kept: ConversionEvent[];
   /** eventId → YYYY-MM-DD of the outbound marketing email used. */
   touchDayByEventId: Record<string, string>;
+  /** eventId → the email actually on that contact's thread. */
+  touchByEventId: Record<string, EmailTouchRef>;
   checked: number;
   touched: number;
   skippedNoContact: number;
@@ -400,8 +467,9 @@ export async function filterConversionsWithEmailTouch(
 ): Promise<EmailTouchFilterResult> {
   const withContact = events.filter((e) => Boolean(e.contactId));
   const skippedNoContact = events.length - withContact.length;
-  const dayTouch = new Map<string, string | null>();
+  const dayTouch = new Map<string, EmailTouchRef | null>();
   const touchDayByEventId: Record<string, string> = {};
+  const touchByEventId: Record<string, EmailTouchRef> = {};
   const formByContact = options.formFilledAtByContactId || {};
 
   const uniqueDays: Array<{
@@ -425,14 +493,14 @@ export async function filterConversionsWithEmailTouch(
   }
 
   await pooled(uniqueDays, async ({ contactId, at, formFilledAt }) => {
-    const day = await latestOutboundMarketingEmailDay(
+    const touch = await latestOutboundMarketingEmailTouch(
       locationId,
       contactId,
       at,
       attributionDays,
       { strictSource: options.strictSource, formFilledAt }
     );
-    dayTouch.set(`${contactId}:${at}:${formFilledAt || ""}`, day);
+    dayTouch.set(`${contactId}:${at}:${formFilledAt || ""}`, touch);
   });
 
   const kept: ConversionEvent[] = [];
@@ -443,16 +511,18 @@ export async function filterConversionsWithEmailTouch(
       event.kind === "appointment"
         ? ymd(formByContact[event.contactId])
         : null;
-    const day =
+    const touch =
       dayTouch.get(`${event.contactId}:${at}:${formFilledAt || ""}`) || null;
-    if (!day) continue;
-    touchDayByEventId[event.id] = day;
+    if (!touch) continue;
+    touchDayByEventId[event.id] = touch.day;
+    touchByEventId[event.id] = touch;
     kept.push(event);
   }
 
   return {
     kept,
     touchDayByEventId,
+    touchByEventId,
     checked: withContact.length,
     touched: kept.length,
     skippedNoContact,

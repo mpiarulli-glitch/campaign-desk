@@ -28,7 +28,7 @@ export type ConversionLogRow = {
   formFilledAt: string | null;
   sendId: string;
   sendName: string;
-  sendChannel: "campaign" | "flow";
+  sendChannel: "campaign" | "flow" | "thread";
   sendOn: string;
   subject: string | null;
   emailTouchDay: string | null;
