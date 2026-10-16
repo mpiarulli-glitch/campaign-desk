@@ -22,8 +22,13 @@ function row(
     sendOn: "2026-09-01",
     subject: null,
     emailTouchDay: null,
+    confidence: "inferred",
+    basis: "inferred",
+    messageSource: "email",
+    campaign: null,
+    content: "Send",
     ...partial,
-  };
+  } as ConversionLogRow;
 }
 
 describe("sortConversionLogRows", () => {
@@ -64,5 +69,37 @@ describe("filterConversionLogRows", () => {
     assert.equal(filterConversionLogRows(rows, "all").length, 2);
     assert.equal(filterConversionLogRows(rows, "appointment").length, 1);
     assert.equal(filterConversionLogRows(rows, "form_fill")[0].id, "2");
+  });
+
+  it("filters confirmed SMS separately from inferred email", () => {
+    const rows = [
+      row({
+        id: "sms",
+        conversionAt: "2026-10-13",
+        clientName: "Krak",
+        kind: "appointment",
+        confidence: "confirmed",
+        basis: "converted_fields",
+        messageSource: "sms",
+        content: "sms-1013",
+      }),
+      row({
+        id: "email",
+        conversionAt: "2026-10-12",
+        clientName: "Krak",
+        kind: "form_fill",
+        confidence: "inferred",
+        messageSource: "email",
+        content: "email-01",
+      }),
+    ];
+    assert.equal(
+      filterConversionLogRows(rows, "all", { confidence: "confirmed" })[0].id,
+      "sms"
+    );
+    assert.equal(
+      filterConversionLogRows(rows, "all", { source: "email" })[0].id,
+      "email"
+    );
   });
 });

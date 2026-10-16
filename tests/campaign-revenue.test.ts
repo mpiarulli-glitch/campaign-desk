@@ -61,13 +61,21 @@ function attr(
     locationId: "loc",
     attributedAppointments: 0,
     attributedFormFills: 0,
+    confirmedAppointments: 0,
+    confirmedFormFills: 0,
+    inferredAppointments: 0,
+    inferredFormFills: 0,
+    emailAppointments: 0,
+    emailFormFills: 0,
+    smsAppointments: 0,
+    smsFormFills: 0,
     totalAppointments: 0,
     totalFormFills: 0,
     campaignSends: 0,
     flowSends: 0,
     error: null,
     ...partial,
-  };
+  } as AttributionRollupRow;
 }
 
 test("calendarMonthBounds covers the whole month", () => {

@@ -22596,6 +22596,30 @@ a.snap-todo-linked-title {
   font-size: 13px;
 }
 
+.lh-proof {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lh-proof.is-confirmed {
+  color: var(--success-ink);
+}
+
+.lh-proof.is-inferred {
+  color: var(--warning-ink);
+}
+
+.lh-attr-pieces {
+  margin-top: 22px;
+}
+
+.lh-attr-pieces .lh-an-band-label {
+  margin-bottom: 4px;
+}
+
 .lh-clog-errors {
   margin-top: 16px;
   color: var(--muted);
