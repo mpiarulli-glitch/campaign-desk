@@ -19,8 +19,9 @@ import {
   type AttributionConfidence,
   type MessageSource,
 } from "./utm-conversion-attribution";
+import { mapWithBudget, SCAN_BUDGET_MS, scanHasPending } from "./scan-budget";
 
-const LOG_CONCURRENCY = 2;
+const LOG_CONCURRENCY = 4;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export type ConversionLogRow = {
@@ -65,11 +66,33 @@ export type ConversionLog = {
   rows: ConversionLogRow[];
   errors: Array<{ clientId: string; clientName: string; error: string }>;
   cached: boolean;
+  status: "running" | "ready";
+  progress: { done: number; total: number };
+  /** True while status is running. Pending accounts are omitted, not failed. */
+  incomplete: boolean;
 };
 
 type CacheEntry = { at: number; payload: ConversionLog };
 
 const cache = new Map<string, CacheEntry>();
+
+type LogTarget = {
+  clientId: string;
+  clientName: string;
+  locationId: string;
+};
+
+type LogPiece = {
+  rows: ConversionLogRow[];
+  error: { clientId: string; clientName: string; error: string } | null;
+};
+
+type LogJob = {
+  full: Promise<ConversionLog>;
+  snapshot: () => ConversionLog;
+};
+
+const inflight = new Map<string, LogJob>();
 
 function resolveLocationId(clientId: string, memberIds: string[]): string | null {
   const ids = [clientId, ...memberIds.filter((id) => id && id !== clientId)];
@@ -80,27 +103,6 @@ function resolveLocationId(clientId: string, memberIds: string[]): string | null
     if (loc) return loc;
   }
   return null;
-}
-
-async function pooledMap<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, Math.max(items.length, 1)) },
-    async () => {
-      for (;;) {
-        const i = cursor++;
-        if (i >= items.length) return;
-        out[i] = await fn(items[i]);
-      }
-    }
-  );
-  await Promise.all(workers);
-  return out;
 }
 
 /** Newest conversions first; stable ties by account then contact. */
@@ -142,12 +144,66 @@ export function filterConversionLogRows(
 
 export function clearConversionLogCache(): void {
   cache.clear();
+  inflight.clear();
+}
+
+function assembleLog(
+  targets: LogTarget[],
+  pieces: Array<LogPiece | undefined>,
+  meta: {
+    start: string;
+    end: string;
+    range: AnalyticsPreset;
+    attributionDays: number;
+    kind: "all" | EmailJourneyKind;
+  },
+  incomplete: boolean
+): ConversionLog {
+  const errors: ConversionLog["errors"] = [];
+  const collected: ConversionLogRow[] = [];
+  let done = 0;
+  for (let index = 0; index < targets.length; index++) {
+    const piece = pieces[index];
+    if (piece !== undefined) done++;
+    if (!piece) continue;
+    collected.push(...piece.rows);
+    if (piece.error) errors.push(piece.error);
+  }
+  const rows = filterConversionLogRows(collected, meta.kind).sort(
+    sortConversionLogRows
+  );
+  return {
+    start: meta.start,
+    end: meta.end,
+    range: meta.range,
+    attributionDays: meta.attributionDays,
+    kind: meta.kind,
+    fetchedAt: new Date().toISOString(),
+    scanned: done,
+    totals: {
+      appointments: rows.filter((r) => r.kind === "appointment").length,
+      formFills: rows.filter((r) => r.kind === "form_fill").length,
+      confirmed: rows.filter((r) => r.confidence === "confirmed").length,
+      inferred: rows.filter((r) => r.confidence === "inferred").length,
+      email: rows.filter((r) => r.messageSource === "email").length,
+      sms: rows.filter((r) => r.messageSource === "sms").length,
+    },
+    rows,
+    errors: errors.sort((a, b) => a.clientName.localeCompare(b.clientName)),
+    cached: false,
+    status: incomplete ? "running" : "ready",
+    progress: { done, total: targets.length },
+    incomplete,
+  };
 }
 
 /**
  * Scan every GHL-linked Lifecycle hub client except Trailhead (HIPAA).
  * Each row names the email or SMS, and whether that credit is UTM-confirmed
  * or inferred from the contact's own thread.
+ *
+ * Returns the current snapshot immediately. The panel polls until status
+ * is ready. The scan keeps running in this process after the response.
  */
 export async function pullConversionLog(options: {
   range?: AnalyticsPreset;
@@ -163,10 +219,18 @@ export async function pullConversionLog(options: {
   const { start, end } = resolveAnalyticsRange(range, options.from, options.to);
   const cacheKey = `${range}:${start}:${end}:${attributionDays}:${kind}`;
 
+  const running = inflight.get(cacheKey);
+  if (running) return running.snapshot();
+
   if (!options.refresh) {
     const hit = cache.get(cacheKey);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-      return { ...hit.payload, cached: true };
+      return {
+        ...hit.payload,
+        cached: true,
+        status: "ready",
+        incomplete: false,
+      };
     }
   }
 
@@ -179,122 +243,122 @@ export async function pullConversionLog(options: {
         ? { clientId: c.id, clientName: c.name, locationId }
         : null;
     })
-    .filter(Boolean) as Array<{
-    clientId: string;
-    clientName: string;
-    locationId: string;
-  }>;
+    .filter(Boolean) as LogTarget[];
 
-  const errors: ConversionLog["errors"] = [];
-  const collected = await pooledMap(targets, LOG_CONCURRENCY, async (target) => {
-    const rows: ConversionLogRow[] = [];
-    try {
-      const result = await pullLocationMessageAttribution({
-        locationId: target.locationId,
-        clientName: target.clientName,
-        start,
-        end,
-        attributionDays,
-      });
-      if (result.skipped === "hipaa") return rows;
-      if (result.error) {
-        errors.push({
-          clientId: target.clientId,
+  const meta = { start, end, range, attributionDays, kind };
+  const scan = mapWithBudget<LogTarget, LogPiece>(
+    targets,
+    LOG_CONCURRENCY,
+    async (target) => {
+      const rows: ConversionLogRow[] = [];
+      try {
+        const result = await pullLocationMessageAttribution({
+          locationId: target.locationId,
           clientName: target.clientName,
-          error: result.error,
+          start,
+          end,
+          attributionDays,
         });
-      }
-      const formDayByContact = new Map<string, string>();
-      for (const credit of result.rows) {
-        if (credit.kind !== "form_fill" || !credit.contactId) continue;
-        const prev = formDayByContact.get(credit.contactId);
-        if (!prev || credit.at > prev) formDayByContact.set(credit.contactId, credit.at);
-      }
-      for (const credit of result.rows) {
-        if (kind !== "all" && credit.kind !== kind) continue;
-        const sendChannel: ConversionLogRow["sendChannel"] =
-          credit.confidence === "confirmed"
-            ? credit.source === "sms"
-              ? "sms"
-              : "utm"
-            : credit.source === "sms"
-              ? "sms"
-              : credit.sendId
-                ? "campaign"
-                : "thread";
-        const formDay = credit.contactId
-          ? formDayByContact.get(credit.contactId) || null
+        if (result.skipped === "hipaa") return { rows, error: null };
+        const error = result.error
+          ? {
+              clientId: target.clientId,
+              clientName: target.clientName,
+              error: result.error,
+            }
           : null;
-        rows.push({
-          id: [
-            target.clientId,
-            credit.kind,
-            credit.contactId || "unknown",
-            credit.at,
-            credit.content,
-            credit.basis,
-          ].join(":"),
-          clientId: target.clientId,
-          clientName: target.clientName,
-          kind: credit.kind,
-          conversionAt: credit.at,
-          contactId: credit.contactId,
-          contactName: credit.contactName,
-          contactEmail: credit.contactEmail,
-          formFilledAt:
-            credit.kind === "form_fill"
-              ? credit.at
-              : formDay && formDay <= credit.at
-                ? formDay
-                : null,
-          sendId: credit.sendId || `${credit.basis}:${credit.content}`,
-          sendName: credit.content,
-          sendChannel,
-          sendOn: credit.sendOn || credit.at,
-          subject: credit.subject,
-          emailTouchDay: credit.confidence === "inferred" ? credit.sendOn : null,
-          confidence: credit.confidence,
-          basis: credit.basis,
-          messageSource: credit.source,
-          campaign: credit.campaign,
-          content: credit.content,
-        });
+        const formDayByContact = new Map<string, string>();
+        for (const credit of result.rows) {
+          if (credit.kind !== "form_fill" || !credit.contactId) continue;
+          const prev = formDayByContact.get(credit.contactId);
+          if (!prev || credit.at > prev) formDayByContact.set(credit.contactId, credit.at);
+        }
+        for (const credit of result.rows) {
+          if (kind !== "all" && credit.kind !== kind) continue;
+          const sendChannel: ConversionLogRow["sendChannel"] =
+            credit.confidence === "confirmed"
+              ? credit.source === "sms"
+                ? "sms"
+                : "utm"
+              : credit.source === "sms"
+                ? "sms"
+                : credit.sendId
+                  ? "campaign"
+                  : "thread";
+          const formDay = credit.contactId
+            ? formDayByContact.get(credit.contactId) || null
+            : null;
+          rows.push({
+            id: [
+              target.clientId,
+              credit.kind,
+              credit.contactId || "unknown",
+              credit.at,
+              credit.content,
+              credit.basis,
+            ].join(":"),
+            clientId: target.clientId,
+            clientName: target.clientName,
+            kind: credit.kind,
+            conversionAt: credit.at,
+            contactId: credit.contactId,
+            contactName: credit.contactName,
+            contactEmail: credit.contactEmail,
+            formFilledAt:
+              credit.kind === "form_fill"
+                ? credit.at
+                : formDay && formDay <= credit.at
+                  ? formDay
+                  : null,
+            sendId: credit.sendId || `${credit.basis}:${credit.content}`,
+            sendName: credit.content,
+            sendChannel,
+            sendOn: credit.sendOn || credit.at,
+            subject: credit.subject,
+            emailTouchDay: credit.confidence === "inferred" ? credit.sendOn : null,
+            confidence: credit.confidence,
+            basis: credit.basis,
+            messageSource: credit.source,
+            campaign: credit.campaign,
+            content: credit.content,
+          });
+        }
+        return { rows, error };
+      } catch (err) {
+        return {
+          rows,
+          error: {
+            clientId: target.clientId,
+            clientName: target.clientName,
+            error: err instanceof Error ? err.message : "Scan failed.",
+          },
+        };
       }
-    } catch (err) {
-      errors.push({
-        clientId: target.clientId,
-        clientName: target.clientName,
-        error: err instanceof Error ? err.message : "Scan failed.",
-      });
-    }
-    return rows;
-  });
-
-  const rows = filterConversionLogRows(collected.flat(), kind).sort(
-    sortConversionLogRows
+    },
+    SCAN_BUDGET_MS
   );
 
-  const payload: ConversionLog = {
-    start,
-    end,
-    range,
-    attributionDays,
-    kind,
-    fetchedAt: new Date().toISOString(),
-    scanned: targets.length,
-    totals: {
-      appointments: rows.filter((r) => r.kind === "appointment").length,
-      formFills: rows.filter((r) => r.kind === "form_fill").length,
-      confirmed: rows.filter((r) => r.confidence === "confirmed").length,
-      inferred: rows.filter((r) => r.confidence === "inferred").length,
-      email: rows.filter((r) => r.messageSource === "email").length,
-      sms: rows.filter((r) => r.messageSource === "sms").length,
+  const job: LogJob = {
+    full: scan.all.then((values) => {
+      const payload = assembleLog(targets, values, meta, false);
+      cache.set(cacheKey, { at: Date.now(), payload });
+      return payload;
+    }),
+    snapshot: () => {
+      const values = scan.values.slice();
+      return assembleLog(
+        targets,
+        values,
+        meta,
+        scanHasPending(values, targets.length)
+      );
     },
-    rows,
-    errors: errors.sort((a, b) => a.clientName.localeCompare(b.clientName)),
-    cached: false,
   };
 
-  cache.set(cacheKey, { at: Date.now(), payload });
-  return payload;
+  inflight.set(cacheKey, job);
+  job.full.finally(() => {
+    if (inflight.get(cacheKey) === job) inflight.delete(cacheKey);
+  });
+
+  return job.snapshot();
 }

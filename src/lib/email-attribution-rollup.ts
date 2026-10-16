@@ -18,8 +18,9 @@ import {
   summarizeAttributionRows,
   type ContentGroup,
 } from "./utm-conversion-attribution";
+import { mapWithBudget, SCAN_BUDGET_MS, scanHasPending } from "./scan-budget";
 
-const ROLLUP_CONCURRENCY = 2;
+const ROLLUP_CONCURRENCY = 4;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export type AttributionRollupRow = {
@@ -70,11 +71,34 @@ export type AttributionRollup = {
   /** GHL-linked accounts with zero attributed conversions (or pull errors). */
   others: AttributionRollupRow[];
   cached: boolean;
+  /** Running while accounts are still being read. The panel polls until ready. */
+  status: "running" | "ready";
+  progress: { done: number; total: number };
+  /** True while status is running. Pending accounts are omitted, not failed. */
+  incomplete: boolean;
 };
 
 type CacheEntry = { at: number; payload: AttributionRollup };
 
 const cache = new Map<string, CacheEntry>();
+
+type RollupTarget = {
+  clientId: string;
+  clientName: string;
+  locationId: string;
+};
+
+type RollupScanItem = {
+  row: AttributionRollupRow;
+  pieces: ContentGroup[];
+} | null;
+
+type RollupJob = {
+  full: Promise<AttributionRollup>;
+  snapshot: () => AttributionRollup;
+};
+
+const inflight = new Map<string, RollupJob>();
 
 function memberIsHipaa(clientId: string): boolean {
   return isHipaaBlockedAccount(getRevClient(clientId)?.name || "");
@@ -95,27 +119,6 @@ function resolveLocationId(clientId: string, memberIds: string[]): string | null
     return loc;
   }
   return null;
-}
-
-async function pooledMap<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, Math.max(items.length, 1)) },
-    async () => {
-      for (;;) {
-        const i = cursor++;
-        if (i >= items.length) return;
-        out[i] = await fn(items[i]);
-      }
-    }
-  );
-  await Promise.all(workers);
-  return out;
 }
 
 /** Sort richest email-attributed accounts first (bookings, then forms). */
@@ -148,6 +151,7 @@ export function partitionAttributionRows(rows: AttributionRollupRow[]): {
 
 export function clearAttributionRollupCache(): void {
   cache.clear();
+  inflight.clear();
 }
 
 const EMPTY_COUNTS = {
@@ -163,96 +167,24 @@ const EMPTY_COUNTS = {
   smsFormFills: 0,
 };
 
-/**
- * Scan every GHL-linked Lifecycle hub client except Trailhead (HIPAA).
- * Confirmed UTM credit is preferred. Inferred credit is contact-thread only.
- */
-export async function pullAttributionRollup(options: {
-  range?: AnalyticsPreset;
-  from?: string | null;
-  to?: string | null;
-  attributionDays?: number;
-  refresh?: boolean;
-}): Promise<AttributionRollup> {
-  const range = options.range || "3m";
-  const attributionDays = options.attributionDays ?? DEFAULT_ATTRIBUTION_DAYS;
-  const { start, end } = resolveAnalyticsRange(range, options.from, options.to);
-  const cacheKey = `${range}:${start}:${end}:${attributionDays}`;
-
-  if (!options.refresh) {
-    const hit = cache.get(cacheKey);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-      return { ...hit.payload, cached: true };
-    }
+function assembleRollup(
+  targets: RollupTarget[],
+  scanned: Array<RollupScanItem | undefined>,
+  meta: {
+    start: string;
+    end: string;
+    range: AnalyticsPreset;
+    attributionDays: number;
+  },
+  incomplete: boolean
+): AttributionRollup {
+  const present: Array<NonNullable<RollupScanItem>> = [];
+  let done = 0;
+  for (let index = 0; index < targets.length; index++) {
+    const item = scanned[index];
+    if (item !== undefined) done++;
+    if (item) present.push(item);
   }
-
-  const hub = buildLifecycleHub();
-  const targets = hub.clients
-    .filter((c) => c.ghlLinked && !isHipaaBlockedAccount(c.name))
-    .map((c) => {
-      const locationId = resolveLocationId(c.id, c.memberIds || []);
-      return locationId
-        ? { clientId: c.id, clientName: c.name, locationId }
-        : null;
-    })
-    .filter(Boolean) as Array<{
-    clientId: string;
-    clientName: string;
-    locationId: string;
-  }>;
-
-  const scanned = await pooledMap(targets, ROLLUP_CONCURRENCY, async (target) => {
-    try {
-      const summary = await pullLocationMessageAttribution({
-        locationId: target.locationId,
-        clientName: target.clientName,
-        start,
-        end,
-        attributionDays,
-      });
-      if (summary.skipped === "hipaa") return null;
-      const counts = summarizeAttributionRows(summary.rows);
-      return {
-        row: {
-          clientId: target.clientId,
-          clientName: target.clientName,
-          locationId: target.locationId,
-          ...counts,
-          totalAppointments: summary.totalAppointments,
-          totalFormFills: summary.totalFormFills,
-          campaignSends: summary.campaignSends,
-          flowSends: summary.flowSends,
-          error: summary.error,
-        } satisfies AttributionRollupRow,
-        pieces: groupAttributionByContent(
-          summary.rows.map((piece) => ({
-            ...piece,
-            clientId: target.clientId,
-            clientName: target.clientName,
-          }))
-        ),
-      };
-    } catch (err) {
-      return {
-        row: {
-          clientId: target.clientId,
-          clientName: target.clientName,
-          locationId: target.locationId,
-          ...EMPTY_COUNTS,
-          totalAppointments: null,
-          totalFormFills: null,
-          campaignSends: 0,
-          flowSends: 0,
-          error: err instanceof Error ? err.message : "Scan failed.",
-        } satisfies AttributionRollupRow,
-        pieces: [] as ContentGroup[],
-      };
-    }
-  });
-
-  const present = scanned.filter(
-    (item): item is NonNullable<typeof item> => item !== null
-  );
   const rows = present.map((item) => item.row);
   const pieces = present
     .flatMap((item) => item.pieces)
@@ -263,14 +195,12 @@ export async function pullAttributionRollup(options: {
         a.content.localeCompare(b.content) ||
         a.clientName.localeCompare(b.clientName)
     );
-
   const { wins, others } = partitionAttributionRows(rows);
-
-  const payload: AttributionRollup = {
-    start,
-    end,
-    range,
-    attributionDays,
+  return {
+    start: meta.start,
+    end: meta.end,
+    range: meta.range,
+    attributionDays: meta.attributionDays,
     fetchedAt: new Date().toISOString(),
     scanned: rows.length,
     withWins: wins.length,
@@ -299,8 +229,136 @@ export async function pullAttributionRollup(options: {
     wins,
     others,
     cached: false,
+    status: incomplete ? "running" : "ready",
+    progress: { done, total: targets.length },
+    incomplete,
+  };
+}
+
+
+/**
+ * Scan every GHL-linked Lifecycle hub client except Trailhead (HIPAA).
+ * Confirmed UTM credit is preferred. Inferred credit is contact-thread only.
+ *
+ * The HTTP handler returns the current snapshot immediately and the panel
+ * polls. `wait` is for cron and revenue, which need the finished payload.
+ * The scan keeps running in this process either way, so a proxy timeout
+ * cannot throw away work that already started.
+ */
+export async function pullAttributionRollup(options: {
+  range?: AnalyticsPreset;
+  from?: string | null;
+  to?: string | null;
+  attributionDays?: number;
+  refresh?: boolean;
+  wait?: boolean;
+}): Promise<AttributionRollup> {
+  const range = options.range || "3m";
+  const attributionDays = options.attributionDays ?? DEFAULT_ATTRIBUTION_DAYS;
+  const { start, end } = resolveAnalyticsRange(range, options.from, options.to);
+  const cacheKey = `${range}:${start}:${end}:${attributionDays}`;
+  const running = inflight.get(cacheKey);
+  if (running) return options.wait ? running.full : running.snapshot();
+
+  if (!options.refresh) {
+    const hit = cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      return {
+        ...hit.payload,
+        cached: true,
+        status: "ready",
+        incomplete: false,
+      };
+    }
+  }
+
+  const hub = buildLifecycleHub();
+  const targets = hub.clients
+    .filter((c) => c.ghlLinked && !isHipaaBlockedAccount(c.name))
+    .map((c) => {
+      const locationId = resolveLocationId(c.id, c.memberIds || []);
+      return locationId
+        ? { clientId: c.id, clientName: c.name, locationId }
+        : null;
+    })
+    .filter(Boolean) as RollupTarget[];
+
+  const meta = { start, end, range, attributionDays };
+  const scan = mapWithBudget<RollupTarget, RollupScanItem>(
+    targets,
+    ROLLUP_CONCURRENCY,
+    async (target) => {
+      try {
+        const summary = await pullLocationMessageAttribution({
+          locationId: target.locationId,
+          clientName: target.clientName,
+          start,
+          end,
+          attributionDays,
+        });
+        if (summary.skipped === "hipaa") return null;
+        const counts = summarizeAttributionRows(summary.rows);
+        return {
+          row: {
+            clientId: target.clientId,
+            clientName: target.clientName,
+            locationId: target.locationId,
+            ...counts,
+            totalAppointments: summary.totalAppointments,
+            totalFormFills: summary.totalFormFills,
+            campaignSends: summary.campaignSends,
+            flowSends: summary.flowSends,
+            error: summary.error,
+          },
+          pieces: groupAttributionByContent(
+            summary.rows.map((piece) => ({
+              ...piece,
+              clientId: target.clientId,
+              clientName: target.clientName,
+            }))
+          ),
+        };
+      } catch (err) {
+        return {
+          row: {
+            clientId: target.clientId,
+            clientName: target.clientName,
+            locationId: target.locationId,
+            ...EMPTY_COUNTS,
+            totalAppointments: null,
+            totalFormFills: null,
+            campaignSends: 0,
+            flowSends: 0,
+            error: err instanceof Error ? err.message : "Scan failed.",
+          },
+          pieces: [],
+        };
+      }
+    },
+    SCAN_BUDGET_MS
+  );
+
+  const job: RollupJob = {
+    full: scan.all.then((values) => {
+      const payload = assembleRollup(targets, values, meta, false);
+      cache.set(cacheKey, { at: Date.now(), payload });
+      return payload;
+    }),
+    snapshot: () => {
+      const values = scan.values.slice();
+      return assembleRollup(
+        targets,
+        values,
+        meta,
+        scanHasPending(values, targets.length)
+      );
+    },
   };
 
-  cache.set(cacheKey, { at: Date.now(), payload });
-  return payload;
+  inflight.set(cacheKey, job);
+  job.full.finally(() => {
+    if (inflight.get(cacheKey) === job) inflight.delete(cacheKey);
+  });
+
+  return options.wait ? job.full : job.snapshot();
 }

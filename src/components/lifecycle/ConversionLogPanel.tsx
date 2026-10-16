@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { AnalyticsPreset, EmailJourneyKind } from "@/lib/ghl-email-analytics";
 import type { ConversionLog, ConversionLogRow } from "@/lib/conversion-log";
 import {
@@ -88,30 +88,43 @@ export function ConversionLogPanel() {
   const [proof, setProof] = useState<"all" | AttributionConfidence>("all");
   const [source, setSource] = useState<"all" | MessageSource>("all");
 
+  const requestGen = useRef(0);
+
   const load = useCallback(
     async (refresh = false) => {
+      const gen = ++requestGen.current;
       setLoading(true);
       setError("");
+      let refreshOnce = refresh;
       try {
-        const params = new URLSearchParams({ range, kind });
-        if (refresh) params.set("refresh", "1");
-        const res = await fetch(`/api/lifecycle/conversion-log?${params}`);
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(
-            typeof body.error === "string"
-              ? body.error
-              : "Could not load conversions."
-          );
-          setData(null);
-          return;
+        for (;;) {
+          const params = new URLSearchParams({ range, kind });
+          if (refreshOnce) params.set("refresh", "1");
+          refreshOnce = false;
+          const res = await fetch(`/api/lifecycle/conversion-log?${params}`);
+          const body = await res.json().catch(() => ({}));
+          if (gen !== requestGen.current) return;
+          if (!res.ok) {
+            setError(
+              typeof body.error === "string"
+                ? body.error
+                : "Could not load conversions."
+            );
+            setData(null);
+            return;
+          }
+          const next = body as ConversionLog;
+          setData(next);
+          if (next.status !== "running") return;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (gen !== requestGen.current) return;
         }
-        setData(body as ConversionLog);
       } catch {
+        if (gen !== requestGen.current) return;
         setError("Network error while loading conversions.");
         setData(null);
       } finally {
-        setLoading(false);
+        if (gen === requestGen.current) setLoading(false);
       }
     },
     [range, kind]
@@ -153,7 +166,9 @@ export function ConversionLogPanel() {
               {prettyRange(data.start, data.end)}
               {data.cached ? " · cached" : ""}
               {" · "}
-              {fmt(data.scanned)} accounts · {fmt(data.rows.length)} conversions
+              {data.status === "running"
+                ? `Loading ${fmt(data.progress.done)} of ${fmt(data.progress.total)} accounts`
+                : `${fmt(data.scanned)} accounts · ${fmt(data.rows.length)} conversions`}
             </p>
           ) : (
             <p className="lh-an-sub">
@@ -169,7 +184,11 @@ export function ConversionLogPanel() {
                 type="button"
                 className={`lh-range-btn${range === p.id ? " is-on" : ""}`}
                 disabled={loading}
-                onClick={() => setRange(p.id)}
+                onClick={() => {
+                  requestGen.current += 1;
+                  setLoading(false);
+                  setRange(p.id);
+                }}
               >
                 {p.label}
               </button>
@@ -182,7 +201,11 @@ export function ConversionLogPanel() {
                 type="button"
                 className={`lh-range-btn${kind === p.id ? " is-on" : ""}`}
                 disabled={loading}
-                onClick={() => setKind(p.id)}
+                onClick={() => {
+                  requestGen.current += 1;
+                  setLoading(false);
+                  setKind(p.id);
+                }}
               >
                 {p.label}
               </button>
@@ -218,9 +241,9 @@ export function ConversionLogPanel() {
             type="button"
             className="lh-link"
             disabled={loading}
-            onClick={() => void load(Boolean(data))}
+            onClick={() => void load(Boolean(data && !data.incomplete))}
           >
-            {loading ? "Loading…" : data ? "Refresh" : "Load all"}
+            {loading ? "Loading…" : data && !data.incomplete ? "Refresh" : "Load all"}
           </button>
         </div>
       </div>
@@ -379,21 +402,17 @@ export function ConversionLogPanel() {
             </div>
           )}
 
-          {data.errors.length > 0 ? (
-            <details className="lh-clog-errors">
-              <summary>
-                {fmt(data.errors.length)} account
-                {data.errors.length === 1 ? "" : "s"} failed to load
-              </summary>
-              <ul>
-                {data.errors.map((err) => (
-                  <li key={err.clientId}>
-                    <strong>{err.clientName}</strong> — {err.error}
-                  </li>
-                ))}
-              </ul>
-            </details>
+          {data.status === "running" ? (
+            <p className="lh-card-note">
+              Loading {fmt(data.progress.done)} of {fmt(data.progress.total)}{" "}
+              accounts. Conversions show up as each account finishes.
+            </p>
           ) : null}
+          {data.errors.map((err) => (
+            <p key={err.clientId} className="lh-error">
+              {err.clientName}: {err.error || "The account scan failed."}
+            </p>
+          ))}
         </div>
       ) : null}
     </section>

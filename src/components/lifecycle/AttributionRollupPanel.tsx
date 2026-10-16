@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { AnalyticsPreset } from "@/lib/ghl-email-analytics";
 import type { AttributionRollup } from "@/lib/email-attribution-rollup";
 import {
@@ -49,33 +49,45 @@ export function AttributionRollupPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showOthers, setShowOthers] = useState(false);
+  const requestGen = useRef(0);
 
   const scan = useCallback(
     async (refresh = false) => {
+      const gen = ++requestGen.current;
       setLoading(true);
       setError("");
+      let refreshOnce = refresh;
       try {
-        const params = new URLSearchParams({ range });
-        if (refresh) params.set("refresh", "1");
-        const res = await fetch(
-          `/api/lifecycle/attribution-rollup?${params}`
-        );
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(
-            typeof body.error === "string"
-              ? body.error
-              : "Could not scan accounts."
+        for (;;) {
+          const params = new URLSearchParams({ range });
+          if (refreshOnce) params.set("refresh", "1");
+          refreshOnce = false;
+          const res = await fetch(
+            `/api/lifecycle/attribution-rollup?${params}`
           );
-          setData(null);
-          return;
+          const body = await res.json().catch(() => ({}));
+          if (gen !== requestGen.current) return;
+          if (!res.ok) {
+            setError(
+              typeof body.error === "string"
+                ? body.error
+                : "Could not scan accounts."
+            );
+            setData(null);
+            return;
+          }
+          const next = body as AttributionRollup;
+          setData(next);
+          if (next.status !== "running") return;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (gen !== requestGen.current) return;
         }
-        setData(body as AttributionRollup);
       } catch {
+        if (gen !== requestGen.current) return;
         setError("Network error while scanning.");
         setData(null);
       } finally {
-        setLoading(false);
+        if (gen === requestGen.current) setLoading(false);
       }
     },
     [range]
@@ -91,7 +103,9 @@ export function AttributionRollupPanel({
               {prettyRange(data.start, data.end)}
               {data.cached ? " · cached" : ""}
               {" · "}
-              {fmt(data.scanned)} scanned · {fmt(data.withWins)} with wins
+              {data.status === "running"
+                ? `Scanning ${fmt(data.progress.done)} of ${fmt(data.progress.total)}`
+                : `${fmt(data.scanned)} scanned · ${fmt(data.withWins)} with wins`}
             </p>
           ) : (
             <p className="lh-an-sub">
@@ -107,7 +121,11 @@ export function AttributionRollupPanel({
                 type="button"
                 className={`lh-range-btn${range === p.id ? " is-on" : ""}`}
                 disabled={loading}
-                onClick={() => setRange(p.id)}
+                onClick={() => {
+                  requestGen.current += 1;
+                  setLoading(false);
+                  setRange(p.id);
+                }}
               >
                 {p.label}
               </button>
@@ -117,14 +135,30 @@ export function AttributionRollupPanel({
             type="button"
             className="lh-link"
             disabled={loading}
-            onClick={() => void scan(Boolean(data))}
+            onClick={() => void scan(Boolean(data && !data.incomplete))}
           >
-            {loading ? "Scanning…" : data ? "Rescan" : "Scan all"}
+            {loading ? "Scanning…" : data && !data.incomplete ? "Rescan" : "Scan all"}
           </button>
         </div>
       </div>
 
       {error ? <p className="lh-error">{error}</p> : null}
+
+      {data?.status === "running" ? (
+        <p className="lh-card-note">
+          Scanning {fmt(data.progress.done)} of {fmt(data.progress.total)}{" "}
+          accounts. Results show up as each account finishes.
+        </p>
+      ) : null}
+      {data
+        ? [...data.wins, ...data.others]
+            .filter((row) => row.error)
+            .map((row) => (
+              <p key={row.clientId} className="lh-error">
+                {row.clientName}: {row.error}
+              </p>
+            ))
+        : null}
 
       {!data && !loading && !error ? (
         <p className="lh-card-note">

@@ -448,15 +448,28 @@ export async function pullLocationMessageAttribution(options: {
 
   const inferredByEventId: Record<string, InferredCredit | null> = {};
   const threadByContact = new Map<string, Promise<Array<Record<string, unknown>>>>();
-  const needsOpen = needsThread.some((event) => event.kind === "form_fill");
+  const formAtsByContact = new Map<string, string[]>();
+  for (const event of needsThread) {
+    if (event.kind !== "form_fill" || !event.contactId) continue;
+    const ats = formAtsByContact.get(event.contactId) || [];
+    ats.push(event.at);
+    formAtsByContact.set(event.contactId, ats);
+  }
 
   function threadFor(contactId: string): Promise<Array<Record<string, unknown>>> {
     let pending = threadByContact.get(contactId);
     if (!pending) {
       pending = (async () => {
         const messages = await listContactThreadMessages(locationId, contactId);
-        if (!needsOpen) return messages;
-        return annotateMarketingEmailOpens(locationId, messages);
+        const formFilledAts = formAtsByContact.get(contactId) || [];
+        if (formFilledAts.length === 0) return messages;
+        // Only the marketing emails inside this form's window need an open
+        // lookup. Checking the whole thread is what pushed the portfolio scan
+        // past Railway's 5-minute silent timeout.
+        return annotateMarketingEmailOpens(locationId, messages, {
+          formFilledAts,
+          attributionDays,
+        });
       })();
       threadByContact.set(contactId, pending);
     }

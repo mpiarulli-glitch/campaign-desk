@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isMarketingEmailSource,
   isOutboundEmailMessage,
+  emailsNeedingOpenLookup,
   isOutboundMarketingTouchMessage,
   isPostFormWorkflowAutomation,
   isTransactionalEmailContent,
@@ -147,6 +148,21 @@ describe("isTransactionalEmailContent", () => {
       isTransactionalEmailContent(
         "Thanks for these booking tips: three ways to prep your home before we arrive."
       ),
+      false
+    );
+  });
+
+  it("flags appointment reminder texts that omit the word reminder", () => {
+    assert.equal(
+      isTransactionalEmailContent("Your appointment starts in 10 minutes"),
+      true
+    );
+    assert.equal(
+      isTransactionalEmailContent("Your appointment is tomorrow"),
+      true
+    );
+    assert.equal(
+      isTransactionalEmailContent("Midterms this week. Book a visit."),
       false
     );
   });
@@ -495,6 +511,70 @@ describe("outbound email before the form", () => {
     assert.equal(
       outboundEmailIsBefore("2026-10-13T19:00:00.000Z", "2026-10-13"),
       true
+    );
+  });
+});
+
+describe("emailsNeedingOpenLookup", () => {
+  const formAt = "2026-10-13T18:00:00.000Z";
+
+  it("checks a delivered marketing email inside the 5-day window", () => {
+    const recent = {
+      messageType: "TYPE_EMAIL",
+      type: 3,
+      direction: "outbound",
+      source: "campaign",
+      subject: "Midterm reminder",
+      status: "delivered",
+      dateAdded: "2026-10-11T15:00:00.000Z",
+    };
+    const selected = emailsNeedingOpenLookup([recent], [formAt], 5);
+    assert.deepEqual(selected, [recent]);
+  });
+
+  it("does not detail-fetch thread mail outside the window, SMS, or mail already opened", () => {
+    const oldDelivered = {
+      messageType: "TYPE_EMAIL",
+      type: 3,
+      direction: "outbound",
+      source: "campaign",
+      subject: "Spring blast",
+      status: "delivered",
+      dateAdded: "2026-08-01T15:00:00.000Z",
+    };
+    const opened = {
+      messageType: "TYPE_EMAIL",
+      type: 3,
+      direction: "outbound",
+      source: "campaign",
+      subject: "Already opened",
+      status: "opened",
+      dateAdded: "2026-10-12T15:00:00.000Z",
+    };
+    const sms = {
+      messageType: "TYPE_SMS",
+      type: 2,
+      direction: "outbound",
+      body: "Reply YES",
+      status: "delivered",
+      dateAdded: "2026-10-12T15:00:00.000Z",
+    };
+    const afterForm = {
+      messageType: "TYPE_EMAIL",
+      type: 3,
+      direction: "outbound",
+      source: "campaign",
+      subject: "After the form",
+      status: "delivered",
+      dateAdded: "2026-10-13T19:00:00.000Z",
+    };
+    assert.deepEqual(
+      emailsNeedingOpenLookup(
+        [oldDelivered, opened, sms, afterForm],
+        [formAt],
+        5
+      ),
+      []
     );
   });
 });

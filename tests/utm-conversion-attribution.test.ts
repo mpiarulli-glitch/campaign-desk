@@ -402,6 +402,56 @@ describe("inferred thread credit", () => {
     );
   });
 
+  it("does not credit appointment reminders sent after the booking was created", () => {
+    const bookedAt = "2026-10-13T15:02:00.000Z";
+    const reminders = [
+      "Your appointment starts in 10 minutes",
+      "Your appointment is tomorrow",
+    ];
+    for (const body of reminders) {
+      const credit = inferCreditFromMessages({
+        messages: [
+          {
+            id: "msg_reminder",
+            contactId: "contact_ava",
+            direction: "outbound",
+            messageType: "TYPE_SMS",
+            type: 2,
+            status: "delivered",
+            body,
+            dateAdded: "2026-10-20T16:50:00.000Z",
+          },
+        ],
+        contactId: "contact_ava",
+        eventAt: bookedAt,
+        kind: "appointment",
+      });
+      assert.equal(credit, null);
+    }
+  });
+
+  it("does not credit a reminder that only lands before the appointment start", () => {
+    const credit = inferCreditFromMessages({
+      messages: [
+        {
+          id: "msg_reminder",
+          contactId: "contact_ava",
+          direction: "outbound",
+          messageType: "TYPE_SMS",
+          type: 2,
+          status: "delivered",
+          body: "Your appointment starts in 10 minutes",
+          dateAdded: "2026-10-20T16:50:00.000Z",
+        },
+      ],
+      contactId: "contact_ava",
+      // Appointment start, not the booking. The text is still a reminder.
+      eventAt: "2026-10-20T17:00:00.000Z",
+      kind: "appointment",
+    });
+    assert.equal(credit, null);
+  });
+
   it("does not let a post-form confirmation email count as the booking driver", () => {
     const credit = inferCreditFromMessages({
       messages: [
