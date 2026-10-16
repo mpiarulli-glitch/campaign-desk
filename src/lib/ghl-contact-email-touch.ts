@@ -8,7 +8,8 @@
  *
  * GHL does not expose campaign recipient lists on the APIs we use, so we
  * approximate via Conversations: outbound email on the contact's thread whose
- * source looks like campaign / workflow / bulk mail.
+ * source looks like campaign / workflow / bulk mail. A form fill counts only
+ * when that marketing email was received and opened in the 5 days before it.
  */
 
 import { ghlRequest } from "./ghl";
@@ -63,6 +64,85 @@ function isOutbound(direction: unknown): boolean {
 /** Any outbound email on the contact, whatever the source label. */
 export function isOutboundEmailMessage(msg: Record<string, unknown>): boolean {
   return isEmailMessage(msg) && isOutbound(msg.direction);
+}
+
+const OPENED_STATUS = /^(opened|read|clicked)$/;
+const UNOPENED_DEAD_STATUS =
+  /^(failed|undelivered|bounced|rejected|permanent_fail|temporary_fail)$/;
+
+function statusTexts(msg: Record<string, unknown>): string[] {
+  const meta = asRecord(msg.meta);
+  const email = asRecord(msg.email);
+  const emailMeta = asRecord(meta?.email);
+  return [
+    msg.status,
+    msg.emailStatus,
+    meta?.status,
+    meta?.emailStatus,
+    email?.status,
+    emailMeta?.status,
+  ]
+    .map((value) => String(value || "").toLowerCase().trim())
+    .filter(Boolean);
+}
+
+function openEventCount(msg: Record<string, unknown>): number {
+  const meta = asRecord(msg.meta);
+  const events = asRecord(msg.events) || asRecord(meta?.events);
+  const n = Number(events?.opened ?? events?.open ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * GHL marks a received email as opened, read, or clicked.
+ * Delivered or sent is not an open. Opened implies it was received.
+ */
+export function marketingEmailWasOpened(msg: Record<string, unknown>): boolean {
+  if (statusTexts(msg).some((status) => OPENED_STATUS.test(status))) return true;
+  if (openEventCount(msg) > 0) return true;
+  const meta = asRecord(msg.meta);
+  return Boolean(pickString(msg.openedAt, meta?.openedAt));
+}
+
+/** Sent or delivered mail can still be opened. Bounces cannot. */
+function emailOpenNeedsLookup(msg: Record<string, unknown>): boolean {
+  if (marketingEmailWasOpened(msg)) return false;
+  const statuses = statusTexts(msg);
+  if (statuses.length === 0) return true;
+  return !statuses.every((status) => UNOPENED_DEAD_STATUS.test(status));
+}
+
+/**
+ * Label for an opened marketing email. A real subject is kept.
+ * HTML, tracking URLs, and message bodies are not.
+ */
+export function openedMarketingEmailLabel(subject: string): string {
+  const text = subject.replace(/\s+/g, " ").trim();
+  if (!text || text.length > 120) return "Opened marketing email";
+  if (/[<>]/.test(text)) return "Opened marketing email";
+  if (/https?:\/\//i.test(text)) return "Opened marketing email";
+  if (/msgsndr|googleapis/i.test(text)) return "Opened marketing email";
+  return text;
+}
+
+/**
+ * True when this outbound marketing email was opened, and it landed in the
+ * `attributionDays` before the form. Mail after the fill does not count.
+ */
+export function countsAsOpenedMarketingEmail(
+  msg: Record<string, unknown>,
+  formAt: string,
+  attributionDays = 5
+): boolean {
+  if (!isOutboundMarketingTouchMessage(msg, { strict: true })) return false;
+  if (!marketingEmailWasOpened(msg)) return false;
+  const rawAt = String(msg.dateAdded || msg.createdAt || "");
+  if (!outboundEmailIsBefore(rawAt, formAt)) return false;
+  const before = ymd(formAt);
+  const day = ymd(rawAt);
+  if (!before || !day) return false;
+  const lag = dayDiff(before, day);
+  return lag >= 0 && lag <= attributionDays;
 }
 
 /**
@@ -374,6 +454,77 @@ async function listConversationMessages(
   return out;
 }
 
+type EmailDetailCache = Map<string, Promise<Record<string, unknown> | null>>;
+
+async function loadEmailMessage(
+  locationId: string,
+  messageId: string,
+  cache: EmailDetailCache
+): Promise<Record<string, unknown> | null> {
+  const key = `${locationId}:${messageId}`;
+  let pending = cache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const result = await ghlRequest<Record<string, unknown>>(
+          "GET",
+          `/conversations/messages/email/${encodeURIComponent(messageId)}`,
+          { locationId, version: "v3" }
+        );
+        return asRecord(result.email) || asRecord(result.message) || result;
+      } catch {
+        return null;
+      }
+    })();
+    cache.set(key, pending);
+  }
+  return pending;
+}
+
+/**
+ * Opened on the conversation row, or on the email record when the row only
+ * says sent or delivered.
+ */
+async function confirmMarketingEmailOpened(
+  locationId: string,
+  msg: Record<string, unknown>,
+  cache: EmailDetailCache
+): Promise<boolean> {
+  if (marketingEmailWasOpened(msg)) return true;
+  if (!emailOpenNeedsLookup(msg)) return false;
+  const ids = [
+    pickString(msg.id),
+    pickString(msg.emailMessageId),
+    pickString(msg.altId),
+  ].filter((id, index, all) => id && all.indexOf(id) === index);
+  for (const id of ids) {
+    const detail = await loadEmailMessage(locationId, id, cache);
+    if (!detail) continue;
+    if (
+      marketingEmailWasOpened({
+        status: detail.status,
+        emailStatus: detail.emailStatus,
+        events: detail.events,
+        openedAt: detail.openedAt,
+        meta: detail.meta,
+        email: detail.email,
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function messageTouch(msg: Record<string, unknown>, day: string): EmailTouchRef {
+  return {
+    day,
+    subject: messageSubject(msg),
+    text: plainMessageBody(msg),
+    campaignId: messageCampaignId(msg),
+  };
+}
+
 /**
  * Latest outbound marketing email for a contact on/before `onOrBefore`,
  * within `attributionDays`. Null when none found.
@@ -383,6 +534,9 @@ async function listConversationMessages(
  *
  * Pass `formFilledAt` for appointment checks so post-form workflow mail
  * (confirmations) does not count as the marketing touch.
+ *
+ * Pass `openedMarketing` for form fills: the email has to be a marketing send
+ * that GHL marked opened, inside the window before the form.
  */
 export async function latestOutboundMarketingEmailTouch(
   locationId: string,
@@ -394,6 +548,9 @@ export async function latestOutboundMarketingEmailTouch(
     formFilledAt?: string | null;
     /** Any outbound email, not only campaign / workflow mail. */
     anyOutbound?: boolean;
+    /** Marketing email that was received and opened before the form. */
+    openedMarketing?: boolean;
+    emailDetailCache?: EmailDetailCache;
   } = {}
 ): Promise<EmailTouchRef | null> {
   const before = ymd(onOrBefore);
@@ -408,18 +565,29 @@ export async function latestOutboundMarketingEmailTouch(
     return null;
   }
 
-  const strictSource = Boolean(options.strictSource);
+  const strictSource = Boolean(options.strictSource) || Boolean(options.openedMarketing);
   const formFilledAt = ymd(options.formFilledAt);
+  const emailDetailCache = options.emailDetailCache || new Map();
   let best: { at: number; touch: EmailTouchRef } | null = null;
+  const openedCandidates: Array<{
+    msg: Record<string, unknown>;
+    at: number;
+    day: string;
+  }> = [];
   for (const msg of messages) {
     const owner = messageContactId(msg);
     if (owner && owner !== contactId) continue;
-    const qualifies = options.anyOutbound
-      ? isOutboundEmailMessage(msg)
-      : isOutboundMarketingTouchMessage(msg, {
-          strict: strictSource,
+    const qualifies = options.openedMarketing
+      ? isOutboundMarketingTouchMessage(msg, {
+          strict: true,
           formFilledAt,
-        });
+        })
+      : options.anyOutbound
+        ? isOutboundEmailMessage(msg)
+        : isOutboundMarketingTouchMessage(msg, {
+            strict: strictSource,
+            formFilledAt,
+          });
     if (!qualifies) continue;
     const rawAt = String(msg.dateAdded || msg.createdAt || "");
     const day = ymd(rawAt);
@@ -428,18 +596,26 @@ export async function latestOutboundMarketingEmailTouch(
     if (lag < 0 || lag > attributionDays) continue;
     const at = Date.parse(rawAt);
     const when = Number.isFinite(at) ? at : Date.parse(`${day}T12:00:00.000Z`);
+    if (options.openedMarketing) {
+      openedCandidates.push({ msg, at: when, day });
+      continue;
+    }
     if (best && when <= best.at) continue;
-    best = {
-      at: when,
-      touch: {
-        day,
-        subject: messageSubject(msg),
-        text: plainMessageBody(msg),
-        campaignId: messageCampaignId(msg),
-      },
-    };
+    best = { at: when, touch: messageTouch(msg, day) };
   }
-  return best?.touch || null;
+  if (!options.openedMarketing) return best?.touch || null;
+
+  openedCandidates.sort((a, b) => b.at - a.at);
+  for (const candidate of openedCandidates) {
+    const opened = await confirmMarketingEmailOpened(
+      locationId,
+      candidate.msg,
+      emailDetailCache
+    );
+    if (!opened) continue;
+    return messageTouch(candidate.msg, candidate.day);
+  }
+  return null;
 }
 
 /**
@@ -455,6 +631,8 @@ export async function latestOutboundMarketingEmailDay(
     strictSource?: boolean;
     formFilledAt?: string | null;
     anyOutbound?: boolean;
+    openedMarketing?: boolean;
+    emailDetailCache?: EmailDetailCache;
   } = {}
 ): Promise<string | null> {
   const touch = await latestOutboundMarketingEmailTouch(
@@ -484,6 +662,9 @@ export type EmailTouchFilterResult = {
  *
  * For appointments, pass `formFilledAtByContactId` so form → confirmation
  * workflow → booked does not count as an email-driven journey.
+ *
+ * For form fills, pass `openedMarketing` so a fill counts only when that
+ * contact opened a marketing email in the window before the form.
  */
 export async function filterConversionsWithEmailTouch(
   locationId: string,
@@ -493,8 +674,10 @@ export async function filterConversionsWithEmailTouch(
     strictSource?: boolean;
     /** Latest in-window form day per contact — used for appointment honesty. */
     formFilledAtByContactId?: Record<string, string>;
-    /** Form fills: any outbound email before the form. */
+    /** Any outbound email before the conversion. */
     anyOutbound?: boolean;
+    /** Marketing email received and opened before the conversion. */
+    openedMarketing?: boolean;
   } = {}
 ): Promise<EmailTouchFilterResult> {
   const withContact = events.filter((e) => Boolean(e.contactId));
@@ -503,6 +686,7 @@ export async function filterConversionsWithEmailTouch(
   const touchDayByEventId: Record<string, string> = {};
   const touchByEventId: Record<string, EmailTouchRef> = {};
   const formByContact = options.formFilledAtByContactId || {};
+  const emailDetailCache: EmailDetailCache = new Map();
 
   const uniqueDays: Array<{
     contactId: string;
@@ -534,6 +718,8 @@ export async function filterConversionsWithEmailTouch(
         strictSource: options.strictSource,
         formFilledAt,
         anyOutbound: options.anyOutbound,
+        openedMarketing: options.openedMarketing,
+        emailDetailCache,
       }
     );
     dayTouch.set(`${contactId}:${at}:${formFilledAt || ""}`, touch);

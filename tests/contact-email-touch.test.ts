@@ -9,6 +9,9 @@ import {
   isTransactionalEmailSubject,
   outboundEmailIsBefore,
   formFilledAtByContactId,
+  marketingEmailWasOpened,
+  countsAsOpenedMarketingEmail,
+  openedMarketingEmailLabel,
 } from "../src/lib/ghl-contact-email-touch";
 
 describe("isMarketingEmailSource", () => {
@@ -361,6 +364,97 @@ describe("formFilledAtByContactId", () => {
       ]),
       { a: "2026-08-25" }
     );
+  });
+});
+
+describe("opened marketing email before a form", () => {
+  const openedCampaign = {
+    type: "Email",
+    direction: "outbound",
+    source: "campaign",
+    status: "opened",
+    subject: "What a Bad Gutter Actually Costs",
+    dateAdded: "2026-09-20T15:00:00.000Z",
+  };
+
+  it("counts an opened marketing email inside the 5 days before the form", () => {
+    assert.equal(
+      countsAsOpenedMarketingEmail(openedCampaign, "2026-09-23T18:00:00.000Z"),
+      true
+    );
+  });
+
+  it("does not count a marketing email that was only delivered", () => {
+    assert.equal(
+      countsAsOpenedMarketingEmail(
+        { ...openedCampaign, status: "delivered" },
+        "2026-09-23T18:00:00.000Z"
+      ),
+      false
+    );
+    assert.equal(marketingEmailWasOpened({ status: "sent" }), false);
+    assert.equal(marketingEmailWasOpened({ status: "delivered" }), false);
+    assert.equal(marketingEmailWasOpened({ status: "read" }), true);
+    assert.equal(marketingEmailWasOpened({ status: "clicked" }), true);
+    assert.equal(marketingEmailWasOpened({ events: { opened: 1 } }), true);
+  });
+
+  it("does not count an open more than 5 days before the form", () => {
+    assert.equal(
+      countsAsOpenedMarketingEmail(
+        { ...openedCampaign, dateAdded: "2026-09-10T15:00:00.000Z" },
+        "2026-09-23T18:00:00.000Z"
+      ),
+      false
+    );
+  });
+
+  it("does not count an open after the form", () => {
+    assert.equal(
+      countsAsOpenedMarketingEmail(
+        { ...openedCampaign, dateAdded: "2026-09-23T19:00:00.000Z" },
+        "2026-09-23T18:00:00.000Z"
+      ),
+      false
+    );
+  });
+
+  it("does not count an opened manual email", () => {
+    assert.equal(
+      countsAsOpenedMarketingEmail(
+        { ...openedCampaign, source: "manual" },
+        "2026-09-23T18:00:00.000Z"
+      ),
+      false
+    );
+  });
+
+  it("does not count an opened appointment confirmation", () => {
+    assert.equal(
+      countsAsOpenedMarketingEmail(
+        {
+          ...openedCampaign,
+          source: "workflow",
+          subject: "Your Onsite Consultation Has Been Scheduled.",
+        },
+        "2026-09-23T18:00:00.000Z"
+      ),
+      false
+    );
+  });
+
+  it("never uses an HTML body or tracking URL as the label", () => {
+    assert.equal(
+      openedMarketingEmailLabel(
+        "[https://storage.googleapis.com/msgsndr/abc View this email"
+      ),
+      "Opened marketing email"
+    );
+    assert.equal(
+      openedMarketingEmailLabel("What a Bad Gutter Actually Costs"),
+      "What a Bad Gutter Actually Costs"
+    );
+    assert.equal(openedMarketingEmailLabel(""), "Opened marketing email");
   });
 });
 

@@ -9,7 +9,7 @@ import { DEFAULT_ATTRIBUTION_DAYS } from "./email-conversion-attribution";
 export function attributionHonestyLine(
   days: number = DEFAULT_ATTRIBUTION_DAYS
 ): string {
-  return `A form counts when that contact received an outbound email within ${days} days before the fill. A booking counts when they received a marketing email in that window.`;
+  return `A form counts when that contact received and opened a marketing email within ${days} days before the fill. A booking counts when they received a marketing email in that window.`;
 }
 
 /** Journeys modal subtitle (same gate, journey-focused). */
@@ -18,7 +18,7 @@ export function attributionJourneySubtitle(
   days: number = DEFAULT_ATTRIBUTION_DAYS
 ): string {
   if (kind === "form_fill") {
-    return `Outbound email on that contact before the form fill (within ${days} days).`;
+    return `Received and opened a marketing email within ${days} days before the form fill.`;
   }
   return `Marketing email on that contact before the booking (within ${days} days). Confirmation emails after the form stay out.`;
 }
@@ -27,5 +27,5 @@ export function attributionJourneySubtitle(
 export function attributionPortfolioNote(
   days: number = DEFAULT_ATTRIBUTION_DAYS
 ): string {
-  return `Forms count an outbound email on the contact within ${days} days before the fill. Bookings count a marketing email in that window.`;
+  return `Forms count when the contact received and opened a marketing email within ${days} days before the fill. Bookings count a marketing email in that window.`;
 }

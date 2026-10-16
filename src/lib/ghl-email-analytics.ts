@@ -30,6 +30,7 @@ import {
   filterConversionsWithEmailTouch,
   formFilledAtByContactId,
   filterEventsByTouchLag,
+  openedMarketingEmailLabel,
 } from "./ghl-contact-email-touch";
 import {
   campaignCountsInEmailTotals,
@@ -932,14 +933,14 @@ export async function pullClientEmailAnalytics(
     })),
   ];
 
-  // Forms: any outbound email on that contact before the fill.
+  // Forms: marketing email received and opened in the 5 days before the fill.
   // Bookings: marketing email only, so a post-form confirmation does not count.
   const formDays = formFilledAtByContactId(formEvents);
   const formTouch = await filterConversionsWithEmailTouch(
     locationId,
     formEvents,
     attributionDays,
-    { anyOutbound: true }
+    { openedMarketing: true }
   );
   const appointmentOnly = conversionEvents.filter(
     (event) => event.kind === "appointment"
@@ -1223,7 +1224,7 @@ export async function pullClientAttributionSummary(
           locationId,
           formEvents,
           attributionDays,
-          { anyOutbound: true }
+          { openedMarketing: true }
         ),
       ]);
       emailTouch = {
@@ -1704,7 +1705,7 @@ async function resolveContactProfiles(
 
 /**
  * Per-contact journeys behind Email → forms / Email → booked.
- * A form journey is an outbound email on that contact before the fill.
+ * A form journey is a marketing email that contact opened in the 5 days before the fill.
  * A booking journey still names a marketing email when the subject matches.
  */
 export async function pullClientEmailJourneys(
@@ -1780,7 +1781,7 @@ export async function pullClientEmailJourneys(
       locationId,
       formEvents,
       attributionDays,
-      { anyOutbound: true }
+      { openedMarketing: true }
     );
     const contactIds = touch.kept
       .map((event) => event.contactId)
@@ -1799,8 +1800,8 @@ export async function pullClientEmailJourneys(
           contactEmail: profile?.email || null,
           conversionAt: event.at.slice(0, 10),
           formFilledAt: event.at.slice(0, 10),
-          sendId: `outbound:${event.id}`,
-          sendName: "Outbound email",
+          sendId: `opened:${event.id}`,
+          sendName: openedMarketingEmailLabel(evidence?.subject || ""),
           sendChannel: "thread" as const,
           sendOn: day,
           subject: null,

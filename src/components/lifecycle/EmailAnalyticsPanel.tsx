@@ -874,7 +874,7 @@ function JourneyPanel({
                       {prettyDay(row.emailTouchDay || row.sendOn)}
                     </strong>
                     <span className="lh-an-meta">
-                      {kind === "form_fill" ? "Outbound email" : journeyEmailLabel(row)}
+                      {kind === "form_fill" ? row.sendName : journeyEmailLabel(row)}
                       {kind !== "form_fill" && row.sendChannel === "flow"
                         ? " · flow"
                         : ""}

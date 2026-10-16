@@ -6,7 +6,8 @@
  * booker received (or opened) the email — busy accounts over-count badly.
  *
  * Callers that report "email-driven" numbers must first filter conversions with
- * contact-level outbound email evidence (see ghl-contact-email-touch).
+ * contact-level email evidence (see ghl-contact-email-touch). Form fills require
+ * a marketing email that was received and opened in the window before the fill.
  *
  * Abandoned-booking recovery is tag-based: contacts that got `abandoned booking`
  * and later show `meeting booked` (or a booked calendar event) count as recovered.
