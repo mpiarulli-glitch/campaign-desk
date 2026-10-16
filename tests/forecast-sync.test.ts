@@ -221,17 +221,18 @@ test("SEO Ops forecast sync receiver", async (t) => {
       "cmorones@marketingempiregroup.com"
     );
 
-    users.setUserEmail("carlos", "carlos.other@marketingempiregroup.com");
-    const replaced = await peopleRoute.GET(
+    assert.throws(
+      () => users.setUserEmail("carlos", "carlos.other@marketingempiregroup.com"),
+      (err: unknown) => err instanceof Error && err.name === "SeoOpsEmailLocked"
+    );
+    const kept = await peopleRoute.GET(
       new Request("http://desk.example/v1/people", { headers: auth() })
     );
-    const other = (await replaced.json()) as { people: Array<{ id: string; email: string }> };
-    assert.ok(other.people.length > 0);
+    const still = (await kept.json()) as { people: Array<{ id: string; email: string }> };
     assert.equal(
-      other.people.find((p) => p.id === "desk_carlos")?.email,
-      "carlos.other@marketingempiregroup.com"
+      still.people.find((p) => p.id === "desk_carlos")?.email,
+      "cmorones@marketingempiregroup.com"
     );
-    users.setUserEmail("carlos", "cmorones@marketingempiregroup.com");
   });
 
   await t.test("the sample run stores once and a repeat does not double hours", async () => {
@@ -252,6 +253,22 @@ test("SEO Ops forecast sync receiver", async (t) => {
     assert.equal(internal?.hours, "1.00");
     assert.equal(internal?.minutes, 60);
     assert.equal(week.length, 2);
+
+    const { getDb } = await import("../src/lib/db");
+    const db = getDb();
+    assert.throws(
+      () =>
+        db.prepare(`UPDATE seo_ops_forecast_allocations SET minutes = 1 WHERE run_id = ?`).run(RUN_A),
+      /SEO Ops allocations stay on file/
+    );
+    assert.throws(
+      () => db.prepare(`DELETE FROM seo_ops_forecast_allocations WHERE run_id = ?`).run(RUN_A),
+      /SEO Ops allocations stay on file/
+    );
+    assert.equal(
+      sync.activeForecastSyncAllocations("2026-10-12").find((row) => row.bucket === "client")?.minutes,
+      240
+    );
   });
 
   await t.test("a different body for the same run conflicts and keeps 240 minutes", async () => {

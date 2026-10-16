@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { can, getAppUrl } from "@/lib/auth";
+import { SeoOpsEmailLocked } from "@/lib/forecast-sync-mailboxes";
 import { OWNER_SLUG } from "@/lib/people";
 import {
   clearPassword,
@@ -150,7 +151,13 @@ export async function POST(request: Request) {
       }
       try {
         setUserEmail(slug, email);
-      } catch {
+      } catch (err) {
+        if (err instanceof SeoOpsEmailLocked) {
+          return NextResponse.json(
+            { error: "SEO Ops matches this mailbox. Other changes leave it as it is." },
+            { status: 409 }
+          );
+        }
         return NextResponse.json(
           { error: "That email is already on another account." },
           { status: 409 }
