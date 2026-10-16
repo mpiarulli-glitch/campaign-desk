@@ -5,9 +5,10 @@ import { useCallback, useMemo, useState } from "react";
 import type { AnalyticsPreset, EmailJourneyKind } from "@/lib/ghl-email-analytics";
 import type { ConversionLog, ConversionLogRow } from "@/lib/conversion-log";
 import {
-  attributionHonestyLine,
   attributionPortfolioNote,
+  utmAttributionLine,
 } from "@/lib/attribution-copy";
+import type { AttributionConfidence, MessageSource } from "@/lib/utm-conversion-attribution";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
   { id: "1m", label: "1 mo" },
@@ -20,6 +21,18 @@ const KIND_FILTERS: Array<{ id: "all" | EmailJourneyKind; label: string }> = [
   { id: "all", label: "All" },
   { id: "appointment", label: "Booked" },
   { id: "form_fill", label: "Forms" },
+];
+
+const PROOF_FILTERS: Array<{ id: "all" | AttributionConfidence; label: string }> = [
+  { id: "all", label: "Any proof" },
+  { id: "confirmed", label: "Confirmed" },
+  { id: "inferred", label: "Inferred" },
+];
+
+const SOURCE_FILTERS: Array<{ id: "all" | MessageSource; label: string }> = [
+  { id: "all", label: "Email & SMS" },
+  { id: "email", label: "Email" },
+  { id: "sms", label: "SMS" },
 ];
 
 function fmt(n: number): string {
@@ -54,6 +67,17 @@ function contactLabel(row: ConversionLogRow): string {
   return "Unknown contact";
 }
 
+function proofLabel(row: ConversionLogRow): string {
+  if (row.confidence !== "confirmed") return "Inferred";
+  if (row.basis === "latest_utm") return "Confirmed · latest";
+  if (row.basis === "first_utm") return "Confirmed · first";
+  return "Confirmed";
+}
+
+function sourceLabel(source: MessageSource): string {
+  return source === "sms" ? "SMS" : "Email";
+}
+
 export function ConversionLogPanel() {
   const [range, setRange] = useState<AnalyticsPreset>("3m");
   const [kind, setKind] = useState<"all" | EmailJourneyKind>("all");
@@ -61,6 +85,8 @@ export function ConversionLogPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [proof, setProof] = useState<"all" | AttributionConfidence>("all");
+  const [source, setSource] = useState<"all" | MessageSource>("all");
 
   const load = useCallback(
     async (refresh = false) => {
@@ -94,22 +120,28 @@ export function ConversionLogPanel() {
   const rows = useMemo(() => {
     if (!data) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return data.rows;
     return data.rows.filter((row) => {
+      if (proof !== "all" && row.confidence !== proof) return false;
+      if (source !== "all" && row.messageSource !== source) return false;
+      if (!q) return true;
       const hay = [
         row.clientName,
         row.contactName,
         row.contactEmail,
         row.sendName,
         row.subject,
+        row.campaign,
+        row.content,
         typeLabel(row.kind),
+        proofLabel(row),
+        sourceLabel(row.messageSource),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [data, query]);
+  }, [data, query, proof, source]);
 
   return (
     <section className="lh-card lh-analytics lh-conversion-log lh-analytics-clean">
@@ -125,7 +157,7 @@ export function ConversionLogPanel() {
             </p>
           ) : (
             <p className="lh-an-sub">
-              Email-attributed bookings and form fills across every account
+              Form fills and bookings driven by a specific email or SMS
             </p>
           )}
         </div>
@@ -156,6 +188,32 @@ export function ConversionLogPanel() {
               </button>
             ))}
           </div>
+          <div className="lh-range" role="group" aria-label="Proof">
+            {PROOF_FILTERS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`lh-range-btn${proof === p.id ? " is-on" : ""}`}
+                disabled={loading || !data}
+                onClick={() => setProof(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="lh-range" role="group" aria-label="Channel">
+            {SOURCE_FILTERS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`lh-range-btn${source === p.id ? " is-on" : ""}`}
+                disabled={loading || !data}
+                onClick={() => setSource(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="lh-link"
@@ -171,9 +229,10 @@ export function ConversionLogPanel() {
 
       {!data && !loading && !error ? (
         <p className="lh-card-note">
-          Loads email-attributed conversions from every GHL-linked Lifecycle
-          account. {attributionPortfolioNote()} First run can take a few
-          minutes.
+          Loads email and SMS conversions from every GHL-linked Lifecycle
+          account except Trailhead. {attributionPortfolioNote()} Confirmed
+          rows use UTM fields. Inferred rows are on that contact&apos;s thread.
+          First run can take a few minutes.
         </p>
       ) : null}
 
@@ -187,11 +246,7 @@ export function ConversionLogPanel() {
 
       {data ? (
         <div className="lh-an-body">
-          <p className="lh-an-accuracy">
-            {attributionHonestyLine(data.attributionDays)} Source is the credited
-            campaign or flow send — not landing-page URL or HDYHAU (Campaign Desk
-            does not store those).
-          </p>
+          <p className="lh-an-accuracy">{utmAttributionLine(data.attributionDays)}</p>
 
           <div className="lh-an-band">
             <h4 className="lh-an-band-label">Totals</h4>
@@ -199,18 +254,28 @@ export function ConversionLogPanel() {
               <div className="lh-an-metric">
                 <span>Booked</span>
                 <strong>{fmt(data.totals.appointments)}</strong>
-                <em>Email → booked</em>
+                <em>Email or SMS</em>
               </div>
               <div className="lh-an-metric">
                 <span>Forms</span>
                 <strong>{fmt(data.totals.formFills)}</strong>
-                <em>Email → form</em>
+                <em>Email or SMS</em>
+              </div>
+              <div className="lh-an-metric">
+                <span>Confirmed</span>
+                <strong>{fmt(data.totals.confirmed)}</strong>
+                <em>{fmt(data.totals.inferred)} inferred</em>
+              </div>
+              <div className="lh-an-metric">
+                <span>SMS</span>
+                <strong>{fmt(data.totals.sms)}</strong>
+                <em>{fmt(data.totals.email)} email</em>
               </div>
               <div className="lh-an-metric">
                 <span>Showing</span>
                 <strong>{fmt(rows.length)}</strong>
                 <em>
-                  {query.trim()
+                  {query.trim() || proof !== "all" || source !== "all"
                     ? "filtered"
                     : `${fmt(data.scanned)} accounts`}
                 </em>
@@ -227,15 +292,18 @@ export function ConversionLogPanel() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by account, contact, send…"
+              placeholder="Filter by account, contact, message, campaign…"
               disabled={loading}
             />
           </div>
 
           {rows.length === 0 ? (
             <p className="lh-empty">
-              No email-attributed conversions in this window
-              {query.trim() ? " match that filter" : ""}.
+              {`No email or SMS conversions in this window${
+                query.trim() || proof !== "all" || source !== "all"
+                  ? " match that filter"
+                  : ""
+              }.`}
             </p>
           ) : (
             <div className="lh-an-table-wrap lh-clog-table-wrap">
@@ -246,8 +314,8 @@ export function ConversionLogPanel() {
                     <th>Account</th>
                     <th>Contact</th>
                     <th>Type</th>
-                    <th>Source</th>
-                    <th>Subject</th>
+                    <th>Message</th>
+                    <th>Proof</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -285,24 +353,24 @@ export function ConversionLogPanel() {
                         </span>
                       </td>
                       <td>
-                        <span className="lh-an-name">{row.sendName}</span>
+                        <span className="lh-an-name">{row.content || row.sendName}</span>
                         <div className="lh-an-meta">
-                          {row.sendChannel === "flow"
-                            ? "Flow"
-                            : row.sendChannel === "thread"
-                              ? "On their thread"
-                              : "Campaign"}
-                          {row.emailTouchDay
-                            ? ` · touch ${prettyDay(row.emailTouchDay)}`
-                            : row.sendOn
-                              ? ` · sent ${prettyDay(row.sendOn)}`
-                              : ""}
+                          {sourceLabel(row.messageSource)}
+                          {row.campaign ? ` · ${row.campaign}` : ""}
+                          {row.subject && row.subject !== row.content
+                            ? ` · ${row.subject}`
+                            : ""}
                         </div>
                       </td>
                       <td>
-                        <span className="lh-clog-subject">
-                          {row.subject || "—"}
+                        <span className={`lh-proof is-${row.confidence}`}>
+                          {proofLabel(row)}
                         </span>
+                        {row.confidence === "inferred" && row.emailTouchDay ? (
+                          <div className="lh-an-meta">
+                            On thread {prettyDay(row.emailTouchDay)}
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

@@ -389,7 +389,7 @@ export function isOutboundMarketingTouchMessage(
   return true;
 }
 
-async function findConversationId(
+export async function findConversationId(
   locationId: string,
   contactId: string
 ): Promise<string | null> {
@@ -413,7 +413,7 @@ async function findConversationId(
   }
 }
 
-async function listConversationMessages(
+export async function listConversationMessages(
   locationId: string,
   conversationId: string
 ): Promise<Array<Record<string, unknown>>> {
@@ -514,6 +514,60 @@ async function confirmMarketingEmailOpened(
     }
   }
   return false;
+}
+
+/**
+ * Messages on this contact's conversation. Empty when GHL has no thread.
+ * Callers must still ignore rows whose contactId names someone else.
+ */
+export async function listContactThreadMessages(
+  locationId: string,
+  contactId: string
+): Promise<Array<Record<string, unknown>>> {
+  if (!contactId.trim()) return [];
+  const conversationId = await findConversationId(locationId, contactId);
+  if (!conversationId) return [];
+  try {
+    return await listConversationMessages(locationId, conversationId);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fill opened/read onto email rows that only say sent or delivered.
+ * Form-fill inference needs this — a thread email that was not opened does not count.
+ */
+export async function annotateMarketingEmailOpens(
+  locationId: string,
+  messages: Array<Record<string, unknown>>
+): Promise<Array<Record<string, unknown>>> {
+  const cache: EmailDetailCache = new Map();
+  const out: Array<Record<string, unknown>> = [];
+  for (const msg of messages) {
+    if (!isEmailMessage(msg) || marketingEmailWasOpened(msg)) {
+      out.push(msg);
+      continue;
+    }
+    if (!emailOpenNeedsLookup(msg)) {
+      out.push(msg);
+      continue;
+    }
+    const opened = await confirmMarketingEmailOpened(locationId, msg, cache);
+    if (!opened) {
+      out.push(msg);
+      continue;
+    }
+    out.push({
+      ...msg,
+      status: "opened",
+      openedAt:
+        pickString(msg.openedAt) ||
+        pickString(msg.dateAdded, msg.createdAt) ||
+        new Date(0).toISOString(),
+    });
+  }
+  return out;
 }
 
 function messageTouch(msg: Record<string, unknown>, day: string): EmailTouchRef {

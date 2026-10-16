@@ -39,8 +39,8 @@ async function authorized(request: Request): Promise<boolean> {
 }
 
 /**
- * One-shot / cron scan: which GHL-linked accounts have last-touch email →
- * booked appointment (and form fill) wins. Secured like other cron routes.
+ * One-shot / cron scan: UTM-confirmed and thread-verified email/SMS wins
+ * for every GHL-linked account except Trailhead. Secured like other cron routes.
  */
 export async function GET(request: Request) {
   if (!(await authorized(request))) {

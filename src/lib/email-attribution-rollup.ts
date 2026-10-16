@@ -1,16 +1,23 @@
 /**
- * Cross-account rollup: which Lifecycle clients have form fills / bookings
- * credited to a campaign or flow send (last-touch attribution).
+ * Cross-account rollup: which email or SMS drove form fills and bookings.
+ * UTM-confirmed first (Converted fields, then Latest/First attribution).
+ * Inferred rows are only messages verified on that contact's thread.
  */
 
 import {
   type AnalyticsPreset,
-  pullClientAttributionSummary,
   resolveAnalyticsRange,
 } from "./ghl-email-analytics";
 import { DEFAULT_ATTRIBUTION_DAYS } from "./email-conversion-attribution";
+import { pullLocationMessageAttribution } from "./ghl-utm-conversions";
 import { buildLifecycleHub } from "./lifecycle-hub";
 import { getRevClient } from "./revenue";
+import {
+  groupAttributionByContent,
+  isHipaaBlockedAccount,
+  summarizeAttributionRows,
+  type ContentGroup,
+} from "./utm-conversion-attribution";
 
 const ROLLUP_CONCURRENCY = 2;
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -21,6 +28,14 @@ export type AttributionRollupRow = {
   locationId: string;
   attributedAppointments: number;
   attributedFormFills: number;
+  confirmedAppointments: number;
+  confirmedFormFills: number;
+  inferredAppointments: number;
+  inferredFormFills: number;
+  emailAppointments: number;
+  emailFormFills: number;
+  smsAppointments: number;
+  smsFormFills: number;
   totalAppointments: number | null;
   totalFormFills: number | null;
   campaignSends: number;
@@ -39,7 +54,17 @@ export type AttributionRollup = {
   totals: {
     attributedAppointments: number;
     attributedFormFills: number;
+    confirmedAppointments: number;
+    confirmedFormFills: number;
+    inferredAppointments: number;
+    inferredFormFills: number;
+    emailAppointments: number;
+    emailFormFills: number;
+    smsAppointments: number;
+    smsFormFills: number;
   };
+  /** One row per email/SMS (Converted Content, or the verified thread message). */
+  pieces: ContentGroup[];
   /** Accounts with at least one attributed booking or form fill, richest first. */
   wins: AttributionRollupRow[];
   /** GHL-linked accounts with zero attributed conversions (or pull errors). */
@@ -51,11 +76,23 @@ type CacheEntry = { at: number; payload: AttributionRollup };
 
 const cache = new Map<string, CacheEntry>();
 
+function memberIsHipaa(clientId: string): boolean {
+  return isHipaaBlockedAccount(getRevClient(clientId)?.name || "");
+}
+
+/**
+ * Location for a hub card. Trailhead Family Chiropractic is never selected,
+ * even when it shares a group with another client.
+ */
 function resolveLocationId(clientId: string, memberIds: string[]): string | null {
   const ids = [clientId, ...memberIds.filter((id) => id && id !== clientId)];
   for (const id of ids) {
-    const loc = (getRevClient(id)?.ghl_location_id || "").trim();
-    if (loc) return loc;
+    if (memberIsHipaa(id)) continue;
+    const client = getRevClient(id);
+    const loc = (client?.ghl_location_id || "").trim();
+    if (!loc) continue;
+    if (isHipaaBlockedAccount(client?.name || "")) continue;
+    return loc;
   }
   return null;
 }
@@ -87,7 +124,9 @@ export function sortAttributionWins(
   b: AttributionRollupRow
 ): number {
   return (
+    b.confirmedAppointments - a.confirmedAppointments ||
     b.attributedAppointments - a.attributedAppointments ||
+    b.confirmedFormFills - a.confirmedFormFills ||
     b.attributedFormFills - a.attributedFormFills ||
     a.clientName.localeCompare(b.clientName)
   );
@@ -111,8 +150,22 @@ export function clearAttributionRollupCache(): void {
   cache.clear();
 }
 
+const EMPTY_COUNTS = {
+  attributedAppointments: 0,
+  attributedFormFills: 0,
+  confirmedAppointments: 0,
+  confirmedFormFills: 0,
+  inferredAppointments: 0,
+  inferredFormFills: 0,
+  emailAppointments: 0,
+  emailFormFills: 0,
+  smsAppointments: 0,
+  smsFormFills: 0,
+};
+
 /**
- * Scan every GHL-linked Lifecycle hub client and sum last-touch email wins.
+ * Scan every GHL-linked Lifecycle hub client except Trailhead (HIPAA).
+ * Confirmed UTM credit is preferred. Inferred credit is contact-thread only.
  */
 export async function pullAttributionRollup(options: {
   range?: AnalyticsPreset;
@@ -135,7 +188,7 @@ export async function pullAttributionRollup(options: {
 
   const hub = buildLifecycleHub();
   const targets = hub.clients
-    .filter((c) => c.ghlLinked)
+    .filter((c) => c.ghlLinked && !isHipaaBlockedAccount(c.name))
     .map((c) => {
       const locationId = resolveLocationId(c.id, c.memberIds || []);
       return locationId
@@ -148,41 +201,68 @@ export async function pullAttributionRollup(options: {
     locationId: string;
   }>;
 
-  const rows = await pooledMap(targets, ROLLUP_CONCURRENCY, async (target) => {
+  const scanned = await pooledMap(targets, ROLLUP_CONCURRENCY, async (target) => {
     try {
-      const summary = await pullClientAttributionSummary(
-        target.locationId,
+      const summary = await pullLocationMessageAttribution({
+        locationId: target.locationId,
+        clientName: target.clientName,
         start,
         end,
-        attributionDays
-      );
+        attributionDays,
+      });
+      if (summary.skipped === "hipaa") return null;
+      const counts = summarizeAttributionRows(summary.rows);
       return {
-        clientId: target.clientId,
-        clientName: target.clientName,
-        locationId: target.locationId,
-        attributedAppointments: summary.attributedAppointments,
-        attributedFormFills: summary.attributedFormFills,
-        totalAppointments: summary.totalAppointments,
-        totalFormFills: summary.totalFormFills,
-        campaignSends: summary.campaignSends,
-        flowSends: summary.flowSends,
-        error: summary.error,
-      } satisfies AttributionRollupRow;
+        row: {
+          clientId: target.clientId,
+          clientName: target.clientName,
+          locationId: target.locationId,
+          ...counts,
+          totalAppointments: summary.totalAppointments,
+          totalFormFills: summary.totalFormFills,
+          campaignSends: summary.campaignSends,
+          flowSends: summary.flowSends,
+          error: summary.error,
+        } satisfies AttributionRollupRow,
+        pieces: groupAttributionByContent(
+          summary.rows.map((piece) => ({
+            ...piece,
+            clientId: target.clientId,
+            clientName: target.clientName,
+          }))
+        ),
+      };
     } catch (err) {
       return {
-        clientId: target.clientId,
-        clientName: target.clientName,
-        locationId: target.locationId,
-        attributedAppointments: 0,
-        attributedFormFills: 0,
-        totalAppointments: null,
-        totalFormFills: null,
-        campaignSends: 0,
-        flowSends: 0,
-        error: err instanceof Error ? err.message : "Scan failed.",
-      } satisfies AttributionRollupRow;
+        row: {
+          clientId: target.clientId,
+          clientName: target.clientName,
+          locationId: target.locationId,
+          ...EMPTY_COUNTS,
+          totalAppointments: null,
+          totalFormFills: null,
+          campaignSends: 0,
+          flowSends: 0,
+          error: err instanceof Error ? err.message : "Scan failed.",
+        } satisfies AttributionRollupRow,
+        pieces: [] as ContentGroup[],
+      };
     }
   });
+
+  const present = scanned.filter(
+    (item): item is NonNullable<typeof item> => item !== null
+  );
+  const rows = present.map((item) => item.row);
+  const pieces = present
+    .flatMap((item) => item.pieces)
+    .sort(
+      (a, b) =>
+        b.appointments - a.appointments ||
+        b.formFills - a.formFills ||
+        a.content.localeCompare(b.content) ||
+        a.clientName.localeCompare(b.clientName)
+    );
 
   const { wins, others } = partitionAttributionRows(rows);
 
@@ -200,7 +280,22 @@ export async function pullAttributionRollup(options: {
         0
       ),
       attributedFormFills: rows.reduce((n, r) => n + r.attributedFormFills, 0),
+      confirmedAppointments: rows.reduce(
+        (n, r) => n + r.confirmedAppointments,
+        0
+      ),
+      confirmedFormFills: rows.reduce((n, r) => n + r.confirmedFormFills, 0),
+      inferredAppointments: rows.reduce(
+        (n, r) => n + r.inferredAppointments,
+        0
+      ),
+      inferredFormFills: rows.reduce((n, r) => n + r.inferredFormFills, 0),
+      emailAppointments: rows.reduce((n, r) => n + r.emailAppointments, 0),
+      emailFormFills: rows.reduce((n, r) => n + r.emailFormFills, 0),
+      smsAppointments: rows.reduce((n, r) => n + r.smsAppointments, 0),
+      smsFormFills: rows.reduce((n, r) => n + r.smsFormFills, 0),
     },
+    pieces,
     wins,
     others,
     cached: false,

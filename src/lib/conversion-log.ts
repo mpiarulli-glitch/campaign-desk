@@ -1,17 +1,24 @@
 /**
- * Cross-account conversion log — flat rows for every email-attributed
- * form fill / booking across GHL-linked Lifecycle accounts.
+ * Cross-account conversion log — one row per form fill or booking that an
+ * email or SMS drove. UTM-confirmed first. Inferred rows are messages verified
+ * on that contact's thread, never an account-level send.
  */
 
 import {
   type AnalyticsPreset,
   type EmailJourneyKind,
-  pullClientEmailJourneys,
   resolveAnalyticsRange,
 } from "./ghl-email-analytics";
 import { DEFAULT_ATTRIBUTION_DAYS } from "./email-conversion-attribution";
+import { pullLocationMessageAttribution } from "./ghl-utm-conversions";
 import { buildLifecycleHub } from "./lifecycle-hub";
 import { getRevClient } from "./revenue";
+import {
+  isHipaaBlockedAccount,
+  type AttributionBasis,
+  type AttributionConfidence,
+  type MessageSource,
+} from "./utm-conversion-attribution";
 
 const LOG_CONCURRENCY = 2;
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -28,10 +35,15 @@ export type ConversionLogRow = {
   formFilledAt: string | null;
   sendId: string;
   sendName: string;
-  sendChannel: "campaign" | "flow" | "thread";
+  sendChannel: "campaign" | "flow" | "thread" | "sms" | "utm";
   sendOn: string;
   subject: string | null;
   emailTouchDay: string | null;
+  confidence: AttributionConfidence;
+  basis: AttributionBasis;
+  messageSource: MessageSource;
+  campaign: string | null;
+  content: string;
 };
 
 export type ConversionLog = {
@@ -45,6 +57,10 @@ export type ConversionLog = {
   totals: {
     appointments: number;
     formFills: number;
+    confirmed: number;
+    inferred: number;
+    email: number;
+    sms: number;
   };
   rows: ConversionLogRow[];
   errors: Array<{ clientId: string; clientName: string; error: string }>;
@@ -58,7 +74,9 @@ const cache = new Map<string, CacheEntry>();
 function resolveLocationId(clientId: string, memberIds: string[]): string | null {
   const ids = [clientId, ...memberIds.filter((id) => id && id !== clientId)];
   for (const id of ids) {
-    const loc = (getRevClient(id)?.ghl_location_id || "").trim();
+    const client = getRevClient(id);
+    if (isHipaaBlockedAccount(client?.name || "")) continue;
+    const loc = (client?.ghl_location_id || "").trim();
     if (loc) return loc;
   }
   return null;
@@ -100,10 +118,26 @@ export function sortConversionLogRows(
 
 export function filterConversionLogRows(
   rows: ConversionLogRow[],
-  kind: "all" | EmailJourneyKind
+  kind: "all" | EmailJourneyKind,
+  extra: {
+    confidence?: "all" | AttributionConfidence;
+    source?: "all" | MessageSource;
+  } = {}
 ): ConversionLogRow[] {
-  if (kind === "all") return rows;
-  return rows.filter((row) => row.kind === kind);
+  return rows.filter((row) => {
+    if (kind !== "all" && row.kind !== kind) return false;
+    if (
+      extra.confidence &&
+      extra.confidence !== "all" &&
+      row.confidence !== extra.confidence
+    ) {
+      return false;
+    }
+    if (extra.source && extra.source !== "all" && row.messageSource !== extra.source) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export function clearConversionLogCache(): void {
@@ -111,8 +145,9 @@ export function clearConversionLogCache(): void {
 }
 
 /**
- * Scan every GHL-linked Lifecycle hub client and collect email-attributed
- * conversion rows (same honesty gate as Email → booked / Email → forms).
+ * Scan every GHL-linked Lifecycle hub client except Trailhead (HIPAA).
+ * Each row names the email or SMS, and whether that credit is UTM-confirmed
+ * or inferred from the contact's own thread.
  */
 export async function pullConversionLog(options: {
   range?: AnalyticsPreset;
@@ -137,7 +172,7 @@ export async function pullConversionLog(options: {
 
   const hub = buildLifecycleHub();
   const targets = hub.clients
-    .filter((c) => c.ghlLinked)
+    .filter((c) => c.ghlLinked && !isHipaaBlockedAccount(c.name))
     .map((c) => {
       const locationId = resolveLocationId(c.id, c.memberIds || []);
       return locationId
@@ -150,46 +185,80 @@ export async function pullConversionLog(options: {
     locationId: string;
   }>;
 
-  const kinds: EmailJourneyKind[] =
-    kind === "all" ? ["appointment", "form_fill"] : [kind];
-
   const errors: ConversionLog["errors"] = [];
   const collected = await pooledMap(targets, LOG_CONCURRENCY, async (target) => {
     const rows: ConversionLogRow[] = [];
     try {
-      for (const journeyKind of kinds) {
-        const result = await pullClientEmailJourneys(
-          target.locationId,
-          start,
-          end,
-          journeyKind,
-          attributionDays
-        );
-        for (const journey of result.journeys) {
-          rows.push({
-            id: [
-              target.clientId,
-              journey.kind,
-              journey.contactId || "unknown",
-              journey.conversionAt,
-              journey.sendId,
-            ].join(":"),
-            clientId: target.clientId,
-            clientName: target.clientName,
-            kind: journey.kind,
-            conversionAt: journey.conversionAt,
-            contactId: journey.contactId,
-            contactName: journey.contactName,
-            contactEmail: journey.contactEmail,
-            formFilledAt: journey.formFilledAt,
-            sendId: journey.sendId,
-            sendName: journey.sendName,
-            sendChannel: journey.sendChannel,
-            sendOn: journey.sendOn,
-            subject: journey.subject,
-            emailTouchDay: journey.emailTouchDay,
-          });
-        }
+      const result = await pullLocationMessageAttribution({
+        locationId: target.locationId,
+        clientName: target.clientName,
+        start,
+        end,
+        attributionDays,
+      });
+      if (result.skipped === "hipaa") return rows;
+      if (result.error) {
+        errors.push({
+          clientId: target.clientId,
+          clientName: target.clientName,
+          error: result.error,
+        });
+      }
+      const formDayByContact = new Map<string, string>();
+      for (const credit of result.rows) {
+        if (credit.kind !== "form_fill" || !credit.contactId) continue;
+        const prev = formDayByContact.get(credit.contactId);
+        if (!prev || credit.at > prev) formDayByContact.set(credit.contactId, credit.at);
+      }
+      for (const credit of result.rows) {
+        if (kind !== "all" && credit.kind !== kind) continue;
+        const sendChannel: ConversionLogRow["sendChannel"] =
+          credit.confidence === "confirmed"
+            ? credit.source === "sms"
+              ? "sms"
+              : "utm"
+            : credit.source === "sms"
+              ? "sms"
+              : credit.sendId
+                ? "campaign"
+                : "thread";
+        const formDay = credit.contactId
+          ? formDayByContact.get(credit.contactId) || null
+          : null;
+        rows.push({
+          id: [
+            target.clientId,
+            credit.kind,
+            credit.contactId || "unknown",
+            credit.at,
+            credit.content,
+            credit.basis,
+          ].join(":"),
+          clientId: target.clientId,
+          clientName: target.clientName,
+          kind: credit.kind,
+          conversionAt: credit.at,
+          contactId: credit.contactId,
+          contactName: credit.contactName,
+          contactEmail: credit.contactEmail,
+          formFilledAt:
+            credit.kind === "form_fill"
+              ? credit.at
+              : formDay && formDay <= credit.at
+                ? formDay
+                : null,
+          sendId: credit.sendId || `${credit.basis}:${credit.content}`,
+          sendName: credit.content,
+          sendChannel,
+          sendOn: credit.sendOn || credit.at,
+          subject: credit.subject,
+          emailTouchDay: credit.confidence === "inferred" ? credit.sendOn : null,
+          confidence: credit.confidence,
+          basis: credit.basis,
+          messageSource: credit.source,
+          campaign: credit.campaign,
+          content: credit.content,
+        });
       }
     } catch (err) {
       errors.push({
@@ -216,6 +285,10 @@ export async function pullConversionLog(options: {
     totals: {
       appointments: rows.filter((r) => r.kind === "appointment").length,
       formFills: rows.filter((r) => r.kind === "form_fill").length,
+      confirmed: rows.filter((r) => r.confidence === "confirmed").length,
+      inferred: rows.filter((r) => r.confidence === "inferred").length,
+      email: rows.filter((r) => r.messageSource === "email").length,
+      sms: rows.filter((r) => r.messageSource === "sms").length,
     },
     rows,
     errors: errors.sort((a, b) => a.clientName.localeCompare(b.clientName)),

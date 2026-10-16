@@ -5,8 +5,8 @@ import { useCallback, useState } from "react";
 import type { AnalyticsPreset } from "@/lib/ghl-email-analytics";
 import type { AttributionRollup } from "@/lib/email-attribution-rollup";
 import {
-  attributionHonestyLine,
   attributionPortfolioNote,
+  utmAttributionLine,
 } from "@/lib/attribution-copy";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
@@ -18,6 +18,14 @@ const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
 
 function fmt(n: number): string {
   return n.toLocaleString("en-US");
+}
+
+function proofLabel(confidence: "confirmed" | "inferred"): string {
+  return confidence === "confirmed" ? "Confirmed" : "Inferred";
+}
+
+function sourceLabel(source: "email" | "sms"): string {
+  return source === "sms" ? "SMS" : "Email";
 }
 
 function prettyRange(start: string, end: string): string {
@@ -77,7 +85,7 @@ export function AttributionRollupPanel({
     <section className="lh-card lh-analytics lh-attr-rollup lh-analytics-clean">
       <div className="lh-an-toolbar">
         <div className="lh-an-title">
-          <h3>Email wins</h3>
+          <h3>Email & SMS wins</h3>
           {data ? (
             <p className="lh-an-sub">
               {prettyRange(data.start, data.end)}
@@ -87,7 +95,7 @@ export function AttributionRollupPanel({
             </p>
           ) : (
             <p className="lh-an-sub">
-              Last-touch bookings and form fills after a send
+              Which email or SMS drove each form fill and booking
             </p>
           )}
         </div>
@@ -120,8 +128,10 @@ export function AttributionRollupPanel({
 
       {!data && !loading && !error ? (
         <p className="lh-card-note">
-          Scans every GHL-linked Lifecycle account. {attributionPortfolioNote()}{" "}
-          First run can take a few minutes.
+          Scans every GHL-linked Lifecycle account except Trailhead.{" "}
+          {attributionPortfolioNote()} UTM-confirmed conversions are read from
+          Converted fields, then Latest or First attribution. First run can
+          take a few minutes.
         </p>
       ) : null}
 
@@ -134,11 +144,7 @@ export function AttributionRollupPanel({
 
       {data ? (
         <div className="lh-an-body">
-          <p className="lh-an-accuracy">
-            {attributionHonestyLine(data.attributionDays)} Credit goes to the
-            last campaign or flow send. Scheduled sends with no real mail volume
-            stay out of the totals.
-          </p>
+          <p className="lh-an-accuracy">{utmAttributionLine(data.attributionDays)}</p>
 
           <div className="lh-an-band">
             <div className="lh-an-band-head">
@@ -149,27 +155,53 @@ export function AttributionRollupPanel({
             </div>
             <div className="lh-an-metrics" aria-label="Rollup totals">
               <div className="lh-an-metric">
-                <span>Email → booked</span>
-                <strong>{fmt(data.totals.attributedAppointments)}</strong>
-                <em>{data.attributionDays}-day last-touch</em>
+                <span>Confirmed booked</span>
+                <strong>{fmt(data.totals.confirmedAppointments)}</strong>
+                <em>UTM email or SMS</em>
               </div>
               <div className="lh-an-metric">
-                <span>Email → forms</span>
-                <strong>{fmt(data.totals.attributedFormFills)}</strong>
-                <em>Attributed form fills</em>
+                <span>Confirmed forms</span>
+                <strong>{fmt(data.totals.confirmedFormFills)}</strong>
+                <em>UTM email or SMS</em>
               </div>
               <div className="lh-an-metric">
-                <span>Accounts with wins</span>
-                <strong>{fmt(data.withWins)}</strong>
-                <em>{fmt(data.scanned)} scanned</em>
+                <span>Inferred</span>
+                <strong>
+                  {fmt(
+                    data.totals.inferredAppointments + data.totals.inferredFormFills
+                  )}
+                </strong>
+                <em>
+                  {fmt(data.totals.inferredAppointments)} booked ·{" "}
+                  {fmt(data.totals.inferredFormFills)} forms
+                </em>
+              </div>
+              <div className="lh-an-metric">
+                <span>Email</span>
+                <strong>
+                  {fmt(data.totals.emailAppointments + data.totals.emailFormFills)}
+                </strong>
+                <em>
+                  {fmt(data.totals.emailAppointments)} booked ·{" "}
+                  {fmt(data.totals.emailFormFills)} forms
+                </em>
+              </div>
+              <div className="lh-an-metric">
+                <span>SMS</span>
+                <strong>
+                  {fmt(data.totals.smsAppointments + data.totals.smsFormFills)}
+                </strong>
+                <em>
+                  {fmt(data.totals.smsAppointments)} booked ·{" "}
+                  {fmt(data.totals.smsFormFills)} forms
+                </em>
               </div>
             </div>
           </div>
 
           {data.wins.length === 0 ? (
             <p className="lh-empty">
-              No accounts with email-attributed bookings or form fills in this
-              window.
+              No accounts with email or SMS bookings or form fills in this window.
             </p>
           ) : (
             <div className="lh-an-table-wrap">
@@ -179,8 +211,9 @@ export function AttributionRollupPanel({
                     <th>Account</th>
                     <th>Booked</th>
                     <th>Forms</th>
+                    <th>Email</th>
+                    <th>SMS</th>
                     <th>All booked</th>
-                    <th>Sends</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -204,16 +237,26 @@ export function AttributionRollupPanel({
                       </td>
                       <td>
                         <strong>{fmt(row.attributedAppointments)}</strong>
+                        <div className="lh-an-meta">
+                          {fmt(row.confirmedAppointments)} confirmed ·{" "}
+                          {fmt(row.inferredAppointments)} inferred
+                        </div>
                       </td>
-                      <td>{fmt(row.attributedFormFills)}</td>
+                      <td>
+                        {fmt(row.attributedFormFills)}
+                        <div className="lh-an-meta">
+                          {fmt(row.confirmedFormFills)} confirmed ·{" "}
+                          {fmt(row.inferredFormFills)} inferred
+                        </div>
+                      </td>
+                      <td>
+                        {fmt(row.emailAppointments + row.emailFormFills)}
+                      </td>
+                      <td>{fmt(row.smsAppointments + row.smsFormFills)}</td>
                       <td>
                         {row.totalAppointments === null
                           ? "—"
                           : fmt(row.totalAppointments)}
-                      </td>
-                      <td>
-                        {fmt(row.campaignSends)} campaigns ·{" "}
-                        {fmt(row.flowSends)} flows
                       </td>
                     </tr>
                   ))}
@@ -229,7 +272,7 @@ export function AttributionRollupPanel({
                 className="btn btn-ghost btn-sm"
                 onClick={() => setShowOthers((v) => !v)}
               >
-                {showOthers ? "Hide" : "Show"} accounts with no email wins (
+                {showOthers ? "Hide" : "Show"} accounts with no email or SMS wins (
                 {fmt(data.others.length)})
               </button>
               {showOthers ? (
@@ -244,6 +287,60 @@ export function AttributionRollupPanel({
                   ))}
                 </ul>
               ) : null}
+            </div>
+          ) : null}
+
+          {data.pieces.length > 0 ? (
+            <div className="lh-attr-pieces">
+              <h4 className="lh-an-band-label">By email / SMS</h4>
+              <p className="lh-an-meta">
+                Grouped by the specific message (Converted Content, or the
+                message verified on the contact).
+              </p>
+              <div className="lh-an-table-wrap">
+                <table className="lh-an-table">
+                  <thead>
+                    <tr>
+                      <th>Message</th>
+                      <th>Source</th>
+                      <th>Campaign</th>
+                      <th>Proof</th>
+                      <th>Booked</th>
+                      <th>Forms</th>
+                      <th>Account</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.pieces.map((piece) => (
+                      <tr
+                        key={[
+                          piece.clientId,
+                          piece.content,
+                          piece.source,
+                          piece.campaign || "",
+                          piece.confidence,
+                        ].join(":")}
+                      >
+                        <td>
+                          <span className="lh-an-name">{piece.content}</span>
+                        </td>
+                        <td>{sourceLabel(piece.source)}</td>
+                        <td>{piece.campaign || "—"}</td>
+                        <td>
+                          <span
+                            className={`lh-proof is-${piece.confidence}`}
+                          >
+                            {proofLabel(piece.confidence)}
+                          </span>
+                        </td>
+                        <td>{fmt(piece.appointments)}</td>
+                        <td>{fmt(piece.formFills)}</td>
+                        <td>{piece.clientName}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : null}
         </div>

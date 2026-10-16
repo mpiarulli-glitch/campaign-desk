@@ -120,7 +120,7 @@ export default function LifecyclePage() {
                   className="btn btn-secondary btn-sm"
                   onClick={() => setTool("wins")}
                 >
-                  Email wins
+                  Email & SMS wins
                 </button>
                 <button
                   type="button"

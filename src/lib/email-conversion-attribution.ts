@@ -212,6 +212,8 @@ export function threadEmailLabel(touch: EmailTouchRef): string {
  *
  * Pass `touchByEventId` to require the credited send's subject to match the
  * email on that contact. A same-day blast with a different subject is skipped.
+ * Lifecycle Email & SMS wins always pass that touch. The date-only branch is
+ * not contact proof and must not be used for inferred credit.
  */
 export function attributeConversionsToJourneys(
   sends: AttributionSend[],
