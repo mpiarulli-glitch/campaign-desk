@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Poppins, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import "./hud.css";
+import "./email-revenue-hud.css";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 const inter = Inter({

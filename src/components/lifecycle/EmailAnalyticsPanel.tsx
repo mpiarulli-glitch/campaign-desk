@@ -18,6 +18,7 @@ import {
   attributionHonestyLine,
   attributionJourneySubtitle,
 } from "@/lib/attribution-copy";
+import { CountUp, RateRing, useHudTilt } from "./email-revenue-motion";
 
 const PRESETS: Array<{ id: AnalyticsPreset; label: string }> = [
   { id: "1m", label: "1 mo" },
@@ -41,13 +42,6 @@ function fmtMoney(n: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   });
-}
-
-function signedNet(n: number): string {
-  const abs = Math.abs(n).toLocaleString("en-US");
-  if (n > 0) return `+${abs}`;
-  if (n < 0) return `−${abs}`;
-  return "0";
 }
 
 function prettyRange(start: string, end: string): string {
@@ -275,6 +269,8 @@ export function EmailAnalyticsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canPull, preset]);
 
+  const tilt = useHudTilt();
+
   if (!canPull) {
     return (
       <section className="lh-card lh-analytics">
@@ -301,12 +297,21 @@ export function EmailAnalyticsPanel({
   const growth = data?.listGrowth;
 
   return (
-    <section className="lh-card lh-analytics lh-analytics-clean">
+    <section
+      className={`lh-card lh-analytics lh-analytics-clean lh-hud${
+        loading ? " is-refreshing" : ""
+      }`}
+    >
       <div className="lh-an-toolbar">
         <div className="lh-an-title">
           {title ?? <h3>Email &amp; revenue</h3>}
           {data ? (
-            <p className="lh-an-sub">{prettyRange(data.start, data.end)}</p>
+            <p className="lh-an-sub">
+              {prettyRange(data.start, data.end)}
+              <span className="lh-hud-beacon" aria-hidden="true">
+                <i /> Telemetry
+              </span>
+            </p>
           ) : (
             <p className="lh-an-sub">Outcomes and send health</p>
           )}
@@ -371,31 +376,54 @@ export function EmailAnalyticsPanel({
       {error ? <p className="lh-error">{error}</p> : null}
 
       {loading && !data ? (
-        <div className="lh-an-skeleton" aria-busy="true">
-          <div className="lh-skel" />
-          <div className="lh-skel" />
-          <div className="lh-skel" />
+        <div className="lh-an-skeleton lh-hud-skel" aria-busy="true" aria-label="Loading email analytics">
+          <div className="lh-hud-skel-metrics">
+            <span className="lh-skel" />
+            <span className="lh-skel" />
+            <span className="lh-skel" />
+            <span className="lh-skel" />
+            <span className="lh-skel" />
+          </div>
+          <div className="lh-hud-skel-metrics is-quiet">
+            <span className="lh-skel" />
+            <span className="lh-skel" />
+            <span className="lh-skel" />
+          </div>
+          <span className="lh-skel is-wide" />
+          <p className="lh-hud-uplink">Syncing telemetry</p>
         </div>
       ) : null}
 
       {data && totals ? (
-        <div className="lh-an-body">
+        <div className="lh-an-body" key={data.fetchedAt}>
           <div className="lh-an-band is-hero">
             <h4 className="lh-an-band-label">Outcomes</h4>
             <div className="lh-an-metrics is-hero" aria-label="Outcomes">
               {data.moneyMode === "commerce" && data.commerce ? (
                 <>
-                  <div className="lh-an-metric">
+                  <div className="lh-an-metric" {...tilt}>
                     <span>Store revenue</span>
-                    <strong>{fmtMoney(data.commerce.revenue)}</strong>
+                    <strong>
+                      <CountUp
+                        value={data.commerce.revenue}
+                        kind="money"
+                        replayKey={data.fetchedAt}
+                      />
+                    </strong>
                     <em>
                       {fmt(data.commerce.orders)} orders · AOV{" "}
                       {fmtMoney(data.commerce.aov)}
                     </em>
                   </div>
-                  <div className="lh-an-metric">
+                  <div className="lh-an-metric" {...tilt}>
                     <span>Orders</span>
-                    <strong>{fmt(data.commerce.orders)}</strong>
+                    <strong>
+                      <CountUp
+                        value={data.commerce.orders}
+                        kind="int"
+                        replayKey={data.fetchedAt}
+                      />
+                    </strong>
                     <em>{data.commerce.revenueSource}</em>
                   </div>
                 </>
@@ -404,6 +432,7 @@ export function EmailAnalyticsPanel({
                   <button
                     type="button"
                     className="lh-an-metric is-clickable"
+                    {...tilt}
                     onClick={() => void openJourneys("form_fill")}
                     disabled={!ghlLinked || attributed.forms <= 0 || loading}
                     title={
@@ -413,7 +442,13 @@ export function EmailAnalyticsPanel({
                     }
                   >
                     <span>Email → forms</span>
-                    <strong>{fmt(attributed.forms)}</strong>
+                    <strong>
+                      <CountUp
+                        value={attributed.forms}
+                        kind="int"
+                        replayKey={data.fetchedAt}
+                      />
+                    </strong>
                     <em>
                       {data.formFills === null
                         ? `${data.attributionDays}-day last-touch`
@@ -426,6 +461,7 @@ export function EmailAnalyticsPanel({
                   <button
                     type="button"
                     className="lh-an-metric is-clickable"
+                    {...tilt}
                     onClick={() => void openJourneys("appointment")}
                     disabled={
                       !ghlLinked || attributed.appointments <= 0 || loading
@@ -437,7 +473,13 @@ export function EmailAnalyticsPanel({
                     }
                   >
                     <span>Email → booked</span>
-                    <strong>{fmt(attributed.appointments)}</strong>
+                    <strong>
+                      <CountUp
+                        value={attributed.appointments}
+                        kind="int"
+                        replayKey={data.fetchedAt}
+                      />
+                    </strong>
                     <em>
                       {bookedSubtitle(data, attributed.appointments)}
                       {attributed.appointments > 0 ? (
@@ -447,12 +489,18 @@ export function EmailAnalyticsPanel({
                   </button>
                   {data.serviceMoney ? (
                     <>
-                      <div className="lh-an-metric">
+                      <div className="lh-an-metric" {...tilt}>
                         <span>Campaign $</span>
                         <strong>
-                          {data.serviceMoney.estimatedRevenue == null
-                            ? "—"
-                            : fmtMoney(data.serviceMoney.estimatedRevenue)}
+                          {data.serviceMoney.estimatedRevenue == null ? (
+                            "—"
+                          ) : (
+                            <CountUp
+                              value={data.serviceMoney.estimatedRevenue}
+                              kind="money"
+                              replayKey={data.fetchedAt}
+                            />
+                          )}
                         </strong>
                         <em>
                           {data.serviceMoney.ticket
@@ -460,12 +508,18 @@ export function EmailAnalyticsPanel({
                             : "Set a ticket to turn bookings into dollars"}
                         </em>
                       </div>
-                      <div className="lh-an-metric">
+                      <div className="lh-an-metric" {...tilt}>
                         <span>$ / email</span>
                         <strong>
-                          {data.serviceMoney.revenuePerEmail == null
-                            ? "—"
-                            : fmtMoney(data.serviceMoney.revenuePerEmail)}
+                          {data.serviceMoney.revenuePerEmail == null ? (
+                            "—"
+                          ) : (
+                            <CountUp
+                              value={data.serviceMoney.revenuePerEmail}
+                              kind="money"
+                              replayKey={data.fetchedAt}
+                            />
+                          )}
                         </strong>
                         <em>
                           {fmt(data.serviceMoney.sentEmails)} sent campaign
@@ -476,7 +530,10 @@ export function EmailAnalyticsPanel({
                   ) : null}
                 </>
               )}
-              <div className="lh-an-metric">
+              <div
+                className={`lh-an-metric${growth && growth.net > 0 ? " is-live" : ""}`}
+                {...tilt}
+              >
                 <span>List net</span>
                 <strong
                   className={
@@ -487,7 +544,15 @@ export function EmailAnalyticsPanel({
                       : undefined
                   }
                 >
-                  {growth ? signedNet(growth.net) : "—"}
+                  {growth ? (
+                    <CountUp
+                      value={growth.net}
+                      kind="net"
+                      replayKey={data.fetchedAt}
+                    />
+                  ) : (
+                    "—"
+                  )}
                 </strong>
                 <em>
                   {growth
@@ -503,19 +568,43 @@ export function EmailAnalyticsPanel({
           <div className="lh-an-band is-quiet">
             <h4 className="lh-an-band-label">Send health</h4>
             <div className="lh-an-metrics is-quiet" aria-label="Send health">
-              <div className="lh-an-metric">
+              <div className="lh-an-metric" {...tilt}>
                 <span>Delivered</span>
-                <strong>{fmt(totals.delivered || totals.sent)}</strong>
+                <strong>
+                  <CountUp
+                    value={totals.delivered || totals.sent}
+                    kind="int"
+                    replayKey={data.fetchedAt}
+                  />
+                </strong>
                 <em>{fmt(totals.sent)} sent</em>
               </div>
-              <div className="lh-an-metric">
+              <div className="lh-an-metric" {...tilt}>
                 <span>Open rate</span>
-                <strong>{fmtPct(totals.openRate)}</strong>
+                <div className="lh-hud-rate">
+                  <RateRing value={totals.openRate} />
+                  <strong>
+                    <CountUp
+                      value={totals.openRate}
+                      kind="pct"
+                      replayKey={data.fetchedAt}
+                    />
+                  </strong>
+                </div>
                 <em>Sent campaigns only</em>
               </div>
-              <div className="lh-an-metric">
+              <div className="lh-an-metric" {...tilt}>
                 <span>Click rate</span>
-                <strong>{fmtPct(totals.clickRate)}</strong>
+                <div className="lh-hud-rate">
+                  <RateRing value={totals.clickRate} />
+                  <strong>
+                    <CountUp
+                      value={totals.clickRate}
+                      kind="pct"
+                      replayKey={data.fetchedAt}
+                    />
+                  </strong>
+                </div>
                 <em>{fmt(totals.unsubscribed)} unsubs</em>
               </div>
             </div>
@@ -926,7 +1015,7 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
           role="img"
           aria-label="Weekly list growth versus unsubscribes"
         >
-          {growth.series.map((bucket) => {
+          {growth.series.map((bucket, index) => {
             const joined =
               bucket.contactsAdded === 1
                 ? "1 contact joined"
@@ -955,6 +1044,7 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
                         bucket.contactsAdded > 0 ? 8 : 3,
                         (bucket.contactsAdded / max) * 100
                       )}%`,
+                      animationDelay: `${0.2 + index * 0.045}s`,
                     }}
                   />
                   <div
@@ -964,6 +1054,7 @@ function GrowthChart({ growth }: { growth: ListGrowthStats }) {
                         bucket.unsubscribed > 0 ? 8 : 3,
                         (bucket.unsubscribed / max) * 100
                       )}%`,
+                      animationDelay: `${0.28 + index * 0.045}s`,
                     }}
                   />
                 </div>
