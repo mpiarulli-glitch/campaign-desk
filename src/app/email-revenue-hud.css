@@ -1,0 +1,567 @@
+/* Email & revenue holographic readout.
+   Scoped to .lh-hud so the rest of Lifecycle keeps the app's cards.
+   Motion is decorative: numbers, rates, and copy are unchanged. */
+
+.lh-hud {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background:
+    radial-gradient(
+      120% 80% at 0% 0%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 46%
+    ),
+    var(--bg-elevated);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 0 32px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.lh-hud::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.35;
+  mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
+}
+
+.lh-hud::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -100%;
+  height: 200%;
+  pointer-events: none;
+  z-index: 3;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 3px,
+    color-mix(in srgb, var(--accent) 18%, transparent) 3px 4px
+  );
+  opacity: 0.28;
+  animation: lh-hud-scan 10s linear infinite;
+}
+
+.lh-hud > :not(.modal-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes lh-hud-scan {
+  from { transform: translateY(0); }
+  to { transform: translateY(4px); }
+}
+
+.lh-hud .lh-an-toolbar {
+  align-items: center;
+}
+
+.lh-hud-beacon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-family: var(--font-readout), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.lh-hud-beacon i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: lh-hud-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes lh-hud-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+.lh-hud .lh-range {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.lh-hud .lh-range-btn.is-on {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.lh-hud .lh-an-band-label::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  vertical-align: 1px;
+}
+
+.lh-hud .lh-an-body > * {
+  animation: lh-hud-boot 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lh-hud .lh-an-body > *:nth-child(2) { animation-delay: 0.08s; }
+.lh-hud .lh-an-body > *:nth-child(3) { animation-delay: 0.14s; }
+.lh-hud .lh-an-body > *:nth-child(4) { animation-delay: 0.2s; }
+.lh-hud .lh-an-body > *:nth-child(5) { animation-delay: 0.26s; }
+.lh-hud .lh-an-body > *:nth-child(6) { animation-delay: 0.32s; }
+
+@keyframes lh-hud-boot {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+    filter: brightness(1.65);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    filter: none;
+  }
+}
+
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-hero,
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-quiet {
+  gap: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-hero {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric,
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-right: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-bottom: 0;
+  border-radius: 2px;
+  padding: 16px 14px 14px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) left 7px top 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 7px top 7px / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px top 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px top 7px / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 7px bottom 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 7px bottom 7px / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px bottom 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px bottom 7px / 1px 12px no-repeat,
+    color-mix(in srgb, var(--bg-elevated) 88%, var(--accent) 12%);
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--accent) 8%, transparent);
+  transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  overflow: hidden;
+}
+
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric {
+  padding: 12px 12px 10px;
+}
+
+.lh-hud .lh-an-metric:hover {
+  box-shadow:
+    inset 0 0 28px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 12px 28px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.lh-hud.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric.is-clickable:hover:not(:disabled) {
+  background:
+    linear-gradient(var(--accent), var(--accent)) left 7px top 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 7px top 7px / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px top 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px top 7px / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 7px bottom 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 7px bottom 7px / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px bottom 7px / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 7px bottom 7px / 1px 12px no-repeat,
+    color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+}
+
+.lh-hud .lh-an-metric.is-live::before {
+  content: "";
+  position: absolute;
+  width: 86px;
+  height: 86px;
+  right: -24px;
+  top: -28px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 72%,
+    color-mix(in srgb, var(--accent) 70%, transparent) 86%,
+    transparent 100%
+  );
+  opacity: 0.45;
+  animation: lh-hud-spin 4.8s linear infinite;
+  pointer-events: none;
+}
+
+.lh-hud.lh-analytics-clean .lh-an-metric > strong,
+.lh-hud .lh-hud-rate strong {
+  font-family: var(--font-readout), ui-monospace, monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme="dark"] .lh-hud.lh-analytics-clean .lh-an-metric > strong,
+html[data-theme="dark"] .lh-hud .lh-hud-rate strong {
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+html[data-theme="dark"] .lh-hud .lh-an-metric > strong.is-up,
+html[data-theme="dark"] .lh-hud .lh-an-metric > strong.is-up .lh-hud-count {
+  text-shadow: 0 0 14px color-mix(in srgb, var(--success) 55%, transparent);
+}
+
+.lh-hud .lh-an-metric.is-live > strong {
+  animation: lh-hud-net 2.6s ease-in-out infinite;
+}
+
+@keyframes lh-hud-net {
+  0%, 100% { text-shadow: 0 0 8px color-mix(in srgb, var(--success) 40%, transparent); }
+  50% { text-shadow: 0 0 18px color-mix(in srgb, var(--success) 80%, transparent); }
+}
+
+.lh-hud-count.is-counting {
+  animation: lh-hud-flicker 0.16s steps(2, end) infinite;
+}
+
+@keyframes lh-hud-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+.lh-hud-rate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+}
+
+.lh-hud-ring {
+  width: 52px;
+  height: 52px;
+  flex: none;
+}
+
+.lh-hud-ring-orbit,
+.lh-hud-ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 28%, transparent);
+  stroke-width: 1;
+}
+
+.lh-hud-ring-spin {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-dasharray: 10 14 3 46;
+  transform-origin: 26px 26px;
+  animation: lh-hud-spin 7.5s linear infinite;
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+
+.lh-hud-ring-value {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 26px 26px;
+  filter: drop-shadow(0 0 4px var(--accent));
+  animation: lh-hud-draw 1.05s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lh-hud-ring-core {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent));
+}
+
+@keyframes lh-hud-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes lh-hud-draw {
+  from { stroke-dashoffset: var(--ring-len); }
+  to { stroke-dashoffset: 0; }
+}
+
+.lh-hud .lh-an-growth,
+.lh-hud .lh-an-table-wrap,
+.lh-hud .lh-an-flow,
+.lh-hud .lh-an-tips li {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background:
+    linear-gradient(var(--accent), var(--accent)) left 6px top 6px / 10px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 6px top 6px / 1px 10px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 6px top 6px / 10px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 6px top 6px / 1px 10px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 6px bottom 6px / 10px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left 6px bottom 6px / 1px 10px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 6px bottom 6px / 10px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right 6px bottom 6px / 1px 10px no-repeat,
+    color-mix(in srgb, var(--bg-elevated) 94%, var(--accent));
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.lh-hud .lh-an-growth {
+  padding: 12px 12px 8px;
+}
+
+.lh-hud .lh-growth-chart {
+  position: relative;
+}
+
+.lh-hud .lh-growth-chart::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  width: 28%;
+  left: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    transparent
+  );
+  animation: lh-hud-sweep 1.5s ease-out 0.35s both;
+}
+
+@keyframes lh-hud-sweep {
+  from { transform: translateX(-30%); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateX(380%); opacity: 0; }
+}
+
+.lh-hud .lh-growth-bar {
+  transform-origin: center bottom;
+  animation: lh-hud-bar 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lh-hud .lh-growth-bar.is-join {
+  background-image: linear-gradient(
+    180deg,
+    #fff 0%,
+    var(--accent) 28%,
+    color-mix(in srgb, var(--accent) 35%, transparent) 100%
+  );
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.lh-hud .lh-growth-bar.is-leave {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+@keyframes lh-hud-bar {
+  from {
+    transform: scaleY(0);
+    opacity: 0.35;
+    filter: brightness(1.8);
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.lh-hud .lh-growth-col:hover .lh-growth-bar,
+.lh-hud .lh-growth-col:focus-visible .lh-growth-bar {
+  filter: brightness(1.28);
+}
+
+.lh-hud .lh-growth-tip {
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, #000);
+  color: var(--text);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.lh-hud .lh-growth-tip strong {
+  color: var(--accent-ink);
+}
+
+.lh-hud .lh-an-table th {
+  font-family: var(--font-readout), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--accent-ink);
+}
+
+.lh-hud .lh-an-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-hud .lh-an-flow {
+  margin-bottom: 8px;
+}
+
+.lh-hud .lh-an-flow-rank {
+  color: var(--accent-ink);
+  font-family: var(--font-readout), ui-monospace, monospace;
+}
+
+.lh-hud .lh-an-tips {
+  gap: 10px;
+}
+
+.lh-hud .lh-an-tips li {
+  padding: 12px 12px 12px 14px;
+}
+
+.lh-hud-skel {
+  position: relative;
+}
+
+.lh-hud-skel-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  grid-column: 1 / -1;
+}
+
+.lh-hud-skel-metrics.is-quiet {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lh-hud .lh-an-skeleton {
+  display: grid;
+  gap: 12px;
+}
+
+.lh-hud .lh-skel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--bg-soft) 80%, transparent) 20%,
+    color-mix(in srgb, var(--accent) 34%, var(--bg-elevated)) 42%,
+    color-mix(in srgb, var(--bg-soft) 80%, transparent) 64%
+  );
+  background-size: 220% 100%;
+  animation: lh-hud-shimmer 1.35s linear infinite;
+}
+
+.lh-hud .lh-skel::before,
+.lh-hud .lh-skel::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--accent);
+  opacity: 0.8;
+}
+
+.lh-hud .lh-skel::before {
+  top: 6px;
+  left: 6px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.lh-hud .lh-skel::after {
+  right: 6px;
+  bottom: 6px;
+  border-left: 0;
+  border-top: 0;
+}
+
+@keyframes lh-hud-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+.lh-hud-uplink {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--font-readout), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.lh-hud-uplink::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  animation: lh-hud-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes lh-hud-dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+.lh-hud.is-refreshing .lh-an-body::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28%;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 22%, transparent),
+    transparent
+  );
+  animation: lh-hud-refresh 1.35s linear infinite;
+}
+
+@keyframes lh-hud-refresh {
+  from { top: -30%; }
+  to { top: 110%; }
+}
+
+@media (max-width: 720px) {
+  .lh-hud.lh-analytics-clean .lh-an-metrics.is-hero .lh-an-metric,
+  .lh-hud.lh-analytics-clean .lh-an-metrics.is-quiet .lh-an-metric {
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  }
+
+  .lh-hud-skel-metrics.is-quiet {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-hud,
+  .lh-hud::before,
+  .lh-hud::after,
+  .lh-hud *,
+  .lh-hud *::before,
+  .lh-hud *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .lh-hud .lh-an-metric,
+  .lh-hud .lh-growth-bar {
+    transform: none !important;
+  }
+}
