@@ -355,12 +355,36 @@ function isBookedAppointment(event: Record<string, unknown>): boolean {
   return !["cancelled", "canceled", "deleted", "invalid", "noshow"].includes(status);
 }
 
-function eventBookedAt(event: Record<string, unknown>): string | null {
-  return (
-    ymd(String(event.dateAdded || "")) ||
-    ymd(String(event.createdAt || "")) ||
-    ymd(String(event.startTime || ""))
-  );
+/**
+ * When the contact booked. Full timestamp, never the appointment start.
+ * Reminders ("starts in 10 minutes", "is tomorrow") go out after this.
+ */
+export function bookingCreatedAt(event: Record<string, unknown>): string | null {
+  const candidates = [
+    event.dateAdded,
+    event.createdAt,
+    event.dateCreated,
+    event.date_added,
+    event.created_at,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return new Date(value).toISOString();
+    }
+    if (typeof value === "string" && value.trim()) {
+      const ms = Date.parse(value.trim());
+      if (Number.isFinite(ms)) return new Date(ms).toISOString();
+    }
+  }
+  return null;
+}
+
+function appointmentStartDay(event: Record<string, unknown>): string | null {
+  const raw = event.startTime ?? event.start_time;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return new Date(raw).toISOString().slice(0, 10);
+  }
+  return ymd(typeof raw === "string" ? raw : "");
 }
 
 /** Booked calendar events with contact ids — used for attribution + recovery. */
@@ -418,8 +442,12 @@ export async function listBookedAppointmentEvents(
   const out: BookedAppointmentEvent[] = [];
   for (const { event, calendarId, calendarName } of unique.values()) {
     if (!isBookedAppointment(event)) continue;
-    const at = eventBookedAt(event);
-    if (!inRange(at, start, end)) continue;
+    const created = bookingCreatedAt(event);
+    // Range membership can use the appointment day when GHL omitted a created
+    // time. Inferred credit still requires `at` to be the created timestamp.
+    const day = (created ? created.slice(0, 10) : null) || appointmentStartDay(event);
+    if (!inRange(day, start, end)) continue;
+    const at = created || day;
     const resolvedCalendarId = String(
       event.calendarId || event.calendar_id || calendarId || ""
     );

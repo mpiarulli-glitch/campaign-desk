@@ -65,6 +65,7 @@ export async function GET(request: Request) {
       range,
       attributionDays: DEFAULT_ATTRIBUTION_DAYS,
       refresh: url.searchParams.get("refresh") === "1",
+      wait: true,
     });
     return NextResponse.json(payload);
   } catch (err) {

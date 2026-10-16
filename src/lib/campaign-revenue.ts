@@ -158,6 +158,7 @@ export async function pullCampaignRevenueBoard(options: {
   const { start, end } = calendarMonthBounds(month);
   const attributionDays = options.attributionDays ?? DEFAULT_ATTRIBUTION_DAYS;
   const rollup = await pullAttributionRollup({
+    wait: true,
     range: "custom",
     from: start,
     to: end,

@@ -13,7 +13,11 @@
  */
 
 import { ghlRequest } from "./ghl";
-import type { ConversionEvent, EmailTouchRef } from "./email-conversion-attribution";
+import {
+  DEFAULT_ATTRIBUTION_DAYS,
+  type ConversionEvent,
+  type EmailTouchRef,
+} from "./email-conversion-attribution";
 
 const DAY_MS = 86_400_000;
 const TOUCH_CONCURRENCY = 4;
@@ -252,6 +256,27 @@ export function isTransactionalEmailContent(text: unknown): boolean {
     return true;
   }
   if (/\b(reminder|reschedul)/.test(s) && /\b(appointment|consultation|estimate|meeting|booking)\b/.test(s)) {
+    return true;
+  }
+  // Reminders often omit the word "reminder": "your appointment starts in 10
+  // minutes", "your appointment is tomorrow".
+  if (
+    /\b(appointment|consultation|estimate|meeting|booking)\b/.test(s) &&
+    /\b(starts?|begins?|is)\s+in\s+\d+\s+(minutes?|hours?)\b/.test(s)
+  ) {
+    return true;
+  }
+  if (
+    /\b(appointment|consultation|estimate|meeting)\s+is\s+(tomorrow|today|tonight)\b/.test(
+      s
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(don'?t forget|coming up|see you)\b/.test(s) &&
+    /\b(appointment|consultation|estimate|meeting)\b/.test(s)
+  ) {
     return true;
   }
   return false;
@@ -535,38 +560,79 @@ export async function listContactThreadMessages(
 }
 
 /**
+ * Emails whose open state can change form-fill credit.
+ * Only an outbound marketing email inside the attribution window of a form
+ * needs a detail lookup. Older thread mail, SMS, and rows already marked
+ * opened stay as they are.
+ */
+export function emailsNeedingOpenLookup(
+  messages: Array<Record<string, unknown>>,
+  formFilledAts: string[],
+  attributionDays = DEFAULT_ATTRIBUTION_DAYS
+): Array<Record<string, unknown>> {
+  const forms = formFilledAts.filter((at) => Boolean(ymd(at)));
+  if (forms.length === 0) return [];
+  return messages.filter((msg) => {
+    if (!emailOpenNeedsLookup(msg)) return false;
+    if (!isOutboundMarketingTouchMessage(msg, { strict: true })) return false;
+    const rawAt = String(msg.dateAdded || msg.createdAt || "");
+    if (!rawAt) return false;
+    return forms.some((formAt) => {
+      if (!outboundEmailIsBefore(rawAt, formAt)) return false;
+      const before = ymd(formAt);
+      const day = ymd(rawAt);
+      if (!before || !day) return false;
+      const lag = dayDiff(before, day);
+      return lag >= 0 && lag <= attributionDays;
+    });
+  });
+}
+
+/**
  * Fill opened/read onto email rows that only say sent or delivered.
  * Form-fill inference needs this — a thread email that was not opened does not count.
+ *
+ * Pass `formFilledAts` to look up only messages that could credit one of those
+ * forms. Without it, every eligible email on the thread is checked.
  */
 export async function annotateMarketingEmailOpens(
   locationId: string,
-  messages: Array<Record<string, unknown>>
+  messages: Array<Record<string, unknown>>,
+  options: { formFilledAts?: string[]; attributionDays?: number } = {}
 ): Promise<Array<Record<string, unknown>>> {
   const cache: EmailDetailCache = new Map();
-  const out: Array<Record<string, unknown>> = [];
-  for (const msg of messages) {
-    if (!isEmailMessage(msg) || marketingEmailWasOpened(msg)) {
-      out.push(msg);
-      continue;
-    }
-    if (!emailOpenNeedsLookup(msg)) {
-      out.push(msg);
-      continue;
-    }
+  const limited =
+    options.formFilledAts != null
+      ? new Set(
+          emailsNeedingOpenLookup(
+            messages,
+            options.formFilledAts,
+            options.attributionDays
+          )
+        )
+      : null;
+  const pendingIndexes: number[] = [];
+  messages.forEach((msg, index) => {
+    if (limited && !limited.has(msg)) return;
+    if (!isEmailMessage(msg) || marketingEmailWasOpened(msg)) return;
+    if (!emailOpenNeedsLookup(msg)) return;
+    pendingIndexes.push(index);
+  });
+
+  const out = messages.slice();
+  await pooled(pendingIndexes, async (index) => {
+    const msg = messages[index];
     const opened = await confirmMarketingEmailOpened(locationId, msg, cache);
-    if (!opened) {
-      out.push(msg);
-      continue;
-    }
-    out.push({
+    if (!opened) return;
+    out[index] = {
       ...msg,
       status: "opened",
       openedAt:
         pickString(msg.openedAt) ||
         pickString(msg.dateAdded, msg.createdAt) ||
         new Date(0).toISOString(),
-    });
-  }
+    };
+  });
   return out;
 }
 
