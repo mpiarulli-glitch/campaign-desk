@@ -12,6 +12,7 @@ import {
   SERVICE,
   asPerson,
   forcePersonRefresh,
+  getConnection,
   hasConnection,
   personAccessToken,
   type BcIdentity,
@@ -147,6 +148,15 @@ export function getServiceIdentity(): ServiceIdentity | null {
 
 function saveServiceIdentity(id: ServiceIdentity): void {
   setSetting("basecamp_service_identity", JSON.stringify(id));
+}
+
+// The Basecamp name a roster error should blame. The service connection is the
+// mascot account; a person connection is whoever pressed the button.
+export function basecampActorName(identity: BcIdentity = SERVICE): string {
+  if (identity.kind === "person") {
+    return getConnection(identity.slug)?.bc_name?.trim() || identity.slug;
+  }
+  return getServiceIdentity()?.name?.trim() || "King Kashflow";
 }
 
 export function authorizeUrl(redirectUri: string): string {
@@ -461,26 +471,88 @@ function asBcPerson(p: {
   };
 }
 
+export interface ProjectRoster {
+  people: BcPerson[];
+  // HTTP status of the request that came back empty. Null when Basecamp
+  // answered 200 with nobody, or the call never got a response.
+  status: number | null;
+}
+
+type PeoplePayload = {
+  id?: number;
+  name?: string;
+  email_address?: string;
+  client?: boolean;
+  employee?: boolean;
+  attachable_sgid?: string;
+};
+
 // People with access to a project. Used to resolve a contact / account manager
 // (given as an email or name) to the Basecamp person id we tag on a card.
+// A 403 from an account that is not on the project used to collapse into []
+// and read as "this project has no people".
 export async function getProjectPeople(
   projectId: string,
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
-  if (!projectId) return [];
+  return (await readProjectPeople(projectId, identity)).people;
+}
+
+async function readProjectPeople(
+  projectId: string,
+  identity: BcIdentity
+): Promise<ProjectRoster> {
+  const id = extractProjectId(projectId);
+  if (!id) return { people: [], status: null };
+  const failure: CollectionFailure = { status: null };
   try {
-    const arr = await bcCollection<{
-      id?: number;
-      name?: string;
-      email_address?: string;
-      client?: boolean;
-      employee?: boolean;
-      attachable_sgid?: string;
-    }>(`/projects/${projectId}/people.json`, PROJECT_PEOPLE_MAX_PAGES, identity);
-    return arr.map(asBcPerson).filter((person): person is BcPerson => person !== null);
+    const arr = await bcCollection<PeoplePayload>(
+      `/projects/${id}/people.json`,
+      PROJECT_PEOPLE_MAX_PAGES,
+      identity,
+      failure
+    );
+    const people = arr
+      .map(asBcPerson)
+      .filter((person): person is BcPerson => person !== null);
+    return { people, status: people.length ? null : failure.status };
   } catch {
-    return [];
+    return { people: [], status: failure.status };
   }
+}
+
+// What to show when the approval picker cannot list anyone. Names the account
+// that was asked, the project id that was stored, and what to do about it.
+export function emptyProjectRosterReason(input: {
+  status: number | null;
+  projectId: string;
+  accountName: string;
+  clientName?: string;
+  serviceAccount?: boolean;
+  // The panel can still offer a typed contact. A failed send should not tell
+  // the sender to send again in the same sentence.
+  duringSend?: boolean;
+}): string {
+  const who = input.accountName.trim() || "King Kashflow";
+  const projectId = input.projectId.trim() || "unknown";
+  const client = (input.clientName || "").trim();
+  const project = client ? `project ${projectId} (${client})` : `project ${projectId}`;
+  const fallback = input.duringSend
+    ? " The approval was not posted."
+    : " You can still send using the contact below. Change the name or email if it should go to someone else.";
+  const connect = input.serviceAccount
+    ? " If you are already on that project, connect your own Basecamp account and this list will load as you."
+    : "";
+  if (input.status === 401) {
+    return `The Basecamp login for ${who} needs to be reconnected before people can load from ${project}.${connect}${fallback}`;
+  }
+  if (input.status === 403 || input.status === 404) {
+    return `${who} is not a member of Basecamp ${project}, so the roster came back empty. Add ${who} to that project in Basecamp.${connect}${fallback}`;
+  }
+  if (input.status) {
+    return `Basecamp returned ${input.status} for ${project}, so nobody could be listed.${connect}${fallback}`;
+  }
+  return `Nobody came back for Basecamp ${project}. Check the project id, and that ${who} is a member of it.${connect}${fallback}`;
 }
 
 export async function listPingablePeople(
@@ -534,21 +606,31 @@ export function mergePingableDetails(
 // mentions silently degraded to plain text. /circles/people.json ("pingable")
 // carries both for the whole account, so the two are merged: membership comes
 // from the project, contact details from pingable.
+export async function getProjectRosterForMention(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<ProjectRoster> {
+  const loaded = await readProjectPeople(projectId, identity);
+  if (!loaded.people.length) return loaded;
+  try {
+    const pingable = await listPingablePeople(identity);
+    if (!pingable.length) return loaded;
+    return {
+      people: mergePingableDetails(loaded.people, pingable),
+      status: null,
+    };
+  } catch {
+    // Enrichment is best effort. Falling back to the plain roster keeps the card
+    // going out, just without an email match or a real mention.
+    return loaded;
+  }
+}
+
 export async function getProjectPeopleForMention(
   projectId: string,
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
-  const members = await getProjectPeople(projectId, identity);
-  if (!members.length) return members;
-  try {
-    const pingable = await listPingablePeople(identity);
-    if (!pingable.length) return members;
-    return mergePingableDetails(members, pingable);
-  } catch {
-    // Enrichment is best effort. Falling back to the plain roster keeps the card
-    // going out, just without an email match or a real mention.
-    return members;
-  }
+  return (await getProjectRosterForMention(projectId, identity)).people;
 }
 
 // Rich-text @-mention markup for a person, to embed directly in card content.
@@ -662,16 +744,20 @@ export function matchPeople(people: BcPerson[], identifiers: string[]): number[]
 
 /* ------------------------------------------------------------------ todos */
 
+type CollectionFailure = { status: number | null };
+
 // Basecamp paginates collections at 50 per page and advertises the next page
 // in a Link header. Follow it, but cap the walk so one enormous todo list can't
 // stall the forecast picker. A timed-out or failed page just ends the walk
 // early with whatever was already fetched, rather than throwing — this runs
 // inside Promise.all fan-outs where one bad request must not blank out every
-// other list's results.
+// other list's results. The first-page status is recorded so an empty roster
+// can tell "not a member" from "this project has no people".
 async function bcCollection<T>(
   path: string,
   maxPages = 4,
-  identity: BcIdentity = SERVICE
+  identity: BcIdentity = SERVICE,
+  failure?: CollectionFailure
 ): Promise<T[]> {
   const out: T[] = [];
   let next: string | null = path;
@@ -682,9 +768,15 @@ async function bcCollection<T>(
     } catch {
       break;
     }
-    if (!res.ok) break;
+    if (!res.ok) {
+      if (failure && out.length === 0) failure.status = res.status;
+      break;
+    }
     const batch = await res.json();
-    if (!Array.isArray(batch)) break;
+    if (!Array.isArray(batch)) {
+      if (failure && out.length === 0) failure.status = res.status;
+      break;
+    }
     out.push(...(batch as T[]));
     const link = res.headers.get("Link") || "";
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
@@ -2240,11 +2332,19 @@ async function loadDeliverablesBoard(
   projectId: string,
   identity: BcIdentity
 ): Promise<{ ok: true; board: DeliverablesBoard } | { ok: false; error: string }> {
-  const projectRes = await bc(`/projects/${projectId}.json`, undefined, identity);
+  const id = extractProjectId(projectId) || projectId.trim();
+  const projectRes = await bc(`/projects/${id}.json`, undefined, identity);
   if (!projectRes.ok) {
+    const who = basecampActorName(identity);
+    const status = projectRes.status;
     return {
       ok: false,
-      error: `Basecamp project lookup failed (${projectRes.status}).`,
+      error:
+        status === 403 || status === 404
+          ? `${who} cannot open Basecamp project ${id} (${status}). Add ${who} to that project in Basecamp, then try again.`
+          : status === 401
+            ? `The Basecamp login for ${who} needs to be reconnected.`
+            : `Basecamp project lookup failed (${status}).`,
     };
   }
   const project = await projectRes.json();
@@ -2446,7 +2546,20 @@ export async function sendApprovalToDeliverables(input: {
     // The enriched roster: /projects/{id}/people.json returns no email_address
     // and no attachable_sgid, so matching a client by email could never succeed
     // and any mention degraded to plain text.
-    const people = await getProjectPeopleForMention(input.projectId, identity);
+    const roster = await getProjectRosterForMention(input.projectId, identity);
+    const people = roster.people;
+    if (!people.length) {
+      return {
+        ok: false,
+        error: emptyProjectRosterReason({
+          status: roster.status,
+          projectId: extractProjectId(input.projectId) || input.projectId,
+          accountName: basecampActorName(identity),
+          serviceAccount: identity.kind === "service",
+          duringSend: true,
+        }),
+      };
+    }
     // Email first, then an exact full name, and nobody otherwise. No substring
     // matching: a contact called "Michael" would otherwise match whichever
     // Michael sits first in the roster, and on a live project that is as likely

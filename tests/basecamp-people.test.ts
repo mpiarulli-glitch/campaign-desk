@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergePingableDetails, type BcPerson } from "../src/lib/basecamp";
+import {
+  emptyProjectRosterReason,
+  mergePingableDetails,
+  type BcPerson,
+} from "../src/lib/basecamp";
 
 function person(partial: Partial<BcPerson> & Pick<BcPerson, "id" | "name">): BcPerson {
   return {
@@ -38,6 +42,29 @@ test("mergePingableDetails copies client flag and mention token from pingable", 
   assert.equal(merged[1].client, true);
   assert.equal(merged[1].email_address, "brandon@hendos.test");
   assert.equal(merged[1].attachable_sgid, "sgid-brandon");
+});
+
+test("an empty roster names the account, the project, and how to send anyway", () => {
+  const refused = emptyProjectRosterReason({
+    status: 403,
+    projectId: "49198430",
+    accountName: "King Kashflow",
+    clientName: "FloorCo Design",
+    serviceAccount: true,
+  });
+  assert.match(refused, /King Kashflow is not a member of Basecamp project 49198430 \(FloorCo Design\)/);
+  assert.match(refused, /Add King Kashflow to that project/);
+  assert.match(refused, /connect your own Basecamp account/);
+  assert.match(refused, /You can still send using the contact below/);
+
+  const empty = emptyProjectRosterReason({
+    status: null,
+    projectId: "48403041",
+    accountName: "King Kashflow",
+    clientName: "Black's Shutters",
+  });
+  assert.match(empty, /Nobody came back for Basecamp project 48403041/);
+  assert.match(empty, /King Kashflow is a member/);
 });
 
 test("mergePingableDetails leaves unmatched members unchanged", () => {

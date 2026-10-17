@@ -2785,6 +2785,23 @@ button {
   line-height: 1.5;
 }
 
+.bc-roster-error {
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(196, 137, 0, 0.35);
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bc-manual-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* Everything the panel knows, stacked as one quiet block instead of four
    loose paragraphs at four different colours. */
 .bc-facts {
