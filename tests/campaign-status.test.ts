@@ -5,15 +5,69 @@ import os from "os";
 import path from "path";
 import {
   OPERATOR_STATUS_OPTIONS,
+  STATUS_BUCKETS,
   isInternallyApproved,
   matchesCampaignStatusFilter,
+  matchesStatusBucket,
   operatorStatusLabel,
   operatorStatusValue,
   statusAfterMarkRevisionDone,
   statusAfterReviewerComment,
   statusAfterReviewLinkView,
+  statusBucketId,
   storedStatusForOperatorChoice,
 } from "../src/lib/campaign-status";
+import { pickDisplayedSendAt } from "../src/lib/send-display";
+
+test("every operator status sits in one plain-language bucket", () => {
+  for (const opt of OPERATOR_STATUS_OPTIONS) {
+    const hits = STATUS_BUCKETS.filter((b) => b.values.includes(opt.value));
+    assert.equal(hits.length, 1, opt.value);
+  }
+  assert.equal(statusBucketId("draft"), "in_progress");
+  assert.equal(statusBucketId("needs_changes"), "in_progress");
+  assert.equal(statusBucketId("approved", "internal"), "in_progress");
+  assert.equal(statusBucketId("in_review"), "waiting");
+  assert.equal(statusBucketId("approved", "client"), "ready");
+  assert.equal(statusBucketId("scheduled"), "ready");
+  assert.equal(statusBucketId("sent"), "sent");
+  assert.equal(statusBucketId("live"), "sent");
+  assert.equal(
+    matchesStatusBucket({ status: "in_review" }, "waiting"),
+    true
+  );
+  assert.equal(
+    matchesStatusBucket({ status: "in_review" }, "in_progress"),
+    false
+  );
+  assert.equal(matchesStatusBucket({ status: "draft" }, "all"), true);
+});
+
+test("list send date prefers the next upcoming instant", () => {
+  const now = "2026-10-17T00:00:00.000Z";
+  assert.deepEqual(
+    pickDisplayedSendAt(
+      ["2026-09-01T00:00:00.000Z", "2026-10-22T16:00:00.000Z", null],
+      now
+    ),
+    { at: "2026-10-22T16:00:00.000Z", upcoming: true }
+  );
+  assert.deepEqual(
+    pickDisplayedSendAt(
+      ["2026-10-28T15:00:00.000Z", "2026-11-03T16:00:00.000Z"],
+      now
+    ),
+    { at: "2026-10-28T15:00:00.000Z", upcoming: true }
+  );
+  assert.deepEqual(
+    pickDisplayedSendAt(["2026-04-10T16:00:00.000Z", "2026-07-15T16:00:00.000Z"], now),
+    { at: "2026-07-15T16:00:00.000Z", upcoming: false }
+  );
+  assert.deepEqual(pickDisplayedSendAt([null, ""], now), {
+    at: null,
+    upcoming: false,
+  });
+});
 
 test("operator status options use Sent for approval and workflow order", () => {
   assert.deepEqual(

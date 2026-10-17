@@ -21,6 +21,64 @@ export const OPERATOR_STATUS_OPTIONS = [
 export type OperatorCampaignStatus =
   (typeof OPERATOR_STATUS_OPTIONS)[number]["value"];
 
+// Plain groups for the campaigns list. The precise status still shows on each
+// row; these only decide which rows a "where is this?" filter keeps.
+// Needs Changes is in progress because the team is the one acting on the
+// client's notes. Waiting on client is only "Sent for approval".
+export type StatusBucketId = "in_progress" | "waiting" | "ready" | "sent";
+
+export const STATUS_BUCKETS: {
+  id: StatusBucketId;
+  label: string;
+  values: readonly OperatorCampaignStatus[];
+}[] = [
+  {
+    id: "in_progress",
+    label: "In progress",
+    values: [
+      "draft",
+      "internal_review",
+      "needs_revisions_internal",
+      "approved_internally",
+      "needs_changes",
+    ],
+  },
+  {
+    id: "waiting",
+    label: "Waiting on client",
+    values: ["in_review"],
+  },
+  {
+    id: "ready",
+    label: "Ready to send",
+    values: ["approved", "scheduled"],
+  },
+  {
+    id: "sent",
+    label: "Sent",
+    values: ["sent", "live"],
+  },
+];
+
+export function statusBucketId(
+  status: string,
+  approvedChannel?: string | null
+): StatusBucketId | null {
+  const value = operatorStatusValue(status, approvedChannel);
+  const bucket = STATUS_BUCKETS.find((b) =>
+    (b.values as readonly string[]).includes(value)
+  );
+  return bucket?.id ?? null;
+}
+
+export function matchesStatusBucket(
+  campaign: { status: string; approved_channel?: string | null },
+  bucket: StatusBucketId | "all"
+): boolean {
+  if (bucket === "all") return true;
+  return statusBucketId(campaign.status, campaign.approved_channel) === bucket;
+}
+
 export type ReviewerChannel = "internal" | "external";
 
 export const OPERATOR_STATUS_VALUES = OPERATOR_STATUS_OPTIONS.map(
