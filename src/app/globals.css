@@ -23585,3 +23585,426 @@ a.snap-todo-linked-title {
   .stark-core { width: 84px; height: 84px; }
   .stark-core .deck-core-read b { font-size: 18px; }
 }
+
+/* Campaigns list. Scoped so the rest of the app, including the old campaign
+   cards on the whiteboard, stays as it is. */
+.clist {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.clist-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 4px;
+}
+
+.clist-sub {
+  margin: 8px 0 0;
+  max-width: 48ch;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+.clist-total {
+  margin: 0;
+  text-align: right;
+  flex: none;
+}
+
+.clist-total b {
+  display: block;
+  font-family: var(--font-head);
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.clist-total span {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.clist-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(140px, 1fr)) auto;
+  gap: 12px 14px;
+  align-items: end;
+}
+
+.clist-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clist-field > span,
+.clist-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.clist .campaign-filter-select,
+.clist-search input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.clist .campaign-filter-select {
+  padding-right: 32px;
+}
+
+.clist-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.clist-more.is-open,
+.clist-more.has-extra {
+  border-color: rgba(0, 212, 232, 0.55);
+  color: var(--accent-ink);
+}
+
+.clist-more-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-tint);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.clist-hint {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.clist-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.clist-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.clist-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.clist-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-ink);
+}
+
+.clist-updated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.clist-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.clist-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.clist-chip,
+.clist-clear {
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 0;
+}
+
+.clist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.clist-chip span {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.clist-table {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.clist-cols,
+.clist-row {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.85fr)
+    minmax(160px, 1.5fr)
+    auto
+    minmax(108px, 0.7fr)
+    minmax(88px, 0.55fr)
+    auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 13px 16px;
+}
+
+.clist-cols-head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.clist-row {
+  color: inherit;
+  border-top: 1px solid var(--border);
+  text-decoration: none;
+}
+
+.clist-table .clist-row:first-of-type {
+  border-top: 0;
+}
+
+.clist-row:hover {
+  background: var(--bg-soft);
+  color: inherit;
+}
+
+.clist-client {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clist-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.clist-name {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clist-note,
+.clist-quiet,
+.clist-send-k {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.clist-send-k {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.clist-send,
+.clist-count-cell {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.clist-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.clist-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clist-rename input {
+  flex: 1;
+  min-width: 0;
+}
+
+.stark .clist-sub,
+.stark .clist-hint,
+.stark .clist-note,
+.stark .clist-quiet,
+.stark .clist-send-k,
+.stark .clist-field > span,
+.stark .clist-field-label,
+.stark .clist-total span,
+.stark .clist-cols-head {
+  color: rgba(232, 238, 244, 0.62);
+}
+
+.stark .clist-total b,
+.stark .clist-name,
+.stark .clist-client,
+.stark .clist-send,
+.stark .clist-count-cell {
+  color: #f7fbff;
+}
+
+.stark .clist-more,
+.stark .clist-panel,
+.stark .clist-table,
+.stark .clist-chip {
+  background: rgba(6, 12, 18, 0.72);
+  border-color: rgba(228, 194, 122, 0.22);
+  color: #e8eef4;
+}
+
+.stark .clist-more.is-open,
+.stark .clist-more.has-extra {
+  border-color: rgba(122, 215, 255, 0.55);
+  color: #d7f4ff;
+}
+
+.stark .clist-more-count {
+  background: rgba(122, 215, 255, 0.16);
+  color: #d7f4ff;
+}
+
+.stark .clist-row {
+  border-top-color: rgba(228, 194, 122, 0.14);
+  color: #e8eef4;
+}
+
+.stark .clist-cols-head {
+  border-bottom-color: rgba(228, 194, 122, 0.22);
+}
+
+.stark .clist-row:hover {
+  background: rgba(122, 215, 255, 0.07);
+  color: #f7fbff;
+}
+
+.stark .clist .campaign-filter-select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+@media (max-width: 1100px) {
+  .clist-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .clist-search {
+    grid-column: 1 / -1;
+  }
+  .clist-more {
+    justify-content: center;
+  }
+  .clist-panel-grid {
+    grid-template-columns: 1fr;
+  }
+  .clist-cols-head {
+    display: none;
+  }
+  .clist-cols,
+  .clist-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "client client"
+      "name status"
+      "send count"
+      "actions actions";
+  }
+  .clist-client {
+    grid-area: client;
+    white-space: normal;
+  }
+  .clist-name { white-space: normal; }
+  .clist-name-wrap { grid-area: name; }
+  .clist-status { grid-area: status; justify-self: end; }
+  .clist-send { grid-area: send; }
+  .clist-count-cell { grid-area: count; justify-self: end; }
+  .clist-actions { grid-area: actions; justify-content: flex-start; }
+}

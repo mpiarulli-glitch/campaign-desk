@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import {
   OPERATOR_STATUS_OPTIONS,
+  STATUS_BUCKETS,
   matchesCampaignStatusFilter,
+  matchesStatusBucket,
+  operatorStatusLabel,
+  statusBucketId,
   type OperatorCampaignStatus,
+  type StatusBucketId,
 } from "@/lib/campaign-status";
 import {
   ASSET_KINDS,
@@ -35,31 +40,60 @@ type CampaignRow = {
   archived_at?: string | null;
   presentation?: string;
   basecamp_followup_count?: number;
+  scheduled_send_at?: string | null;
+  next_send_at?: string | null;
+  next_send_upcoming?: boolean;
 };
+
+const SEND_ZONE = "America/Los_Angeles";
 
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
   month: "long",
   year: "numeric",
+  timeZone: SEND_ZONE,
 });
 
-type View = "all" | "folders";
-type GroupBy = "client" | "month";
+const SEND_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: SEND_ZONE,
+});
+
+const MONTH_KEY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: SEND_ZONE,
+  year: "numeric",
+  month: "2-digit",
+});
+
 type StatusFilter = "all" | OperatorCampaignStatus;
+type BucketFilter = "all" | StatusBucketId;
 type KindFilter = "all" | AssetKind;
 type DatePreset = "any" | "7d" | "30d" | "90d" | "month" | "custom";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All statuses" },
+  { value: "all", label: "Any exact status" },
   ...OPERATOR_STATUS_OPTIONS,
 ];
 
 const KIND_FILTERS: { value: KindFilter; label: string }[] = [
-  { value: "all", label: "All kinds" },
+  { value: "all", label: "Any type" },
   ...ASSET_KINDS.map((k) => ({
     value: k.kind,
     label: k.kind === "linkedin" ? "LinkedIn" : k.label,
   })),
 ];
+
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: "any", label: "Any time" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
+  { value: "month", label: "This month" },
+  { value: "custom", label: "Custom" },
+];
+
+const NO_CLIENT = "__none__";
 
 function setListQueryParam(key: "status" | "kind", value: string) {
   const url = new URL(window.location.href);
@@ -72,15 +106,6 @@ function campaignMatchesKind(c: CampaignRow, kind: KindFilter): boolean {
   if (kind === "all") return true;
   return (c.email_kinds || []).includes(kind);
 }
-
-const DATE_PRESETS: { value: DatePreset; label: string }[] = [
-  { value: "any", label: "Any time" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "90d", label: "90 days" },
-  { value: "month", label: "This month" },
-  { value: "custom", label: "Custom" },
-];
 
 function ymdLocal(d: Date): string {
   const y = d.getFullYear();
@@ -127,34 +152,43 @@ function matchesDateFilter(
   return true;
 }
 
-// Grouped by the month the campaign was created/sent, not by approval date,
-// so pending and in-review campaigns land in a folder too.
-function monthGroups(rows: CampaignRow[]) {
-  const map = new Map<string, { label: string; items: CampaignRow[] }>();
-  for (const c of rows) {
-    const d = new Date(c.created_at);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (!map.has(key)) map.set(key, { label: MONTH_FORMAT.format(d), items: [] });
-    map.get(key)!.items.push(c);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([key, v]) => ({ key, label: v.label, items: v.items }));
+function campaignMonthKey(iso: string): string {
+  const formatted = MONTH_KEY.format(new Date(iso));
+  return formatted.slice(0, 7);
 }
 
-function clientGroups(rows: CampaignRow[]) {
-  const map = new Map<string, CampaignRow[]>();
-  for (const c of rows) {
-    const key = c.client_name.trim() || "No client";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(c);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, items]) => ({ key, label: key, items }));
+function monthLabel(key: string): string {
+  const [y, m] = key.split("-");
+  const d = new Date(Date.UTC(Number(y), Number(m) - 1, 15, 12));
+  return MONTH_FORMAT.format(d);
 }
 
-function CampaignCard({
+function clientKey(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? trimmed : NO_CLIENT;
+}
+
+function clientLabel(key: string): string {
+  return key === NO_CLIENT ? "No client" : key;
+}
+
+function formatSend(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Not scheduled";
+  return SEND_FORMAT.format(d);
+}
+
+function emailLabel(c: CampaignRow): string {
+  if (!c.email_count) return "No emails";
+  return packageItemCountLabel(
+    c.email_kinds?.length
+      ? c.email_kinds
+      : Array.from({ length: c.email_count }, () => "email" as AssetKind),
+    { automation: c.presentation === "automation" }
+  );
+}
+
+function CampaignRowView({
   c,
   filter,
   busyId,
@@ -171,8 +205,6 @@ function CampaignCard({
   const [draft, setDraft] = useState(c.title);
   const [saving, setSaving] = useState(false);
 
-  // The whole row is a link to the campaign, so anything interactive inside it
-  // has to stop the click from navigating.
   function swallow(e: React.MouseEvent | React.KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -191,15 +223,33 @@ function CampaignCard({
     setRenaming(false);
   }
 
+  const notes: string[] = [];
+  if (c.presentation === "automation") notes.push("Automation");
+  if (c.open_comments > 0) {
+    notes.push(
+      `${c.open_comments} open comment${c.open_comments === 1 ? "" : "s"}`
+    );
+  }
+  if ((c.basecamp_followup_count || 0) > 0) {
+    notes.push(`Followed up ${c.basecamp_followup_count}×`);
+  }
+
+  const sendAt = c.next_send_at || c.scheduled_send_at || null;
+  const upcoming = c.next_send_at ? Boolean(c.next_send_upcoming) : false;
+
   return (
-    <Link href={`/admin/campaigns/${c.id}`} className="campaign-item">
-      <div style={{ minWidth: 0, flex: 1 }}>
+    <Link href={`/admin/campaigns/${c.id}`} className="clist-row">
+      <span className="clist-client">
+        {c.client_name.trim() || "No client"}
+      </span>
+      <span className="clist-name-wrap">
         {renaming ? (
-          <div className="row" style={{ gap: 6, alignItems: "center" }} onClick={swallow}>
+          <span className="clist-rename" onClick={swallow}>
             <input
               autoFocus
               value={draft}
               disabled={saving}
+              aria-label="Campaign name"
               onChange={(e) => setDraft(e.target.value)}
               onClick={swallow}
               onKeyDown={(e) => {
@@ -212,7 +262,6 @@ function CampaignCard({
                   setRenaming(false);
                 }
               }}
-              style={{ flex: 1, minWidth: 0 }}
             />
             <button
               type="button"
@@ -237,34 +286,27 @@ function CampaignCard({
             >
               Cancel
             </button>
-          </div>
+          </span>
         ) : (
-          <h3>{c.title}</h3>
+          <span className="clist-name">{c.title}</span>
         )}
-        <div className="meta">
-          {c.presentation === "automation" ? "Automation · " : ""}
-          {c.client_name ? `${c.client_name} · ` : ""}
-          {c.email_count
-            ? `${packageItemCountLabel(
-                c.email_kinds?.length
-                  ? c.email_kinds
-                  : Array.from({ length: c.email_count }, () => "email" as AssetKind),
-                { automation: c.presentation === "automation" }
-              )} · `
-            : ""}
-          Updated {new Date(c.updated_at).toLocaleString()}
-          {c.open_comments > 0
-            ? ` · ${c.open_comments} open comment${
-                c.open_comments === 1 ? "" : "s"
-              }`
-            : ""}
-          {(c.basecamp_followup_count || 0) > 0
-            ? ` · Followed up ${c.basecamp_followup_count}×`
-            : ""}
-        </div>
-      </div>
-      <div className="row" style={{ alignItems: "center", gap: 8 }}>
+        {notes.length ? <span className="clist-note">{notes.join(" · ")}</span> : null}
+      </span>
+      <span className="clist-status">
         <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
+      </span>
+      <span className="clist-send">
+        {sendAt ? (
+          <>
+            <span className="clist-send-k">{upcoming ? "Next" : "Sent"}</span>
+            {formatSend(sendAt)}
+          </>
+        ) : (
+          <span className="clist-quiet">Not scheduled</span>
+        )}
+      </span>
+      <span className="clist-count-cell">{emailLabel(c)}</span>
+      <span className="clist-actions" onClick={swallow}>
         {!renaming ? (
           <button
             type="button"
@@ -283,18 +325,13 @@ function CampaignCard({
           className="btn btn-ghost btn-sm"
           disabled={busyId === c.id}
           onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            swallow(e);
             onArchive(c.id, filter === "active");
           }}
         >
-          {busyId === c.id
-            ? "..."
-            : filter === "active"
-              ? "Archive"
-              : "Restore"}
+          {busyId === c.id ? "..." : filter === "active" ? "Archive" : "Restore"}
         </button>
-      </div>
+      </span>
     </Link>
   );
 }
@@ -304,52 +341,117 @@ export default function AdminPage() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<View>("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("month");
-  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"active" | "archived">("active");
+  const [bucket, setBucket] = useState<BucketFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const dateBounds = resolveDateBounds(datePreset, dateFrom, dateTo);
   const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
   const kinded = dated.filter((c) => campaignMatchesKind(c, kindFilter));
-  const statused =
-    statusFilter === "all"
+  const cliented =
+    clientFilter === "all"
       ? kinded
-      : kinded.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
+      : kinded.filter((c) => clientKey(c.client_name) === clientFilter);
+  const monthed =
+    monthFilter === "all"
+      ? cliented
+      : cliented.filter((c) => campaignMonthKey(c.created_at) === monthFilter);
   const q = query.trim().toLowerCase();
-  const visible = q
-    ? statused.filter(
+  const searched = q
+    ? monthed.filter(
         (c) =>
           c.title.toLowerCase().includes(q) ||
           c.client_name.toLowerCase().includes(q)
       )
-    : statused;
+    : monthed;
+  const bucketed =
+    bucket === "all"
+      ? searched
+      : searched.filter((c) => matchesStatusBucket(c, bucket));
+  const visible =
+    statusFilter === "all"
+      ? bucketed
+      : bucketed.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
   const dateActive = Boolean(dateBounds.start || dateBounds.end);
-  const kindsInList = new Set(
-    campaigns.flatMap((c) => c.email_kinds || [])
-  );
+  const kindsInList = new Set(campaigns.flatMap((c) => c.email_kinds || []));
 
-  function toggleFolder(key: string) {
-    setOpenFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+  const clients = useMemo(() => {
+    const keys = new Set(campaigns.map((c) => clientKey(c.client_name)));
+    return Array.from(keys).sort((a, b) =>
+      clientLabel(a).localeCompare(clientLabel(b))
+    );
+  }, [campaigns]);
+
+  const months = useMemo(() => {
+    const keys = new Set(campaigns.map((c) => campaignMonthKey(c.created_at)));
+    return Array.from(keys).sort((a, b) => b.localeCompare(a));
+  }, [campaigns]);
+
+  useEffect(() => {
+    if (clientFilter !== "all" && !clients.includes(clientFilter)) {
+      setClientFilter("all");
+    }
+  }, [clients, clientFilter]);
+
+  useEffect(() => {
+    if (monthFilter !== "all" && !months.includes(monthFilter)) {
+      setMonthFilter("all");
+    }
+  }, [months, monthFilter]);
+
+  const extraCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (kindFilter !== "all" ? 1 : 0) +
+    (datePreset !== "any" ? 1 : 0) +
+    (filter === "archived" ? 1 : 0);
+
+  const filtersOn =
+    extraCount > 0 ||
+    bucket !== "all" ||
+    clientFilter !== "all" ||
+    monthFilter !== "all" ||
+    query.trim() !== "";
+
+  function applyBucket(next: BucketFilter) {
+    setBucket(next);
+    if (
+      statusFilter !== "all" &&
+      (next === "all" || statusBucketId(statusFilter) !== next)
+    ) {
+      setStatusFilter("all");
+      setListQueryParam("status", "all");
+    }
   }
 
-  async function load(nextFilter: "active" | "archived" = filter, opts?: { silent?: boolean }) {
+  function clearFilters() {
+    setQuery("");
+    setClientFilter("all");
+    setBucket("all");
+    setMonthFilter("all");
+    setStatusFilter("all");
+    setListQueryParam("status", "all");
+    setKindFilter("all");
+    setListQueryParam("kind", "all");
+    setDatePreset("any");
+    setDateFrom("");
+    setDateTo("");
+    if (filter === "archived") setFilter("active");
+  }
+
+  const load = useCallback(async (
+    nextFilter: "active" | "archived",
+    opts?: { silent?: boolean }
+  ) => {
     if (!opts?.silent) setLoading(true);
     setError("");
     const res = await fetch(
@@ -372,7 +474,7 @@ export default function AdminPage() {
       setKindFilter((current) => (current === "blog" ? "all" : current));
     }
     setLoading(false);
-  }
+  }, [router]);
 
   async function renameCampaign(id: string, title: string) {
     const res = await fetch(`/api/campaigns/${id}`, {
@@ -403,19 +505,30 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    load(filter);
-  }, [filter]);
+    void load(filter);
+  }, [filter, load]);
 
   // Honor ?status= and ?kind= deep links (home tiles, LinkedIn campaign pages).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    let openMore = false;
     const s = params.get("status");
     if (s && STATUS_FILTERS.some((sf) => sf.value === s)) {
       setStatusFilter(s as StatusFilter);
+      const parent = statusBucketId(s);
+      if (parent) setBucket(parent);
+      openMore = true;
     }
     const k = params.get("kind");
-    if (k === "all" || isAssetKind(k)) setKindFilter(k);
+    if (k === "all" || isAssetKind(k)) {
+      setKindFilter(k);
+      if (k !== "all") openMore = true;
+    }
+    if (openMore) setMoreOpen(true);
   }, []);
+
+  const noun = kindScope === "blog" ? "blog post" : "campaign";
+  const nounPlural = kindScope === "blog" ? "blog posts" : "campaigns";
 
   return (
     <div className="app-shell stark">
@@ -426,328 +539,350 @@ export default function AdminPage() {
       </div>
 
       <main className="container container-wide stack">
-        <div className="page-hero campaign-hero stark-hero">
-          <div className="stark-hero-copy">
-            <p className="deck-kicker">
-              <span className="deck-live" aria-hidden />
-              Systems · Campaigns
-            </p>
-            <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
-          </div>
-          <div className="deck-core stark-core" aria-hidden="true">
-            <span className="deck-ring r1" />
-            <span className="deck-ring r2" />
-            <span className="deck-ring r3" />
-            <span className="deck-core-read">
+        <div className="clist">
+          <div className="clist-head">
+            <div>
+              <p className="deck-kicker">
+                <span className="deck-live" aria-hidden />
+                Systems · Campaigns
+              </p>
+              <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
+              <p className="clist-sub">
+                Find a {noun} by client, where it stands, and the month it was created.
+              </p>
+            </div>
+            <p className="clist-total">
               <b>{loading ? "—" : visible.length}</b>
-              <span>live</span>
-            </span>
+              <span>
+                {loading
+                  ? "loading"
+                  : visible.length === campaigns.length
+                    ? nounPlural
+                    : `of ${campaigns.length}`}
+              </span>
+            </p>
           </div>
-          <label className="cs-search campaign-search">
-            <span className="ads-search-label">Search</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                kindScope === "blog" ? "Post or client" : "Campaign or client"
-              }
-              aria-label={
-                kindScope === "blog"
-                  ? "Search blog posts by name or client"
-                  : "Search campaigns by name or client"
-              }
-            />
-          </label>
-        </div>
 
-        {error ? <p className="error">{error}</p> : null}
+          {error ? <p className="error">{error}</p> : null}
 
-        <div className="campaign-toolbar">
-          <div className="tabs" style={{ marginBottom: 0 }}>
-            <button
-              className={`tab ${filter === "active" ? "active" : ""}`}
-              onClick={() => setFilter("active")}
-            >
-              Active
-            </button>
-            <button
-              className={`tab ${filter === "archived" ? "active" : ""}`}
-              onClick={() => setFilter("archived")}
-            >
-              Archived
-            </button>
-          </div>
-          <label className="campaign-filter">
-            <span className="campaign-date-label">Status</span>
-            <select
-              className="campaign-filter-select"
-              aria-label="Filter by status"
-              value={statusFilter}
-              onChange={(e) => {
-                const next = e.target.value as StatusFilter;
-                setStatusFilter(next);
-                setListQueryParam("status", next);
-              }}
-            >
-              {STATUS_FILTERS.map((sf) => {
-                const count =
-                  sf.value === "all"
-                    ? kinded.length
-                    : kinded.filter((c) =>
-                        matchesCampaignStatusFilter(c, sf.value)
-                      ).length;
-                return (
-                  <option key={sf.value} value={sf.value}>
-                    {sf.label} ({count})
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          {kindScope === "blog" || kindScope === "interactive" ? null : (
-            <label className="campaign-filter">
-              <span className="campaign-date-label">Kind</span>
+          <div className="clist-bar">
+            <label className="clist-field clist-search">
+              <span>Search</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={kindScope === "blog" ? "Post or client" : "Campaign or client"}
+                aria-label={
+                  kindScope === "blog"
+                    ? "Search blog posts by name or client"
+                    : "Search campaigns by name or client"
+                }
+              />
+            </label>
+            <label className="clist-field">
+              <span>Client</span>
               <select
                 className="campaign-filter-select"
-                aria-label="Filter by campaign kind"
-                value={kindFilter}
-                onChange={(e) => {
-                  const next = e.target.value as KindFilter;
-                  setKindFilter(next);
-                  setListQueryParam("kind", next);
-                }}
+                aria-label="Filter by client"
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
               >
-                {KIND_FILTERS.filter(
-                  (kf) =>
-                    (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
-                    (kf.value === "all" ||
-                      kf.value === "linkedin" ||
-                      kindsInList.has(kf.value))
-                ).map((kf) => {
-                  const count =
-                    kf.value === "all"
-                      ? dated.length
-                      : dated.filter((c) =>
-                          campaignMatchesKind(c, kf.value)
-                        ).length;
+                <option value="all">All clients</option>
+                {clients.map((key) => (
+                  <option key={key} value={key}>
+                    {clientLabel(key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Status</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by status"
+                value={bucket}
+                onChange={(e) => applyBucket(e.target.value as BucketFilter)}
+              >
+                <option value="all">All statuses</option>
+                {STATUS_BUCKETS.map((b) => {
+                  const count = searched.filter((c) =>
+                    matchesStatusBucket(c, b.id)
+                  ).length;
                   return (
-                    <option key={kf.value} value={kf.value}>
-                      {kf.label} ({count})
+                    <option key={b.id} value={b.id}>
+                      {b.label} ({count})
                     </option>
                   );
                 })}
               </select>
             </label>
-          )}
-        </div>
-
-        <div className="campaign-date-filter">
-          <span className="campaign-date-label">Updated</span>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {DATE_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                className={`preview-device-btn ${datePreset === p.value ? "active" : ""}`}
-                onClick={() => setDatePreset(p.value)}
+            <label className="clist-field">
+              <span>Month</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by month created"
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
               >
-                {p.label}
-              </button>
-            ))}
+                <option value="all">Any month</option>
+                {months.map((key) => (
+                  <option key={key} value={key}>
+                    {monthLabel(key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`clist-more${moreOpen ? " is-open" : ""}${extraCount ? " has-extra" : ""}`}
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((open) => !open)}
+            >
+              More filters
+              {extraCount ? <span className="clist-more-count">{extraCount}</span> : null}
+            </button>
           </div>
-          {datePreset === "custom" ? (
-            <div className="campaign-date-custom">
-              <label>
-                <span>From</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  max={dateTo || undefined}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </label>
-              <label>
-                <span>To</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom || undefined}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </label>
+
+          {statusFilter !== "all" ? (
+            <p className="clist-hint">
+              Status is narrowed to {operatorStatusLabel(statusFilter)}. The precise
+              status still shows on each row.
+            </p>
+          ) : null}
+
+          {moreOpen ? (
+            <div className="clist-panel">
+              <div className="clist-panel-grid">
+                <label className="clist-field">
+                  <span>Exact status</span>
+                  <select
+                    className="campaign-filter-select"
+                    aria-label="Filter by exact status"
+                    value={statusFilter}
+                    onChange={(e) => {
+                      const next = e.target.value as StatusFilter;
+                      setStatusFilter(next);
+                      setListQueryParam("status", next);
+                      if (next !== "all") {
+                        const parent = statusBucketId(next);
+                        if (parent) setBucket(parent);
+                      }
+                    }}
+                  >
+                    {STATUS_FILTERS.map((sf) => (
+                      <option key={sf.value} value={sf.value}>
+                        {sf.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {kindScope === "blog" || kindScope === "interactive" ? null : (
+                  <label className="clist-field">
+                    <span>Type</span>
+                    <select
+                      className="campaign-filter-select"
+                      aria-label="Filter by campaign kind"
+                      value={kindFilter}
+                      onChange={(e) => {
+                        const next = e.target.value as KindFilter;
+                        setKindFilter(next);
+                        setListQueryParam("kind", next);
+                      }}
+                    >
+                      {KIND_FILTERS.filter(
+                        (kf) =>
+                          (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
+                          (kf.value === "all" ||
+                            kf.value === "linkedin" ||
+                            kindsInList.has(kf.value))
+                      ).map((kf) => (
+                        <option key={kf.value} value={kf.value}>
+                          {kf.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="clist-check">
+                  <input
+                    type="checkbox"
+                    checked={filter === "archived"}
+                    onChange={(e) => setFilter(e.target.checked ? "archived" : "active")}
+                  />
+                  <span>Show archived</span>
+                </label>
+              </div>
+              <div className="clist-updated">
+                <span className="clist-field-label">Updated</span>
+                <div className="clist-pills">
+                  {DATE_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      className={`preview-device-btn ${datePreset === p.value ? "active" : ""}`}
+                      onClick={() => setDatePreset(p.value)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {datePreset === "custom" ? (
+                  <div className="campaign-date-custom">
+                    <label>
+                      <span>From</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        max={dateTo || undefined}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>To</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        min={dateFrom || undefined}
+                        onChange={(e) => setDateTo(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
-        </div>
 
-        <div className="dashboard-grid">
-          <div className="stack" style={{ gap: 12 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div className="row" style={{ gap: 6 }}>
-                <button
-                  type="button"
-                  className={`preview-device-btn ${view === "all" ? "active" : ""}`}
-                  onClick={() => setView("all")}
-                >
-                  All campaigns
+          {filtersOn ? (
+            <div className="clist-chips">
+              {clientFilter !== "all" ? (
+                <button type="button" className="clist-chip" onClick={() => setClientFilter("all")}>
+                  {clientLabel(clientFilter)} <span aria-hidden>×</span>
                 </button>
-                <button
-                  type="button"
-                  className={`preview-device-btn ${view === "folders" ? "active" : ""}`}
-                  onClick={() => setView("folders")}
-                >
-                  Folders
-                </button>
-              </div>
-              {view === "folders" ? (
-                <div className="row" style={{ gap: 6 }}>
-                  <button
-                    type="button"
-                    className={`preview-device-btn ${groupBy === "month" ? "active" : ""}`}
-                    onClick={() => {
-                      setGroupBy("month");
-                      setOpenFolders(new Set());
-                    }}
-                  >
-                    By month
-                  </button>
-                  <button
-                    type="button"
-                    className={`preview-device-btn ${groupBy === "client" ? "active" : ""}`}
-                    onClick={() => {
-                      setGroupBy("client");
-                      setOpenFolders(new Set());
-                    }}
-                  >
-                    By client
-                  </button>
-                </div>
               ) : null}
+              {bucket !== "all" ? (
+                <button type="button" className="clist-chip" onClick={() => applyBucket("all")}>
+                  {STATUS_BUCKETS.find((b) => b.id === bucket)?.label} <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              {monthFilter !== "all" ? (
+                <button type="button" className="clist-chip" onClick={() => setMonthFilter("all")}>
+                  {monthLabel(monthFilter)} <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              {statusFilter !== "all" ? (
+                <button
+                  type="button"
+                  className="clist-chip"
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setListQueryParam("status", "all");
+                  }}
+                >
+                  {operatorStatusLabel(statusFilter)} <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              {kindFilter !== "all" ? (
+                <button
+                  type="button"
+                  className="clist-chip"
+                  onClick={() => {
+                    setKindFilter("all");
+                    setListQueryParam("kind", "all");
+                  }}
+                >
+                  {KIND_FILTERS.find((k) => k.value === kindFilter)?.label}{" "}
+                  <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              {dateActive ? (
+                <button
+                  type="button"
+                  className="clist-chip"
+                  onClick={() => {
+                    setDatePreset("any");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  Updated{" "}
+                  {DATE_PRESETS.find((p) => p.value === datePreset)?.label.toLowerCase()}{" "}
+                  <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              {filter === "archived" ? (
+                <button type="button" className="clist-chip" onClick={() => setFilter("active")}>
+                  Archived <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              <button type="button" className="clist-clear" onClick={clearFilters}>
+                Clear filters
+              </button>
             </div>
+          ) : null}
 
-            {loading ? (
-              <p className="muted">Loading...</p>
-            ) : campaigns.length === 0 ? (
-              filter === "archived" ? (
-                <div className="empty">
-                  <p>No archived campaigns.</p>
-                </div>
-              ) : (
+          <div className="dashboard-grid">
+            <div className="stack" style={{ gap: 12 }}>
+              {loading ? (
+                <p className="muted">Loading...</p>
+              ) : campaigns.length === 0 ? (
+                filter === "archived" ? (
+                  <div className="empty">
+                    <p>No archived campaigns.</p>
+                  </div>
+                ) : (
+                  <div className="empty">
+                    <p>
+                      {kindScope === "blog" ? "No blog posts yet." : "No campaigns yet."}
+                    </p>
+                    <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
+                      {kindScope === "blog"
+                        ? "Create your first blog post"
+                        : "Upload your first email"}
+                    </Link>
+                  </div>
+                )
+              ) : visible.length === 0 ? (
                 <div className="empty">
                   <p>
-                    {kindScope === "blog"
-                      ? "No blog posts yet."
-                      : "No campaigns yet."}
+                    {q
+                      ? `No campaigns match “${query.trim()}”.`
+                      : "No campaigns match these filters."}
                   </p>
-                  <Link
-                    className="btn"
-                    href="/admin/new"
-                    style={{ marginTop: 12 }}
-                  >
-                    {kindScope === "blog"
-                      ? "Create your first blog post"
-                      : "Upload your first email"}
-                  </Link>
-                </div>
-              )
-            ) : statused.length === 0 ? (
-              <div className="empty">
-                <p>
-                  No{" "}
-                  {STATUS_FILTERS.find((sf) => sf.value === statusFilter)?.label.toLowerCase()}{" "}
-                  campaigns
-                  {dateActive ? " in that date range" : ""}.
-                </p>
-                {dateActive ? (
                   <button
                     type="button"
                     className="btn btn-ghost"
                     style={{ marginTop: 12 }}
-                    onClick={() => {
-                      setDatePreset("any");
-                      setDateFrom("");
-                      setDateTo("");
-                    }}
+                    onClick={clearFilters}
                   >
-                    Clear date filter
+                    Clear filters
                   </button>
-                ) : null}
-              </div>
-            ) : visible.length === 0 ? (
-              <div className="empty">
-                <p>No campaigns match “{query.trim()}”.</p>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ marginTop: 12 }}
-                  onClick={() => setQuery("")}
-                >
-                  Clear search
-                </button>
-              </div>
-            ) : view === "all" ? (
-              <div className="campaign-list">
-                {visible.map((c) => (
-                  <CampaignCard
-                    key={c.id}
-                    c={c}
-                    filter={filter}
-                    busyId={busyId}
-                    onArchive={setArchived}
-                    onRename={renameCampaign}
-                  />
-                ))}
-              </div>
-            ) : (
-              (() => {
-                const groups =
-                  groupBy === "month"
-                    ? monthGroups(visible)
-                    : clientGroups(visible);
-                return (
-                  <div className="stack" style={{ gap: 12 }}>
-                    {groups.map((g) => {
-                      const isOpen = openFolders.has(g.key);
-                      return (
-                        <div key={g.key} className="folder-group">
-                          <button
-                            type="button"
-                            className="folder-header"
-                            onClick={() => toggleFolder(g.key)}
-                            aria-expanded={isOpen}
-                          >
-                            {g.label}
-                            <span className="muted" style={{ fontWeight: 400 }}>
-                              {g.items.length}
-                            </span>
-                            <span className="folder-chevron" aria-hidden="true">
-                              {isOpen ? "▾" : "▸"}
-                            </span>
-                          </button>
-                          {isOpen ? (
-                            <div className="campaign-list">
-                              {g.items.map((c) => (
-                                <CampaignCard
-                                  key={c.id}
-                                  c={c}
-                                  filter={filter}
-                                  busyId={busyId}
-                                  onArchive={setArchived}
-                                  onRename={renameCampaign}
-                                />
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                </div>
+              ) : (
+                <div className="clist-table">
+                  <div className="clist-cols clist-cols-head" aria-hidden="true">
+                    <span>Client</span>
+                    <span>Campaign</span>
+                    <span>Status</span>
+                    <span>Next send</span>
+                    <span>Emails</span>
+                    <span />
                   </div>
-                );
-              })()
-            )}
+                  {visible.map((c) => (
+                    <CampaignRowView
+                      key={c.id}
+                      c={c}
+                      filter={filter}
+                      busyId={busyId}
+                      onArchive={setArchived}
+                      onRename={renameCampaign}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <ActivitySidebar />
           </div>
-
-          <ActivitySidebar />
         </div>
       </main>
     </div>
