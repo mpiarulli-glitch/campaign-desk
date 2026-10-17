@@ -12,7 +12,9 @@ import {
   countOpenComments,
   countEmails,
   listEmailKinds,
+  listEmailScheduledInstants,
 } from "@/lib/campaigns";
+import { pickDisplayedSendAt } from "@/lib/send-display";
 import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
 import { kindAllowedForCampaignScope } from "@/lib/people";
 import {
@@ -38,13 +40,24 @@ export async function GET(request: Request) {
       ? listArchivedCampaigns()
       : listCampaigns();
 
-  const campaigns = source.map((c) => ({
-    ...c,
-    open_comments: countOpenComments(c.id),
-    email_count: countEmails(c.id),
-    email_kinds: listEmailKinds(c.id),
-    review_path: `/review/${c.magic_token}`,
-  }));
+  const emailSends = listEmailScheduledInstants();
+  const now = new Date().toISOString();
+  const campaigns = source.map((c) => {
+    const send = pickDisplayedSendAt(
+      [...(emailSends.get(c.id) || []), c.scheduled_send_at],
+      now
+    );
+    return {
+      ...c,
+      open_comments: countOpenComments(c.id),
+      email_count: countEmails(c.id),
+      email_kinds: listEmailKinds(c.id),
+      review_path: `/review/${c.magic_token}`,
+      // Display only. Not stored; the list already had scheduled_send_at.
+      next_send_at: send.at,
+      next_send_upcoming: send.upcoming,
+    };
+  });
 
   return NextResponse.json({ campaigns, scope: kindScope || "all" });
 }
