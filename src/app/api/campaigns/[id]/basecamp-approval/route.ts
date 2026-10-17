@@ -3,10 +3,14 @@ import { isAdminAuthenticated, reviewUrl, sessionUserSlug } from "@/lib/auth";
 import {
   SERVICE,
   asPerson,
+  basecampActorName,
   basecampCardAppUrl,
   basecampConnected,
+  emptyProjectRosterReason,
+  extractProjectId,
   findClientContact,
   getProjectPeopleForMention,
+  getProjectRosterForMention,
   hasConnection,
   sendApprovalToDeliverables,
 } from "@/lib/basecamp";
@@ -111,6 +115,10 @@ export async function GET(_request: Request, { params }: Params) {
   // The roster powers the send form's recipient and assignee pickers. It is a
   // live Basecamp call, so a failure degrades to an empty list and a reason
   // rather than taking the whole panel down.
+  //
+  // Load it as the same account that will post the card. The service account
+  // (King Kashflow) is not on every client project; asking only as that account
+  // made a project full of people look empty for anyone who was actually on it.
   let people: Array<{
     id: number;
     name: string;
@@ -120,12 +128,14 @@ export async function GET(_request: Request, { params }: Params) {
   }> = [];
   let peopleReason = "";
   let defaultRecipientId: number | null = null;
-  if (state.client?.basecamp_project_id && basecampConnected()) {
+  const projectId = extractProjectId(state.client?.basecamp_project_id || "");
+  if (projectId && basecampConnected()) {
     try {
-      const roster = await getProjectPeopleForMention(
-        state.client.basecamp_project_id
-      );
-      people = roster
+      const sender = await sessionUserSlug();
+      const identity =
+        sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
+      const roster = await getProjectRosterForMention(projectId, identity);
+      people = roster.people
         .map((person) => ({
           id: person.id,
           name: person.name,
@@ -138,17 +148,22 @@ export async function GET(_request: Request, { params }: Params) {
           return a.name.localeCompare(b.name);
         });
       if (!people.length) {
-        peopleReason =
-          "Nobody came back for that project. Check the project id, and that King Kashflow is a member of it.";
+        peopleReason = emptyProjectRosterReason({
+          status: roster.status,
+          projectId,
+          accountName: basecampActorName(identity),
+          clientName: state.client?.name || state.campaign.client_name,
+          serviceAccount: identity.kind === "service",
+        });
       }
       // Whoever the account already points at, so the form opens on the usual
       // recipient and sending stays one click for every client that has one.
       const saved =
-        state.client.basecamp_contact_id ||
+        state.client?.basecamp_contact_id ||
         findClientContact(
-          roster,
-          state.client.contact_email,
-          state.client.contact_name
+          roster.people,
+          state.client?.contact_email || "",
+          state.client?.contact_name || ""
         )?.id ||
         0;
       if (saved && people.some((person) => person.id === saved)) {
@@ -179,7 +194,8 @@ export async function GET(_request: Request, { params }: Params) {
     contactEmail,
     emailTo,
     emailConfigured: emailConfigured(),
-    projectConfigured: Boolean(state.client?.basecamp_project_id),
+    projectConfigured: Boolean(projectId),
+    projectId,
     message: clientApprovalMessageText(state.messageInput),
     alreadySent: state.alreadySent,
     lastSentAt: state.campaign.basecamp_approval_sent_at,
@@ -261,13 +277,17 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const client = state.client!;
-  if (
-    !recipientId &&
-    !client.contact_email.trim() &&
-    !client.contact_name.trim()
-  ) {
+  const manualName =
+    typeof body.recipientName === "string" ? body.recipientName.trim() : "";
+  const manualEmail =
+    typeof body.recipientEmail === "string" ? body.recipientEmail.trim() : "";
+  // A roster pick wins. Otherwise the form's typed contact, then whatever is
+  // saved on the client, so an empty Basecamp roster does not block the send.
+  const lookupEmail = manualEmail || client.contact_email.trim();
+  const lookupName = manualName || client.contact_name.trim();
+  if (!recipientId && !lookupEmail && !lookupName) {
     return NextResponse.json(
-      { error: "Pick who this approval goes to before sending it." },
+      { error: "Pick who this approval goes to, or enter a name or email." },
       { status: 400 }
     );
   }
@@ -291,7 +311,7 @@ export async function POST(request: Request, { params }: Params) {
 
   const result = await sendApprovalToDeliverables({
     identity,
-    projectId: client.basecamp_project_id,
+    projectId: extractProjectId(client.basecamp_project_id) || client.basecamp_project_id,
     campaignTitle: state.campaign.title,
     // Built after the recipient resolves, so the greeting is a real mention.
     // An edited draft is what the sender saw; otherwise the usual template.
@@ -300,10 +320,7 @@ export async function POST(request: Request, { params }: Params) {
       customMessage
         ? clientApprovalMessageHtmlFromText(customMessage, contactMention, ccMention)
         : clientApprovalMessageHtml(state.messageInput, contactMention, ccMention),
-    recipientIdentifiers: [
-      client.contact_email,
-      client.contact_name,
-    ].filter(Boolean),
+    recipientIdentifiers: [lookupEmail, lookupName].filter(Boolean),
     recipientId: recipientId || undefined,
     extraAssigneeIds,
     dueOn,
@@ -347,9 +364,12 @@ export async function POST(request: Request, { params }: Params) {
   // Email is the parallel inbox ping. Prefer the saved contact email; fall back
   // to the selected Basecamp person's address when the account record is blank.
   let rosterEmail = "";
-  if (!client.contact_email.trim() && recipientId) {
+  if (!lookupEmail && recipientId) {
     try {
-      const roster = await getProjectPeopleForMention(client.basecamp_project_id);
+      const roster = await getProjectPeopleForMention(
+        extractProjectId(client.basecamp_project_id) || client.basecamp_project_id,
+        identity
+      );
       rosterEmail =
         roster.find((person) => person.id === recipientId)?.email_address || "";
     } catch {
@@ -357,7 +377,7 @@ export async function POST(request: Request, { params }: Params) {
     }
   }
   const emailTo = resolveApprovalEmailTo({
-    contactEmail: client.contact_email,
+    contactEmail: lookupEmail,
     rosterEmail,
   });
   const email = await sendApprovalEmail({
