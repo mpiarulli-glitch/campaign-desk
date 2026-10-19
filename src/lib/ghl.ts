@@ -488,3 +488,98 @@ export function clearGhlCache(): void {
   agencyToken = null;
   locationTokens.clear();
 }
+
+export interface GhlPhoneNumber {
+  phoneNumber: string;
+  friendlyName: string;
+  sms: boolean;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function phoneRows(payload: unknown): unknown[] {
+  const record = asRecord(payload);
+  if (!record) return [];
+  for (const key of ["numbers", "phoneNumbers", "data"]) {
+    if (Array.isArray(record[key])) return record[key] as unknown[];
+  }
+  return [];
+}
+
+/**
+ * Numbers on a sub-account. SMS-capable ones are the only ones a scheduling
+ * text can leave from. The payload shape varies by API version, so this
+ * reads the fields GHL has used rather than one exact schema.
+ */
+export async function listLocationPhoneNumbers(
+  locationId: string
+): Promise<GhlPhoneNumber[]> {
+  const data = await ghlRequest<unknown>("GET", "/phone-numbers/", {
+    locationId,
+    params: { locationId },
+  });
+  return phoneRows(data).map((row) => {
+    const record = asRecord(row) || {};
+    const capabilities = asRecord(record.capabilities) || {};
+    const phoneNumber = String(
+      record.phoneNumber || record.phone || record.number || ""
+    );
+    const smsFlag = capabilities.sms ?? record.sms ?? record.smsCapable;
+    return {
+      phoneNumber,
+      friendlyName: String(record.friendlyName || record.name || ""),
+      sms: smsFlag === undefined ? true : Boolean(smsFlag),
+    };
+  }).filter((row) => row.phoneNumber);
+}
+
+export async function upsertContactByPhone(
+  locationId: string,
+  input: { phone: string; name?: string; email?: string }
+): Promise<string> {
+  const name = (input.name || "").trim();
+  const first = name.split(/\s+/)[0] || "";
+  const data = await ghlRequest<{ contact?: { id?: string }; id?: string }>(
+    "POST",
+    "/contacts/upsert",
+    {
+      locationId,
+      body: {
+        locationId,
+        phone: input.phone,
+        ...(name ? { name, firstName: first } : {}),
+        ...(input.email ? { email: input.email } : {}),
+      },
+    }
+  );
+  const id = data.contact?.id || data.id || "";
+  if (!id) throw new GhlError("GoHighLevel did not return a contact id");
+  return id;
+}
+
+export async function sendLocationSms(
+  locationId: string,
+  input: { contactId: string; phone: string; message: string }
+): Promise<{ messageId?: string; conversationId?: string }> {
+  const data = await ghlRequest<Record<string, unknown>>(
+    "POST",
+    "/conversations/messages",
+    {
+      locationId,
+      body: {
+        type: "SMS",
+        contactId: input.contactId,
+        message: input.message,
+        phone: input.phone,
+      },
+    }
+  );
+  const record = asRecord(data) || {};
+  const nested = asRecord(record.message);
+  const messageId = String(record.messageId || record.id || nested?.id || "") || undefined;
+  const conversationId =
+    String(record.conversationId || nested?.conversationId || "") || undefined;
+  return { messageId, conversationId };
+}

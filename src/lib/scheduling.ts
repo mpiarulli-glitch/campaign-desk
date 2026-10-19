@@ -80,6 +80,8 @@ export interface SchedulingStatus {
   // they still have not. The link stays valid; the page offers a makeup
   // booking instead of those expired dates.
   missedWindow: { start: string; end: string } | null;
+  // The public sample link. Same booking page, and submitting it books nobody.
+  testLink?: boolean;
 }
 
 // A client's own not-cancelled, not-yet-sent out-of-cycle bookings. Ordered
@@ -217,6 +219,35 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
     extraWindow,
     missedWindow,
     isFirst: isFirstProductionClient(client) || extraWindow?.kind === "first",
+  };
+}
+
+/** Preview payload for /schedule/sample. Same page a client sees, labeled as a test. */
+export function sampleSchedulePreview(now = new Date()): SchedulingStatus {
+  const clock = appDateTime(now);
+  const [y, m, d] = clock.date.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d));
+  const daysUntilMonday = (8 - start.getUTCDay()) % 7 || 7;
+  start.setUTCDate(start.getUTCDate() + daysUntilMonday);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 4);
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  return {
+    client: { name: "Test link" },
+    window: { start: iso(start), end: iso(end) },
+    status: "due",
+    today: clock.date,
+    currentTime: clock.time,
+    slots: BOOKING_SLOTS,
+    blackoutDates: [],
+    videographerBooked: [],
+    videographerOff: [],
+    existingSend: null,
+    extraRequests: [],
+    extraWindow: null,
+    isFirst: false,
+    missedWindow: null,
+    testLink: true,
   };
 }
 

@@ -11,6 +11,7 @@ import {
 import type { BusinessModel } from "@/lib/db";
 import { extractProjectId } from "@/lib/basecamp";
 import { isCycleStatus } from "@/lib/cadence";
+import { normalizePhoneE164 } from "@/lib/phone";
 import { contractStatus, listDeliverables } from "@/lib/snapshot";
 
 const MODELS: BusinessModel[] = ["ecomm", "b2b", "home_service"];
@@ -55,6 +56,22 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => ({}));
+  let contactPhone: string | undefined;
+  if (typeof body.contactPhone === "string") {
+    const trimmed = body.contactPhone.trim();
+    if (!trimmed) {
+      contactPhone = "";
+    } else {
+      const e164 = normalizePhoneE164(trimmed);
+      if (!e164) {
+        return NextResponse.json(
+          { error: "Enter a phone number with an area code." },
+          { status: 400 }
+        );
+      }
+      contactPhone = e164;
+    }
+  }
   const COLOR_WEEKS = ["purple", "red", "blue", "green", ""];
   const CADENCES = ["monthly", "bi_monthly", "quarterly", ""];
   const client = updateRevClient(id, {
@@ -94,6 +111,7 @@ export async function PATCH(request: Request, { params }: Params) {
     contactName: typeof body.contactName === "string" ? body.contactName : undefined,
     contactEmail:
       typeof body.contactEmail === "string" ? body.contactEmail : undefined,
+    contactPhone,
     poc: typeof body.poc === "string" ? body.poc : undefined,
     accountManager:
       typeof body.accountManager === "string" ? body.accountManager : undefined,

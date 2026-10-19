@@ -19,6 +19,8 @@ import {
 import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
+import { normalizePhoneE164 } from "./phone";
+import { scheduleSmsReady, sendScheduleNudgeSms } from "./production-sms";
 import {
   basecampConnected,
   commentOnCard,
@@ -772,7 +774,11 @@ export async function runReminders(opts?: {
 
     // No email address is the same refusal as no Basecamp contact: we do not
     // know where to send it, so it does not go, and somebody is told.
-    if (!client.contact_email?.trim()) {
+    // A configured scheduling text is the one exception. The text is the ask.
+    const hasEmail = Boolean(client.contact_email?.trim());
+    const canText =
+      scheduleSmsReady() && Boolean(normalizePhoneE164(client.contact_phone || ""));
+    if (!hasEmail && !canText) {
       skip("noEmail");
       if (!contacted) {
         recordFailure({
@@ -805,24 +811,51 @@ export async function runReminders(opts?: {
       continue;
     }
     const url = scheduleUrl(token);
-    const { subject, html, text } = reminderEmail(client, window, url);
+    let marked = false;
+    if (hasEmail) {
+      const { subject, html, text } = reminderEmail(client, window, url);
+      const ok = dryRun
+        ? true
+        : await sendEmail({ to: client.contact_email, subject, html, text });
 
-    const ok = dryRun
-      ? true
-      : await sendEmail({ to: client.contact_email, subject, html, text });
+      if (ok) {
+        if (!dryRun) {
+          markReminded(client.id, window.start, today);
+          marked = true;
+        }
+        result.sent.push({
+          client: client.name,
+          email: client.contact_email,
+          window,
+          attempt: (rec?.count || 0) + 1,
+        });
+        contacted = true;
+        noteReachout(client, "email", window, client.contact_email);
+      } else {
+        result.failed.push({ client: client.name, email: client.contact_email });
+      }
+    }
 
-    if (ok) {
-      if (!dryRun) markReminded(client.id, window.start, today);
-      result.sent.push({
-        client: client.name,
-        email: client.contact_email,
-        window,
-        attempt: (rec?.count || 0) + 1,
-      });
-      contacted = true;
-      noteReachout(client, "email", window, client.contact_email);
-    } else {
-      result.failed.push({ client: client.name, email: client.contact_email });
+    if (!dryRun) {
+      let sms: Awaited<ReturnType<typeof sendScheduleNudgeSms>>;
+      try {
+        sms = await sendScheduleNudgeSms({
+          kind: "cadence_reminder",
+          client,
+          url,
+          dedupeKey: `cadence:${client.id}:${window.start}:${today}`,
+        });
+      } catch (err) {
+        sms = {
+          status: "failed",
+          error: err instanceof Error ? err.message : "Text failed",
+        };
+      }
+      if (sms.status === "sent") {
+        if (!marked) markReminded(client.id, window.start, today);
+        contacted = true;
+        noteReachout(client, "sms", window, sms.phone);
+      }
     }
   }
 

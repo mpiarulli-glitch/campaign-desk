@@ -22,7 +22,8 @@ export type FailureKind =
   | "basecamp_approval"
   | "basecamp_project"
   | "basecamp_todo"
-  | "contact_unresolved";
+  | "contact_unresolved"
+  | "production_sms";
 
 export interface RecordFailureInput {
   kind: FailureKind;

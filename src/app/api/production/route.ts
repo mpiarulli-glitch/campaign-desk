@@ -44,6 +44,7 @@ export async function GET() {
         active: client.active,
         contact_name: client.contact_name,
         contact_email: client.contact_email,
+        contact_phone: client.contact_phone || "",
         account_manager: client.account_manager,
         color_week: client.color_week,
         production_cadence: client.production_cadence,
