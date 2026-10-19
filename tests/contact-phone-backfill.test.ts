@@ -49,19 +49,37 @@ const WAYNE: ContactPhoneBackfillEntry = {
   phone: "+19099514915",
 };
 
-test("every POC phone is already E.164", () => {
-  assert.equal(CONTACT_PHONE_BACKFILL.length, 59);
+const EXCLUDED_PROJECT_IDS = ["29833578", "40435223", "49112019", "47628800", "41711679"];
+
+test("every approved phone is already E.164 and the excluded projects are absent", () => {
+  assert.equal(CONTACT_PHONE_BACKFILL.length, 50);
+  const ids = new Set<string>();
   for (const entry of CONTACT_PHONE_BACKFILL) {
     assert.equal(normalizePhoneE164(entry.phone), entry.phone, entry.name);
+    assert.equal(ids.has(entry.projectId), false, entry.projectId);
+    ids.add(entry.projectId);
+  }
+  for (const projectId of EXCLUDED_PROJECT_IDS) {
+    assert.equal(ids.has(projectId), false, projectId);
   }
   const wayne = CONTACT_PHONE_BACKFILL.find((entry) => entry.projectId === "48158835");
   assert.equal(wayne?.pocName, "Wayne Meeks");
   assert.equal(wayne?.phone, "+19099514915");
-  const danza = CONTACT_PHONE_BACKFILL.filter((entry) => entry.projectId === "40435223");
-  assert.deepEqual(
-    danza.map((entry) => entry.phone),
-    ["+19515282729", "+19515282729"]
-  );
+});
+
+test("the five excluded projects get no phone written", () => {
+  const database = memoryDb();
+  insert(database, { id: "top", name: "Top Notch Auto", phone: "", projectId: "29833578" });
+  insert(database, { id: "danza", name: "Danza Del Sol", phone: "", projectId: "40435223" });
+  insert(database, { id: "swing", name: "Swing Inn Cafe", phone: "", projectId: "49112019" });
+  insert(database, { id: "hendo", name: "Hendo's Barrel House", phone: "", projectId: "47628800" });
+  insert(database, { id: "cipo", name: "CIPO Cloud Software", phone: "", projectId: "41711679" });
+  backfillKnownContactPhones(database, () => {});
+  assert.equal(phoneOf(database, "top"), "");
+  assert.equal(phoneOf(database, "danza"), "");
+  assert.equal(phoneOf(database, "swing"), "");
+  assert.equal(phoneOf(database, "hendo"), "");
+  assert.equal(phoneOf(database, "cipo"), "");
 });
 
 test("blank and invalid phones are saved, a valid one is left alone", () => {

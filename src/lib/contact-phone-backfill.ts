@@ -18,30 +18,28 @@ export interface ContactPhoneBackfillEntry {
 }
 
 /**
- * One row per Basecamp POC who has a phone on the project description.
- * The first number for a client is the one that sticks; a later row for the
- * same client does not replace a phone that is already valid.
+ * The approved list of 50 client phones. Michael excluded Top Notch Auto
+ * (29833578), Danza Del Sol (40435223), Swing Inn Cafe (49112019), Hendo's
+ * Barrel House (47628800), and CIPO Cloud Software (41711679). A later row
+ * for the same client does not replace a phone that is already valid.
  */
 export const CONTACT_PHONE_BACKFILL: ContactPhoneBackfillEntry[] = [
   { name: "Milan and Associates", projectId: "49308040", pocName: "Jeremiah Milan", phone: "+17758530284" },
-  { name: "Curt’s Floor Covering", projectId: "49277608", pocName: "Curt Hinton", phone: "+19519419395" },
+  { name: "Curt's Floor Covering", projectId: "49277608", pocName: "Curt Hinton", phone: "+19519419395" },
   { name: "Dolce Vita Wellness Spa", projectId: "49264101", pocName: "Fernando Leal", phone: "+17737442050" },
   { name: "FloorCo Design", projectId: "49198430", pocName: "Andy Mohajeri", phone: "+19513991470" },
-  { name: "Swing Inn Cafe", projectId: "49112019", pocName: "Bridget Norris", phone: "+19516916964" },
   { name: "Krak Boba Piscataway", projectId: "49040791", pocName: "Mehtab Singh", phone: "+17173866682" },
   { name: "Maya's Construction", projectId: "48997930", pocName: "Ervin Rodas", phone: "+17604056020" },
   { name: "Stephanie's Construction", projectId: "48661885", pocName: "Oscar Hernandez", phone: "+19514251969" },
   { name: "Cuidando De Ti Advantage", projectId: "48416102", pocName: "Miriam Morales", phone: "+17607550550" },
-  { name: "Cuidando De Ti Advantage", projectId: "48416102", pocName: "Leticia Hernandez", phone: "+19493518534" },
-  { name: "Black's Shutters Shades & Blinds", projectId: "48403041", pocName: "Mark Black", phone: "+17149138463" },
   { name: "1off Creative Concepts", projectId: "48402949", pocName: "Fredrick Gunnison", phone: "+18588881383" },
+  { name: "Black's Shutters Shades & Blinds", projectId: "48403041", pocName: "Mark Black", phone: "+17149138463" },
   { name: "ALL-IN-1 Construction", projectId: "48158835", pocName: "Wayne Meeks", phone: "+19099514915" },
   { name: "JG Seamless Gutters", projectId: "48019705", pocName: "Jared Green", phone: "+19512019735" },
   { name: "Looda House Auction", projectId: "47992032", pocName: "Sean Loodus", phone: "+19516007667" },
   { name: "Looda House Pawn", projectId: "47991754", pocName: "Sean Loodus", phone: "+19516007667" },
   { name: "Vitatherapy Wellness & Medspa", projectId: "47747763", pocName: "Katie Jones", phone: "+19513977444" },
   { name: "Krak Boba (Corporate)", projectId: "47729403", pocName: "Ben Pham", phone: "+17142109048" },
-  { name: "Hendo's Barrel House", projectId: "47628800", pocName: "Brandon Gonzales", phone: "+19516913600" },
   { name: "Krak Boba Oceanside", projectId: "47496503", pocName: "Ben Pham", phone: "+17142109048" },
   { name: "The HR Innovator Group", projectId: "47257146", pocName: "Stephanie Heathman", phone: "+19514016849" },
   { name: "Kentina", projectId: "47256487", pocName: "Blaine Smith", phone: "+19512652143" },
@@ -57,31 +55,25 @@ export const CONTACT_PHONE_BACKFILL: ContactPhoneBackfillEntry[] = [
   { name: "Krak Boba Temecula", projectId: "45767179", pocName: "Luis/Debbie Mares", phone: "+19512051155" },
   { name: "Passion Life Church", projectId: "45706270", pocName: "Phil Valdez", phone: "+19518528793" },
   { name: "Orangecrest Club", projectId: "45647295", pocName: "Jennifer Hudak", phone: "+13862959858" },
-  { name: "Law Offices of Giselle Rodriguez, PC", projectId: "45547448", pocName: "Giselle Rodriguez", phone: "+17077208293" },
+  { name: "Law Offices of Giselle Rodriguez", projectId: "45547448", pocName: "Giselle Rodriguez", phone: "+17077208293" },
   { name: "The BetterLife Coach", projectId: "45517328", pocName: "Randal Smalls", phone: "+17145195431" },
   { name: "BLuu Construction", projectId: "44886864", pocName: "Bryan Luu", phone: "+17144931576" },
   { name: "S.K. Produce Co.", projectId: "44479780", pocName: "Mishel Woods", phone: "+12064670789" },
   { name: "Premier Choice Management", projectId: "44251596", pocName: "Jared Bregen", phone: "+17606722860" },
   { name: "My 401k PEP Solution", projectId: "44055263", pocName: "Shawn West", phone: "+14808793051" },
   { name: "Ecoworkz", projectId: "43063862", pocName: "Tom Kelly", phone: "+17145827800" },
-  { name: "Ecoworkz", projectId: "43063862", pocName: "Bret Peterson", phone: "+17144937430" },
   { name: "Pristine Clean", projectId: "43030054", pocName: "Trevor Stenier", phone: "+19512592764" },
   { name: "MBros Pool Construction", projectId: "42663595", pocName: "Sergio Martinez", phone: "+17143921784" },
   { name: "Alliance Tops", projectId: "41139622", pocName: "Claudia Carrera", phone: "+16264075197" },
   { name: "Pipe It Right", projectId: "40889279", pocName: "Paulina Barrera", phone: "+17609061600" },
-  { name: "Pipe It Right", projectId: "40889279", pocName: "Cynthia Rivas", phone: "+19492911843" },
-  { name: "Danza Del Sol", projectId: "40435223", pocName: "Sara Sindicich", phone: "+19515282729" },
-  { name: "Danza Del Sol", projectId: "40435223", pocName: "Walter Carter", phone: "+19515282729" },
   { name: "CISCo Restaurant + Bar", projectId: "39953917", pocName: "Cisco Perez", phone: "+19495220370" },
   { name: "American Made Blue Collar LLC", projectId: "39941109", pocName: "Jason Apodaca", phone: "+13238952751" },
   { name: "GenEX Cleaning Services", projectId: "39618841", pocName: "Oscar Rodriguez", phone: "+19512286144" },
   { name: "Beyond the Walls Community Church", projectId: "38899767", pocName: "Demetric Felton", phone: "+16199470693" },
   { name: "Scott Cole Plumbing", projectId: "38327950", pocName: "Scott Cole", phone: "+19518338572" },
-  { name: "Guardian Plumbers, Heating, Air & Electrical", projectId: "38169363", pocName: "Kristen Black", phone: "+19512163280" },
+  { name: "Guardian Plumbers Heating Air & Electrical", projectId: "38169363", pocName: "Kristen Black", phone: "+19512163280" },
   { name: "Integrity Air", projectId: "34677126", pocName: "Chris Johnson", phone: "+19514632315" },
   { name: "Superior Patios", projectId: "34229213", pocName: "Jacqueline", phone: "+19099978068" },
-  { name: "Top Notch Auto", projectId: "29833578", pocName: "Naryssa", phone: "+19516944411" },
-  { name: "Top Notch Auto", projectId: "29833578", pocName: "Josh", phone: "+19519738001" },
 ];
 
 export type ContactPhoneBackfillOutcome = "updated" | "skipped" | "not found";
