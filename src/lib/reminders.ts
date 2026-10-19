@@ -20,7 +20,7 @@ import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
 import { scheduleUrl } from "./auth";
 import { normalizePhoneE164 } from "./phone";
-import { scheduleSmsReady, sendScheduleNudgeSms } from "./production-sms";
+import { scheduleSmsReady, sendScheduleNudgeSms, smsAlertReason } from "./production-sms";
 import {
   basecampConnected,
   commentOnCard,
@@ -419,6 +419,8 @@ export interface ReminderRunResult {
   heldByStatus: Array<{ client: string; clientId: string; status: string }>;
   sent: Array<{ client: string; email: string; window: Window; attempt: number }>;
   failed: Array<{ client: string; email: string }>;
+  // Texts that did not arrive. The cron groups these into one alert.
+  smsFailures: Array<{ client: string; reason: string; dedupeKey: string }>;
   basecampCards: Array<{ client: string; ok: boolean; error?: string }>;
   basecampFollowups: Array<{ client: string; ok: boolean; error?: string }>;
   skipped: {
@@ -483,6 +485,7 @@ export async function runReminders(opts?: {
     heldByStatus: [],
     sent: [],
     failed: [],
+    smsFailures: [],
     basecampCards: [],
     basecampFollowups: [],
     skipped: {
@@ -855,6 +858,14 @@ export async function runReminders(opts?: {
         if (!marked) markReminded(client.id, window.start, today);
         contacted = true;
         noteReachout(client, "sms", window, sms.phone);
+      }
+      const smsReason = smsAlertReason(sms);
+      if (smsReason) {
+        result.smsFailures.push({
+          client: client.name,
+          reason: smsReason,
+          dedupeKey: `cadence:${client.id}:${window.start}:${today}`,
+        });
       }
     }
   }

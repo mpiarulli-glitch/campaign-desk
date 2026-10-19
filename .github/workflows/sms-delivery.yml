@@ -1,0 +1,19 @@
+name: Scheduling text delivery check
+
+# Re-reads GoHighLevel a few minutes after a scheduling text goes out, until
+# the carrier says delivered or failed. Does not send texts.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sms-delivery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check scheduling text delivery
+        run: |
+          curl -fsS --show-error -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://hub.marketingempiregroup.com/api/cron/sms-delivery

@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { runReminders } from "@/lib/reminders";
 import { notifyReachouts } from "@/lib/notify";
+import { alertSmsFailures, refreshSmsDeliveries } from "@/lib/production-sms";
 
 // Constant-time compare so the secret can't be probed by timing.
 function secretMatches(provided: string | null): boolean {
@@ -63,6 +64,7 @@ async function handle(request: Request) {
   const newCard = url.searchParams.get("newCard") === "1";
   // &cardOnly=1 does the Basecamp card and sends no email.
   const cardOnly = url.searchParams.get("cardOnly") === "1";
+  const caught = dryRun ? [] : await refreshSmsDeliveries();
   const result = await runReminders({
     dryRun,
     only,
@@ -71,6 +73,9 @@ async function handle(request: Request) {
     cardOnly,
     today: asOf || undefined,
   });
+  if (!dryRun) {
+    await alertSmsFailures([...caught, ...result.smsFailures]);
+  }
   if (only) {
     return NextResponse.json({ ...result, targeted: only });
   }

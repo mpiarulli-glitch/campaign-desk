@@ -1561,11 +1561,22 @@ export function getDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS production_sms_sends (
       dedupe_key TEXT PRIMARY KEY,
       client_id TEXT NOT NULL DEFAULT '',
+      client_name TEXT NOT NULL DEFAULT '',
       phone TEXT NOT NULL,
       kind TEXT NOT NULL,
       body TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      message_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '',
+      error_code TEXT NOT NULL DEFAULT '',
+      error_text TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
+      checked_at TEXT NOT NULL DEFAULT '',
+      final_at TEXT NOT NULL DEFAULT '',
+      alerted_at TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sms_client ON production_sms_sends(client_id, created_at);
 
     -- Every outbound contact with a client, whatever channel carried it.
     --
@@ -3115,6 +3126,26 @@ function migrate(database: Database.Database) {
 
   // Track the Basecamp "time to schedule" card per reminder window (dedupe),
   // plus the card id and last follow-up so team nudges can comment on it.
+  const smsCols = tableColumns(database, "production_sms_sends");
+  for (const [col, ddl] of [
+    ["client_name", `ALTER TABLE production_sms_sends ADD COLUMN client_name TEXT NOT NULL DEFAULT ''`],
+    ["message_id", `ALTER TABLE production_sms_sends ADD COLUMN message_id TEXT NOT NULL DEFAULT ''`],
+    ["status", `ALTER TABLE production_sms_sends ADD COLUMN status TEXT NOT NULL DEFAULT ''`],
+    ["error_code", `ALTER TABLE production_sms_sends ADD COLUMN error_code TEXT NOT NULL DEFAULT ''`],
+    ["error_text", `ALTER TABLE production_sms_sends ADD COLUMN error_text TEXT NOT NULL DEFAULT ''`],
+    ["updated_at", `ALTER TABLE production_sms_sends ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`],
+    ["checked_at", `ALTER TABLE production_sms_sends ADD COLUMN checked_at TEXT NOT NULL DEFAULT ''`],
+    ["final_at", `ALTER TABLE production_sms_sends ADD COLUMN final_at TEXT NOT NULL DEFAULT ''`],
+    ["alerted_at", `ALTER TABLE production_sms_sends ADD COLUMN alerted_at TEXT NOT NULL DEFAULT ''`],
+  ] as const) {
+    if (smsCols.length && !smsCols.includes(col)) database.exec(ddl);
+  }
+  if (smsCols.length) {
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_sms_client ON production_sms_sends(client_id, created_at)`
+    );
+  }
+
   const reminderCols = tableColumns(database, "schedule_reminders");
   if (reminderCols.length && !reminderCols.includes("bc_card_at")) {
     database.exec(`ALTER TABLE schedule_reminders ADD COLUMN bc_card_at TEXT`);
