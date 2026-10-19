@@ -20,6 +20,7 @@ test("internal Basecamp projects stay out of client import and show in forecast"
 
     assert.equal(isInternalProject("Empire Leadership HQ"), true);
     assert.equal(isInternalProject("MEG Web HQ"), true);
+    assert.equal(isInternalProject("MEG InFrame app"), true);
     assert.equal(isInternalProject("Humble Somm Growth OS"), false);
     assert.equal(isInternalProject("Temecula Limos"), false);
     assert.equal(
@@ -32,11 +33,13 @@ test("internal Basecamp projects stay out of client import and show in forecast"
       { id: 2, name: "Humble Somm Growth OS - Powered by the Empire Method" },
       { id: 3, name: "MEG Web HQ" },
       { id: 4, name: "Temecula Limos Growth OS - Powered by the Empire Method" },
+      { id: 49194101, name: "MEG InFrame app" },
     ]);
     assert.deepEqual(
       visible.map((p) => p.name),
       [
         "Empire Leadership HQ",
+        "MEG InFrame app",
         "MEG Web HQ",
         "Temecula Limos Growth OS - Powered by the Empire Method",
       ]
