@@ -2645,6 +2645,14 @@ function tableColumns(database: Database.Database, table: string): string[] {
 }
 
 function migrate(database: Database.Database) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS klaviyo_revenue_cache (
+      cache_key TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      fetched_at TEXT NOT NULL
+    );
+  `);
+
   // The very first cut of the onboarding board was client_id-based and shipped
   // for a few hours with nothing ever added to it before the prospect-based
   // rebuild. Safe to drop and recreate in the new shape rather than migrate
