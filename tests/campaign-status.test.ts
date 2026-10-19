@@ -4,9 +4,13 @@ import fs from "node:fs";
 import os from "os";
 import path from "path";
 import {
+  BOARD_COLUMNS,
   OPERATOR_STATUS_OPTIONS,
   STATUS_BUCKETS,
+  boardColumnId,
+  groupCampaignsByBoard,
   isInternallyApproved,
+  listStageFromStatusParam,
   matchesCampaignStatusFilter,
   matchesListBucket,
   matchesStatusBucket,
@@ -47,6 +51,61 @@ test("every operator status sits in one plain-language bucket", () => {
   assert.equal(matchesListBucket({ status: "sent" }, "open"), false);
   assert.equal(matchesListBucket({ status: "live" }, "open"), false);
   assert.equal(matchesListBucket({ status: "sent" }, "all"), true);
+});
+
+test("old status links map onto the stage dropdown", () => {
+  assert.equal(listStageFromStatusParam("all"), "all");
+  assert.equal(listStageFromStatusParam("open"), "open");
+  assert.equal(listStageFromStatusParam("in_progress"), "in_progress");
+  assert.equal(listStageFromStatusParam("draft"), "in_progress");
+  assert.equal(listStageFromStatusParam("approved_internally"), "in_progress");
+  assert.equal(listStageFromStatusParam("in_review"), "waiting");
+  assert.equal(listStageFromStatusParam("approved"), "ready");
+  assert.equal(listStageFromStatusParam("scheduled"), "ready");
+  assert.equal(listStageFromStatusParam("sent"), "sent");
+  assert.equal(listStageFromStatusParam("live"), "sent");
+  assert.equal(listStageFromStatusParam("not-a-status"), null);
+});
+
+test("board columns follow the approval process and group campaigns", () => {
+  const covered = BOARD_COLUMNS.flatMap((column) => column.values);
+  assert.deepEqual(
+    covered,
+    OPERATOR_STATUS_OPTIONS.map((option) => option.value)
+  );
+  assert.equal(new Set(covered).size, covered.length);
+  assert.equal(boardColumnId("draft"), "draft");
+  assert.equal(boardColumnId("approved", "internal"), "approved_internally");
+  assert.equal(boardColumnId("approved", "client"), "approved");
+  assert.equal(boardColumnId("approved"), "approved");
+  assert.equal(boardColumnId("live"), "sent");
+  assert.equal(boardColumnId("sent"), "sent");
+  assert.equal(boardColumnId("mystery"), null);
+
+  const grouped = groupCampaignsByBoard([
+    { id: "a", status: "draft" },
+    { id: "b", status: "in_review" },
+    { id: "c", status: "approved", approved_channel: "internal" },
+    { id: "d", status: "live" },
+    { id: "e", status: "sent" },
+    { id: "f", status: "needs_changes" },
+    { id: "g", status: "nope" },
+  ]);
+  assert.deepEqual(
+    grouped.map((column) => column.id),
+    BOARD_COLUMNS.map((column) => column.id)
+  );
+  const byId = new Map(grouped.map((column) => [column.id, column.items.map((item) => item.id)]));
+  assert.deepEqual(byId.get("draft"), ["a"]);
+  assert.deepEqual(byId.get("in_review"), ["b"]);
+  assert.deepEqual(byId.get("approved_internally"), ["c"]);
+  assert.deepEqual(byId.get("needs_changes"), ["f"]);
+  assert.deepEqual(byId.get("sent"), ["d", "e"]);
+  assert.deepEqual(byId.get("scheduled"), []);
+  assert.equal(
+    grouped.reduce((sum, column) => sum + column.items.length, 0),
+    6
+  );
 });
 
 test("list send date prefers the next upcoming instant", () => {

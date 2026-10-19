@@ -6,8 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import {
+  groupCampaignsByBoard,
+  listStageFromStatusParam,
   matchesListBucket,
-  statusBucketId,
   type ListBucket,
 } from "@/lib/campaign-status";
 import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
@@ -63,14 +64,17 @@ const TYPE_LABEL: Record<AssetKind, string> = {
   mockup: "Mock-up",
 };
 
-const QUICK_FILTERS: { id: ListBucket; label: string }[] = [
+const STAGE_OPTIONS: { id: ListBucket; label: string }[] = [
+  { id: "all", label: "All" },
   { id: "open", label: "Open" },
   { id: "in_progress", label: "In progress" },
   { id: "waiting", label: "Waiting on client" },
   { id: "ready", label: "Ready to send" },
   { id: "sent", label: "Sent" },
-  { id: "all", label: "All" },
 ];
+
+const VIEW_STORAGE_KEY = "cd-campaigns-view";
+type CampaignView = "list" | "board";
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
   { value: "any", label: "Any time" },
@@ -137,6 +141,107 @@ function formatSend(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Not scheduled";
   return SEND_FORMAT.format(d);
+}
+
+function KindGlyph({ kind }: { kind: AssetKind }) {
+  const common = {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  if (kind === "cold_email") {
+    return (
+      <svg {...common}>
+        <rect x="1.5" y="3.5" width="11" height="8" rx="1.4" />
+        <path d="M2 4.5 7 8.2 12 4.5" />
+        <path d="M12.5 8.5 15 11M15 8.5 12.5 11" />
+      </svg>
+    );
+  }
+  if (kind === "linkedin") {
+    return (
+      <svg {...common}>
+        <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+        <path d="M4.5 7v4.5M4.5 4.5h.01M7.5 11.5V8.2A1.6 1.6 0 0 1 11 8.2v3.3" />
+      </svg>
+    );
+  }
+  if (kind === "sms") {
+    return (
+      <svg {...common}>
+        <path d="M3 3.5h10a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 13 11.5H7L3.5 14v-2.5H3A1.5 1.5 0 0 1 1.5 10V5A1.5 1.5 0 0 1 3 3.5Z" />
+      </svg>
+    );
+  }
+  if (kind === "interactive") {
+    return (
+      <svg {...common}>
+        <rect x="2" y="2" width="12" height="12" rx="1.5" />
+        <path d="M5 6h6M5 8.5h6M5 11h3.5" />
+      </svg>
+    );
+  }
+  if (kind === "blog") {
+    return (
+      <svg {...common}>
+        <path d="M4 2.5h6L13 5.5V13.5H4Z" />
+        <path d="M10 2.5V6h3M6 8.5h4M6 11h3" />
+      </svg>
+    );
+  }
+  if (kind === "copydeck") {
+    return (
+      <svg {...common}>
+        <path d="M3 3.5h10M3 6.5h10M3 9.5h7M3 12.5h5" />
+      </svg>
+    );
+  }
+  if (kind === "mockup") {
+    return (
+      <svg {...common}>
+        <rect x="2" y="2.5" width="12" height="11" rx="1.4" />
+        <path d="M2 5.5h12" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+      <path d="M2 4.5 8 9l6-4.5" />
+    </svg>
+  );
+}
+
+function BoardCard({ c }: { c: CampaignRow }) {
+  const kinds = Array.from(new Set(c.email_kinds || []));
+  const sendAt = c.next_send_at || c.scheduled_send_at || null;
+  return (
+    <Link href={`/admin/campaigns/${c.id}`} className="cboard-card">
+      <span className="cboard-client">{c.client_name.trim() || "No client"}</span>
+      <span className="cboard-name">{c.title}</span>
+      <span className="cboard-meta">
+        {kinds.length ? (
+          <span className="cboard-kinds">
+            {kinds.map((kind) => (
+              <span key={kind} className="cboard-kind" title={TYPE_LABEL[kind]} aria-label={TYPE_LABEL[kind]}>
+                <KindGlyph kind={kind} />
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <span className="cboard-owner">{c.owner || "Unassigned"}</span>
+      </span>
+      <span className={sendAt ? "cboard-send" : "cboard-send is-quiet"}>
+        {sendAt ? formatSend(sendAt) : "Not scheduled"}
+      </span>
+    </Link>
+  );
 }
 
 function emailLabel(c: CampaignRow): string {
@@ -343,7 +448,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"active" | "archived">("active");
-  const [bucket, setBucket] = useState<BucketFilter>("open");
+  const [bucket, setBucket] = useState<BucketFilter>("all");
+  const [view, setView] = useState<CampaignView>("list");
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -414,7 +520,7 @@ export default function AdminPage() {
   }, [types, typeFilter]);
 
   const filtersOn =
-    bucket !== "open" ||
+    bucket !== "all" ||
     clientFilter !== "all" ||
     ownerFilter !== "all" ||
     typeFilter !== "all" ||
@@ -427,9 +533,42 @@ export default function AdminPage() {
     setClientFilter("all");
     setOwnerFilter("all");
     setTypeFilter("all");
-    setBucket("open");
+    setBucket("all");
     setDatePreset("any");
     if (filter === "archived") setFilter("active");
+    replaceQuery((params) => {
+      params.delete("status");
+      params.delete("kind");
+    });
+  }
+
+  function replaceQuery(mutate: (params: URLSearchParams) => void) {
+    const url = new URL(window.location.href);
+    mutate(url.searchParams);
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== current) window.history.replaceState(null, "", nextUrl);
+  }
+
+  function rememberView(next: CampaignView) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      /* Private browsing can block storage. The URL still records the view. */
+    }
+    replaceQuery((params) => {
+      if (next === "board") params.set("view", "board");
+      else params.delete("view");
+    });
+  }
+
+  function chooseStage(next: BucketFilter) {
+    setBucket(next);
+    replaceQuery((params) => {
+      if (next === "all") params.delete("status");
+      else params.set("status", next);
+    });
   }
 
   const load = useCallback(async (
@@ -489,73 +628,66 @@ export default function AdminPage() {
     void load(filter);
   }, [filter, load]);
 
-  // Old links used an exact status. The pills are the only status control,
-  // so a link lands on the group that status belongs to.
+  // Old links pass an exact status or a stage id. Both select this dropdown.
+  // ?view=board wins over the remembered view; otherwise localStorage does.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("status");
     if (status) {
-      const parent = statusBucketId(status);
-      if (parent) setBucket(parent);
+      const stage = listStageFromStatusParam(status);
+      if (stage) setBucket(stage);
     }
     const kind = params.get("kind");
     if (isAssetKind(kind)) setTypeFilter(kind);
+    const requested = params.get("view");
+    if (requested === "board" || requested === "list") {
+      setView(requested);
+      try {
+        localStorage.setItem(VIEW_STORAGE_KEY, requested);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+      if (stored === "board" || stored === "list") setView(stored);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
-  const nounPlural = kindScope === "blog" ? "blog posts" : "campaigns";
+
+  const board = groupCampaignsByBoard(visible);
 
   return (
     <div className="app-shell">
-      <div className="page-actions">
-        <Link className="btn" href="/admin/new">
-          {kindScope === "blog" ? "New blog post" : "New campaign"}
-        </Link>
-      </div>
-
-      <main className="container container-wide stack">
+      <main className="container container-wide stack clist-page">
         <div className="clist">
           <div className="clist-head">
-            <div>
-              <p className="clist-kicker">Marketing Empire Group</p>
-              <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
-              <p className="clist-sub">Open work first.</p>
+            <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
+            <div className="clist-view" role="group" aria-label="Campaign view">
+              <button
+                type="button"
+                aria-pressed={view === "list"}
+                onClick={() => rememberView("list")}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                aria-pressed={view === "board"}
+                onClick={() => rememberView("board")}
+              >
+                Board
+              </button>
             </div>
-            <p className="clist-total">
-              <b>{loading ? "—" : visible.length}</b>
-              <span>
-                {loading
-                  ? "loading"
-                  : visible.length === campaigns.length
-                    ? nounPlural
-                    : `of ${campaigns.length}`}
-              </span>
-            </p>
+            <Link className="btn btn-sm clist-new" href="/admin/new">
+              {kindScope === "blog" ? "New blog post" : "New campaign"}
+            </Link>
           </div>
 
           {error ? <p className="error">{error}</p> : null}
-
-          <div className="clist-quick">
-            <div role="group" aria-label="Status">
-              {QUICK_FILTERS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={bucket === item.id}
-                  onClick={() => setBucket(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="clist-archived"
-              aria-pressed={filter === "archived"}
-              onClick={() => setFilter(filter === "archived" ? "active" : "archived")}
-            >
-              Archived
-            </button>
-          </div>
 
           <div className="clist-bar">
             <label className="clist-field clist-search">
@@ -571,6 +703,21 @@ export default function AdminPage() {
                     : "Search campaigns by name or client"
                 }
               />
+            </label>
+            <label className="clist-field">
+              <span>Stage</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by stage"
+                value={bucket}
+                onChange={(e) => chooseStage(e.target.value as BucketFilter)}
+              >
+                {STAGE_OPTIONS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="clist-field">
               <span>Client</span>
@@ -612,7 +759,12 @@ export default function AdminPage() {
                 value={typeFilter}
                 onChange={(e) => {
                   const next = e.target.value;
-                  setTypeFilter(isAssetKind(next) ? next : "all");
+                  const type = isAssetKind(next) ? next : "all";
+                  setTypeFilter(type);
+                  replaceQuery((params) => {
+                    if (type === "all") params.delete("kind");
+                    else params.set("kind", type);
+                  });
                 }}
               >
                 <option value="all">Any type</option>
@@ -638,6 +790,14 @@ export default function AdminPage() {
                 ))}
               </select>
             </label>
+            <button
+              type="button"
+              className="clist-archived"
+              aria-pressed={filter === "archived"}
+              onClick={() => setFilter(filter === "archived" ? "active" : "archived")}
+            >
+              Archived
+            </button>
             {filtersOn ? (
               <button type="button" className="clist-clear" onClick={clearFilters}>
                 Clear
@@ -645,7 +805,7 @@ export default function AdminPage() {
             ) : null}
           </div>
 
-          <div className="dashboard-grid">
+          <div className={view === "board" ? "dashboard-grid clist-board-wrap" : "dashboard-grid"}>
             <div className="stack" style={{ gap: 12 }}>
               {loading ? (
                 <p className="muted">Loading...</p>
@@ -674,6 +834,26 @@ export default function AdminPage() {
                       : "No campaigns match these filters."}
                   </p>
                 </div>
+              ) : view === "board" ? (
+                <div className="clist-board" aria-label="Campaigns by stage">
+                  {board.map((column) => (
+                    <section
+                      key={column.id}
+                      className="clist-col"
+                      aria-label={`${column.label}, ${column.items.length}`}
+                    >
+                      <header className="clist-col-head">
+                        <h2>{column.label}</h2>
+                        <span>{column.items.length}</span>
+                      </header>
+                      <div className="clist-col-cards">
+                        {column.items.map((c) => (
+                          <BoardCard key={c.id} c={c} />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
               ) : (
                 <div className="clist-table">
                   <div className="clist-cols clist-cols-head" aria-hidden="true">
@@ -698,7 +878,7 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
-            <ActivitySidebar />
+            {view === "list" ? <ActivitySidebar /> : null}
           </div>
         </div>
       </main>

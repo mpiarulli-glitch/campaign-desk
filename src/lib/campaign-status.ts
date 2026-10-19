@@ -79,8 +79,18 @@ export function matchesStatusBucket(
   return statusBucketId(campaign.status, campaign.approved_channel) === bucket;
 }
 
-// "open" is the list default: everything still moving, without Sent and Live.
+// "open" is everything still moving, without Sent and Live. The list itself
+// defaults to "all".
 export type ListBucket = StatusBucketId | "open" | "all";
+
+const LIST_STAGE_IDS: readonly ListBucket[] = [
+  "all",
+  "open",
+  "in_progress",
+  "waiting",
+  "ready",
+  "sent",
+];
 
 export function matchesListBucket(
   campaign: { status: string; approved_channel?: string | null },
@@ -90,6 +100,70 @@ export function matchesListBucket(
   const id = statusBucketId(campaign.status, campaign.approved_channel);
   if (bucket === "open") return id != null && id !== "sent";
   return id === bucket;
+}
+
+// Old list links pass either a stage id (?status=open) or an exact stored
+// status (?status=draft). Both land on the Stage dropdown.
+export function listStageFromStatusParam(status: string): ListBucket | null {
+  if ((LIST_STAGE_IDS as readonly string[]).includes(status)) {
+    return status as ListBucket;
+  }
+  return statusBucketId(status);
+}
+
+// One board column per approval stage, in the same order as the operator
+// status list. Live shares the Sent column: both mean the work has gone out.
+export const BOARD_COLUMNS: {
+  id: string;
+  label: string;
+  values: readonly OperatorCampaignStatus[];
+}[] = [
+  { id: "draft", label: "Draft", values: ["draft"] },
+  { id: "internal_review", label: "Internal review", values: ["internal_review"] },
+  {
+    id: "needs_revisions_internal",
+    label: "Needs revisions",
+    values: ["needs_revisions_internal"],
+  },
+  {
+    id: "approved_internally",
+    label: "Approved internally",
+    values: ["approved_internally"],
+  },
+  { id: "in_review", label: "Sent for approval", values: ["in_review"] },
+  { id: "needs_changes", label: "Needs changes", values: ["needs_changes"] },
+  { id: "approved", label: "Approved", values: ["approved"] },
+  { id: "scheduled", label: "Scheduled", values: ["scheduled"] },
+  { id: "sent", label: "Sent", values: ["sent", "live"] },
+];
+
+export type BoardColumnId = (typeof BOARD_COLUMNS)[number]["id"];
+
+export function boardColumnId(
+  status: string,
+  approvedChannel?: string | null
+): BoardColumnId | null {
+  const value = operatorStatusValue(status, approvedChannel);
+  const column = BOARD_COLUMNS.find((col) =>
+    (col.values as readonly string[]).includes(value)
+  );
+  return column?.id ?? null;
+}
+
+export function groupCampaignsByBoard<
+  T extends { status: string; approved_channel?: string | null },
+>(campaigns: T[]): { id: BoardColumnId; label: string; items: T[] }[] {
+  const groups = BOARD_COLUMNS.map((col) => ({
+    id: col.id,
+    label: col.label,
+    items: [] as T[],
+  }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  for (const campaign of campaigns) {
+    const id = boardColumnId(campaign.status, campaign.approved_channel);
+    if (id) byId.get(id)?.items.push(campaign);
+  }
+  return groups;
 }
 
 export type ReviewerChannel = "internal" | "external";
