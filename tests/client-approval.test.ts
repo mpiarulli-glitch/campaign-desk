@@ -251,9 +251,11 @@ test("campaigns list uses one control for status and one for updated", () => {
   );
   assert.match(page, /QUICK_FILTERS/);
   assert.match(page, /aria-label="Status"/);
+  assert.match(page, /Filter by type/);
   assert.match(page, /Filter by when it was updated/);
   assert.match(page, /campaign-filter-select/);
   assert.match(page, /statusBucketId/);
+  assert.equal((page.match(/Filter by type/g) || []).length, 1);
   assert.doesNotMatch(page, /KIND_FILTERS/);
   assert.doesNotMatch(page, /More filters/);
   assert.doesNotMatch(page, /Save view/);

@@ -10,7 +10,7 @@ import {
   statusBucketId,
   type ListBucket,
 } from "@/lib/campaign-status";
-import { packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
+import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
 import type { CampaignKindScope } from "@/lib/people";
 import { isCampaignKindScope } from "@/lib/people";
 
@@ -47,7 +47,21 @@ const SEND_FORMAT = new Intl.DateTimeFormat("en-US", {
 });
 
 type BucketFilter = ListBucket;
+type TypeFilter = "all" | AssetKind;
 type DatePreset = "any" | "7d" | "30d" | "90d" | "month";
+
+// The stored type of a package is the kind of work inside it. There is no
+// newsletter/promo/winback field. Package vs automation is a separate flag.
+const TYPE_LABEL: Record<AssetKind, string> = {
+  email: "Email",
+  cold_email: "Cold email",
+  linkedin: "LinkedIn",
+  sms: "Text",
+  interactive: "Form / quiz",
+  blog: "Blog",
+  copydeck: "Copy deck",
+  mockup: "Mock-up",
+};
 
 const QUICK_FILTERS: { id: ListBucket; label: string }[] = [
   { id: "open", label: "Open" },
@@ -103,6 +117,11 @@ function matchesDateFilter(
   if (bounds.start && day < bounds.start) return false;
   if (bounds.end && day > bounds.end) return false;
   return true;
+}
+
+function campaignMatchesType(c: CampaignRow, type: TypeFilter): boolean {
+  if (type === "all") return true;
+  return (c.email_kinds || []).includes(type);
 }
 
 function clientKey(name: string): string {
@@ -328,6 +347,7 @@ export default function AdminPage() {
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -342,15 +362,16 @@ export default function AdminPage() {
     ownerFilter === "all"
       ? cliented
       : cliented.filter((c) => (c.owner_key || "unassigned") === ownerFilter);
+  const typed = owned.filter((c) => campaignMatchesType(c, typeFilter));
   const q = query.trim().toLowerCase();
   const searched = q
-    ? owned.filter(
+    ? typed.filter(
         (c) =>
           c.title.toLowerCase().includes(q) ||
           c.client_name.toLowerCase().includes(q) ||
           (c.owner || "").toLowerCase().includes(q)
       )
-    : owned;
+    : typed;
   const visible =
     bucket === "all"
       ? searched
@@ -361,6 +382,14 @@ export default function AdminPage() {
     return Array.from(keys).sort((a, b) =>
       clientLabel(a).localeCompare(clientLabel(b))
     );
+  }, [campaigns]);
+
+  const types = useMemo(() => {
+    const present = new Set<AssetKind>();
+    for (const c of campaigns) {
+      for (const kind of c.email_kinds || []) present.add(kind);
+    }
+    return ASSET_KINDS.filter((kind) => present.has(kind.kind));
   }, [campaigns]);
 
   const owners = useMemo(() => {
@@ -378,10 +407,17 @@ export default function AdminPage() {
     }
   }, [clients, clientFilter]);
 
+  useEffect(() => {
+    if (typeFilter !== "all" && !types.some((kind) => kind.kind === typeFilter)) {
+      setTypeFilter("all");
+    }
+  }, [types, typeFilter]);
+
   const filtersOn =
     bucket !== "open" ||
     clientFilter !== "all" ||
     ownerFilter !== "all" ||
+    typeFilter !== "all" ||
     datePreset !== "any" ||
     filter === "archived" ||
     query.trim() !== "";
@@ -390,6 +426,7 @@ export default function AdminPage() {
     setQuery("");
     setClientFilter("all");
     setOwnerFilter("all");
+    setTypeFilter("all");
     setBucket("open");
     setDatePreset("any");
     if (filter === "archived") setFilter("active");
@@ -455,10 +492,14 @@ export default function AdminPage() {
   // Old links used an exact status. The pills are the only status control,
   // so a link lands on the group that status belongs to.
   useEffect(() => {
-    const status = new URLSearchParams(window.location.search).get("status");
-    if (!status) return;
-    const parent = statusBucketId(status);
-    if (parent) setBucket(parent);
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("status");
+    if (status) {
+      const parent = statusBucketId(status);
+      if (parent) setBucket(parent);
+    }
+    const kind = params.get("kind");
+    if (isAssetKind(kind)) setTypeFilter(kind);
   }, []);
 
   const nounPlural = kindScope === "blog" ? "blog posts" : "campaigns";
@@ -559,6 +600,25 @@ export default function AdminPage() {
                 {owners.map(([key, label]) => (
                   <option key={key} value={key}>
                     {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Type</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by type"
+                value={typeFilter}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setTypeFilter(isAssetKind(next) ? next : "all");
+                }}
+              >
+                <option value="all">Any type</option>
+                {types.map((kind) => (
+                  <option key={kind.kind} value={kind.kind}>
+                    {TYPE_LABEL[kind.kind]}
                   </option>
                 ))}
               </select>
