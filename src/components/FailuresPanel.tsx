@@ -19,6 +19,7 @@ type Failure = {
   subject: string;
   detail: string;
   hint: string;
+  raw_detail?: string;
   last_seen_at: string;
   seen_count: number;
 };
@@ -98,6 +99,12 @@ export function FailuresPanel() {
                 ) : null}
               </p>
               <p className="ops-item-sub">{f.detail}</p>
+              {f.raw_detail ? (
+                <details className="fail-raw">
+                  <summary>Raw detail</summary>
+                  <pre>{f.raw_detail}</pre>
+                </details>
+              ) : null}
               {f.hint ? <p className="fail-hint">{f.hint}</p> : null}
             </div>
             <div className="fail-item-side">

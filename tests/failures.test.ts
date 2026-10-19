@@ -100,6 +100,18 @@ test("failures surface", async (t) => {
     assert.equal(failures.dismissFailure("does-not-exist"), false);
   });
 
+  await t.test("the provider body is stored separately from the plain detail", () => {
+    failures.recordFailure({
+      kind: "email",
+      subject: "c@masked.example",
+      detail: "Resend couldn't send it: contains non-ASCII characters",
+      raw: '{"message":"contains non-ASCII characters"}',
+    });
+    const row = failures.listOpenFailures().find((f) => f.subject === "c@masked.example")!;
+    assert.equal(row.detail, "Resend couldn't send it: contains non-ASCII characters");
+    assert.equal(row.raw_detail, '{"message":"contains non-ASCII characters"}');
+  });
+
   await t.test("long details are capped so one row cannot swamp the panel", () => {
     failures.recordFailure({
       kind: "basecamp_campfire",

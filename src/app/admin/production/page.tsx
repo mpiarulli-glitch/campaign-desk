@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usableEmail } from "@/lib/email-address";
 import { FailuresPanel } from "@/components/FailuresPanel";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -1067,7 +1068,11 @@ export default function ProductionPage() {
           ? {
               basecampContactId: person.id,
               contactName: person.name,
-              contactEmail: person.email,
+              // A masked Basecamp address is not an inbox. Leave a real email
+              // already on the client alone instead of writing the mask.
+              ...(usableEmail(person.email)
+                ? { contactEmail: usableEmail(person.email) }
+                : {}),
             }
           : { basecampContactId: 0 }
       ),
@@ -2210,8 +2215,8 @@ export default function ProductionPage() {
                       <div>
                         <span className="k">Email</span>
                         <div className="v">
-                          {editableField(r, "contact_email", "text", c.contact_email,
-                            <span>{c.contact_email || "Not set"}</span>)}
+                          {editableField(r, "contact_email", "text", usableEmail(c.contact_email),
+                            <span>{usableEmail(c.contact_email) || "Not set"}</span>)}
                         </div>
                       </div>
                       <div>

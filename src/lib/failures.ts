@@ -34,6 +34,8 @@ export interface RecordFailureInput {
   // What the reader should do about it. Worth writing properly: the person
   // reading this list is trying to decide whether to act.
   hint?: string;
+  // Provider payload, shown collapsed under the plain detail. Not the headline.
+  raw?: string;
 }
 
 export function recordFailure(input: RecordFailureInput): void {
@@ -52,21 +54,28 @@ export function recordFailure(input: RecordFailureInput): void {
       // and a changed message often means the cause changed.
       db.prepare(
         `UPDATE app_failures
-         SET detail = ?, hint = ?, last_seen_at = ?, seen_count = seen_count + 1
+         SET detail = ?, hint = ?, raw_detail = ?, last_seen_at = ?, seen_count = seen_count + 1
          WHERE id = ?`
-      ).run(input.detail.slice(0, 500), input.hint || "", ts, existing.id);
+      ).run(
+        input.detail.slice(0, 500),
+        input.hint || "",
+        (input.raw || "").slice(0, 2000),
+        ts,
+        existing.id
+      );
       return;
     }
     db.prepare(
       `INSERT INTO app_failures
-         (id, kind, subject, detail, hint, occurred_at, last_seen_at, seen_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+         (id, kind, subject, detail, hint, raw_detail, occurred_at, last_seen_at, seen_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
     ).run(
       nanoid(12),
       input.kind,
       input.subject,
       input.detail.slice(0, 500),
       input.hint || "",
+      (input.raw || "").slice(0, 2000),
       ts,
       ts
     );

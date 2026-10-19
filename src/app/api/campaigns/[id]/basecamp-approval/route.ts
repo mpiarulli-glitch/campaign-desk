@@ -14,6 +14,11 @@ import {
   resolveApprovalEmailTo,
   sendApprovalEmail,
 } from "@/lib/approval-email";
+import {
+  NO_CONTACT_EMAIL,
+  sawUnusableEmail,
+  usableEmail,
+} from "@/lib/email-address";
 import { clearFailure, recordFailure } from "@/lib/failures";
 import {
   getCampaignById,
@@ -129,7 +134,7 @@ export async function GET(_request: Request, { params }: Params) {
         .map((person) => ({
           id: person.id,
           name: person.name,
-          email: person.email_address || "",
+          email: usableEmail(person.email_address),
           isClient: Boolean(person.client),
           mentionable: Boolean(person.attachable_sgid),
         }))
@@ -347,7 +352,7 @@ export async function POST(request: Request, { params }: Params) {
   // Email is the parallel inbox ping. Prefer the saved contact email; fall back
   // to the selected Basecamp person's address when the account record is blank.
   let rosterEmail = "";
-  if (!client.contact_email.trim() && recipientId) {
+  if (recipientId && !usableEmail(client.contact_email)) {
     try {
       const roster = await getProjectPeopleForMention(client.basecamp_project_id);
       rosterEmail =
@@ -377,12 +382,20 @@ export async function POST(request: Request, { params }: Params) {
     },
     customMessage: customMessage || undefined,
   });
-  if (!email.ok && !email.skipped) {
+  // A masked Basecamp address used to be sent, and Resend's refusal was then
+  // replaced with "Could not send the approval email." A bad address is not a
+  // send: say there is no contact email. A real provider refusal is already
+  // recorded by the mailer, with its own message, so this route must not
+  // overwrite that row.
+  if (
+    email.skipped === "no contact email" &&
+    sawUnusableEmail(client.contact_email, rosterEmail)
+  ) {
     recordFailure({
-      kind: "email",
-      subject: email.to || client.name,
-      detail: email.error || "Could not send the approval email.",
-      hint: "The Basecamp card went out. Fix email delivery, then resend if needed.",
+      kind: "contact_unresolved",
+      subject: client.name,
+      detail: NO_CONTACT_EMAIL,
+      hint: "Add a contact email on the client. The Basecamp card already went out.",
     });
   }
 

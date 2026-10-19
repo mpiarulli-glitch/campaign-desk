@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isProductionAuthenticated } from "@/lib/auth";
 import { getRevClient } from "@/lib/revenue";
 import { basecampConnected, getProjectPeopleForMention } from "@/lib/basecamp";
+import { usableEmail } from "@/lib/email-address";
 
 // The roster of a client's Basecamp project, for picking their contact.
 //
@@ -53,7 +54,7 @@ export async function GET(_request: Request, { params }: Params) {
       .map((person) => ({
         id: person.id,
         name: person.name,
-        email: person.email_address,
+        email: usableEmail(person.email_address),
         // Our own staff vs the client's people. Both are returned, since the
         // roster is the source of truth about who is actually reachable there,
         // but the picker groups them so a colleague is not chosen by accident.

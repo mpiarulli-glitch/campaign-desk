@@ -48,6 +48,7 @@ import {
 import { getUser } from "./users";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
+import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
 import { recordReachout } from "./reachouts";
 import { clearFailure, recordFailure } from "./failures";
 import {
@@ -521,14 +522,23 @@ export async function sendWeeklyAsk(args: {
   const { from, replyTo } = senderFor(am);
 
   // ---- email
-  if (!client.contact_email?.trim()) {
+  const to = usableEmail(client.contact_email);
+  if (!to) {
     out.email.skipped = "no contact email";
+    if ((client.contact_email || "").trim()) {
+      recordFailure({
+        kind: "contact_unresolved",
+        subject: client.name,
+        detail: NO_CONTACT_EMAIL,
+        hint: "Add a contact email on the client before the weekly ask can be emailed.",
+      });
+    }
   } else if (simulate) {
     out.email = { ok: true, skipped: heldReason };
   } else {
     const { subject, html, text } = weeklyAskEmail({ client, am, ask, link });
     const res = await sendEmailWithId({
-      to: client.contact_email,
+      to,
       subject,
       html,
       text,
@@ -546,7 +556,7 @@ export async function sendWeeklyAsk(args: {
         channel: "email",
         amSlug: am?.slug || "",
         amLabel: am?.label || "",
-        sentTo: client.contact_email,
+        sentTo: to,
         providerMessageId: res.id,
       });
       recordReachout({
@@ -556,9 +566,9 @@ export async function sendWeeklyAsk(args: {
         ymd: todayYmd(),
         detail: "Weekly snapshot ask",
       });
-      clearFailure("email", client.contact_email);
+      clearFailure("email", to);
     } else {
-      out.email.error = "Resend refused the send";
+      out.email.error = res.error || "Resend refused the send";
     }
   }
 

@@ -11,6 +11,7 @@
 // decide what to do.
 
 import { clearFailure, recordFailure } from "./failures";
+import { isUsableEmail, plainProviderEmailError } from "./email-address";
 
 export interface EmailInput {
   to: string;
@@ -36,6 +37,8 @@ export interface EmailResult {
   ok: boolean;
   /** Resend's id for the send. Null unless the send succeeded. */
   id: string | null;
+  /** Plain provider error when the send was refused. */
+  error?: string;
 }
 
 export function emailConfigured(): boolean {
@@ -79,6 +82,11 @@ export async function sendEmail(input: EmailInput): Promise<boolean> {
  * this variant rather than sendEmail.
  */
 export async function sendEmailWithId(input: EmailInput): Promise<EmailResult> {
+  if (!isUsableEmail(input.to)) {
+    console.warn("[email] not sending: address is missing or not a real email");
+    return { ok: false, id: null, error: "No contact email on file" };
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   const rawFrom = input.from?.trim() || process.env.EMAIL_FROM || "";
   const from = rawFrom ? agencyFrom(rawFrom) : "";
@@ -134,16 +142,18 @@ export async function sendEmailWithId(input: EmailInput): Promise<EmailResult> {
       console.error(
         `[email] Resend send failed: ${res.status} ${detail.slice(0, 300)}`
       );
+      const plain = plainProviderEmailError(res.status, detail);
       recordFailure({
         kind: "email",
         subject: input.to,
-        detail: `Resend refused it (${res.status}). ${detail.slice(0, 200)}`,
+        detail: plain.detail,
+        raw: plain.raw,
         hint:
           res.status === 403 || res.status === 401
             ? "Check the Resend key and that the sending domain is still verified."
             : "Check the address is valid, then resend.",
       });
-      return { ok: false, id: null };
+      return { ok: false, id: null, error: plain.detail };
     }
     // A send that works clears any earlier failure for this address, so the list
     // reflects what is broken now rather than what was ever broken.

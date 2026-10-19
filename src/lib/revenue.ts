@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { clientLogoPublicUrl } from "./client-logos";
 import { normalizePhoneE164 } from "./phone";
+import { nextContactEmail } from "./email-address";
 import {
   getDb,
   nowIso,
@@ -245,7 +246,7 @@ export function updateRevClient(
       ? existing.blackout_dates
       : JSON.stringify(updates.blackoutDates),
     updates.contactName?.trim() ?? existing.contact_name,
-    updates.contactEmail?.trim() ?? existing.contact_email,
+    nextContactEmail(updates.contactEmail, existing.contact_email),
     storedContactPhone(updates.contactPhone, existing.contact_phone),
     updates.poc?.trim() ?? existing.poc,
     updates.accountManager?.trim() ?? existing.account_manager,
