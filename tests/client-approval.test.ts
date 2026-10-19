@@ -290,7 +290,7 @@ test("LinkedIn review follow-up talks about outreach, not email packaging", () =
   assert.doesNotMatch(text, /review everything, then type/);
 });
 
-test("more than one email uses are ready, and names the package", () => {
+test("a campaign or flow name is singular even when it holds several emails", () => {
   const text = clientApprovalMessageText({
     ...input,
     campaignTitle: "Superior Patios September 2026 emails",
@@ -317,23 +317,41 @@ test("more than one email uses are ready, and names the package", () => {
   const disclaimer = html.indexOf("5 business days");
   assert.ok(lookingForward >= 0 && disclaimer > lookingForward);
 
+  const named = clientApprovalMessageText({
+    ...input,
+    campaignTitle: "FloorCo October Launch",
+    itemCount: 3,
+  });
+  assert.match(named, /FloorCo October Launch is ready for review/);
+  assert.doesNotMatch(named, /are ready/);
+
   const automation = clientApprovalMessageText({
     ...input,
     isAutomation: true,
     itemCount: 4,
   });
-  assert.match(automation, /Welcome Series are ready for review/);
+  assert.match(automation, /Welcome Series is ready for review/);
+  assert.doesNotMatch(automation, /Welcome Series are ready/);
   assert.match(
     automation,
     /this automation will be considered approved and will be scheduled to send/
   );
+
+  const automationHtml = clientApprovalMessageHtml({
+    ...input,
+    isAutomation: true,
+    itemCount: 4,
+  });
+  assert.match(automationHtml, /Welcome Series is ready for review/);
+  assert.doesNotMatch(automationHtml, /Welcome Series are ready/);
 
   const sms = clientApprovalMessageText({
     ...input,
     itemCount: 2,
     assetKinds: ["sms", "sms"],
   });
-  assert.match(sms, /are ready for review/);
+  assert.match(sms, /Welcome Series is ready for review/);
+  assert.doesNotMatch(sms, /are ready for review/);
   assert.match(
     sms,
     /these text messages will be considered approved and will be scheduled to send/

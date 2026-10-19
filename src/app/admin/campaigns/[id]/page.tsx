@@ -442,6 +442,8 @@ export default function AdminCampaignPage() {
   // are only sent when the sender has actually seen the form, so a send from a
   // stale tab cannot silently reassign a card.
   const [approvalRecipientId, setApprovalRecipientId] = useState<number | "">("");
+  const [approvalManualName, setApprovalManualName] = useState("");
+  const [approvalManualEmail, setApprovalManualEmail] = useState("");
   const [approvalAssigneeIds, setApprovalAssigneeIds] = useState<number[]>([]);
   const [approvalDueOn, setApprovalDueOn] = useState("");
   const [approvalMessage, setApprovalMessage] = useState("");
@@ -595,6 +597,10 @@ export default function AdminCampaignPage() {
     setApprovalRecipientId((current) =>
       current === "" ? (data.defaultRecipientId ?? "") : current
     );
+    if (!data.people.length) {
+      setApprovalManualName((current) => current || data.recipient || "");
+      setApprovalManualEmail((current) => current || data.contactEmail || "");
+    }
     setApprovalDueOn((current) => current || data.dueOn || "");
     setApprovalMessage((current) => (current ? current : data.message || ""));
   }
@@ -682,12 +688,15 @@ export default function AdminCampaignPage() {
   }
 
   useEffect(() => {
-    const name =
+    const picked =
       basecampApproval?.people.find((person) => person.id === approvalRecipientId)
         ?.name || "";
+    const name =
+      picked ||
+      (basecampApproval?.people.length ? "" : approvalManualName.trim());
     if (!name) return;
     setApprovalMessage((current) => withApprovalGreeting(current, name));
-  }, [approvalRecipientId, basecampApproval?.people]);
+  }, [approvalRecipientId, approvalManualName, basecampApproval?.people]);
 
   useEffect(() => {
     const name =
@@ -1150,8 +1159,16 @@ export default function AdminCampaignPage() {
       );
       return;
     }
-    if (!approvalRecipientId && !basecampApproval.recipient) {
-      setError("Pick who this approval goes to before sending it.");
+    const rosterEmpty = !basecampApproval.people.length;
+    const manualName = approvalManualName.trim();
+    const manualEmail = approvalManualEmail.trim();
+    if (
+      !approvalRecipientId &&
+      !(rosterEmpty && (manualName || manualEmail)) &&
+      !basecampApproval.recipient &&
+      !(basecampApproval.contactEmail || "").trim()
+    ) {
+      setError("Pick who this approval goes to, or enter a name or email.");
       return;
     }
     const resend = basecampApproval.alreadySent;
@@ -1166,6 +1183,8 @@ export default function AdminCampaignPage() {
       body: JSON.stringify({
         force: resend,
         recipientId: approvalRecipientId || undefined,
+        recipientName: rosterEmpty ? manualName : undefined,
+        recipientEmail: rosterEmpty ? manualEmail : undefined,
         assigneeIds: approvalAssigneeIds,
         dueOn: approvalDueOn,
         message: approvalMessage,
@@ -1938,6 +1957,7 @@ export default function AdminCampaignPage() {
     basecampApproval?.people.find(
       (person) => person.id === approvalRecipientId
     )?.name ||
+    (basecampApproval?.people.length ? "" : approvalManualName.trim()) ||
     basecampApproval?.recipient ||
     "";
   const planRows =
@@ -3664,33 +3684,66 @@ export default function AdminCampaignPage() {
             <>
             {basecampApproval?.ready && !sendingBasecampApproval ? (
               <div className="bc-form">
+                {!basecampApproval.people.length && basecampApproval.peopleReason ? (
+                  <p className="bc-roster-error" role="status">
+                    {basecampApproval.peopleReason}
+                  </p>
+                ) : null}
                 <div className="bc-form-row">
                   <div className="field">
-                    <label htmlFor="bc-recipient">Send to</label>
-                    <select
-                      id="bc-recipient"
-                      value={approvalRecipientId}
-                      onChange={(e) =>
-                        setApprovalRecipientId(
-                          e.target.value ? Number(e.target.value) : ""
-                        )
+                    <label
+                      htmlFor={
+                        basecampApproval.people.length
+                          ? "bc-recipient"
+                          : "bc-recipient-name"
                       }
-                      disabled={!basecampApproval.people.length}
                     >
-                      <option value="">
-                        {basecampApproval.people.length
-                          ? "Pick a person..."
-                          : basecampApproval.peopleReason ||
-                            "No project roster available"}
-                      </option>
-                      {basecampApproval.people.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {person.name}
-                          {person.isClient ? "" : " (our team)"}
-                          {person.mentionable ? "" : " (cannot be mentioned)"}
-                        </option>
-                      ))}
-                    </select>
+                      Send to
+                    </label>
+                    {basecampApproval.people.length ? (
+                      <select
+                        id="bc-recipient"
+                        value={approvalRecipientId}
+                        onChange={(e) =>
+                          setApprovalRecipientId(
+                            e.target.value ? Number(e.target.value) : ""
+                          )
+                        }
+                      >
+                        <option value="">Pick a person...</option>
+                        {basecampApproval.people.map((person) => (
+                          <option key={person.id} value={person.id}>
+                            {person.name}
+                            {person.isClient ? "" : " (our team)"}
+                            {person.mentionable ? "" : " (cannot be mentioned)"}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="bc-manual-contact">
+                        <input
+                          id="bc-recipient-name"
+                          value={approvalManualName}
+                          onChange={(e) => setApprovalManualName(e.target.value)}
+                          placeholder="Contact name"
+                          autoComplete="name"
+                        />
+                        <input
+                          id="bc-recipient-email"
+                          type="email"
+                          value={approvalManualEmail}
+                          onChange={(e) => setApprovalManualEmail(e.target.value)}
+                          placeholder="Contact email"
+                          autoComplete="email"
+                          aria-label="Contact email"
+                        />
+                        <span className="field-hint">
+                          Filled in from the client&apos;s saved contact. Change
+                          the name or email if this approval should go to
+                          someone else.
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="field">
                     <label htmlFor="bc-due">Due date</label>
@@ -3791,10 +3844,14 @@ export default function AdminCampaignPage() {
                     basecampApproval?.people.find(
                       (person) => person.id === approvalRecipientId
                     )?.email || "";
-                  const to =
-                    (basecampApproval?.contactEmail || "").trim() ||
-                    rosterEmail.trim() ||
-                    (basecampApproval?.emailTo || "").trim();
+                  const manualEmail = approvalManualEmail.trim();
+                  const to = basecampApproval?.people.length
+                    ? (basecampApproval.contactEmail || "").trim() ||
+                      rosterEmail.trim() ||
+                      (basecampApproval.emailTo || "").trim()
+                    : manualEmail ||
+                      (basecampApproval?.contactEmail || "").trim() ||
+                      (basecampApproval?.emailTo || "").trim();
                   return to ? ` and email ${to}` : "";
                 })()}
                 , and move its Deliverables card to Needs Approval?
@@ -3810,10 +3867,13 @@ export default function AdminCampaignPage() {
                           basecampApproval.people.find(
                             (person) => person.id === approvalRecipientId
                           )?.email || "";
-                        const to =
-                          (basecampApproval.contactEmail || "").trim() ||
-                          rosterEmail.trim() ||
-                          (basecampApproval.emailTo || "").trim();
+                        const to = basecampApproval.people.length
+                          ? (basecampApproval.contactEmail || "").trim() ||
+                            rosterEmail.trim() ||
+                            (basecampApproval.emailTo || "").trim()
+                          : approvalManualEmail.trim() ||
+                            (basecampApproval.contactEmail || "").trim() ||
+                            (basecampApproval.emailTo || "").trim();
                         return to
                           ? `Posts the Deliverables card to Needs Approval and emails ${to} (you’re CC’d).`
                           : `Posts the Deliverables card to Needs Approval. Add a contact email on the client to also email the ask.`;

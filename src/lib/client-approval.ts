@@ -48,8 +48,19 @@ function blogNoun(input: ClientApprovalMessageInput): string {
   return (input.itemCount ?? 1) === 1 ? "blog post" : "blog posts";
 }
 
+// The sentence is "Your {campaign or flow name} is/are ready". The name is the
+// subject, so a single campaign or flow ("Welcome Series") takes "is" even
+// when the package holds several emails. "are" is for a title that is itself
+// a plural ("September emails").
+function campaignSubjectIsPlural(title: string): boolean {
+  const folded = (title || "").trim().toLowerCase().replace(/[.!?]+$/g, "");
+  return /(?:emails|text messages|messages|blog posts|posts|newsletters|campaigns|automations|flows|sequences|articles|texts)$/.test(
+    folded
+  );
+}
+
 function readyVerb(input: ClientApprovalMessageInput): "is" | "are" {
-  return (input.itemCount ?? 1) === 1 ? "is" : "are";
+  return campaignSubjectIsPlural(input.campaignTitle) ? "are" : "is";
 }
 
 function silenceSubject(input: ClientApprovalMessageInput): string {
