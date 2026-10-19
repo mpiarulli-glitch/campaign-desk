@@ -56,6 +56,7 @@ const INTERNAL_PROJECTS = new Set(
     "Email/SMS + Automation + Linkedin Department",
     "Social Media and Graphic Design Team",
     "MEG Web HQ",
+    "MEG InFrame app",
     "Video Editing Team",
     "Empire Ads Team",
     "Empire Leadership HQ",
