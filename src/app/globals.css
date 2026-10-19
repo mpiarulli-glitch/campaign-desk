@@ -1745,7 +1745,7 @@ button {
   text-overflow: ellipsis;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1360px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -23853,26 +23853,31 @@ a.snap-todo-linked-title {
 }
 
 .clist-table {
+  container-type: inline-size;
+  container-name: clist;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--bg-elevated);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .clist-cols,
 .clist-row {
   display: grid;
+  /* Shared tracks. Fixed columns keep the header and every row on the same
+     lines; only the name grows. `auto` was sizing each row to its own badge
+     and action buttons, so the header and the rows drifted apart. */
   grid-template-columns:
-    minmax(110px, 0.8fr)
-    minmax(160px, 1.45fr)
-    auto
-    minmax(88px, 0.55fr)
-    minmax(100px, 0.65fr)
-    minmax(80px, 0.5fr)
-    auto;
-  gap: 8px 14px;
+    minmax(8.25rem, 0.85fr)
+    minmax(11rem, 1.8fr)
+    11.5rem
+    minmax(5.75rem, 0.6fr)
+    7.25rem
+    9.25rem
+    2.25rem;
+  column-gap: 12px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .clist-cols-head {
@@ -23887,9 +23892,18 @@ a.snap-todo-linked-title {
 }
 
 .clist-row {
+  position: relative;
   color: inherit;
   border-top: 1px solid var(--border);
   text-decoration: none;
+}
+
+.clist-row:last-of-type {
+  border-radius: 0 0 13px 13px;
+}
+
+.clist-row:has(.clist-menu) {
+  z-index: 4;
 }
 
 .clist-table .clist-row:first-of-type {
@@ -23950,18 +23964,84 @@ a.snap-todo-linked-title {
   text-transform: uppercase;
 }
 
+.clist-status {
+  min-width: 0;
+}
+
+.clist-status .badge {
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  line-height: 1.25;
+}
+
 .clist-send,
 .clist-count-cell {
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .clist-actions {
+  position: relative;
   display: flex;
   justify-content: flex-end;
-  gap: 2px;
+}
+
+.clist-menu-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.clist-row:hover .clist-menu-btn,
+.clist-menu-btn[aria-expanded="true"],
+.clist-menu-btn:focus-visible {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.clist-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.clist-menu button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.clist-menu button:hover,
+.clist-menu button:focus-visible {
+  background: var(--bg-soft);
 }
 
 .clist-rename {
@@ -24052,22 +24132,41 @@ a.snap-todo-linked-title {
   .clist-panel-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* When the table itself is narrow, keep the same seven columns and let the
+   name shrink. Headers stay visible so the cells still sit under them. */
+@container clist (max-width: 920px) {
+  .clist-cols,
+  .clist-row {
+    grid-template-columns:
+      minmax(7.25rem, 0.75fr)
+      minmax(0, 1.5fr)
+      10.25rem
+      minmax(0, 0.55fr)
+      6.5rem
+      8.25rem
+      2rem;
+    column-gap: 8px;
+    padding: 11px 10px;
+  }
+}
+
+@container clist (max-width: 720px) {
   .clist-cols-head {
     display: none;
   }
   .clist-cols,
   .clist-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "client client"
-      "name status"
+      "client status"
+      "name name"
       "owner send"
       "count actions";
+    row-gap: 4px;
   }
-  .clist-client {
-    grid-area: client;
-    white-space: normal;
-  }
+  .clist-client { grid-area: client; white-space: normal; }
   .clist-name { white-space: normal; }
   .clist-name-wrap { grid-area: name; }
   .clist-status { grid-area: status; justify-self: end; }

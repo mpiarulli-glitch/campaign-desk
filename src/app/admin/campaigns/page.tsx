@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import {
@@ -233,11 +233,29 @@ function CampaignRowView({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(c.title);
   const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
 
   function swallow(e: React.MouseEvent | React.KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
   }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointer(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   async function save() {
     const next = draft.trim();
@@ -336,31 +354,52 @@ function CampaignRowView({
         )}
       </span>
       <span className="clist-count-cell">{emailLabel(c)}</span>
-      <span className="clist-actions" onClick={swallow}>
-        {!renaming ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={(e) => {
-              swallow(e);
-              setDraft(c.title);
-              setRenaming(true);
-            }}
-          >
-            Rename
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={busyId === c.id}
-          onClick={(e) => {
-            swallow(e);
-            onArchive(c.id, filter === "active");
-          }}
-        >
-          {busyId === c.id ? "..." : filter === "active" ? "Archive" : "Restore"}
-        </button>
+      <span className="clist-actions" ref={menuRef} onClick={swallow}>
+        {renaming ? null : (
+          <>
+            <button
+              type="button"
+              className="clist-menu-btn"
+              aria-label={`Actions for ${c.title}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={(e) => {
+                swallow(e);
+                setMenuOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden="true">···</span>
+            </button>
+            {menuOpen ? (
+              <span className="clist-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    swallow(e);
+                    setMenuOpen(false);
+                    setDraft(c.title);
+                    setRenaming(true);
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busyId === c.id}
+                  onClick={(e) => {
+                    swallow(e);
+                    setMenuOpen(false);
+                    onArchive(c.id, filter === "active");
+                  }}
+                >
+                  {busyId === c.id ? "..." : filter === "active" ? "Archive" : "Restore"}
+                </button>
+              </span>
+            ) : null}
+          </>
+        )}
       </span>
     </Link>
   );
