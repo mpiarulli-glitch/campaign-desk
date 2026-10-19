@@ -23728,6 +23728,46 @@ a.snap-todo-linked-title {
   color: var(--on-ink, #fff);
 }
 
+.clist-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.clist-done:hover {
+  color: var(--text);
+}
+
+.clist-done.is-current {
+  background: var(--ink);
+  color: var(--on-ink, #fff);
+  border-color: var(--ink);
+}
+
+.clist-done-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.clist-done.is-current .clist-done-count {
+  background: rgba(255, 255, 255, 0.16);
+  color: inherit;
+}
+
 .clist-new {
   margin-left: auto;
   flex: none;

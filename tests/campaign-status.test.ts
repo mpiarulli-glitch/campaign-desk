@@ -8,7 +8,11 @@ import {
   OPERATOR_STATUS_OPTIONS,
   STATUS_BUCKETS,
   boardColumnId,
+  compareDoneNewestFirst,
+  doneSentInstant,
   groupCampaignsByBoard,
+  isDoneCampaignStatus,
+  isDoneListStatus,
   isInternallyApproved,
   listStageFromStatusParam,
   matchesCampaignStatusFilter,
@@ -55,32 +59,38 @@ test("every operator status sits in one plain-language bucket", () => {
 
 test("old status links map onto the stage dropdown", () => {
   assert.equal(listStageFromStatusParam("all"), "all");
-  assert.equal(listStageFromStatusParam("open"), "open");
+  assert.equal(listStageFromStatusParam("open"), "all");
   assert.equal(listStageFromStatusParam("in_progress"), "in_progress");
   assert.equal(listStageFromStatusParam("draft"), "in_progress");
   assert.equal(listStageFromStatusParam("approved_internally"), "in_progress");
   assert.equal(listStageFromStatusParam("in_review"), "waiting");
   assert.equal(listStageFromStatusParam("approved"), "ready");
   assert.equal(listStageFromStatusParam("scheduled"), "ready");
-  assert.equal(listStageFromStatusParam("sent"), "sent");
-  assert.equal(listStageFromStatusParam("live"), "sent");
+  assert.equal(listStageFromStatusParam("sent"), null);
+  assert.equal(listStageFromStatusParam("live"), null);
   assert.equal(listStageFromStatusParam("not-a-status"), null);
 });
 
-test("board columns follow the approval process and group campaigns", () => {
+test("sent and live are done, and the board keeps only in-progress stages", () => {
+  assert.equal(isDoneCampaignStatus("sent"), true);
+  assert.equal(isDoneCampaignStatus("live"), true);
+  assert.equal(isDoneCampaignStatus("draft"), false);
+  assert.equal(isDoneCampaignStatus("scheduled"), false);
+  assert.equal(isDoneListStatus("sent"), true);
+  assert.equal(isDoneListStatus("live"), true);
+  assert.equal(isDoneListStatus("draft"), false);
+
   const covered = BOARD_COLUMNS.flatMap((column) => column.values);
   assert.deepEqual(
     covered,
-    OPERATOR_STATUS_OPTIONS.map((option) => option.value)
+    OPERATOR_STATUS_OPTIONS.map((option) => option.value).filter(
+      (value) => value !== "sent" && value !== "live"
+    )
   );
-  assert.equal(new Set(covered).size, covered.length);
+  assert.equal(boardColumnId("sent"), null);
+  assert.equal(boardColumnId("live"), null);
   assert.equal(boardColumnId("draft"), "draft");
   assert.equal(boardColumnId("approved", "internal"), "approved_internally");
-  assert.equal(boardColumnId("approved", "client"), "approved");
-  assert.equal(boardColumnId("approved"), "approved");
-  assert.equal(boardColumnId("live"), "sent");
-  assert.equal(boardColumnId("sent"), "sent");
-  assert.equal(boardColumnId("mystery"), null);
 
   const grouped = groupCampaignsByBoard([
     { id: "a", status: "draft" },
@@ -95,17 +105,56 @@ test("board columns follow the approval process and group campaigns", () => {
     grouped.map((column) => column.id),
     BOARD_COLUMNS.map((column) => column.id)
   );
+  assert.equal(
+    grouped.some((column) => column.id === "sent"),
+    false
+  );
   const byId = new Map(grouped.map((column) => [column.id, column.items.map((item) => item.id)]));
   assert.deepEqual(byId.get("draft"), ["a"]);
   assert.deepEqual(byId.get("in_review"), ["b"]);
   assert.deepEqual(byId.get("approved_internally"), ["c"]);
   assert.deepEqual(byId.get("needs_changes"), ["f"]);
-  assert.deepEqual(byId.get("sent"), ["d", "e"]);
-  assert.deepEqual(byId.get("scheduled"), []);
   assert.equal(
     grouped.reduce((sum, column) => sum + column.items.length, 0),
-    6
+    4
   );
+});
+
+test("done campaigns sort newest sent first", () => {
+  assert.equal(
+    doneSentInstant({
+      next_send_at: "2026-10-02T00:00:00.000Z",
+      next_send_upcoming: false,
+      scheduled_send_at: "2026-09-01T00:00:00.000Z",
+      updated_at: "2026-10-03T00:00:00.000Z",
+    }),
+    "2026-10-02T00:00:00.000Z"
+  );
+  assert.equal(
+    doneSentInstant({
+      next_send_at: "2026-11-01T00:00:00.000Z",
+      next_send_upcoming: true,
+      scheduled_send_at: "2026-09-01T00:00:00.000Z",
+    }),
+    "2026-09-01T00:00:00.000Z"
+  );
+  assert.equal(
+    doneSentInstant({ updated_at: "2026-08-01T00:00:00.000Z" }),
+    "2026-08-01T00:00:00.000Z"
+  );
+  assert.equal(doneSentInstant({}), null);
+  const order = [
+    "2026-01-01T00:00:00.000Z",
+    "2026-06-01T00:00:00.000Z",
+    null,
+    "2026-03-01T00:00:00.000Z",
+  ].sort(compareDoneNewestFirst);
+  assert.deepEqual(order, [
+    "2026-06-01T00:00:00.000Z",
+    "2026-03-01T00:00:00.000Z",
+    "2026-01-01T00:00:00.000Z",
+    null,
+  ]);
 });
 
 test("list send date prefers the next upcoming instant", () => {
