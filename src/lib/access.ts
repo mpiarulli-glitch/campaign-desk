@@ -118,6 +118,14 @@ export const PAGES: Capability[] = [
     blurb: "Outreach, seats and per client economics.",
   },
   {
+    key: "page.klaviyo",
+    label: "Klaviyo",
+    group: "page",
+    href: "/admin/klaviyo",
+    icon: "bars",
+    blurb: "Bookings, forms, and email revenue across every Klaviyo account.",
+  },
+  {
     key: "page.calendar",
     label: "Calendar",
     group: "page",
@@ -349,6 +357,7 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
     // Admin sidebar only: each one aggregates across every client or person.
     case "page.clients":
     case "page.lifecycle":
+    case "page.klaviyo":
     case "page.onboarding":
     case "page.reports":
     case "page.activity":

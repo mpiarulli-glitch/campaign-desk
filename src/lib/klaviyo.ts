@@ -17,7 +17,8 @@ const REQUEST_TIMEOUT_MS = 25_000;
 export class KlaviyoError extends Error {
   constructor(
     message: string,
-    readonly status?: number
+    readonly status?: number,
+    readonly retryAfterMs?: number
   ) {
     super(message);
     this.name = "KlaviyoError";
@@ -158,7 +159,24 @@ export function klaviyoTemplatePayload(input: {
   };
 }
 
-async function klaviyoRequest<T>(
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, 15_000);
+  }
+  const when = Date.parse(header);
+  if (Number.isFinite(when)) {
+    return Math.min(Math.max(0, when - Date.now()), 15_000);
+  }
+  return undefined;
+}
+
+async function klaviyoRequestOnce<T>(
   apiKey: string,
   method: string,
   path: string,
@@ -173,9 +191,10 @@ async function klaviyoRequest<T>(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const url = path.startsWith("http") ? path : `${KLAVIYO_BASE}${path}`;
   let res: Response;
   try {
-    res = await fetch(`${KLAVIYO_BASE}${path}`, {
+    res = await fetch(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -194,9 +213,35 @@ async function klaviyoRequest<T>(
 
   const text = await res.text().catch(() => "");
   if (!res.ok) {
-    throw new KlaviyoError(formatKlaviyoError(res.status, text), res.status);
+    throw new KlaviyoError(
+      formatKlaviyoError(res.status, text),
+      res.status,
+      res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : undefined
+    );
   }
   return (text ? JSON.parse(text) : {}) as T;
+}
+
+/** JSON:API call. Retries a 429 a few times, honoring Retry-After up to 15s. */
+export async function klaviyoRequest<T>(
+  apiKey: string,
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await klaviyoRequestOnce<T>(apiKey, method, path, body);
+    } catch (err) {
+      if (err instanceof KlaviyoError && err.status === 429 && attempt < 3) {
+        attempt += 1;
+        await sleep(err.retryAfterMs ?? 1000 * attempt);
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 function formatKlaviyoError(status: number, body: string): string {
