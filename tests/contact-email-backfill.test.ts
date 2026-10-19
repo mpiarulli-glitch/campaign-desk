@@ -145,14 +145,24 @@ test("backfill writes blank and masked emails and leaves a valid one", () => {
 
   assert.ok(lines.includes(contactEmailBackfillLine({ client: "Trailhead Family Chiropractic", outcome: "updated" })));
   assert.ok(
-    lines.includes("[contact-email] Superior Patios: skipped (already valid)")
+    lines.includes(
+      contactEmailBackfillLine({
+        client: "Superior Patios",
+        outcome: "skipped",
+        matchedName: "Superior Patios Growth OS - Powered by the Empire Method",
+      })
+    )
   );
   assert.ok(lines.includes("[contact-email] Kentina: not found"));
 
   const again: string[] = [];
   backfillKnownContactEmails(database, (line) => again.push(line));
   assert.equal(emailOf("trail").contact_email, "c@drchrisboman.com");
-  assert.ok(again.every((line) => line.endsWith("skipped (already valid)") || line.endsWith("not found")));
+  assert.ok(
+    again.every((line) =>
+      /: (skipped \(already valid\)|not found)( \(.+\))?$/.test(line)
+    )
+  );
   assert.ok(again.includes("[contact-email] Trailhead Family Chiropractic: skipped (already valid)"));
 });
 
@@ -176,6 +186,114 @@ test("a Basecamp project id match wins over a different name", () => {
   );
   assert.equal(plan[0].outcome, "updated");
   assert.equal(plan[0].clientId, "by-id");
+});
+
+test("ALL-IN-1 matches All In One by name, and the project id when the name differs", () => {
+  const database = memoryDb();
+  insert(database, {
+    id: "aio",
+    name: "All In One Construction",
+    email: "",
+    projectId: "48158835",
+  });
+  insert(database, {
+    id: "maya",
+    name: "Maya's Construction",
+    email: "",
+    projectId: "48997930",
+  });
+  insert(database, {
+    id: "done",
+    name: "Done Right Construction",
+    email: "",
+  });
+
+  const lines: string[] = [];
+  const rows = backfillKnownContactEmails(database, (line) => lines.push(line));
+  const allInOne = rows.find((row) => row.client === "ALL-IN-1 Construction");
+  assert.equal(allInOne?.outcome, "updated");
+  assert.equal(allInOne?.clientId, "aio");
+  assert.equal(allInOne?.matchedName, "All In One Construction");
+  assert.equal(
+    (
+      database.prepare(`SELECT contact_email FROM rev_clients WHERE id = 'aio'`).get() as {
+        contact_email: string;
+      }
+    ).contact_email,
+    "wayne@allinone-const.com"
+  );
+  assert.equal(
+    (
+      database.prepare(`SELECT contact_email FROM rev_clients WHERE id = 'maya'`).get() as {
+        contact_email: string;
+      }
+    ).contact_email,
+    ""
+  );
+  assert.equal(
+    (
+      database.prepare(`SELECT contact_email FROM rev_clients WHERE id = 'done'`).get() as {
+        contact_email: string;
+      }
+    ).contact_email,
+    ""
+  );
+  assert.ok(
+    lines.includes(
+      "[contact-email] ALL-IN-1 Construction: updated (All In One Construction)"
+    )
+  );
+
+  const names = [
+    "All-In-One Construction",
+    "ALL IN 1",
+    "All In 1 Construction",
+    "ALL-IN-1 Construction",
+  ];
+  for (const name of names) {
+    const plan = planContactEmailBackfill(
+      [
+        {
+          id: "one",
+          name,
+          basecamp_project_id: "",
+          contact_email: "",
+        },
+      ],
+      [{ name: "ALL-IN-1 Construction", email: "wayne@allinone-const.com" }]
+    );
+    assert.equal(plan[0].outcome, "updated", name);
+    assert.equal(plan[0].matchedName, name);
+  }
+
+  const kept = planContactEmailBackfill(
+    [
+      {
+        id: "aio",
+        name: "All-In-One Construction",
+        basecamp_project_id: "48158835",
+        contact_email: "wayne@allinone-const.com",
+      },
+    ]
+  );
+  const row = kept.find((item) => item.client === "ALL-IN-1 Construction");
+  assert.equal(row?.outcome, "skipped");
+  assert.equal(row?.matchedName, "All-In-One Construction");
+
+  const byId = planContactEmailBackfill(
+    [
+      {
+        id: "weird",
+        name: "Wayne Meeks",
+        basecamp_project_id: "48158835",
+        contact_email: "",
+      },
+    ]
+  );
+  const idRow = byId.find((item) => item.client === "ALL-IN-1 Construction");
+  assert.equal(idRow?.outcome, "updated");
+  assert.equal(idRow?.clientId, "weird");
+  assert.equal(idRow?.matchedName, "Wayne Meeks");
 });
 
 test("an empty client table logs nothing", () => {
