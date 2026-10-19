@@ -2,20 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import {
-  OPERATOR_STATUS_OPTIONS,
-  matchesCampaignStatusFilter,
-  type OperatorCampaignStatus,
+  groupCampaignsByBoard,
+  listStageFromStatusParam,
+  matchesListBucket,
+  type ListBucket,
 } from "@/lib/campaign-status";
-import {
-  ASSET_KINDS,
-  isAssetKind,
-  packageItemCountLabel,
-  type AssetKind,
-} from "@/lib/asset-kinds";
+import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
 import type { CampaignKindScope } from "@/lib/people";
 import { isCampaignKindScope } from "@/lib/people";
 
@@ -35,52 +31,60 @@ type CampaignRow = {
   archived_at?: string | null;
   presentation?: string;
   basecamp_followup_count?: number;
+  scheduled_send_at?: string | null;
+  next_send_at?: string | null;
+  next_send_upcoming?: boolean;
+  owner?: string;
+  owner_key?: string;
 };
 
-const MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
-  month: "long",
+const SEND_ZONE = "America/Los_Angeles";
+
+const SEND_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
   year: "numeric",
+  timeZone: SEND_ZONE,
 });
 
-type View = "all" | "folders";
-type GroupBy = "client" | "month";
-type StatusFilter = "all" | OperatorCampaignStatus;
-type KindFilter = "all" | AssetKind;
-type DatePreset = "any" | "7d" | "30d" | "90d" | "month" | "custom";
+type BucketFilter = ListBucket;
+type TypeFilter = "all" | AssetKind;
+type DatePreset = "any" | "7d" | "30d" | "90d" | "month";
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All statuses" },
-  ...OPERATOR_STATUS_OPTIONS,
+// The stored type of a package is the kind of work inside it. There is no
+// newsletter/promo/winback field. Package vs automation is a separate flag.
+const TYPE_LABEL: Record<AssetKind, string> = {
+  email: "Email",
+  cold_email: "Cold email",
+  linkedin: "LinkedIn",
+  sms: "Text",
+  interactive: "Form / quiz",
+  blog: "Blog",
+  copydeck: "Copy deck",
+  mockup: "Mock-up",
+};
+
+const STAGE_OPTIONS: { id: ListBucket; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "open", label: "Open" },
+  { id: "in_progress", label: "In progress" },
+  { id: "waiting", label: "Waiting on client" },
+  { id: "ready", label: "Ready to send" },
+  { id: "sent", label: "Sent" },
 ];
 
-const KIND_FILTERS: { value: KindFilter; label: string }[] = [
-  { value: "all", label: "All kinds" },
-  ...ASSET_KINDS.map((k) => ({
-    value: k.kind,
-    label: k.kind === "linkedin" ? "LinkedIn" : k.label,
-  })),
-];
-
-function setListQueryParam(key: "status" | "kind", value: string) {
-  const url = new URL(window.location.href);
-  if (value === "all") url.searchParams.delete(key);
-  else url.searchParams.set(key, value);
-  window.history.replaceState(null, "", url);
-}
-
-function campaignMatchesKind(c: CampaignRow, kind: KindFilter): boolean {
-  if (kind === "all") return true;
-  return (c.email_kinds || []).includes(kind);
-}
+const VIEW_STORAGE_KEY = "cd-campaigns-view";
+type CampaignView = "list" | "board";
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
   { value: "any", label: "Any time" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "90d", label: "90 days" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
   { value: "month", label: "This month" },
-  { value: "custom", label: "Custom" },
 ];
+
+const NO_CLIENT = "__none__";
 
 function ymdLocal(d: Date): string {
   const y = d.getFullYear();
@@ -96,18 +100,10 @@ function campaignUpdatedYmd(c: CampaignRow): string {
 /** Inclusive YYYY-MM-DD bounds for the date filter. Null means unbounded. */
 function resolveDateBounds(
   preset: DatePreset,
-  from: string,
-  to: string,
   now = new Date()
 ): { start: string | null; end: string | null } {
   const end = ymdLocal(now);
   if (preset === "any") return { start: null, end: null };
-  if (preset === "custom") {
-    const start = from.trim() || null;
-    const customEnd = to.trim() || null;
-    if (!start && !customEnd) return { start: null, end: null };
-    return { start, end: customEnd };
-  }
   if (preset === "month") {
     return { start: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`, end };
   }
@@ -127,34 +123,199 @@ function matchesDateFilter(
   return true;
 }
 
-// Grouped by the month the campaign was created/sent, not by approval date,
-// so pending and in-review campaigns land in a folder too.
-function monthGroups(rows: CampaignRow[]) {
-  const map = new Map<string, { label: string; items: CampaignRow[] }>();
-  for (const c of rows) {
-    const d = new Date(c.created_at);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (!map.has(key)) map.set(key, { label: MONTH_FORMAT.format(d), items: [] });
-    map.get(key)!.items.push(c);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([key, v]) => ({ key, label: v.label, items: v.items }));
+function campaignMatchesType(c: CampaignRow, type: TypeFilter): boolean {
+  if (type === "all") return true;
+  return (c.email_kinds || []).includes(type);
 }
 
-function clientGroups(rows: CampaignRow[]) {
-  const map = new Map<string, CampaignRow[]>();
-  for (const c of rows) {
-    const key = c.client_name.trim() || "No client";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(c);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, items]) => ({ key, label: key, items }));
+function clientKey(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? trimmed : NO_CLIENT;
 }
 
-function CampaignCard({
+function clientLabel(key: string): string {
+  return key === NO_CLIENT ? "No client" : key;
+}
+
+function formatSend(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Not scheduled";
+  return SEND_FORMAT.format(d);
+}
+
+function KindGlyph({ kind }: { kind: AssetKind }) {
+  const common = {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  if (kind === "cold_email") {
+    return (
+      <svg {...common}>
+        <rect x="1.5" y="3.5" width="11" height="8" rx="1.4" />
+        <path d="M2 4.5 7 8.2 12 4.5" />
+        <path d="M12.5 8.5 15 11M15 8.5 12.5 11" />
+      </svg>
+    );
+  }
+  if (kind === "linkedin") {
+    return (
+      <svg {...common}>
+        <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+        <path d="M4.5 7v4.5M4.5 4.5h.01M7.5 11.5V8.2A1.6 1.6 0 0 1 11 8.2v3.3" />
+      </svg>
+    );
+  }
+  if (kind === "sms") {
+    return (
+      <svg {...common}>
+        <path d="M3 3.5h10a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 13 11.5H7L3.5 14v-2.5H3A1.5 1.5 0 0 1 1.5 10V5A1.5 1.5 0 0 1 3 3.5Z" />
+      </svg>
+    );
+  }
+  if (kind === "interactive") {
+    return (
+      <svg {...common}>
+        <rect x="2" y="2" width="12" height="12" rx="1.5" />
+        <path d="M5 6h6M5 8.5h6M5 11h3.5" />
+      </svg>
+    );
+  }
+  if (kind === "blog") {
+    return (
+      <svg {...common}>
+        <path d="M4 2.5h6L13 5.5V13.5H4Z" />
+        <path d="M10 2.5V6h3M6 8.5h4M6 11h3" />
+      </svg>
+    );
+  }
+  if (kind === "copydeck") {
+    return (
+      <svg {...common}>
+        <path d="M3 3.5h10M3 6.5h10M3 9.5h7M3 12.5h5" />
+      </svg>
+    );
+  }
+  if (kind === "mockup") {
+    return (
+      <svg {...common}>
+        <rect x="2" y="2.5" width="12" height="11" rx="1.4" />
+        <path d="M2 5.5h12" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+      <path d="M2 4.5 8 9l6-4.5" />
+    </svg>
+  );
+}
+
+const SOON_MS = 7 * 24 * 60 * 60 * 1000;
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "–";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function avatarTone(name: string): string {
+  let hash = 0;
+  for (const char of name.trim().toLowerCase()) hash = (hash + char.charCodeAt(0) * 17) % 6;
+  return String(hash);
+}
+
+function sendChip(
+  iso: string | null,
+  upcoming: boolean
+): { label: string; tone: "soon" | "overdue" | "later" | "past" } | null {
+  if (!iso) return null;
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return null;
+  const label = formatSend(iso);
+  if (!upcoming) return { label, tone: "past" };
+  const delta = time - Date.now();
+  if (delta < 0) return { label, tone: "overdue" };
+  if (delta <= SOON_MS) return { label, tone: "soon" };
+  return { label, tone: "later" };
+}
+
+function BoardCard({ c }: { c: CampaignRow }) {
+  const client = c.client_name.trim() || "No client";
+  const owner = c.owner || "Unassigned";
+  const kinds = Array.from(new Set(c.email_kinds || []));
+  const sendAt = c.next_send_at || c.scheduled_send_at || null;
+  const upcoming = c.next_send_at ? Boolean(c.next_send_upcoming) : false;
+  const chip = sendChip(sendAt, upcoming);
+  const chipLabel = chip
+    ? chip.tone === "soon"
+      ? `Soon · ${chip.label}`
+      : chip.tone === "overdue"
+        ? `Overdue · ${chip.label}`
+        : chip.tone === "past"
+          ? `Sent · ${chip.label}`
+          : chip.label
+    : null;
+
+  return (
+    <Link href={`/admin/campaigns/${c.id}`} className="cboard-card">
+      <span className="cboard-who">
+        <span className="cboard-avatar" data-tone={avatarTone(client)} aria-hidden="true">
+          {initials(client)}
+        </span>
+        <span className="cboard-client">{client}</span>
+      </span>
+      <span className="cboard-name">{c.title}</span>
+      <span className="cboard-foot">
+        {kinds.length ? (
+          <span className="cboard-kinds">
+            {kinds.map((kind) => (
+              <span key={kind} className="cboard-kind" title={TYPE_LABEL[kind]}>
+                <KindGlyph kind={kind} />
+                {TYPE_LABEL[kind]}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span />
+        )}
+        <span
+          className="cboard-owner"
+          data-tone={avatarTone(owner)}
+          title={owner}
+          aria-label={`Owner ${owner}`}
+        >
+          {initials(owner)}
+        </span>
+      </span>
+      {chip && chipLabel ? (
+        <span className={`cboard-send is-${chip.tone}`}>
+          {chipLabel}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function emailLabel(c: CampaignRow): string {
+  if (!c.email_count) return "No emails";
+  return packageItemCountLabel(
+    c.email_kinds?.length
+      ? c.email_kinds
+      : Array.from({ length: c.email_count }, () => "email" as AssetKind),
+    { automation: c.presentation === "automation" }
+  );
+}
+
+function CampaignRowView({
   c,
   filter,
   busyId,
@@ -170,13 +331,29 @@ function CampaignCard({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(c.title);
   const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
 
-  // The whole row is a link to the campaign, so anything interactive inside it
-  // has to stop the click from navigating.
   function swallow(e: React.MouseEvent | React.KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
   }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointer(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   async function save() {
     const next = draft.trim();
@@ -191,15 +368,33 @@ function CampaignCard({
     setRenaming(false);
   }
 
+  const notes: string[] = [];
+  if (c.presentation === "automation") notes.push("Automation");
+  if (c.open_comments > 0) {
+    notes.push(
+      `${c.open_comments} open comment${c.open_comments === 1 ? "" : "s"}`
+    );
+  }
+  if ((c.basecamp_followup_count || 0) > 0) {
+    notes.push(`Followed up ${c.basecamp_followup_count}×`);
+  }
+
+  const sendAt = c.next_send_at || c.scheduled_send_at || null;
+  const upcoming = c.next_send_at ? Boolean(c.next_send_upcoming) : false;
+
   return (
-    <Link href={`/admin/campaigns/${c.id}`} className="campaign-item">
-      <div style={{ minWidth: 0, flex: 1 }}>
+    <Link href={`/admin/campaigns/${c.id}`} className="clist-row">
+      <span className="clist-client">
+        {c.client_name.trim() || "No client"}
+      </span>
+      <span className="clist-name-wrap">
         {renaming ? (
-          <div className="row" style={{ gap: 6, alignItems: "center" }} onClick={swallow}>
+          <span className="clist-rename" onClick={swallow}>
             <input
               autoFocus
               value={draft}
               disabled={saving}
+              aria-label="Campaign name"
               onChange={(e) => setDraft(e.target.value)}
               onClick={swallow}
               onKeyDown={(e) => {
@@ -212,7 +407,6 @@ function CampaignCard({
                   setRenaming(false);
                 }
               }}
-              style={{ flex: 1, minWidth: 0 }}
             />
             <button
               type="button"
@@ -237,64 +431,74 @@ function CampaignCard({
             >
               Cancel
             </button>
-          </div>
+          </span>
         ) : (
-          <h3>{c.title}</h3>
+          <span className="clist-name">{c.title}</span>
         )}
-        <div className="meta">
-          {c.presentation === "automation" ? "Automation · " : ""}
-          {c.client_name ? `${c.client_name} · ` : ""}
-          {c.email_count
-            ? `${packageItemCountLabel(
-                c.email_kinds?.length
-                  ? c.email_kinds
-                  : Array.from({ length: c.email_count }, () => "email" as AssetKind),
-                { automation: c.presentation === "automation" }
-              )} · `
-            : ""}
-          Updated {new Date(c.updated_at).toLocaleString()}
-          {c.open_comments > 0
-            ? ` · ${c.open_comments} open comment${
-                c.open_comments === 1 ? "" : "s"
-              }`
-            : ""}
-          {(c.basecamp_followup_count || 0) > 0
-            ? ` · Followed up ${c.basecamp_followup_count}×`
-            : ""}
-        </div>
-      </div>
-      <div className="row" style={{ alignItems: "center", gap: 8 }}>
+        {notes.length ? <span className="clist-note">{notes.join(" · ")}</span> : null}
+      </span>
+      <span className="clist-status">
         <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
-        {!renaming ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={(e) => {
-              swallow(e);
-              setDraft(c.title);
-              setRenaming(true);
-            }}
-          >
-            Rename
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={busyId === c.id}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onArchive(c.id, filter === "active");
-          }}
-        >
-          {busyId === c.id
-            ? "..."
-            : filter === "active"
-              ? "Archive"
-              : "Restore"}
-        </button>
-      </div>
+      </span>
+      <span className="clist-owner">{c.owner || "Unassigned"}</span>
+      <span className="clist-send">
+        {sendAt ? (
+          <>
+            <span className="clist-send-k">{upcoming ? "Next" : "Sent"}</span>
+            {formatSend(sendAt)}
+          </>
+        ) : (
+          <span className="clist-quiet">Not scheduled</span>
+        )}
+      </span>
+      <span className="clist-count-cell">{emailLabel(c)}</span>
+      <span className="clist-actions" ref={menuRef} onClick={swallow}>
+        {renaming ? null : (
+          <>
+            <button
+              type="button"
+              className="clist-menu-btn"
+              aria-label={`Actions for ${c.title}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={(e) => {
+                swallow(e);
+                setMenuOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden="true">···</span>
+            </button>
+            {menuOpen ? (
+              <span className="clist-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    swallow(e);
+                    setMenuOpen(false);
+                    setDraft(c.title);
+                    setRenaming(true);
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busyId === c.id}
+                  onClick={(e) => {
+                    swallow(e);
+                    setMenuOpen(false);
+                    onArchive(c.id, filter === "active");
+                  }}
+                >
+                  {busyId === c.id ? "..." : filter === "active" ? "Archive" : "Restore"}
+                </button>
+              </span>
+            ) : null}
+          </>
+        )}
+      </span>
     </Link>
   );
 }
@@ -304,52 +508,134 @@ export default function AdminPage() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<View>("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("month");
-  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"active" | "archived">("active");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [bucket, setBucket] = useState<BucketFilter>("all");
+  const [view, setView] = useState<CampaignView>("list");
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const dateBounds = resolveDateBounds(datePreset, dateFrom, dateTo);
+  const dateBounds = resolveDateBounds(datePreset);
   const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
-  const kinded = dated.filter((c) => campaignMatchesKind(c, kindFilter));
-  const statused =
-    statusFilter === "all"
-      ? kinded
-      : kinded.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
+  const cliented =
+    clientFilter === "all"
+      ? dated
+      : dated.filter((c) => clientKey(c.client_name) === clientFilter);
+  const owned =
+    ownerFilter === "all"
+      ? cliented
+      : cliented.filter((c) => (c.owner_key || "unassigned") === ownerFilter);
+  const typed = owned.filter((c) => campaignMatchesType(c, typeFilter));
   const q = query.trim().toLowerCase();
-  const visible = q
-    ? statused.filter(
+  const searched = q
+    ? typed.filter(
         (c) =>
           c.title.toLowerCase().includes(q) ||
-          c.client_name.toLowerCase().includes(q)
+          c.client_name.toLowerCase().includes(q) ||
+          (c.owner || "").toLowerCase().includes(q)
       )
-    : statused;
-  const dateActive = Boolean(dateBounds.start || dateBounds.end);
-  const kindsInList = new Set(
-    campaigns.flatMap((c) => c.email_kinds || [])
-  );
+    : typed;
+  const visible =
+    bucket === "all"
+      ? searched
+      : searched.filter((c) => matchesListBucket(c, bucket));
 
-  function toggleFolder(key: string) {
-    setOpenFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
+  const clients = useMemo(() => {
+    const keys = new Set(campaigns.map((c) => clientKey(c.client_name)));
+    return Array.from(keys).sort((a, b) =>
+      clientLabel(a).localeCompare(clientLabel(b))
+    );
+  }, [campaigns]);
+
+  const types = useMemo(() => {
+    const present = new Set<AssetKind>();
+    for (const c of campaigns) {
+      for (const kind of c.email_kinds || []) present.add(kind);
+    }
+    return ASSET_KINDS.filter((kind) => present.has(kind.kind));
+  }, [campaigns]);
+
+  const owners = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of campaigns) {
+      const key = c.owner_key || "unassigned";
+      if (!map.has(key)) map.set(key, c.owner || "Unassigned");
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [campaigns]);
+
+  useEffect(() => {
+    if (clientFilter !== "all" && !clients.includes(clientFilter)) {
+      setClientFilter("all");
+    }
+  }, [clients, clientFilter]);
+
+  useEffect(() => {
+    if (typeFilter !== "all" && !types.some((kind) => kind.kind === typeFilter)) {
+      setTypeFilter("all");
+    }
+  }, [types, typeFilter]);
+
+  const filtersOn =
+    bucket !== "all" ||
+    clientFilter !== "all" ||
+    ownerFilter !== "all" ||
+    typeFilter !== "all" ||
+    datePreset !== "any" ||
+    filter === "archived" ||
+    query.trim() !== "";
+
+  function clearFilters() {
+    setQuery("");
+    setClientFilter("all");
+    setOwnerFilter("all");
+    setTypeFilter("all");
+    setBucket("all");
+    setDatePreset("any");
+    if (filter === "archived") setFilter("active");
+    replaceQuery((params) => {
+      params.delete("status");
+      params.delete("kind");
     });
   }
 
-  async function load(nextFilter: "active" | "archived" = filter, opts?: { silent?: boolean }) {
+  function replaceQuery(mutate: (params: URLSearchParams) => void) {
+    const url = new URL(window.location.href);
+    mutate(url.searchParams);
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== current) window.history.replaceState(null, "", nextUrl);
+  }
+
+  function rememberView(next: CampaignView) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      /* Private browsing can block storage. The URL still records the view. */
+    }
+    replaceQuery((params) => {
+      if (next === "board") params.set("view", "board");
+      else params.delete("view");
+    });
+  }
+
+  function chooseStage(next: BucketFilter) {
+    setBucket(next);
+    replaceQuery((params) => {
+      if (next === "all") params.delete("status");
+      else params.set("status", next);
+    });
+  }
+
+  const load = useCallback(async (
+    nextFilter: "active" | "archived",
+    opts?: { silent?: boolean }
+  ) => {
     if (!opts?.silent) setLoading(true);
     setError("");
     const res = await fetch(
@@ -368,11 +654,8 @@ export default function AdminPage() {
     setCampaigns(data.campaigns || []);
     const scope = isCampaignKindScope(data.scope) ? data.scope : "all";
     setKindScope(scope);
-    if (scope === "no_blog") {
-      setKindFilter((current) => (current === "blog" ? "all" : current));
-    }
     setLoading(false);
-  }
+  }, [router]);
 
   async function renameCampaign(id: string, title: string) {
     const res = await fetch(`/api/campaigns/${id}`, {
@@ -403,351 +686,264 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    load(filter);
-  }, [filter]);
+    void load(filter);
+  }, [filter, load]);
 
-  // Honor ?status= and ?kind= deep links (home tiles, LinkedIn campaign pages).
+  // Old links pass an exact status or a stage id. Both select this dropdown.
+  // ?view=board wins over the remembered view; otherwise localStorage does.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const s = params.get("status");
-    if (s && STATUS_FILTERS.some((sf) => sf.value === s)) {
-      setStatusFilter(s as StatusFilter);
+    const status = params.get("status");
+    if (status) {
+      const stage = listStageFromStatusParam(status);
+      if (stage) setBucket(stage);
     }
-    const k = params.get("kind");
-    if (k === "all" || isAssetKind(k)) setKindFilter(k);
+    const kind = params.get("kind");
+    if (isAssetKind(kind)) setTypeFilter(kind);
+    const requested = params.get("view");
+    if (requested === "board" || requested === "list") {
+      setView(requested);
+      try {
+        localStorage.setItem(VIEW_STORAGE_KEY, requested);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+      if (stored === "board" || stored === "list") setView(stored);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
+
+  const board = groupCampaignsByBoard(visible);
+
   return (
-    <div className="app-shell stark">
-      <div className="page-actions">
-        <Link className="btn" href="/admin/new">
-          {kindScope === "blog" ? "New blog post" : "New campaign"}
-        </Link>
-      </div>
-
-      <main className="container container-wide stack">
-        <div className="page-hero campaign-hero stark-hero">
-          <div className="stark-hero-copy">
-            <p className="deck-kicker">
-              <span className="deck-live" aria-hidden />
-              Systems · Campaigns
-            </p>
+    <div className="app-shell">
+      <main className="container container-wide stack clist-page">
+        <div className="clist">
+          <div className="clist-head">
             <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
+            <div className="clist-view" role="group" aria-label="Campaign view">
+              <button
+                type="button"
+                aria-pressed={view === "list"}
+                onClick={() => rememberView("list")}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                aria-pressed={view === "board"}
+                onClick={() => rememberView("board")}
+              >
+                Board
+              </button>
+            </div>
+            <Link className="btn btn-sm clist-new" href="/admin/new">
+              {kindScope === "blog" ? "New blog post" : "New campaign"}
+            </Link>
           </div>
-          <div className="deck-core stark-core" aria-hidden="true">
-            <span className="deck-ring r1" />
-            <span className="deck-ring r2" />
-            <span className="deck-ring r3" />
-            <span className="deck-core-read">
-              <b>{loading ? "—" : visible.length}</b>
-              <span>live</span>
-            </span>
-          </div>
-          <label className="cs-search campaign-search">
-            <span className="ads-search-label">Search</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                kindScope === "blog" ? "Post or client" : "Campaign or client"
-              }
-              aria-label={
-                kindScope === "blog"
-                  ? "Search blog posts by name or client"
-                  : "Search campaigns by name or client"
-              }
-            />
-          </label>
-        </div>
 
-        {error ? <p className="error">{error}</p> : null}
+          {error ? <p className="error">{error}</p> : null}
 
-        <div className="campaign-toolbar">
-          <div className="tabs" style={{ marginBottom: 0 }}>
+          <div className="clist-bar">
+            <label className="clist-field clist-search">
+              <span>Search</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={kindScope === "blog" ? "Post or client" : "Campaign or client"}
+                aria-label={
+                  kindScope === "blog"
+                    ? "Search blog posts by name or client"
+                    : "Search campaigns by name or client"
+                }
+              />
+            </label>
+            <label className="clist-field">
+              <span>Stage</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by stage"
+                value={bucket}
+                onChange={(e) => chooseStage(e.target.value as BucketFilter)}
+              >
+                {STAGE_OPTIONS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Client</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by client"
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+              >
+                <option value="all">All clients</option>
+                {clients.map((key) => (
+                  <option key={key} value={key}>
+                    {clientLabel(key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Owner</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by owner"
+                value={ownerFilter}
+                onChange={(e) => setOwnerFilter(e.target.value)}
+              >
+                <option value="all">Any owner</option>
+                {owners.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Type</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by type"
+                value={typeFilter}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const type = isAssetKind(next) ? next : "all";
+                  setTypeFilter(type);
+                  replaceQuery((params) => {
+                    if (type === "all") params.delete("kind");
+                    else params.set("kind", type);
+                  });
+                }}
+              >
+                <option value="all">Any type</option>
+                {types.map((kind) => (
+                  <option key={kind.kind} value={kind.kind}>
+                    {TYPE_LABEL[kind.kind]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Updated</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by when it was updated"
+                value={datePreset}
+                onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+              >
+                {DATE_PRESETS.map((preset) => (
+                  <option key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
-              className={`tab ${filter === "active" ? "active" : ""}`}
-              onClick={() => setFilter("active")}
-            >
-              Active
-            </button>
-            <button
-              className={`tab ${filter === "archived" ? "active" : ""}`}
-              onClick={() => setFilter("archived")}
+              type="button"
+              className="clist-archived"
+              aria-pressed={filter === "archived"}
+              onClick={() => setFilter(filter === "archived" ? "active" : "archived")}
             >
               Archived
             </button>
-          </div>
-          <label className="campaign-filter">
-            <span className="campaign-date-label">Status</span>
-            <select
-              className="campaign-filter-select"
-              aria-label="Filter by status"
-              value={statusFilter}
-              onChange={(e) => {
-                const next = e.target.value as StatusFilter;
-                setStatusFilter(next);
-                setListQueryParam("status", next);
-              }}
-            >
-              {STATUS_FILTERS.map((sf) => {
-                const count =
-                  sf.value === "all"
-                    ? kinded.length
-                    : kinded.filter((c) =>
-                        matchesCampaignStatusFilter(c, sf.value)
-                      ).length;
-                return (
-                  <option key={sf.value} value={sf.value}>
-                    {sf.label} ({count})
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          {kindScope === "blog" || kindScope === "interactive" ? null : (
-            <label className="campaign-filter">
-              <span className="campaign-date-label">Kind</span>
-              <select
-                className="campaign-filter-select"
-                aria-label="Filter by campaign kind"
-                value={kindFilter}
-                onChange={(e) => {
-                  const next = e.target.value as KindFilter;
-                  setKindFilter(next);
-                  setListQueryParam("kind", next);
-                }}
-              >
-                {KIND_FILTERS.filter(
-                  (kf) =>
-                    (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
-                    (kf.value === "all" ||
-                      kf.value === "linkedin" ||
-                      kindsInList.has(kf.value))
-                ).map((kf) => {
-                  const count =
-                    kf.value === "all"
-                      ? dated.length
-                      : dated.filter((c) =>
-                          campaignMatchesKind(c, kf.value)
-                        ).length;
-                  return (
-                    <option key={kf.value} value={kf.value}>
-                      {kf.label} ({count})
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          )}
-        </div>
-
-        <div className="campaign-date-filter">
-          <span className="campaign-date-label">Updated</span>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {DATE_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                className={`preview-device-btn ${datePreset === p.value ? "active" : ""}`}
-                onClick={() => setDatePreset(p.value)}
-              >
-                {p.label}
+            {filtersOn ? (
+              <button type="button" className="clist-clear" onClick={clearFilters}>
+                Clear
               </button>
-            ))}
+            ) : null}
           </div>
-          {datePreset === "custom" ? (
-            <div className="campaign-date-custom">
-              <label>
-                <span>From</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  max={dateTo || undefined}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </label>
-              <label>
-                <span>To</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom || undefined}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </label>
-            </div>
-          ) : null}
-        </div>
 
-        <div className="dashboard-grid">
-          <div className="stack" style={{ gap: 12 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div className="row" style={{ gap: 6 }}>
-                <button
-                  type="button"
-                  className={`preview-device-btn ${view === "all" ? "active" : ""}`}
-                  onClick={() => setView("all")}
-                >
-                  All campaigns
-                </button>
-                <button
-                  type="button"
-                  className={`preview-device-btn ${view === "folders" ? "active" : ""}`}
-                  onClick={() => setView("folders")}
-                >
-                  Folders
-                </button>
-              </div>
-              {view === "folders" ? (
-                <div className="row" style={{ gap: 6 }}>
-                  <button
-                    type="button"
-                    className={`preview-device-btn ${groupBy === "month" ? "active" : ""}`}
-                    onClick={() => {
-                      setGroupBy("month");
-                      setOpenFolders(new Set());
-                    }}
-                  >
-                    By month
-                  </button>
-                  <button
-                    type="button"
-                    className={`preview-device-btn ${groupBy === "client" ? "active" : ""}`}
-                    onClick={() => {
-                      setGroupBy("client");
-                      setOpenFolders(new Set());
-                    }}
-                  >
-                    By client
-                  </button>
-                </div>
-              ) : null}
-            </div>
-
-            {loading ? (
-              <p className="muted">Loading...</p>
-            ) : campaigns.length === 0 ? (
-              filter === "archived" ? (
-                <div className="empty">
-                  <p>No archived campaigns.</p>
-                </div>
-              ) : (
+          <div className={view === "board" ? "dashboard-grid clist-board-wrap" : "dashboard-grid"}>
+            <div className="stack" style={{ gap: 12 }}>
+              {loading ? (
+                <p className="muted">Loading...</p>
+              ) : campaigns.length === 0 ? (
+                filter === "archived" ? (
+                  <div className="empty">
+                    <p>No archived campaigns.</p>
+                  </div>
+                ) : (
+                  <div className="empty">
+                    <p>
+                      {kindScope === "blog" ? "No blog posts yet." : "No campaigns yet."}
+                    </p>
+                    <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
+                      {kindScope === "blog"
+                        ? "Create your first blog post"
+                        : "Upload your first email"}
+                    </Link>
+                  </div>
+                )
+              ) : visible.length === 0 ? (
                 <div className="empty">
                   <p>
-                    {kindScope === "blog"
-                      ? "No blog posts yet."
-                      : "No campaigns yet."}
+                    {q
+                      ? `No campaigns match “${query.trim()}”.`
+                      : "No campaigns match these filters."}
                   </p>
-                  <Link
-                    className="btn"
-                    href="/admin/new"
-                    style={{ marginTop: 12 }}
-                  >
-                    {kindScope === "blog"
-                      ? "Create your first blog post"
-                      : "Upload your first email"}
-                  </Link>
                 </div>
-              )
-            ) : statused.length === 0 ? (
-              <div className="empty">
-                <p>
-                  No{" "}
-                  {STATUS_FILTERS.find((sf) => sf.value === statusFilter)?.label.toLowerCase()}{" "}
-                  campaigns
-                  {dateActive ? " in that date range" : ""}.
-                </p>
-                {dateActive ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ marginTop: 12 }}
-                    onClick={() => {
-                      setDatePreset("any");
-                      setDateFrom("");
-                      setDateTo("");
-                    }}
-                  >
-                    Clear date filter
-                  </button>
-                ) : null}
-              </div>
-            ) : visible.length === 0 ? (
-              <div className="empty">
-                <p>No campaigns match “{query.trim()}”.</p>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ marginTop: 12 }}
-                  onClick={() => setQuery("")}
-                >
-                  Clear search
-                </button>
-              </div>
-            ) : view === "all" ? (
-              <div className="campaign-list">
-                {visible.map((c) => (
-                  <CampaignCard
-                    key={c.id}
-                    c={c}
-                    filter={filter}
-                    busyId={busyId}
-                    onArchive={setArchived}
-                    onRename={renameCampaign}
-                  />
-                ))}
-              </div>
-            ) : (
-              (() => {
-                const groups =
-                  groupBy === "month"
-                    ? monthGroups(visible)
-                    : clientGroups(visible);
-                return (
-                  <div className="stack" style={{ gap: 12 }}>
-                    {groups.map((g) => {
-                      const isOpen = openFolders.has(g.key);
-                      return (
-                        <div key={g.key} className="folder-group">
-                          <button
-                            type="button"
-                            className="folder-header"
-                            onClick={() => toggleFolder(g.key)}
-                            aria-expanded={isOpen}
-                          >
-                            {g.label}
-                            <span className="muted" style={{ fontWeight: 400 }}>
-                              {g.items.length}
-                            </span>
-                            <span className="folder-chevron" aria-hidden="true">
-                              {isOpen ? "▾" : "▸"}
-                            </span>
-                          </button>
-                          {isOpen ? (
-                            <div className="campaign-list">
-                              {g.items.map((c) => (
-                                <CampaignCard
-                                  key={c.id}
-                                  c={c}
-                                  filter={filter}
-                                  busyId={busyId}
-                                  onArchive={setArchived}
-                                  onRename={renameCampaign}
-                                />
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+              ) : view === "board" ? (
+                <div className="clist-board" aria-label="Campaigns by stage">
+                  {board.map((column) => (
+                    <section
+                      key={column.id}
+                      className="clist-col"
+                      data-stage={column.id}
+                      aria-label={`${column.label}, ${column.items.length}`}
+                    >
+                      <header className="clist-col-head">
+                        <h2>{column.label}</h2>
+                        <span className="clist-col-count">{column.items.length}</span>
+                      </header>
+                      <div className="clist-col-cards">
+                        {column.items.length ? (
+                          column.items.map((c) => <BoardCard key={c.id} c={c} />)
+                        ) : (
+                          <p className="clist-col-empty">None yet</p>
+                        )}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="clist-table">
+                  <div className="clist-cols clist-cols-head" aria-hidden="true">
+                    <span>Client</span>
+                    <span>Campaign</span>
+                    <span>Status</span>
+                    <span>Owner</span>
+                    <span>Next send</span>
+                    <span>Items</span>
+                    <span />
                   </div>
-                );
-              })()
-            )}
+                  {visible.map((c) => (
+                    <CampaignRowView
+                      key={c.id}
+                      c={c}
+                      filter={filter}
+                      busyId={busyId}
+                      onArchive={setArchived}
+                      onRename={renameCampaign}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            {view === "list" ? <ActivitySidebar /> : null}
           </div>
-
-          <ActivitySidebar />
         </div>
       </main>
     </div>

@@ -812,9 +812,9 @@ button {
 }
 
 .badge-internal_review {
-  color: #007a87;
-  border-color: rgba(0, 212, 232, 0.35);
-  background: var(--bg-tint);
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
 }
 
 .badge-needs_revisions_internal {
@@ -1745,7 +1745,7 @@ button {
   text-overflow: ellipsis;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1360px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -11501,6 +11501,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .app-search kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; background: var(--bg-elevated); }
 .app-top-right { display: flex; align-items: center; gap: 6px; }
+.app-top-nosearch .app-top-right { margin-left: auto; }
 .app-iconbtn { width: 38px; height: 38px; border-radius: 10px; border: none; background: none; color: var(--text-body); display: grid; place-items: center; cursor: pointer; }
 .app-iconbtn:hover { background: var(--bg); }
 .app-iconbtn svg { width: 20px; height: 20px; }
@@ -23584,4 +23585,977 @@ a.snap-todo-linked-title {
 @media (max-width: 800px) {
   .stark-core { width: 84px; height: 84px; }
   .stark-core .deck-core-read b { font-size: 18px; }
+}
+
+/* Campaigns list. Scoped so the rest of the app, including the old campaign
+   cards on the whiteboard, stays as it is. */
+.clist {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.clist-page {
+  padding-top: 16px;
+}
+
+.clist-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.clist h1 {
+  font-family: var(--font-head);
+  letter-spacing: -0.03em;
+}
+
+.clist-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.clist-quick [role="group"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clist-quick [role="group"] button,
+.clist-pills button {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clist-quick [role="group"] button[aria-pressed="true"],
+.clist-pills button.is-on,
+.clist-pills button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--on-ink, #fff);
+  border-color: var(--ink);
+}
+
+.clist-save {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.clist-save input {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.clist-save-btn {
+  border-style: dashed !important;
+  color: var(--text-muted) !important;
+}
+
+.clist-bar .clist-archived {
+  flex: none;
+  align-self: end;
+  height: 36px;
+  margin-left: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.clist-bar .clist-archived[aria-pressed="true"] {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.clist-bar .clist-clear {
+  flex: none;
+  align-self: end;
+  height: 36px;
+  padding: 0 2px;
+}
+
+.clist-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 0;
+}
+
+.clist-head .h1 {
+  font-size: 26px;
+}
+
+.clist-view {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+}
+
+.clist-view button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.clist-view button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--on-ink, #fff);
+}
+
+.clist-new {
+  margin-left: auto;
+  flex: none;
+}
+
+.clist-sub {
+  margin: 8px 0 0;
+  max-width: 48ch;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+.clist-total {
+  margin: 0;
+  text-align: right;
+  flex: none;
+}
+
+.clist-total b {
+  display: block;
+  font-family: var(--font-head);
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.clist-total span {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.clist-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+}
+
+.clist-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 7.25rem;
+  min-width: 0;
+}
+
+.clist-search {
+  flex: 1.35 1 10rem;
+}
+
+.clist-field > span,
+.clist-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.clist .campaign-filter-select,
+.clist-search input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.clist .campaign-filter-select {
+  padding-right: 32px;
+}
+
+.clist-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.clist-more.is-open,
+.clist-more.has-extra {
+  border-color: rgba(0, 212, 232, 0.55);
+  color: var(--accent-ink);
+}
+
+.clist-more-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-tint);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.clist-hint {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.clist-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.clist-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.clist-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.clist-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-ink);
+}
+
+.clist-updated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.clist-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.clist-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.clist-chip,
+.clist-clear {
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 0;
+}
+
+.clist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.clist-chip span {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.clist-table {
+  container-type: inline-size;
+  container-name: clist;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  overflow: visible;
+}
+
+.clist-cols,
+.clist-row {
+  display: grid;
+  /* Shared tracks. Fixed columns keep the header and every row on the same
+     lines; only the name grows. `auto` was sizing each row to its own badge
+     and action buttons, so the header and the rows drifted apart. */
+  grid-template-columns:
+    minmax(8.25rem, 0.85fr)
+    minmax(11rem, 1.8fr)
+    11.5rem
+    minmax(5.75rem, 0.6fr)
+    7.25rem
+    9.25rem
+    2.25rem;
+  column-gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.clist-cols-head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.clist-row {
+  position: relative;
+  color: inherit;
+  border-top: 1px solid var(--border);
+  text-decoration: none;
+}
+
+.clist-row:last-of-type {
+  border-radius: 0 0 13px 13px;
+}
+
+.clist-row:has(.clist-menu) {
+  z-index: 4;
+}
+
+.clist-table .clist-row:first-of-type {
+  border-top: 0;
+}
+
+.clist-row:hover {
+  background: var(--bg-soft);
+  color: inherit;
+}
+
+.clist-client,
+.clist-owner {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clist-owner {
+  font-weight: 550;
+  color: var(--text-body);
+}
+
+.clist-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.clist-name {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clist-note,
+.clist-quiet,
+.clist-send-k {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.clist-send-k {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.clist-status {
+  min-width: 0;
+}
+
+.clist-status .badge {
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.clist-send,
+.clist-count-cell {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clist-actions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.clist-menu-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.clist-row:hover .clist-menu-btn,
+.clist-menu-btn[aria-expanded="true"],
+.clist-menu-btn:focus-visible {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.clist-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.clist-menu button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.clist-menu button:hover,
+.clist-menu button:focus-visible {
+  background: var(--bg-soft);
+}
+
+.clist-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clist-rename input {
+  flex: 1;
+  min-width: 0;
+}
+
+.stark .clist-sub,
+.stark .clist-hint,
+.stark .clist-note,
+.stark .clist-quiet,
+.stark .clist-send-k,
+.stark .clist-field > span,
+.stark .clist-field-label,
+.stark .clist-total span,
+.stark .clist-cols-head {
+  color: rgba(232, 238, 244, 0.62);
+}
+
+.stark .clist-total b,
+.stark .clist-name,
+.stark .clist-client,
+.stark .clist-send,
+.stark .clist-count-cell {
+  color: #f7fbff;
+}
+
+.stark .clist-more,
+.stark .clist-panel,
+.stark .clist-table,
+.stark .clist-chip {
+  background: rgba(6, 12, 18, 0.72);
+  border-color: rgba(228, 194, 122, 0.22);
+  color: #e8eef4;
+}
+
+.stark .clist-more.is-open,
+.stark .clist-more.has-extra {
+  border-color: rgba(122, 215, 255, 0.55);
+  color: #d7f4ff;
+}
+
+.stark .clist-more-count {
+  background: rgba(122, 215, 255, 0.16);
+  color: #d7f4ff;
+}
+
+.stark .clist-row {
+  border-top-color: rgba(228, 194, 122, 0.14);
+  color: #e8eef4;
+}
+
+.stark .clist-cols-head {
+  border-bottom-color: rgba(228, 194, 122, 0.22);
+}
+
+.stark .clist-row:hover {
+  background: rgba(122, 215, 255, 0.07);
+  color: #f7fbff;
+}
+
+.stark .clist .campaign-filter-select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.clist-board-wrap {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.clist-board {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px 2px 12px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.clist-col {
+  --stage: var(--text-muted);
+  --stage-ink: var(--text-body);
+  flex: 0 0 236px;
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 240px;
+  padding: 10px;
+  scroll-snap-align: start;
+  border: 1px solid color-mix(in srgb, var(--stage) 18%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--stage) 7%, var(--bg));
+}
+
+.clist-col[data-stage="internal_review"] {
+  --stage: var(--text-body);
+  --stage-ink: var(--text);
+}
+.clist-col[data-stage="needs_revisions_internal"],
+.clist-col[data-stage="needs_changes"] {
+  --stage: var(--warning);
+  --stage-ink: var(--warning-ink);
+}
+.clist-col[data-stage="approved_internally"],
+.clist-col[data-stage="in_review"] {
+  --stage: var(--accent-ink);
+  --stage-ink: var(--accent-ink);
+}
+.clist-col[data-stage="approved"] {
+  --stage: var(--success);
+  --stage-ink: var(--success-ink);
+}
+.clist-col[data-stage="scheduled"] {
+  --stage: #5b3fb0;
+  --stage-ink: #5b3fb0;
+}
+:root[data-theme="dark"] .clist-col[data-stage="scheduled"] {
+  --stage: #c4b5fd;
+  --stage-ink: #c4b5fd;
+}
+.clist-col[data-stage="sent"] {
+  --stage: #3a4a5a;
+  --stage-ink: #3a4a5a;
+}
+:root[data-theme="dark"] .clist-col[data-stage="sent"] {
+  --stage: #b7c3d0;
+  --stage-ink: #d5dee8;
+}
+
+.clist-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 0;
+}
+
+.clist-col-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.clist-col-head h2::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--stage);
+}
+
+.clist-col-count {
+  flex: none;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--stage) 16%, var(--bg-elevated));
+  color: var(--stage-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.clist-col-cards {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clist-col-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+  margin: 0;
+  border: 1px dashed color-mix(in srgb, var(--stage) 32%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.cboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 11px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--stage);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.cboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  color: inherit;
+}
+
+.cboard-who {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cboard-client {
+  min-width: 0;
+  padding-top: 2px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.cboard-name {
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.cboard-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cboard-kinds {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cboard-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-body);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cboard-kind svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.cboard-avatar,
+.cboard-owner {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.cboard-avatar[data-tone="0"],
+.cboard-owner[data-tone="0"] {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+.cboard-avatar[data-tone="1"],
+.cboard-owner[data-tone="1"] {
+  background: var(--success-wash);
+  color: var(--success-ink);
+}
+.cboard-avatar[data-tone="2"],
+.cboard-owner[data-tone="2"] {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+.cboard-avatar[data-tone="3"],
+.cboard-owner[data-tone="3"] {
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+.cboard-avatar[data-tone="4"],
+.cboard-owner[data-tone="4"] {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+.cboard-avatar[data-tone="5"],
+.cboard-owner[data-tone="5"] {
+  background: var(--bg-tint);
+  color: var(--accent-ink);
+}
+
+.cboard-send {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cboard-send.is-soon {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+
+.cboard-send.is-overdue {
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+
+.cboard-send.is-past {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+.stark .clist-view {
+  background: rgba(6, 12, 18, 0.72);
+  border-color: rgba(228, 194, 122, 0.22);
+  color: #e8eef4;
+}
+
+.stark .clist-col {
+  background: rgba(6, 12, 18, 0.45);
+  border-color: rgba(228, 194, 122, 0.22);
+}
+
+.stark .cboard-card {
+  background: rgba(10, 16, 24, 0.92);
+  border-color: rgba(228, 194, 122, 0.22);
+  color: #e8eef4;
+  box-shadow: none;
+}
+
+.stark .cboard-name,
+.stark .cboard-client,
+.stark .clist-col-head h2 {
+  color: #f7fbff;
+}
+
+@media (max-width: 1100px) {
+  .clist-more {
+    justify-content: center;
+  }
+  .clist-panel-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* When the table itself is narrow, keep the same seven columns and let the
+   name shrink. Headers stay visible so the cells still sit under them. */
+@container clist (max-width: 920px) {
+  .clist-cols,
+  .clist-row {
+    grid-template-columns:
+      minmax(7.25rem, 0.75fr)
+      minmax(0, 1.5fr)
+      10.25rem
+      minmax(0, 0.55fr)
+      6.5rem
+      8.25rem
+      2rem;
+    column-gap: 8px;
+    padding: 11px 10px;
+  }
+}
+
+@container clist (max-width: 720px) {
+  .clist-cols-head {
+    display: none;
+  }
+  .clist-cols,
+  .clist-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "client status"
+      "name name"
+      "owner send"
+      "count actions";
+    row-gap: 4px;
+  }
+  .clist-client { grid-area: client; white-space: normal; }
+  .clist-name { white-space: normal; }
+  .clist-name-wrap { grid-area: name; }
+  .clist-status { grid-area: status; justify-self: end; }
+  .clist-owner { grid-area: owner; }
+  .clist-send { grid-area: send; justify-self: end; }
+  .clist-count-cell { grid-area: count; }
+  .clist-actions { grid-area: actions; justify-content: flex-end; }
 }

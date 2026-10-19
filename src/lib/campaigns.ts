@@ -1768,6 +1768,31 @@ export function countEmails(campaignId: string): number {
 }
 
 /** Ordered kinds for every item in a package (used for count labels). */
+/** Every email send instant, grouped by campaign. List display only. */
+/** Account manager stored on each client, for the campaigns list owner filter. */
+export function listClientAccountManagers(): Map<string, string> {
+  const rows = getDb()
+    .prepare(`SELECT id, account_manager FROM rev_clients`)
+    .all() as Array<{ id: string; account_manager: string | null }>;
+  return new Map(rows.map((row) => [row.id, (row.account_manager || "").trim()]));
+}
+
+export function listEmailScheduledInstants(): Map<string, string[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT campaign_id, scheduled_send_at FROM campaign_emails
+       WHERE scheduled_send_at IS NOT NULL AND scheduled_send_at != ''`
+    )
+    .all() as Array<{ campaign_id: string; scheduled_send_at: string }>;
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const list = map.get(row.campaign_id);
+    if (list) list.push(row.scheduled_send_at);
+    else map.set(row.campaign_id, [row.scheduled_send_at]);
+  }
+  return map;
+}
+
 export function listEmailKinds(campaignId: string): AssetKind[] {
   const rows = getDb()
     .prepare(

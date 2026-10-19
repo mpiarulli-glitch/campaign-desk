@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
-import { can, sessionCampaignKind } from "@/lib/auth";
+import { can, getSession, sessionCampaignKind } from "@/lib/auth";
 import { mergeActivityWithFollowups } from "@/lib/approval-followup-nudge";
 import { listActivity } from "@/lib/campaigns";
+import { OWNER_SLUG } from "@/lib/people";
+import { filterInternalReviewFollowups } from "@/lib/review-notifications";
+import { wantsInternalReviewNotifications } from "@/lib/users";
+
+function viewerSlug(session: Awaited<ReturnType<typeof getSession>>): string | null {
+  if (!session) return null;
+  if (session.role === "admin" && !session.person) return OWNER_SLUG;
+  return session.person;
+}
 
 export async function GET() {
   // Campaigns readers (Carlos, Abel) need the sidebar; it is filtered to the
@@ -12,7 +21,13 @@ export async function GET() {
 
   const kindScope = await sessionCampaignKind();
   const activity = listActivity(150, undefined, kindScope);
+  const slug = viewerSlug(await getSession());
+  const includeInternal = wantsInternalReviewNotifications(slug);
   return NextResponse.json({
-    activity: mergeActivityWithFollowups(activity, undefined, kindScope, 150),
+    activity: filterInternalReviewFollowups(
+      mergeActivityWithFollowups(activity, undefined, kindScope, 150),
+      includeInternal
+    ),
+    notifyInternalReviews: includeInternal,
   });
 }
