@@ -1769,6 +1769,14 @@ export function countEmails(campaignId: string): number {
 
 /** Ordered kinds for every item in a package (used for count labels). */
 /** Every email send instant, grouped by campaign. List display only. */
+/** Account manager stored on each client, for the campaigns list owner filter. */
+export function listClientAccountManagers(): Map<string, string> {
+  const rows = getDb()
+    .prepare(`SELECT id, account_manager FROM rev_clients`)
+    .all() as Array<{ id: string; account_manager: string | null }>;
+  return new Map(rows.map((row) => [row.id, (row.account_manager || "").trim()]));
+}
+
 export function listEmailScheduledInstants(): Map<string, string[]> {
   const rows = getDb()
     .prepare(

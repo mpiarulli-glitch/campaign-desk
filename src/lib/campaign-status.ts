@@ -79,6 +79,19 @@ export function matchesStatusBucket(
   return statusBucketId(campaign.status, campaign.approved_channel) === bucket;
 }
 
+// "open" is the list default: everything still moving, without Sent and Live.
+export type ListBucket = StatusBucketId | "open" | "all";
+
+export function matchesListBucket(
+  campaign: { status: string; approved_channel?: string | null },
+  bucket: ListBucket
+): boolean {
+  if (bucket === "all") return true;
+  const id = statusBucketId(campaign.status, campaign.approved_channel);
+  if (bucket === "open") return id != null && id !== "sent";
+  return id === bucket;
+}
+
 export type ReviewerChannel = "internal" | "external";
 
 export const OPERATOR_STATUS_VALUES = OPERATOR_STATUS_OPTIONS.map(

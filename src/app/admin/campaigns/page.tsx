@@ -9,11 +9,11 @@ import {
   OPERATOR_STATUS_OPTIONS,
   STATUS_BUCKETS,
   matchesCampaignStatusFilter,
-  matchesStatusBucket,
+  matchesListBucket,
   operatorStatusLabel,
   statusBucketId,
+  type ListBucket,
   type OperatorCampaignStatus,
-  type StatusBucketId,
 } from "@/lib/campaign-status";
 import {
   ASSET_KINDS,
@@ -43,6 +43,8 @@ type CampaignRow = {
   scheduled_send_at?: string | null;
   next_send_at?: string | null;
   next_send_upcoming?: boolean;
+  owner?: string;
+  owner_key?: string;
 };
 
 const SEND_ZONE = "America/Los_Angeles";
@@ -67,7 +69,7 @@ const MONTH_KEY = new Intl.DateTimeFormat("en-CA", {
 });
 
 type StatusFilter = "all" | OperatorCampaignStatus;
-type BucketFilter = "all" | StatusBucketId;
+type BucketFilter = ListBucket;
 type KindFilter = "all" | AssetKind;
 type DatePreset = "any" | "7d" | "30d" | "90d" | "month" | "custom";
 
@@ -77,11 +79,38 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 ];
 
 const KIND_FILTERS: { value: KindFilter; label: string }[] = [
-  { value: "all", label: "Any type" },
+  { value: "all", label: "Any channel" },
   ...ASSET_KINDS.map((k) => ({
     value: k.kind,
     label: k.kind === "linkedin" ? "LinkedIn" : k.label,
   })),
+];
+
+type SavedView = {
+  id: string;
+  name: string;
+  query: string;
+  client: string;
+  owner: string;
+  bucket: ListBucket;
+  status: StatusFilter;
+  kind: KindFilter;
+  month: string;
+  datePreset: DatePreset;
+  dateFrom: string;
+  dateTo: string;
+  archived: boolean;
+};
+
+const SAVED_VIEWS_KEY = "cd-campaign-saved-views";
+
+const QUICK_FILTERS: { id: ListBucket; label: string }[] = [
+  { id: "open", label: "Open" },
+  { id: "in_progress", label: "In progress" },
+  { id: "waiting", label: "Waiting on client" },
+  { id: "ready", label: "Ready to send" },
+  { id: "sent", label: "Sent" },
+  { id: "all", label: "All" },
 ];
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
@@ -295,6 +324,7 @@ function CampaignRowView({
       <span className="clist-status">
         <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
       </span>
+      <span className="clist-owner">{c.owner || "Unassigned"}</span>
       <span className="clist-send">
         {sendAt ? (
           <>
@@ -342,11 +372,12 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"active" | "archived">("active");
-  const [bucket, setBucket] = useState<BucketFilter>("all");
+  const [bucket, setBucket] = useState<BucketFilter>("open");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
   const [clientFilter, setClientFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [dateFrom, setDateFrom] = useState("");
@@ -354,6 +385,9 @@ export default function AdminPage() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [savingView, setSavingView] = useState(false);
+  const [viewName, setViewName] = useState("");
 
   const dateBounds = resolveDateBounds(datePreset, dateFrom, dateTo);
   const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
@@ -362,22 +396,27 @@ export default function AdminPage() {
     clientFilter === "all"
       ? kinded
       : kinded.filter((c) => clientKey(c.client_name) === clientFilter);
+  const owned =
+    ownerFilter === "all"
+      ? cliented
+      : cliented.filter((c) => (c.owner_key || "unassigned") === ownerFilter);
   const monthed =
     monthFilter === "all"
-      ? cliented
-      : cliented.filter((c) => campaignMonthKey(c.created_at) === monthFilter);
+      ? owned
+      : owned.filter((c) => campaignMonthKey(c.created_at) === monthFilter);
   const q = query.trim().toLowerCase();
   const searched = q
     ? monthed.filter(
         (c) =>
           c.title.toLowerCase().includes(q) ||
-          c.client_name.toLowerCase().includes(q)
+          c.client_name.toLowerCase().includes(q) ||
+          (c.owner || "").toLowerCase().includes(q)
       )
     : monthed;
   const bucketed =
     bucket === "all"
       ? searched
-      : searched.filter((c) => matchesStatusBucket(c, bucket));
+      : searched.filter((c) => matchesListBucket(c, bucket));
   const visible =
     statusFilter === "all"
       ? bucketed
@@ -390,6 +429,15 @@ export default function AdminPage() {
     return Array.from(keys).sort((a, b) =>
       clientLabel(a).localeCompare(clientLabel(b))
     );
+  }, [campaigns]);
+
+  const owners = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of campaigns) {
+      const key = c.owner_key || "unassigned";
+      if (!map.has(key)) map.set(key, c.owner || "Unassigned");
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [campaigns]);
 
   const months = useMemo(() => {
@@ -417,26 +465,72 @@ export default function AdminPage() {
 
   const filtersOn =
     extraCount > 0 ||
-    bucket !== "all" ||
+    bucket !== "open" ||
     clientFilter !== "all" ||
     monthFilter !== "all" ||
+    ownerFilter !== "all" ||
     query.trim() !== "";
 
   function applyBucket(next: BucketFilter) {
     setBucket(next);
-    if (
-      statusFilter !== "all" &&
-      (next === "all" || statusBucketId(statusFilter) !== next)
-    ) {
+    if (statusFilter === "all") return;
+    const parent = statusBucketId(statusFilter);
+    const stillFits =
+      next === "all" ||
+      parent === next ||
+      (next === "open" && parent != null && parent !== "sent");
+    if (!stillFits) {
       setStatusFilter("all");
       setListQueryParam("status", "all");
+    }
+  }
+
+  function currentView(): Omit<SavedView, "id" | "name"> {
+    return {
+      query,
+      client: clientFilter,
+      owner: ownerFilter,
+      bucket,
+      status: statusFilter,
+      kind: kindFilter,
+      month: monthFilter,
+      datePreset,
+      dateFrom,
+      dateTo,
+      archived: filter === "archived",
+    };
+  }
+
+  function applySaved(view: SavedView) {
+    setQuery(view.query);
+    setClientFilter(view.client);
+    setOwnerFilter(view.owner);
+    setBucket(view.bucket);
+    setStatusFilter(view.status);
+    setListQueryParam("status", view.status);
+    setKindFilter(view.kind);
+    setListQueryParam("kind", view.kind);
+    setMonthFilter(view.month);
+    setDatePreset(view.datePreset);
+    setDateFrom(view.dateFrom);
+    setDateTo(view.dateTo);
+    setFilter(view.archived ? "archived" : "active");
+  }
+
+  function persistViews(next: SavedView[]) {
+    setSavedViews(next);
+    try {
+      localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(next));
+    } catch {
+      // The view still applies for this visit.
     }
   }
 
   function clearFilters() {
     setQuery("");
     setClientFilter("all");
-    setBucket("all");
+    setOwnerFilter("all");
+    setBucket("open");
     setMonthFilter("all");
     setStatusFilter("all");
     setListQueryParam("status", "all");
@@ -527,11 +621,21 @@ export default function AdminPage() {
     if (openMore) setMoreOpen(true);
   }, []);
 
-  const noun = kindScope === "blog" ? "blog post" : "campaign";
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_VIEWS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as SavedView[];
+      if (Array.isArray(parsed)) setSavedViews(parsed.filter((view) => view && view.name && view.id));
+    } catch {
+      // Ignore a bad saved-view blob.
+    }
+  }, []);
+
   const nounPlural = kindScope === "blog" ? "blog posts" : "campaigns";
 
   return (
-    <div className="app-shell stark">
+    <div className="app-shell">
       <div className="page-actions">
         <Link className="btn" href="/admin/new">
           {kindScope === "blog" ? "New blog post" : "New campaign"}
@@ -542,13 +646,10 @@ export default function AdminPage() {
         <div className="clist">
           <div className="clist-head">
             <div>
-              <p className="deck-kicker">
-                <span className="deck-live" aria-hidden />
-                Systems · Campaigns
-              </p>
+              <p className="clist-kicker">Marketing Empire Group</p>
               <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
               <p className="clist-sub">
-                Find a {noun} by client, where it stands, and the month it was created.
+                Open work first. Filter by client, owner, status, channel, or when it was updated.
               </p>
             </div>
             <p className="clist-total">
@@ -564,6 +665,56 @@ export default function AdminPage() {
           </div>
 
           {error ? <p className="error">{error}</p> : null}
+
+          <div className="clist-quick" role="group" aria-label="Quick filters">
+            {QUICK_FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={bucket === item.id && statusFilter === "all"}
+                onClick={() => applyBucket(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+            {savedViews.map((view) => (
+              <button key={view.id} type="button" onClick={() => applySaved(view)}>
+                {view.name}
+              </button>
+            ))}
+            {savingView ? (
+              <form
+                className="clist-save"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const name = viewName.trim();
+                  if (!name) return;
+                  persistViews([
+                    ...savedViews,
+                    { ...currentView(), id: `${Date.now()}`, name },
+                  ]);
+                  setViewName("");
+                  setSavingView(false);
+                }}
+              >
+                <input
+                  autoFocus
+                  value={viewName}
+                  onChange={(event) => setViewName(event.target.value)}
+                  placeholder="Name this view"
+                  aria-label="Saved view name"
+                />
+                <button type="submit" className="btn btn-sm">Save</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSavingView(false)}>
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <button type="button" className="clist-save-btn" onClick={() => setSavingView(true)}>
+                Save view
+              </button>
+            )}
+          </div>
 
           <div className="clist-bar">
             <label className="clist-field clist-search">
@@ -604,10 +755,11 @@ export default function AdminPage() {
                 value={bucket}
                 onChange={(e) => applyBucket(e.target.value as BucketFilter)}
               >
+                <option value="open">Open</option>
                 <option value="all">All statuses</option>
                 {STATUS_BUCKETS.map((b) => {
                   const count = searched.filter((c) =>
-                    matchesStatusBucket(c, b.id)
+                    matchesListBucket(c, b.id)
                   ).length;
                   return (
                     <option key={b.id} value={b.id}>
@@ -617,6 +769,49 @@ export default function AdminPage() {
                 })}
               </select>
             </label>
+            <label className="clist-field">
+              <span>Owner</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by owner"
+                value={ownerFilter}
+                onChange={(e) => setOwnerFilter(e.target.value)}
+              >
+                <option value="all">Any owner</option>
+                {owners.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {kindScope === "blog" || kindScope === "interactive" ? null : (
+              <label className="clist-field">
+                <span>Channel</span>
+                <select
+                  className="campaign-filter-select"
+                  aria-label="Filter by channel"
+                  value={kindFilter}
+                  onChange={(e) => {
+                    const next = e.target.value as KindFilter;
+                    setKindFilter(next);
+                    setListQueryParam("kind", next);
+                  }}
+                >
+                  {KIND_FILTERS.filter(
+                    (kf) =>
+                      (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
+                      (kf.value === "all" ||
+                        kf.value === "linkedin" ||
+                        kindsInList.has(kf.value))
+                  ).map((kf) => (
+                    <option key={kf.value} value={kf.value}>
+                      {kf.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="clist-field">
               <span>Month</span>
               <select
@@ -644,12 +839,44 @@ export default function AdminPage() {
             </button>
           </div>
 
-          {statusFilter !== "all" ? (
-            <p className="clist-hint">
-              Status is narrowed to {operatorStatusLabel(statusFilter)}. The precise
-              status still shows on each row.
-            </p>
-          ) : null}
+          <div className="clist-updated">
+            <span className="clist-field-label">Updated</span>
+            <div className="clist-pills" role="group" aria-label="Updated date range">
+              {DATE_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  aria-pressed={datePreset === p.value}
+                  className={datePreset === p.value ? "is-on" : ""}
+                  onClick={() => setDatePreset(p.value)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {datePreset === "custom" ? (
+              <div className="campaign-date-custom">
+                <label>
+                  <span>From</span>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    max={dateTo || undefined}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>To</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    min={dateFrom || undefined}
+                    onChange={(e) => setDateTo(e.target.value)}
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
 
           {moreOpen ? (
             <div className="clist-panel">
@@ -677,33 +904,6 @@ export default function AdminPage() {
                     ))}
                   </select>
                 </label>
-                {kindScope === "blog" || kindScope === "interactive" ? null : (
-                  <label className="clist-field">
-                    <span>Type</span>
-                    <select
-                      className="campaign-filter-select"
-                      aria-label="Filter by campaign kind"
-                      value={kindFilter}
-                      onChange={(e) => {
-                        const next = e.target.value as KindFilter;
-                        setKindFilter(next);
-                        setListQueryParam("kind", next);
-                      }}
-                    >
-                      {KIND_FILTERS.filter(
-                        (kf) =>
-                          (kindScope === "no_blog" ? kf.value !== "blog" : true) &&
-                          (kf.value === "all" ||
-                            kf.value === "linkedin" ||
-                            kindsInList.has(kf.value))
-                      ).map((kf) => (
-                        <option key={kf.value} value={kf.value}>
-                          {kf.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
                 <label className="clist-check">
                   <input
                     type="checkbox"
@@ -713,56 +913,34 @@ export default function AdminPage() {
                   <span>Show archived</span>
                 </label>
               </div>
-              <div className="clist-updated">
-                <span className="clist-field-label">Updated</span>
-                <div className="clist-pills">
-                  {DATE_PRESETS.map((p) => (
-                    <button
-                      key={p.value}
-                      type="button"
-                      className={`preview-device-btn ${datePreset === p.value ? "active" : ""}`}
-                      onClick={() => setDatePreset(p.value)}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-                {datePreset === "custom" ? (
-                  <div className="campaign-date-custom">
-                    <label>
-                      <span>From</span>
-                      <input
-                        type="date"
-                        value={dateFrom}
-                        max={dateTo || undefined}
-                        onChange={(e) => setDateFrom(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      <span>To</span>
-                      <input
-                        type="date"
-                        value={dateTo}
-                        min={dateFrom || undefined}
-                        onChange={(e) => setDateTo(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                ) : null}
-              </div>
+              {statusFilter !== "all" ? (
+                <p className="clist-hint">
+                  Narrowed to {operatorStatusLabel(statusFilter)}. Each row still shows that status.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
           {filtersOn ? (
             <div className="clist-chips">
+              {query.trim() ? (
+                <button type="button" className="clist-chip" onClick={() => setQuery("")}>
+                  Search: {query.trim()} <span aria-hidden>×</span>
+                </button>
+              ) : null}
               {clientFilter !== "all" ? (
                 <button type="button" className="clist-chip" onClick={() => setClientFilter("all")}>
                   {clientLabel(clientFilter)} <span aria-hidden>×</span>
                 </button>
               ) : null}
-              {bucket !== "all" ? (
-                <button type="button" className="clist-chip" onClick={() => applyBucket("all")}>
-                  {STATUS_BUCKETS.find((b) => b.id === bucket)?.label} <span aria-hidden>×</span>
+              {ownerFilter !== "all" ? (
+                <button type="button" className="clist-chip" onClick={() => setOwnerFilter("all")}>
+                  {owners.find(([key]) => key === ownerFilter)?.[1] || "Owner"} <span aria-hidden>×</span>
+                </button>
+              ) : null}
+              {bucket !== "open" ? (
+                <button type="button" className="clist-chip" onClick={() => applyBucket("open")}>
+                  {QUICK_FILTERS.find((item) => item.id === bucket)?.label || "Status"} <span aria-hidden>×</span>
                 </button>
               ) : null}
               {monthFilter !== "all" ? (
@@ -864,8 +1042,9 @@ export default function AdminPage() {
                     <span>Client</span>
                     <span>Campaign</span>
                     <span>Status</span>
+                    <span>Owner</span>
                     <span>Next send</span>
-                    <span>Emails</span>
+                    <span>Items</span>
                     <span />
                   </div>
                   {visible.map((c) => (

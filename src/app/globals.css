@@ -812,9 +812,9 @@ button {
 }
 
 .badge-internal_review {
-  color: #007a87;
-  border-color: rgba(0, 212, 232, 0.35);
-  background: var(--bg-tint);
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
 }
 
 .badge-needs_revisions_internal {
@@ -23591,7 +23591,67 @@ a.snap-todo-linked-title {
 .clist {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+}
+
+.clist-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.clist h1 {
+  font-family: var(--font-head);
+  letter-spacing: -0.03em;
+}
+
+.clist-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.clist-quick > button,
+.clist-pills button {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clist-quick > button[aria-pressed="true"],
+.clist-pills button.is-on,
+.clist-pills button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--on-ink, #fff);
+  border-color: var(--ink);
+}
+
+.clist-save {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.clist-save input {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.clist-save-btn {
+  border-style: dashed !important;
+  color: var(--text-muted) !important;
 }
 
 .clist-head {
@@ -23637,7 +23697,7 @@ a.snap-todo-linked-title {
 
 .clist-bar {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(140px, 1fr)) auto;
+  grid-template-columns: minmax(200px, 1.5fr) repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px 14px;
   align-items: end;
 }
@@ -23803,15 +23863,16 @@ a.snap-todo-linked-title {
 .clist-row {
   display: grid;
   grid-template-columns:
-    minmax(120px, 0.85fr)
-    minmax(160px, 1.5fr)
+    minmax(110px, 0.8fr)
+    minmax(160px, 1.45fr)
     auto
-    minmax(108px, 0.7fr)
     minmax(88px, 0.55fr)
+    minmax(100px, 0.65fr)
+    minmax(80px, 0.5fr)
     auto;
-  gap: 8px 16px;
+  gap: 8px 14px;
   align-items: center;
-  padding: 13px 16px;
+  padding: 14px 16px;
 }
 
 .clist-cols-head {
@@ -23840,7 +23901,8 @@ a.snap-todo-linked-title {
   color: inherit;
 }
 
-.clist-client {
+.clist-client,
+.clist-owner {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
@@ -23848,6 +23910,11 @@ a.snap-todo-linked-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.clist-owner {
+  font-weight: 550;
+  color: var(--text-body);
 }
 
 .clist-name-wrap {
@@ -23994,8 +24061,8 @@ a.snap-todo-linked-title {
     grid-template-areas:
       "client client"
       "name status"
-      "send count"
-      "actions actions";
+      "owner send"
+      "count actions";
   }
   .clist-client {
     grid-area: client;
@@ -24004,7 +24071,8 @@ a.snap-todo-linked-title {
   .clist-name { white-space: normal; }
   .clist-name-wrap { grid-area: name; }
   .clist-status { grid-area: status; justify-self: end; }
-  .clist-send { grid-area: send; }
-  .clist-count-cell { grid-area: count; justify-self: end; }
-  .clist-actions { grid-area: actions; justify-content: flex-start; }
+  .clist-owner { grid-area: owner; }
+  .clist-send { grid-area: send; justify-self: end; }
+  .clist-count-cell { grid-area: count; }
+  .clist-actions { grid-area: actions; justify-content: flex-end; }
 }

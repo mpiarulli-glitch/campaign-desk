@@ -47,6 +47,7 @@ export default function ActivityPage() {
   const [filter, setFilter] = useState<"all" | "feedback" | "approved" | "followup">(
     "all"
   );
+  const [internalReviews, setInternalReviews] = useState<boolean | null>(null);
 
   async function load() {
     setLoading(true);
@@ -72,7 +73,31 @@ export default function ActivityPage() {
 
   useEffect(() => {
     load();
+    void fetch("/api/account/notifications")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.internalReviews === "boolean") {
+          setInternalReviews(data.internalReviews);
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  async function toggleInternalReviews() {
+    if (internalReviews == null) return;
+    const next = !internalReviews;
+    setInternalReviews(next);
+    const res = await fetch("/api/account/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ internalReviews: next }),
+    });
+    if (!res.ok) {
+      setInternalReviews(!next);
+      return;
+    }
+    void load();
+  }
 
   const shown = items.filter((i) => filter === "all" || i.kind === filter);
 
@@ -89,9 +114,20 @@ export default function ActivityPage() {
           <p className="eyebrow">Dashboard</p>
           <h1 className="h1">Client activity</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Every piece of client feedback and approval across all campaigns,
-            plus follow-up reminders for packages still waiting.
+            Client feedback, client approvals, and reminders for packages still
+            waiting on the client. Pending internal reviews stay out of this
+            list unless you turn them on.
           </p>
+          {internalReviews == null ? null : (
+            <label className="row" style={{ gap: 8, marginTop: 14, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={internalReviews}
+                onChange={() => void toggleInternalReviews()}
+              />
+              <span>Also notify me about pending internal reviews</span>
+            </label>
+          )}
         </div>
 
         <div className="row" style={{ gap: 8 }}>

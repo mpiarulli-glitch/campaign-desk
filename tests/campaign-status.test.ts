@@ -8,6 +8,7 @@ import {
   STATUS_BUCKETS,
   isInternallyApproved,
   matchesCampaignStatusFilter,
+  matchesListBucket,
   matchesStatusBucket,
   operatorStatusLabel,
   operatorStatusValue,
@@ -41,6 +42,11 @@ test("every operator status sits in one plain-language bucket", () => {
     false
   );
   assert.equal(matchesStatusBucket({ status: "draft" }, "all"), true);
+  assert.equal(matchesListBucket({ status: "draft" }, "open"), true);
+  assert.equal(matchesListBucket({ status: "in_review" }, "open"), true);
+  assert.equal(matchesListBucket({ status: "sent" }, "open"), false);
+  assert.equal(matchesListBucket({ status: "live" }, "open"), false);
+  assert.equal(matchesListBucket({ status: "sent" }, "all"), true);
 });
 
 test("list send date prefers the next upcoming instant", () => {

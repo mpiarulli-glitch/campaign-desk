@@ -59,6 +59,8 @@ export interface User {
   // JSON array of sha256 hashes.
   totp_backup_codes: string;
   setup_completed_at: string | null;
+  // 1 = notify, 0 = don't, null = role default (owner off, everyone else on).
+  notify_internal_reviews: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -3511,6 +3513,9 @@ function migrate(database: Database.Database) {
   }
   if (userCols.length && !userCols.includes("setup_completed_at")) {
     database.exec(`ALTER TABLE users ADD COLUMN setup_completed_at TEXT`);
+  }
+  if (userCols.length && !userCols.includes("notify_internal_reviews")) {
+    database.exec(`ALTER TABLE users ADD COLUMN notify_internal_reviews INTEGER`);
   }
 
   // Public share tokens for Team Hub training. Existing courses get a token

@@ -10,6 +10,7 @@ import {
   passwordProblem,
   verifyPasswordHash,
 } from "./password";
+import { internalReviewNotificationsEnabled } from "./review-notifications";
 import { decryptSecret, encryptSecret } from "./secrets";
 import {
   consumeBackupCodeHash,
@@ -416,6 +417,29 @@ export function setUserActive(slug: string, active: boolean): void {
        WHERE slug = ?`
     )
     .run(active ? 1 : 0, now, active ? 1 : 0, active ? 1 : 0, slug);
+}
+
+export function wantsInternalReviewNotifications(slug: string | null): boolean {
+  if (!slug) return internalReviewNotificationsEnabled({ slug: null, stored: null });
+  const user = getUser(slug);
+  if (!user) return internalReviewNotificationsEnabled({ slug, stored: null });
+  return internalReviewNotificationsEnabled({
+    slug: user.slug,
+    role: user.role,
+    stored: user.notify_internal_reviews,
+  });
+}
+
+export function setInternalReviewNotifications(slug: string, enabled: boolean): boolean {
+  const user = getUser(slug);
+  if (!user) return false;
+  const now = nowIso();
+  getDb()
+    .prepare(
+      `UPDATE users SET notify_internal_reviews = ?, updated_at = ? WHERE slug = ?`
+    )
+    .run(enabled ? 1 : 0, now, slug);
+  return true;
 }
 
 export function setUserEmail(slug: string, email: string): void {

@@ -13,8 +13,10 @@ import {
   countEmails,
   listEmailKinds,
   listEmailScheduledInstants,
+  listClientAccountManagers,
 } from "@/lib/campaigns";
 import { pickDisplayedSendAt } from "@/lib/send-display";
+import { slugForName, teamLabel } from "@/lib/team";
 import { coerceKind, coerceFormat } from "@/lib/asset-kinds";
 import { kindAllowedForCampaignScope } from "@/lib/people";
 import {
@@ -22,6 +24,14 @@ import {
   coerceTriggerKind,
   coerceTriggerFormFormat,
 } from "@/lib/automation-map";
+
+function ownerFields(manager: string): { owner: string; owner_key: string } {
+  const raw = manager.trim();
+  if (!raw) return { owner: "Unassigned", owner_key: "unassigned" };
+  const slug = slugForName(raw);
+  if (!slug) return { owner: raw, owner_key: raw.toLowerCase() };
+  return { owner: teamLabel(slug), owner_key: slug };
+}
 
 export async function GET(request: Request) {
   // Read follows page.campaigns. The list is filtered to the session's campaign
@@ -41,12 +51,14 @@ export async function GET(request: Request) {
       : listCampaigns();
 
   const emailSends = listEmailScheduledInstants();
+  const managers = listClientAccountManagers();
   const now = new Date().toISOString();
   const campaigns = source.map((c) => {
     const send = pickDisplayedSendAt(
       [...(emailSends.get(c.id) || []), c.scheduled_send_at],
       now
     );
+    const owner = ownerFields(c.client_id ? managers.get(c.client_id) || "" : "");
     return {
       ...c,
       open_comments: countOpenComments(c.id),
@@ -56,6 +68,8 @@ export async function GET(request: Request) {
       // Display only. Not stored; the list already had scheduled_send_at.
       next_send_at: send.at,
       next_send_upcoming: send.upcoming,
+      owner: owner.owner,
+      owner_key: owner.owner_key,
     };
   });
 
