@@ -23615,7 +23615,13 @@ a.snap-todo-linked-title {
   align-items: center;
 }
 
-.clist-quick > button,
+.clist-quick [role="group"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clist-quick [role="group"] button,
 .clist-pills button {
   border: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -23627,7 +23633,7 @@ a.snap-todo-linked-title {
   cursor: pointer;
 }
 
-.clist-quick > button[aria-pressed="true"],
+.clist-quick [role="group"] button[aria-pressed="true"],
 .clist-pills button.is-on,
 .clist-pills button[aria-pressed="true"] {
   background: var(--ink);
@@ -23652,6 +23658,28 @@ a.snap-todo-linked-title {
 .clist-save-btn {
   border-style: dashed !important;
   color: var(--text-muted) !important;
+}
+
+.clist-quick > .clist-archived {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 7px 2px;
+}
+
+.clist-quick > .clist-archived[aria-pressed="true"] {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.clist-bar .clist-clear {
+  align-self: end;
+  height: 40px;
+  padding: 0 2px;
 }
 
 .clist-head {

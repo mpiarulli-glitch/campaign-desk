@@ -242,19 +242,22 @@ test("campaign detail can open the Basecamp card after client approval is sent",
   assert.match(page, /Emailed \$\{email\.to\}/);
 });
 
-test("campaigns list filters status and kind with dropdowns", () => {
+test("campaigns list uses one control for status and one for updated", () => {
   const fs = require("node:fs") as typeof import("node:fs");
   const path = require("node:path") as typeof import("node:path");
   const page = fs.readFileSync(
     path.join("src/app/admin/campaigns/page.tsx"),
     "utf8"
   );
-  assert.match(page, /KIND_FILTERS/);
-  assert.match(page, /campaignMatchesKind/);
-  assert.match(page, /kf\.value === "linkedin"/);
+  assert.match(page, /QUICK_FILTERS/);
+  assert.match(page, /aria-label="Status"/);
+  assert.match(page, /Filter by when it was updated/);
   assert.match(page, /campaign-filter-select/);
-  assert.match(page, /setListQueryParam\("status"/);
-  assert.match(page, /setListQueryParam\("kind"/);
+  assert.match(page, /statusBucketId/);
+  assert.doesNotMatch(page, /KIND_FILTERS/);
+  assert.doesNotMatch(page, /More filters/);
+  assert.doesNotMatch(page, /Save view/);
+  assert.doesNotMatch(page, /Exact status/);
   assert.match(page, /Create your first blog post/);
   assert.match(page, /Upload your first email/);
   assert.match(page, /New blog post/);

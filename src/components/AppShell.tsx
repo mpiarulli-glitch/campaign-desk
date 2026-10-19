@@ -331,10 +331,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Svg name="menu" />
           </button>
-          <button className="app-search" onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}>
-            <span aria-hidden="true">⌕</span> Search clients, campaigns…
-            <kbd>⌘K</kbd>
-          </button>
+          {pathname === "/admin/campaigns" ? null : (
+            <button className="app-search" onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}>
+              <span aria-hidden="true">⌕</span> Search clients, campaigns…
+              <kbd>⌘K</kbd>
+            </button>
+          )}
 
           <div className="app-top-right">
             {session.role === "admin" ? <ActivityBell /> : null}
