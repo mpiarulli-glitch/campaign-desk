@@ -3,6 +3,9 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { isAdminAuthenticated } from "@/lib/auth";
 import {
   describeProductionSmsLocations,
+  formatSampleLog,
+  plainSmsFailure,
+  sampleHttpStatus,
   scheduleSmsEnabled,
   sendSampleScheduleSms,
   type ScheduleSmsResult,
@@ -60,18 +63,26 @@ export async function POST(request: Request) {
   const contactName =
     typeof body.contactName === "string" ? body.contactName : "";
   if (!phone.trim()) {
-    return NextResponse.json({ error: "phone is required" }, { status: 400 });
+    const missing = {
+      status: "skipped" as const,
+      reason: "invalid_phone" as const,
+    };
+    console.log(formatSampleLog(missing));
+    return NextResponse.json(
+      { ...missing, error: "phone is required", plain: plainSmsFailure(missing) },
+      { status: 400 }
+    );
   }
   const result = await sendSampleScheduleSms({ phone, contactName });
-  const status =
-    result.status === "sent" ? 200 : result.status === "failed" ? 502 : 400;
+  console.log(formatSampleLog(result));
   return NextResponse.json(
     {
       ...result,
       clientSendsEnabled: scheduleSmsEnabled(),
       error: sampleError(result),
+      plain: plainSmsFailure(result),
     },
-    { status }
+    { status: sampleHttpStatus(result) }
   );
 }
 

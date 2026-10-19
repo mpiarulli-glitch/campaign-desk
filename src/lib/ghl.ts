@@ -492,7 +492,13 @@ export function clearGhlCache(): void {
 export interface GhlPhoneNumber {
   phoneNumber: string;
   friendlyName: string;
+  /** True only when GoHighLevel says this number can send SMS. */
   sms: boolean;
+  /** False when the payload never said whether SMS is enabled. */
+  smsKnown: boolean;
+  provider: string;
+  a2pStatus: string;
+  isDefault: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -500,39 +506,147 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function phoneRows(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
   const record = asRecord(payload);
   if (!record) return [];
-  for (const key of ["numbers", "phoneNumbers", "data"]) {
+  for (const key of ["numbers", "phoneNumbers", "data", "phone_numbers"]) {
     if (Array.isArray(record[key])) return record[key] as unknown[];
   }
   return [];
 }
 
+export function parseLocationPhoneNumber(row: unknown): GhlPhoneNumber | null {
+  const record = asRecord(row) || {};
+  const capabilities = asRecord(record.capabilities) || {};
+  const phoneNumber = String(
+    record.phoneNumber || record.phone || record.number || ""
+  ).trim();
+  if (!phoneNumber) return null;
+  const smsFlag =
+    capabilities.sms ??
+    capabilities.SMS ??
+    record.smsEnabled ??
+    record.sms ??
+    record.smsCapable;
+  const provider = String(
+    record.provider ||
+      record.origin ||
+      record.source ||
+      record.type ||
+      record.phoneNumberType ||
+      ""
+  );
+  const a2pStatus = String(
+    record.a2pStatus ||
+      record.campaignStatus ||
+      record.registrationStatus ||
+      record.complianceStatus ||
+      asRecord(record.a2p)?.status ||
+      ""
+  );
+  return {
+    phoneNumber,
+    friendlyName: String(record.friendlyName || record.name || ""),
+    sms: smsFlag === undefined ? false : Boolean(smsFlag),
+    smsKnown: smsFlag !== undefined,
+    provider,
+    a2pStatus,
+    isDefault: Boolean(record.isDefault || record.default || record.isDefaultNumber),
+  };
+}
+
 /**
- * Numbers on a sub-account. SMS-capable ones are the only ones a scheduling
- * text can leave from. The payload shape varies by API version, so this
- * reads the fields GHL has used rather than one exact schema.
+ * Numbers on a sub-account. LC Phone and Twilio both show up here. A missing
+ * SMS flag is not treated as SMS-capable.
  */
 export async function listLocationPhoneNumbers(
   locationId: string
 ): Promise<GhlPhoneNumber[]> {
-  const data = await ghlRequest<unknown>("GET", "/phone-numbers/", {
+  const attempts: Array<() => Promise<unknown>> = [
+    () =>
+      ghlRequest("GET", `/phone-system/numbers/location/${locationId}`, {
+        locationId,
+        version: "v3",
+      }),
+    () =>
+      ghlRequest("GET", "/phone-numbers/", {
+        locationId,
+        params: { locationId },
+      }),
+  ];
+  const seen = new Map<string, GhlPhoneNumber>();
+  const errors: string[] = [];
+  for (const attempt of attempts) {
+    try {
+      const data = await attempt();
+      for (const row of phoneRows(data)) {
+        const parsed = parseLocationPhoneNumber(row);
+        if (!parsed) continue;
+        const prev = seen.get(parsed.phoneNumber);
+        if (!prev || (parsed.smsKnown && !prev.smsKnown)) seen.set(parsed.phoneNumber, parsed);
+      }
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : "Could not read phone numbers");
+    }
+  }
+  if (seen.size === 0 && errors.length === attempts.length) {
+    throw new GhlError(errors[errors.length - 1] || "Could not read phone numbers");
+  }
+  return [...seen.values()];
+}
+
+export async function getGhlContact(
+  locationId: string,
+  contactId: string
+): Promise<unknown> {
+  return ghlRequest("GET", `/contacts/${contactId}`, { locationId });
+}
+
+export async function getConversationMessage(
+  locationId: string,
+  messageId: string
+): Promise<unknown> {
+  return ghlRequest("GET", `/conversations/messages/${messageId}`, {
     locationId,
-    params: { locationId },
+    version: "v3",
   });
-  return phoneRows(data).map((row) => {
-    const record = asRecord(row) || {};
-    const capabilities = asRecord(record.capabilities) || {};
-    const phoneNumber = String(
-      record.phoneNumber || record.phone || record.number || ""
-    );
-    const smsFlag = capabilities.sms ?? record.sms ?? record.smsCapable;
-    return {
-      phoneNumber,
-      friendlyName: String(record.friendlyName || record.name || ""),
-      sms: smsFlag === undefined ? true : Boolean(smsFlag),
-    };
-  }).filter((row) => row.phoneNumber);
+}
+
+/** A2P campaign payload for a sub-account. Null when GHL has no such route. */
+export async function getLocationA2p(locationId: string): Promise<unknown | null> {
+  const attempts: Array<() => Promise<unknown>> = [
+    () =>
+      ghlRequest("GET", "/phone-system/a2p/campaigns", {
+        locationId,
+        params: { locationId },
+        version: "v3",
+      }),
+    () =>
+      ghlRequest("GET", "/phone-system/a2p", {
+        locationId,
+        params: { locationId },
+        version: "v3",
+      }),
+  ];
+  let lastStatus = 0;
+  for (const attempt of attempts) {
+    try {
+      return await attempt();
+    } catch (err) {
+      lastStatus = err instanceof GhlError ? err.status || 0 : 0;
+      if (lastStatus !== 404 && lastStatus !== 400) throw err;
+    }
+  }
+  return null;
+}
+
+export async function getLocationName(locationId: string): Promise<string> {
+  try {
+    const locations = await listLocations();
+    return locations.find((location) => location.id === locationId)?.name || "";
+  } catch {
+    return "";
+  }
 }
 
 export async function upsertContactByPhone(
@@ -563,23 +677,57 @@ export async function sendLocationSms(
   locationId: string,
   input: { contactId: string; phone: string; message: string }
 ): Promise<{ messageId?: string; conversationId?: string }> {
-  const data = await ghlRequest<Record<string, unknown>>(
-    "POST",
-    "/conversations/messages",
-    {
-      locationId,
-      body: {
-        type: "SMS",
-        contactId: input.contactId,
-        message: input.message,
-        phone: input.phone,
-      },
-    }
-  );
+  const data = await ghlRequest<unknown>("POST", "/conversations/messages", {
+    locationId,
+    body: {
+      type: "SMS",
+      contactId: input.contactId,
+      message: input.message,
+      phone: input.phone,
+    },
+  });
+  const parsed = interpretSmsSendPayload(data);
+  if (parsed.error) throw new GhlError(parsed.error);
+  return { messageId: parsed.messageId, conversationId: parsed.conversationId };
+}
+
+/** A 2xx body can still be a rejected text. Missing id counts as a rejection. */
+export function interpretSmsSendPayload(data: unknown): {
+  messageId?: string;
+  conversationId?: string;
+  error?: string;
+} {
   const record = asRecord(data) || {};
   const nested = asRecord(record.message);
-  const messageId = String(record.messageId || record.id || nested?.id || "") || undefined;
+  const messageId =
+    String(record.messageId || (typeof record.message === "string" ? "" : record.id) || nested?.id || "") ||
+    undefined;
   const conversationId =
     String(record.conversationId || nested?.conversationId || "") || undefined;
+  const status = String(record.status || nested?.status || "").toLowerCase();
+  const errorText = String(record.error || nested?.error || "").trim();
+  const msg =
+    typeof record.msg === "string"
+      ? record.msg
+      : typeof record.message === "string"
+        ? record.message
+        : "";
+  if (record.success === false || record.succeded === false) {
+    return {
+      messageId,
+      conversationId,
+      error: errorText || msg || "GoHighLevel rejected the text.",
+    };
+  }
+  if (status === "failed" || status === "undelivered" || status === "opt_out") {
+    return {
+      messageId,
+      conversationId,
+      error: errorText || msg || `GoHighLevel status is ${status}.`,
+    };
+  }
+  if (!messageId) {
+    return { error: errorText || msg || "GoHighLevel did not return a message id." };
+  }
   return { messageId, conversationId };
 }
