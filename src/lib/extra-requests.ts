@@ -18,7 +18,12 @@ import {
   type RevClient,
 } from "./db";
 import { getOrCreateScheduleToken, todayYmd } from "./cadence";
-import { sendScheduleNudgeSms, type ScheduleSmsResult } from "./production-sms";
+import {
+  alertSmsFailures,
+  sendScheduleNudgeSms,
+  smsAlertReason,
+  type ScheduleSmsResult,
+} from "./production-sms";
 import { recordReachout } from "./reachouts";
 import { scheduleUrl } from "./auth";
 import { sendEmail } from "./email";
@@ -492,6 +497,17 @@ export async function sendExtraRequestOutreach(
       ymd: todayYmd(),
       detail: result.sms.phone,
     });
+  }
+  const smsReason = smsAlertReason(result.sms);
+  if (smsReason) {
+    const dedupeKey = `extra:${request.id}:${todayYmd()}`;
+    await alertSmsFailures([
+      {
+        client: client.name,
+        reason: smsReason,
+        dedupeKey: result.sms.messageId ? dedupeKey : undefined,
+      },
+    ]);
   }
 
   return result;

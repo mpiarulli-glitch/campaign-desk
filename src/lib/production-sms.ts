@@ -7,6 +7,7 @@
 
 import { scheduleUrl } from "./auth";
 import { getDb, nowIso, type RevClient } from "./db";
+import { emailConfigured, sendEmail } from "./email";
 import { clearFailure, recordFailure } from "./failures";
 import {
   sendLocationSms,
@@ -38,7 +39,11 @@ export function productionNoticeSendsSms(notice: ProductionNotice): boolean {
   return PRODUCTION_SMS_EVENTS[notice];
 }
 
-const SMS_MAX = 300;
+/** One GSM-7 segment. Longer links still go out whole; the opt-out is never cut. */
+const SMS_SEGMENT = 160;
+
+const SMS_BRAND = "Marketing Empire Group: ";
+const SMS_STOP = " Reply STOP to opt out.";
 
 export function scheduleSmsEnabled(): boolean {
   return process.env.PRODUCTION_SMS_ENABLED === "1";
@@ -58,6 +63,55 @@ export function contactFirstName(name: string): string {
   return first;
 }
 
+function productionPhrase(kind: ScheduleSmsKind | "sample"): string {
+  if (kind === "first_invite") return "your first production";
+  if (kind === "extra_invite") return "a production";
+  if (kind === "cadence_reminder") return "your next production";
+  return "your production";
+}
+
+/**
+ * Every scheduling text starts with the brand and ends with STOP.
+ * The full https link is kept. Shorter wording is used only when that is
+ * what fits in one 160-character segment.
+ */
+export function scheduleSmsCopy(args: {
+  kind: ScheduleSmsKind | "sample";
+  contactName: string;
+  url?: string;
+  includeLink?: boolean;
+}): string {
+  const first = contactFirstName(args.contactName);
+  const hello = first ? `Hi ${first}` : "Hi";
+  const what = productionPhrase(args.kind);
+  const link = args.includeLink === false ? "" : (args.url || "").trim();
+  const withLink = link
+    ? [
+        `${SMS_BRAND}${hello}, it's time to schedule ${what}. Pick a time here: ${link}${SMS_STOP}`,
+        `${SMS_BRAND}${hello}, it's time to schedule ${what}. ${link}${SMS_STOP}`,
+        `${SMS_BRAND}${hello}, schedule ${what}: ${link}${SMS_STOP}`,
+        `${SMS_BRAND}Hi, it's time to schedule ${what}. ${link}${SMS_STOP}`,
+        `${SMS_BRAND}Schedule ${what}: ${link}${SMS_STOP}`,
+      ]
+    : [
+        `${SMS_BRAND}${hello}, it's time to schedule ${what}.${SMS_STOP}`,
+        `${SMS_BRAND}Hi, it's time to schedule ${what}.${SMS_STOP}`,
+      ];
+  const chosen = withLink.find((body) => body.length <= SMS_SEGMENT) || withLink[withLink.length - 1];
+  return guardProductionSms(chosen);
+}
+
+/**
+ * The only door a production text can leave through. Brand and opt-out are
+ * added here even if a caller forgot them, and adding them twice is a no-op.
+ */
+export function guardProductionSms(body: string): string {
+  const trimmed = (body || "").trim();
+  const branded = trimmed.startsWith(SMS_BRAND) ? trimmed : `${SMS_BRAND}${trimmed}`;
+  if (branded.endsWith("Reply STOP to opt out.")) return branded;
+  return `${branded}${SMS_STOP}`;
+}
+
 /**
  * Short plain text that mirrors the scheduling email.
  * First production uses the first-shoot wording. A regular reminder uses
@@ -68,34 +122,21 @@ export function scheduleNudgeSmsBody(args: {
   contactName: string;
   url: string;
 }): string {
-  const first = contactFirstName(args.contactName);
-  const hello = first ? `Hi ${first}` : "Hi";
-  const what =
-    args.kind === "first_invite"
-      ? "your first MEG production"
-      : args.kind === "extra_invite"
-        ? "a MEG production"
-        : "your next MEG production";
-  const link = (args.url || "").trim();
-  let body = `${hello}, it's time to book ${what}. Pick a time here: ${link}`;
-  if (body.length <= SMS_MAX) return body;
-  body = `Hi, it's time to book ${what}. Pick a time here: ${link}`;
-  if (body.length <= SMS_MAX) return body;
-  const tight = `Hi, book ${what}: ${link}`;
-  return tight.length <= SMS_MAX ? tight : tight.slice(0, SMS_MAX);
+  return scheduleSmsCopy(args);
 }
 
 /** Sample text only. A real scheduling page, labeled as a test, not a client nudge. */
-function sampleScheduleSmsBody(contactName: string, url: string): string {
-  const first = contactFirstName(contactName);
-  const hello = first ? `Hi ${first}` : "Hi";
-  const link = (url || "").trim();
-  let body = `${hello}, it's time to schedule your production. Pick a time here: ${link}`;
-  if (body.length <= SMS_MAX) return body;
-  body = `Hi, it's time to schedule your production. Pick a time here: ${link}`;
-  if (body.length <= SMS_MAX) return body;
-  const tight = `Hi, schedule your production: ${link}`;
-  return tight.length <= SMS_MAX ? tight : tight.slice(0, SMS_MAX);
+function sampleScheduleSmsBody(
+  contactName: string,
+  url: string,
+  includeLink = true
+): string {
+  return scheduleSmsCopy({
+    kind: "sample",
+    contactName,
+    url,
+    includeLink,
+  });
 }
 
 export const SAMPLE_SCHEDULE_TOKEN = "sample";
@@ -163,6 +204,15 @@ export function plainSmsFailure(result: {
   if (/no phone number|no sms-capable|sms off|sms not marked|21606|21661/.test(raw)) {
     return `${place} has no texting number, so GHL can't send texts yet. Add an SMS number (LC Phone or Twilio) on that account, then try again.`;
   }
+  if (/30007|carrier filter/.test(raw)) {
+    return "The carrier blocked this text as possible spam. Try the version without the link, or adjust the wording.";
+  }
+  if (/30003/.test(raw)) {
+    return "The carrier couldn't reach this phone. Check the number, then try again.";
+  }
+  if (/30005/.test(raw)) {
+    return "The carrier doesn't recognize this number. Check it, then try again.";
+  }
   if (/a2p|30034|30032|30033|toll-free|toll free/.test(raw)) {
     return "The texting number isn't approved for US business texts yet. Finish A2P or toll-free registration in GHL, then try again.";
   }
@@ -216,6 +266,323 @@ function scrubLogValue(value: string): string {
 
 function quoteLog(value: string): string {
   return `"${value.replace(/"/g, "'")}"`;
+}
+
+/** Twilio-style code, or dnd. Empty when the failure has no code. */
+export function smsErrorCode(error: string | undefined): string {
+  const text = error || "";
+  const match = text.match(/\b(300\d{2}|216\d{2})\b/);
+  if (match) return match[1];
+  if (/do not disturb|\bdnd\b/i.test(text)) return "dnd";
+  return "";
+}
+
+/** One Railway line per send. No message body and no secrets. */
+export function formatSendLog(args: {
+  client?: string;
+  status: string;
+  code?: string;
+  messageId?: string;
+}): string {
+  const code = scrubLogValue(args.code || "") || "-";
+  const client = scrubLogValue(args.client || "") || "-";
+  const messageId = scrubLogValue(args.messageId || "") || "-";
+  return (
+    `${SMS_LOG} send client=${quoteLog(client)}` +
+    ` status=${args.status || "-"}` +
+    ` code=${code}` +
+    ` messageId=${messageId}`
+  );
+}
+
+export function smsDeliveryLabel(args: {
+  status?: string;
+  error?: string;
+  code?: string;
+}): string {
+  const code = args.code || smsErrorCode(args.error);
+  const error = args.error || "";
+  if (code === "30007" || /carrier filter/i.test(error)) return "Blocked by carrier";
+  if (code === "30003") return "Unreachable";
+  if (code === "30005") return "Unknown number";
+  if (code === "dnd" || /do not disturb/i.test(error)) return "Do Not Disturb";
+  const status = (args.status || "").toLowerCase();
+  if (status === "delivered") return "Delivered";
+  if (status === "failed" || status === "undelivered") return "Didn't arrive";
+  if (status === "queued" || status === "sent" || status === "pending") {
+    return "Sent, waiting on the carrier";
+  }
+  return "Not sent";
+}
+
+/** The small line on a production card, plus the plain sentence when it failed. */
+export function lastTextView(args: {
+  phone?: string | null;
+  status?: string | null;
+  errorCode?: string | null;
+  errorText?: string | null;
+}): { line: string; detail: string } {
+  const phone = (args.phone || "").trim();
+  const status = (args.status || "").trim();
+  if (!status) {
+    if (!phone) return { line: "Last text: Not sent (no phone)", detail: "" };
+    if (!normalizePhoneE164(phone)) return { line: "Last text: Not sent (bad number)", detail: "" };
+    return { line: "Last text: Not sent yet", detail: "" };
+  }
+  const label = smsDeliveryLabel({
+    status,
+    error: args.errorText || "",
+    code: args.errorCode || "",
+  });
+  const failed = status === "failed" || status === "undelivered";
+  const detail = failed
+    ? plainSmsFailure({
+        status: "failed",
+        delivery: status,
+        error: args.errorText || args.errorCode || "",
+      }) || ""
+    : "";
+  return { line: `Last text: ${label}`, detail };
+}
+
+export type SmsFailureNotice = {
+  client: string;
+  reason: string;
+  dedupeKey?: string;
+};
+
+/** One alert for a whole run. Empty when nothing failed. */
+export function groupSmsFailureAlert(
+  items: SmsFailureNotice[]
+): { subject: string; text: string } | null {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const item of items) {
+    const client = item.client.trim() || "A client";
+    const reason = item.reason.trim();
+    if (!reason) continue;
+    const key = `${client}\n${reason}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(`${client}: ${reason}`);
+  }
+  if (!lines.length) return null;
+  const subject =
+    lines.length === 1
+      ? `Scheduling text didn't reach ${lines[0].split(":")[0]}`
+      : `${lines.length} scheduling texts didn't go through`;
+  return { subject, text: lines.join("\n") };
+}
+
+export function smsAlertReason(result: ScheduleSmsResult): string | null {
+  if (result.status === "skipped") return null;
+  if (result.status === "sent" && result.delivery !== "failed" && result.delivery !== "undelivered") {
+    return null;
+  }
+  const error = result.status === "failed" ? result.error : "";
+  return (
+    plainSmsFailure({
+      status: "failed",
+      delivery: result.delivery,
+      error,
+    }) ||
+    error ||
+    "The text didn't arrive."
+  );
+}
+
+function escapeAlert(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+const SMS_ALERT_SUBJECT = "Scheduling texts";
+
+/**
+ * One in-app failure and one email for the whole run. Does not send a text.
+ */
+export async function alertSmsFailures(
+  items: SmsFailureNotice[],
+  send?: (input: { to: string; subject: string; text: string; html: string }) => Promise<boolean>
+): Promise<{ subject: string; text: string } | null> {
+  const grouped = groupSmsFailureAlert(items);
+  if (!grouped) return null;
+  recordFailure({
+    kind: "production_sms",
+    subject: SMS_ALERT_SUBJECT,
+    detail: grouped.text,
+    hint: "The client's production card shows the same reason. The scheduling email still went out.",
+  });
+  const to = (process.env.PRODUCTION_SMS_ALERT_EMAIL || "mpiarulli@marketingempiregroup.com").trim();
+  const html = grouped.text
+    .split("\n")
+    .map((line) => `<p>${escapeAlert(line)}</p>`)
+    .join("");
+  if (send) {
+    await send({ to, subject: grouped.subject, text: grouped.text, html });
+  } else if (emailConfigured()) {
+    await sendEmail({ to, subject: grouped.subject, text: grouped.text, html });
+  } else {
+    console.log(
+      `${SMS_LOG} alert email skipped (email not configured) subject=${quoteLog(grouped.subject)}`
+    );
+  }
+  const ts = nowIso();
+  const db = getDb();
+  for (const item of items) {
+    if (!item.dedupeKey) continue;
+    db.prepare(
+      `UPDATE production_sms_sends SET alerted_at = ? WHERE dedupe_key = ? AND alerted_at = ''`
+    ).run(ts, item.dedupeKey);
+  }
+  return grouped;
+}
+
+export type StoredSms = {
+  client_id: string;
+  status: string;
+  error_code: string;
+  error_text: string;
+  created_at: string;
+};
+
+export function latestSmsByClient(): Map<string, StoredSms> {
+  const rows = getDb()
+    .prepare(
+      `SELECT client_id, status, error_code, error_text, created_at
+       FROM production_sms_sends
+       WHERE client_id != ''
+       ORDER BY created_at DESC`
+    )
+    .all() as StoredSms[];
+  const map = new Map<string, StoredSms>();
+  for (const row of rows) {
+    if (!map.has(row.client_id)) map.set(row.client_id, row);
+  }
+  return map;
+}
+
+const SMS_FOLLOW_UP_MS = 2 * 60 * 1000;
+const SMS_GIVE_UP_MS = 48 * 60 * 60 * 1000;
+
+type OpenSmsRow = {
+  dedupe_key: string;
+  client_name: string;
+  message_id: string;
+  status: string;
+  error_text: string;
+  error_code: string;
+  created_at: string;
+  alerted_at: string;
+};
+
+/**
+ * Re-read GHL for texts that are not final yet. Returns failures that have
+ * not been alerted, so the caller can group them into one notice.
+ */
+export async function refreshSmsDeliveries(args?: {
+  read?: (messageId: string) => Promise<unknown>;
+  minAgeMs?: number;
+  nowMs?: number;
+}): Promise<SmsFailureNotice[]> {
+  const nowMs = args?.nowMs ?? Date.now();
+  const minAge = args?.minAgeMs ?? SMS_FOLLOW_UP_MS;
+  const locationId = productionSmsLocationId();
+  const read =
+    args?.read ||
+    (async (messageId: string) => {
+      if (!locationId) throw new Error("PRODUCTION_SMS_LOCATION_ID is not set.");
+      return getConversationMessage(locationId, messageId);
+    });
+  const rows = getDb()
+    .prepare(
+      `SELECT dedupe_key, client_name, message_id, status, error_text, error_code, created_at, alerted_at
+       FROM production_sms_sends
+       WHERE message_id != ''
+         AND (
+           status IN ('queued', 'sent', 'pending', '')
+           OR (status IN ('failed', 'undelivered') AND alerted_at = '')
+         )`
+    )
+    .all() as OpenSmsRow[];
+  const notices: SmsFailureNotice[] = [];
+  for (const row of rows) {
+    const created = Date.parse(row.created_at);
+    const age = Number.isFinite(created) ? nowMs - created : minAge;
+    let status = row.status;
+    let error = row.error_text || "";
+    let code = row.error_code || "";
+    const alreadyFinal = status === "failed" || status === "undelivered";
+    if (!alreadyFinal) {
+      if (age < minAge) continue;
+      if (!locationId && !args?.read) continue;
+      if (age >= SMS_GIVE_UP_MS) {
+        status = "undelivered";
+        error = "The carrier never confirmed this text.";
+        code = "unconfirmed";
+      } else {
+        try {
+          const snap = snapshotFromMessage(await read(row.message_id));
+          status = snap.status;
+          error = snap.error;
+          code = smsErrorCode(snap.error);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : "Could not read the message.";
+          logSend({
+            client: row.client_name,
+            status: "check_failed",
+            code: smsErrorCode(detail),
+            messageId: row.message_id,
+          });
+          continue;
+        }
+        if (!terminalDelivery(status as SmsDeliveryStatus)) {
+          getDb()
+            .prepare(
+              `UPDATE production_sms_sends
+               SET status = ?, error_text = ?, error_code = ?, checked_at = ?, updated_at = ?
+               WHERE dedupe_key = ?`
+            )
+            .run(status, error, code, nowIso(), nowIso(), row.dedupe_key);
+          logSend({
+            client: row.client_name,
+            status,
+            code,
+            messageId: row.message_id,
+          });
+          continue;
+        }
+      }
+    }
+    const finalStatus = status === "failed" || status === "undelivered" ? status : "undelivered";
+    getDb()
+      .prepare(
+        `UPDATE production_sms_sends
+         SET status = ?, error_text = ?, error_code = ?, checked_at = ?, updated_at = ?, final_at = ?
+         WHERE dedupe_key = ?`
+      )
+      .run(finalStatus, error, code, nowIso(), nowIso(), nowIso(), row.dedupe_key);
+    logSend({
+      client: row.client_name,
+      status: finalStatus,
+      code,
+      messageId: row.message_id,
+    });
+    if (row.alerted_at) continue;
+    const reason =
+      code === "unconfirmed"
+        ? "The carrier never confirmed this text. Check it in GoHighLevel."
+        : plainSmsFailure({ status: "failed", delivery: finalStatus, error: error || code }) ||
+          "The text didn't arrive.";
+    notices.push({
+      client: row.client_name || "A client",
+      reason,
+      dedupeKey: row.dedupe_key,
+    });
+  }
+  return notices;
 }
 
 const SMS_LOG = "[production-sms]";
@@ -390,9 +757,10 @@ export type SmsTransportInput = {
 
 export type SmsTransport = (
   input: SmsTransportInput
-) => Promise<{ messageId?: string }>;
+) => Promise<{ messageId?: string; delivery?: SmsDeliveryStatus }>;
 
 async function liveDeliver(input: SmsTransportInput & { message: string }): Promise<ScheduleSmsResult> {
+  const message = guardProductionSms(input.message);
   const locationName = await getLocationName(input.locationId);
   let numbers: GhlPhoneNumber[] = [];
   let numbersError = "";
@@ -426,7 +794,7 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
       error: problem,
       httpStatus: 400,
       phone: input.phone,
-      message: input.message,
+      message: message,
       locationId: input.locationId,
       locationName,
       fromNumber,
@@ -452,7 +820,7 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
       error: `This contact is Do Not Disturb for SMS (${dnd.state}). Nothing was sent.`,
       httpStatus: 400,
       phone: input.phone,
-      message: input.message,
+      message: message,
       locationId: input.locationId,
       locationName,
       fromNumber,
@@ -463,7 +831,7 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
   const sent = await sendLocationSms(input.locationId, {
     contactId,
     phone: input.phone,
-    message: input.message,
+    message: message,
   });
   const snapshot = await pollMessageDelivery({
     read: () => getConversationMessage(input.locationId, sent.messageId || ""),
@@ -481,7 +849,7 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
   });
   const outcome: SmsOutcome & { phone: string } = {
     phone: input.phone,
-    message: input.message,
+    message: message,
     messageId: sent.messageId,
     delivery: snapshot.status,
     fromNumber: reportedFrom,
@@ -512,30 +880,57 @@ function alreadySent(dedupeKey: string): boolean {
   return Boolean(row);
 }
 
-function markSent(args: {
+function recordSmsSend(args: {
   dedupeKey: string;
   clientId: string;
+  clientName: string;
   phone: string;
   kind: string;
   body: string;
+  messageId: string;
+  status: string;
+  errorCode: string;
+  errorText: string;
+  final: boolean;
 }): void {
+  const ts = nowIso();
   getDb()
     .prepare(
       `INSERT INTO production_sms_sends
-        (dedupe_key, client_id, phone, kind, body, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+        (dedupe_key, client_id, client_name, phone, kind, body, created_at,
+         message_id, status, error_code, error_text, updated_at, checked_at, final_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(args.dedupeKey, args.clientId, args.phone, args.kind, args.body, nowIso());
+    .run(
+      args.dedupeKey,
+      args.clientId,
+      args.clientName,
+      args.phone,
+      args.kind,
+      args.body,
+      ts,
+      args.messageId,
+      args.status,
+      args.errorCode,
+      args.errorText,
+      ts,
+      ts,
+      args.final ? ts : ""
+    );
 }
 
-function logSkip(clientName: string, detail: string, hint: string): void {
+function logSend(args: {
+  client: string;
+  status: string;
+  code?: string;
+  messageId?: string;
+}): void {
+  console.log(formatSendLog(args));
+}
+
+function logSkip(clientName: string, detail: string, code: string): void {
   console.log(`[production-sms] ${clientName}: ${detail}`);
-  recordFailure({
-    kind: "production_sms",
-    subject: clientName || "Scheduling text",
-    detail,
-    hint,
-  });
+  logSend({ client: clientName, status: "skipped", code });
 }
 
 export async function sendScheduleNudgeSms(args: {
@@ -551,14 +946,14 @@ export async function sendScheduleNudgeSms(args: {
   const locationId = productionSmsLocationId();
   const unresolved = unresolvedLocationMessage(process.env.PRODUCTION_SMS_LOCATION_ID || "");
   if (locationId && unresolved) {
-    logSkip(name, unresolved, "Set PRODUCTION_SMS_LOCATION_ID to the location id itself, not a Railway reference.");
+    logSkip(name, unresolved, "no_location");
     return { status: "failed", error: unresolved, httpStatus: 400, locationId };
   }
   if (!locationId) {
     logSkip(
       name,
       "Scheduling text skipped because PRODUCTION_SMS_LOCATION_ID is not set. The email still goes out.",
-      "Set PRODUCTION_SMS_LOCATION_ID to the agency's own GoHighLevel sub-account."
+      "no_location"
     );
     return { status: "skipped", reason: "no_location" };
   }
@@ -568,7 +963,7 @@ export async function sendScheduleNudgeSms(args: {
     logSkip(
       name,
       "Scheduling text skipped because there is no scheduling link.",
-      "Open the client's schedule link from the production desk and resend."
+      "no_link"
     );
     return { status: "skipped", reason: "no_link" };
   }
@@ -578,7 +973,7 @@ export async function sendScheduleNudgeSms(args: {
     logSkip(
       name,
       "No contact phone on this client, so no scheduling text was sent. The email still goes out.",
-      "Add a mobile number next to the contact email on the client."
+      "no_phone"
     );
     return { status: "skipped", reason: "no_phone" };
   }
@@ -586,7 +981,7 @@ export async function sendScheduleNudgeSms(args: {
     logSkip(
       name,
       `The contact phone "${args.client.contact_phone}" is not a usable number, so no scheduling text was sent.`,
-      "Enter the mobile number with an area code. It is stored as E.164."
+      "invalid_phone"
     );
     return { status: "skipped", reason: "invalid_phone" };
   }
@@ -617,60 +1012,105 @@ export async function sendScheduleNudgeSms(args: {
           email: args.client.contact_email?.trim() || undefined,
           message,
         });
-    if (result.status !== "sent") {
-      if (result.status === "failed") {
-        logSkip(
-          name,
-          `Scheduling text failed and the email was not affected. ${result.error}`,
-          "Check the GoHighLevel sub-account has an SMS-capable number, then resend."
-        );
-      }
-      return result;
-    }
-    try {
-      markSent({
-        dedupeKey: args.dedupeKey,
-        clientId: args.client.id,
-        phone,
-        kind: args.kind,
-        body: message,
-      });
-    } catch (err) {
-      const messageText = err instanceof Error ? err.message : "";
-      if (/UNIQUE/i.test(messageText)) return { status: "skipped", reason: "duplicate" };
-      throw err;
-    }
-    clearFailure("production_sms", name);
-    return result;
+    return rememberSmsSend({
+      dedupeKey: args.dedupeKey,
+      clientId: args.client.id,
+      clientName: name,
+      phone,
+      kind: args.kind,
+      message,
+      result,
+    });
   } catch (err) {
     const error = err instanceof Error ? err.message : "Text failed";
-    logSkip(
-      name,
-      `Scheduling text failed and the email was not affected. ${error}`,
-      "Check the GoHighLevel sub-account has an SMS-capable number, then resend."
-    );
-    return { status: "failed", error };
+    console.log(`[production-sms] ${name}: Scheduling text failed and the email was not affected. ${error}`);
+    const failed = { status: "failed" as const, error };
+    rememberSmsSend({
+      dedupeKey: args.dedupeKey,
+      clientId: args.client.id,
+      clientName: name,
+      phone,
+      kind: args.kind,
+      message,
+      result: failed,
+    });
+    return failed;
   }
 }
 
+function rememberSmsSend(args: {
+  dedupeKey: string;
+  clientId: string;
+  clientName: string;
+  phone: string;
+  kind: string;
+  message: string;
+  result: ScheduleSmsResult;
+}): ScheduleSmsResult {
+  const errorText = args.result.status === "failed" ? args.result.error : "";
+  const delivery = args.result.delivery;
+  const status =
+    args.result.status === "sent"
+      ? delivery || "queued"
+      : args.result.status === "failed"
+        ? delivery || "failed"
+        : args.result.reason || args.result.status;
+  const code = smsErrorCode(errorText);
+  logSend({
+    client: args.clientName,
+    status,
+    code,
+    messageId: args.result.messageId,
+  });
+  const messageId = args.result.messageId || "";
+  const failed = args.result.status === "failed" || delivery === "failed" || delivery === "undelivered";
+  if (!messageId && args.result.status !== "failed") return args.result;
+  const key = messageId ? args.dedupeKey : `attempt:${args.dedupeKey}:${nowIso()}`;
+  try {
+    recordSmsSend({
+      dedupeKey: key,
+      clientId: args.clientId,
+      clientName: args.clientName,
+      phone: args.phone,
+      kind: args.kind,
+      body: args.message,
+      messageId,
+      status,
+      errorCode: code,
+      errorText,
+      final: failed || delivery === "delivered",
+    });
+  } catch (err) {
+    const messageText = err instanceof Error ? err.message : "";
+    if (messageId && /UNIQUE/i.test(messageText)) {
+      return { status: "skipped", reason: "duplicate" };
+    }
+    throw err;
+  }
+  if (!failed) clearFailure("production_sms", args.clientName);
+  return args.result;
+}
+
 async function stubDeliver(args: SmsTransportInput & { transport: SmsTransport; message: string }): Promise<ScheduleSmsResult> {
-  const sent = await args.transport(args);
+  const message = guardProductionSms(args.message);
+  const sent = await args.transport({ ...args, message });
   if (!sent.messageId) {
     return {
       status: "failed",
       error: "GoHighLevel did not return a message id, so the text was not accepted.",
       httpStatus: 502,
       phone: args.phone,
-      message: args.message,
+      message,
       locationId: args.locationId,
     };
   }
   return {
     status: "sent",
     phone: args.phone,
-    message: args.message,
+    message,
     messageId: sent.messageId,
     locationId: args.locationId,
+    delivery: sent.delivery,
   };
 }
 
@@ -678,6 +1118,9 @@ async function stubDeliver(args: SmsTransportInput & { transport: SmsTransport; 
 export async function sendSampleScheduleSms(args: {
   phone: string;
   contactName?: string;
+  email?: string;
+  /** False sends the same text with no link, to see if the link is filtered. */
+  includeLink?: boolean;
   transport?: SmsTransport;
 }): Promise<ScheduleSmsResult> {
   const rawLocation = process.env.PRODUCTION_SMS_LOCATION_ID || "";
@@ -692,22 +1135,27 @@ export async function sendSampleScheduleSms(args: {
   if (!phone) return { status: "skipped", reason: "invalid_phone" };
   const message = sampleScheduleSmsBody(
     args.contactName || "",
-    scheduleUrl(SAMPLE_SCHEDULE_TOKEN)
+    scheduleUrl(SAMPLE_SCHEDULE_TOKEN),
+    args.includeLink !== false
   );
+  const name = args.contactName?.trim() || "Sample";
+  const email = args.email?.trim() || undefined;
   try {
     if (args.transport) {
       return stubDeliver({
         transport: args.transport,
         locationId,
         phone,
-        name: args.contactName?.trim() || "Sample",
+        name,
+        email,
         message,
       });
     }
     return liveDeliver({
       locationId,
       phone,
-      name: args.contactName?.trim() || "Sample",
+      name,
+      email,
       message,
     });
   } catch (err) {

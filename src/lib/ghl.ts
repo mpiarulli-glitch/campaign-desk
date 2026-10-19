@@ -649,10 +649,80 @@ export async function getLocationName(locationId: string): Promise<string> {
   }
 }
 
+export type SmsContactMatch = {
+  id: string;
+  email: string;
+  phone: string;
+};
+
+/** Last 10 digits for a US number, otherwise the digits we have. */
+export function phoneMatchKey(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits;
+}
+
+/**
+ * When one phone is on more than one contact, use the contact whose email
+ * also matches. Returns null when there is no email, or no contact has both.
+ * Never picks a phone-only match, and never says to merge or delete anyone.
+ */
+export function pickContactMatchingEmailAndPhone(
+  contacts: SmsContactMatch[],
+  phone: string,
+  email?: string
+): string | null {
+  const wantEmail = (email || "").trim().toLowerCase();
+  const wantPhone = phoneMatchKey(phone);
+  if (!wantEmail || !wantPhone) return null;
+  const hit = contacts.find(
+    (contact) =>
+      contact.id &&
+      contact.email.trim().toLowerCase() === wantEmail &&
+      phoneMatchKey(contact.phone) === wantPhone
+  );
+  return hit?.id || null;
+}
+
+function contactMatch(row: unknown): SmsContactMatch | null {
+  const record = asRecord(row);
+  if (!record) return null;
+  const id = String(record.id || "");
+  if (!id) return null;
+  return {
+    id,
+    email: String(record.email || ""),
+    phone: String(record.phone || ""),
+  };
+}
+
+async function searchContacts(
+  locationId: string,
+  query: string
+): Promise<SmsContactMatch[]> {
+  const data = await ghlRequest<{ contacts?: unknown[] }>("POST", "/contacts/search", {
+    locationId,
+    body: { locationId, page: 1, pageLimit: 20, query },
+  });
+  return (data.contacts || [])
+    .map(contactMatch)
+    .filter((contact): contact is SmsContactMatch => Boolean(contact));
+}
+
 export async function upsertContactByPhone(
   locationId: string,
   input: { phone: string; name?: string; email?: string }
 ): Promise<string> {
+  const email = (input.email || "").trim();
+  if (email) {
+    try {
+      const existing = await searchContacts(locationId, email);
+      const matched = pickContactMatchingEmailAndPhone(existing, input.phone, email);
+      if (matched) return matched;
+    } catch {
+      // Search failed. Fall through to upsert, which still does not merge or delete.
+    }
+  }
   const name = (input.name || "").trim();
   const first = name.split(/\s+/)[0] || "";
   const data = await ghlRequest<{ contact?: { id?: string }; id?: string }>(
@@ -664,7 +734,7 @@ export async function upsertContactByPhone(
         locationId,
         phone: input.phone,
         ...(name ? { name, firstName: first } : {}),
-        ...(input.email ? { email: input.email } : {}),
+        ...(email ? { email } : {}),
       },
     }
   );

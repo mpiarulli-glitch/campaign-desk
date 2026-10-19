@@ -12,6 +12,7 @@ import {
 import { listVideographers } from "@/lib/videographers";
 import { listProductionSends, productionStatsByClient } from "@/lib/calendar";
 import { listOpenExtraRequests } from "@/lib/extra-requests";
+import { lastTextView, latestSmsByClient } from "@/lib/production-sms";
 
 export async function GET() {
   if (!(await isProductionAuthenticated())) {
@@ -19,6 +20,7 @@ export async function GET() {
   }
   const today = todayYmd();
   const shootStats = productionStatsByClient(today);
+  const latestSms = latestSmsByClient();
   const clients = listRevClients(true).map((client) => {
     const window = nextWindow(client, today);
     const { status, real: realStatus, overridden } = effectiveCycleStatus(
@@ -37,6 +39,13 @@ export async function GET() {
       ? reachoutsForWindow(client.id, window.start)
       : { count: 0, last: null };
     const openExtraRequest = listOpenExtraRequests(client.id)[0] || null;
+    const sms = latestSms.get(client.id);
+    const lastText = lastTextView({
+      phone: client.contact_phone,
+      status: sms?.status,
+      errorCode: sms?.error_code,
+      errorText: sms?.error_text,
+    });
     return {
       client: {
         id: client.id,
@@ -103,6 +112,7 @@ export async function GET() {
             kind: openExtraRequest.kind === "first" ? "first" : "extra",
           }
         : null,
+      lastText,
       shoots: shootStats.get(client.id) || { had: 0, upcoming: null },
     };
   });

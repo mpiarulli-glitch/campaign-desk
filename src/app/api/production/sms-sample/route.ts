@@ -62,6 +62,8 @@ export async function POST(request: Request) {
   const phone = typeof body.phone === "string" ? body.phone : "";
   const contactName =
     typeof body.contactName === "string" ? body.contactName : "";
+  const email = typeof body.email === "string" ? body.email : "";
+  const includeLink = body.includeLink !== false;
   if (!phone.trim()) {
     const missing = {
       status: "skipped" as const,
@@ -73,7 +75,12 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const result = await sendSampleScheduleSms({ phone, contactName });
+  const result = await sendSampleScheduleSms({
+    phone,
+    contactName,
+    email,
+    includeLink,
+  });
   console.log(formatSampleLog(result));
   return NextResponse.json(
     {

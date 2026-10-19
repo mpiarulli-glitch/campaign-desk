@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FailuresPanel } from "@/components/FailuresPanel";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -164,6 +165,7 @@ type Row = {
   currentReachoutCount: number;
   currentReachoutLast: { channel: ReachoutChannel; ymd: string } | null;
   openExtraRequest: OpenExtraRequest | null;
+  lastText?: { line: string; detail: string };
   shoots?: {
     had: number;
     upcoming: { date: string; time: string; status: string } | null;
@@ -539,6 +541,8 @@ export default function ProductionPage() {
   const [sampleOpen, setSampleOpen] = useState(false);
   const [samplePhone, setSamplePhone] = useState("");
   const [sampleName, setSampleName] = useState("");
+  const [sampleEmail, setSampleEmail] = useState("");
+  const [sampleOmitLink, setSampleOmitLink] = useState(false);
   const [sampleSaving, setSampleSaving] = useState(false);
   const [sampleError, setSampleError] = useState("");
   const [sampleSent, setSampleSent] = useState("");
@@ -591,7 +595,12 @@ export default function ProductionPage() {
     const res = await fetch("/api/production/sms-sample", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, contactName: sampleName.trim() }),
+      body: JSON.stringify({
+        phone,
+        contactName: sampleName.trim(),
+        email: sampleEmail.trim(),
+        includeLink: !sampleOmitLink,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     setSampleSaving(false);
@@ -1415,6 +1424,7 @@ export default function ProductionPage() {
   return (
     <div className="app-shell">
       <main className="container container-wide stack">
+        <FailuresPanel />
         <div className="page-hero pcon-hero">
           <div>
             <p className="eyebrow">Email department</p>
@@ -1539,7 +1549,32 @@ export default function ProductionPage() {
                     onChange={(e) => setSampleName(e.target.value)}
                   />
                 </div>
+                <div className="field">
+                  <label htmlFor="sample-email">Email, if this number is shared</label>
+                  <input
+                    id="sample-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="michael@example.com"
+                    value={sampleEmail}
+                    onChange={(e) => setSampleEmail(e.target.value)}
+                  />
+                </div>
               </div>
+              <label className="row" htmlFor="sample-omit-link" style={{ gap: 8 }}>
+                <input
+                  id="sample-omit-link"
+                  type="checkbox"
+                  checked={sampleOmitLink}
+                  onChange={(e) => setSampleOmitLink(e.target.checked)}
+                />
+                Send without the link
+              </label>
+              <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+                {sampleOmitLink
+                  ? "This sample has the brand name and Reply STOP, and no link, so you can see whether the link is what the carrier blocks."
+                  : "The text starts with Marketing Empire Group and ends with Reply STOP to opt out. If this number is on more than one contact, the email picks the matching one. Nothing is merged or deleted."}
+              </p>
               {sampleOutcome?.plain ? (
                 <p className="error">{sampleOutcome.plain}</p>
               ) : sampleError ? (
@@ -2100,6 +2135,12 @@ export default function ProductionPage() {
                       </div>
                       {hint ? (
                         <p className="pcon-hint">{hint}</p>
+                      ) : null}
+                      {r.lastText?.line ? (
+                        <p className="pcon-hint">{r.lastText.line}</p>
+                      ) : null}
+                      {r.lastText?.detail ? (
+                        <p className="pcon-hint">{r.lastText.detail}</p>
                       ) : null}
                     </div>
                   </div>
