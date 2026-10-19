@@ -646,9 +646,17 @@ export function interpretA2p(payload: unknown | null): {
     return { state: "unknown", detail: "GoHighLevel did not return an A2P campaign list." };
   }
   const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
-  const list = [record.campaigns, record.data, record.a2pCampaigns].find(Array.isArray) as
-    | unknown[]
-    | undefined;
+  const nested =
+    record.data && typeof record.data === "object" && !Array.isArray(record.data)
+      ? (record.data as Record<string, unknown>)
+      : null;
+  const list = [
+    record.campaigns,
+    record.data,
+    record.a2pCampaigns,
+    nested?.campaigns,
+    nested?.a2pCampaigns,
+  ].find(Array.isArray) as unknown[] | undefined;
   if (!list) {
     return { state: "unknown", detail: "GoHighLevel did not include an A2P campaign list." };
   }
@@ -667,42 +675,37 @@ export function interpretA2p(payload: unknown | null): {
   };
 }
 
-const A2P_BLOCKED = /pending|fail|suspend|reject|unregistered|none|incomplete|not registered/i;
+/**
+ * A note for the log when the number or A2P read is empty or failed.
+ * This never stops a send. GoHighLevel uses the location's default number.
+ */
+export function smsLookupWarning(args: {
+  numbers: GhlPhoneNumber[];
+  numbersError?: string;
+}): string {
+  if (args.numbersError && args.numbers.length === 0) {
+    return `Phone number lookup failed (${args.numbersError}). Sending anyway.`;
+  }
+  if (args.numbers.length === 0) {
+    return "Phone number lookup returned nothing. Sending anyway so GoHighLevel can use the location default.";
+  }
+  return "";
+}
 
+/** Kept so a lookup can never be turned back into a reason to refuse the text. */
 export function smsPreflightError(args: {
   numbers: GhlPhoneNumber[];
   numbersError?: string;
   a2p: { state: "approved" | "blocked" | "unknown"; detail: string };
 }): string | null {
-  if (args.numbersError && args.numbers.length === 0) {
-    return `Could not read phone numbers for this sub-account. ${args.numbersError}`;
-  }
-  const smsNumbers = args.numbers.filter((number) => number.sms && number.smsKnown);
-  if (smsNumbers.length === 0) {
-    const found = args.numbers
-      .map((number) => {
-        const provider = number.provider ? ` ${number.provider}` : "";
-        const flag = number.smsKnown ? "SMS off" : "SMS not marked";
-        return `${number.phoneNumber}${provider} (${flag})`;
-      })
-      .join(", ");
-    return found
-      ? `This sub-account has no SMS-capable LC Phone or Twilio number. Found: ${found}.`
-      : "This sub-account has no phone number, so a text cannot be sent.";
-  }
-  const blockedNumber = smsNumbers.find((number) => A2P_BLOCKED.test(number.a2pStatus));
-  if (blockedNumber) {
-    return `The sending number ${blockedNumber.phoneNumber} is not A2P-registered (${blockedNumber.a2pStatus}). US texts will not be delivered until that registration is approved in GoHighLevel.`;
-  }
-  if (args.a2p.state === "blocked") {
-    return `${args.a2p.detail} US texts from a local number will not be delivered until A2P registration is approved in GoHighLevel.`;
-  }
+  smsLookupWarning(args);
   return null;
 }
 
 export function pickFromNumber(numbers: GhlPhoneNumber[]): string {
   const smsNumbers = numbers.filter((number) => number.sms && number.smsKnown);
-  return (smsNumbers.find((number) => number.isDefault) || smsNumbers[0])?.phoneNumber || "";
+  const pool = smsNumbers.length ? smsNumbers : numbers;
+  return (pool.find((number) => number.isDefault) || pool[0])?.phoneNumber || "";
 }
 
 export type MessageSnapshot = {
@@ -759,19 +762,48 @@ export type SmsTransport = (
   input: SmsTransportInput
 ) => Promise<{ messageId?: string; delivery?: SmsDeliveryStatus }>;
 
-async function liveDeliver(input: SmsTransportInput & { message: string }): Promise<ScheduleSmsResult> {
+type LiveSmsDeps = {
+  listNumbers: (locationId: string) => Promise<GhlPhoneNumber[]>;
+  readA2p: (locationId: string) => Promise<unknown | null>;
+  locationName: (locationId: string) => Promise<string>;
+  upsert: (
+    locationId: string,
+    input: { phone: string; name?: string; email?: string }
+  ) => Promise<string>;
+  getContact: (locationId: string, contactId: string) => Promise<unknown>;
+  send: (
+    locationId: string,
+    input: { contactId: string; phone: string; message: string }
+  ) => Promise<{ messageId?: string }>;
+  readMessage: (locationId: string, messageId: string) => Promise<unknown>;
+};
+
+const realSmsDeps: LiveSmsDeps = {
+  listNumbers: listLocationPhoneNumbers,
+  readA2p: getLocationA2p,
+  locationName: getLocationName,
+  upsert: upsertContactByPhone,
+  getContact: getGhlContact,
+  send: sendLocationSms,
+  readMessage: getConversationMessage,
+};
+
+async function liveDeliver(
+  input: SmsTransportInput & { message: string },
+  deps: LiveSmsDeps = realSmsDeps
+): Promise<ScheduleSmsResult> {
   const message = guardProductionSms(input.message);
-  const locationName = await getLocationName(input.locationId);
+  const locationName = await deps.locationName(input.locationId);
   let numbers: GhlPhoneNumber[] = [];
   let numbersError = "";
   try {
-    numbers = await listLocationPhoneNumbers(input.locationId);
+    numbers = await deps.listNumbers(input.locationId);
   } catch (err) {
     numbersError = err instanceof Error ? err.message : "Could not read phone numbers";
   }
   let a2p = interpretA2p(null);
   try {
-    a2p = interpretA2p(await getLocationA2p(input.locationId));
+    a2p = interpretA2p(await deps.readA2p(input.locationId));
   } catch (err) {
     a2p = {
       state: "unknown",
@@ -779,34 +811,22 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
     };
   }
   const fromNumber = pickFromNumber(numbers);
-  const problem = smsPreflightError({ numbers, numbersError, a2p });
+  const warning = smsLookupWarning({ numbers, numbersError });
   smsLog({
     step: "preflight",
     locationId: input.locationId,
     locationName,
     fromNumber,
     a2p: `${a2p.state}: ${a2p.detail}`,
-    error: problem || "",
+    warning,
   });
-  if (problem) {
-    return {
-      status: "failed",
-      error: problem,
-      httpStatus: 400,
-      phone: input.phone,
-      message: message,
-      locationId: input.locationId,
-      locationName,
-      fromNumber,
-    };
-  }
 
-  const contactId = await upsertContactByPhone(input.locationId, {
+  const contactId = await deps.upsert(input.locationId, {
     phone: input.phone,
     name: input.name,
     email: input.email,
   });
-  const dnd = smsDndState(await getGhlContact(input.locationId, contactId));
+  const dnd = smsDndState(await deps.getContact(input.locationId, contactId));
   smsLog({
     step: "dnd",
     locationId: input.locationId,
@@ -828,13 +848,13 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
     };
   }
 
-  const sent = await sendLocationSms(input.locationId, {
+  const sent = await deps.send(input.locationId, {
     contactId,
     phone: input.phone,
     message: message,
   });
   const snapshot = await pollMessageDelivery({
-    read: () => getConversationMessage(input.locationId, sent.messageId || ""),
+    read: () => deps.readMessage(input.locationId, sent.messageId || ""),
   });
   const reportedFrom = snapshot.fromNumber || fromNumber;
   smsLog({
@@ -866,6 +886,14 @@ async function liveDeliver(input: SmsTransportInput & { message: string }): Prom
     };
   }
   return { status: "sent", ...outcome };
+}
+
+/** Same send path as production, with the lookup and the GHL write supplied by the caller. */
+export async function deliverProductionSms(
+  input: SmsTransportInput & { message: string },
+  deps: LiveSmsDeps
+): Promise<ScheduleSmsResult> {
+  return liveDeliver(input, deps);
 }
 
 type SmsClient = Pick<

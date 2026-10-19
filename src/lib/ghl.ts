@@ -505,14 +505,30 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+const PHONE_LIST_KEYS = ["numbers", "phoneNumbers", "phone_numbers", "items", "results"];
+
+/** A list of number rows, including the v3 envelope `{ data: { numbers } }`. */
 function phoneRows(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   const record = asRecord(payload);
   if (!record) return [];
-  for (const key of ["numbers", "phoneNumbers", "data", "phone_numbers"]) {
+  for (const key of [...PHONE_LIST_KEYS, "data"]) {
     if (Array.isArray(record[key])) return record[key] as unknown[];
   }
+  const nested = asRecord(record.data) || asRecord(record.result) || asRecord(record.payload);
+  if (nested) {
+    for (const key of PHONE_LIST_KEYS) {
+      if (Array.isArray(nested[key])) return nested[key] as unknown[];
+    }
+  }
   return [];
+}
+
+/** Parsed numbers from either the flat list or the v3 success envelope. */
+export function collectPhoneNumbers(payload: unknown): GhlPhoneNumber[] {
+  return phoneRows(payload)
+    .map(parseLocationPhoneNumber)
+    .filter((row): row is GhlPhoneNumber => Boolean(row));
 }
 
 export function parseLocationPhoneNumber(row: unknown): GhlPhoneNumber | null {
@@ -562,12 +578,13 @@ export function parseLocationPhoneNumber(row: unknown): GhlPhoneNumber | null {
 export async function listLocationPhoneNumbers(
   locationId: string
 ): Promise<GhlPhoneNumber[]> {
+  const path = `/phone-system/numbers/location/${locationId}`;
+  const params = { locationId, pageSize: 100, page: 0, skipNumberPool: false };
+  // Version 2021-07-28 returns { numbers: [...] }. Version v3 wraps that
+  // list under data, which is why a v3-only read used to look empty.
   const attempts: Array<() => Promise<unknown>> = [
-    () =>
-      ghlRequest("GET", `/phone-system/numbers/location/${locationId}`, {
-        locationId,
-        version: "v3",
-      }),
+    () => ghlRequest("GET", path, { locationId, params }),
+    () => ghlRequest("GET", path, { locationId, params, version: "v3" }),
     () =>
       ghlRequest("GET", "/phone-numbers/", {
         locationId,
@@ -612,29 +629,29 @@ export async function getConversationMessage(
   });
 }
 
-/** A2P campaign payload for a sub-account. Null when GHL has no such route. */
+/**
+ * A2P campaign payload for a sub-account. Null when the route is missing or
+ * the location token cannot read it. Callers must not treat null as "no campaign".
+ */
 export async function getLocationA2p(locationId: string): Promise<unknown | null> {
   const attempts: Array<() => Promise<unknown>> = [
     () =>
       ghlRequest("GET", "/phone-system/a2p/campaigns", {
         locationId,
         params: { locationId },
-        version: "v3",
       }),
     () =>
-      ghlRequest("GET", "/phone-system/a2p", {
+      ghlRequest("GET", "/phone-system/a2p/campaigns", {
         locationId,
         params: { locationId },
         version: "v3",
       }),
   ];
-  let lastStatus = 0;
   for (const attempt of attempts) {
     try {
       return await attempt();
-    } catch (err) {
-      lastStatus = err instanceof GhlError ? err.status || 0 : 0;
-      if (lastStatus !== 404 && lastStatus !== 400) throw err;
+    } catch {
+      // A missing scope or an unknown route is not evidence that A2P is absent.
     }
   }
   return null;
