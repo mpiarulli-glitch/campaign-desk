@@ -18,7 +18,13 @@ export const CONTACT_EMAIL_BACKFILL: ContactEmailBackfillEntry[] = [
   { name: "Superior Patios", email: "jacqueline.superiorpatiosinc@gmail.com" },
   { name: "Black's Shutters Shades & Blinds", email: "mark@blacksblinds.com" },
   { name: "Cuidando De Ti Advantage", email: "miriam@cuidandodetiadvantage.com" },
-  { name: "ALL-IN-1 Construction", email: "wayne@allinone-const.com" },
+  {
+    name: "ALL-IN-1 Construction",
+    email: "wayne@allinone-const.com",
+    // Basecamp project "ALL-IN-1 Construction Growth OS – Powered by the Empire Method™".
+    // The Campaign Desk name is often "All In One" rather than "ALL-IN-1".
+    projectId: "48158835",
+  },
   { name: "JG Seamless Gutters", email: "jaredyz125@yahoo.com" },
   { name: "Chaparral Junk Removal", email: "nicopanzera@gmail.com" },
   { name: "Kentina", email: "blaines12@gmail.com" },
@@ -31,6 +37,8 @@ export interface ContactEmailBackfillRow {
   client: string;
   outcome: ContactEmailBackfillOutcome;
   clientId?: string;
+  /** Name stored on the matched Campaign Desk client, when one was found. */
+  matchedName?: string;
 }
 
 interface ClientEmailRow {
@@ -40,7 +48,11 @@ interface ClientEmailRow {
   contact_email: string;
 }
 
-/** Compare a client name to a Basecamp project name. Punctuation is ignored. */
+/**
+ * Compare a client name to a Basecamp project name.
+ * Case, punctuation, and hyphens are ignored. The word "one" and the digit
+ * "1" are the same, so "All-In-One Construction" matches "ALL-IN-1 Construction".
+ */
 export function foldContactName(value: string): string {
   return (value || "")
     .toLowerCase()
@@ -50,7 +62,8 @@ export function foldContactName(value: string): string {
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
+    .replace(/\bone\b/g, "1");
 }
 
 function nameMatch(clientName: string, projectName: string): "exact" | "prefix" | null {
@@ -85,17 +98,20 @@ export function planContactEmailBackfill(
       return { client: entry.name, outcome: "not found" as const };
     }
     const client = matches[0];
+    const matchedName = client.name;
     if (isUsableEmail(client.contact_email)) {
       return {
         client: entry.name,
         outcome: "skipped" as const,
         clientId: client.id,
+        matchedName,
       };
     }
     return {
       client: entry.name,
       outcome: "updated" as const,
       clientId: client.id,
+      matchedName,
       email: entry.email,
     };
   });
@@ -104,7 +120,9 @@ export function planContactEmailBackfill(
 export function contactEmailBackfillLine(row: ContactEmailBackfillRow): string {
   const outcome =
     row.outcome === "skipped" ? "skipped (already valid)" : row.outcome;
-  return `[contact-email] ${row.client}: ${outcome}`;
+  const matched =
+    row.matchedName && row.matchedName !== row.client ? ` (${row.matchedName})` : "";
+  return `[contact-email] ${row.client}: ${outcome}${matched}`;
 }
 
 /**
@@ -143,5 +161,10 @@ export function backfillKnownContactEmails(
   });
   write();
   for (const row of plan) log(contactEmailBackfillLine(row));
-  return plan.map(({ client, outcome, clientId }) => ({ client, outcome, clientId }));
+  return plan.map(({ client, outcome, clientId, matchedName }) => ({
+    client,
+    outcome,
+    clientId,
+    matchedName,
+  }));
 }
