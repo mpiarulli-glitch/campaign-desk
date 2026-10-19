@@ -218,28 +218,89 @@ function KindGlyph({ kind }: { kind: AssetKind }) {
   );
 }
 
+const SOON_MS = 7 * 24 * 60 * 60 * 1000;
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "–";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function avatarTone(name: string): string {
+  let hash = 0;
+  for (const char of name.trim().toLowerCase()) hash = (hash + char.charCodeAt(0) * 17) % 6;
+  return String(hash);
+}
+
+function sendChip(
+  iso: string | null,
+  upcoming: boolean
+): { label: string; tone: "soon" | "overdue" | "later" | "past" } | null {
+  if (!iso) return null;
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return null;
+  const label = formatSend(iso);
+  if (!upcoming) return { label, tone: "past" };
+  const delta = time - Date.now();
+  if (delta < 0) return { label, tone: "overdue" };
+  if (delta <= SOON_MS) return { label, tone: "soon" };
+  return { label, tone: "later" };
+}
+
 function BoardCard({ c }: { c: CampaignRow }) {
+  const client = c.client_name.trim() || "No client";
+  const owner = c.owner || "Unassigned";
   const kinds = Array.from(new Set(c.email_kinds || []));
   const sendAt = c.next_send_at || c.scheduled_send_at || null;
+  const upcoming = c.next_send_at ? Boolean(c.next_send_upcoming) : false;
+  const chip = sendChip(sendAt, upcoming);
+  const chipLabel = chip
+    ? chip.tone === "soon"
+      ? `Soon · ${chip.label}`
+      : chip.tone === "overdue"
+        ? `Overdue · ${chip.label}`
+        : chip.tone === "past"
+          ? `Sent · ${chip.label}`
+          : chip.label
+    : null;
+
   return (
     <Link href={`/admin/campaigns/${c.id}`} className="cboard-card">
-      <span className="cboard-client">{c.client_name.trim() || "No client"}</span>
+      <span className="cboard-who">
+        <span className="cboard-avatar" data-tone={avatarTone(client)} aria-hidden="true">
+          {initials(client)}
+        </span>
+        <span className="cboard-client">{client}</span>
+      </span>
       <span className="cboard-name">{c.title}</span>
-      <span className="cboard-meta">
+      <span className="cboard-foot">
         {kinds.length ? (
           <span className="cboard-kinds">
             {kinds.map((kind) => (
-              <span key={kind} className="cboard-kind" title={TYPE_LABEL[kind]} aria-label={TYPE_LABEL[kind]}>
+              <span key={kind} className="cboard-kind" title={TYPE_LABEL[kind]}>
                 <KindGlyph kind={kind} />
+                {TYPE_LABEL[kind]}
               </span>
             ))}
           </span>
-        ) : null}
-        <span className="cboard-owner">{c.owner || "Unassigned"}</span>
+        ) : (
+          <span />
+        )}
+        <span
+          className="cboard-owner"
+          data-tone={avatarTone(owner)}
+          title={owner}
+          aria-label={`Owner ${owner}`}
+        >
+          {initials(owner)}
+        </span>
       </span>
-      <span className={sendAt ? "cboard-send" : "cboard-send is-quiet"}>
-        {sendAt ? formatSend(sendAt) : "Not scheduled"}
-      </span>
+      {chip && chipLabel ? (
+        <span className={`cboard-send is-${chip.tone}`}>
+          {chipLabel}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -840,16 +901,19 @@ export default function AdminPage() {
                     <section
                       key={column.id}
                       className="clist-col"
+                      data-stage={column.id}
                       aria-label={`${column.label}, ${column.items.length}`}
                     >
                       <header className="clist-col-head">
                         <h2>{column.label}</h2>
-                        <span>{column.items.length}</span>
+                        <span className="clist-col-count">{column.items.length}</span>
                       </header>
                       <div className="clist-col-cards">
-                        {column.items.map((c) => (
-                          <BoardCard key={c.id} c={c} />
-                        ))}
+                        {column.items.length ? (
+                          column.items.map((c) => <BoardCard key={c.id} c={c} />)
+                        ) : (
+                          <p className="clist-col-empty">None yet</p>
+                        )}
                       </div>
                     </section>
                   ))}
