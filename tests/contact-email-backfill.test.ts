@@ -146,11 +146,7 @@ test("backfill writes blank and masked emails and leaves a valid one", () => {
   assert.ok(lines.includes(contactEmailBackfillLine({ client: "Trailhead Family Chiropractic", outcome: "updated" })));
   assert.ok(
     lines.includes(
-      contactEmailBackfillLine({
-        client: "Superior Patios",
-        outcome: "skipped",
-        matchedName: "Superior Patios Growth OS - Powered by the Empire Method",
-      })
+      "[contact-email] Superior Patios: skipped (already valid) (Superior Patios Growth OS - Powered by the Empire Method id=superior)"
     )
   );
   assert.ok(lines.includes("[contact-email] Kentina: not found"));
@@ -160,7 +156,7 @@ test("backfill writes blank and masked emails and leaves a valid one", () => {
   assert.equal(emailOf("trail").contact_email, "c@drchrisboman.com");
   assert.ok(
     again.every((line) =>
-      /: (skipped \(already valid\)|not found)( \(.+\))?$/.test(line)
+      /: (skipped \(already valid\)|not found)( \(.+\))?(; closest: .+)?$/.test(line)
     )
   );
   assert.ok(again.includes("[contact-email] Trailhead Family Chiropractic: skipped (already valid)"));
@@ -240,7 +236,7 @@ test("ALL-IN-1 matches All In One by name, and the project id when the name diff
   );
   assert.ok(
     lines.includes(
-      "[contact-email] ALL-IN-1 Construction: updated (All In One Construction)"
+      "[contact-email] ALL-IN-1 Construction: updated (All In One Construction id=aio)"
     )
   );
 
@@ -249,6 +245,7 @@ test("ALL-IN-1 matches All In One by name, and the project id when the name diff
     "ALL IN 1",
     "All In 1 Construction",
     "ALL-IN-1 Construction",
+    "All In \uFF11 Construction",
   ];
   for (const name of names) {
     const plan = planContactEmailBackfill(
@@ -294,6 +291,110 @@ test("ALL-IN-1 matches All In One by name, and the project id when the name diff
   assert.equal(idRow?.outcome, "updated");
   assert.equal(idRow?.clientId, "weird");
   assert.equal(idRow?.matchedName, "Wayne Meeks");
+});
+
+test("duplicate All In 1 rows and the October campaign client all get Wayne's email", () => {
+  const database = memoryDb();
+  database.exec(`
+    CREATE TABLE campaigns (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      client_name TEXT NOT NULL DEFAULT '',
+      client_id TEXT
+    );
+  `);
+  insert(database, { id: "desk", name: "All In 1 Construction", email: "" });
+  insert(database, {
+    id: "copy",
+    name: "ALL-IN-1 Construction",
+    email: "wayne@allinone-const.com",
+  });
+  insert(database, { id: "meeks", name: "Meeks Builds", email: MASKED });
+  insert(database, { id: "maya", name: "Maya's Construction", email: "" });
+  insert(database, { id: "fall", name: "Fallbrook Plumbing", email: "owner@fallbrook.example" });
+  database
+    .prepare(
+      `INSERT INTO campaigns (id, title, client_name, client_id) VALUES (?, ?, ?, ?)`
+    )
+    .run(
+      "FOk4YyxjQGTJ",
+      "All In 1 Construction | October 2026 Nurture Emails",
+      "ALL-IN-1 Construction",
+      "meeks"
+    );
+
+  const lines: string[] = [];
+  const rows = backfillKnownContactEmails(database, (line) => lines.push(line));
+  const allInOne = rows.find((row) => row.client === "ALL-IN-1 Construction");
+  assert.equal(allInOne?.outcome, "updated");
+  const emailOf = (id: string) =>
+    (
+      database.prepare(`SELECT contact_email FROM rev_clients WHERE id = ?`).get(id) as {
+        contact_email: string;
+      }
+    ).contact_email;
+  assert.equal(emailOf("desk"), "wayne@allinone-const.com");
+  assert.equal(emailOf("copy"), "wayne@allinone-const.com");
+  assert.equal(emailOf("meeks"), "wayne@allinone-const.com");
+  assert.equal(emailOf("maya"), "");
+  assert.equal(emailOf("fall"), "owner@fallbrook.example");
+  const allLine = lines.find((line) => line.startsWith("[contact-email] ALL-IN-1 Construction:"));
+  assert.ok(allLine?.includes("All In 1 Construction id=desk"));
+  assert.ok(allLine?.includes("Meeks Builds id=meeks"));
+  assert.ok(allLine && !allLine.includes("id=maya"));
+
+  const numeric = planContactEmailBackfill([
+    {
+      id: "num",
+      name: "Wayne Meeks",
+      basecamp_project_id: 48158835 as unknown as string,
+      contact_email: "",
+    },
+    {
+      id: "other",
+      name: "All In 1 Construction",
+      basecamp_project_id: "",
+      contact_email: "",
+    },
+  ]);
+  const byNumber = numeric.find((row) => row.client === "ALL-IN-1 Construction");
+  assert.equal(byNumber?.outcome, "updated");
+  assert.equal(byNumber?.clientId, "num");
+  assert.deepEqual(byNumber?.writeIds, ["num"]);
+});
+
+test("a miss lists client and campaign names containing construct or all", () => {
+  const clients = [
+    { id: "maya", name: "Maya's Construction", basecamp_project_id: "", contact_email: "" },
+    { id: "done", name: "Done Right Construction", basecamp_project_id: "", contact_email: "" },
+    { id: "fall", name: "Fallbrook Plumbing", basecamp_project_id: "", contact_email: "" },
+    { id: "off", name: "1-Off Creative Concepts", basecamp_project_id: "", contact_email: "" },
+  ];
+  const campaigns = [
+    {
+      id: "FOk4YyxjQGTJ",
+      title: "All In 1 Construction | October 2026 Nurture Emails",
+      client_name: "ALL-IN-1 Construction",
+      client_id: "",
+    },
+  ];
+  const plan = planContactEmailBackfill(
+    clients,
+    [{ name: "ALL-IN-1 Construction", email: "wayne@allinone-const.com", projectId: "48158835" }],
+    campaigns
+  );
+  assert.equal(plan[0].outcome, "not found");
+  const line = contactEmailBackfillLine(plan[0]);
+  assert.ok(line.startsWith("[contact-email] ALL-IN-1 Construction: not found; closest: "));
+  assert.ok(line.includes("Maya's Construction id=maya"));
+  assert.ok(line.includes("Done Right Construction id=done"));
+  assert.ok(line.includes("Fallbrook Plumbing id=fall"));
+  assert.ok(
+    line.includes(
+      'campaign ALL-IN-1 Construction campaign=FOk4YyxjQGTJ client=-'
+    )
+  );
+  assert.ok(!line.includes("1-Off"));
 });
 
 test("an empty client table logs nothing", () => {
