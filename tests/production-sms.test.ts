@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { normalizePhoneE164 } from "../src/lib/phone";
 import {
+  collectPhoneNumbers,
   interpretSmsSendPayload,
   parseLocationPhoneNumber,
   pickContactMatchingEmailAndPhone,
@@ -17,12 +18,15 @@ import {
   guardProductionSms,
   interpretA2p,
   lastTextView,
+  deliverProductionSms,
   plainSmsFailure,
+  pickFromNumber,
   pollMessageDelivery,
   productionNoticeSendsSms,
   scheduleNudgeSmsBody,
   scheduleSmsCopy,
   smsDndState,
+  smsLookupWarning,
   smsPreflightError,
   type ProductionNotice,
 } from "../src/lib/production-sms";
@@ -214,9 +218,10 @@ test("every scheduling text goes through the compliance guard", () => {
     src.indexOf("export async function sendSampleScheduleSms")
   );
   assert.ok(live.indexOf("guardProductionSms") !== -1);
-  assert.ok(live.indexOf("guardProductionSms") < live.indexOf("sendLocationSms"));
+  assert.ok(live.indexOf("guardProductionSms") < live.indexOf("deps.send"));
   assert.ok(stub.indexOf("guardProductionSms") < stub.indexOf("args.transport"));
-  assert.equal(src.split("sendLocationSms(").length, 2);
+  assert.equal(src.includes("send: sendLocationSms"), true);
+  assert.equal(src.includes("sendLocationSms("), false);
 
   const url = "https://hub.marketingempiregroup.com/schedule/sample";
   const bodies = [
@@ -481,8 +486,33 @@ test("a failed sample is one plain sentence and one log line", async () => {
       numbers: [],
       a2p: { state: "unknown", detail: "" },
     }),
-    "This sub-account has no phone number, so a text cannot be sent."
+    null
   );
+  assert.match(
+    smsLookupWarning({ numbers: [], numbersError: "401 missing scope" }),
+    /Sending anyway/
+  );
+  assert.match(smsLookupWarning({ numbers: [] }), /returned nothing/);
+  const listed = collectPhoneNumbers({
+    status: "success",
+    statusCode: 200,
+    data: {
+      numbers: [
+        {
+          phoneNumber: "+19514042452",
+          friendlyName: "MEG DEFAULT",
+          capabilities: { sms: true, voice: true },
+          isDefaultNumber: true,
+          origin: "twilio",
+        },
+      ],
+    },
+  });
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].phoneNumber, "+19514042452");
+  assert.equal(listed[0].isDefault, true);
+  assert.equal(listed[0].sms, true);
+  assert.equal(pickFromNumber(listed), "+19514042452");
   const parsed = parseLocationPhoneNumber({
     phoneNumber: "+19515550100",
     capabilities: { sms: true },
@@ -648,4 +678,45 @@ test("text failures group into one alert per run", async (t) => {
   assert.match(line, /code=30007/);
   assert.equal(line.includes("hidden body"), false);
   assert.equal(line.includes("Bearer"), false);
+});
+
+test("an empty or failed number lookup still sends", async () => {
+  const input = {
+    locationId: "0GKlxMiOTyF1FJ3vPBfo",
+    phone: "+19513839888",
+    name: "Michael",
+    message: "Marketing Empire Group: Hi Michael. Reply STOP to opt out.",
+  };
+  const base = {
+    readA2p: async () => null,
+    locationName: async () => "Marketing Empire Group",
+    upsert: async () => "contact-1",
+    getContact: async () => ({ dnd: false }),
+    readMessage: async () => ({ status: "delivered", from: "+19514042452" }),
+  };
+  let sends = 0;
+  const empty = await deliverProductionSms(input, {
+    ...base,
+    listNumbers: async () => [],
+    send: async () => {
+      sends += 1;
+      return { messageId: "m-empty" };
+    },
+  });
+  assert.equal(empty.status, "sent");
+  if (empty.status === "sent") assert.equal(empty.messageId, "m-empty");
+
+  const broken = await deliverProductionSms(input, {
+    ...base,
+    listNumbers: async () => {
+      throw new Error("401 missing scope phonenumbers.read");
+    },
+    send: async () => {
+      sends += 1;
+      return { messageId: "m-error" };
+    },
+  });
+  assert.equal(broken.status, "sent");
+  if (broken.status === "sent") assert.equal(broken.messageId, "m-error");
+  assert.equal(sends, 2);
 });
