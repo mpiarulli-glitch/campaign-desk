@@ -320,7 +320,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="app-body">
-        <header className="app-top">
+        <header className={`app-top${pathname === "/admin/campaigns" ? " app-top-nosearch" : ""}`}>
           {/* Shown only under the mobile breakpoint, where the sidebar is a
               drawer rather than a rail. */}
           <button

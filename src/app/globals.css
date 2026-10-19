@@ -11501,6 +11501,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 }
 .app-search kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; background: var(--bg-elevated); }
 .app-top-right { display: flex; align-items: center; gap: 6px; }
+.app-top-nosearch .app-top-right { margin-left: auto; }
 .app-iconbtn { width: 38px; height: 38px; border-radius: 10px; border: none; background: none; color: var(--text-body); display: grid; place-items: center; cursor: pointer; }
 .app-iconbtn:hover { background: var(--bg); }
 .app-iconbtn svg { width: 20px; height: 20px; }
