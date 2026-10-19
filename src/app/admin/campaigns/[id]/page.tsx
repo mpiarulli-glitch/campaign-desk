@@ -9,6 +9,7 @@ import { EmailPreview, type EmailEditHandle, type PendingEdit } from "@/componen
 import { applyTextEdits } from "@/lib/inline-edit";
 import { EmailLinks } from "@/components/EmailLinks";
 import { isCopyQuote, quotedFeedback } from "@/lib/copy-quote";
+import { SendPlanDisclosure } from "@/components/SendPlanDisclosure";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   OPERATOR_STATUS_OPTIONS,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/campaign-status";
 import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
 import { APP_TIME_ZONE, currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
+import { sendPlanSummary } from "@/lib/send-plan-summary";
 
 function countMonthOptions(createdAt?: string, selected?: string | null): string[] {
   const keys = new Set<string>();
@@ -489,7 +491,6 @@ export default function AdminCampaignPage() {
     }>
   >([]);
   const [sendPlanDirty, setSendPlanDirty] = useState(false);
-  const [sendPlanOpen, setSendPlanOpen] = useState(false);
 
   async function submitReply(commentId: string) {
     const text = (replyDrafts[commentId] || "").trim();
@@ -1942,6 +1943,7 @@ export default function AdminCampaignPage() {
     "";
   const planRows =
     sendPlan.length === emails.length ? sendPlan : sendPlanFromEmails(emails);
+  const sendSummary = sendPlanSummary(planRows.map((row) => row.sendDate));
   const isAutomation = campaign.presentation === "automation";
   const flowSummary = (() => {
     if (!isAutomation) return "";
@@ -2367,32 +2369,17 @@ export default function AdminCampaignPage() {
           ) : null}
         </div>
 
-        <section
-          className={`card cd-send-plan${sendPlanOpen ? "" : " is-collapsed"}`}
-          aria-labelledby="pkg-send-plan-heading"
-        >
-          <div className="cd-send-plan-head">
-            <div>
-              <h2 id="pkg-send-plan-heading" className="cd-send-plan-title">
-                <button
-                  type="button"
-                  className="cd-send-plan-toggle"
-                  aria-expanded={sendPlanOpen}
-                  aria-controls="pkg-send-plan-list"
-                  onClick={() => setSendPlanOpen((open) => !open)}
-                >
-                  <span className="cd-send-plan-chevron" aria-hidden="true">
-                    {sendPlanOpen ? "▾" : "▸"}
-                  </span>
-                  When these go out
-                </button>
-              </h2>
-              <p className="muted cd-send-plan-note">
-                {planRows.length} {planRows.length === 1 ? "email" : "emails"} · Pacific.
-                This is what the client sees on the review link.
-                {sendPlanDirty ? " Unsaved changes." : ""}
-              </p>
-            </div>
+        <SendPlanDisclosure
+          variant="desk"
+          headingId="pkg-send-plan-heading"
+          summary={sendSummary}
+          note={
+            <>
+              This is what the client sees on the review link.
+              {sendPlanDirty ? " Unsaved changes." : ""}
+            </>
+          }
+          actions={
             <button
               type="button"
               className="btn btn-sm"
@@ -2401,12 +2388,9 @@ export default function AdminCampaignPage() {
             >
               {saving ? "Saving..." : "Save times"}
             </button>
-          </div>
-          <div
-            className="cd-send-plan-list"
-            id="pkg-send-plan-list"
-            hidden={!sendPlanOpen}
-          >
+          }
+        >
+          <div className="cd-send-plan-list">
             {planRows.map((row) => (
               <div key={row.id} className="cd-send-plan-row">
                 <div className="cd-send-plan-name">
@@ -2460,7 +2444,7 @@ export default function AdminCampaignPage() {
               </div>
             ))}
           </div>
-        </section>
+        </SendPlanDisclosure>
 
         <div className="cd-pkg-work">
           <div className="cd-pkg-editor">

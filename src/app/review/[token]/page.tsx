@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { SendPlanDisclosure } from "@/components/SendPlanDisclosure";
 import {
   EmailPreview,
   type InlineFeedbackPayload,
@@ -23,6 +24,7 @@ import {
 import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
 import { isCopyQuote } from "@/lib/copy-quote";
 import { formatPacificSend } from "@/lib/period";
+import { sendPlanSummary } from "@/lib/send-plan-summary";
 
 type Attachment = {
   id: string;
@@ -622,13 +624,13 @@ export default function ReviewPage() {
           ) : null}
         </div>
 
-        <section className="card rv-send-plan" aria-labelledby="send-schedule-heading">
-          <div className="rv-send-plan-head">
-            <h2 id="send-schedule-heading" className="rv-send-plan-title">
-              When these go out
-            </h2>
-            <p className="rv-send-plan-zone">Pacific</p>
-          </div>
+        <SendPlanDisclosure
+          variant="review"
+          headingId="send-schedule-heading"
+          summary={sendPlanSummary(
+            emails.map((email) => email.scheduled_send_at)
+          )}
+        >
           <ul className="rv-send-plan-list">
             {emails.map((email) => {
               const when = email.scheduled_send_at
@@ -648,7 +650,7 @@ export default function ReviewPage() {
               );
             })}
           </ul>
-        </section>
+        </SendPlanDisclosure>
 
         {isAutomation ? (
           <div className="card card-pad am-map-card">
