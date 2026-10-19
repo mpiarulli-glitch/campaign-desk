@@ -255,6 +255,8 @@ test("campaigns list uses one control for stage, type, and updated", () => {
   assert.match(page, /Filter by when it was updated/);
   assert.match(page, /campaign-filter-select/);
   assert.match(page, /listStageFromStatusParam/);
+  assert.match(page, /isDoneListStatus/);
+  assert.match(page, /href="\/admin\/campaigns\/done"/);
   assert.match(page, /groupCampaignsByBoard/);
   assert.match(page, /aria-label="Campaign view"/);
   assert.match(page, /cd-campaigns-view/);
@@ -270,6 +272,15 @@ test("campaigns list uses one control for stage, type, and updated", () => {
   assert.match(page, /Create your first blog post/);
   assert.match(page, /Upload your first email/);
   assert.match(page, /New blog post/);
+  const done = fs.readFileSync(
+    path.join("src/app/admin/campaigns/done/page.tsx"),
+    "utf8"
+  );
+  assert.match(done, /doneSentInstant/);
+  assert.match(done, /compareDoneNewestFirst/);
+  assert.match(done, /Filter by when it was sent/);
+  assert.match(done, /isDoneCampaignStatus/);
+  assert.match(done, /StatusBadge/);
 });
 
 test("blog-scoped new campaign page only offers blog posts", () => {

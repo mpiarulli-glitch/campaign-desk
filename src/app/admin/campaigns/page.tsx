@@ -7,9 +7,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import {
   groupCampaignsByBoard,
+  isDoneCampaignStatus,
+  isDoneListStatus,
   listStageFromStatusParam,
   matchesListBucket,
-  type ListBucket,
 } from "@/lib/campaign-status";
 import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
 import type { CampaignKindScope } from "@/lib/people";
@@ -47,7 +48,8 @@ const SEND_FORMAT = new Intl.DateTimeFormat("en-US", {
   timeZone: SEND_ZONE,
 });
 
-type BucketFilter = ListBucket;
+type WorkingStage = "all" | "in_progress" | "waiting" | "ready";
+type BucketFilter = WorkingStage;
 type TypeFilter = "all" | AssetKind;
 type DatePreset = "any" | "7d" | "30d" | "90d" | "month";
 
@@ -64,13 +66,11 @@ const TYPE_LABEL: Record<AssetKind, string> = {
   mockup: "Mock-up",
 };
 
-const STAGE_OPTIONS: { id: ListBucket; label: string }[] = [
+const STAGE_OPTIONS: { id: WorkingStage; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "open", label: "Open" },
   { id: "in_progress", label: "In progress" },
   { id: "waiting", label: "Waiting on client" },
   { id: "ready", label: "Ready to send" },
-  { id: "sent", label: "Sent" },
 ];
 
 const VIEW_STORAGE_KEY = "cd-campaigns-view";
@@ -518,9 +518,17 @@ export default function AdminPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [doneCount, setDoneCount] = useState<number | null>(null);
 
+  const pool = useMemo(
+    () =>
+      filter === "archived"
+        ? campaigns
+        : campaigns.filter((c) => !isDoneCampaignStatus(c.status)),
+    [campaigns, filter]
+  );
   const dateBounds = resolveDateBounds(datePreset);
-  const dated = campaigns.filter((c) => matchesDateFilter(c, dateBounds));
+  const dated = pool.filter((c) => matchesDateFilter(c, dateBounds));
   const cliented =
     clientFilter === "all"
       ? dated
@@ -545,28 +553,28 @@ export default function AdminPage() {
       : searched.filter((c) => matchesListBucket(c, bucket));
 
   const clients = useMemo(() => {
-    const keys = new Set(campaigns.map((c) => clientKey(c.client_name)));
+    const keys = new Set(pool.map((c) => clientKey(c.client_name)));
     return Array.from(keys).sort((a, b) =>
       clientLabel(a).localeCompare(clientLabel(b))
     );
-  }, [campaigns]);
+  }, [pool]);
 
   const types = useMemo(() => {
     const present = new Set<AssetKind>();
-    for (const c of campaigns) {
+    for (const c of pool) {
       for (const kind of c.email_kinds || []) present.add(kind);
     }
     return ASSET_KINDS.filter((kind) => present.has(kind.kind));
-  }, [campaigns]);
+  }, [pool]);
 
   const owners = useMemo(() => {
     const map = new Map<string, string>();
-    for (const c of campaigns) {
+    for (const c of pool) {
       const key = c.owner_key || "unassigned";
       if (!map.has(key)) map.set(key, c.owner || "Unassigned");
     }
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [campaigns]);
+  }, [pool]);
 
   useEffect(() => {
     if (clientFilter !== "all" && !clients.includes(clientFilter)) {
@@ -651,7 +659,11 @@ export default function AdminPage() {
       return;
     }
     const data = await res.json();
-    setCampaigns(data.campaigns || []);
+    const rows = (data.campaigns || []) as CampaignRow[];
+    if (nextFilter === "active") {
+      setDoneCount(rows.filter((c) => isDoneCampaignStatus(c.status)).length);
+    }
+    setCampaigns(rows);
     const scope = isCampaignKindScope(data.scope) ? data.scope : "all";
     setKindScope(scope);
     setLoading(false);
@@ -689,14 +701,20 @@ export default function AdminPage() {
     void load(filter);
   }, [filter, load]);
 
-  // Old links pass an exact status or a stage id. Both select this dropdown.
-  // ?view=board wins over the remembered view; otherwise localStorage does.
+  // Old links pass an exact status or a stage id. Sent and Live go to Done.
+  // Other statuses select this dropdown. ?view=board wins over localStorage.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("status");
+    if (status && isDoneListStatus(status)) {
+      router.replace("/admin/campaigns/done");
+      return;
+    }
     if (status) {
       const stage = listStageFromStatusParam(status);
-      if (stage) setBucket(stage);
+      if (stage === "all" || stage === "in_progress" || stage === "waiting" || stage === "ready") {
+        setBucket(stage);
+      }
     }
     const kind = params.get("kind");
     if (isAssetKind(kind)) setTypeFilter(kind);
@@ -716,7 +734,7 @@ export default function AdminPage() {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [router]);
 
 
   const board = groupCampaignsByBoard(visible);
@@ -743,6 +761,10 @@ export default function AdminPage() {
                 Board
               </button>
             </div>
+            <Link className="clist-done" href="/admin/campaigns/done">
+              Done
+              {doneCount != null ? <span className="clist-done-count">{doneCount}</span> : null}
+            </Link>
             <Link className="btn btn-sm clist-new" href="/admin/new">
               {kindScope === "blog" ? "New blog post" : "New campaign"}
             </Link>

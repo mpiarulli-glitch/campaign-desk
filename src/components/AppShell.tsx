@@ -320,7 +320,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="app-body">
-        <header className={`app-top${pathname === "/admin/campaigns" ? " app-top-nosearch" : ""}`}>
+        <header className={`app-top${pathname === "/admin/campaigns" || pathname === "/admin/campaigns/done" ? " app-top-nosearch" : ""}`}>
           {/* Shown only under the mobile breakpoint, where the sidebar is a
               drawer rather than a rail. */}
           <button
@@ -331,7 +331,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Svg name="menu" />
           </button>
-          {pathname === "/admin/campaigns" ? null : (
+          {pathname === "/admin/campaigns" || pathname === "/admin/campaigns/done" ? null : (
             <button className="app-search" onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}>
               <span aria-hidden="true">⌕</span> Search clients, campaigns…
               <kbd>⌘K</kbd>

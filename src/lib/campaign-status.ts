@@ -85,12 +85,21 @@ export type ListBucket = StatusBucketId | "open" | "all";
 
 const LIST_STAGE_IDS: readonly ListBucket[] = [
   "all",
-  "open",
   "in_progress",
   "waiting",
   "ready",
-  "sent",
 ];
+
+// Sent and Live are finished work. They live on the Done page, not in the
+// working list or on the board.
+export function isDoneCampaignStatus(status: string): boolean {
+  return status === "sent" || status === "live";
+}
+
+export function isDoneListStatus(status: string): boolean {
+  if (isDoneCampaignStatus(status)) return true;
+  return statusBucketId(status) === "sent";
+}
 
 export function matchesListBucket(
   campaign: { status: string; approved_channel?: string | null },
@@ -103,16 +112,45 @@ export function matchesListBucket(
 }
 
 // Old list links pass either a stage id (?status=open) or an exact stored
-// status (?status=draft). Both land on the Stage dropdown.
+// status (?status=draft). In-progress ones land on the Stage dropdown.
+// Sent and Live return null so the page can send them to Done.
+// "open" is the same set as All now that finished work is not on this page.
 export function listStageFromStatusParam(status: string): ListBucket | null {
+  if (isDoneListStatus(status)) return null;
+  if (status === "all" || status === "open") return "all";
   if ((LIST_STAGE_IDS as readonly string[]).includes(status)) {
     return status as ListBucket;
   }
-  return statusBucketId(status);
+  const bucket = statusBucketId(status);
+  if (!bucket || bucket === "sent") return null;
+  return bucket;
 }
 
-// One board column per approval stage, in the same order as the operator
-// status list. Live shares the Sent column: both mean the work has gone out.
+// When a finished campaign went out. A past displayed send wins, then the
+// stored schedule, then the last update (a manual Sent or Live mark).
+export function doneSentInstant(input: {
+  scheduled_send_at?: string | null;
+  updated_at?: string | null;
+  next_send_at?: string | null;
+  next_send_upcoming?: boolean | null;
+}): string | null {
+  const next = input.next_send_at?.trim();
+  if (next && !input.next_send_upcoming) return next;
+  const scheduled = input.scheduled_send_at?.trim();
+  if (scheduled) return scheduled;
+  const updated = input.updated_at?.trim();
+  return updated || null;
+}
+
+export function compareDoneNewestFirst(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a < b ? 1 : -1;
+}
+
+// One board column per in-progress approval stage, in operator order.
+// Sent and Live are finished, so they are not columns here.
 export const BOARD_COLUMNS: {
   id: string;
   label: string;
@@ -134,7 +172,6 @@ export const BOARD_COLUMNS: {
   { id: "needs_changes", label: "Needs changes", values: ["needs_changes"] },
   { id: "approved", label: "Approved", values: ["approved"] },
   { id: "scheduled", label: "Scheduled", values: ["scheduled"] },
-  { id: "sent", label: "Sent", values: ["sent", "live"] },
 ];
 
 export type BoardColumnId = (typeof BOARD_COLUMNS)[number]["id"];
