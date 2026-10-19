@@ -10,6 +10,7 @@ import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
 import { addWeeks, mondayOf } from "./week";
 import { backfillKnownContactEmails } from "./contact-email-backfill";
+import { backfillKnownContactPhones } from "./contact-phone-backfill";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -3877,6 +3878,9 @@ function migrate(database: Database.Database) {
   // Idempotent: a valid email already on the row is not replaced, and an
   // empty database logs nothing. Does not send mail or touch old failures.
   backfillKnownContactEmails(database);
+  // Known client phones from Basecamp POC lines. Idempotent: a valid phone
+  // already on the row is not replaced. Does not send texts.
+  backfillKnownContactPhones(database);
 }
 
 // Insert a login row for every person in the code roster who does not have one
