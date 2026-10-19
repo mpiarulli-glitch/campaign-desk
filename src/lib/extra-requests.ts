@@ -17,7 +17,9 @@ import {
   type ExtraProductionRequest,
   type RevClient,
 } from "./db";
-import { getOrCreateScheduleToken } from "./cadence";
+import { getOrCreateScheduleToken, todayYmd } from "./cadence";
+import { sendScheduleNudgeSms, type ScheduleSmsResult } from "./production-sms";
+import { recordReachout } from "./reachouts";
 import { scheduleUrl } from "./auth";
 import { sendEmail } from "./email";
 import {
@@ -381,6 +383,7 @@ export function extraRequestEmail(
 export interface OutreachResult {
   basecamp: { ok: boolean; error?: string; skipped?: boolean };
   email: { ok: boolean; skipped?: boolean };
+  sms: ScheduleSmsResult;
 }
 
 // Fires both halves of the outreach for a freshly created request: the
@@ -394,6 +397,7 @@ export async function sendExtraRequestOutreach(
   const result: OutreachResult = {
     basecamp: { ok: false, skipped: true },
     email: { ok: false, skipped: true },
+    sms: { status: "skipped", reason: "disabled" },
   };
 
   const token = getOrCreateScheduleToken(client.id);
@@ -462,6 +466,32 @@ export async function sendExtraRequestOutreach(
     const ok = await sendEmail({ to: client.contact_email, subject, html, text });
     result.email = { ok };
     if (ok) markEmailed(request.id);
+  }
+
+  // A text is the same ask as the email. It cannot fail the email, and a
+  // second call the same day for this request does not text again.
+  try {
+    result.sms = await sendScheduleNudgeSms({
+      kind: request.kind === "first" ? "first_invite" : "extra_invite",
+      client,
+      url,
+      dedupeKey: `extra:${request.id}:${todayYmd()}`,
+    });
+  } catch (err) {
+    result.sms = {
+      status: "failed",
+      error: err instanceof Error ? err.message : "Text failed",
+    };
+  }
+  if (result.sms.status === "sent") {
+    recordReachout({
+      clientId: client.id,
+      clientName: client.name,
+      channel: "sms",
+      windowStart: request.window_start,
+      ymd: todayYmd(),
+      detail: result.sms.phone,
+    });
   }
 
   return result;

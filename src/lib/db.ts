@@ -388,6 +388,8 @@ export interface RevClient {
   blackout_dates: string;
   contact_name: string;
   contact_email: string;
+  // Mobile number for scheduling texts only. Stored E.164, or "" when unset.
+  contact_phone: string;
   // Point of contact tagged on the Basecamp scheduling card (email or name,
   // matched against the project's Basecamp people).
   poc: string;
@@ -829,7 +831,8 @@ export type ReachoutChannel =
   | "email"
   | "basecamp_card"
   | "basecamp_comment"
-  | "basecamp_message";
+  | "basecamp_message"
+  | "sms";
 
 export interface Reachout {
   id: string;
@@ -1551,6 +1554,18 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reminders_client ON schedule_reminders(client_id);
+
+    -- One row per scheduling text that actually went out. The key is the nudge
+    -- (an invite on a given day, or a cadence reminder for a window on a day),
+    -- so a retry of the same nudge cannot text the client twice.
+    CREATE TABLE IF NOT EXISTS production_sms_sends (
+      dedupe_key TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
 
     -- Every outbound contact with a client, whatever channel carried it.
     --
@@ -3016,6 +3031,11 @@ function migrate(database: Database.Database) {
   if (revClientCols.length && !revClientCols.includes("contact_email")) {
     database.exec(
       `ALTER TABLE rev_clients ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  if (revClientCols.length && !revClientCols.includes("contact_phone")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN contact_phone TEXT NOT NULL DEFAULT ''`
     );
   }
   if (revClientCols.length && !revClientCols.includes("production_enrolled")) {

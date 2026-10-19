@@ -725,6 +725,7 @@ export interface ClientServiceRow {
   accountManagerEmail: string;
   contactName: string;
   contactEmail: string;
+  contactPhone: string;
   paused: boolean;
   hasBasecamp: boolean;
   snapshotUrl: string;
@@ -785,6 +786,7 @@ export function clientServiceRows(today?: string): ClientServiceRow[] {
       accountManagerEmail: am?.email || "",
       contactName: client.contact_name || "",
       contactEmail: client.contact_email || "",
+      contactPhone: client.contact_phone || "",
       paused: Boolean(client.outreach_paused),
       hasBasecamp: Boolean(client.basecamp_project_id),
       snapshotUrl: token && appUrl ? `${appUrl}/snapshot/${token}` : "",

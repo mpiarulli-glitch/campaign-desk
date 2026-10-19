@@ -81,6 +81,15 @@ In the service → **Variables**:
 | `GHL_CLIENT_SECRET` | Optional. GoHighLevel OAuth app client secret |
 | `GHL_COMPANY_ID` | Optional. GHL agency/company ID |
 | `GHL_REFRESH_TOKEN` | Optional. Bootstrap refresh token, seed only (see below) |
+| `PRODUCTION_SMS_ENABLED` | Set to `1` to text clients when asking them to schedule a production. Off otherwise. Leave this off for a sample text. |
+| `PRODUCTION_SMS_LOCATION_ID` | GHL sub-account that sends those texts. Use the agency's own location, not a client's. Required for the sample text too. |
+
+A logged-in admin can send one sample from **Productions → Test text**. It does not look up a client and does not require `PRODUCTION_SMS_ENABLED`. The same call from a script:
+
+```bash
+PHONE="+1..." APP_URL="https://hub.marketingempiregroup.com" CRON_SECRET="..." \
+  node scripts/send-production-sms-sample.mjs --name Michael
+```
 
 Generate a secret:
 

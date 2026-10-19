@@ -62,6 +62,7 @@ type Client = {
   active: number;
   contact_name: string;
   contact_email: string;
+  contact_phone: string;
   account_manager: string;
   color_week: ColorWeek;
   production_cadence: Cadence;
@@ -121,13 +122,15 @@ type ReachoutChannel =
   | "email"
   | "basecamp_card"
   | "basecamp_comment"
-  | "basecamp_message";
+  | "basecamp_message"
+  | "sms";
 
 const REACHOUT_LABEL: Record<ReachoutChannel, string> = {
   email: "Email",
   basecamp_card: "Basecamp card",
   basecamp_comment: "Basecamp follow-up",
   basecamp_message: "Basecamp message",
+  sms: "Text",
 };
 
 type Reachout = {
@@ -221,6 +224,7 @@ type Field =
   | "name"
   | "contact_name"
   | "contact_email"
+  | "contact_phone"
   | "account_manager"
   | "active"
   | "color_week"
@@ -234,6 +238,7 @@ const PATCH_KEY: Record<Field, string> = {
   name: "name",
   contact_name: "contactName",
   contact_email: "contactEmail",
+  contact_phone: "contactPhone",
   account_manager: "accountManager",
   active: "active",
   color_week: "colorWeek",
@@ -530,6 +535,14 @@ export default function ProductionPage() {
   const [manualError, setManualError] = useState("");
   const [manualLink, setManualLink] = useState("");
 
+  // One sample scheduling text to a number typed by hand. Never a client.
+  const [sampleOpen, setSampleOpen] = useState(false);
+  const [samplePhone, setSamplePhone] = useState("");
+  const [sampleName, setSampleName] = useState("");
+  const [sampleSaving, setSampleSaving] = useState(false);
+  const [sampleError, setSampleError] = useState("");
+  const [sampleSent, setSampleSent] = useState("");
+
   function defaultWindowDates() {
     const start = new Date();
     start.setDate(start.getDate() + 3);
@@ -539,8 +552,42 @@ export default function ProductionPage() {
     return { windowStart: iso(start), windowEnd: iso(end) };
   }
 
+  function openSampleText() {
+    setLogging(null);
+    setExtraAsk(null);
+    setManual(null);
+    setSampleError("");
+    setSampleSent("");
+    setSampleOpen(true);
+  }
+
+  async function submitSampleText(e: FormEvent) {
+    e.preventDefault();
+    const phone = samplePhone.trim();
+    if (!phone) {
+      setSampleError("Enter a phone number.");
+      return;
+    }
+    setSampleSaving(true);
+    setSampleError("");
+    setSampleSent("");
+    const res = await fetch("/api/production/sms-sample", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, contactName: sampleName.trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSampleSaving(false);
+    if (!res.ok || data.status !== "sent") {
+      setSampleError(data.error || "Text was not sent.");
+      return;
+    }
+    setSampleSent(data.message || `Sent to ${data.phone}.`);
+  }
+
   function openManualSchedule(clientId = "") {
     setLogging(null);
+    setSampleOpen(false);
     setExtraAsk(null);
     setManualError("");
     setManualLink("");
@@ -620,6 +667,7 @@ export default function ProductionPage() {
 
   function openLog(clientId = "") {
     setManual(null);
+    setSampleOpen(false);
     setExtraAsk(null);
     setLogError("");
     const row = clientId ? rows.find((r) => r.client.id === clientId) : undefined;
@@ -956,7 +1004,8 @@ export default function ProductionPage() {
       body: JSON.stringify({ [PATCH_KEY[field]]: value }),
     });
     if (!res.ok) {
-      setError("Could not save that change.");
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save that change.");
       return;
     }
     load({ silent: true });
@@ -1353,13 +1402,16 @@ export default function ProductionPage() {
             <p className="eyebrow">Email department</p>
             <h1 className="h1">Productions</h1>
           </div>
-          {isAdmin && !manual && !logging ? (
+          {isAdmin && !manual && !logging && !sampleOpen ? (
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <button className="btn btn-sm" onClick={() => openManualSchedule()}>
                 Schedule
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => openLog()}>
                 Log a shoot
+              </button>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={openSampleText}>
+                Test text
               </button>
             </div>
           ) : null}
@@ -1434,7 +1486,62 @@ export default function ProductionPage() {
         {error ? <p className="error">{error}</p> : null}
 
         {isAdmin ? (
-          manual ? (
+          sampleOpen ? (
+            <form className="card card-pad stack" onSubmit={submitSampleText}>
+              <div>
+                <h2 className="h3" style={{ margin: 0 }}>
+                  Send a sample scheduling text
+                </h2>
+                <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+                  Texts the number you type and includes a test scheduling link.
+                  It does not look up a client, and client texts stay off until
+                  PRODUCTION_SMS_ENABLED is set to 1.
+                </p>
+              </div>
+              <div className="rev-form-grid">
+                <div className="field">
+                  <label htmlFor="sample-phone">Phone</label>
+                  <input
+                    id="sample-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="(415) 555-0134"
+                    value={samplePhone}
+                    onChange={(e) => setSamplePhone(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="sample-name">First name</label>
+                  <input
+                    id="sample-name"
+                    type="text"
+                    placeholder="Michael"
+                    value={sampleName}
+                    onChange={(e) => setSampleName(e.target.value)}
+                  />
+                </div>
+              </div>
+              {sampleError ? <p className="error">{sampleError}</p> : null}
+              {sampleSent ? (
+                <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+                  Sent. {sampleSent}
+                </p>
+              ) : null}
+              <div className="row" style={{ gap: 10 }}>
+                <button className="btn" type="submit" disabled={sampleSaving}>
+                  {sampleSaving ? "Sending..." : "Send sample text"}
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  onClick={() => setSampleOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : manual ? (
             <form className="card card-pad stack" onSubmit={submitManualSchedule}>
               <div>
                 <h2 className="h3" style={{ margin: 0 }}>
@@ -2034,6 +2141,18 @@ export default function ProductionPage() {
                         <div className="v">
                           {editableField(r, "contact_email", "text", c.contact_email,
                             <span>{c.contact_email || "Not set"}</span>)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="k">Phone</span>
+                        <div className="v">
+                          {editableField(
+                            r,
+                            "contact_phone",
+                            "text",
+                            c.contact_phone,
+                            <span>{c.contact_phone || "Not set"}</span>
+                          )}
                         </div>
                       </div>
                       <div>

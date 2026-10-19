@@ -31,6 +31,7 @@ type Data = {
   extraRequests: { sendDate: string; sendTime: string; status: string }[];
   extraWindow: { start: string; end: string; note: string } | null;
   missedWindow: { start: string; end: string } | null;
+  testLink?: boolean;
 };
 
 type Brief = Record<string, string>;
@@ -225,6 +226,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   if (mode === "extra") {
     return (
       <div className="stack">
+        <TestLinkNote show={data.testLink} />
         <div className="sched-hero">
           <p className="eyebrow">{data.client.name}</p>
           <h1 className="h1">
@@ -617,6 +619,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
 
   return (
     <div className="stack">
+      <TestLinkNote show={data.testLink} />
       <div className="sched-hero">
         <p className="eyebrow">{data.client.name}</p>
         <h1 className="h1">Book your next production</h1>
@@ -751,6 +754,18 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       )}
 
       <ExtraRequestLink onClick={startExtraRequest} openWindow={data.extraWindow} />
+    </div>
+  );
+}
+
+function TestLinkNote({ show }: { show?: boolean }) {
+  if (!show) return null;
+  return (
+    <div className="sched-disclaimer" role="status">
+      <p style={{ margin: 0 }}>
+        Test link. This is the real scheduling page. Nothing you submit here
+        books a production.
+      </p>
     </div>
   );
 }

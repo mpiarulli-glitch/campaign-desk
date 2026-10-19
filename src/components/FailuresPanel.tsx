@@ -33,6 +33,7 @@ const KIND_LABEL: Record<string, string> = {
   basecamp_project: "Project not found",
   basecamp_todo: "Social QA to-do not updated",
   contact_unresolved: "Nobody to tag",
+  production_sms: "Scheduling text not sent",
 };
 
 function whenText(iso: string): string {

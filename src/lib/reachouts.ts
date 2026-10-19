@@ -14,6 +14,7 @@ export const REACHOUT_CHANNEL_LABEL: Record<ReachoutChannel, string> = {
   basecamp_card: "Basecamp card",
   basecamp_comment: "Basecamp follow-up",
   basecamp_message: "Basecamp message",
+  sms: "Text",
 };
 
 export function recordReachout(args: {

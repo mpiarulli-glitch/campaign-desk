@@ -29,6 +29,7 @@ type Row = {
   accountManagerEmail: string;
   contactName: string;
   contactEmail: string;
+  contactPhone: string;
   paused: boolean;
   hasBasecamp: boolean;
   snapshotUrl: string;
@@ -115,7 +116,7 @@ const ACCOUNT_MANAGER_OPTIONS = [
   { value: "Luis", label: "Luis" },
 ];
 
-type EditField = "contactEmail" | "contactName" | "accountManager";
+type EditField = "contactEmail" | "contactName" | "contactPhone" | "accountManager";
 
 function fmtWhen(iso: string | null): string {
   if (!iso) return "";
@@ -295,7 +296,8 @@ export default function ClientServicesPage() {
       body: JSON.stringify({ [field]: raw }),
     });
     if (!res.ok) {
-      setError("Could not save that change.");
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not save that change.");
       return;
     }
     setMessage("Saved.");
@@ -307,7 +309,7 @@ export default function ClientServicesPage() {
     field: EditField,
     current: string,
     display: React.ReactNode,
-    opts?: { type?: "text" | "email"; placeholder?: string }
+    opts?: { type?: "text" | "email" | "tel"; placeholder?: string }
   ) {
     if (!isAdmin) return display;
     const active = edit?.id === row.clientId && edit?.field === field;
@@ -897,6 +899,17 @@ export default function ClientServicesPage() {
                                     <div className="cs-sub cs-gap">Add client email</div>
                                   ) : null,
                                   { type: "email", placeholder: "client@email.com" }
+                                )}
+                                {editableText(
+                                  row,
+                                  "contactPhone",
+                                  row.contactPhone,
+                                  row.contactPhone ? (
+                                    <div className="cs-sub">{row.contactPhone}</div>
+                                  ) : isAdmin ? (
+                                    <div className="cs-sub cs-gap">Add mobile number</div>
+                                  ) : null,
+                                  { type: "tel", placeholder: "(415) 555-0134" }
                                 )}
                                 {dead ? (
                                   <div className="cs-flag is-bad">

@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { clientLogoPublicUrl } from "./client-logos";
+import { normalizePhoneE164 } from "./phone";
 import {
   getDb,
   nowIso,
@@ -164,6 +165,15 @@ export function createRevClient(input: {
   return getRevClient(id)!;
 }
 
+function storedContactPhone(raw: string | undefined, existing: string | null): string {
+  if (raw === undefined) return existing || "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const e164 = normalizePhoneE164(trimmed);
+  if (!e164) throw new Error("Enter a phone number with an area code.");
+  return e164;
+}
+
 export function updateRevClient(
   id: string,
   updates: Partial<{
@@ -183,6 +193,7 @@ export function updateRevClient(
     blackoutDates: string[];
     contactName: string;
     contactEmail: string;
+    contactPhone: string;
     poc: string;
     accountManager: string;
     tier: string;
@@ -207,7 +218,7 @@ export function updateRevClient(
        retainer = ?, monthly_cost = ?, ltv = ?, active = ?,
        color_week = ?, production_cadence = ?, last_production_date = ?,
        contract_start = ?, contract_end = ?, blackout_dates = ?,
-       contact_name = ?, contact_email = ?, poc = ?, account_manager = ?, tier = ?,
+       contact_name = ?, contact_email = ?, contact_phone = ?, poc = ?, account_manager = ?, tier = ?,
        website = ?, logo_path = ?, sentiment_override = ?,
        production_enrolled = ?,
        status_override = ?, outreach_paused = ?,
@@ -235,6 +246,7 @@ export function updateRevClient(
       : JSON.stringify(updates.blackoutDates),
     updates.contactName?.trim() ?? existing.contact_name,
     updates.contactEmail?.trim() ?? existing.contact_email,
+    storedContactPhone(updates.contactPhone, existing.contact_phone),
     updates.poc?.trim() ?? existing.poc,
     updates.accountManager?.trim() ?? existing.account_manager,
     updates.tier ?? existing.tier,
