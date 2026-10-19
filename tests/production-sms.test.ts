@@ -4,10 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { normalizePhoneE164 } from "../src/lib/phone";
+import { interpretSmsSendPayload, parseLocationPhoneNumber } from "../src/lib/ghl";
 import {
   PRODUCTION_SMS_EVENTS,
+  formatSampleLog,
+  interpretA2p,
+  plainSmsFailure,
+  pollMessageDelivery,
   productionNoticeSendsSms,
   scheduleNudgeSmsBody,
+  smsDndState,
+  smsPreflightError,
   type ProductionNotice,
 } from "../src/lib/production-sms";
 
@@ -266,7 +273,8 @@ test("texts fall back, dedupe, and never throw when the send fails", async (t) =
     dedupeKey: "cadence:c:window:today",
     transport,
   });
-  assert.deepEqual(sent, { status: "sent", phone: "+14155550134" });
+  assert.equal(sent.status, "sent");
+  if (sent.status === "sent") assert.equal(sent.phone, "+14155550134");
   assert.equal(calls.length, 1);
   assert.match(calls[0], /your next MEG production/);
 
@@ -325,4 +333,68 @@ test("texts fall back, dedupe, and never throw when the send fails", async (t) =
     .prepare(`SELECT dedupe_key FROM production_sms_sends WHERE phone = ?`)
     .get("+14155550199");
   assert.equal(sampleRow, undefined);
+});
+
+test("a failed sample is one plain sentence and one log line", async () => {
+  const noNumber = plainSmsFailure({
+    status: "failed",
+    error: "This sub-account has no phone number, so a text cannot be sent.",
+    locationName: "Marketing Empire Group",
+  });
+  assert.match(noNumber || "", /has no texting number, so GHL can't send texts yet/);
+  assert.match(noNumber || "", /Add an SMS number/);
+
+  assert.match(
+    plainSmsFailure({ status: "failed", error: "This contact is Do Not Disturb for SMS (active)." }) || "",
+    /Do Not Disturb/
+  );
+  assert.match(
+    plainSmsFailure({ status: "failed", error: "30034 A2P Registration Pending" }) || "",
+    /isn't approved for US business texts/
+  );
+  assert.equal(plainSmsFailure({ status: "sent", delivery: "delivered" }), null);
+
+  const line = formatSampleLog({
+    status: "failed",
+    error: "Bearer secret-token\nThis sub-account has no phone number.",
+    fromNumber: "",
+    locationName: "Marketing Empire Group",
+  });
+  assert.match(line, /^\[production-sms\] sample status=failed /);
+  assert.match(line, /from=-/);
+  assert.match(line, /location="Marketing Empire Group"/);
+  assert.match(line, /no texting number/);
+  assert.equal(line.includes("\n"), false);
+  assert.equal(line.includes("secret-token"), false);
+
+  assert.equal(
+    smsPreflightError({
+      numbers: [],
+      a2p: { state: "unknown", detail: "" },
+    }),
+    "This sub-account has no phone number, so a text cannot be sent."
+  );
+  const parsed = parseLocationPhoneNumber({
+    phoneNumber: "+19515550100",
+    capabilities: { sms: true },
+    provider: "twilio",
+  });
+  assert.equal(parsed?.sms, true);
+  assert.equal(parsed?.smsKnown, true);
+  assert.equal(
+    smsDndState({ contact: { dndSettings: { SMS: { status: "active" } } } }).blocked,
+    true
+  );
+  assert.equal(interpretA2p({ campaigns: [] }).state, "blocked");
+  assert.equal(interpretSmsSendPayload({ success: false, message: "No number" }).error, "No number");
+  assert.ok(interpretSmsSendPayload({ messageId: "abc", msg: "queued" }).messageId);
+
+  const reads = [{ status: "pending" }, { status: "undelivered", error: "30034", from: "+15550001111" }];
+  const snapshot = await pollMessageDelivery({
+    read: async () => reads.shift() || { status: "undelivered" },
+    sleep: async () => {},
+  });
+  assert.equal(snapshot.status, "undelivered");
+  assert.equal(snapshot.fromNumber, "+15550001111");
+  assert.equal(snapshot.error, "30034");
 });

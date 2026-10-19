@@ -542,6 +542,8 @@ export default function ProductionPage() {
   const [sampleSaving, setSampleSaving] = useState(false);
   const [sampleError, setSampleError] = useState("");
   const [sampleSent, setSampleSent] = useState("");
+  const [sampleDiag, setSampleDiag] = useState<SmsDiag | null>(null);
+  const [sampleOutcome, setSampleOutcome] = useState<SmsOutcome | null>(null);
 
   function defaultWindowDates() {
     const start = new Date();
@@ -558,7 +560,21 @@ export default function ProductionPage() {
     setManual(null);
     setSampleError("");
     setSampleSent("");
+    setSampleOutcome(null);
     setSampleOpen(true);
+    setSampleDiag(null);
+    fetch("/api/production/sms-sample")
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => setSampleDiag(data))
+      .catch(() =>
+        setSampleDiag({
+          enabled: false,
+          configuredLocationId: "",
+          configured: null,
+          candidates: [],
+          error: "Could not load GoHighLevel locations.",
+        })
+      );
   }
 
   async function submitSampleText(e: FormEvent) {
@@ -571,6 +587,7 @@ export default function ProductionPage() {
     setSampleSaving(true);
     setSampleError("");
     setSampleSent("");
+    setSampleOutcome(null);
     const res = await fetch("/api/production/sms-sample", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -578,11 +595,12 @@ export default function ProductionPage() {
     });
     const data = await res.json().catch(() => ({}));
     setSampleSaving(false);
+    setSampleOutcome(data);
     if (!res.ok || data.status !== "sent") {
       setSampleError(data.error || "Text was not sent.");
       return;
     }
-    setSampleSent(data.message || `Sent to ${data.phone}.`);
+    setSampleSent(data.message || `Accepted for ${data.phone}.`);
   }
 
   function openManualSchedule(clientId = "") {
@@ -1522,15 +1540,27 @@ export default function ProductionPage() {
                   />
                 </div>
               </div>
-              {sampleError ? <p className="error">{sampleError}</p> : null}
-              {sampleSent ? (
-                <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
-                  Sent. {sampleSent}
+              {sampleOutcome?.plain ? (
+                <p className="error">{sampleOutcome.plain}</p>
+              ) : sampleError ? (
+                <p className="error">{sampleError}</p>
+              ) : null}
+              {sampleSent && sampleOutcome?.delivery ? (
+                <p style={{ margin: 0, lineHeight: 1.6 }}>
+                  GHL says this text is {sampleOutcome.delivery}.
+                  {sampleOutcome.delivery === "queued"
+                    ? " That means it was accepted, and delivery is not confirmed yet."
+                    : ""}
                 </p>
               ) : null}
+              <details>
+                <summary>GHL details</summary>
+                <SmsDiagnostics diag={sampleDiag} />
+                <SmsOutcomeDetail outcome={sampleOutcome} />
+              </details>
               <div className="row" style={{ gap: 10 }}>
                 <button className="btn" type="submit" disabled={sampleSaving}>
-                  {sampleSaving ? "Sending..." : "Send sample text"}
+                  {sampleSaving ? "Checking delivery..." : "Send sample text"}
                 </button>
                 <button
                   className="btn btn-ghost"
@@ -2897,6 +2927,114 @@ function ProductionQueue({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+type SmsNumber = {
+  phoneNumber: string;
+  friendlyName: string;
+  sms: boolean;
+  smsKnown: boolean;
+  provider: string;
+  a2pStatus: string;
+};
+
+type SmsLocationDetail = {
+  id: string;
+  name: string;
+  reason: string;
+  numbers: SmsNumber[];
+  a2p: string;
+  error?: string;
+};
+
+type SmsDiag = {
+  enabled?: boolean;
+  configuredLocationId?: string;
+  configured?: SmsLocationDetail | null;
+  candidates?: SmsLocationDetail[];
+  error?: string;
+  clientSendsEnabled?: boolean;
+};
+
+type SmsOutcome = {
+  status?: string;
+  delivery?: string;
+  error?: string;
+  plain?: string | null;
+  fromNumber?: string;
+  locationId?: string;
+  locationName?: string;
+  dnd?: string;
+  messageId?: string;
+  message?: string;
+};
+
+function numberLine(number: SmsNumber): string {
+  const sms = number.smsKnown ? (number.sms ? "SMS" : "no SMS") : "SMS unknown";
+  const provider = number.provider || "provider unknown";
+  const a2p = number.a2pStatus ? `, A2P ${number.a2pStatus}` : "";
+  return `${number.phoneNumber} (${provider}, ${sms}${a2p})`;
+}
+
+function LocationBlock({ detail }: { detail: SmsLocationDetail }) {
+  return (
+    <div style={{ marginTop: 8 }}>
+      <strong>{detail.name || "Unnamed location"}</strong>
+      <div className="muted" style={{ fontSize: 13 }}>
+        {detail.reason}. Id {detail.id}
+      </div>
+      {detail.error ? <div className="error">{detail.error}</div> : null}
+      <div className="muted" style={{ fontSize: 13 }}>
+        A2P: {detail.a2p || "not reported"}
+      </div>
+      {detail.numbers.length ? (
+        <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13 }}>
+          {detail.numbers.map((number) => (
+            <li key={number.phoneNumber}>{numberLine(number)}</li>
+          ))}
+        </ul>
+      ) : (
+        <div className="muted" style={{ fontSize: 13 }}>No phone numbers returned.</div>
+      )}
+    </div>
+  );
+}
+
+function SmsDiagnostics({ diag }: { diag: SmsDiag | null }) {
+  if (!diag) return <p className="muted">Loading GoHighLevel locations...</p>;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+        Client texts are {diag.clientSendsEnabled || diag.enabled ? "on" : "off"}.
+        Sending location: {diag.configuredLocationId || "not set"}.
+      </p>
+      {diag.error ? <p className="error">{diag.error}</p> : null}
+      {diag.configured ? <LocationBlock detail={diag.configured} /> : null}
+      {(diag.candidates || []).map((candidate) => (
+        <LocationBlock key={candidate.id} detail={candidate} />
+      ))}
+    </div>
+  );
+}
+
+function SmsOutcomeDetail({ outcome }: { outcome: SmsOutcome | null }) {
+  if (!outcome || (!outcome.delivery && !outcome.fromNumber && !outcome.locationId && !outcome.dnd && !outcome.messageId)) {
+    return null;
+  }
+  return (
+    <div className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
+      {outcome.delivery ? <div>Delivery: {outcome.delivery}</div> : null}
+      {outcome.error && outcome.status !== "sent" ? <div>GoHighLevel: {outcome.error}</div> : null}
+      {outcome.fromNumber ? <div>From: {outcome.fromNumber}</div> : null}
+      {outcome.locationId ? (
+        <div>
+          Location: {outcome.locationName || "unnamed"} ({outcome.locationId})
+        </div>
+      ) : null}
+      {outcome.dnd ? <div>Contact SMS DND: {outcome.dnd}</div> : null}
+      {outcome.messageId ? <div>Message id: {outcome.messageId}</div> : null}
     </div>
   );
 }
