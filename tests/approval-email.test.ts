@@ -14,6 +14,10 @@ import {
   resolveApprovalEmailTo,
   sendApprovalEmail,
 } from "../src/lib/approval-email";
+import {
+  plainProviderEmailError,
+  sawUnusableEmail,
+} from "../src/lib/email-address";
 import { SYLVIA_CC_EMAIL } from "../src/lib/review-cc";
 
 const input = {
@@ -76,6 +80,80 @@ test("resolveApprovalEmailTo prefers the saved contact email", () => {
     resolveApprovalEmailTo({ contactEmail: "", rosterEmail: "" }),
     ""
   );
+});
+
+test("resolveApprovalEmailTo skips a masked Basecamp address", () => {
+  const masked = "c@••••••••••••.•••";
+  assert.equal(
+    resolveApprovalEmailTo({
+      contactEmail: "",
+      rosterEmail: masked,
+    }),
+    ""
+  );
+  assert.equal(
+    resolveApprovalEmailTo({
+      contactEmail: masked,
+      rosterEmail: "mark@blacksblinds.com",
+    }),
+    "mark@blacksblinds.com"
+  );
+  assert.equal(
+    resolveApprovalEmailTo({
+      contactEmail: "not an email",
+      rosterEmail: "george@bearwindows.com",
+    }),
+    "george@bearwindows.com"
+  );
+  assert.equal(sawUnusableEmail("", masked), true);
+  assert.equal(sawUnusableEmail("", ""), false);
+});
+
+test("sendApprovalEmail does not send to a masked address", async () => {
+  const previousKey = process.env.RESEND_API_KEY;
+  const previousFrom = process.env.EMAIL_FROM;
+  process.env.RESEND_API_KEY = "re_test";
+  process.env.EMAIL_FROM = "Marketing Empire Group <hello@example.com>";
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    throw new Error("should not send");
+  }) as typeof fetch;
+  try {
+    const result = await sendApprovalEmail({
+      client: {
+        id: "c1",
+        name: "Trailhead Family Chiropractic",
+        contact_email: "",
+        contact_name: "Chris",
+        account_manager: "kyle",
+      } as never,
+      to: "c@••••••••••••.•••",
+      messageInput: input,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.skipped, "no contact email");
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    if (previousFrom === undefined) delete process.env.EMAIL_FROM;
+    else process.env.EMAIL_FROM = previousFrom;
+  }
+});
+
+test("a Resend refusal stays in the provider's own words", () => {
+  const body =
+    '{"statusCode":422,"message":"Invalid `to` field. The email address contains non-ASCII characters.","name":"validation_error"}';
+  const plain = plainProviderEmailError(422, body);
+  assert.equal(
+    plain.detail,
+    "Resend couldn't send it: Invalid `to` field. The email address contains non-ASCII characters."
+  );
+  assert.equal(plain.raw, body);
+  assert.doesNotMatch(plain.detail, /Could not send the approval email/);
 });
 
 test("sendApprovalEmail skips when there is no To address", async () => {

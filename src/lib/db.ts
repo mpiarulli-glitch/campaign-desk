@@ -9,6 +9,7 @@ import { PEOPLE, OWNER_SLUG } from "./people";
 import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
 import { addWeeks, mondayOf } from "./week";
+import { backfillKnownContactEmails } from "./contact-email-backfill";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -905,6 +906,8 @@ export interface AppFailure {
   detail: string;
   // What to do about it, written for whoever reads the list.
   hint: string;
+  // Provider body, collapsed under the plain detail in the panel.
+  raw_detail: string;
   occurred_at: string;
   last_seen_at: string;
   seen_count: number;
@@ -1675,6 +1678,7 @@ export function getDb(): Database.Database {
       subject TEXT NOT NULL DEFAULT '',
       detail TEXT NOT NULL DEFAULT '',
       hint TEXT NOT NULL DEFAULT '',
+      raw_detail TEXT NOT NULL DEFAULT '',
       occurred_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL,
       seen_count INTEGER NOT NULL DEFAULT 1,
@@ -3861,6 +3865,18 @@ function migrate(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_personal_notes_owner
       ON personal_notes(owner, pinned, updated_at);
   `);
+
+  const failureCols = tableColumns(database, "app_failures");
+  if (failureCols.length && !failureCols.includes("raw_detail")) {
+    database.exec(
+      `ALTER TABLE app_failures ADD COLUMN raw_detail TEXT NOT NULL DEFAULT ''`
+    );
+  }
+
+  // Known client inboxes that were blank or held a masked Basecamp address.
+  // Idempotent: a valid email already on the row is not replaced, and an
+  // empty database logs nothing. Does not send mail or touch old failures.
+  backfillKnownContactEmails(database);
 }
 
 // Insert a login row for every person in the code roster who does not have one

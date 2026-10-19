@@ -18,6 +18,7 @@ import {
 } from "./cadence";
 import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
+import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
 import { scheduleUrl } from "./auth";
 import { normalizePhoneE164 } from "./phone";
 import { scheduleSmsReady, sendScheduleNudgeSms, smsAlertReason } from "./production-sms";
@@ -778,7 +779,9 @@ export async function runReminders(opts?: {
     // No email address is the same refusal as no Basecamp contact: we do not
     // know where to send it, so it does not go, and somebody is told.
     // A configured scheduling text is the one exception. The text is the ask.
-    const hasEmail = Boolean(client.contact_email?.trim());
+    const rawEmail = (client.contact_email || "").trim();
+    const to = usableEmail(rawEmail);
+    const hasEmail = Boolean(to);
     const canText =
       scheduleSmsReady() && Boolean(normalizePhoneE164(client.contact_phone || ""));
     if (!hasEmail && !canText) {
@@ -787,13 +790,20 @@ export async function runReminders(opts?: {
         recordFailure({
           kind: "contact_unresolved",
           subject: client.name,
-          detail:
-            "No contact email on this client, so no scheduling reminder was emailed.",
+          detail: NO_CONTACT_EMAIL,
           hint: "Add a contact email on the client in the revenue console.",
         });
         noteBlocked(client, "No contact email on this client");
       }
       continue;
+    }
+    if (!hasEmail && rawEmail) {
+      recordFailure({
+        kind: "contact_unresolved",
+        subject: client.name,
+        detail: NO_CONTACT_EMAIL,
+        hint: "The address on file can't be emailed. Add a real contact email on the client.",
+      });
     }
     const rec = getReminder(client.id, window.start);
     // Client emails go out on their follow-up weekdays only, so nobody gets a
@@ -819,7 +829,7 @@ export async function runReminders(opts?: {
       const { subject, html, text } = reminderEmail(client, window, url);
       const ok = dryRun
         ? true
-        : await sendEmail({ to: client.contact_email, subject, html, text });
+        : await sendEmail({ to, subject, html, text });
 
       if (ok) {
         if (!dryRun) {
@@ -828,12 +838,12 @@ export async function runReminders(opts?: {
         }
         result.sent.push({
           client: client.name,
-          email: client.contact_email,
+          email: to,
           window,
           attempt: (rec?.count || 0) + 1,
         });
         contacted = true;
-        noteReachout(client, "email", window, client.contact_email);
+        noteReachout(client, "email", window, to);
       } else {
         result.failed.push({ client: client.name, email: client.contact_email });
       }

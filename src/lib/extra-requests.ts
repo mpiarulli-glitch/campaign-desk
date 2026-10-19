@@ -27,6 +27,7 @@ import {
 import { recordReachout } from "./reachouts";
 import { scheduleUrl } from "./auth";
 import { sendEmail } from "./email";
+import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
 import {
   basecampConnected,
   createScheduleCard,
@@ -466,11 +467,19 @@ export async function sendExtraRequestOutreach(
     }
   }
 
-  if (client.contact_email?.trim() && url) {
+  const to = usableEmail(client.contact_email);
+  if (to && url) {
     const { subject, html, text } = extraRequestEmail(client, request, url);
-    const ok = await sendEmail({ to: client.contact_email, subject, html, text });
+    const ok = await sendEmail({ to, subject, html, text });
     result.email = { ok };
     if (ok) markEmailed(request.id);
+  } else if ((client.contact_email || "").trim() && url) {
+    recordFailure({
+      kind: "contact_unresolved",
+      subject: client.name,
+      detail: NO_CONTACT_EMAIL,
+      hint: "Add a contact email on the client, then resend the extra-production ask.",
+    });
   }
 
   // A text is the same ask as the email. It cannot fail the email, and a

@@ -15,6 +15,7 @@ import {
   resolveApprovalEmailTo,
   sendApprovalFollowupEmail,
 } from "@/lib/approval-email";
+import { NO_CONTACT_EMAIL, sawUnusableEmail } from "@/lib/email-address";
 import { getCampaignById, listEmails, recordBasecampFollowUp } from "@/lib/campaigns";
 import { approvalChannelForAssets, clientReviewFollowupHtml } from "@/lib/client-approval";
 import { recordFailure, clearFailure } from "@/lib/failures";
@@ -127,12 +128,15 @@ export async function POST(_request: Request, { params }: Params) {
       ),
     },
   });
-  if (!email.ok && !email.skipped) {
+  if (
+    email.skipped === "no contact email" &&
+    sawUnusableEmail(client.contact_email, recipient.email_address)
+  ) {
     recordFailure({
-      kind: "email",
-      subject: email.to || client.name,
-      detail: email.error || "Could not send the follow-up email.",
-      hint: "The Basecamp follow-up posted. Fix email delivery, then follow up again if needed.",
+      kind: "contact_unresolved",
+      subject: client.name,
+      detail: NO_CONTACT_EMAIL,
+      hint: "Add a contact email on the client. The Basecamp follow-up already posted.",
     });
   }
 

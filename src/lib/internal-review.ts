@@ -23,6 +23,7 @@ import { resolveCampaignClient } from "./campaign-card-sync";
 import { updateRevClient } from "./revenue";
 import { adminCampaignUrl, reviewUrl } from "./auth";
 import { getDb } from "./db";
+import { usableEmail } from "./email-address";
 import { basecampNameForManager } from "./people";
 import { slugForName, teamLabel } from "./team";
 import { stripSylviaCcLines, SYLVIA_CC_TEXT, sylviaCcHtml } from "./review-cc";
@@ -214,7 +215,7 @@ function toReviewPerson(person: ReviewRosterPerson): InternalReviewPerson {
   return {
     id: person.id,
     name: person.name,
-    email: person.email_address || "",
+    email: usableEmail(person.email_address),
     isClient: Boolean(person.client),
     attachableSgid: person.attachable_sgid || "",
   };

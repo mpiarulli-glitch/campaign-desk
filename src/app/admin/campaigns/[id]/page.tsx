@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmailPreview, type EmailEditHandle, type PendingEdit } from "@/components/EmailPreview";
 import { applyTextEdits } from "@/lib/inline-edit";
+import { usableEmail } from "@/lib/email-address";
 import { EmailLinks } from "@/components/EmailLinks";
 import { isCopyQuote, quotedFeedback } from "@/lib/copy-quote";
 import { SendPlanDisclosure } from "@/components/SendPlanDisclosure";
@@ -3776,9 +3777,9 @@ export default function AdminCampaignPage() {
                       (person) => person.id === approvalRecipientId
                     )?.email || "";
                   const to =
-                    (basecampApproval?.contactEmail || "").trim() ||
-                    rosterEmail.trim() ||
-                    (basecampApproval?.emailTo || "").trim();
+                    usableEmail(basecampApproval?.contactEmail) ||
+                    usableEmail(rosterEmail) ||
+                    usableEmail(basecampApproval?.emailTo);
                   return to ? ` and email ${to}` : "";
                 })()}
                 , and move its Deliverables card to Needs Approval?
@@ -3795,9 +3796,9 @@ export default function AdminCampaignPage() {
                             (person) => person.id === approvalRecipientId
                           )?.email || "";
                         const to =
-                          (basecampApproval.contactEmail || "").trim() ||
-                          rosterEmail.trim() ||
-                          (basecampApproval.emailTo || "").trim();
+                          usableEmail(basecampApproval.contactEmail) ||
+                          usableEmail(rosterEmail) ||
+                          usableEmail(basecampApproval.emailTo);
                         return to
                           ? `Posts the Deliverables card to Needs Approval and emails ${to} (you’re CC’d).`
                           : `Posts the Deliverables card to Needs Approval. Add a contact email on the client to also email the ask.`;

@@ -9,6 +9,8 @@
 // two accounts which one this is.
 import type { RevClient, ScheduledSend } from "./db";
 import { sendEmail } from "./email";
+import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
+import { recordFailure } from "./failures";
 import {
   FIRST_PRODUCTION_EXPECTATIONS,
   isFirstProductionClient,
@@ -106,13 +108,28 @@ function shell(args: {
   return { subject, html, text };
 }
 
+function sendableContactEmail(client: RevClient): string {
+  const to = usableEmail(client.contact_email);
+  if (to) return to;
+  if ((client.contact_email || "").trim()) {
+    recordFailure({
+      kind: "contact_unresolved",
+      subject: client.name,
+      detail: NO_CONTACT_EMAIL,
+      hint: "Add a contact email on the client. A masked Basecamp address cannot be emailed.",
+    });
+  }
+  return "";
+}
+
 // Fired the moment a client submits a slot on their scheduling link.
 export async function sendProductionRequestReceived(
   client: RevClient,
   send: ScheduledSend,
   opts?: { first?: boolean }
 ): Promise<boolean> {
-  if (!client.contact_email?.trim()) return false;
+  const to = sendableContactEmail(client);
+  if (!to) return false;
   const name = client.contact_name?.trim();
   const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
@@ -155,7 +172,7 @@ export async function sendProductionRequestReceived(
   });
 
   return sendEmail({
-    to: client.contact_email,
+    to,
     subject,
     html,
     text,
@@ -169,7 +186,8 @@ export async function sendProductionConfirmed(
   send: ScheduledSend,
   opts?: { first?: boolean }
 ): Promise<boolean> {
-  if (!client.contact_email?.trim()) return false;
+  const to = sendableContactEmail(client);
+  if (!to) return false;
   const name = client.contact_name?.trim();
   const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
@@ -216,7 +234,7 @@ export async function sendProductionConfirmed(
   });
 
   return sendEmail({
-    to: client.contact_email,
+    to,
     subject,
     html,
     text,

@@ -14028,6 +14028,22 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   line-height: 1.5;
   color: var(--accent-ink);
 }
+.fail-raw {
+  margin-top: 6px;
+}
+.fail-raw summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.fail-raw pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
 .fail-times {
   margin-left: 7px;
   font-size: 11px;

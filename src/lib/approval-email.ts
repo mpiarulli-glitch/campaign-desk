@@ -15,6 +15,7 @@ import {
   type ClientApprovalMessageInput,
 } from "./client-approval";
 import { emailConfigured, sendEmailWithId, type EmailResult } from "./email";
+import { firstUsableEmail, isUsableEmail } from "./email-address";
 
 /** CC'd on email, automation, and LinkedIn approval emails. */
 export const APPROVAL_EMAIL_CC = "mpiarulli@marketingempiregroup.com";
@@ -44,9 +45,9 @@ export function resolveApprovalEmailTo(args: {
   contactEmail?: string | null;
   rosterEmail?: string | null;
 }): string {
-  const saved = (args.contactEmail || "").trim();
-  if (saved) return saved;
-  return (args.rosterEmail || "").trim();
+  // Saved contact first, then the Basecamp person's address. A masked or
+  // otherwise unusable value is skipped so the next real address can be used.
+  return firstUsableEmail(args.contactEmail, args.rosterEmail);
 }
 
 async function sendBrandedApprovalEmail(args: {
@@ -57,7 +58,7 @@ async function sendBrandedApprovalEmail(args: {
   cc: string[];
 }): Promise<ApprovalEmailResult> {
   const to = args.to.trim();
-  if (!to) {
+  if (!isUsableEmail(to)) {
     return { ok: false, to: "", skipped: "no contact email" };
   }
   if (!emailConfigured()) {
@@ -84,7 +85,7 @@ async function sendBrandedApprovalEmail(args: {
     return {
       ok: false,
       to,
-      error: args.failLabel,
+      error: res.error || args.failLabel,
       id: res.id,
     };
   }
