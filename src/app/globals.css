@@ -10444,33 +10444,23 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   color: var(--text);
 }
 
-/* ============================================ Command deck (home) */
+/* ============================================ Command deck (home)
+   Light mode is a flat page: the same surfaces, text, and borders as the
+   rest of the app, filling the content width. The navy card below is dark
+   mode only. */
 .deck {
-  --gold: #e4c27a;
-  --arc: #7ad7ff;
+  --gold: var(--accent-ink);
+  --arc: var(--accent-ink);
   position: relative;
-  color: #e8eef4;
-  background:
-    radial-gradient(ellipse at 18% 0%, rgba(122, 215, 255, 0.16), transparent 42%),
-    radial-gradient(ellipse at 88% 12%, rgba(228, 194, 122, 0.12), transparent 36%),
-    linear-gradient(180deg, #101820 0%, #070b10 100%);
-  border: 1px solid rgba(228, 194, 122, 0.28);
-  border-radius: 22px;
-  padding: 28px 26px 22px;
-  overflow: hidden;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  overflow: visible;
+  box-shadow: none;
 }
-.deck::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(122, 215, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(122, 215, 255, 0.045) 1px, transparent 1px);
-  background-size: 52px 52px;
-  mask-image: radial-gradient(ellipse at 30% 20%, #000 10%, transparent 72%);
-  pointer-events: none;
-}
+.deck::before { content: none; }
 .deck-top {
   position: relative;
   display: grid;
@@ -10484,71 +10474,78 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: var(--gold);
+  color: var(--text-muted);
   font-size: 11px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 .deck-live {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--arc);
-  box-shadow: 0 0 10px var(--arc);
+  background: var(--accent);
+  box-shadow: none;
 }
-.deck-clock { margin-left: auto; letter-spacing: 0.08em; color: rgba(232, 238, 244, 0.55); }
+.deck-clock { margin-left: auto; letter-spacing: 0.08em; color: var(--text-muted); }
 .deck-brief h1 {
   font-family: var(--font-head);
   font-weight: 600;
-  font-size: clamp(32px, 5vw, 52px);
+  font-size: clamp(26px, 3vw, 32px);
   letter-spacing: -0.03em;
-  line-height: 1;
-  margin: 10px 0 0;
-  color: #f7fbff;
+  line-height: 1.05;
+  margin: 6px 0 0;
+  color: var(--text);
 }
-.deck-brief p { margin: 12px 0 0; max-width: 62ch; color: rgba(232, 238, 244, 0.78); font-size: 15.5px; line-height: 1.55; }
-.deck-command { margin-top: 18px; }
+.deck-brief p { margin: 8px 0 0; max-width: 62ch; color: var(--text-body); font-size: 15px; line-height: 1.5; }
+.deck-command { margin-top: 14px; }
 .deck-command label {
   display: block;
   margin-bottom: 6px;
-  color: rgba(228, 194, 122, 0.8);
+  color: var(--text-muted);
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 .deck-command-row { display: flex; gap: 8px; }
 .deck-command input {
   flex: 1;
   min-width: 0;
-  background: rgba(4, 10, 16, 0.72);
-  color: #f4f8fb;
-  border: 1px solid rgba(122, 215, 255, 0.35);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
   padding: 12px 14px;
   font: inherit;
   font-size: 15px;
 }
+.deck-command input::placeholder { color: var(--text-muted); opacity: 1; }
 .deck-command input:focus {
   outline: none;
-  border-color: var(--arc);
-  box-shadow: 0 0 0 3px rgba(122, 215, 255, 0.16);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 232, 0.18);
 }
 .deck-command button,
 .deck-quick button {
-  background: transparent;
-  color: var(--gold);
-  border: 1px solid rgba(228, 194, 122, 0.45);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 10px 14px;
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
-.deck-command button { border-radius: 12px; padding: 0 16px; }
+.deck-command button {
+  border-radius: 12px;
+  padding: 0 16px;
+  background: var(--ink);
+  color: var(--on-ink);
+  border-color: var(--ink);
+}
 .deck-command button:disabled { opacity: 0.45; cursor: default; }
-.deck-command button:hover:not(:disabled),
-.deck-quick button:hover { background: rgba(228, 194, 122, 0.1); }
-.deck-reply { margin: 10px 0 0; color: var(--arc); font-size: 14px; }
+.deck-command button:hover:not(:disabled) { background: var(--text); color: var(--on-ink); }
+.deck-quick button:hover { background: var(--bg-soft); color: var(--text); }
+.deck-reply { margin: 10px 0 0; color: var(--accent-ink); font-size: 14px; }
 .deck-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .deck-core {
   position: relative;
@@ -10560,20 +10557,20 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(122, 215, 255, 0.35);
+  border: 1px solid var(--border-strong);
 }
 .deck-ring.r1 { animation: deck-spin 18s linear infinite; border-style: dashed; }
 .deck-ring.r2 {
   inset: 18px;
-  border-color: rgba(228, 194, 122, 0.55);
+  border-color: var(--accent-ink);
   border-top-color: transparent;
   animation: deck-spin 9s linear infinite reverse;
 }
 .deck-ring.r3 {
   inset: 38px;
-  background:
-    radial-gradient(circle, rgba(122, 215, 255, 0.28), rgba(122, 215, 255, 0.02) 68%);
-  box-shadow: 0 0 32px rgba(122, 215, 255, 0.25);
+  background: radial-gradient(circle, var(--accent-wash), transparent 68%);
+  border-color: var(--accent);
+  box-shadow: none;
 }
 .deck-core-read {
   position: absolute;
@@ -10588,12 +10585,12 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   font-family: var(--font-head);
   font-size: 28px;
   font-weight: 600;
-  color: #f7fbff;
+  color: var(--text);
   line-height: 1;
 }
 .deck-core-read span {
   margin-top: 4px;
-  color: var(--gold);
+  color: var(--accent-ink);
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -10602,26 +10599,122 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 @media (prefers-reduced-motion: reduce) {
   .deck-ring.r1, .deck-ring.r2 { animation: none; }
 }
-.deck .hq-card {
+.deck .hq-divider { background: var(--border-strong); }
+.deck .hq-res a,
+.deck .hq-res button {
+  color: var(--text);
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
+}
+.deck .hq-res .rgo { color: var(--text-muted); }
+.deck .assign-form .field input,
+.deck .assign-form .field select,
+.deck .fc-combo > input {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+@media (max-width: 800px) {
+  .deck-top { grid-template-columns: 1fr; }
+  .deck-core { width: 150px; height: 150px; }
+  .deck-clock { margin-left: 0; }
+}
+
+/* Dark mode keeps the navy command deck. These rules restate the previous
+   look; they do not apply while the page is light. */
+:root[data-theme="dark"] .deck {
+  --gold: #e4c27a;
+  --arc: #7ad7ff;
+  color: #e8eef4;
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(122, 215, 255, 0.16), transparent 42%),
+    radial-gradient(ellipse at 88% 12%, rgba(228, 194, 122, 0.12), transparent 36%),
+    linear-gradient(180deg, #101820 0%, #070b10 100%);
+  border: 1px solid rgba(228, 194, 122, 0.28);
+  border-radius: 22px;
+  padding: 28px 26px 22px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+:root[data-theme="dark"] .deck::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(122, 215, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(122, 215, 255, 0.045) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse at 30% 20%, #000 10%, transparent 72%);
+  pointer-events: none;
+}
+:root[data-theme="dark"] .deck-kicker { color: var(--gold); letter-spacing: 0.16em; }
+:root[data-theme="dark"] .deck-live { background: var(--arc); box-shadow: 0 0 10px var(--arc); }
+:root[data-theme="dark"] .deck-clock { color: rgba(232, 238, 244, 0.55); }
+:root[data-theme="dark"] .deck-brief h1 {
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 1;
+  margin: 10px 0 0;
+  color: #f7fbff;
+}
+:root[data-theme="dark"] .deck-brief p { margin: 12px 0 0; color: rgba(232, 238, 244, 0.78); font-size: 15.5px; line-height: 1.55; }
+:root[data-theme="dark"] .deck-command { margin-top: 18px; }
+:root[data-theme="dark"] .deck-command label { color: rgba(228, 194, 122, 0.8); letter-spacing: 0.14em; }
+:root[data-theme="dark"] .deck-command input {
+  background: rgba(4, 10, 16, 0.72);
+  color: #f4f8fb;
+  border-color: rgba(122, 215, 255, 0.35);
+}
+:root[data-theme="dark"] .deck-command input::placeholder { color: rgba(232, 238, 244, 0.45); }
+:root[data-theme="dark"] .deck-command input:focus {
+  border-color: var(--arc);
+  box-shadow: 0 0 0 3px rgba(122, 215, 255, 0.16);
+}
+:root[data-theme="dark"] .deck-command button,
+:root[data-theme="dark"] .deck-quick button {
+  background: transparent;
+  color: var(--gold);
+  border-color: rgba(228, 194, 122, 0.45);
+}
+:root[data-theme="dark"] .deck-command button:hover:not(:disabled),
+:root[data-theme="dark"] .deck-quick button:hover { background: rgba(228, 194, 122, 0.1); color: var(--gold); }
+:root[data-theme="dark"] .deck-reply { color: var(--arc); }
+:root[data-theme="dark"] .deck-ring { border-color: rgba(122, 215, 255, 0.35); }
+:root[data-theme="dark"] .deck-ring.r2 {
+  border-color: rgba(228, 194, 122, 0.55);
+  border-top-color: transparent;
+}
+:root[data-theme="dark"] .deck-ring.r3 {
+  background: radial-gradient(circle, rgba(122, 215, 255, 0.28), rgba(122, 215, 255, 0.02) 68%);
+  border-color: rgba(122, 215, 255, 0.35);
+  box-shadow: 0 0 32px rgba(122, 215, 255, 0.25);
+}
+:root[data-theme="dark"] .deck-core-read b { color: #f7fbff; }
+:root[data-theme="dark"] .deck-core-read span { color: var(--gold); }
+:root[data-theme="dark"] .deck .hq-card {
   background: rgba(6, 12, 18, 0.72);
   border-color: rgba(228, 194, 122, 0.2);
   color: #e8eef4;
   box-shadow: none;
 }
-.deck .hq-card-title { color: #f7fbff; }
-.deck .hq-card-desc, .deck .muted { color: rgba(232, 238, 244, 0.62); }
-.deck .hq-mini { color: #e8eef4; }
-.deck .hq-res a, .deck .hq-res button { color: #e8eef4; }
-.deck .ops-panel.assign-panel {
+:root[data-theme="dark"] .deck .hq-card-title { color: #f7fbff; }
+:root[data-theme="dark"] .deck .hq-card-desc,
+:root[data-theme="dark"] .deck .muted { color: rgba(232, 238, 244, 0.62); }
+:root[data-theme="dark"] .deck .hq-mini { color: #e8eef4; }
+:root[data-theme="dark"] .deck .hq-divider { background: var(--border); }
+:root[data-theme="dark"] .deck .hq-res a,
+:root[data-theme="dark"] .deck .hq-res button {
+  color: #f4f8fb;
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
+}
+:root[data-theme="dark"] .deck .hq-res .rgo { color: rgba(232, 238, 244, 0.72); }
+:root[data-theme="dark"] .deck .ops-panel.assign-panel {
   background: rgba(6, 12, 18, 0.72);
   color: #e8eef4;
   border-color: rgba(228, 194, 122, 0.2);
 }
 @media (max-width: 800px) {
-  .deck { padding: 20px 16px 16px; }
-  .deck-top { grid-template-columns: 1fr; }
-  .deck-core { width: 150px; height: 150px; }
-  .deck-clock { margin-left: 0; }
+  :root[data-theme="dark"] .deck { padding: 20px 16px 16px; }
 }
 
 /* ============================================ MEG Team HQ home (light) */
