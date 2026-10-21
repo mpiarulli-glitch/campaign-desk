@@ -3851,6 +3851,65 @@ function migrate(database: Database.Database) {
       ON seo_ops_forecast_items(week_start, run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_ops_items_key
       ON seo_ops_forecast_items(run_id, person_id, item_date, item_key);
+
+    -- Carlos's SEO Ops sync owns these rows. Desk edits can accept a new run
+    -- and can mark a run deleted. They cannot rewrite or remove the receipt.
+    CREATE TRIGGER IF NOT EXISTS seo_ops_runs_no_delete
+    BEFORE DELETE ON seo_ops_forecast_runs
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops runs stay on file');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_runs_protect
+    BEFORE UPDATE ON seo_ops_forecast_runs
+    WHEN NOT (
+      OLD.status = 'accepted'
+      AND NEW.status = 'deleted'
+      AND NEW.run_id = OLD.run_id
+      AND NEW.organization_id = OLD.organization_id
+      AND NEW.canonical_json = OLD.canonical_json
+      AND NEW.created_at = OLD.created_at
+      AND NEW.deleted_at IS NOT NULL
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops runs can only be marked deleted');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_weeks_no_update
+    BEFORE UPDATE ON seo_ops_forecast_weeks
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops weeks stay on file');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_weeks_no_delete
+    BEFORE DELETE ON seo_ops_forecast_weeks
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops weeks stay on file');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_alloc_no_update
+    BEFORE UPDATE ON seo_ops_forecast_allocations
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops allocations stay on file');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_alloc_no_delete
+    BEFORE DELETE ON seo_ops_forecast_allocations
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops allocations stay on file');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_items_no_update
+    BEFORE UPDATE ON seo_ops_forecast_items
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops items stay on file');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS seo_ops_items_no_delete
+    BEFORE DELETE ON seo_ops_forecast_items
+    BEGIN
+      SELECT RAISE(ABORT, 'SEO Ops items stay on file');
+    END;
   `);
 
   database.exec(`
