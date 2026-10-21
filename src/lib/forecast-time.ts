@@ -58,6 +58,41 @@ export function formatTimeLabel(hhmm: string): string {
   return m ? `${h12}:${String(m).padStart(2, "0")} ${period}` : `${h12} ${period}`;
 }
 
+// A start the hour columns can draw. 07:00 is the first row; 19:00 is the
+// bottom edge and is not on the grid.
+export function isOnGrid(startTime: string): boolean {
+  const mins = minutesFromMidnight(startTime);
+  if (mins == null) return false;
+  return mins >= CAL_START_HOUR * 60 && mins < CAL_END_HOUR * 60;
+}
+
+export type ForecastStartPlacement = "queued" | "after-hours" | "timed";
+
+// Only a missing start is queued. A real time outside 07:00–19:00 is still
+// timed work; the week view keeps it in the all-day row and shows the clock.
+export function classifyForecastStart(
+  startTime: string | null | undefined
+): ForecastStartPlacement {
+  if (startTime == null || startTime.trim() === "") return "queued";
+  return isOnGrid(startTime) ? "timed" : "after-hours";
+}
+
+export function afterHoursLabel(startTime: string): string {
+  const clock = formatTimeLabel(startTime);
+  return clock ? `After hours · ${clock}` : "After hours";
+}
+
+// Decimal hours don't add cleanly: 1 + 0.75 + 0.38 + 0.82 is
+// 2.9499999999999997, and rounding that to a tenth prints 2.9. Sum whole
+// minutes, then round to a tenth.
+export function sumDayHours(hours: number[]): number {
+  const minutes = hours.reduce((sum, value) => {
+    if (!Number.isFinite(value)) return sum;
+    return sum + Math.round(value * 60);
+  }, 0);
+  return Math.round(minutes / 6) / 10;
+}
+
 export function isoToStartTime(iso: string, timeZone: string): string {
   if (!iso || /^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
   const d = new Date(iso);
