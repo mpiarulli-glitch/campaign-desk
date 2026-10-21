@@ -23538,45 +23538,32 @@ a.snap-todo-linked-title {
   .notes-sheet::before { left: 22px; }
 }
 
-/* Campaigns and Lifecycle command surface. Same gold and arc language as the
-   home deck, scoped so the rest of the app stays as it is. */
+/* Lifecycle command surface. Light mode is the same surfaces, text, and
+   borders as the rest of the app. The navy treatment below is dark mode only. */
 .stark {
-  --gold: #e4c27a;
-  --arc: #7ad7ff;
+  --gold: var(--accent-ink);
+  --arc: var(--accent-ink);
   position: relative;
-  color: #e8eef4;
-  background:
-    radial-gradient(ellipse at 12% 0%, rgba(122, 215, 255, 0.16), transparent 42%),
-    radial-gradient(ellipse at 90% 8%, rgba(228, 194, 122, 0.12), transparent 34%),
-    linear-gradient(180deg, #101820 0%, #070b10 100%);
+  color: var(--text);
+  background: transparent;
 }
-.stark::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(122, 215, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(122, 215, 255, 0.045) 1px, transparent 1px);
-  background-size: 52px 52px;
-  mask-image: radial-gradient(ellipse at 20% 0%, #000 8%, transparent 70%);
-  pointer-events: none;
-}
+.stark::before { content: none; }
 .stark > * { position: relative; }
 .stark .h1,
 .stark h1,
 .stark h2,
 .stark h3,
 .stark .h2 {
-  color: #f7fbff;
+  color: var(--text);
 }
 .stark .muted,
 .stark .meta,
 .stark .campaign-date-label,
 .stark .ads-search-label {
-  color: rgba(232, 238, 244, 0.62);
+  color: var(--text-muted);
 }
 .stark .page-hero {
-  border-bottom-color: rgba(228, 194, 122, 0.22);
+  border-bottom-color: var(--border);
 }
 .stark-hero {
   display: flex;
@@ -23599,69 +23586,116 @@ a.snap-todo-linked-title {
   flex: none;
 }
 .stark-core .deck-core-read b { font-size: 22px; }
-.stark .page-actions .btn,
-.stark .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger) {
+.stark .lh.lh-grid-page,
+.stark .lh.lh-detail-page {
+  background: transparent;
+  border: 0;
+}
+@media (max-width: 800px) {
+  .stark-core { width: 84px; height: 84px; }
+  .stark-core .deck-core-read b { font-size: 18px; }
+}
+
+/* Dark mode keeps the navy Lifecycle surface. */
+:root[data-theme="dark"] .stark {
+  --gold: #e4c27a;
+  --arc: #7ad7ff;
+  color: #e8eef4;
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(122, 215, 255, 0.16), transparent 42%),
+    radial-gradient(ellipse at 90% 8%, rgba(228, 194, 122, 0.12), transparent 34%),
+    linear-gradient(180deg, #101820 0%, #070b10 100%);
+}
+:root[data-theme="dark"] .stark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(122, 215, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(122, 215, 255, 0.045) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse at 20% 0%, #000 8%, transparent 70%);
+  pointer-events: none;
+}
+:root[data-theme="dark"] .stark .h1,
+:root[data-theme="dark"] .stark h1,
+:root[data-theme="dark"] .stark h2,
+:root[data-theme="dark"] .stark h3,
+:root[data-theme="dark"] .stark .h2 {
+  color: #f7fbff;
+}
+:root[data-theme="dark"] .stark .muted,
+:root[data-theme="dark"] .stark .meta,
+:root[data-theme="dark"] .stark .campaign-date-label,
+:root[data-theme="dark"] .stark .ads-search-label {
+  color: rgba(232, 238, 244, 0.62);
+}
+:root[data-theme="dark"] .stark .page-hero {
+  border-bottom-color: rgba(228, 194, 122, 0.22);
+}
+:root[data-theme="dark"] .stark .page-actions .btn,
+:root[data-theme="dark"] .stark .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger) {
   background: rgba(122, 215, 255, 0.14);
   color: #d7f4ff;
   border-color: rgba(122, 215, 255, 0.55);
   box-shadow: none;
 }
-.stark .page-actions .btn:hover,
-.stark .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):hover {
+:root[data-theme="dark"] .stark .page-actions .btn:hover,
+:root[data-theme="dark"] .stark .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):hover {
   background: rgba(122, 215, 255, 0.24);
   color: #f7fbff;
 }
-.stark .btn-secondary,
-.stark .btn-ghost {
+:root[data-theme="dark"] .stark .btn-secondary,
+:root[data-theme="dark"] .stark .btn-ghost {
   background: transparent;
   color: var(--gold);
   border-color: rgba(228, 194, 122, 0.45);
 }
-.stark .btn-ghost { border-color: transparent; }
-.stark .btn-secondary:hover,
-.stark .btn-ghost:hover {
+:root[data-theme="dark"] .stark .btn-ghost { border-color: transparent; }
+:root[data-theme="dark"] .stark .btn-secondary:hover,
+:root[data-theme="dark"] .stark .btn-ghost:hover {
   background: rgba(228, 194, 122, 0.1);
   color: var(--gold);
 }
-.stark .btn-danger {
+:root[data-theme="dark"] .stark .btn-danger {
   background: transparent;
   color: #ffb4b4;
   border-color: rgba(255, 140, 140, 0.45);
 }
-.stark .tab,
-.stark .preview-device-btn,
-.stark .lh-pick-mini-btn {
+:root[data-theme="dark"] .stark .tab,
+:root[data-theme="dark"] .stark .preview-device-btn,
+:root[data-theme="dark"] .stark .lh-pick-mini-btn {
   background: rgba(4, 10, 16, 0.55);
   color: rgba(232, 238, 244, 0.78);
   border-color: rgba(122, 215, 255, 0.28);
 }
-.stark .tab.active,
-.stark .preview-device-btn.active {
+:root[data-theme="dark"] .stark .tab.active,
+:root[data-theme="dark"] .stark .preview-device-btn.active {
   background: rgba(122, 215, 255, 0.16);
   color: #d7f4ff;
   border-color: rgba(122, 215, 255, 0.7);
 }
-.stark .tab.active .tab-count {
+:root[data-theme="dark"] .stark .tab.active .tab-count {
   background: rgba(4, 10, 16, 0.55);
   color: var(--gold);
 }
-.stark input,
-.stark select,
-.stark textarea {
+:root[data-theme="dark"] .stark input,
+:root[data-theme="dark"] .stark select,
+:root[data-theme="dark"] .stark textarea {
   background: rgba(4, 10, 16, 0.72);
   color: #f4f8fb;
   border-color: rgba(122, 215, 255, 0.35);
 }
-.stark input:focus,
-.stark select:focus,
-.stark textarea:focus {
+:root[data-theme="dark"] .stark input:focus,
+:root[data-theme="dark"] .stark select:focus,
+:root[data-theme="dark"] .stark textarea:focus {
   outline: none;
   border-color: var(--arc);
   box-shadow: 0 0 0 3px rgba(122, 215, 255, 0.16);
 }
-.stark .campaign-filter-select,
-.stark .lh-tools-pick select,
-.stark .lh-sort-pick select {
+:root[data-theme="dark"] .stark .campaign-filter-select,
+:root[data-theme="dark"] .stark .lh-tools-pick select,
+:root[data-theme="dark"] .stark .lh-sort-pick select {
   background-color: rgba(4, 10, 16, 0.72);
   color: #f4f8fb;
   border-color: rgba(228, 194, 122, 0.4);
@@ -23670,52 +23704,52 @@ a.snap-todo-linked-title {
   background-position: right 12px center;
   background-size: 10px 6px;
 }
-.stark .lh-filters button {
+:root[data-theme="dark"] .stark .lh-filters button {
   background: rgba(4, 10, 16, 0.55);
   color: rgba(232, 238, 244, 0.78);
   border-color: rgba(122, 215, 255, 0.28);
 }
-.stark .lh-filters button.on {
+:root[data-theme="dark"] .stark .lh-filters button.on {
   background: rgba(122, 215, 255, 0.16);
   color: #d7f4ff;
   border-color: rgba(122, 215, 255, 0.7);
 }
-.stark .campaign-item,
-.stark .folder-header,
-.stark .card,
-.stark .empty,
-.stark .snap-pick-card,
-.stark .lh-card,
-.stark .lh {
+:root[data-theme="dark"] .stark .campaign-item,
+:root[data-theme="dark"] .stark .folder-header,
+:root[data-theme="dark"] .stark .card,
+:root[data-theme="dark"] .stark .empty,
+:root[data-theme="dark"] .stark .snap-pick-card,
+:root[data-theme="dark"] .stark .lh-card,
+:root[data-theme="dark"] .stark .lh {
   background: rgba(6, 12, 18, 0.72);
   border-color: rgba(228, 194, 122, 0.22);
   color: #e8eef4;
   box-shadow: none;
 }
-.stark .campaign-item::before { background: var(--arc); }
-.stark .campaign-item:hover,
-.stark .folder-header:hover,
-.stark .snap-pick-card:hover {
+:root[data-theme="dark"] .stark .campaign-item::before { background: var(--arc); }
+:root[data-theme="dark"] .stark .campaign-item:hover,
+:root[data-theme="dark"] .stark .folder-header:hover,
+:root[data-theme="dark"] .stark .snap-pick-card:hover {
   border-color: rgba(122, 215, 255, 0.55);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
 }
-.stark .lh.lh-grid-page,
-.stark .lh.lh-detail-page {
+:root[data-theme="dark"] .stark .lh.lh-grid-page,
+:root[data-theme="dark"] .stark .lh.lh-detail-page {
   background: transparent;
   border: 0;
 }
-.stark .snap-pick-card-cat,
-.stark .snap-pick-card-desc,
-.stark .lh-pick-back-kicker,
-.stark .lh-pick-back-done,
-.stark .lh-pick-camp-tag {
+:root[data-theme="dark"] .stark .snap-pick-card-cat,
+:root[data-theme="dark"] .stark .snap-pick-card-desc,
+:root[data-theme="dark"] .stark .lh-pick-back-kicker,
+:root[data-theme="dark"] .stark .lh-pick-back-done,
+:root[data-theme="dark"] .stark .lh-pick-camp-tag {
   color: rgba(232, 238, 244, 0.62);
 }
-.stark .lh-pick-back-needed,
-.stark .lh-pick-back-next strong { color: #f7fbff; }
-.stark .activity-sidebar-line,
-.stark .activity-sidebar-text { color: #e8eef4; }
-.stark .hud {
+:root[data-theme="dark"] .stark .lh-pick-back-needed,
+:root[data-theme="dark"] .stark .lh-pick-back-next strong { color: #f7fbff; }
+:root[data-theme="dark"] .stark .activity-sidebar-line,
+:root[data-theme="dark"] .stark .activity-sidebar-text { color: #e8eef4; }
+:root[data-theme="dark"] .stark .hud {
   --void: transparent;
   --hull: rgba(6, 12, 18, 0.72);
   --hull-lift: rgba(4, 10, 16, 0.72);
@@ -23728,10 +23762,6 @@ a.snap-todo-linked-title {
   --ghost-dim: rgba(232, 238, 244, 0.62);
   background: transparent;
   color: #e8eef4;
-}
-@media (max-width: 800px) {
-  .stark-core { width: 84px; height: 84px; }
-  .stark-core .deck-core-read b { font-size: 18px; }
 }
 
 /* Campaigns list. Scoped so the rest of the app, including the old campaign
@@ -24320,61 +24350,61 @@ a.snap-todo-linked-title {
   min-width: 0;
 }
 
-.stark .clist-sub,
-.stark .clist-hint,
-.stark .clist-note,
-.stark .clist-quiet,
-.stark .clist-send-k,
-.stark .clist-field > span,
-.stark .clist-field-label,
-.stark .clist-total span,
-.stark .clist-cols-head {
+:root[data-theme="dark"] .stark .clist-sub,
+:root[data-theme="dark"] .stark .clist-hint,
+:root[data-theme="dark"] .stark .clist-note,
+:root[data-theme="dark"] .stark .clist-quiet,
+:root[data-theme="dark"] .stark .clist-send-k,
+:root[data-theme="dark"] .stark .clist-field > span,
+:root[data-theme="dark"] .stark .clist-field-label,
+:root[data-theme="dark"] .stark .clist-total span,
+:root[data-theme="dark"] .stark .clist-cols-head {
   color: rgba(232, 238, 244, 0.62);
 }
 
-.stark .clist-total b,
-.stark .clist-name,
-.stark .clist-client,
-.stark .clist-send,
-.stark .clist-count-cell {
+:root[data-theme="dark"] .stark .clist-total b,
+:root[data-theme="dark"] .stark .clist-name,
+:root[data-theme="dark"] .stark .clist-client,
+:root[data-theme="dark"] .stark .clist-send,
+:root[data-theme="dark"] .stark .clist-count-cell {
   color: #f7fbff;
 }
 
-.stark .clist-more,
-.stark .clist-panel,
-.stark .clist-table,
-.stark .clist-chip {
+:root[data-theme="dark"] .stark .clist-more,
+:root[data-theme="dark"] .stark .clist-panel,
+:root[data-theme="dark"] .stark .clist-table,
+:root[data-theme="dark"] .stark .clist-chip {
   background: rgba(6, 12, 18, 0.72);
   border-color: rgba(228, 194, 122, 0.22);
   color: #e8eef4;
 }
 
-.stark .clist-more.is-open,
-.stark .clist-more.has-extra {
+:root[data-theme="dark"] .stark .clist-more.is-open,
+:root[data-theme="dark"] .stark .clist-more.has-extra {
   border-color: rgba(122, 215, 255, 0.55);
   color: #d7f4ff;
 }
 
-.stark .clist-more-count {
+:root[data-theme="dark"] .stark .clist-more-count {
   background: rgba(122, 215, 255, 0.16);
   color: #d7f4ff;
 }
 
-.stark .clist-row {
+:root[data-theme="dark"] .stark .clist-row {
   border-top-color: rgba(228, 194, 122, 0.14);
   color: #e8eef4;
 }
 
-.stark .clist-cols-head {
+:root[data-theme="dark"] .stark .clist-cols-head {
   border-bottom-color: rgba(228, 194, 122, 0.22);
 }
 
-.stark .clist-row:hover {
+:root[data-theme="dark"] .stark .clist-row:hover {
   background: rgba(122, 215, 255, 0.07);
   color: #f7fbff;
 }
 
-.stark .clist .campaign-filter-select {
+:root[data-theme="dark"] .stark .clist .campaign-filter-select {
   width: 100%;
   min-width: 0;
   max-width: none;
@@ -24672,27 +24702,27 @@ a.snap-todo-linked-title {
   color: var(--text-muted);
 }
 
-.stark .clist-view {
+:root[data-theme="dark"] .stark .clist-view {
   background: rgba(6, 12, 18, 0.72);
   border-color: rgba(228, 194, 122, 0.22);
   color: #e8eef4;
 }
 
-.stark .clist-col {
+:root[data-theme="dark"] .stark .clist-col {
   background: rgba(6, 12, 18, 0.45);
   border-color: rgba(228, 194, 122, 0.22);
 }
 
-.stark .cboard-card {
+:root[data-theme="dark"] .stark .cboard-card {
   background: rgba(10, 16, 24, 0.92);
   border-color: rgba(228, 194, 122, 0.22);
   color: #e8eef4;
   box-shadow: none;
 }
 
-.stark .cboard-name,
-.stark .cboard-client,
-.stark .clist-col-head h2 {
+:root[data-theme="dark"] .stark .cboard-name,
+:root[data-theme="dark"] .stark .cboard-client,
+:root[data-theme="dark"] .stark .clist-col-head h2 {
   color: #f7fbff;
 }
 
