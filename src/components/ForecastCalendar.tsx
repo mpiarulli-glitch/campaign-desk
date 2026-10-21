@@ -7,11 +7,14 @@ import {
   CAL_SNAP_MINUTES,
   CAL_START_HOUR,
   addHoursToTime,
+  afterHoursLabel,
+  classifyForecastStart,
   formatTimeLabel,
   hoursFromResize,
+  isOnGrid,
   layoutTimedBlocks,
-  minutesFromMidnight,
   padTime,
+  sumDayHours,
   timeAtOffset,
 } from "@/lib/forecast-time";
 import type { ForecastDrag } from "@/lib/forecast-queue";
@@ -182,11 +185,13 @@ export function ForecastCalendar({
         {days.map((date) => {
           const all = tasksByDay.get(date) || [];
           const synced = syncedFor.get(date) || [];
-          const dayHours =
-            all.reduce((s, t) => s + t.hours, 0) + synced.reduce((s, item) => s + item.hours, 0);
+          const dayHours = sumDayHours([
+            ...all.map((t) => t.hours),
+            ...synced.map((item) => item.hours),
+          ]);
           const unplaced =
             all.filter((t) => !t.start_time).length +
-            synced.filter((item) => !item.startTime || !isOnGrid(item.startTime)).length;
+            synced.filter((item) => classifyForecastStart(item.startTime) === "queued").length;
           return (
             <div
               key={`h-${date}`}
@@ -197,21 +202,25 @@ export function ForecastCalendar({
               <div className="fc-cal-dow">{dayName(date).slice(0, 3)}</div>
               <div className="fc-cal-dom">{dayShortDate(date).split(" ")[1]}</div>
               <span className="ops-day-hours">
-                {dayHours ? `${Math.round(dayHours * 10) / 10}h` : ""}
+                {dayHours ? `${dayHours}h` : ""}
                 {unplaced ? <em> · {unplaced} queued</em> : null}
               </span>
               {synced
-                .filter((item) => !item.startTime || !isOnGrid(item.startTime))
-                .map((item) => (
-                  <div key={item.id} className="fc-cal-sync-chip" title={item.title}>
-                    <strong>{item.title}</strong>
-                    <span>
-                      {item.clientName}
-                      {item.unmatched ? ` · ${UNMATCHED_CLIENT_LABEL}` : ""}
-                    </span>
-                    <em>{SEO_OPS_SYNC_MARKER}</em>
-                  </div>
-                ))}
+                .filter((item) => classifyForecastStart(item.startTime) !== "timed")
+                .map((item) => {
+                  const afterHours = classifyForecastStart(item.startTime) === "after-hours";
+                  return (
+                    <div key={item.id} className="fc-cal-sync-chip" title={item.title}>
+                      <strong>{item.title}</strong>
+                      {afterHours ? <span>{afterHoursLabel(item.startTime || "")}</span> : null}
+                      <span>
+                        {item.clientName}
+                        {item.unmatched ? ` · ${UNMATCHED_CLIENT_LABEL}` : ""}
+                      </span>
+                      <em>{SEO_OPS_SYNC_MARKER}</em>
+                    </div>
+                  );
+                })}
             </div>
           );
         })}
@@ -478,10 +487,4 @@ export function ForecastCalendar({
   );
 }
 
-// Whether a task is inside the hours the calendar renders. A row timed at 6am
-// exists but would sit above the grid, so the queue keeps showing it.
-export function isOnGrid(startTime: string): boolean {
-  const mins = minutesFromMidnight(startTime);
-  if (mins == null) return false;
-  return mins >= CAL_START_HOUR * 60 && mins < CAL_END_HOUR * 60;
-}
+export { isOnGrid };
