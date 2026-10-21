@@ -5,11 +5,14 @@ import {
   CAL_PX_PER_HOUR,
   CAL_START_HOUR,
   addHoursToTime,
+  afterHoursLabel,
+  classifyForecastStart,
   formatTimeLabel,
   hoursFromResize,
   layoutTimedBlocks,
   minutesFromMidnight,
   parseTimeInput,
+  sumDayHours,
   timeAtOffset,
   staggerStartTimes,
   scheduleEntryTimes,
@@ -24,6 +27,32 @@ test("parseTimeInput accepts 24-hour and am/pm", () => {
   assert.equal(parseTimeInput("5:45 PM"), "17:45");
   assert.equal(parseTimeInput(""), "");
   assert.equal(parseTimeInput("nope"), "");
+});
+
+test("a null or empty startTime is queued", () => {
+  assert.equal(classifyForecastStart(null), "queued");
+  assert.equal(classifyForecastStart(""), "queued");
+  assert.equal(classifyForecastStart("   "), "queued");
+});
+
+test("an off-grid startTime is after hours and not queued", () => {
+  assert.equal(classifyForecastStart("23:07"), "after-hours");
+  assert.notEqual(classifyForecastStart("23:07"), "queued");
+  assert.equal(afterHoursLabel("23:07"), "After hours · 11:07 PM");
+  assert.equal(classifyForecastStart("06:15"), "after-hours");
+});
+
+test("an on-grid startTime is timed", () => {
+  assert.equal(classifyForecastStart("09:30"), "timed");
+  assert.equal(classifyForecastStart("07:00"), "timed");
+  assert.equal(classifyForecastStart("18:45"), "timed");
+});
+
+test("a day total of 2.95 rounds to 3 instead of 2.9", () => {
+  const parts = [1, 0.75, 0.38, 0.82];
+  const raw = parts.reduce((sum, hours) => sum + hours, 0);
+  assert.equal(Math.round(raw * 10) / 10, 2.9);
+  assert.equal(sumDayHours(parts), 3);
 });
 
 test("addHoursToTime and labels", () => {
