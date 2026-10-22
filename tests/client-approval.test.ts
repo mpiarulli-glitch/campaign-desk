@@ -242,26 +242,32 @@ test("campaign detail can open the Basecamp card after client approval is sent",
   assert.match(page, /Emailed \$\{email\.to\}/);
 });
 
-test("campaigns list uses one control for stage, type, and updated", () => {
+test("campaigns list uses one status dropdown, plus type and updated", () => {
   const fs = require("node:fs") as typeof import("node:fs");
   const path = require("node:path") as typeof import("node:path");
   const page = fs.readFileSync(
     path.join("src/app/admin/campaigns/page.tsx"),
     "utf8"
   );
-  assert.match(page, /STAGE_OPTIONS/);
-  assert.match(page, /Filter by stage/);
+  assert.match(page, /LIST_STATUS_OPTIONS/);
+  assert.match(page, /Filter by status/);
   assert.match(page, /Filter by type/);
   assert.match(page, /Filter by when it was updated/);
   assert.match(page, /campaign-filter-select/);
-  assert.match(page, /listStageFromStatusParam/);
+  assert.match(page, /matchesCampaignStatusFilter/);
+  assert.match(page, /resolveListStatusFilter/);
+  assert.match(page, /writeCampaignListFilters/);
   assert.match(page, /isDoneListStatus/);
   assert.match(page, /href="\/admin\/campaigns\/done"/);
   assert.match(page, /groupCampaignsByBoard/);
   assert.match(page, /aria-label="Campaign view"/);
   assert.match(page, /cd-campaigns-view/);
-  assert.equal((page.match(/Filter by stage/g) || []).length, 1);
+  assert.equal((page.match(/Filter by status/g) || []).length, 1);
   assert.equal((page.match(/Filter by type/g) || []).length, 1);
+  assert.equal((page.match(/Filter by client/g) || []).length, 1);
+  assert.equal((page.match(/Filter by owner/g) || []).length, 1);
+  assert.doesNotMatch(page, /STAGE_OPTIONS/);
+  assert.doesNotMatch(page, /Filter by stage/);
   assert.doesNotMatch(page, /QUICK_FILTERS/);
   assert.doesNotMatch(page, /aria-label="Status"/);
   assert.doesNotMatch(page, /KIND_FILTERS/);
@@ -269,6 +275,7 @@ test("campaigns list uses one control for stage, type, and updated", () => {
   assert.doesNotMatch(page, /Save view/);
   assert.doesNotMatch(page, /Exact status/);
   assert.doesNotMatch(page, /Open work first/);
+  assert.doesNotMatch(page, /clist-pills/);
   assert.match(page, /Create your first blog post/);
   assert.match(page, /Upload your first email/);
   assert.match(page, /New blog post/);

@@ -111,8 +111,8 @@ export function matchesListBucket(
   return id === bucket;
 }
 
-// Old list links pass either a stage id (?status=open) or an exact stored
-// status (?status=draft). In-progress ones land on the Stage dropdown.
+// Older list links pass either a stage id (?status=open) or an exact stored
+// status (?status=draft). This maps both onto the plain-language buckets.
 // Sent and Live return null so the page can send them to Done.
 // "open" is the same set as All now that finished work is not on this page.
 export function listStageFromStatusParam(status: string): ListBucket | null {
@@ -124,6 +124,50 @@ export function listStageFromStatusParam(status: string): ListBucket | null {
   const bucket = statusBucketId(status);
   if (!bucket || bucket === "sent") return null;
   return bucket;
+}
+
+// Statuses the working campaigns list can filter by, in workflow order.
+// Sent and Live stay on the Done page, so they are not choices here.
+export const LIST_STATUS_OPTIONS = OPERATOR_STATUS_OPTIONS.filter(
+  (option) => option.value !== "sent" && option.value !== "live"
+);
+
+export type ListStatusFilter =
+  | "all"
+  | (typeof LIST_STATUS_OPTIONS)[number]["value"];
+
+export function isListStatusFilter(
+  value: string
+): value is Exclude<ListStatusFilter, "all"> {
+  return LIST_STATUS_OPTIONS.some((option) => option.value === value);
+}
+
+// ?status= on the campaigns list. An exact workflow status selects that
+// status. "all" and the older "open" alias select All. Sent and Live return
+// "done" so the page can send them to Done. Stage ids from the short-lived
+// stage menu are not statuses; the caller ignores them.
+export function listStatusFromStatusParam(
+  status: string
+): ListStatusFilter | "done" | "ignore" {
+  if (isDoneListStatus(status)) return "done";
+  if (status === "all" || status === "open") return "all";
+  if (isListStatusFilter(status)) return status;
+  return "ignore";
+}
+
+// A recognized ?status= wins. A missing param, or a leftover stage id, falls
+// through to the saved dropdown. Sent and Live stay "done".
+export function resolveListStatusFilter(
+  param: string | null,
+  saved?: ListStatusFilter
+): ListStatusFilter | "done" {
+  if (param) {
+    const parsed = listStatusFromStatusParam(param);
+    if (parsed === "done") return "done";
+    if (parsed !== "ignore") return parsed;
+  }
+  if (saved && saved !== "all") return saved;
+  return "all";
 }
 
 // When a finished campaign went out. A past displayed send wins, then the
