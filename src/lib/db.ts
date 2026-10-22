@@ -96,6 +96,7 @@ export type CampaignStatus =
   | "draft"
   | "internal_review"
   | "needs_revisions_internal"
+  | "revisions_made"
   | "in_review"
   | "needs_changes"
   | "approved"
@@ -201,6 +202,10 @@ export interface Campaign {
   // client-approval Deliverables card in basecamp_card_*.
   internal_review_todo_id: string | null;
   internal_review_todo_url: string | null;
+  // Team slug the internal-review to-do was assigned to. Empty when unset.
+  // Status itself is free text (no CHECK), so "revisions_made" needs no
+  // constraint migration — only this assignee column is added for existing DBs.
+  internal_review_assignee: string;
   // When the AM to-do was last sent. Age for internal follow-up nudges.
   internal_review_sent_at: string | null;
   basecamp_approval_revision: string | null;
@@ -2844,6 +2849,34 @@ function migrate(database: Database.Database) {
   }
   if (!campaignCols.includes("internal_review_sent_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN internal_review_sent_at TEXT`);
+  }
+  if (!campaignCols.includes("internal_review_assignee")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN internal_review_assignee TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  // Older sends stored the reviewer only on the desk to-do. Fill blanks from
+  // the newest internal-review to-do whose notes point at this campaign.
+  const reviewTodoCols = tableColumns(database, "todos");
+  if (reviewTodoCols.includes("assignee") && reviewTodoCols.includes("notes")) {
+    database.exec(
+      `UPDATE campaigns
+          SET internal_review_assignee = (
+            SELECT assignee FROM todos
+             WHERE source = 'internal_review'
+               AND assignee != ''
+               AND notes LIKE '%/admin/campaigns/' || campaigns.id || '%'
+             ORDER BY created_at DESC
+             LIMIT 1
+          )
+        WHERE IFNULL(internal_review_assignee, '') = ''
+          AND EXISTS (
+            SELECT 1 FROM todos
+             WHERE source = 'internal_review'
+               AND assignee != ''
+               AND notes LIKE '%/admin/campaigns/' || campaigns.id || '%'
+          )`
+    );
   }
   if (!campaignCols.includes("approval_nudge_last_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN approval_nudge_last_at TEXT`);

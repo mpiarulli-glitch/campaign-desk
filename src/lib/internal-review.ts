@@ -478,15 +478,17 @@ export async function sendCampaignForInternalReview(input: {
     return { ok: false, error: created.error, status: 502 };
   }
 
-  recordInternalReviewTodo(input.campaignId, {
-    todoId: created.todoId,
-    todoUrl: created.todoUrl,
-  });
-
   const assigneeSlug =
     slugForName(reviewer.name) ||
     slugForName(reviewer.name.split(/\s+/)[0] || "") ||
     slugForName(client.account_manager);
+
+  recordInternalReviewTodo(input.campaignId, {
+    todoId: created.todoId,
+    todoUrl: created.todoUrl,
+    assignee: assigneeSlug,
+  });
+
   if (assigneeSlug) {
     createTodo({
       title: content.title,

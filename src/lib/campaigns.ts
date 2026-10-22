@@ -1148,12 +1148,17 @@ export function clearCampaignBasecampDueOn(id: string): void {
 
 export function recordInternalReviewTodo(
   id: string,
-  input: { todoId?: string | null; todoUrl?: string | null }
+  input: {
+    todoId?: string | null;
+    todoUrl?: string | null;
+    assignee?: string | null;
+  }
 ): Campaign | null {
   const existing = getCampaignById(id);
   if (!existing) return null;
   const todoId = (input.todoId || "").trim() || null;
   const todoUrl = (input.todoUrl || "").trim() || null;
+  const assignee = (input.assignee || "").trim();
   const ts = nowIso();
   getDb()
     .prepare(
@@ -1161,10 +1166,11 @@ export function recordInternalReviewTodo(
        SET internal_review_todo_id = ?,
            internal_review_todo_url = ?,
            internal_review_sent_at = ?,
+           internal_review_assignee = CASE WHEN ? != '' THEN ? ELSE internal_review_assignee END,
            updated_at = ?
        WHERE id = ?`
     )
-    .run(todoId, todoUrl, ts, ts, id);
+    .run(todoId, todoUrl, ts, assignee, assignee, ts, id);
   return getCampaignById(id);
 }
 

@@ -378,6 +378,7 @@ test("sending a campaign for internal review", async (t) => {
     assert.equal(row.approval_thank_you_due_at, null);
     assert.equal(row.internal_review_todo_id, "99");
     assert.equal(row.internal_review_todo_url, "https://3.basecamp.com/todo/99");
+    assert.equal(row.internal_review_assignee, "cassidy");
     assert.equal(row.basecamp_card_id, "card-1");
     assert.equal(row.basecamp_card_url, "https://3.basecamp.com/card/1");
 

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import {
   canOrSync,
+  getSession,
   isCampaignsReadAuthenticated,
   sessionCampaignKind,
 } from "@/lib/auth";
+import { isCampaignAccountManagerSlug } from "@/lib/campaign-review-queue";
 import {
   createCampaign,
   listCampaigns,
@@ -53,6 +55,11 @@ export async function GET(request: Request) {
   const emailSends = listEmailScheduledInstants();
   const managers = listClientAccountManagers();
   const now = new Date().toISOString();
+  const session = await getSession();
+  const viewerSlug =
+    session && !(session.role === "admin" && session.person === null)
+      ? session.person
+      : null;
   const campaigns = source.map((c) => {
     const send = pickDisplayedSendAt(
       [...(emailSends.get(c.id) || []), c.scheduled_send_at],
@@ -70,10 +77,18 @@ export async function GET(request: Request) {
       next_send_upcoming: send.upcoming,
       owner: owner.owner,
       owner_key: owner.owner_key,
+      review_assignee: (c.internal_review_assignee || "").trim(),
     };
   });
 
-  return NextResponse.json({ campaigns, scope: kindScope || "all" });
+  return NextResponse.json({
+    campaigns,
+    scope: kindScope || "all",
+    viewer: {
+      slug: viewerSlug,
+      accountManager: isCampaignAccountManagerSlug(viewerSlug),
+    },
+  });
 }
 
 export async function POST(request: Request) {

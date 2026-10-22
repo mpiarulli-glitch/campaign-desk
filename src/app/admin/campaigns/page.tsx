@@ -12,9 +12,16 @@ import {
   isListStatusFilter,
   LIST_STATUS_OPTIONS,
   matchesCampaignStatusFilter,
+  operatorStatusLabel,
   resolveListStatusFilter,
   type ListStatusFilter,
 } from "@/lib/campaign-status";
+import {
+  ACCOUNT_MANAGER_REVIEW_SECTIONS,
+  accountManagerQueueNote,
+  campaignInAccountManagerQueue,
+  isCampaignAccountManagerSlug,
+} from "@/lib/campaign-review-queue";
 import {
   emptyCampaignListFilters,
   isCampaignListUpdated,
@@ -49,6 +56,7 @@ type CampaignRow = {
   next_send_upcoming?: boolean;
   owner?: string;
   owner_key?: string;
+  review_assignee?: string;
 };
 
 const SEND_ZONE = "America/Los_Angeles";
@@ -77,7 +85,11 @@ const TYPE_LABEL: Record<AssetKind, string> = {
 };
 
 const VIEW_STORAGE_KEY = "cd-campaigns-view";
-type CampaignView = "list" | "board";
+type CampaignView = "list" | "board" | "review";
+
+function isCampaignView(value: string | null): value is CampaignView {
+  return value === "list" || value === "board" || value === "review";
+}
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
   { value: "any", label: "Any time" },
@@ -324,12 +336,16 @@ function CampaignRowView({
   busyId,
   onArchive,
   onRename,
+  href,
+  queueNote,
 }: {
   c: CampaignRow;
   filter: "active" | "archived";
   busyId: string | null;
   onArchive: (id: string, archived: boolean) => void;
   onRename: (id: string, title: string) => Promise<void>;
+  href?: string;
+  queueNote?: string | null;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(c.title);
@@ -386,7 +402,7 @@ function CampaignRowView({
   const upcoming = c.next_send_at ? Boolean(c.next_send_upcoming) : false;
 
   return (
-    <Link href={`/admin/campaigns/${c.id}`} className="clist-row">
+    <Link href={href || `/admin/campaigns/${c.id}`} className="clist-row">
       <span className="clist-client">
         {c.client_name.trim() || "No client"}
       </span>
@@ -442,6 +458,7 @@ function CampaignRowView({
       </span>
       <span className="clist-status">
         <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
+        {queueNote ? <span className="clist-status-note">{queueNote}</span> : null}
       </span>
       <span className="clist-owner">{c.owner || "Unassigned"}</span>
       <span className="clist-send">
@@ -514,6 +531,8 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<ListStatusFilter>("all");
   const [view, setView] = useState<CampaignView>("list");
+  const [viewerSlug, setViewerSlug] = useState<string | null>(null);
+  const [viewerIsAccountManager, setViewerIsAccountManager] = useState(false);
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -644,8 +663,8 @@ export default function AdminPage() {
       /* Private browsing can block storage. The URL still records the view. */
     }
     replaceQuery((params) => {
-      if (next === "board") params.set("view", "board");
-      else params.delete("view");
+      if (next === "list") params.delete("view");
+      else params.set("view", next);
     });
   }
 
@@ -712,6 +731,11 @@ export default function AdminPage() {
     setCampaigns(rows);
     const scope = isCampaignKindScope(data.scope) ? data.scope : "all";
     setKindScope(scope);
+    const slug = typeof data.viewer?.slug === "string" ? data.viewer.slug : null;
+    setViewerSlug(slug);
+    setViewerIsAccountManager(
+      Boolean(data.viewer?.accountManager) || isCampaignAccountManagerSlug(slug)
+    );
     setLoading(false);
   }, [router]);
 
@@ -787,7 +811,7 @@ export default function AdminPage() {
       else query.set("kind", nextType);
     });
     const requested = params.get("view");
-    if (requested === "board" || requested === "list") {
+    if (isCampaignView(requested)) {
       setView(requested);
       try {
         localStorage.setItem(VIEW_STORAGE_KEY, requested);
@@ -798,12 +822,36 @@ export default function AdminPage() {
     }
     try {
       const stored = localStorage.getItem(VIEW_STORAGE_KEY);
-      if (stored === "board" || stored === "list") setView(stored);
+      if (isCampaignView(stored)) setView(stored);
     } catch {
       /* ignore */
     }
   }, [router]);
 
+
+  const showReviewTab =
+    Boolean(viewerSlug) &&
+    (viewerIsAccountManager ||
+      campaigns.some((c) => campaignInAccountManagerQueue(c, viewerSlug!)));
+  const inMyQueue = (c: CampaignRow) =>
+    Boolean(viewerSlug) && campaignInAccountManagerQueue(c, viewerSlug!);
+  const reviewPool = searched.filter(inMyQueue);
+  const reviewVisible = visible.filter(inMyQueue);
+
+  useEffect(() => {
+    if (loading || view !== "review" || showReviewTab) return;
+    setView("list");
+    try {
+      if (localStorage.getItem(VIEW_STORAGE_KEY) === "review") {
+        localStorage.setItem(VIEW_STORAGE_KEY, "list");
+      }
+    } catch {
+      /* ignore */
+    }
+    replaceQuery((params) => {
+      if (params.get("view") === "review") params.delete("view");
+    });
+  }, [loading, view, showReviewTab]);
 
   const board = groupCampaignsByBoard(visible);
 
@@ -828,6 +876,16 @@ export default function AdminPage() {
               >
                 Board
               </button>
+              {showReviewTab ? (
+                <button
+                  type="button"
+                  aria-pressed={view === "review"}
+                  aria-label="Campaigns needing your review"
+                  onClick={() => rememberView("review")}
+                >
+                  Needs your review
+                </button>
+              ) : null}
             </div>
             <Link className="clist-done" href="/admin/campaigns/done">
               Done
@@ -968,6 +1026,75 @@ export default function AdminPage() {
                         ? "Create your first blog post"
                         : "Upload your first email"}
                     </Link>
+                  </div>
+                )
+              ) : view === "review" ? (
+                reviewPool.length === 0 ? (
+                  <div className="empty">
+                    <p>Nothing needs your review right now.</p>
+                  </div>
+                ) : reviewVisible.length === 0 ? (
+                  <div className="empty">
+                    <p>
+                      {statusFilter === "all"
+                        ? "No campaigns match these filters."
+                        : `Nothing in this view matches ${operatorStatusLabel(statusFilter)}. Set Status to All to see every campaign that needs you.`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="clist-queue" aria-label="Campaigns needing your review">
+                    {ACCOUNT_MANAGER_REVIEW_SECTIONS.filter(
+                      (section) =>
+                        statusFilter === "all" ||
+                        matchesCampaignStatusFilter(
+                          { status: section.status },
+                          statusFilter
+                        )
+                    ).map((section) => {
+                      const items = reviewVisible.filter(
+                        (c) => c.status === section.status
+                      );
+                      return (
+                        <section
+                          key={section.id}
+                          className="clist-queue-section"
+                          aria-label={section.title}
+                        >
+                          <div className="clist-queue-head">
+                            <h2>{section.title}</h2>
+                            <span className="clist-queue-count">{items.length}</span>
+                          </div>
+                          <p className="clist-queue-note">{section.note}</p>
+                          {items.length === 0 ? (
+                            <p className="clist-queue-empty">None</p>
+                          ) : (
+                            <div className="clist-table">
+                              <div className="clist-cols clist-cols-head" aria-hidden="true">
+                                <span>Client</span>
+                                <span>Campaign</span>
+                                <span>Status</span>
+                                <span>Owner</span>
+                                <span>Next send</span>
+                                <span>Items</span>
+                                <span />
+                              </div>
+                              {items.map((c) => (
+                                <CampaignRowView
+                                  key={c.id}
+                                  c={c}
+                                  filter={filter}
+                                  busyId={busyId}
+                                  onArchive={setArchived}
+                                  onRename={renameCampaign}
+                                  href={`/review/${c.magic_token}`}
+                                  queueNote={accountManagerQueueNote(c.status)}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
                   </div>
                 )
               ) : visible.length === 0 ? (

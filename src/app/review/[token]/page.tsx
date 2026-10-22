@@ -622,6 +622,21 @@ export default function ReviewPage() {
               Click an email to preview it.
             </p>
           ) : null}
+          {campaign.status === "internal_review" ? (
+            <p className="rv-hero-desc">
+              Leave a comment for anything that should change. Sending feedback hands this back as Needs revisions (internal).
+            </p>
+          ) : null}
+          {campaign.status === "revisions_made" ? (
+            <p className="rv-hero-desc">
+              Revisions made. Approve it, or send another round of feedback.
+            </p>
+          ) : null}
+          {campaign.status === "needs_revisions_internal" ? (
+            <p className="rv-hero-desc">
+              Revisions left. Waiting on Michael.
+            </p>
+          ) : null}
         </div>
 
         <SendPlanDisclosure

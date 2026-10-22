@@ -231,6 +231,7 @@ test("operator status options use Sent for approval and workflow order", () => {
       "draft",
       "internal_review",
       "needs_revisions_internal",
+      "revisions_made",
       "approved_internally",
       "in_review",
       "needs_changes",
@@ -246,6 +247,7 @@ test("operator status options use Sent for approval and workflow order", () => {
       "Draft",
       "Internal Review",
       "Needs revisions (internal)",
+      "Revisions made",
       "Approved Internally",
       "Sent for approval",
       "Needs Changes",
@@ -294,7 +296,11 @@ test("review-link views and reviewer comments keep internal work off Sent for ap
   assert.equal(statusAfterReviewerComment("internal_review", "external"), "needs_changes");
   assert.equal(statusAfterReviewerComment("approved", "internal"), null);
 
-  assert.equal(statusAfterMarkRevisionDone("needs_revisions_internal"), "internal_review");
+  assert.equal(statusAfterMarkRevisionDone("needs_revisions_internal"), "revisions_made");
+  assert.equal(statusAfterMarkRevisionDone("internal_review"), "revisions_made");
+  assert.equal(statusAfterMarkRevisionDone("revisions_made"), "revisions_made");
+  assert.equal(statusAfterReviewerComment("revisions_made", "internal"), "needs_revisions_internal");
+  assert.equal(statusAfterReviewerComment("revisions_made", "external"), "needs_changes");
   assert.equal(statusAfterMarkRevisionDone("needs_changes"), "in_review");
   assert.equal(statusAfterMarkRevisionDone("draft"), "in_review");
 });
@@ -522,13 +528,43 @@ test("operator status picker writes approved internally vs client approved", asy
     assert.equal(campaigns.getCampaignById(created.id)!.status, "in_review");
   });
 
-  await t.test("marking internal revisions done returns to Internal Review, not Sent for approval", () => {
+  await t.test("marking internal revisions done stores Revisions made, not Sent for approval", () => {
     const created = campaign();
     campaigns.applyOperatorCampaignStatus(created.id, "needs_revisions_internal");
     const row = campaigns.markRevisionDone(created.id);
     assert.ok(row);
-    assert.equal(row.status, "internal_review");
+    assert.equal(row.status, "revisions_made");
+    assert.equal(operatorStatusLabel(row.status), "Revisions made");
     assert.notEqual(row.status, "in_review");
+    assert.notEqual(row.status, "internal_review");
+  });
+
+  await t.test("another round of internal feedback after Revisions made returns to Needs revisions", () => {
+    const created = campaign();
+    campaigns.applyOperatorCampaignStatus(created.id, "revisions_made");
+    campaigns.addComment({
+      campaignId: created.id,
+      body: "One more change on the offer.",
+      type: "general",
+      channel: "internal",
+    });
+    const noted = campaigns.getCampaignById(created.id)!;
+    assert.equal(noted.status, "needs_revisions_internal");
+    const again = campaigns.markRevisionDone(created.id);
+    assert.ok(again);
+    assert.equal(again.status, "revisions_made");
+  });
+
+  await t.test("the client link hides Revisions made the same way as other internal work", async () => {
+    const created = campaign();
+    campaigns.applyOperatorCampaignStatus(created.id, "revisions_made");
+    const external = await getToken(created.external_token);
+    const externalPayload = await external.json();
+    assert.equal(externalPayload.campaign.status, "in_review");
+    const internal = await getToken(created.magic_token);
+    const internalPayload = await internal.json();
+    assert.equal(internalPayload.campaign.status, "revisions_made");
+    assert.equal(campaigns.getCampaignById(created.id)!.status, "revisions_made");
   });
 
   await t.test("marking client revisions done returns to Sent for approval", () => {
