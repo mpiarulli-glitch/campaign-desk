@@ -12,7 +12,9 @@ import { addWeeks, mondayOf } from "./week";
 import { backfillKnownContactEmails } from "./contact-email-backfill";
 import { backfillKnownContactPhones } from "./contact-phone-backfill";
 import {
+  accountManagerSlugFromOwner,
   accountManagerSlugFromReviewerName,
+  isCampaignAccountManagerSlug,
   withRevisionAuthor,
 } from "./campaign-review-queue";
 
@@ -2905,6 +2907,144 @@ function backfillInternalApprovers(database: Database.Database) {
   apply();
 }
 
+const INTERNAL_REVIEW_VISIBILITY_BACKFILL_V2_KEY = "internal_review_visibility_backfill_v2";
+
+const INTERNAL_LOOP_STATUSES = new Set([
+  "internal_review",
+  "revisions_made",
+  "needs_revisions_internal",
+]);
+
+/**
+ * The first assignee pass only copied a desk to-do whose notes contained the
+ * admin campaign URL, and it stored the assignee text unchanged. The author
+ * pass skipped "Reviewer" and Michael. Campaigns Michael moved to Revisions
+ * made therefore have neither signal, even when the client's owner is Cassidy.
+ *
+ * One pass: normalize a stored name to the account-manager slug, fill a blank
+ * assignee from an internal-review to-do (admin link or review link), and,
+ * when both signals are still blank, copy the client owner onto internal-loop
+ * campaigns. Stamped so the next boot does not scan again.
+ */
+function backfillInternalReviewVisibilityV2(database: Database.Database) {
+  const campaignCols = tableColumns(database, "campaigns");
+  if (!campaignCols.includes("internal_review_assignee")) return;
+  if (!campaignCols.includes("internal_revision_authors")) return;
+  if (!tableColumns(database, "app_settings").includes("key")) return;
+  const done = database
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(INTERNAL_REVIEW_VISIBILITY_BACKFILL_V2_KEY) as { value: string } | undefined;
+  if (done?.value) return;
+
+  const hasMagic = campaignCols.includes("magic_token");
+  const hasExternal = campaignCols.includes("external_token");
+  const hasClient = campaignCols.includes("client_id");
+  const campaigns = database
+    .prepare(
+      `SELECT id,
+              IFNULL(status, '') AS status,
+              IFNULL(internal_review_assignee, '') AS assignee,
+              IFNULL(internal_revision_authors, '') AS authors
+              ${hasMagic ? ", IFNULL(magic_token, '') AS magic_token" : ", '' AS magic_token"}
+              ${hasExternal ? ", IFNULL(external_token, '') AS external_token" : ", '' AS external_token"}
+              ${hasClient ? ", IFNULL(client_id, '') AS client_id" : ", '' AS client_id"}
+         FROM campaigns`
+    )
+    .all() as Array<{
+    id: string;
+    status: string;
+    assignee: string;
+    authors: string;
+    magic_token: string;
+    external_token: string;
+    client_id: string;
+  }>;
+
+  const ownerByClient = new Map<string, string>();
+  const clientCols = tableColumns(database, "rev_clients");
+  if (clientCols.includes("id") && clientCols.includes("account_manager")) {
+    const clients = database
+      .prepare(`SELECT id, IFNULL(account_manager, '') AS account_manager FROM rev_clients`)
+      .all() as Array<{ id: string; account_manager: string }>;
+    for (const client of clients) ownerByClient.set(client.id, client.account_manager);
+  }
+
+  const idByToken = new Map<string, string>();
+  for (const campaign of campaigns) {
+    if (campaign.magic_token) idByToken.set(campaign.magic_token, campaign.id);
+    if (campaign.external_token) idByToken.set(campaign.external_token, campaign.id);
+  }
+
+  const assigneeFromTodo = new Map<string, string>();
+  const todoCols = tableColumns(database, "todos");
+  if (
+    todoCols.includes("assignee") &&
+    todoCols.includes("notes") &&
+    todoCols.includes("source") &&
+    todoCols.includes("created_at")
+  ) {
+    const todos = database
+      .prepare(
+        `SELECT assignee, notes FROM todos
+          WHERE source = 'internal_review' AND IFNULL(assignee, '') != ''
+          ORDER BY created_at DESC`
+      )
+      .all() as Array<{ assignee: string; notes: string }>;
+    const remember = (id: string, assignee: string) => {
+      if (!id || assigneeFromTodo.has(id)) return;
+      const slug =
+        accountManagerSlugFromReviewerName(assignee) ||
+        accountManagerSlugFromOwner(assignee) ||
+        assignee.trim();
+      if (slug) assigneeFromTodo.set(id, slug);
+    };
+    for (const todo of todos) {
+      const notes = todo.notes || "";
+      for (const match of notes.matchAll(/\/admin\/campaigns\/([A-Za-z0-9_-]+)/g)) {
+        remember(match[1], todo.assignee);
+      }
+      for (const match of notes.matchAll(/\/review\/([A-Za-z0-9_-]+)/g)) {
+        const id = idByToken.get(match[1]);
+        if (id) remember(id, todo.assignee);
+      }
+    }
+  }
+
+  const write = database.prepare(
+    `UPDATE campaigns SET internal_review_assignee = ? WHERE id = ?`
+  );
+  const stamp = nowIso();
+  const apply = database.transaction(() => {
+    for (const campaign of campaigns) {
+      let next = campaign.assignee.trim();
+      const normalized =
+        accountManagerSlugFromReviewerName(next) ||
+        (isCampaignAccountManagerSlug(next) ? next : accountManagerSlugFromOwner(next));
+      if (normalized && isCampaignAccountManagerSlug(normalized)) next = normalized;
+      if (!next) {
+        const fromTodo = assigneeFromTodo.get(campaign.id) || "";
+        if (fromTodo) next = fromTodo;
+      }
+      if (
+        !next &&
+        !campaign.authors.trim() &&
+        INTERNAL_LOOP_STATUSES.has(campaign.status) &&
+        campaign.client_id
+      ) {
+        next = accountManagerSlugFromOwner(ownerByClient.get(campaign.client_id) || "") || "";
+      }
+      if (next && next !== campaign.assignee) write.run(next, campaign.id);
+    }
+    database
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(INTERNAL_REVIEW_VISIBILITY_BACKFILL_V2_KEY, stamp, stamp);
+  });
+  apply();
+}
+
 function migrate(database: Database.Database) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS klaviyo_revenue_cache (
@@ -3100,6 +3240,8 @@ function migrate(database: Database.Database) {
   backfillInternalRevisionAuthors(database);
   // Who internally approved, when that name is still on the row. One stamped pass.
   backfillInternalApprovers(database);
+  // Revisions made with no assignee and no revision author. One stamped pass.
+  backfillInternalReviewVisibilityV2(database);
   if (!campaignCols.includes("approval_nudge_last_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN approval_nudge_last_at TEXT`);
   }

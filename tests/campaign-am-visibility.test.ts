@@ -160,7 +160,8 @@ test("leaving revisions records the account manager and keeps the campaign visib
     path.join(originalCwd, "src/app/api/campaigns/route.ts"),
     "utf8"
   );
-  assert.match(route, /campaignsVisibleToViewer\(source, session, listScope\)/);
+  assert.match(route, /attachClientAccountManager\(source, managers\)/);
+  assert.match(route, /campaignsVisibleToViewer\(/);
   assert.match(route, /params\.get\("approved"\) === "mine"/);
   const page = fs.readFileSync(
     path.join(originalCwd, "src/app/admin/campaigns/page.tsx"),
@@ -482,6 +483,208 @@ test("internal approval is filed under the account manager who approved it", asy
     .prepare(`SELECT internal_approved_by AS slug FROM campaigns WHERE id = ?`)
     .get("after-stamp") as { slug: string };
   assert.equal(late.slug, "");
+});
+
+test("revisions made with no recorded reviewer still belongs to the client owner", async (t) => {
+  const originalCwd = process.cwd();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-revisions-made-owner-"));
+  process.chdir(tmp);
+
+  const { closeDbForTests, getDb } = await import("../src/lib/db");
+  const {
+    campaignInAccountManagerQueue,
+    campaignOnAccountManagerMainList,
+  } = await import("../src/lib/campaign-review-queue");
+
+  t.after(() => {
+    closeDbForTests();
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  getDb();
+  closeDbForTests();
+  const seeded = getDb();
+  const now = "2026-04-01T00:00:00.000Z";
+  seeded
+    .prepare(`INSERT INTO rev_clients (id, name, account_manager, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`)
+    .run("client-cassidy", "Northwind Revisions", "Cassidy", now, now);
+  seeded
+    .prepare(`INSERT INTO rev_clients (id, name, account_manager, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`)
+    .run("client-kyle", "Other", "Kyle", now, now);
+  const insertCampaign = seeded.prepare(
+    `INSERT INTO campaigns
+      (id, title, status, client_id, magic_token, internal_review_assignee, internal_revision_authors, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  // Michael marked the revisions done. The notes were saved as Reviewer, and
+  // no internal-review assignee was stored. Owner on the client is Cassidy.
+  insertCampaign.run(
+    "made",
+    "Revisions made for Cassidy",
+    "revisions_made",
+    "client-cassidy",
+    "magic-made",
+    "",
+    "",
+    now,
+    now
+  );
+  insertCampaign.run(
+    "left",
+    "Needs revisions for Cassidy",
+    "needs_revisions_internal",
+    "client-cassidy",
+    "magic-left",
+    "",
+    "",
+    now,
+    now
+  );
+  insertCampaign.run(
+    "named",
+    "Assignee stored as a name",
+    "revisions_made",
+    "client-kyle",
+    "magic-named",
+    "Cassidy Merideth",
+    "",
+    now,
+    now
+  );
+  insertCampaign.run(
+    "kyle-assigned",
+    "Sent to Kyle",
+    "revisions_made",
+    "client-cassidy",
+    "magic-kyle",
+    "kyle_morris",
+    "",
+    now,
+    now
+  );
+  insertCampaign.run(
+    "review-link",
+    "Only a review link",
+    "internal_review",
+    "",
+    "magic-review-link",
+    "",
+    "",
+    now,
+    now
+  );
+  seeded
+    .prepare(
+      `INSERT INTO comments
+        (id, campaign_id, author_name, body, type, resolved, channel, created_at)
+       VALUES (?, ?, ?, 'Please change the headline', 'general', 0, 'internal', ?)`
+    )
+    .run("note-reviewer", "made", "Reviewer", now);
+  seeded
+    .prepare(
+      `INSERT INTO comments
+        (id, campaign_id, author_name, body, type, resolved, channel, created_at)
+       VALUES (?, ?, ?, 'Done on my side', 'general', 0, 'internal', ?)`
+    )
+    .run("note-michael", "made", "Michael", now);
+  seeded
+    .prepare(
+      `INSERT INTO todos (id, title, notes, assignee, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'internal_review', ?, ?)`
+    )
+    .run(
+      "todo-review",
+      "Review",
+      "https://hub.example/review/magic-review-link",
+      "Cassidy",
+      now,
+      now
+    );
+  seeded.prepare(`DELETE FROM app_settings WHERE key = ?`).run("internal_review_visibility_backfill_v2");
+  closeDbForTests();
+
+  const migrated = getDb();
+  const assignee = (id: string) =>
+    (
+      migrated
+        .prepare(`SELECT internal_review_assignee AS slug FROM campaigns WHERE id = ?`)
+        .get(id) as { slug: string }
+    ).slug;
+  const authors = (id: string) =>
+    (
+      migrated
+        .prepare(`SELECT internal_revision_authors AS authors FROM campaigns WHERE id = ?`)
+        .get(id) as { authors: string }
+    ).authors;
+  assert.equal(assignee("made"), "cassidy");
+  assert.equal(authors("made"), "");
+  assert.equal(assignee("left"), "cassidy");
+  assert.equal(assignee("named"), "cassidy");
+  assert.equal(assignee("kyle-assigned"), "kyle_morris");
+  assert.equal(assignee("review-link"), "cassidy");
+
+  const made = {
+    status: "revisions_made",
+    internal_review_assignee: assignee("made"),
+    internal_revision_authors: authors("made"),
+    client_account_manager: "Cassidy",
+  };
+  assert.equal(campaignOnAccountManagerMainList(made, "cassidy"), true);
+  assert.equal(campaignInAccountManagerQueue(made, "cassidy"), true);
+  assert.equal(campaignOnAccountManagerMainList(made, "kyle_morris"), false);
+  assert.equal(
+    campaignInAccountManagerQueue(
+      { ...made, status: "needs_revisions_internal", internal_review_assignee: assignee("left") },
+      "cassidy"
+    ),
+    true
+  );
+
+  const stamped = migrated
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get("internal_review_visibility_backfill_v2") as { value: string } | undefined;
+  assert.ok(stamped?.value);
+
+  migrated
+    .prepare(`UPDATE campaigns SET internal_review_assignee = '' WHERE id = ?`)
+    .run("made");
+  migrated
+    .prepare(`UPDATE rev_clients SET account_manager = ? WHERE id = ?`)
+    .run("Luis", "client-cassidy");
+  closeDbForTests();
+  const secondStarted = performance.now();
+  const second = getDb();
+  const secondElapsed = performance.now() - secondStarted;
+  assert.ok(secondElapsed < 2000, `second boot took ${secondElapsed.toFixed(0)}ms`);
+  const kept = second
+    .prepare(`SELECT internal_review_assignee AS slug FROM campaigns WHERE id = ?`)
+    .get("made") as { slug: string };
+  assert.equal(kept.slug, "");
+
+  // A fresh stamp-less pass over a few thousand internal-loop rows stays fast.
+  second.prepare(`DELETE FROM app_settings WHERE key = ?`).run("internal_review_visibility_backfill_v2");
+  const insertBulk = second.prepare(
+    `INSERT INTO campaigns
+      (id, title, status, client_id, magic_token, internal_review_assignee, internal_revision_authors, created_at, updated_at)
+     VALUES (?, ?, 'revisions_made', ?, ?, '', '', ?, ?)`
+  );
+  const bulk = second.transaction(() => {
+    for (let i = 0; i < 3000; i++) {
+      insertBulk.run(`bulk-made-${i}`, `Bulk ${i}`, "client-cassidy", `magic-bulk-made-${i}`, now, now);
+    }
+  });
+  bulk();
+  closeDbForTests();
+  const started = performance.now();
+  const filled = getDb();
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 2000, `visibility backfill took ${elapsed.toFixed(0)}ms`);
+  const sample = filled
+    .prepare(`SELECT internal_review_assignee AS slug FROM campaigns WHERE id = ?`)
+    .get("bulk-made-0") as { slug: string };
+  // The client owner was changed to Luis before this pass, and the stamp was cleared.
+  assert.equal(sample.slug, "luis_romero");
 });
 });
 
