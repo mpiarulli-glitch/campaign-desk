@@ -14,9 +14,12 @@ import {
   isDoneCampaignStatus,
   isDoneListStatus,
   isInternallyApproved,
+  LIST_STATUS_OPTIONS,
   listStageFromStatusParam,
+  listStatusFromStatusParam,
   matchesCampaignStatusFilter,
   matchesListBucket,
+  resolveListStatusFilter,
   matchesStatusBucket,
   operatorStatusLabel,
   operatorStatusValue,
@@ -55,6 +58,44 @@ test("every operator status sits in one plain-language bucket", () => {
   assert.equal(matchesListBucket({ status: "sent" }, "open"), false);
   assert.equal(matchesListBucket({ status: "live" }, "open"), false);
   assert.equal(matchesListBucket({ status: "sent" }, "all"), true);
+});
+
+test("campaign list status filter is every working status, in workflow order", () => {
+  assert.deepEqual(
+    LIST_STATUS_OPTIONS.map((option) => option.value),
+    OPERATOR_STATUS_OPTIONS.map((option) => option.value).filter(
+      (value) => value !== "sent" && value !== "live"
+    )
+  );
+
+  assert.equal(listStatusFromStatusParam("draft"), "draft");
+  assert.equal(listStatusFromStatusParam("internal_review"), "internal_review");
+  assert.equal(
+    listStatusFromStatusParam("needs_revisions_internal"),
+    "needs_revisions_internal"
+  );
+  assert.equal(listStatusFromStatusParam("approved_internally"), "approved_internally");
+  assert.equal(listStatusFromStatusParam("in_review"), "in_review");
+  assert.equal(listStatusFromStatusParam("needs_changes"), "needs_changes");
+  assert.equal(listStatusFromStatusParam("approved"), "approved");
+  assert.equal(listStatusFromStatusParam("scheduled"), "scheduled");
+  assert.equal(listStatusFromStatusParam("all"), "all");
+  assert.equal(listStatusFromStatusParam("open"), "all");
+  assert.equal(listStatusFromStatusParam("sent"), "done");
+  assert.equal(listStatusFromStatusParam("live"), "done");
+  assert.equal(listStatusFromStatusParam("in_progress"), "ignore");
+  assert.equal(listStatusFromStatusParam("waiting"), "ignore");
+  assert.equal(listStatusFromStatusParam("ready"), "ignore");
+  assert.equal(listStatusFromStatusParam("not-a-status"), "ignore");
+
+  assert.equal(resolveListStatusFilter("draft", "scheduled"), "draft");
+  assert.equal(resolveListStatusFilter("all", "scheduled"), "all");
+  assert.equal(resolveListStatusFilter("open", "draft"), "all");
+  assert.equal(resolveListStatusFilter(null, "needs_changes"), "needs_changes");
+  assert.equal(resolveListStatusFilter("in_progress", "approved"), "approved");
+  assert.equal(resolveListStatusFilter("waiting", undefined), "all");
+  assert.equal(resolveListStatusFilter("sent", "draft"), "done");
+  assert.equal(resolveListStatusFilter("live", undefined), "done");
 });
 
 test("old status links map onto the stage dropdown", () => {

@@ -9,9 +9,21 @@ import {
   groupCampaignsByBoard,
   isDoneCampaignStatus,
   isDoneListStatus,
-  listStageFromStatusParam,
-  matchesListBucket,
+  isListStatusFilter,
+  LIST_STATUS_OPTIONS,
+  matchesCampaignStatusFilter,
+  resolveListStatusFilter,
+  type ListStatusFilter,
 } from "@/lib/campaign-status";
+import {
+  emptyCampaignListFilters,
+  isCampaignListUpdated,
+  readCampaignListFilters,
+  resolveListKindFilter,
+  writeCampaignListFilters,
+  type CampaignListFilterState,
+  type CampaignListUpdated,
+} from "@/lib/campaign-list-filters";
 import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
 import type { CampaignKindScope } from "@/lib/people";
 import { isCampaignKindScope } from "@/lib/people";
@@ -48,10 +60,8 @@ const SEND_FORMAT = new Intl.DateTimeFormat("en-US", {
   timeZone: SEND_ZONE,
 });
 
-type WorkingStage = "all" | "in_progress" | "waiting" | "ready";
-type BucketFilter = WorkingStage;
 type TypeFilter = "all" | AssetKind;
-type DatePreset = "any" | "7d" | "30d" | "90d" | "month";
+type DatePreset = CampaignListUpdated;
 
 // The stored type of a package is the kind of work inside it. There is no
 // newsletter/promo/winback field. Package vs automation is a separate flag.
@@ -65,13 +75,6 @@ const TYPE_LABEL: Record<AssetKind, string> = {
   copydeck: "Copy deck",
   mockup: "Mock-up",
 };
-
-const STAGE_OPTIONS: { id: WorkingStage; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "in_progress", label: "In progress" },
-  { id: "waiting", label: "Waiting on client" },
-  { id: "ready", label: "Ready to send" },
-];
 
 const VIEW_STORAGE_KEY = "cd-campaigns-view";
 type CampaignView = "list" | "board";
@@ -509,13 +512,21 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"active" | "archived">("active");
-  const [bucket, setBucket] = useState<BucketFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<ListStatusFilter>("all");
   const [view, setView] = useState<CampaignView>("list");
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
+  const filtersRef = useRef<CampaignListFilterState>(emptyCampaignListFilters());
+  filtersRef.current = {
+    status: statusFilter,
+    client: clientFilter,
+    owner: ownerFilter,
+    type: typeFilter,
+    updated: datePreset,
+  };
   const [busyId, setBusyId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [doneCount, setDoneCount] = useState<number | null>(null);
@@ -548,24 +559,26 @@ export default function AdminPage() {
       )
     : typed;
   const visible =
-    bucket === "all"
+    statusFilter === "all"
       ? searched
-      : searched.filter((c) => matchesListBucket(c, bucket));
+      : searched.filter((c) => matchesCampaignStatusFilter(c, statusFilter));
 
   const clients = useMemo(() => {
     const keys = new Set(pool.map((c) => clientKey(c.client_name)));
+    if (clientFilter !== "all") keys.add(clientFilter);
     return Array.from(keys).sort((a, b) =>
       clientLabel(a).localeCompare(clientLabel(b))
     );
-  }, [pool]);
+  }, [pool, clientFilter]);
 
   const types = useMemo(() => {
     const present = new Set<AssetKind>();
     for (const c of pool) {
       for (const kind of c.email_kinds || []) present.add(kind);
     }
+    if (isAssetKind(typeFilter)) present.add(typeFilter);
     return ASSET_KINDS.filter((kind) => present.has(kind.kind));
-  }, [pool]);
+  }, [pool, typeFilter]);
 
   const owners = useMemo(() => {
     const map = new Map<string, string>();
@@ -573,23 +586,25 @@ export default function AdminPage() {
       const key = c.owner_key || "unassigned";
       if (!map.has(key)) map.set(key, c.owner || "Unassigned");
     }
+    if (ownerFilter !== "all" && !map.has(ownerFilter)) {
+      map.set(
+        ownerFilter,
+        ownerFilter === "unassigned" ? "Unassigned" : ownerFilter
+      );
+    }
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [pool]);
+  }, [pool, ownerFilter]);
 
-  useEffect(() => {
-    if (clientFilter !== "all" && !clients.includes(clientFilter)) {
-      setClientFilter("all");
-    }
-  }, [clients, clientFilter]);
-
-  useEffect(() => {
-    if (typeFilter !== "all" && !types.some((kind) => kind.kind === typeFilter)) {
-      setTypeFilter("all");
-    }
-  }, [types, typeFilter]);
+  function rememberFilters(next: CampaignListFilterState) {
+    filtersRef.current = next;
+    writeCampaignListFilters(
+      typeof window === "undefined" ? null : window.localStorage,
+      next
+    );
+  }
 
   const filtersOn =
-    bucket !== "all" ||
+    statusFilter !== "all" ||
     clientFilter !== "all" ||
     ownerFilter !== "all" ||
     typeFilter !== "all" ||
@@ -598,13 +613,15 @@ export default function AdminPage() {
     query.trim() !== "";
 
   function clearFilters() {
+    const next = emptyCampaignListFilters();
     setQuery("");
-    setClientFilter("all");
-    setOwnerFilter("all");
-    setTypeFilter("all");
-    setBucket("all");
-    setDatePreset("any");
+    setClientFilter(next.client);
+    setOwnerFilter(next.owner);
+    setTypeFilter(next.type);
+    setStatusFilter(next.status);
+    setDatePreset(next.updated);
     if (filter === "archived") setFilter("active");
+    rememberFilters(next);
     replaceQuery((params) => {
       params.delete("status");
       params.delete("kind");
@@ -632,12 +649,41 @@ export default function AdminPage() {
     });
   }
 
-  function chooseStage(next: BucketFilter) {
-    setBucket(next);
+  function chooseStatus(value: string) {
+    const next: ListStatusFilter =
+      value === "all" || isListStatusFilter(value) ? value : "all";
+    setStatusFilter(next);
+    rememberFilters({ ...filtersRef.current, status: next });
     replaceQuery((params) => {
       if (next === "all") params.delete("status");
       else params.set("status", next);
     });
+  }
+
+  function chooseClient(next: string) {
+    setClientFilter(next);
+    rememberFilters({ ...filtersRef.current, client: next });
+  }
+
+  function chooseOwner(next: string) {
+    setOwnerFilter(next);
+    rememberFilters({ ...filtersRef.current, owner: next });
+  }
+
+  function chooseType(value: string) {
+    const next: TypeFilter = isAssetKind(value) ? value : "all";
+    setTypeFilter(next);
+    rememberFilters({ ...filtersRef.current, type: next });
+    replaceQuery((params) => {
+      if (next === "all") params.delete("kind");
+      else params.set("kind", next);
+    });
+  }
+
+  function chooseUpdated(value: string) {
+    const next: DatePreset = isCampaignListUpdated(value) ? value : "any";
+    setDatePreset(next);
+    rememberFilters({ ...filtersRef.current, updated: next });
   }
 
   const load = useCallback(async (
@@ -701,8 +747,10 @@ export default function AdminPage() {
     void load(filter);
   }, [filter, load]);
 
-  // Old links pass an exact status or a stage id. Sent and Live go to Done.
-  // Other statuses select this dropdown. ?view=board wins over localStorage.
+  // ?status= selects one workflow status. Sent and Live go to Done.
+  // "all" and the older "open" alias clear it. A leftover stage id is ignored
+  // so a saved status can still apply. Dropdowns restore from this browser
+  // when the URL does not name them. ?view= wins over the saved view.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("status");
@@ -710,14 +758,34 @@ export default function AdminPage() {
       router.replace("/admin/campaigns/done");
       return;
     }
-    if (status) {
-      const stage = listStageFromStatusParam(status);
-      if (stage === "all" || stage === "in_progress" || stage === "waiting" || stage === "ready") {
-        setBucket(stage);
-      }
+    const saved = readCampaignListFilters(window.localStorage);
+    const nextStatus = resolveListStatusFilter(status, saved.status);
+    if (nextStatus === "done") {
+      router.replace("/admin/campaigns/done");
+      return;
     }
-    const kind = params.get("kind");
-    if (isAssetKind(kind)) setTypeFilter(kind);
+    const nextType = resolveListKindFilter(params.get("kind"), saved.type);
+    const nextClient = saved.client || "all";
+    const nextOwner = saved.owner || "all";
+    const nextUpdated: DatePreset = saved.updated ?? "any";
+    setStatusFilter(nextStatus);
+    setTypeFilter(nextType);
+    setClientFilter(nextClient);
+    setOwnerFilter(nextOwner);
+    setDatePreset(nextUpdated);
+    rememberFilters({
+      status: nextStatus,
+      client: nextClient,
+      owner: nextOwner,
+      type: nextType,
+      updated: nextUpdated,
+    });
+    replaceQuery((query) => {
+      if (nextStatus === "all") query.delete("status");
+      else query.set("status", nextStatus);
+      if (nextType === "all") query.delete("kind");
+      else query.set("kind", nextType);
+    });
     const requested = params.get("view");
     if (requested === "board" || requested === "list") {
       setView(requested);
@@ -788,15 +856,16 @@ export default function AdminPage() {
               />
             </label>
             <label className="clist-field">
-              <span>Stage</span>
+              <span>Status</span>
               <select
                 className="campaign-filter-select"
-                aria-label="Filter by stage"
-                value={bucket}
-                onChange={(e) => chooseStage(e.target.value as BucketFilter)}
+                aria-label="Filter by status"
+                value={statusFilter}
+                onChange={(e) => chooseStatus(e.target.value)}
               >
-                {STAGE_OPTIONS.map((item) => (
-                  <option key={item.id} value={item.id}>
+                <option value="all">All</option>
+                {LIST_STATUS_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
                 ))}
@@ -808,7 +877,7 @@ export default function AdminPage() {
                 className="campaign-filter-select"
                 aria-label="Filter by client"
                 value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
+                onChange={(e) => chooseClient(e.target.value)}
               >
                 <option value="all">All clients</option>
                 {clients.map((key) => (
@@ -824,7 +893,7 @@ export default function AdminPage() {
                 className="campaign-filter-select"
                 aria-label="Filter by owner"
                 value={ownerFilter}
-                onChange={(e) => setOwnerFilter(e.target.value)}
+                onChange={(e) => chooseOwner(e.target.value)}
               >
                 <option value="all">Any owner</option>
                 {owners.map(([key, label]) => (
@@ -840,15 +909,7 @@ export default function AdminPage() {
                 className="campaign-filter-select"
                 aria-label="Filter by type"
                 value={typeFilter}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  const type = isAssetKind(next) ? next : "all";
-                  setTypeFilter(type);
-                  replaceQuery((params) => {
-                    if (type === "all") params.delete("kind");
-                    else params.set("kind", type);
-                  });
-                }}
+                onChange={(e) => chooseType(e.target.value)}
               >
                 <option value="all">Any type</option>
                 {types.map((kind) => (
@@ -864,7 +925,7 @@ export default function AdminPage() {
                 className="campaign-filter-select"
                 aria-label="Filter by when it was updated"
                 value={datePreset}
-                onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+                onChange={(e) => chooseUpdated(e.target.value)}
               >
                 {DATE_PRESETS.map((preset) => (
                   <option key={preset.value} value={preset.value}>
