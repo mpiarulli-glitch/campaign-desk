@@ -4,6 +4,7 @@ import {
   ACCOUNT_MANAGER_REVIEW_SECTIONS,
   accountManagerQueueNote,
   accountManagerReviewSection,
+  accountManagerSlugFromOwner,
   accountManagerSlugFromReviewerName,
   accountManagerViewerSlug,
   campaignAssignedToAccountManager,
@@ -57,8 +58,10 @@ test("account manager queue is the internal loop for work sent to them or revise
     review_assignee: "",
     internal_revision_authors: "",
   };
-  assert.equal(campaignVisibleToAccountManager(clientOwnerOnly, "cassidy"), false);
-  assert.equal(campaignInAccountManagerQueue(clientOwnerOnly, "cassidy"), false);
+  // No assignee and no revision author: the client owner is the fallback.
+  assert.equal(campaignVisibleToAccountManager(clientOwnerOnly, "cassidy"), true);
+  assert.equal(campaignInAccountManagerQueue(clientOwnerOnly, "cassidy"), true);
+  assert.equal(campaignVisibleToAccountManager(clientOwnerOnly, "kyle_morris"), false);
 
   const assignedToKyle = {
     status: "revisions_made",
@@ -114,12 +117,18 @@ test("campaign list visibility is the account manager's set, and admins see ever
       status: "internal_review",
       internal_review_assignee: "luis_romero",
     },
-    { id: "nobody", status: "draft", internal_review_assignee: "", owner_key: "cassidy" },
+    {
+      id: "owned-unrecorded",
+      status: "draft",
+      internal_review_assignee: "",
+      owner_key: "cassidy",
+    },
+    { id: "nobody", status: "draft", internal_review_assignee: "", owner_key: "unassigned" },
   ];
 
   assert.deepEqual(
     campaignsVisibleToViewer(rows, { role: "admin", person: "cassidy" }).map((row) => row.id),
-    ["sent-cassidy", "revised-by-cassidy"]
+    ["sent-cassidy", "revised-by-cassidy", "owned-unrecorded"]
   );
   assert.deepEqual(
     campaignsVisibleToViewer(rows, { role: "admin", person: "kyle_morris" }).map((row) => row.id),
@@ -170,7 +179,7 @@ test("campaign list visibility is the account manager's set, and admins see ever
       [...rows, approvedByCassidy],
       { role: "admin", person: "cassidy" }
     ).map((row) => row.id),
-    ["sent-cassidy", "revised-by-cassidy"]
+    ["sent-cassidy", "revised-by-cassidy", "owned-unrecorded"]
   );
   assert.deepEqual(
     campaignsVisibleToViewer(
@@ -244,6 +253,87 @@ test("campaign list visibility is the account manager's set, and admins see ever
   assert.equal(campaignOnAccountManagerMainList(kyleOnlyRevised, "kyle_morris"), true);
   assert.equal(campaignApprovedByAccountManager(kyleOnlyRevised, "kyle_morris"), false);
   assert.equal(campaignVisibleToAccountManager(kyleOnlyRevised, "luis_romero"), false);
+
+  // Production shape: Revisions made, notes saved as Reviewer or Michael, no
+  // assignee, Owner = Cassidy. It belongs on her queue and her main list.
+  const revisionsMadeForOwner = {
+    id: "revisions-made-owner",
+    status: "revisions_made",
+    internal_review_assignee: "",
+    internal_revision_authors: "",
+    client_account_manager: "Cassidy",
+  };
+  assert.equal(accountManagerSlugFromOwner("Cassidy"), "cassidy");
+  assert.equal(accountManagerSlugFromOwner("Kyle"), "kyle_morris");
+  assert.equal(accountManagerSlugFromOwner("Luis"), "luis_romero");
+  assert.equal(accountManagerSlugFromOwner("Kyle Onstott"), null);
+  assert.equal(accountManagerSlugFromOwner("Reviewer"), null);
+  assert.equal(campaignOnAccountManagerMainList(revisionsMadeForOwner, "cassidy"), true);
+  assert.equal(campaignApprovedByAccountManager(revisionsMadeForOwner, "cassidy"), false);
+  assert.equal(campaignInAccountManagerQueue(revisionsMadeForOwner, "cassidy"), true);
+  assert.equal(campaignInAccountManagerQueue(revisionsMadeForOwner, "kyle_morris"), false);
+  assert.equal(
+    campaignInAccountManagerQueue(
+      { ...revisionsMadeForOwner, status: "needs_revisions_internal" },
+      "cassidy"
+    ),
+    true
+  );
+  assert.equal(
+    campaignOnAccountManagerMainList(
+      { ...revisionsMadeForOwner, status: "sent" },
+      "cassidy"
+    ),
+    true
+  );
+  assert.equal(
+    campaignInAccountManagerQueue(
+      { ...revisionsMadeForOwner, status: "sent" },
+      "cassidy"
+    ),
+    false
+  );
+
+  const assignedToSomeoneElse = {
+    id: "assigned-elsewhere",
+    status: "revisions_made",
+    internal_review_assignee: "kyle_morris",
+    internal_revision_authors: "",
+    client_account_manager: "Cassidy",
+  };
+  assert.equal(campaignOnAccountManagerMainList(assignedToSomeoneElse, "cassidy"), false);
+  assert.equal(campaignInAccountManagerQueue(assignedToSomeoneElse, "cassidy"), false);
+  assert.equal(campaignOnAccountManagerMainList(assignedToSomeoneElse, "kyle_morris"), true);
+
+  const namedAssignee = {
+    status: "revisions_made",
+    internal_review_assignee: "Cassidy Merideth",
+    internal_revision_authors: "",
+    client_account_manager: "Kyle",
+  };
+  assert.equal(campaignAssignedToAccountManager(namedAssignee, "cassidy"), true);
+  assert.equal(campaignInAccountManagerQueue(namedAssignee, "cassidy"), true);
+  assert.equal(campaignOnAccountManagerMainList(namedAssignee, "kyle_morris"), false);
+
+  const backToOwner = {
+    ...revisionsMadeForOwner,
+    internal_approved_by: "cassidy",
+  };
+  assert.equal(campaignOnAccountManagerMainList(backToOwner, "cassidy"), true);
+  assert.equal(campaignApprovedByAccountManager(backToOwner, "cassidy"), false);
+  assert.deepEqual(
+    campaignsVisibleToViewer([revisionsMadeForOwner, assignedToSomeoneElse], {
+      role: "admin",
+      person: "cassidy",
+    }).map((row) => row.id),
+    ["revisions-made-owner"]
+  );
+  assert.deepEqual(
+    campaignsVisibleToViewer([revisionsMadeForOwner], { role: "admin", person: null }).map(
+      (row) => row.id
+    ),
+    ["revisions-made-owner"]
+  );
 
   assert.equal(
     revisionAuthorForFeedback({ sessionSlug: "", authorName: "Luis Romero" }),

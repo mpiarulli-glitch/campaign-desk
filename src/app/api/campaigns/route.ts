@@ -6,6 +6,7 @@ import {
   sessionCampaignKind,
 } from "@/lib/auth";
 import {
+  attachClientAccountManager,
   campaignsVisibleToViewer,
   isCampaignAccountManagerSlug,
   type AccountManagerListScope,
@@ -69,16 +70,24 @@ export async function GET(request: Request) {
       : null;
   // Account managers receive their main list, or Approved by me when asked.
   // A campaign they internally approved leaves the main list until a later
-  // internal review is assigned to them. Michael and other admins get every row.
-  const visible = campaignsVisibleToViewer(source, session, listScope);
+  // internal review is assigned to them. When neither the assignee nor a
+  // revision author was recorded, the client's owner is the fallback.
+  // Michael and other admins get every row.
+  const visible = campaignsVisibleToViewer(
+    attachClientAccountManager(source, managers),
+    session,
+    listScope
+  );
   const campaigns = visible.map((c) => {
     const send = pickDisplayedSendAt(
       [...(emailSends.get(c.id) || []), c.scheduled_send_at],
       now
     );
     const owner = ownerFields(c.client_id ? managers.get(c.client_id) || "" : "");
+    const { client_account_manager, ...campaign } = c;
+    void client_account_manager;
     return {
-      ...c,
+      ...campaign,
       open_comments: countOpenComments(c.id),
       email_count: countEmails(c.id),
       email_kinds: listEmailKinds(c.id),

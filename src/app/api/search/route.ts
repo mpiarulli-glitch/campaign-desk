@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { can, getSession, isWorkflowAuthenticated } from "@/lib/auth";
-import { listCampaigns } from "@/lib/campaigns";
+import { listCampaigns, listClientAccountManagers } from "@/lib/campaigns";
 import {
   accountManagerViewerSlug,
+  attachClientAccountManager,
   campaignVisibleToAccountManager,
 } from "@/lib/campaign-review-queue";
 import { search } from "@/lib/search";
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   const amSlug = accountManagerViewerSlug(await getSession());
   if (amSlug) {
     const allowed = new Set(
-      listCampaigns()
+      attachClientAccountManager(listCampaigns(), listClientAccountManagers())
         .filter((campaign) => campaignVisibleToAccountManager(campaign, amSlug))
         .map((campaign) => campaign.id)
     );
