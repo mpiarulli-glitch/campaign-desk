@@ -2682,6 +2682,65 @@ function tableColumns(database: Database.Database, table: string): string[] {
   ).map((c) => c.name);
 }
 
+const INTERNAL_REVIEW_ASSIGNEE_BACKFILL_KEY = "internal_review_assignee_backfill_v1";
+
+/**
+ * Fill blank campaign assignees from internal-review to-dos already on the desk.
+ * Newest to-do wins. A to-do with no assignee, or any other source, is ignored.
+ * An assignee already stored on the campaign is left alone.
+ * Recorded in app_settings so later boots, including the second bundled copy
+ * of this module, do not scan the table again.
+ */
+function backfillInternalReviewAssignees(database: Database.Database) {
+  if (!tableColumns(database, "campaigns").includes("internal_review_assignee")) return;
+  if (!tableColumns(database, "app_settings").includes("key")) return;
+  const done = database
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(INTERNAL_REVIEW_ASSIGNEE_BACKFILL_KEY) as { value: string } | undefined;
+  if (done?.value) return;
+
+  const todoCols = tableColumns(database, "todos");
+  if (
+    todoCols.includes("assignee") &&
+    todoCols.includes("notes") &&
+    todoCols.includes("source") &&
+    todoCols.includes("created_at")
+  ) {
+    const todos = database
+      .prepare(
+        `SELECT assignee, notes FROM todos
+          WHERE source = 'internal_review' AND assignee != ''
+          ORDER BY created_at DESC`
+      )
+      .all() as Array<{ assignee: string; notes: string }>;
+    const assigneeByCampaign = new Map<string, string>();
+    for (const todo of todos) {
+      for (const match of (todo.notes || "").matchAll(/\/admin\/campaigns\/([A-Za-z0-9_-]+)/g)) {
+        const id = match[1];
+        if (!assigneeByCampaign.has(id)) assigneeByCampaign.set(id, todo.assignee);
+      }
+    }
+    const update = database.prepare(
+      `UPDATE campaigns
+          SET internal_review_assignee = ?
+        WHERE id = ?
+          AND IFNULL(internal_review_assignee, '') = ''`
+    );
+    const apply = database.transaction(() => {
+      for (const [id, assignee] of assigneeByCampaign) update.run(assignee, id);
+    });
+    apply();
+  }
+
+  const stamp = nowIso();
+  database
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .run(INTERNAL_REVIEW_ASSIGNEE_BACKFILL_KEY, stamp, stamp);
+}
+
 function migrate(database: Database.Database) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS klaviyo_revenue_cache (
@@ -2855,29 +2914,11 @@ function migrate(database: Database.Database) {
       `ALTER TABLE campaigns ADD COLUMN internal_review_assignee TEXT NOT NULL DEFAULT ''`
     );
   }
-  // Older sends stored the reviewer only on the desk to-do. Fill blanks from
-  // the newest internal-review to-do whose notes point at this campaign.
-  const reviewTodoCols = tableColumns(database, "todos");
-  if (reviewTodoCols.includes("assignee") && reviewTodoCols.includes("notes")) {
-    database.exec(
-      `UPDATE campaigns
-          SET internal_review_assignee = (
-            SELECT assignee FROM todos
-             WHERE source = 'internal_review'
-               AND assignee != ''
-               AND notes LIKE '%/admin/campaigns/' || campaigns.id || '%'
-             ORDER BY created_at DESC
-             LIMIT 1
-          )
-        WHERE IFNULL(internal_review_assignee, '') = ''
-          AND EXISTS (
-            SELECT 1 FROM todos
-             WHERE source = 'internal_review'
-               AND assignee != ''
-               AND notes LIKE '%/admin/campaigns/' || campaigns.id || '%'
-          )`
-    );
-  }
+  // One pass over internal-review to-dos. The previous statement was a
+  // correlated LIKE across every campaign and every to-do, and Next bundles
+  // this module more than once, so boot ran that scan twice before it could
+  // answer /api/health. Railway gives that 30 seconds.
+  backfillInternalReviewAssignees(database);
   if (!campaignCols.includes("approval_nudge_last_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN approval_nudge_last_at TEXT`);
   }
