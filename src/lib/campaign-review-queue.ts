@@ -5,7 +5,12 @@
 // only when the internal review was sent to them, or when they left revisions
 // on it. Later statuses stay visible so they can follow that work.
 //
-// The three queue sections are that same set, narrowed to the internal loop:
+// Once that account manager marks it Approved Internally, it leaves their
+// main list and shows under Approved by me. It comes back to the main list
+// when a later internal review is assigned to them. Another account manager
+// who only left revisions still follows it on their main list.
+//
+// The three queue sections are the main list, narrowed to the internal loop:
 // Needs your review, Revisions made, and Revisions left. Owning the client
 // is not enough.
 
@@ -133,10 +138,53 @@ export function accountManagerReviewSection(
 }
 
 export type CampaignVisibility = {
+  status?: string;
   internal_review_assignee?: string | null;
   review_assignee?: string | null;
   internal_revision_authors?: string | null;
+  // Account-manager slugs who marked this Approved Internally, comma-separated.
+  // Survives client approval and later statuses. approved_by does not.
+  internal_approved_by?: string | null;
 };
+
+export type AccountManagerListScope = "main" | "approved";
+
+export function internalApproverSlugs(value: string | null | undefined): string[] {
+  return revisionAuthorSlugs(value);
+}
+
+// The internal loop is assigned to this account manager again, so the campaign
+// belongs on their main list until they approve it once more.
+export function campaignBackWithAccountManager(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  if (!slug || !campaign.status) return false;
+  if (!accountManagerReviewSection(campaign.status)) return false;
+  return campaignAssignedToAccountManager(campaign, slug);
+}
+
+export function campaignApprovedByAccountManager(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  if (!slug) return false;
+  if (!internalApproverSlugs(campaign.internal_approved_by).includes(slug)) return false;
+  return !campaignBackWithAccountManager(campaign, slug);
+}
+
+// Main list: work sent to them or revisions they left, except campaigns they
+// have internally approved and that are not back in an internal review for them.
+export function campaignOnAccountManagerMainList(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  if (!slug) return false;
+  if (campaignBackWithAccountManager(campaign, slug)) return true;
+  if (internalApproverSlugs(campaign.internal_approved_by).includes(slug)) return false;
+  if (campaignAssignedToAccountManager(campaign, slug)) return true;
+  return revisionAuthorSlugs(campaign.internal_revision_authors).includes(slug);
+}
 
 export function campaignAssignedToAccountManager(
   campaign: CampaignVisibility,
@@ -151,13 +199,16 @@ export function campaignAssignedToAccountManager(
   return assignee === slug;
 }
 
+// Either tab. Search uses this so an account manager can still find a campaign
+// they approved, without seeing anyone else's.
 export function campaignVisibleToAccountManager(
   campaign: CampaignVisibility,
   slug: string
 ): boolean {
-  if (!slug) return false;
-  if (campaignAssignedToAccountManager(campaign, slug)) return true;
-  return revisionAuthorSlugs(campaign.internal_revision_authors).includes(slug);
+  return (
+    campaignOnAccountManagerMainList(campaign, slug) ||
+    campaignApprovedByAccountManager(campaign, slug)
+  );
 }
 
 export type CampaignListViewer = {
@@ -178,11 +229,16 @@ export function accountManagerViewerSlug(
 
 export function campaignsVisibleToViewer<T extends CampaignVisibility>(
   rows: T[],
-  session: CampaignListViewer
+  session: CampaignListViewer,
+  scope: AccountManagerListScope = "main"
 ): T[] {
   const slug = accountManagerViewerSlug(session);
   if (!slug) return rows;
-  return rows.filter((row) => campaignVisibleToAccountManager(row, slug));
+  const keep =
+    scope === "approved"
+      ? campaignApprovedByAccountManager
+      : campaignOnAccountManagerMainList;
+  return rows.filter((row) => keep(row, slug));
 }
 
 export function campaignInAccountManagerQueue(
@@ -191,7 +247,7 @@ export function campaignInAccountManagerQueue(
 ): boolean {
   return (
     accountManagerReviewSection(campaign.status) != null &&
-    campaignVisibleToAccountManager(campaign, slug)
+    campaignOnAccountManagerMainList(campaign, slug)
   );
 }
 

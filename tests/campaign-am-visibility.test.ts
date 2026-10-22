@@ -160,7 +160,15 @@ test("leaving revisions records the account manager and keeps the campaign visib
     path.join(originalCwd, "src/app/api/campaigns/route.ts"),
     "utf8"
   );
-  assert.match(route, /campaignsVisibleToViewer\(source, session\)/);
+  assert.match(route, /campaignsVisibleToViewer\(source, session, listScope\)/);
+  assert.match(route, /params\.get\("approved"\) === "mine"/);
+  const page = fs.readFileSync(
+    path.join(originalCwd, "src/app/admin/campaigns/page.tsx"),
+    "utf8"
+  );
+  assert.match(page, /Approved by me/);
+  assert.match(page, /params\.set\("approved", "mine"\)/);
+  assert.match(page, /viewerIsAccountManager \?/);
   const search = fs.readFileSync(
     path.join(originalCwd, "src/app/api/search/route.ts"),
     "utf8"
@@ -252,6 +260,228 @@ test("revision-author backfill is one fast pass", async (t) => {
   assert.equal(authorsOf(second, "bare-kyle"), "");
   assert.equal(authorsOf(second, "named"), "cassidy,kyle_morris");
   assert.equal(authorsOf(second, "already"), "kyle_morris,cassidy");
+});
+
+test("internal approval is filed under the account manager who approved it", async (t) => {
+  const originalCwd = process.cwd();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-am-approved-"));
+  process.chdir(tmp);
+
+  const { closeDbForTests, getDb } = await import("../src/lib/db");
+  const campaigns = await import("../src/lib/campaigns");
+  const {
+    campaignApprovedByAccountManager,
+    campaignOnAccountManagerMainList,
+    campaignsVisibleToViewer,
+  } = await import("../src/lib/campaign-review-queue");
+
+  t.after(() => {
+    closeDbForTests();
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const cassidyReview = campaigns.createCampaign({
+    title: "Cassidy approves",
+    clientName: "Northwind",
+    htmlContent: "<p>Hello</p>",
+  });
+  campaigns.recordInternalReviewTodo(cassidyReview.id, { assignee: "cassidy" });
+  campaigns.applyOperatorCampaignStatus(cassidyReview.id, "internal_review");
+  campaigns.addComment({
+    campaignId: cassidyReview.id,
+    body: "Tighten the offer.",
+    type: "general",
+    channel: "internal",
+    authorSlug: "kyle_morris",
+    authorName: "Kyle Morris",
+  });
+
+  const approved = campaigns.applyOperatorCampaignStatus(
+    cassidyReview.id,
+    "approved_internally",
+    "Cassidy Merideth",
+    "cassidy"
+  )!;
+  assert.equal(approved.status, "approved");
+  assert.equal(approved.approved_channel, "internal");
+  assert.equal(approved.internal_approved_by, "cassidy");
+  assert.ok(approved.internal_approved_at);
+  assert.equal(campaignOnAccountManagerMainList(approved, "cassidy"), false);
+  assert.equal(campaignApprovedByAccountManager(approved, "cassidy"), true);
+  // Kyle left revisions and did not approve, so he still follows it.
+  assert.equal(campaignOnAccountManagerMainList(approved, "kyle_morris"), true);
+  assert.equal(campaignApprovedByAccountManager(approved, "kyle_morris"), false);
+
+  const sent = campaigns.applyOperatorCampaignStatus(cassidyReview.id, "sent")!;
+  assert.equal(sent.internal_approved_by, "cassidy");
+  assert.equal(sent.approved_by, null);
+  assert.equal(campaignOnAccountManagerMainList(sent, "cassidy"), false);
+  assert.equal(campaignApprovedByAccountManager(sent, "cassidy"), true);
+
+  campaigns.applyOperatorCampaignStatus(cassidyReview.id, "internal_review");
+  campaigns.recordInternalReviewTodo(cassidyReview.id, { assignee: "cassidy" });
+  const returned = campaigns.getCampaignById(cassidyReview.id)!;
+  assert.equal(returned.status, "internal_review");
+  assert.equal(returned.internal_review_assignee, "cassidy");
+  assert.equal(campaignOnAccountManagerMainList(returned, "cassidy"), true);
+  assert.equal(campaignApprovedByAccountManager(returned, "cassidy"), false);
+
+  const again = campaigns.applyOperatorCampaignStatus(
+    cassidyReview.id,
+    "approved_internally",
+    "Cassidy Merideth",
+    "cassidy"
+  )!;
+  assert.equal(again.internal_approved_by, "cassidy");
+  assert.equal(campaignApprovedByAccountManager(again, "cassidy"), true);
+  assert.equal(campaignOnAccountManagerMainList(again, "cassidy"), false);
+
+  campaigns.applyOperatorCampaignStatus(cassidyReview.id, "internal_review");
+  campaigns.recordInternalReviewTodo(cassidyReview.id, { assignee: "kyle_morris" });
+  const forKyle = campaigns.getCampaignById(cassidyReview.id)!;
+  assert.equal(campaignOnAccountManagerMainList(forKyle, "cassidy"), false);
+  assert.equal(campaignApprovedByAccountManager(forKyle, "cassidy"), true);
+  assert.equal(campaignOnAccountManagerMainList(forKyle, "kyle_morris"), true);
+  assert.equal(campaignApprovedByAccountManager(forKyle, "kyle_morris"), false);
+
+  const ids = (scope: "main" | "approved", person: string | null) =>
+    campaignsVisibleToViewer(
+      [campaigns.getCampaignById(cassidyReview.id)!],
+      { role: "admin", person },
+      scope
+    ).map((row) => row.id);
+  assert.deepEqual(ids("main", "cassidy"), []);
+  assert.deepEqual(ids("approved", "cassidy"), [cassidyReview.id]);
+  assert.deepEqual(ids("main", null), [cassidyReview.id]);
+  assert.deepEqual(ids("approved", null), [cassidyReview.id]);
+  assert.deepEqual(ids("approved", "carlos"), [cassidyReview.id]);
+
+  const byMichael = campaigns.createCampaign({
+    title: "Michael approves",
+    clientName: "Fabrikam",
+    htmlContent: "<p>Admin</p>",
+  });
+  campaigns.recordInternalReviewTodo(byMichael.id, { assignee: "luis_romero" });
+  const michaelApproved = campaigns.applyOperatorCampaignStatus(
+    byMichael.id,
+    "approved_internally",
+    "Michael",
+    "michael"
+  )!;
+  assert.equal(michaelApproved.internal_approved_by, "");
+  assert.equal(campaignOnAccountManagerMainList(michaelApproved, "luis_romero"), true);
+  assert.equal(campaignApprovedByAccountManager(michaelApproved, "luis_romero"), false);
+
+  const clientApproved = campaigns.markApproved(
+    byMichael.id,
+    "Cassidy Merideth",
+    "client",
+    "cassidy"
+  )!;
+  assert.equal(clientApproved.approved_channel, "client");
+  assert.equal(clientApproved.internal_approved_by, "");
+
+  const fromReviewLink = campaigns.createCampaign({
+    title: "Review link",
+    clientName: "Contoso",
+    htmlContent: "<p>Link</p>",
+  });
+  campaigns.recordInternalReviewTodo(fromReviewLink.id, { assignee: "luis_romero" });
+  const named = campaigns.markApproved(
+    fromReviewLink.id,
+    "Luis Romero",
+    "internal",
+    "luis_romero"
+  )!;
+  assert.equal(named.internal_approved_by, "luis_romero");
+  campaigns.markApproved(fromReviewLink.id, "Luis Romero", "internal", "michael");
+  assert.equal(campaigns.getCampaignById(fromReviewLink.id)!.internal_approved_by, "luis_romero");
+  campaigns.markApproved(
+    fromReviewLink.id,
+    "Cassidy Merideth",
+    "internal",
+    "cassidy"
+  );
+  assert.equal(
+    campaigns.getCampaignById(fromReviewLink.id)!.internal_approved_by,
+    "luis_romero,cassidy"
+  );
+
+  campaigns.unapproveCampaign(fromReviewLink.id);
+  const undone = campaigns.getCampaignById(fromReviewLink.id)!;
+  assert.equal(undone.internal_approved_by, "");
+  assert.equal(campaignApprovedByAccountManager(undone, "luis_romero"), false);
+  assert.equal(campaignOnAccountManagerMainList(undone, "luis_romero"), true);
+
+  closeDbForTests();
+  const seeded = getDb();
+  const now = "2026-04-01T00:00:00.000Z";
+  seeded
+    .prepare(
+      `INSERT INTO campaigns
+        (id, title, status, magic_token, approved_by, approved_channel, approved_at,
+         internal_approved_by, created_at, updated_at)
+       VALUES (?, ?, 'approved', ?, ?, ?, ?, '', ?, ?)`
+    )
+    .run("still-internal", "Still internal", "magic-still", "Cassidy Merideth", "internal", now, now, now);
+  seeded
+    .prepare(
+      `INSERT INTO campaigns
+        (id, title, status, magic_token, approved_by, approved_channel, approved_at,
+         internal_approved_by, created_at, updated_at)
+       VALUES (?, ?, 'approved', ?, ?, ?, ?, 'kyle_morris', ?, ?)`
+    )
+    .run("merge-name", "Merge", "magic-merge", "Cassidy", "internal", now, now, now);
+  seeded
+    .prepare(
+      `INSERT INTO campaigns
+        (id, title, status, magic_token, approved_by, approved_channel, approved_at,
+         internal_approved_by, created_at, updated_at)
+       VALUES (?, ?, 'approved', ?, ?, ?, ?, '', ?, ?)`
+    )
+    .run("bare-kyle", "Bare Kyle", "magic-bare", "Kyle", "internal", now, now, now);
+  seeded
+    .prepare(
+      `INSERT INTO campaigns
+        (id, title, status, magic_token, approved_by, approved_channel, approved_at,
+         internal_approved_by, created_at, updated_at)
+       VALUES (?, ?, 'approved', ?, ?, ?, ?, '', ?, ?)`
+    )
+    .run("client-ok", "Client", "magic-client", "Luis Romero", "client", now, now, now);
+  seeded.prepare(`DELETE FROM app_settings WHERE key = ?`).run("internal_approved_by_backfill_v1");
+  closeDbForTests();
+
+  const migrated = getDb();
+  const approver = (id: string) =>
+    (
+      migrated
+        .prepare(`SELECT internal_approved_by AS slug FROM campaigns WHERE id = ?`)
+        .get(id) as { slug: string }
+    ).slug;
+  assert.equal(approver("still-internal"), "cassidy");
+  assert.equal(approver("merge-name"), "kyle_morris,cassidy");
+  assert.equal(approver("bare-kyle"), "");
+  assert.equal(approver("client-ok"), "");
+  const stamped = migrated
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get("internal_approved_by_backfill_v1") as { value: string } | undefined;
+  assert.ok(stamped?.value);
+
+  migrated
+    .prepare(
+      `INSERT INTO campaigns
+        (id, title, status, magic_token, approved_by, approved_channel, approved_at,
+         internal_approved_by, created_at, updated_at)
+       VALUES (?, ?, 'approved', ?, ?, 'internal', ?, '', ?, ?)`
+    )
+    .run("after-stamp", "Too late", "magic-late", "Luis Romero", now, now, now);
+  closeDbForTests();
+  const second = getDb();
+  const late = second
+    .prepare(`SELECT internal_approved_by AS slug FROM campaigns WHERE id = ?`)
+    .get("after-stamp") as { slug: string };
+  assert.equal(late.slug, "");
 });
 });
 

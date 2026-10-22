@@ -237,7 +237,12 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    const approved = markApproved(campaign.id, approverName, approvedChannel);
+    const approved = markApproved(
+      campaign.id,
+      approverName,
+      approvedChannel,
+      approvedChannel === "internal" ? await feedbackAuthorSlug(approverName) : null
+    );
     await syncCampaignDeliverablesCard(campaign.id, "approved");
     return NextResponse.json({
       campaign: publicCampaign(approved!, channel),
@@ -295,7 +300,14 @@ export async function POST(request: Request, { params }: Params) {
       approvedChannel
     );
     if (allApproved && reviewAcceptsViewerAction(campaign, channel)) {
-      markApproved(campaign.id, approverName, approvedChannel);
+      markApproved(
+        campaign.id,
+        approverName,
+        approvedChannel,
+        approvedChannel === "internal"
+          ? await feedbackAuthorSlug(approverName)
+          : null
+      );
       await syncCampaignDeliverablesCard(campaign.id, "approved");
     }
     const fresh = getCampaignById(campaign.id)!;

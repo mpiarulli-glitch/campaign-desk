@@ -7,7 +7,9 @@ import {
   accountManagerSlugFromReviewerName,
   accountManagerViewerSlug,
   campaignAssignedToAccountManager,
+  campaignApprovedByAccountManager,
   campaignInAccountManagerQueue,
+  campaignOnAccountManagerMainList,
   campaignVisibleToAccountManager,
   campaignsVisibleToViewer,
   isCampaignAccountManagerSlug,
@@ -156,6 +158,93 @@ test("campaign list visibility is the account manager's set, and admins see ever
     revisionAuthorForFeedback({ sessionSlug: "cassidy:impersonated", authorName: "Cassidy" }),
     null
   );
+  const approvedByCassidy = {
+    id: "approved-by-cassidy",
+    status: "approved",
+    internal_review_assignee: "cassidy",
+    internal_revision_authors: "cassidy",
+    internal_approved_by: "cassidy",
+  };
+  assert.deepEqual(
+    campaignsVisibleToViewer(
+      [...rows, approvedByCassidy],
+      { role: "admin", person: "cassidy" }
+    ).map((row) => row.id),
+    ["sent-cassidy", "revised-by-cassidy"]
+  );
+  assert.deepEqual(
+    campaignsVisibleToViewer(
+      [...rows, approvedByCassidy],
+      { role: "admin", person: "cassidy" },
+      "approved"
+    ).map((row) => row.id),
+    ["approved-by-cassidy"]
+  );
+  assert.deepEqual(
+    campaignsVisibleToViewer(
+      [...rows, approvedByCassidy],
+      { role: "admin", person: null },
+      "approved"
+    ).map((row) => row.id),
+    [...rows, approvedByCassidy].map((row) => row.id)
+  );
+  assert.equal(campaignOnAccountManagerMainList(approvedByCassidy, "cassidy"), false);
+  assert.equal(campaignApprovedByAccountManager(approvedByCassidy, "cassidy"), true);
+  assert.equal(
+    campaignApprovedByAccountManager({ ...approvedByCassidy, status: "sent" }, "cassidy"),
+    true
+  );
+  assert.equal(
+    campaignOnAccountManagerMainList({ ...approvedByCassidy, status: "live" }, "cassidy"),
+    false
+  );
+
+  const backWithCassidy = {
+    ...approvedByCassidy,
+    status: "internal_review",
+    internal_review_assignee: "cassidy",
+  };
+  assert.equal(campaignOnAccountManagerMainList(backWithCassidy, "cassidy"), true);
+  assert.equal(campaignApprovedByAccountManager(backWithCassidy, "cassidy"), false);
+  assert.equal(campaignInAccountManagerQueue(backWithCassidy, "cassidy"), true);
+  assert.equal(
+    campaignOnAccountManagerMainList(
+      { ...backWithCassidy, status: "revisions_made" },
+      "cassidy"
+    ),
+    true
+  );
+  assert.equal(
+    campaignApprovedByAccountManager(
+      { ...backWithCassidy, status: "needs_revisions_internal" },
+      "cassidy"
+    ),
+    false
+  );
+
+  const sentToKyle = {
+    ...approvedByCassidy,
+    status: "internal_review",
+    internal_review_assignee: "kyle_morris",
+    internal_revision_authors: "cassidy,kyle_morris",
+    internal_approved_by: "cassidy,kyle_morris",
+  };
+  assert.equal(campaignOnAccountManagerMainList(sentToKyle, "cassidy"), false);
+  assert.equal(campaignApprovedByAccountManager(sentToKyle, "cassidy"), true);
+  assert.equal(campaignOnAccountManagerMainList(sentToKyle, "kyle_morris"), true);
+  assert.equal(campaignApprovedByAccountManager(sentToKyle, "kyle_morris"), false);
+  assert.equal(campaignInAccountManagerQueue(sentToKyle, "cassidy"), false);
+
+  const kyleOnlyRevised = {
+    status: "in_review",
+    internal_review_assignee: "cassidy",
+    internal_revision_authors: "kyle_morris",
+    internal_approved_by: "cassidy",
+  };
+  assert.equal(campaignOnAccountManagerMainList(kyleOnlyRevised, "kyle_morris"), true);
+  assert.equal(campaignApprovedByAccountManager(kyleOnlyRevised, "kyle_morris"), false);
+  assert.equal(campaignVisibleToAccountManager(kyleOnlyRevised, "luis_romero"), false);
+
   assert.equal(
     revisionAuthorForFeedback({ sessionSlug: "", authorName: "Luis Romero" }),
     "luis_romero"

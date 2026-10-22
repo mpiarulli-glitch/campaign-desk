@@ -1265,6 +1265,39 @@ export function rememberInternalRevisionAuthor(
     .run(next, campaignId);
 }
 
+// Who marked it Approved Internally. A signed-in account manager is stored.
+// Michael, another admin, and an impersonated session are not. A slug already
+// on the row stays; a new account manager is added. The time moves forward
+// on each approval so a later round is distinct from the earlier one.
+export function rememberInternalApprover(
+  campaignId: string,
+  slug: string | null | undefined
+): void {
+  const clean = (slug || "").trim();
+  if (clean.endsWith(":impersonated")) return;
+  if (!isCampaignAccountManagerSlug(clean)) return;
+  const existing = getCampaignById(campaignId);
+  if (!existing) return;
+  const next = withRevisionAuthor(existing.internal_approved_by, clean);
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+          SET internal_approved_by = ?, internal_approved_at = ?
+        WHERE id = ?`
+    )
+    .run(next, nowIso(), campaignId);
+}
+
+export function clearInternalApprovers(campaignId: string): void {
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+          SET internal_approved_by = '', internal_approved_at = NULL
+        WHERE id = ?`
+    )
+    .run(campaignId);
+}
+
 function noteRevisionFeedbackAuthor(
   campaignId: string,
   status: string,
@@ -1632,7 +1665,8 @@ export function listDueApprovalThankYous(asOfIso?: string): Campaign[] {
 export function markApproved(
   campaignId: string,
   approvedBy?: string | null,
-  approvedChannel: "client" | "internal" = "client"
+  approvedChannel: "client" | "internal" = "client",
+  approverSlug?: string | null
 ): Campaign | null {
   const existing = getCampaignById(campaignId);
   if (!existing) return null;
@@ -1656,6 +1690,8 @@ export function markApproved(
     scheduleApprovalThankYou(campaignId);
   } else if (updated && approvedChannel === "internal") {
     cancelPendingApprovalThankYou(campaignId);
+    rememberInternalApprover(campaignId, approverSlug);
+    return getCampaignById(campaignId);
   }
   return updated;
 }
@@ -1681,7 +1717,8 @@ export function applyOperatorCampaignStatus(
     return markApproved(
       campaignId,
       approverLabel?.trim() || existing.approved_by || "Admin",
-      "internal"
+      "internal",
+      actorSlug
     );
   }
 
@@ -1740,6 +1777,7 @@ export function applyOperatorCampaignStatus(
 // folders until it's approved again.
 export function unapproveCampaign(campaignId: string): Campaign | null {
   clearApprovalThankYou(campaignId);
+  clearInternalApprovers(campaignId);
   return updateCampaign(campaignId, {
     status: "in_review",
     approvedAt: null,
