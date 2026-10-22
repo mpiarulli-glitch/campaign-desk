@@ -505,6 +505,11 @@ export default function ProductionPage() {
     identity: { name: string; email: string } | null;
     personalLoginInUse: { person: string; name: string } | null;
   } | null>(null);
+  const [ghl, setGhl] = useState<{
+    configured: boolean;
+    connected: boolean;
+    lastError: string;
+  } | null>(null);
   const [videographers, setVideographers] = useState<Videographer[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -883,6 +888,10 @@ export default function ProductionPage() {
     const res = await fetch("/api/basecamp/status");
     if (res.ok) setBc(await res.json());
   }
+  async function loadGhl() {
+    const res = await fetch("/api/ghl/status");
+    if (res.ok) setGhl(await res.json());
+  }
   async function disconnectBc() {
     await fetch("/api/basecamp/status", { method: "DELETE" });
     loadBc();
@@ -996,7 +1005,10 @@ export default function ProductionPage() {
       .then((data) => {
         const admin = data?.role === "admin";
         setIsAdmin(admin);
-        if (admin) loadBc();
+        if (admin) {
+          loadBc();
+          loadGhl();
+        }
       })
       .catch(() => {});
   }, []);
@@ -1449,6 +1461,14 @@ export default function ProductionPage() {
             </div>
           ) : null}
         </div>
+
+        {isAdmin && ghl?.configured ? (
+          <p className={ghl.connected ? "muted" : "error"} style={{ margin: 0 }}>
+            GoHighLevel is {ghl.connected ? "connected" : "disconnected"}.
+            {ghl.lastError ? ` ${ghl.lastError}` : ""}{" "}
+            <a href="/api/ghl/connect">{ghl.connected ? "Reconnect" : "Connect GoHighLevel"}</a>
+          </p>
+        ) : null}
 
         <div className="tabs" role="tablist" aria-label="Production views">
           <button
@@ -2489,6 +2509,28 @@ export default function ProductionPage() {
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={disconnectBc}>Disconnect</button>
                   </span>
+                ) : null}
+              </div>
+            ) : null}
+            {ghl ? (
+              <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <span
+                    className="color-dot"
+                    style={{ background: ghl.connected ? "var(--success)" : "var(--border-strong)" }}
+                  />
+                  <strong>GoHighLevel</strong>
+                  <span className="muted">
+                    {ghl.connected ? "Connected" : ghl.configured ? "Disconnected" : "Not configured"}
+                  </span>
+                  {ghl.lastError ? (
+                    <span className="error" style={{ fontSize: 12 }}>{ghl.lastError}</span>
+                  ) : null}
+                </span>
+                {ghl.configured ? (
+                  <a className="btn btn-sm" href="/api/ghl/connect">
+                    {ghl.connected ? "Reconnect" : "Connect GoHighLevel"}
+                  </a>
                 ) : null}
               </div>
             ) : null}

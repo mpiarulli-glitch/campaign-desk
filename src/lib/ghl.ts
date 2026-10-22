@@ -24,7 +24,32 @@ import { getDb, nowIso } from "./db";
 const BASE = "https://services.leadconnectorhq.com";
 const API_VERSION = process.env.GHL_API_VERSION || "2021-07-28";
 
+/** Used when GHL_REDIRECT_URI is unset or still points at the local MCP tool. */
+export const DEFAULT_GHL_REDIRECT_URI =
+  "https://hub.marketingempiregroup.com/api/ghl/callback";
+
+/**
+ * Public redirect for this hub's OAuth callback.
+ * GHL_REDIRECT_URI wins when it is a real URL. The marketplace app also has
+ * http://localhost:8889/callback for a local MCP tool; that value must not
+ * send the hub's browser flow to someone's laptop.
+ */
+export function ghlRedirectUri(): string {
+  const fromEnv = (process.env.GHL_REDIRECT_URI || "").trim();
+  if (!fromEnv) return DEFAULT_GHL_REDIRECT_URI;
+  try {
+    const host = new URL(fromEnv).hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1") {
+      return DEFAULT_GHL_REDIRECT_URI;
+    }
+  } catch {
+    return DEFAULT_GHL_REDIRECT_URI;
+  }
+  return fromEnv;
+}
+
 const TOKEN_KEY = "ghl_tokens";
+const AUTH_ERROR_KEY = "ghl_auth_error";
 const REQUEST_TIMEOUT_MS = 25_000;
 const WORKFLOW_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -132,13 +157,96 @@ function loadTokens(): TokenData | null {
   }
 }
 
-function saveTokens(token: TokenData): void {
+function saveSetting(key: string, value: string): void {
   getDb()
     .prepare(
       `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
     )
-    .run(TOKEN_KEY, JSON.stringify(token), nowIso());
+    .run(key, value, nowIso());
+}
+
+function saveTokens(token: TokenData): void {
+  saveSetting(TOKEN_KEY, JSON.stringify(token));
+  clearAuthError();
+}
+
+/** Drop token-shaped fields before a message is stored or shown. */
+function scrubSecrets(value: string): string {
+  return value
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(
+      /"(access_token|refresh_token|client_secret|id_token)"\s*:\s*"[^"]*"/gi,
+      '"$1":"[redacted]"'
+    )
+    .replace(/\b(access_token|refresh_token|client_secret|id_token)=([^&\s]+)/gi, "$1=[redacted]");
+}
+
+function readAuthError(): string {
+  try {
+    const row = getDb()
+      .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+      .get(AUTH_ERROR_KEY) as { value: string } | undefined;
+    return (row?.value || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function noteAuthError(message: string): void {
+  try {
+    saveSetting(AUTH_ERROR_KEY, scrubSecrets(message).replace(/\s+/g, " ").trim().slice(0, 500));
+  } catch {
+    // The refresh error still propagates. A missed status row is not a second failure.
+  }
+}
+
+function clearAuthError(): void {
+  try {
+    getDb().prepare(`DELETE FROM app_settings WHERE key = ?`).run(AUTH_ERROR_KEY);
+  } catch {
+    // The new tokens are already stored. Status can lag by one refresh.
+  }
+}
+
+function publicRefreshError(status: number, detail: string): string {
+  const scrubbed = scrubSecrets(detail).replace(/\s+/g, " ").trim();
+  return `GoHighLevel refused the refresh token (${status}). Re-authorise the app.${
+    scrubbed ? ` ${scrubbed.slice(0, 140)}` : ""
+  }`;
+}
+
+/**
+ * Replace `ghl_tokens` with a new agency install.
+ * Same shape the refresh path writes: access_token, refresh_token, expires_at.
+ */
+export function installAgencyTokens(input: {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn?: number;
+}): void {
+  const next: TokenData = {
+    access_token: input.accessToken,
+    refresh_token: input.refreshToken,
+    expires_at: jwtExpiry(input.accessToken) || Date.now() + (input.expiresIn || 86_400) * 1000,
+  };
+  saveTokens(next);
+  clearGhlCache();
+}
+
+export function ghlConnectionStatus(): {
+  configured: boolean;
+  connected: boolean;
+  lastError: string;
+} {
+  const c = config();
+  const lastError = readAuthError();
+  const hasToken = Boolean(loadTokens()?.refresh_token || c.seedRefreshToken);
+  return {
+    configured: Boolean(c.clientId && c.clientSecret),
+    connected: hasToken && !lastError,
+    lastError,
+  };
 }
 
 /** Read `exp` out of the JWT. More reliable than trusting `expires_in`. */
@@ -190,7 +298,7 @@ async function doRefresh(): Promise<TokenData> {
     refresh_token: current.refresh_token,
     user_type: "Company",
   });
-  if (c.redirectUri) params.set("redirect_uri", c.redirectUri);
+  params.set("redirect_uri", ghlRedirectUri());
 
   const res = await fetch(`${BASE}/oauth/token`, {
     method: "POST",
@@ -211,16 +319,14 @@ async function doRefresh(): Promise<TokenData> {
       const stored = loadTokens();
       if (stored && stored.refresh_token !== current.refresh_token && !isExpired(stored)) {
         agencyToken = stored;
+        clearAuthError();
         return stored;
       }
     }
 
-    throw new GhlError(
-      `GoHighLevel refused the refresh token (${res.status}). Re-authorise the app.${
-        detail ? ` ${detail.slice(0, 140)}` : ""
-      }`,
-      res.status
-    );
+    const message = publicRefreshError(res.status, detail);
+    noteAuthError(message);
+    throw new GhlError(message, res.status);
   }
 
   const data = (await res.json()) as {
