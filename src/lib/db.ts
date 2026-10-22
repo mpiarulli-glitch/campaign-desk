@@ -3612,6 +3612,13 @@ function migrate(database: Database.Database) {
        ON forecast_tasks(person, google_event_id)
        WHERE google_event_id != ''`
   );
+  // The timer dock reads this on a short poll. The person/date index still
+  // walks every task that person has ever had.
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_forecast_running
+       ON forecast_tasks(person, timer_started_at)
+       WHERE timer_started_at != ''`
+  );
 
   database.exec(`DROP TABLE IF EXISTS forecast_todo_repeats`);
 

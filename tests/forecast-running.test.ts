@@ -22,6 +22,13 @@ test("the app shell hosts the forecast timer dock, not the person page", () => {
   assert.match(dock, /fc-timer-docks/);
   assert.match(dock, /\/api\/forecast\/running/);
   assert.match(dock, /timer:\s*"stop"/);
+  // The visible clock still advances every second from the last reading.
+  // Asking the server that often, including from hidden tabs, was the poll.
+  assert.match(dock, /setInterval\(\(\) => setNowMs\(Date\.now\(\)\), 1000\)/);
+  assert.match(dock, /LIVE_POLL_MS = 10_000/);
+  assert.match(dock, /IDLE_POLL_MS = 30_000/);
+  assert.match(dock, /visibilityState === "hidden"/);
+  assert.match(dock, /FORECAST_TIMER_CHANGED/);
   assert.doesNotMatch(page, /fc-timer-docks/);
   assert.match(page, /notifyForecastTimerChanged/);
 

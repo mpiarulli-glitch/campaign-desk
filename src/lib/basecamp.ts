@@ -13,6 +13,7 @@ import {
   asPerson,
   forcePersonRefresh,
   hasConnection,
+  identityKey,
   personAccessToken,
   type BcIdentity,
 } from "./basecamp-identity";
@@ -2719,25 +2720,127 @@ export async function listProjectMessages(
   }
 }
 
-export async function listProjects(
-  identity: BcIdentity = SERVICE
-): Promise<Array<{ id: number; name: string }>> {
-  const out: Array<{ id: number; name: string }> = [];
-  for (let page = 1; page <= 30; page++) {
-    const res = await bc(`/projects.json?page=${page}`, undefined, identity);
-    if (!res.ok) break;
-    const arr = await res.json();
-    if (!Array.isArray(arr) || arr.length === 0) break;
-    for (const p of arr) out.push({ id: p.id, name: p.name });
-    if (arr.length < 15) break;
+type BasecampProject = { id: number; name: string };
+
+// Basecamp pages this endpoint at 15 and does not take a larger page size.
+const PROJECT_PAGE_SIZE = 15;
+const PROJECT_MAX_PAGES = 30;
+// One account list is a few kilobytes. Hold it long enough that opening
+// Forecast or Assign again in the same sitting does not page Basecamp.
+const PROJECT_CACHE_TTL_MS = 10 * 60 * 1000;
+const PROJECT_CACHE_PREFIX = "basecamp_project_list:";
+// How many pages to ask for at once after the first page proves there is more.
+const PROJECT_PAGE_BATCH = 8;
+
+const projectMemory = new Map<string, { at: number; projects: BasecampProject[] }>();
+const projectInflight = new Map<string, Promise<BasecampProject[]>>();
+
+export function clearBasecampProjectCache(): void {
+  projectMemory.clear();
+  projectInflight.clear();
+}
+
+function readStoredProjects(key: string): { at: number; projects: BasecampProject[] } | null {
+  const raw = getSetting(PROJECT_CACHE_PREFIX + key);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { at?: unknown; projects?: unknown };
+    if (!parsed || typeof parsed.at !== "number" || !Array.isArray(parsed.projects)) return null;
+    return { at: parsed.at, projects: parsed.projects as BasecampProject[] };
+  } catch {
+    return null;
   }
+}
+
+function writeStoredProjects(key: string, row: { at: number; projects: BasecampProject[] }) {
+  setSetting(PROJECT_CACHE_PREFIX + key, JSON.stringify(row));
+}
+
+async function fetchProjectPage(
+  identity: BcIdentity,
+  page: number
+): Promise<BasecampProject[] | null> {
+  const res = await bc(`/projects.json?page=${page}`, undefined, identity);
+  if (!res.ok) return null;
+  const arr = await res.json();
+  if (!Array.isArray(arr)) return null;
+  const out: BasecampProject[] = [];
+  for (const p of arr) out.push({ id: p.id, name: p.name });
   return out;
+}
+
+async function fetchAllProjects(
+  identity: BcIdentity
+): Promise<{ projects: BasecampProject[]; complete: boolean }> {
+  const first = await fetchProjectPage(identity, 1);
+  if (!first) return { projects: [], complete: false };
+  if (first.length < PROJECT_PAGE_SIZE) return { projects: first, complete: true };
+
+  const projects = [...first];
+  let page = 2;
+  while (page <= PROJECT_MAX_PAGES) {
+    const batch: number[] = [];
+    while (batch.length < PROJECT_PAGE_BATCH && page <= PROJECT_MAX_PAGES) {
+      batch.push(page);
+      page += 1;
+    }
+    const results = await Promise.all(batch.map((n) => fetchProjectPage(identity, n)));
+    for (const result of results) {
+      if (!result) return { projects, complete: false };
+      if (result.length === 0) return { projects, complete: true };
+      projects.push(...result);
+      if (result.length < PROJECT_PAGE_SIZE) return { projects, complete: true };
+    }
+  }
+  return { projects, complete: true };
+}
+
+function refreshProjectList(key: string, identity: BcIdentity): Promise<BasecampProject[]> {
+  const existing = projectInflight.get(key);
+  if (existing) return existing;
+  // The finally callback runs after this assignment, so it can see `job`.
+  const job = (async () => {
+    const { projects, complete } = await fetchAllProjects(identity);
+    if (complete) {
+      const row = { at: Date.now(), projects };
+      projectMemory.set(key, row);
+      try {
+        writeStoredProjects(key, row);
+      } catch {
+        // The memory copy still serves this process.
+      }
+    }
+    return projects;
+  })().finally(() => {
+    if (projectInflight.get(key) === job) projectInflight.delete(key);
+  });
+  projectInflight.set(key, job);
+  return job;
+}
+
+export async function listProjects(
+  identity: BcIdentity = SERVICE,
+  opts?: { fresh?: boolean }
+): Promise<BasecampProject[]> {
+  const key = identityKey(identity);
+  const now = Date.now();
+  if (!opts?.fresh) {
+    const cached = projectMemory.get(key) || readStoredProjects(key);
+    if (cached) {
+      projectMemory.set(key, cached);
+      if (now - cached.at < PROJECT_CACHE_TTL_MS) return cached.projects;
+      void refreshProjectList(key, identity).catch(() => {});
+      return cached.projects;
+    }
+  }
+  return refreshProjectList(key, identity);
 }
 
 export function disconnectBasecamp() {
   getDb()
-    .prepare(`DELETE FROM app_settings WHERE key IN (?, ?)`)
-    .run("basecamp_tokens", "basecamp_service_identity");
+    .prepare(`DELETE FROM app_settings WHERE key IN (?, ?) OR key LIKE ?`)
+    .run("basecamp_tokens", "basecamp_service_identity", `${PROJECT_CACHE_PREFIX}%`);
+  clearBasecampProjectCache();
 }
 
 // --------------------------------------------------------------- Onboarding
