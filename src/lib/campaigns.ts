@@ -44,6 +44,10 @@ import {
   type OperatorCampaignStatus,
 } from "./campaign-status";
 import type { CampaignKindScope } from "./people";
+import {
+  isCampaignAccountManagerSlug,
+  withRevisionAuthor,
+} from "./campaign-review-queue";
 
 // The campaigns.html_content column is only a convenience thumbnail for list
 // views. Keep it in sync with the first asset, rendered the same way the
@@ -1246,6 +1250,64 @@ export function listComments(
     .all(...params) as Comment[];
 }
 
+export function rememberInternalRevisionAuthor(
+  campaignId: string,
+  slug: string | null | undefined
+): void {
+  const clean = (slug || "").trim();
+  if (!isCampaignAccountManagerSlug(clean)) return;
+  const existing = getCampaignById(campaignId);
+  if (!existing) return;
+  const next = withRevisionAuthor(existing.internal_revision_authors, clean);
+  if (next === (existing.internal_revision_authors || "")) return;
+  getDb()
+    .prepare(`UPDATE campaigns SET internal_revision_authors = ? WHERE id = ?`)
+    .run(next, campaignId);
+}
+
+// Who marked it Approved Internally. A signed-in account manager is stored.
+// Michael, another admin, and an impersonated session are not. A slug already
+// on the row stays; a new account manager is added. The time moves forward
+// on each approval so a later round is distinct from the earlier one.
+export function rememberInternalApprover(
+  campaignId: string,
+  slug: string | null | undefined
+): void {
+  const clean = (slug || "").trim();
+  if (clean.endsWith(":impersonated")) return;
+  if (!isCampaignAccountManagerSlug(clean)) return;
+  const existing = getCampaignById(campaignId);
+  if (!existing) return;
+  const next = withRevisionAuthor(existing.internal_approved_by, clean);
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+          SET internal_approved_by = ?, internal_approved_at = ?
+        WHERE id = ?`
+    )
+    .run(next, nowIso(), campaignId);
+}
+
+export function clearInternalApprovers(campaignId: string): void {
+  getDb()
+    .prepare(
+      `UPDATE campaigns
+          SET internal_approved_by = '', internal_approved_at = NULL
+        WHERE id = ?`
+    )
+    .run(campaignId);
+}
+
+function noteRevisionFeedbackAuthor(
+  campaignId: string,
+  status: string,
+  channel: ReviewChannel,
+  authorSlug: string | null | undefined
+): void {
+  if (statusAfterReviewerComment(status, channel) !== "needs_revisions_internal") return;
+  rememberInternalRevisionAuthor(campaignId, authorSlug);
+}
+
 export function addComment(input: {
   campaignId: string;
   emailId?: string | null;
@@ -1257,6 +1319,7 @@ export function addComment(input: {
   quoteText?: string | null;
   quoteOrdinal?: number | null;
   channel?: ReviewChannel;
+  authorSlug?: string | null;
 }): Comment {
   const db = getDb();
   const id = nanoid(12);
@@ -1299,11 +1362,17 @@ export function addComment(input: {
   );
 
   const campaign = getCampaignById(input.campaignId);
+  const channel = input.channel || "internal";
+  if (campaign) {
+    noteRevisionFeedbackAuthor(
+      input.campaignId,
+      campaign.status,
+      channel,
+      input.authorSlug
+    );
+  }
   const nextStatus = campaign
-    ? statusAfterReviewerComment(
-        campaign.status,
-        input.channel || "internal"
-      )
+    ? statusAfterReviewerComment(campaign.status, channel)
     : null;
   if (nextStatus && nextStatus !== campaign?.status) {
     updateCampaign(input.campaignId, { status: nextStatus as CampaignStatus });
@@ -1332,6 +1401,7 @@ export function addReply(input: {
   authorName?: string;
   body: string;
   isAdmin: boolean;
+  authorSlug?: string | null;
 }): CommentReply {
   const id = nanoid(12);
   const ts = nowIso();
@@ -1350,6 +1420,18 @@ export function addReply(input: {
       input.isAdmin ? 1 : 0,
       ts
     );
+  if (!input.isAdmin) {
+    const parent = getCommentById(input.commentId);
+    const campaign = getCampaignById(input.campaignId);
+    if (parent && campaign && (parent.channel || "internal") === "internal") {
+      noteRevisionFeedbackAuthor(
+        input.campaignId,
+        campaign.status,
+        "internal",
+        input.authorSlug
+      );
+    }
+  }
   return getDb()
     .prepare(`SELECT * FROM comment_replies WHERE id = ?`)
     .get(id) as CommentReply;
@@ -1583,7 +1665,8 @@ export function listDueApprovalThankYous(asOfIso?: string): Campaign[] {
 export function markApproved(
   campaignId: string,
   approvedBy?: string | null,
-  approvedChannel: "client" | "internal" = "client"
+  approvedChannel: "client" | "internal" = "client",
+  approverSlug?: string | null
 ): Campaign | null {
   const existing = getCampaignById(campaignId);
   if (!existing) return null;
@@ -1607,6 +1690,8 @@ export function markApproved(
     scheduleApprovalThankYou(campaignId);
   } else if (updated && approvedChannel === "internal") {
     cancelPendingApprovalThankYou(campaignId);
+    rememberInternalApprover(campaignId, approverSlug);
+    return getCampaignById(campaignId);
   }
   return updated;
 }
@@ -1617,18 +1702,23 @@ export function markApproved(
 export function applyOperatorCampaignStatus(
   campaignId: string,
   next: string,
-  approverLabel?: string | null
+  approverLabel?: string | null,
+  actorSlug?: string | null
 ): Campaign | null {
   if (!isOperatorCampaignStatus(next)) return null;
   const existing = getCampaignById(campaignId);
   if (!existing) return null;
 
   const choice: OperatorCampaignStatus = next;
+  if (choice === "needs_revisions_internal") {
+    rememberInternalRevisionAuthor(campaignId, actorSlug);
+  }
   if (choice === "approved_internally") {
     return markApproved(
       campaignId,
       approverLabel?.trim() || existing.approved_by || "Admin",
-      "internal"
+      "internal",
+      actorSlug
     );
   }
 
@@ -1687,6 +1777,7 @@ export function applyOperatorCampaignStatus(
 // folders until it's approved again.
 export function unapproveCampaign(campaignId: string): Campaign | null {
   clearApprovalThankYou(campaignId);
+  clearInternalApprovers(campaignId);
   return updateCampaign(campaignId, {
     status: "in_review",
     approvedAt: null,

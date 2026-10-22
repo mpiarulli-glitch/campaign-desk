@@ -45,6 +45,7 @@ type CampaignRow = {
   updated_at: string;
   approved_at: string | null;
   open_comments: number;
+  internal_revision_authors?: string;
   email_count?: number;
   email_kinds?: AssetKind[];
   magic_token: string;
@@ -86,6 +87,7 @@ const TYPE_LABEL: Record<AssetKind, string> = {
 
 const VIEW_STORAGE_KEY = "cd-campaigns-view";
 type CampaignView = "list" | "board" | "review";
+type CampaignScope = "mine" | "approved";
 
 function isCampaignView(value: string | null): value is CampaignView {
   return value === "list" || value === "board" || value === "review";
@@ -531,6 +533,7 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<ListStatusFilter>("all");
   const [view, setView] = useState<CampaignView>("list");
+  const [scope, setScope] = useState<CampaignScope>("mine");
   const [viewerSlug, setViewerSlug] = useState<string | null>(null);
   const [viewerIsAccountManager, setViewerIsAccountManager] = useState(false);
   const [kindScope, setKindScope] = useState<CampaignKindScope | "all">("all");
@@ -552,10 +555,10 @@ export default function AdminPage() {
 
   const pool = useMemo(
     () =>
-      filter === "archived"
+      filter === "archived" || scope === "approved"
         ? campaigns
         : campaigns.filter((c) => !isDoneCampaignStatus(c.status)),
-    [campaigns, filter]
+    [campaigns, filter, scope]
   );
   const dateBounds = resolveDateBounds(datePreset);
   const dated = pool.filter((c) => matchesDateFilter(c, dateBounds));
@@ -655,6 +658,14 @@ export default function AdminPage() {
     if (nextUrl !== current) window.history.replaceState(null, "", nextUrl);
   }
 
+  function chooseScope(next: CampaignScope) {
+    setScope(next);
+    replaceQuery((params) => {
+      if (next === "mine") params.delete("scope");
+      else params.set("scope", "approved");
+    });
+  }
+
   function rememberView(next: CampaignView) {
     setView(next);
     try {
@@ -707,13 +718,16 @@ export default function AdminPage() {
 
   const load = useCallback(async (
     nextFilter: "active" | "archived",
+    nextScope: CampaignScope,
     opts?: { silent?: boolean }
   ) => {
     if (!opts?.silent) setLoading(true);
     setError("");
-    const res = await fetch(
-      `/api/campaigns${nextFilter === "archived" ? "?archived=1" : ""}`
-    );
+    const params = new URLSearchParams();
+    if (nextFilter === "archived") params.set("archived", "1");
+    if (nextScope === "approved") params.set("approved", "mine");
+    const qs = params.toString();
+    const res = await fetch(`/api/campaigns${qs ? `?${qs}` : ""}`);
     if (res.status === 401) {
       router.push("/login");
       return;
@@ -725,7 +739,7 @@ export default function AdminPage() {
     }
     const data = await res.json();
     const rows = (data.campaigns || []) as CampaignRow[];
-    if (nextFilter === "active") {
+    if (nextFilter === "active" && nextScope === "mine") {
       setDoneCount(rows.filter((c) => isDoneCampaignStatus(c.status)).length);
     }
     setCampaigns(rows);
@@ -764,12 +778,12 @@ export default function AdminPage() {
       setError(archived ? "Could not archive." : "Could not restore.");
       return;
     }
-    load(filter, { silent: true });
+    load(filter, scope, { silent: true });
   }
 
   useEffect(() => {
-    void load(filter);
-  }, [filter, load]);
+    void load(filter, scope);
+  }, [filter, scope, load]);
 
   // ?status= selects one workflow status. Sent and Live go to Done.
   // "all" and the older "open" alias clear it. A leftover stage id is ignored
@@ -777,8 +791,11 @@ export default function AdminPage() {
   // when the URL does not name them. ?view= wins over the saved view.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const requestedScope: CampaignScope =
+      params.get("scope") === "approved" ? "approved" : "mine";
+    setScope(requestedScope);
     const status = params.get("status");
-    if (status && isDoneListStatus(status)) {
+    if (status && isDoneListStatus(status) && requestedScope !== "approved") {
       router.replace("/admin/campaigns/done");
       return;
     }
@@ -829,17 +846,23 @@ export default function AdminPage() {
   }, [router]);
 
 
-  const showReviewTab =
-    Boolean(viewerSlug) &&
-    (viewerIsAccountManager ||
-      campaigns.some((c) => campaignInAccountManagerQueue(c, viewerSlug!)));
+  const showReviewTab = viewerIsAccountManager && scope === "mine";
+  const listingView: CampaignView = scope === "approved" ? "list" : view;
   const inMyQueue = (c: CampaignRow) =>
     Boolean(viewerSlug) && campaignInAccountManagerQueue(c, viewerSlug!);
   const reviewPool = searched.filter(inMyQueue);
   const reviewVisible = visible.filter(inMyQueue);
 
   useEffect(() => {
-    if (loading || view !== "review" || showReviewTab) return;
+    if (loading || viewerIsAccountManager || scope === "mine") return;
+    setScope("mine");
+    replaceQuery((params) => {
+      params.delete("scope");
+    });
+  }, [loading, viewerIsAccountManager, scope]);
+
+  useEffect(() => {
+    if (loading || view !== "review" || viewerIsAccountManager) return;
     setView("list");
     try {
       if (localStorage.getItem(VIEW_STORAGE_KEY) === "review") {
@@ -851,7 +874,7 @@ export default function AdminPage() {
     replaceQuery((params) => {
       if (params.get("view") === "review") params.delete("view");
     });
-  }, [loading, view, showReviewTab]);
+  }, [loading, view, viewerIsAccountManager]);
 
   const board = groupCampaignsByBoard(visible);
 
@@ -861,32 +884,52 @@ export default function AdminPage() {
         <div className="clist">
           <div className="clist-head">
             <h1 className="h1">{kindScope === "blog" ? "Blog posts" : "Campaigns"}</h1>
-            <div className="clist-view" role="group" aria-label="Campaign view">
-              <button
-                type="button"
-                aria-pressed={view === "list"}
-                onClick={() => rememberView("list")}
-              >
-                List
-              </button>
-              <button
-                type="button"
-                aria-pressed={view === "board"}
-                onClick={() => rememberView("board")}
-              >
-                Board
-              </button>
-              {showReviewTab ? (
+            {viewerIsAccountManager ? (
+              <div className="clist-view" role="group" aria-label="Which campaigns">
                 <button
                   type="button"
-                  aria-pressed={view === "review"}
-                  aria-label="Campaigns needing your review"
-                  onClick={() => rememberView("review")}
+                  aria-pressed={scope === "mine"}
+                  onClick={() => chooseScope("mine")}
                 >
-                  Needs your review
+                  My campaigns
                 </button>
-              ) : null}
-            </div>
+                <button
+                  type="button"
+                  aria-pressed={scope === "approved"}
+                  onClick={() => chooseScope("approved")}
+                >
+                  Approved by me
+                </button>
+              </div>
+            ) : null}
+            {scope === "mine" ? (
+              <div className="clist-view" role="group" aria-label="Campaign view">
+                <button
+                  type="button"
+                  aria-pressed={view === "list"}
+                  onClick={() => rememberView("list")}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={view === "board"}
+                  onClick={() => rememberView("board")}
+                >
+                  Board
+                </button>
+                {showReviewTab ? (
+                  <button
+                    type="button"
+                    aria-pressed={view === "review"}
+                    aria-label="Campaigns needing your review"
+                    onClick={() => rememberView("review")}
+                  >
+                    Needs your review
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <Link className="clist-done" href="/admin/campaigns/done">
               Done
               {doneCount != null ? <span className="clist-done-count">{doneCount}</span> : null}
@@ -1007,7 +1050,7 @@ export default function AdminPage() {
             ) : null}
           </div>
 
-          <div className={view === "board" ? "dashboard-grid clist-board-wrap" : "dashboard-grid"}>
+          <div className={listingView === "board" ? "dashboard-grid clist-board-wrap" : "dashboard-grid"}>
             <div className="stack" style={{ gap: 12 }}>
               {loading ? (
                 <p className="muted">Loading...</p>
@@ -1019,16 +1062,24 @@ export default function AdminPage() {
                 ) : (
                   <div className="empty">
                     <p>
-                      {kindScope === "blog" ? "No blog posts yet." : "No campaigns yet."}
+                      {viewerIsAccountManager
+                        ? scope === "approved"
+                          ? "Campaigns you mark Approved Internally show up here."
+                          : "Campaigns appear here after they're sent to you for review, or after you leave revisions. Once you approve one, it moves to Approved by me."
+                        : kindScope === "blog"
+                          ? "No blog posts yet."
+                          : "No campaigns yet."}
                     </p>
-                    <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
-                      {kindScope === "blog"
-                        ? "Create your first blog post"
-                        : "Upload your first email"}
-                    </Link>
+                    {viewerIsAccountManager ? null : (
+                      <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
+                        {kindScope === "blog"
+                          ? "Create your first blog post"
+                          : "Upload your first email"}
+                      </Link>
+                    )}
                   </div>
                 )
-              ) : view === "review" ? (
+              ) : listingView === "review" ? (
                 reviewPool.length === 0 ? (
                   <div className="empty">
                     <p>Nothing needs your review right now.</p>
@@ -1105,7 +1156,7 @@ export default function AdminPage() {
                       : "No campaigns match these filters."}
                   </p>
                 </div>
-              ) : view === "board" ? (
+              ) : listingView === "board" ? (
                 <div className="clist-board" aria-label="Campaigns by stage">
                   {board.map((column) => (
                     <section
@@ -1152,7 +1203,7 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
-            {view === "list" ? <ActivitySidebar /> : null}
+            {scope === "mine" && listingView === "list" ? <ActivitySidebar /> : null}
           </div>
         </div>
       </main>

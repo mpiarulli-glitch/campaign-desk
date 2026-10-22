@@ -1,10 +1,18 @@
-// Account-manager queue on the Campaigns tab.
+// What an account manager sees on the Campaigns tab.
 //
-// A campaign needs this person's eyes when it is in the internal review loop
-// and it is theirs: the client's account manager resolves to their login (the
-// same Owner column the list already shows), or the internal-review to-do was
-// assigned to them. Either one is enough. Kyle the account manager is Kyle
-// Morris; Kyle Onstott is a different login and does not match "Kyle".
+// Cassidy, Kyle Morris, and Luis are the account managers. Michael and every
+// other login still see the full list. An account manager sees a campaign
+// only when the internal review was sent to them, or when they left revisions
+// on it. Later statuses stay visible so they can follow that work.
+//
+// Once that account manager marks it Approved Internally, it leaves their
+// main list and shows under Approved by me. It comes back to the main list
+// when a later internal review is assigned to them. Another account manager
+// who only left revisions still follows it on their main list.
+//
+// The three queue sections are the main list, narrowed to the internal loop:
+// Needs your review, Revisions made, and Revisions left. Owning the client
+// is not enough.
 
 export const CAMPAIGN_ACCOUNT_MANAGER_SLUGS = [
   "cassidy",
@@ -19,6 +27,74 @@ export function isCampaignAccountManagerSlug(
     Boolean(slug) &&
     (CAMPAIGN_ACCOUNT_MANAGER_SLUGS as readonly string[]).includes(slug!)
   );
+}
+
+// Names the review page and older comments actually store. Bare "Kyle" is
+// left unmatched: Kyle Morris and Kyle Onstott are different people.
+const REVIEWER_NAME_TO_AM: Record<string, string> = {
+  cassidy: "cassidy",
+  "cassidy merideth": "cassidy",
+  "kyle morris": "kyle_morris",
+  "morris kyle": "kyle_morris",
+  morris: "kyle_morris",
+  kyle_morris: "kyle_morris",
+  luis: "luis_romero",
+  "luis romero": "luis_romero",
+  luis_romero: "luis_romero",
+};
+
+export function accountManagerSlugFromReviewerName(
+  value: string | null | undefined
+): string | null {
+  const raw = (value || "").trim().toLowerCase();
+  if (!raw || raw === "reviewer") return null;
+  const spaced = raw.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
+  const underscored = spaced.replace(/ /g, "_");
+  return (
+    REVIEWER_NAME_TO_AM[spaced] ||
+    REVIEWER_NAME_TO_AM[underscored] ||
+    REVIEWER_NAME_TO_AM[raw] ||
+    null
+  );
+}
+
+// Who to store when revision feedback is saved. A signed-in account manager
+// wins. A signed-in person who is not an account manager (Michael) is not
+// credited from the name they typed. With no session, the typed name is the
+// only record the review page has.
+export function revisionAuthorForFeedback(input: {
+  sessionSlug?: string | null;
+  authorName?: string | null;
+}): string | null {
+  const raw = (input.sessionSlug || "").trim();
+  if (raw.endsWith(":impersonated")) return null;
+  if (isCampaignAccountManagerSlug(raw)) return raw;
+  if (raw) return null;
+  return accountManagerSlugFromReviewerName(input.authorName);
+}
+
+export function revisionAuthorSlugs(value: string | null | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of (value || "").split(",")) {
+    const slug = part.trim();
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+  }
+  return out;
+}
+
+export function withRevisionAuthor(
+  current: string | null | undefined,
+  slug: string | null | undefined
+): string {
+  const existing = revisionAuthorSlugs(current);
+  const next = (slug || "").trim();
+  if (!isCampaignAccountManagerSlug(next) || existing.includes(next)) {
+    return existing.join(",");
+  }
+  return [...existing, next].join(",");
 }
 
 export type AccountManagerReviewSection =
@@ -61,25 +137,117 @@ export function accountManagerReviewSection(
   );
 }
 
-export function campaignAssignedToAccountManager(
-  campaign: { owner_key?: string | null; review_assignee?: string | null },
+export type CampaignVisibility = {
+  status?: string;
+  internal_review_assignee?: string | null;
+  review_assignee?: string | null;
+  internal_revision_authors?: string | null;
+  // Account-manager slugs who marked this Approved Internally, comma-separated.
+  // Survives client approval and later statuses. approved_by does not.
+  internal_approved_by?: string | null;
+};
+
+export type AccountManagerListScope = "main" | "approved";
+
+export function internalApproverSlugs(value: string | null | undefined): string[] {
+  return revisionAuthorSlugs(value);
+}
+
+// The internal loop is assigned to this account manager again, so the campaign
+// belongs on their main list until they approve it once more.
+export function campaignBackWithAccountManager(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  if (!slug || !campaign.status) return false;
+  if (!accountManagerReviewSection(campaign.status)) return false;
+  return campaignAssignedToAccountManager(campaign, slug);
+}
+
+export function campaignApprovedByAccountManager(
+  campaign: CampaignVisibility,
   slug: string
 ): boolean {
   if (!slug) return false;
-  return campaign.owner_key === slug || campaign.review_assignee === slug;
+  if (!internalApproverSlugs(campaign.internal_approved_by).includes(slug)) return false;
+  return !campaignBackWithAccountManager(campaign, slug);
+}
+
+// Main list: work sent to them or revisions they left, except campaigns they
+// have internally approved and that are not back in an internal review for them.
+export function campaignOnAccountManagerMainList(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  if (!slug) return false;
+  if (campaignBackWithAccountManager(campaign, slug)) return true;
+  if (internalApproverSlugs(campaign.internal_approved_by).includes(slug)) return false;
+  if (campaignAssignedToAccountManager(campaign, slug)) return true;
+  return revisionAuthorSlugs(campaign.internal_revision_authors).includes(slug);
+}
+
+export function campaignAssignedToAccountManager(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  if (!slug) return false;
+  const assignee = (
+    campaign.internal_review_assignee ||
+    campaign.review_assignee ||
+    ""
+  ).trim();
+  return assignee === slug;
+}
+
+// Either tab. Search uses this so an account manager can still find a campaign
+// they approved, without seeing anyone else's.
+export function campaignVisibleToAccountManager(
+  campaign: CampaignVisibility,
+  slug: string
+): boolean {
+  return (
+    campaignOnAccountManagerMainList(campaign, slug) ||
+    campaignApprovedByAccountManager(campaign, slug)
+  );
+}
+
+export type CampaignListViewer = {
+  role: string;
+  person: string | null;
+} | null;
+
+// The slug whose Campaigns list is limited, or null when this login sees
+// every campaign. Michael's owner session has no person. Other admins are
+// not account managers.
+export function accountManagerViewerSlug(
+  session: CampaignListViewer
+): string | null {
+  const person = session?.person?.trim() || "";
+  if (!person || !isCampaignAccountManagerSlug(person)) return null;
+  return person;
+}
+
+export function campaignsVisibleToViewer<T extends CampaignVisibility>(
+  rows: T[],
+  session: CampaignListViewer,
+  scope: AccountManagerListScope = "main"
+): T[] {
+  const slug = accountManagerViewerSlug(session);
+  if (!slug) return rows;
+  const keep =
+    scope === "approved"
+      ? campaignApprovedByAccountManager
+      : campaignOnAccountManagerMainList;
+  return rows.filter((row) => keep(row, slug));
 }
 
 export function campaignInAccountManagerQueue(
-  campaign: {
-    status: string;
-    owner_key?: string | null;
-    review_assignee?: string | null;
-  },
+  campaign: CampaignVisibility & { status: string },
   slug: string
 ): boolean {
   return (
     accountManagerReviewSection(campaign.status) != null &&
-    campaignAssignedToAccountManager(campaign, slug)
+    campaignOnAccountManagerMainList(campaign, slug)
   );
 }
 

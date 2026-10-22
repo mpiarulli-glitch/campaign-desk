@@ -5,7 +5,11 @@ import {
   isCampaignsReadAuthenticated,
   sessionCampaignKind,
 } from "@/lib/auth";
-import { isCampaignAccountManagerSlug } from "@/lib/campaign-review-queue";
+import {
+  campaignsVisibleToViewer,
+  isCampaignAccountManagerSlug,
+  type AccountManagerListScope,
+} from "@/lib/campaign-review-queue";
 import {
   createCampaign,
   listCampaigns,
@@ -42,8 +46,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const archived =
-    new URL(request.url).searchParams.get("archived") === "1";
+  const params = new URL(request.url).searchParams;
+  const archived = params.get("archived") === "1";
+  // Account managers only. Admins ignore this and still receive every campaign.
+  const listScope: AccountManagerListScope =
+    params.get("approved") === "mine" ? "approved" : "main";
 
   const kindScope = await sessionCampaignKind();
   const source = kindScope
@@ -60,7 +67,11 @@ export async function GET(request: Request) {
     session && !(session.role === "admin" && session.person === null)
       ? session.person
       : null;
-  const campaigns = source.map((c) => {
+  // Account managers receive their main list, or Approved by me when asked.
+  // A campaign they internally approved leaves the main list until a later
+  // internal review is assigned to them. Michael and other admins get every row.
+  const visible = campaignsVisibleToViewer(source, session, listScope);
+  const campaigns = visible.map((c) => {
     const send = pickDisplayedSendAt(
       [...(emailSends.get(c.id) || []), c.scheduled_send_at],
       now

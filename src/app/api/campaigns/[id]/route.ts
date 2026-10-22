@@ -151,7 +151,7 @@ export async function PATCH(request: Request, { params }: Params) {
       "internal"
     );
     if (approved && allApproved && existing.status !== "approved") {
-      markApproved(id, approverLabel, "internal");
+      markApproved(id, approverLabel, "internal", await sessionUserSlug());
       await syncCard(id, "approved");
     }
     if (!approved && existing.status === "approved") {
@@ -230,7 +230,12 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   if (body.markApproved === true) {
-    const campaign = markApproved(id, await internalApproverLabel(), "internal");
+    const campaign = markApproved(
+      id,
+      await internalApproverLabel(),
+      "internal",
+      await sessionUserSlug()
+    );
     if (!campaign) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -284,7 +289,12 @@ export async function PATCH(request: Request, { params }: Params) {
     }
     flippedToSent = scheduled.flippedToSent;
   } else if (statusChoice) {
-    applyOperatorCampaignStatus(id, statusChoice, await internalApproverLabel());
+    applyOperatorCampaignStatus(
+      id,
+      statusChoice,
+      await internalApproverLabel(),
+      await sessionUserSlug()
+    );
   }
 
   if (
