@@ -4,11 +4,14 @@
 //
 // `in_review` is client review ("Sent for approval"). Internal review is
 // `internal_review`. Client "Needs Changes" is `needs_changes`. Internal
-// feedback is `needs_revisions_internal`. Those pairs must stay distinct.
+// feedback is `needs_revisions_internal` ("revisions left"). After Michael
+// marks that work done, `revisions_made` sends it back to the account manager.
+// Those stay distinct from client "Needs Changes" and "Sent for approval".
 export const OPERATOR_STATUS_OPTIONS = [
   { value: "draft", label: "Draft" },
   { value: "internal_review", label: "Internal Review" },
   { value: "needs_revisions_internal", label: "Needs revisions (internal)" },
+  { value: "revisions_made", label: "Revisions made" },
   { value: "approved_internally", label: "Approved Internally" },
   { value: "in_review", label: "Sent for approval" },
   { value: "needs_changes", label: "Needs Changes" },
@@ -39,6 +42,7 @@ export const STATUS_BUCKETS: {
       "draft",
       "internal_review",
       "needs_revisions_internal",
+      "revisions_made",
       "approved_internally",
       "needs_changes",
     ],
@@ -207,6 +211,7 @@ export const BOARD_COLUMNS: {
     label: "Needs revisions",
     values: ["needs_revisions_internal"],
   },
+  { id: "revisions_made", label: "Revisions made", values: ["revisions_made"] },
   {
     id: "approved_internally",
     label: "Approved internally",
@@ -326,6 +331,7 @@ const INTERNAL_REVISION_FROM = new Set([
   "draft",
   "internal_review",
   "needs_revisions_internal",
+  "revisions_made",
 ]);
 
 const CLIENT_REVISION_FROM = new Set([
@@ -334,6 +340,7 @@ const CLIENT_REVISION_FROM = new Set([
   "needs_changes",
   "internal_review",
   "needs_revisions_internal",
+  "revisions_made",
 ]);
 
 // Internal-link comments stay on the internal workflow. Client-link comments
@@ -352,9 +359,15 @@ export function statusAfterReviewerComment(
   return CLIENT_REVISION_FROM.has(status) ? "needs_changes" : null;
 }
 
+// Internal notes go back to the account manager as Revisions made.
+// Client notes go back to Sent for approval.
 export function statusAfterMarkRevisionDone(status: string): string {
-  if (status === "needs_revisions_internal" || status === "internal_review") {
-    return "internal_review";
+  if (
+    status === "needs_revisions_internal" ||
+    status === "internal_review" ||
+    status === "revisions_made"
+  ) {
+    return "revisions_made";
   }
   return "in_review";
 }

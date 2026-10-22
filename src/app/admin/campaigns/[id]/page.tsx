@@ -16,6 +16,7 @@ import {
   OPERATOR_STATUS_OPTIONS,
   operatorStatusLabel,
   operatorStatusValue,
+  statusAfterMarkRevisionDone,
 } from "@/lib/campaign-status";
 import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
 import { APP_TIME_ZONE, currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
@@ -1076,6 +1077,10 @@ export default function AdminCampaignPage() {
     status === "needs_revisions_internal" ||
     openCount > 0 ||
     status === "draft";
+  const handingBackToAccountManager =
+    status === "needs_revisions_internal" ||
+    status === "internal_review" ||
+    status === "revisions_made";
   const isApproved = status === "approved";
   const internallyApproved =
     isApproved && campaign?.approved_channel === "internal";
@@ -1811,10 +1816,12 @@ export default function AdminCampaignPage() {
       return;
     }
     const data = await res.json().catch(() => ({}));
-    if (data.campaign?.status) setStatus(data.campaign.status);
-    else setStatus(status === "needs_revisions_internal" ? "internal_review" : "in_review");
+    const next = data.campaign?.status || statusAfterMarkRevisionDone(status);
+    setStatus(next);
     setMessage(
-      "Revision marked done. All feedback resolved and package is ready for re-review."
+      next === "revisions_made"
+        ? "Revisions marked done. The account manager has this back as Revisions made."
+        : "Revision marked done. All feedback resolved and the package is ready for the client to review again."
     );
     load(activeEmailId);
   }
@@ -3232,7 +3239,9 @@ export default function AdminCampaignPage() {
             <div className="next-steps-copy">
               <strong>Next step</strong>
               <span className="muted">
-                Resolve open feedback and send it back for review.
+                {handingBackToAccountManager
+                  ? "Mark these done to send the campaign back as Revisions made."
+                  : "Resolve open feedback and send it back for review."}
               </span>
             </div>
             <div className="row next-steps-actions">
@@ -3241,8 +3250,8 @@ export default function AdminCampaignPage() {
                 onClick={markRevisionDone}
                 disabled={saving}
                 title={
-                  status === "needs_revisions_internal"
-                    ? `Marks all open feedback resolved and sets status to ${operatorStatusLabel("internal_review")} so the account manager can check the update.`
+                  handingBackToAccountManager
+                    ? "Marks all open feedback resolved and sets status to Revisions made."
                     : `Marks all open feedback resolved and sets status to ${operatorStatusLabel("in_review")} so the client can check the update.`
                 }
               >

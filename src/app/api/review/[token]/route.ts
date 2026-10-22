@@ -86,7 +86,8 @@ function publicCampaign(campaign: Campaign, viewer: ReviewChannel) {
     hideFromClient ||
     (viewer === "external" &&
       (campaign.status === "internal_review" ||
-        campaign.status === "needs_revisions_internal"));
+        campaign.status === "needs_revisions_internal" ||
+        campaign.status === "revisions_made"));
   return {
     id: campaign.id,
     title: campaign.title,
