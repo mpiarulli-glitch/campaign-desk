@@ -18,8 +18,15 @@ type RunningTask = {
   timer_started_at: string;
 };
 
-const LIVE_POLL_MS = 1000;
-const IDLE_POLL_MS = 20_000;
+// The clock on screen ticks locally every second. These intervals only refresh
+// which tasks are running, so a hidden tab does not need to ask at all and a
+// visible one does not need to ask every second.
+const LIVE_POLL_MS = 10_000;
+const IDLE_POLL_MS = 30_000;
+
+function tabHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
 
 export function TimerDock() {
   const pathname = usePathname();
@@ -53,25 +60,33 @@ export function TimerDock() {
 
     function schedule() {
       if (timer) clearTimeout(timer);
+      if (!on || tabHidden()) return;
       const ms = tasksRef.current.length ? LIVE_POLL_MS : IDLE_POLL_MS;
       timer = setTimeout(async () => {
-        if (!on) return;
+        if (!on || tabHidden()) return;
         await load();
         if (on) schedule();
       }, ms);
     }
 
-    void load().then(() => {
+    void (async () => {
+      if (tabHidden()) return;
+      await load();
       if (on) schedule();
-    });
+    })();
 
     function refresh() {
+      if (tabHidden()) return;
       void load().then(() => {
         if (on) schedule();
       });
     }
     function onVisibility() {
       if (document.visibilityState === "visible") refresh();
+      else if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
     }
 
     window.addEventListener("focus", refresh);

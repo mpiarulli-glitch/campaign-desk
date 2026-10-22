@@ -95,7 +95,7 @@ export async function syncClientContacts(opts?: {
   apply?: boolean;
 }): Promise<ContactSyncResult> {
   const apply = Boolean(opts?.apply);
-  const projects = await listProjects();
+  const projects = await listProjects(undefined, { fresh: true });
 
   // One pass over every project to learn who is internal.
   const rosters = new Map<string, BcPerson[]>();

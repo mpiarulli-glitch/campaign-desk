@@ -59,6 +59,38 @@ function parseQuiz(rows: CourseQuizQuestion[]): QuizQuestion[] {
   });
 }
 
+function quizzesByLesson(
+  db: ReturnType<typeof getDb>,
+  lessonIds: string[]
+): Map<string, QuizQuestion[]> {
+  const grouped = new Map<string, CourseQuizQuestion[]>();
+  // SQLite's default variable limit is well above a course, but chunk anyway.
+  for (let i = 0; i < lessonIds.length; i += 200) {
+    const ids = lessonIds.slice(i, i + 200);
+    const rows = db
+      .prepare(
+        `SELECT * FROM course_quiz_questions WHERE lesson_id IN (${ids.map(() => "?").join(",")})`
+      )
+      .all(...ids) as CourseQuizQuestion[];
+    for (const row of rows) {
+      const list = grouped.get(row.lesson_id);
+      if (list) list.push(row);
+      else grouped.set(row.lesson_id, [row]);
+    }
+  }
+  const out = new Map<string, QuizQuestion[]>();
+  for (const [lessonId, rows] of grouped) {
+    rows.sort((a, b) => {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      if (a.created_at < b.created_at) return -1;
+      if (a.created_at > b.created_at) return 1;
+      return 0;
+    });
+    out.set(lessonId, parseQuiz(rows));
+  }
+  return out;
+}
+
 export function getCourse(slug: string): CourseWithLessons | null {
   const db = getDb();
   const course = db.prepare(`SELECT * FROM courses WHERE slug = ?`).get(slug) as
@@ -70,12 +102,13 @@ export function getCourse(slug: string): CourseWithLessons | null {
       `SELECT * FROM course_lessons WHERE course_id = ? ORDER BY sort_order ASC, created_at ASC`
     )
     .all(course.id) as CourseLesson[];
-  const quizStmt = db.prepare(
-    `SELECT * FROM course_quiz_questions WHERE lesson_id = ? ORDER BY sort_order ASC, created_at ASC`
+  const quizzes = quizzesByLesson(
+    db,
+    lessons.map((lesson) => lesson.id)
   );
   const withQuiz: LessonWithQuiz[] = lessons.map((l) => ({
     ...l,
-    quiz: parseQuiz(quizStmt.all(l.id) as CourseQuizQuestion[]),
+    quiz: quizzes.get(l.id) || [],
   }));
   return { ...course, lessons: withQuiz };
 }

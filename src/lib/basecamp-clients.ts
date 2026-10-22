@@ -327,7 +327,7 @@ export async function reconcileClients(opts?: {
   const createMissing = opts?.createMissing === true;
   const dryRun = opts?.dryRun === true;
 
-  const projects = (await listProjects()).map((p) => ({
+  const projects = (await listProjects(SERVICE, { fresh: true })).map((p) => ({
     id: String(p.id),
     name: p.name,
     n: norm(p.name),
@@ -518,7 +518,7 @@ export async function ensureKrakBobaPiscatawayGrowthOsClient(): Promise<void> {
   try {
     if (settingDone(PISCATAWAY_GROWTH_OS_KEY)) return;
     const identity = hasConnection(OWNER_SLUG) ? asPerson(OWNER_SLUG) : SERVICE;
-    const projects = (await listProjects(identity)).map((p) => ({
+    const projects = (await listProjects(identity, { fresh: true })).map((p) => ({
       id: String(p.id),
       name: p.name,
     }));
@@ -564,7 +564,7 @@ export async function ensureFloorCoDesignGrowthOsClient(): Promise<void> {
   try {
     if (settingDone(FLOORCO_DESIGN_GROWTH_OS_KEY)) return;
     const identity = hasConnection(OWNER_SLUG) ? asPerson(OWNER_SLUG) : SERVICE;
-    const projects = (await listProjects(identity)).map((p) => ({
+    const projects = (await listProjects(identity, { fresh: true })).map((p) => ({
       id: String(p.id),
       name: p.name,
     }));
