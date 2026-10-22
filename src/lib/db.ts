@@ -11,6 +11,10 @@ import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-
 import { addWeeks, mondayOf } from "./week";
 import { backfillKnownContactEmails } from "./contact-email-backfill";
 import { backfillKnownContactPhones } from "./contact-phone-backfill";
+import {
+  accountManagerSlugFromReviewerName,
+  withRevisionAuthor,
+} from "./campaign-review-queue";
 
 export type { AssetKind, BodyFormat } from "./asset-kinds";
 
@@ -206,6 +210,9 @@ export interface Campaign {
   // Status itself is free text (no CHECK), so "revisions_made" needs no
   // constraint migration — only this assignee column is added for existing DBs.
   internal_review_assignee: string;
+  // Account-manager slugs who left internal revisions, comma-separated.
+  // Kept after the status moves on so they can still find the campaign.
+  internal_revision_authors: string;
   // When the AM to-do was last sent. Age for internal follow-up nudges.
   internal_review_sent_at: string | null;
   basecamp_approval_revision: string | null;
@@ -2741,6 +2748,94 @@ function backfillInternalReviewAssignees(database: Database.Database) {
     .run(INTERNAL_REVIEW_ASSIGNEE_BACKFILL_KEY, stamp, stamp);
 }
 
+const INTERNAL_REVISION_AUTHORS_BACKFILL_KEY = "internal_revision_authors_backfill_v1";
+
+/**
+ * One pass over internal review comments. The author name is the only history
+ * those rows have. A name that uniquely matches Cassidy, Kyle Morris, or Luis
+ * is stored on the campaign. Anything else is skipped, including a bare "Kyle".
+ * Stamped so the next boot, including a second bundled copy of this module,
+ * does not scan comments again.
+ */
+function backfillInternalRevisionAuthors(database: Database.Database) {
+  if (!tableColumns(database, "campaigns").includes("internal_revision_authors")) return;
+  if (!tableColumns(database, "app_settings").includes("key")) return;
+  const done = database
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(INTERNAL_REVISION_AUTHORS_BACKFILL_KEY) as { value: string } | undefined;
+  if (done?.value) return;
+
+  const authorsByCampaign = new Map<string, string[]>();
+  const add = (campaignId: string, authorName: string) => {
+    const slug = accountManagerSlugFromReviewerName(authorName);
+    if (!slug || !campaignId) return;
+    const list = authorsByCampaign.get(campaignId) || [];
+    if (!list.includes(slug)) list.push(slug);
+    authorsByCampaign.set(campaignId, list);
+  };
+
+  const commentCols = tableColumns(database, "comments");
+  if (commentCols.includes("campaign_id") && commentCols.includes("author_name")) {
+    const hasChannel = commentCols.includes("channel");
+    const comments = database
+      .prepare(
+        hasChannel
+          ? `SELECT campaign_id, author_name FROM comments
+              WHERE channel = 'internal' OR channel IS NULL OR channel = ''`
+          : `SELECT campaign_id, author_name FROM comments`
+      )
+      .all() as Array<{ campaign_id: string; author_name: string }>;
+    for (const row of comments) add(row.campaign_id, row.author_name);
+  }
+
+  const replyCols = tableColumns(database, "comment_replies");
+  if (
+    replyCols.includes("campaign_id") &&
+    replyCols.includes("author_name") &&
+    replyCols.includes("comment_id") &&
+    replyCols.includes("is_admin") &&
+    commentCols.includes("id") &&
+    commentCols.includes("channel")
+  ) {
+    const replies = database
+      .prepare(
+        `SELECT r.campaign_id, r.author_name
+           FROM comment_replies r
+           JOIN comments c ON c.id = r.comment_id
+          WHERE r.is_admin = 0
+            AND (c.channel = 'internal' OR c.channel IS NULL OR c.channel = '')`
+      )
+      .all() as Array<{ campaign_id: string; author_name: string }>;
+    for (const row of replies) add(row.campaign_id, row.author_name);
+  }
+
+  const currentRows = database
+    .prepare(
+      `SELECT id, IFNULL(internal_revision_authors, '') AS authors FROM campaigns`
+    )
+    .all() as Array<{ id: string; authors: string }>;
+  const current = new Map(currentRows.map((row) => [row.id, row.authors]));
+  const write = database.prepare(
+    `UPDATE campaigns SET internal_revision_authors = ? WHERE id = ?`
+  );
+  const stamp = nowIso();
+  const apply = database.transaction(() => {
+    for (const [id, slugs] of authorsByCampaign) {
+      if (!current.has(id)) continue;
+      let merged = current.get(id) || "";
+      for (const slug of slugs) merged = withRevisionAuthor(merged, slug);
+      if (merged !== (current.get(id) || "")) write.run(merged, id);
+    }
+    database
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(INTERNAL_REVISION_AUTHORS_BACKFILL_KEY, stamp, stamp);
+  });
+  apply();
+}
+
 function migrate(database: Database.Database) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS klaviyo_revenue_cache (
@@ -2914,11 +3009,18 @@ function migrate(database: Database.Database) {
       `ALTER TABLE campaigns ADD COLUMN internal_review_assignee TEXT NOT NULL DEFAULT ''`
     );
   }
+  if (!campaignCols.includes("internal_revision_authors")) {
+    database.exec(
+      `ALTER TABLE campaigns ADD COLUMN internal_revision_authors TEXT NOT NULL DEFAULT ''`
+    );
+  }
   // One pass over internal-review to-dos. The previous statement was a
   // correlated LIKE across every campaign and every to-do, and Next bundles
   // this module more than once, so boot ran that scan twice before it could
   // answer /api/health. Railway gives that 30 seconds.
   backfillInternalReviewAssignees(database);
+  // Same rule for who left revisions: one stamped pass, then never again.
+  backfillInternalRevisionAuthors(database);
   if (!campaignCols.includes("approval_nudge_last_at")) {
     database.exec(`ALTER TABLE campaigns ADD COLUMN approval_nudge_last_at TEXT`);
   }

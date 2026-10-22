@@ -27,7 +27,18 @@ import { syncCampaignDeliverablesCard } from "@/lib/campaign-card-sync";
 import { MAX_QUOTE_CHARS, quotedFeedback } from "@/lib/copy-quote";
 import { notifyClientFeedback } from "@/lib/notify";
 import { statusAfterReviewLinkView } from "@/lib/campaign-status";
+import { revisionAuthorForFeedback } from "@/lib/campaign-review-queue";
+import { sessionActor } from "@/lib/auth";
 import { publicSendScheduleForToken } from "@/lib/client-send-schedule";
+
+async function feedbackAuthorSlug(authorName: string): Promise<string | null> {
+  try {
+    const actor = await sessionActor();
+    return revisionAuthorForFeedback({ sessionSlug: actor, authorName });
+  } catch {
+    return revisionAuthorForFeedback({ authorName });
+  }
+}
 
 const ALLOWED_IMAGE_MIME = new Set([
   "image/png",
@@ -369,6 +380,7 @@ export async function POST(request: Request, { params }: Params) {
       authorName: replyAuthor,
       body: replyText,
       isAdmin: false,
+      authorSlug: await feedbackAuthorSlug(replyAuthor),
     });
     return NextResponse.json({ reply }, { status: 201 });
   }
@@ -433,6 +445,7 @@ export async function POST(request: Request, { params }: Params) {
     quoteText: quoteText || null,
     quoteOrdinal: quoteText ? quoteOrdinal : null,
     channel,
+    authorSlug: await feedbackAuthorSlug(authorName),
   });
 
   for (const img of images) {

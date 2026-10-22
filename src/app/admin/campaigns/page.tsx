@@ -45,6 +45,7 @@ type CampaignRow = {
   updated_at: string;
   approved_at: string | null;
   open_comments: number;
+  internal_revision_authors?: string;
   email_count?: number;
   email_kinds?: AssetKind[];
   magic_token: string;
@@ -829,10 +830,7 @@ export default function AdminPage() {
   }, [router]);
 
 
-  const showReviewTab =
-    Boolean(viewerSlug) &&
-    (viewerIsAccountManager ||
-      campaigns.some((c) => campaignInAccountManagerQueue(c, viewerSlug!)));
+  const showReviewTab = viewerIsAccountManager;
   const inMyQueue = (c: CampaignRow) =>
     Boolean(viewerSlug) && campaignInAccountManagerQueue(c, viewerSlug!);
   const reviewPool = searched.filter(inMyQueue);
@@ -1019,13 +1017,19 @@ export default function AdminPage() {
                 ) : (
                   <div className="empty">
                     <p>
-                      {kindScope === "blog" ? "No blog posts yet." : "No campaigns yet."}
+                      {viewerIsAccountManager
+                        ? "Campaigns appear here after they're sent to you for review, or after you leave revisions."
+                        : kindScope === "blog"
+                          ? "No blog posts yet."
+                          : "No campaigns yet."}
                     </p>
-                    <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
-                      {kindScope === "blog"
-                        ? "Create your first blog post"
-                        : "Upload your first email"}
-                    </Link>
+                    {viewerIsAccountManager ? null : (
+                      <Link className="btn" href="/admin/new" style={{ marginTop: 12 }}>
+                        {kindScope === "blog"
+                          ? "Create your first blog post"
+                          : "Upload your first email"}
+                      </Link>
+                    )}
                   </div>
                 )
               ) : view === "review" ? (

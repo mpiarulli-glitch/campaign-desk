@@ -284,7 +284,12 @@ export async function PATCH(request: Request, { params }: Params) {
     }
     flippedToSent = scheduled.flippedToSent;
   } else if (statusChoice) {
-    applyOperatorCampaignStatus(id, statusChoice, await internalApproverLabel());
+    applyOperatorCampaignStatus(
+      id,
+      statusChoice,
+      await internalApproverLabel(),
+      await sessionUserSlug()
+    );
   }
 
   if (

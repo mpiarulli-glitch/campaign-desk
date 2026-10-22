@@ -5,7 +5,10 @@ import {
   isCampaignsReadAuthenticated,
   sessionCampaignKind,
 } from "@/lib/auth";
-import { isCampaignAccountManagerSlug } from "@/lib/campaign-review-queue";
+import {
+  campaignsVisibleToViewer,
+  isCampaignAccountManagerSlug,
+} from "@/lib/campaign-review-queue";
 import {
   createCampaign,
   listCampaigns,
@@ -60,7 +63,10 @@ export async function GET(request: Request) {
     session && !(session.role === "admin" && session.person === null)
       ? session.person
       : null;
-  const campaigns = source.map((c) => {
+  // Account managers only receive campaigns sent to them or ones they left
+  // revisions on. Michael and other admins still get the full list.
+  const visible = campaignsVisibleToViewer(source, session);
+  const campaigns = visible.map((c) => {
     const send = pickDisplayedSendAt(
       [...(emailSends.get(c.id) || []), c.scheduled_send_at],
       now
