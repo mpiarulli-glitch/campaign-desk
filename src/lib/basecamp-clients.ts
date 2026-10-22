@@ -10,6 +10,10 @@ import { addClientToHub } from "./lifecycle-hub";
 import { OWNER_SLUG } from "./people";
 import { currentPeriod } from "./period";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
+import {
+  matchUnlinkedClients,
+  normalizeClientMatchKey,
+} from "./basecamp-client-match";
 
 // Client projects are named "<Client> Growth OS - Powered by the Empire
 // Method(tm)", so the suffix has to come off before a project name can be
@@ -289,7 +293,7 @@ export async function forecastPickerForPerson(person: string): Promise<{
 // Clients whose app name and Basecamp project name differ too much for name
 // matching to bridge. Keyed by project id so a rename on either side can't
 // silently repoint them.
-const PROJECT_ALIASES: Record<string, string> = {
+export const PROJECT_ALIASES: Record<string, string> = {
   "47628800": "Hendos Barrel House",
   "46912240": "House Cleaning by Christina",
   "38899767": "Beyond The Walls Church",
@@ -330,7 +334,6 @@ export async function reconcileClients(opts?: {
   const projects = (await listProjects(SERVICE, { fresh: true })).map((p) => ({
     id: String(p.id),
     name: p.name,
-    n: norm(p.name),
   }));
 
   const linked: ReconcileReport["linked"] = [];
@@ -354,37 +357,25 @@ export async function reconcileClients(opts?: {
   }
 
   // ---- link pass: fill blank project ids on existing clients
-  for (const c of listRevClients(true)) {
-    if (c.basecamp_project_id) continue;
-    const cn = norm(c.name);
-    if (!cn) {
-      noProject.push(c.name);
-      continue;
-    }
-
-    const aliasId = Object.keys(PROJECT_ALIASES).find(
-      (pid) => PROJECT_ALIASES[pid].toLowerCase() === c.name.trim().toLowerCase()
-    );
-    let match = aliasId ? projects.find((p) => p.id === aliasId) : undefined;
-
-    if (!match) match = projects.find((p) => p.n === cn);
-    if (!match) {
-      const cands = projects.filter((p) => p.n.includes(cn) || cn.includes(p.n));
-      if (cands.length === 1) {
-        match = cands[0];
-      } else if (cands.length > 1) {
-        ambiguous.push({ client: c.name, options: cands.map((p) => `${p.name} #${p.id}`) });
-        continue;
-      }
-    }
-
-    if (!match) {
-      noProject.push(c.name);
-      continue;
-    }
-    if (!dryRun) updateRevClient(c.id, { basecampProjectId: match.id });
-    linked.push({ client: c.name, project: match.name });
+  // Confident names only. A substring such as "NORLO" inside "NORLO Peptides"
+  // is left blank so an admin can pick it, instead of guessing.
+  const plan = matchUnlinkedClients(
+    listRevClients(true).map((c) => ({
+      id: c.id,
+      name: c.name,
+      basecampProjectId: (c.basecamp_project_id || "").trim(),
+    })),
+    projects,
+    { aliases: PROJECT_ALIASES, isInternal: isInternalProject }
+  );
+  for (const match of plan.matches) {
+    if (!dryRun) updateRevClient(match.clientId, { basecampProjectId: match.projectId });
+    linked.push({ client: match.clientName, project: match.projectName });
   }
+  for (const row of plan.ambiguous) {
+    ambiguous.push({ client: row.clientName, options: row.options });
+  }
+  for (const row of plan.unmatched) noProject.push(row.clientName);
 
   // ---- create pass: projects with no client at all
   if (createMissing) {
@@ -393,7 +384,9 @@ export async function reconcileClients(opts?: {
     const takenIds = new Set(
       clients.map((c) => c.basecamp_project_id).filter(Boolean).map(String)
     );
-    const takenNames = new Set(clients.map((c) => norm(c.name)).filter(Boolean));
+    const takenNames = new Set(
+      clients.map((c) => normalizeClientMatchKey(c.name)).filter(Boolean)
+    );
 
     for (const p of projects) {
       if (takenIds.has(p.id)) continue;
@@ -403,7 +396,8 @@ export async function reconcileClients(opts?: {
       }
       // A client with this name already exists but is linked elsewhere (or is a
       // duplicate row) — importing again would only add another duplicate.
-      if (takenNames.has(p.n)) continue;
+      const projectKey = normalizeClientMatchKey(p.name);
+      if (projectKey && takenNames.has(projectKey)) continue;
 
       const name = clientNameFor(p.name);
       if (!name) continue;
@@ -417,7 +411,7 @@ export async function reconcileClients(opts?: {
         });
       }
       takenIds.add(p.id);
-      takenNames.add(p.n);
+      if (projectKey) takenNames.add(projectKey);
       created.push({ client: name, project: p.name });
     }
   }
@@ -459,6 +453,10 @@ function markBackfillDone(summary: string) {
  * Run the full reconcile once, ever, then record that it happened so later boots
  * skip it. Safe to leave in place: the flag makes repeat runs a no-op, and the
  * reconcile itself never overwrites a project id that's already set.
+ *
+ * Clients added after this pass are linked by linkMissingBasecampProjects,
+ * which an admin runs from Forecast. Do not call that from register(): listing
+ * Basecamp at boot can blow Railway's 30 second /api/health limit.
  *
  * Errors are logged and swallowed — a Basecamp outage at boot must not stop the
  * app from starting.

@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 import { isAdminOrSyncAuthenticated } from "@/lib/auth";
 import { basecampConnected } from "@/lib/basecamp";
 import { reconcileClients } from "@/lib/basecamp-clients";
+import {
+  BASECAMP_DISCONNECTED_MESSAGE,
+  BASECAMP_NO_PROJECTS_MESSAGE,
+  BASECAMP_UNREACHABLE_MESSAGE,
+  linkMissingBasecampProjects,
+} from "@/lib/basecamp-client-links";
 
 function cronSecretMatches(request: Request): boolean {
   const expected = process.env.CRON_SECRET;
@@ -24,15 +30,12 @@ function cronSecretMatches(request: Request): boolean {
 /**
  * Reconcile clients against Basecamp projects.
  *
- * Always links: any client with no basecamp_project_id gets one if a project
- * matches. Never overwrites an id that's already set, so this is safe to re-run.
+ * With no body, link blank basecamp_project_id values when the normalized
+ * names match one project. Never overwrites an id that's already set.
  *
- * `{ createMissing: true }` also creates a client for every project that has no
- * client yet, skipping internal MEG workspaces. `{ dryRun: true }` returns the
- * same report without writing.
- *
- * The logic lives in lib/basecamp-clients so this and the one-time startup
- * backfill share a single implementation.
+ * `{ createMissing: true }` also creates a client for every project that has
+ * no client yet, skipping internal MEG workspaces. `{ dryRun: true }` returns
+ * the same report without writing.
  *
  * Auth: an admin session, CAMPAIGN_DESK_SYNC_TOKEN, or CRON_SECRET (same
  * machine path as the other Basecamp sync jobs).
@@ -42,23 +45,49 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!basecampConnected()) {
-    return NextResponse.json({ error: "Connect Basecamp first." }, { status: 400 });
+    return NextResponse.json({ error: BASECAMP_DISCONNECTED_MESSAGE }, { status: 400 });
   }
 
   const body = await request.json().catch(() => ({}));
-  const report = await reconcileClients({
-    createMissing: body?.createMissing === true,
-    dryRun: body?.dryRun === true,
-  });
+  try {
+    if (body?.createMissing === true) {
+      const report = await reconcileClients({
+        createMissing: true,
+        dryRun: body?.dryRun === true,
+      });
+      if (!report.projects) {
+        return NextResponse.json({ error: BASECAMP_NO_PROJECTS_MESSAGE }, { status: 502 });
+      }
+      return NextResponse.json({
+        ...report,
+        matched: report.linked,
+        unmatched: report.noProject,
+      });
+    }
 
-  if (!report.projects) {
-    return NextResponse.json({ error: "No Basecamp projects returned." }, { status: 502 });
+    const report = await linkMissingBasecampProjects({
+      dryRun: body?.dryRun === true,
+      force: true,
+    });
+    if (!report.ok) {
+      return NextResponse.json({ error: report.error }, { status: 502 });
+    }
+    return NextResponse.json({
+      dryRun: report.dryRun,
+      createMissing: false,
+      projects: report.projects.length,
+      linked: report.linked,
+      created: [],
+      ambiguous: report.ambiguous,
+      noProject: report.noProject,
+      skippedInternal: [],
+      internals: [],
+      matched: report.linked,
+      unmatched: report.noProject,
+      missing: report.missing,
+    });
+  } catch (err) {
+    console.error("[basecamp-automatch]", (err as Error).message);
+    return NextResponse.json({ error: BASECAMP_UNREACHABLE_MESSAGE }, { status: 502 });
   }
-
-  return NextResponse.json({
-    ...report,
-    // Kept so the existing production-page button's message still renders.
-    matched: report.linked,
-    unmatched: report.noProject,
-  });
 }

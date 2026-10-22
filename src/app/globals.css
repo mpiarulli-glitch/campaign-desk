@@ -24850,3 +24850,46 @@ a.snap-todo-linked-title {
   .clist-count-cell { grid-area: count; }
   .clist-actions { grid-area: actions; justify-content: flex-end; }
 }
+
+.fc-bc-missing {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+.fc-bc-missing-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fc-bc-missing-head strong { font-size: 14px; }
+.fc-bc-missing .muted,
+.fc-bc-missing .error { margin: 8px 0 0; font-size: 13px; }
+.fc-bc-missing-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.fc-bc-missing-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.fc-bc-link-select {
+  max-width: min(100%, 420px);
+  min-width: 200px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
