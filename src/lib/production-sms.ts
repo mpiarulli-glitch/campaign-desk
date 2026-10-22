@@ -5,7 +5,7 @@
 // Client sends stay off unless PRODUCTION_SMS_ENABLED=1. A missing phone or
 // a missing sending location never throws and never blocks the email.
 
-import { scheduleUrl } from "./auth";
+import { getAppUrl, scheduleUrl } from "./auth";
 import { getDb, nowIso, type RevClient } from "./db";
 import { emailConfigured, sendEmail } from "./email";
 import { clearFailure, recordFailure } from "./failures";
@@ -216,6 +216,9 @@ export function plainSmsFailure(result: {
   if (/a2p|30034|30032|30033|toll-free|toll free/.test(raw)) {
     return "The texting number isn't approved for US business texts yet. Finish A2P or toll-free registration in GHL, then try again.";
   }
+  if (isGhlAuthSmsFailure(raw)) {
+    return "GoHighLevel is disconnected. Reconnect it from the admin page, then try again.";
+  }
   if (/invalid token|unauthorized|401/.test(raw)) {
     return "Campaign Desk can't sign in to GHL right now. Reconnect the GHL account, then try again.";
   }
@@ -398,6 +401,40 @@ function escapeAlert(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/** A refused refresh or a removed marketplace install, not a number or A2P problem. */
+export function isGhlAuthSmsFailure(text: string): boolean {
+  const raw = (text || "").toLowerCase();
+  return (
+    raw.includes("invalid_grant") ||
+    raw.includes("refused the refresh") ||
+    raw.includes("integration is not valid") ||
+    raw.includes("gohighlevel is disconnected")
+  );
+}
+
+export function ghlReconnectUrl(): string {
+  return `${getAppUrl()}/api/ghl/connect`;
+}
+
+/** Email body for one grouped failure. Auth failures link to the admin reconnect. */
+export function smsFailureEmail(grouped: { subject: string; text: string }): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  let text = grouped.text;
+  let html = grouped.text
+    .split("\n")
+    .map((line) => `<p>${escapeAlert(line)}</p>`)
+    .join("");
+  if (isGhlAuthSmsFailure(grouped.text)) {
+    const url = ghlReconnectUrl();
+    text = `${text}\n\nGoHighLevel is disconnected. Reconnect it here: ${url}`;
+    html += `<p>GoHighLevel is disconnected. <a href="${escapeAlert(url)}">Reconnect GoHighLevel</a></p>`;
+  }
+  return { subject: grouped.subject, text, html };
+}
+
 const SMS_ALERT_SUBJECT = "Scheduling texts";
 
 /**
@@ -416,14 +453,11 @@ export async function alertSmsFailures(
     hint: "The client's production card shows the same reason. The scheduling email still went out.",
   });
   const to = (process.env.PRODUCTION_SMS_ALERT_EMAIL || "mpiarulli@marketingempiregroup.com").trim();
-  const html = grouped.text
-    .split("\n")
-    .map((line) => `<p>${escapeAlert(line)}</p>`)
-    .join("");
+  const email = smsFailureEmail(grouped);
   if (send) {
-    await send({ to, subject: grouped.subject, text: grouped.text, html });
+    await send({ to, subject: email.subject, text: email.text, html: email.html });
   } else if (emailConfigured()) {
-    await sendEmail({ to, subject: grouped.subject, text: grouped.text, html });
+    await sendEmail({ to, subject: email.subject, text: email.text, html: email.html });
   } else {
     console.log(
       `${SMS_LOG} alert email skipped (email not configured) subject=${quoteLog(grouped.subject)}`

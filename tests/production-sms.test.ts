@@ -16,6 +16,7 @@ import {
   formatSendLog,
   groupSmsFailureAlert,
   guardProductionSms,
+  smsFailureEmail,
   interpretA2p,
   lastTextView,
   deliverProductionSms,
@@ -582,6 +583,24 @@ test("delivery status maps to a plain card line", () => {
     plainSmsFailure({ status: "failed", error: "30005" }),
     "The carrier doesn't recognize this number. Check it, then try again."
   );
+  const auth = plainSmsFailure({
+    status: "failed",
+    error:
+      'GoHighLevel refused the refresh token (400). Re-authorise the app. {"error":"invalid_grant","error_description":"Integration is not valid or has been removed"}',
+  });
+  assert.match(auth || "", /GoHighLevel is disconnected/);
+  assert.doesNotMatch(auth || "", /texting number|A2P/i);
+  const authEmail = smsFailureEmail({
+    subject: "Scheduling text didn't reach North Co",
+    text: auth || "",
+  });
+  assert.match(authEmail.text, /\/api\/ghl\/connect/);
+  assert.match(authEmail.html, /Reconnect GoHighLevel/);
+  const a2pEmail = smsFailureEmail({
+    subject: "Scheduling text didn't reach North Co",
+    text: "The texting number isn't approved for US business texts yet. Finish A2P or toll-free registration in GHL, then try again.",
+  });
+  assert.equal(a2pEmail.text.includes("/api/ghl/connect"), false);
 });
 
 test("text failures group into one alert per run", async (t) => {
