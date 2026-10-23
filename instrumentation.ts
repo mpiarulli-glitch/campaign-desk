@@ -7,9 +7,12 @@ export async function register() {
     const {
       ensureKrakBobaPiscatawayGrowthOsClient,
       ensureFloorCoDesignGrowthOsClient,
+      ensureCoronasDeOroClient,
     } = await import("./src/lib/basecamp-clients");
     void ensureKrakBobaPiscatawayGrowthOsClient();
     void ensureFloorCoDesignGrowthOsClient();
+    // Known project id, SQLite only. Does not page Basecamp.
+    void ensureCoronasDeOroClient();
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

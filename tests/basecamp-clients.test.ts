@@ -150,6 +150,63 @@ test("internal Basecamp projects stay out of client import and show in forecast"
     assert.equal(swingAgain.created, false);
     assert.equal(swingAgain.clientId, swing.clientId);
 
+    const { createRevClient } = await import("../src/lib/revenue");
+    const { ensureCoronasDeOroClient, CORONAS_DE_ORO_PROJECT_ID } = await import(
+      "../src/lib/basecamp-clients"
+    );
+    const { getDb } = await import("../src/lib/db");
+    const blank = createRevClient({
+      name: "Coronas De Oro",
+      businessModel: "home_service",
+    });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error("Coronas De Oro import must not call Basecamp");
+    }) as typeof fetch;
+    try {
+      await ensureCoronasDeOroClient();
+      const coronas = listRevClients(true).filter((c) => c.name === "Coronas De Oro");
+      assert.equal(coronas.length, 1);
+      assert.equal(coronas[0].id, blank.id);
+      assert.equal(coronas[0].basecamp_project_id, CORONAS_DE_ORO_PROJECT_ID);
+      assert.equal(coronas[0].basecamp_project_id, "49308114");
+      assert.equal(coronas[0].production_enrolled, 0);
+      assert.equal(coronas[0].active, 1);
+      await ensureCoronasDeOroClient();
+      assert.equal(
+        listRevClients(true).filter((c) => c.name === "Coronas De Oro").length,
+        1
+      );
+
+      getDb()
+        .prepare(`DELETE FROM app_settings WHERE key = 'forecast_client_coronas_de_oro_v1'`)
+        .run();
+      getDb()
+        .prepare(`UPDATE rev_clients SET basecamp_project_id = '' WHERE id = ?`)
+        .run(blank.id);
+      await ensureCoronasDeOroClient();
+      const relinked = listRevClients(true).filter((c) => c.name === "Coronas De Oro");
+      assert.equal(relinked.length, 1);
+      assert.equal(relinked[0].id, blank.id);
+      assert.equal(relinked[0].basecamp_project_id, "49308114");
+
+      getDb()
+        .prepare(`DELETE FROM app_settings WHERE key = 'forecast_client_coronas_de_oro_v1'`)
+        .run();
+      getDb().prepare(`DELETE FROM rev_clients WHERE id = ?`).run(blank.id);
+      await ensureCoronasDeOroClient();
+      const created = listRevClients(true).filter((c) => c.name === "Coronas De Oro");
+      assert.equal(created.length, 1);
+      assert.notEqual(created[0].id, blank.id);
+      assert.equal(created[0].basecamp_project_id, "49308114");
+      assert.equal(created[0].production_enrolled, 0);
+      const before = listRevClients(true).length;
+      await ensureCoronasDeOroClient();
+      assert.equal(listRevClients(true).length, before);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+
     const {
       pickFloorCoDesignGrowthOsProject,
       isFloorCoDesignGrowthOsProject,

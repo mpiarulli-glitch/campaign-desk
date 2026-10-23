@@ -675,3 +675,40 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
     console.error("[lifecycle-client] Swing Inn Cafe import failed", (err as Error).message);
   }
 }
+
+/* ----------------------------------------- Coronas De Oro one-shot import */
+
+const CORONAS_DE_ORO_KEY = "forecast_client_coronas_de_oro_v1";
+
+// https://3.basecamp.com/5338018/projects/49308114
+export const CORONAS_DE_ORO_PROJECT_ID = "49308114";
+export const CORONAS_DE_ORO_CLIENT_NAME = "Coronas De Oro";
+
+/**
+ * Add Coronas De Oro and link Basecamp project 49308114. The project id is
+ * known, so this does not list Basecamp. The one-time client backfill already
+ * ran, and a project created after that stays out of Forecast until someone
+ * clicks Sync. This writes one row on boot, fills a blank project id when the
+ * name is already a client, and does not overwrite a different project id.
+ */
+export async function ensureCoronasDeOroClient(): Promise<void> {
+  try {
+    if (settingDone(CORONAS_DE_ORO_KEY)) return;
+
+    const project = { id: CORONAS_DE_ORO_PROJECT_ID, name: CORONAS_DE_ORO_CLIENT_NAME };
+    const result = bindForecastClientToExactProject(project, CORONAS_DE_ORO_CLIENT_NAME);
+    const row = listRevClients(true).find((c) => c.id === result.clientId);
+    if ((row?.basecamp_project_id || "").trim() !== CORONAS_DE_ORO_PROJECT_ID) {
+      console.log(
+        `[forecast-client] Coronas De Oro is linked to ${row?.basecamp_project_id || "nothing"}; will retry next boot`
+      );
+      return;
+    }
+    const ts = nowIso();
+    const summary = `client=${result.clientName} id=${result.clientId} project=${project.id} created=${result.created} linked=${result.linked} at=${ts}`;
+    markSetting(CORONAS_DE_ORO_KEY, summary);
+    console.log(`[forecast-client] ${summary}`);
+  } catch (err) {
+    console.error("[forecast-client] Coronas De Oro import failed", (err as Error).message);
+  }
+}
