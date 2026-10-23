@@ -212,7 +212,12 @@ button {
   width: 100%;
   max-width: 100%;
   min-height: 100vh;
-  overflow-x: hidden;
+  /* `hidden` computes the other axis to `auto`, so this shell becomes a scroll
+     container. The campaign review column is sticky inside the real scroller
+     (.app-content). A scroll container in between swallows that stickiness and
+     the column slides off the top of the preview, clipping its own buttons.
+     `clip` still cuts sideways overflow without creating a scroll container. */
+  overflow-x: clip;
   background: var(--bg);
 }
 
@@ -1187,6 +1192,8 @@ button {
   border: 1px solid var(--border);
   overflow: auto;
   max-height: calc(100vh - 180px);
+  max-width: 100%;
+  min-width: 0;
   box-shadow: var(--shadow);
 }
 
@@ -1207,6 +1214,8 @@ button {
 .preview-canvas {
   position: relative;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -1230,6 +1239,8 @@ button {
 
 .preview-canvas iframe {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border: 0;
   display: block;
   background: white;
@@ -2513,9 +2524,13 @@ button {
 
 .cd-pkg-work {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.88fr);
+  /* 260px is a floor, not a promise. On a laptop the sidebar already takes
+     208px, so the column has to be allowed to narrow and the buttons wrap. */
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.88fr);
   gap: 16px;
   align-items: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .cd-pkg-editor,
@@ -2524,18 +2539,32 @@ button {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  max-width: 100%;
+}
+
+/* Clip the editor to its track so a wide email or the device bar cannot paint
+   under the review column. `clip` does not turn this into a scroll container,
+   so the device bar inside the preview can still stick. */
+.cd-pkg-editor {
+  overflow-x: clip;
 }
 
 .cd-pkg-review {
   position: sticky;
+  /* .app-content is the scroller and already sits under the 60px top bar.
+     16px below that, and short enough that the column ends above the bottom
+     of the pane instead of hiding the last button. */
   top: 16px;
-  max-height: calc(100vh - 32px);
-  overflow: auto;
+  max-height: calc(100vh - 92px);
+  overflow-x: clip;
+  overflow-y: auto;
   padding-bottom: 8px;
+  z-index: 1;
 }
 
 .cd-pkg-editor .split-review {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
 }
 
 .cd-pkg-review .review-links-card {
@@ -2555,6 +2584,32 @@ button {
 .cd-pkg-review .bc-panel {
   padding: 14px 16px 16px;
   gap: 12px;
+  min-width: 0;
+}
+
+/* The account-manager actions are long ("Follow-up with Cassidy", "Resend for
+   internal review"). In this narrow column they wrap onto their own lines
+   instead of running out of the card. */
+.cd-pkg-review .bc-head,
+.cd-pkg-review .bc-head-copy,
+.cd-pkg-review .bc-head-actions,
+.cd-pkg-review .review-link-top,
+.cd-pkg-review .review-links-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cd-pkg-review .bc-head-actions {
+  flex: 1 1 100%;
+}
+
+.cd-pkg-review .bc-head-actions .btn,
+.cd-pkg-review .review-link-top .btn {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .cd-pkg-review .bc-form {
@@ -2581,6 +2636,7 @@ button {
     position: static;
     max-height: none;
     overflow: visible;
+    z-index: auto;
   }
 }
 
