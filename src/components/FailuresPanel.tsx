@@ -33,6 +33,7 @@ const KIND_LABEL: Record<string, string> = {
   basecamp_approval: "Approval not posted",
   basecamp_project: "Project not found",
   basecamp_todo: "Social QA to-do not updated",
+  basecamp_schedule: "Production schedule",
   contact_unresolved: "Nobody to tag",
   production_sms: "Scheduling text not sent",
 };

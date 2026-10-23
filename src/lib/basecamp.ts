@@ -1309,6 +1309,136 @@ export async function createScheduleEntry(
   }
 }
 
+export interface ProductionScheduleWrite {
+  summary: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  description?: string;
+  participantIds?: number[];
+}
+
+/**
+ * Read one schedule's entries, following Basecamp's geared pagination.
+ *
+ * A partial list is a failure: availability must not treat a cut-off page as
+ * "nobody is busy". `totalCount` is the X-Total-Count header when Basecamp
+ * sends one, otherwise the number of rows actually read.
+ */
+export async function listScheduleEntriesStrict(
+  scheduleId: string,
+  maxPages = 12,
+  identity: BcIdentity = SERVICE
+): Promise<
+  | { ok: true; entries: unknown[]; totalCount: number }
+  | { ok: false; error: string }
+> {
+  if (!scheduleId) return { ok: false, error: "No schedule set." };
+  const out: unknown[] = [];
+  let next: string | null = `/schedules/${scheduleId}/entries.json`;
+  let totalCount = -1;
+  for (let page = 0; page < maxPages && next; page++) {
+    let res: Response;
+    try {
+      res = await bc(next, undefined, identity);
+    } catch (err) {
+      return { ok: false, error: (err as Error).message || "Basecamp did not respond." };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `schedule entries ${res.status}` };
+    }
+    const headerCount = Number(res.headers.get("X-Total-Count"));
+    if (Number.isFinite(headerCount) && headerCount >= 0) totalCount = headerCount;
+    let batch: unknown;
+    try {
+      batch = await res.json();
+    } catch {
+      return { ok: false, error: "Basecamp returned a schedule list that was not JSON." };
+    }
+    if (!Array.isArray(batch)) {
+      return { ok: false, error: "Basecamp returned a schedule list that was not a list." };
+    }
+    out.push(...batch);
+    const link = res.headers.get("Link") || "";
+    const match = link.match(/<([^>]+)>;\s*rel="next"/);
+    next = match ? match[1].replace(apiBase(), "") : null;
+    if (page === maxPages - 1 && next) {
+      return { ok: false, error: "The production schedule listing was cut short." };
+    }
+  }
+  return { ok: true, entries: out, totalCount: totalCount >= 0 ? totalCount : out.length };
+}
+
+/** Create an entry on a known schedule, without looking the schedule up again. */
+export async function createScheduleEntryOnSchedule(
+  scheduleId: string,
+  input: ProductionScheduleWrite,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const summary = input.summary.trim().slice(0, 999);
+  if (!scheduleId) return { ok: false, error: "No schedule set." };
+  if (!summary) return { ok: false, error: "A schedule entry needs a name." };
+  const body: Record<string, unknown> = {
+    summary,
+    starts_at: input.startsAt,
+    ends_at: input.endsAt,
+    all_day: input.allDay,
+    notify: false,
+  };
+  if (input.description) body.description = input.description;
+  if (input.participantIds) body.participant_ids = input.participantIds;
+  try {
+    const res = await bc(
+      `/schedules/${scheduleId}/entries.json`,
+      { method: "POST", body: JSON.stringify(body) },
+      identity
+    );
+    if (!res.ok) return { ok: false, error: `Could not add that entry to Basecamp (${res.status}).` };
+    const entry = await res.json();
+    if (!entry?.id) return { ok: false, error: "Basecamp did not return a schedule entry." };
+    return { ok: true, id: String(entry.id) };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message || "Could not add that entry to Basecamp." };
+  }
+}
+
+/**
+ * Replace a schedule entry's details.
+ *
+ * Basecamp clears any field the update omits, so callers send the full set.
+ * A 404 means the entry was trashed or never existed.
+ */
+export async function updateScheduleEntry(
+  entryId: string,
+  input: ProductionScheduleWrite,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: true; id: string } | { ok: false; error: string; missing?: boolean }> {
+  const summary = input.summary.trim().slice(0, 999);
+  if (!entryId) return { ok: false, error: "No schedule entry set." };
+  if (!summary) return { ok: false, error: "A schedule entry needs a name." };
+  const body: Record<string, unknown> = {
+    summary,
+    starts_at: input.startsAt,
+    ends_at: input.endsAt,
+    all_day: input.allDay,
+    notify: false,
+    description: input.description || "",
+    participant_ids: input.participantIds || [],
+  };
+  try {
+    const res = await bc(
+      `/schedule_entries/${entryId}.json`,
+      { method: "PUT", body: JSON.stringify(body) },
+      identity
+    );
+    if (res.status === 404) return { ok: false, error: "That schedule entry is gone.", missing: true };
+    if (!res.ok) return { ok: false, error: `Could not update that Basecamp entry (${res.status}).` };
+    return { ok: true, id: entryId };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message || "Could not update that Basecamp entry." };
+  }
+}
+
 /* -------------------------------------------------------------- timesheets */
 
 export interface TimeEntryResult {

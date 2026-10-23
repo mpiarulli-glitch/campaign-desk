@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClientByDashboardToken } from "@/lib/dashboard";
 import {
+  attachVideographerSchedule,
   getSchedulingStatus,
   submitOutOfCycleBooking,
   submitProductionBooking,
@@ -17,7 +18,7 @@ export async function GET(_request: Request, { params }: Params) {
   if (!client) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json(getSchedulingStatus(client));
+  return NextResponse.json(await attachVideographerSchedule(client, getSchedulingStatus(client)));
 }
 
 export async function POST(request: Request, { params }: Params) {

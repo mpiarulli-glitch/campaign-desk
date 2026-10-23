@@ -826,6 +826,9 @@ export interface ScheduledSend {
   // reads as unbooked again, they show as needing a production, reminders resume,
   // and the day-before crew email will not fire. Reversible.
   cancelled_at: string | null;
+  // Basecamp schedule entry on the Video Editing Team production schedule.
+  // Empty until the shoot is synced. Updates and cancellation reuse this id.
+  basecamp_schedule_entry_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -3639,6 +3642,14 @@ function migrate(database: Database.Database) {
     database.exec(
       `CREATE INDEX IF NOT EXISTS idx_sends_import_batch
          ON scheduled_sends(import_batch) WHERE import_batch <> ''`
+    );
+  }
+  // The Video Editing Team schedule entry for this production. Empty until
+  // synced. Kept so a reschedule updates the same entry and a retry does not
+  // create a second one.
+  if (sendCols.length && !sendCols.includes("basecamp_schedule_entry_id")) {
+    database.exec(
+      `ALTER TABLE scheduled_sends ADD COLUMN basecamp_schedule_entry_id TEXT NOT NULL DEFAULT ''`
     );
   }
 

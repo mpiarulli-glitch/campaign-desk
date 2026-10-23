@@ -29,6 +29,13 @@ import {
 import { isFirstProductionClient } from "./first-production";
 import { resolveMissedAllocatedWindow } from "./missed-production-window";
 import { syncProductionScheduleCard } from "./production-card-sync";
+import { datesBetween as scheduleDatesBetween } from "./production-schedule";
+import {
+  SCHEDULE_UNREACHABLE_CLIENT,
+  readVideographerBlocks,
+  syncProductionScheduleEntry,
+  videographerScheduleConflict,
+} from "./production-schedule-sync";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -43,6 +50,60 @@ function crewUrl(sendId: string): string {
     : `${getAppUrl()}/admin/production/${sendId}`;
 }
 
+function queueProductionScheduleSync(sendId: string): void {
+  void syncProductionScheduleEntry(sendId).catch((err) => {
+    console.error("[production-schedule] sync failed", (err as Error).message);
+  });
+}
+
+async function rejectIfVideographerBusy(
+  client: RevClient,
+  date: string,
+  time: string,
+  duration: "half" | "full",
+  audience: "admin" | "client",
+  excludeEntryId?: string
+): Promise<BookingResult | null> {
+  const result = await videographerScheduleConflict({
+    videographerId: client.videographer_id,
+    date,
+    time,
+    // A shoot with no start time still occupies the working day.
+    duration: time ? duration : "full",
+    today: appDateTime().date,
+    audience,
+    excludeEntryId,
+  });
+  if (result.ok) return null;
+  return { ok: false, httpStatus: result.httpStatus, error: result.error };
+}
+
+// The client grid offers times across the open windows and the next few months,
+// so a date picked on the open extra form is checked too. A failed read blocks
+// every one of those times.
+export async function attachVideographerSchedule(
+  client: RevClient,
+  status: SchedulingStatus
+): Promise<SchedulingStatus> {
+  const today = status.today;
+  let end = addDaysYmd(today, 120);
+  for (const range of [status.window, status.extraWindow]) {
+    if (range && range.end > end) end = range.end;
+  }
+  const dates = scheduleDatesBetween(today, end);
+  if (!client.videographer_id || !dates.length) return status;
+  const read = await readVideographerBlocks({
+    videographerId: client.videographer_id,
+    dates,
+  });
+  return {
+    ...status,
+    blockedHalfSlots: read.blocks.blockedHalfSlots,
+    blockedFullDays: read.blocks.blockedFullDays,
+    scheduleMessage: read.ok ? null : SCHEDULE_UNREACHABLE_CLIENT,
+  };
+}
+
 export interface SchedulingStatus {
   client: { name: string };
   window: Window | null;
@@ -55,6 +116,13 @@ export interface SchedulingStatus {
   // Standing days off for the assigned videographer, e.g. they never shoot
   // Wednesdays. Unavailable to the client just like a booked day.
   videographerOff: string[];
+  // Four-hour starts already taken on the Basecamp production schedule,
+  // "YYYY-MM-DD|HH:MM". Full-day dates overlap 9:00 AM–5:30 PM.
+  blockedHalfSlots: string[];
+  blockedFullDays: string[];
+  // Set when that schedule could not be read. The slot lists are then every
+  // offered time, so nothing is bookable until the check works.
+  scheduleMessage: string | null;
   existingSend: {
     sendDate: string;
     sendTime: string;
@@ -207,6 +275,9 @@ export function getSchedulingStatus(client: RevClient): SchedulingStatus {
         )
       ),
     ],
+    blockedHalfSlots: [],
+    blockedFullDays: [],
+    scheduleMessage: null,
     existingSend: existing
       ? {
           sendDate: existing.send_date,
@@ -242,6 +313,9 @@ export function sampleSchedulePreview(now = new Date()): SchedulingStatus {
     blackoutDates: [],
     videographerBooked: [],
     videographerOff: [],
+    blockedHalfSlots: [],
+    blockedFullDays: [],
+    scheduleMessage: null,
     existingSend: null,
     extraRequests: [],
     extraWindow: null,
@@ -436,6 +510,8 @@ export async function submitProductionBooking(
       error: "That day isn't available. Pick another day in the window.",
     };
   }
+  const busy = await rejectIfVideographerBusy(client, date, time, duration, "client");
+  if (busy) return busy;
   // Serialize the last availability check and insert. This prevents two
   // simultaneous requests from claiming the same videographer/day or cadence
   // window before either request can see the other's insert.
@@ -537,6 +613,7 @@ export async function submitProductionBooking(
     windowStart: result.send.cadence_window_start,
     sendId: result.send.id,
   });
+  queueProductionScheduleSync(result.send.id);
 
   return result;
 }
@@ -632,6 +709,8 @@ export async function submitOutOfCycleBooking(
       error: "That day isn't available. Pick another day.",
     };
   }
+  const busy = await rejectIfVideographerBusy(client, date, time, duration, "client");
+  if (busy) return busy;
   // An open window an admin invited them into bounds the date, but only while
   // that window still has days left. An expired invite is a makeup booking:
   // any real upcoming date is fair game, same as asking off their own bat.
@@ -750,6 +829,7 @@ export async function submitOutOfCycleBooking(
     windowStart: result.send.cadence_window_start,
     sendId: result.send.id,
   });
+  queueProductionScheduleSync(result.send.id);
 
   return result;
 }
@@ -873,6 +953,9 @@ export async function recordManualProduction(
     };
   }
 
+  const busy = await rejectIfVideographerBusy(client, date, time, duration, "admin");
+  if (busy) return busy;
+
   // Serialize the duplicate check with the insert so two people logging the
   // same production can't both land a row for one window.
   const reserve = getDb().transaction((): BookingResult => {
@@ -943,6 +1026,7 @@ export async function recordManualProduction(
     windowStart: result.send.cadence_window_start,
     sendId: result.send.id,
   });
+  queueProductionScheduleSync(result.send.id);
 
   return result;
 }
@@ -999,6 +1083,9 @@ export async function recordOutOfCycleProduction(
       error: `Keep each answer under ${MAX_FIELD_LENGTH} characters.`,
     };
   }
+
+  const busy = await rejectIfVideographerBusy(client, date, time, duration, "admin");
+  if (busy) return busy;
 
   const reserve = getDb().transaction((): BookingResult => {
     const currentClient = getDb()
@@ -1070,6 +1157,7 @@ export async function recordOutOfCycleProduction(
     windowStart: result.send.cadence_window_start,
     sendId: result.send.id,
   });
+  queueProductionScheduleSync(result.send.id);
 
   return result;
 }

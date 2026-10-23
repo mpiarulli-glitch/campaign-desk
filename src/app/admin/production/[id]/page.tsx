@@ -114,6 +114,11 @@ export default function ProductionDetailPage() {
   // never filled in a brief. Null until "Edit details" is pressed, so the page
   // stays a clean read-only view for the crew.
   const [form, setForm] = useState<EditForm | null>(null);
+  const [editAvailability, setEditAvailability] = useState<{
+    blockedHalfSlots: string[];
+    fullDayBlocked: boolean;
+    message: string | null;
+  } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -147,6 +152,39 @@ export default function ProductionDetailPage() {
       mounted = false;
     };
   }, [id, router]);
+
+  const editingDate = form?.sendDate ?? "";
+  const editing = form !== null;
+  useEffect(() => {
+    if (!editing || !data?.client?.id || !DATE_RE.test(editingDate)) {
+      setEditAvailability(null);
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams({
+      clientId: data.client.id,
+      date: editingDate,
+      excludeSendId: data.send.id,
+    });
+    fetch(`/api/production/schedule-availability?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!cancelled) setEditAvailability(body);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEditAvailability({
+            blockedHalfSlots: ["09:00", "10:00", "11:00", "12:00", "13:00"],
+            fullDayBlocked: true,
+            message:
+              "Couldn't reach Basecamp, so this videographer's schedule wasn't checked. Nothing was booked. Reconnect the King Kashflow service account and try again.",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editing, data?.client?.id, data?.send.id, editingDate]);
 
   async function saveStatus() {
     if (!data || status === data.send.status) return;
@@ -278,10 +316,23 @@ export default function ProductionDetailPage() {
                       value={form.sendTime}
                       onChange={(e) => setForm({ ...form, sendTime: e.target.value })}
                     >
-                      <option value="">No time set</option>
-                      {SLOTS.map((t) => (
-                        <option key={t} value={t}>{fmtTime(t)}</option>
-                      ))}
+                      <option value="" disabled={Boolean(editAvailability?.fullDayBlocked)}>
+                        No time set
+                        {editAvailability?.fullDayBlocked ? " — unavailable" : ""}
+                      </option>
+                      {SLOTS.map((t) => {
+                        const blocked = Boolean(
+                          form.duration === "full"
+                            ? editAvailability?.fullDayBlocked
+                            : editAvailability?.blockedHalfSlots?.includes(t)
+                        );
+                        return (
+                          <option key={t} value={t} disabled={blocked}>
+                            {fmtTime(t)}
+                            {blocked ? " — unavailable" : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                   <div className="field">
@@ -295,7 +346,10 @@ export default function ProductionDetailPage() {
                       }
                     >
                       <option value="half">4 hours</option>
-                      <option value="full">Full day</option>
+                      <option value="full" disabled={Boolean(editAvailability?.fullDayBlocked)}>
+                        Full day
+                        {editAvailability?.fullDayBlocked ? " — unavailable" : ""}
+                      </option>
                     </select>
                   </div>
                   <Detail
@@ -325,6 +379,10 @@ export default function ProductionDetailPage() {
                   />
                 </div>
               )}
+
+              {form && editAvailability?.message ? (
+                <p className="error" style={{ margin: 0 }}>{editAvailability.message}</p>
+              ) : null}
 
               {isAdmin ? (
                 <div className="field">
