@@ -518,6 +518,14 @@ export default function ProductionPage() {
   const logFormRef = useRef<HTMLFormElement>(null);
   const [logSaving, setLogSaving] = useState(false);
   const [logError, setLogError] = useState("");
+  const [logAvailability, setLogAvailability] = useState<{
+    blockedHalfSlots: string[];
+    fullDayBlocked: boolean;
+    message: string | null;
+  } | null>(null);
+  const [scheduleSyncing, setScheduleSyncing] = useState(false);
+  const [scheduleSyncMessage, setScheduleSyncMessage] = useState("");
+  const [scheduleSyncError, setScheduleSyncError] = useState(false);
 
   // "Ask to schedule" / first-invite form (row or First productions list).
   const [extraAsk, setExtraAsk] = useState<{
@@ -1013,6 +1021,66 @@ export default function ProductionPage() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!logging?.clientId || !logging.date) {
+      setLogAvailability(null);
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams({
+      clientId: logging.clientId,
+      date: logging.date,
+    });
+    fetch(`/api/production/schedule-availability?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled) setLogAvailability(data);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLogAvailability({
+            blockedHalfSlots: ["09:00", "10:00", "11:00", "12:00", "13:00"],
+            fullDayBlocked: true,
+            message:
+              "Couldn't reach Basecamp, so this videographer's schedule wasn't checked. Nothing was booked. Reconnect the King Kashflow service account and try again.",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logging?.clientId, logging?.date]);
+
+  async function syncProductionSchedule() {
+    setScheduleSyncing(true);
+    setScheduleSyncMessage("");
+    setScheduleSyncError(false);
+    try {
+      const res = await fetch("/api/admin/production-schedule", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        setScheduleSyncError(true);
+        setScheduleSyncMessage(
+          data.error || "Couldn't add shoots to the Basecamp schedule."
+        );
+        return;
+      }
+      const created = Number(data.created) || 0;
+      setScheduleSyncMessage(
+        created
+          ? `Added ${created} production${created === 1 ? "" : "s"} to the Basecamp schedule.`
+          : "Every upcoming production is already on the Basecamp schedule."
+      );
+    } catch {
+      setScheduleSyncError(true);
+      setScheduleSyncMessage(
+        "Couldn't reach Basecamp. Reconnect the King Kashflow service account and try again."
+      );
+    } finally {
+      setScheduleSyncing(false);
+    }
+  }
+
   function beginEdit(id: string, field: Field, current: string) {
     setError("");
     setEdit({ id, field });
@@ -1458,9 +1526,22 @@ export default function ProductionPage() {
               <button className="btn btn-ghost btn-sm" type="button" onClick={openSampleText}>
                 Test text
               </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                disabled={scheduleSyncing}
+                onClick={syncProductionSchedule}
+              >
+                {scheduleSyncing ? "Adding…" : "Add shoots to Basecamp"}
+              </button>
             </div>
           ) : null}
         </div>
+        {scheduleSyncMessage ? (
+          <p className={scheduleSyncError ? "error" : "muted"} style={{ margin: 0 }}>
+            {scheduleSyncMessage}
+          </p>
+        ) : null}
 
         {isAdmin && ghl?.configured ? (
           <p className={ghl.connected ? "muted" : "error"} style={{ margin: 0 }}>
@@ -1806,10 +1887,23 @@ export default function ProductionPage() {
                     value={logging.time}
                     onChange={(e) => setLogging({ ...logging, time: e.target.value })}
                   >
-                    <option value="">No time set</option>
-                    {["09:00", "10:00", "11:00", "12:00", "13:00"].map((t) => (
-                      <option key={t} value={t}>{fmtTime(t)}</option>
-                    ))}
+                    <option value="" disabled={Boolean(logAvailability?.fullDayBlocked)}>
+                      No time set
+                      {logAvailability?.fullDayBlocked ? " — unavailable" : ""}
+                    </option>
+                    {["09:00", "10:00", "11:00", "12:00", "13:00"].map((t) => {
+                      const blocked = Boolean(
+                        logging.duration === "full"
+                          ? logAvailability?.fullDayBlocked
+                          : logAvailability?.blockedHalfSlots?.includes(t)
+                      );
+                      return (
+                        <option key={t} value={t} disabled={blocked}>
+                          {fmtTime(t)}
+                          {blocked ? " — unavailable" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div className="field">
@@ -1823,7 +1917,10 @@ export default function ProductionPage() {
                     }
                   >
                     <option value="half">4 hours</option>
-                    <option value="full">Full day</option>
+                    <option value="full" disabled={Boolean(logAvailability?.fullDayBlocked)}>
+                      Full day
+                      {logAvailability?.fullDayBlocked ? " — unavailable" : ""}
+                    </option>
                   </select>
                 </div>
                 <div className="field">
@@ -1922,6 +2019,9 @@ export default function ProductionPage() {
                 </p>
               ) : null}
 
+              {logAvailability?.message ? (
+                <p className="error" style={{ margin: 0 }}>{logAvailability.message}</p>
+              ) : null}
               {logError ? <p className="error">{logError}</p> : null}
 
               <div className="row" style={{ gap: 10 }}>

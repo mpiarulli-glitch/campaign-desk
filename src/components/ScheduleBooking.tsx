@@ -22,6 +22,9 @@ type Data = {
   blackoutDates: string[];
   videographerBooked: string[];
   videographerOff: string[];
+  blockedHalfSlots?: string[];
+  blockedFullDays?: string[];
+  scheduleMessage?: string | null;
   existingSend: {
     sendDate: string;
     sendTime: string;
@@ -152,6 +155,14 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
     return slotHasPassed(date, time, data.today, data.currentTime);
   }
 
+  function crewBlocks(date: string, time: string): boolean {
+    return (data?.blockedHalfSlots || []).includes(`${date}|${time}`);
+  }
+
+  function fullDayBlocked(date: string): boolean {
+    return Boolean(date) && (data?.blockedFullDays || []).includes(date);
+  }
+
   function choose(date: string, time: string) {
     setPick({ date, time });
     setError("");
@@ -171,6 +182,18 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   async function submit() {
     const chosen = mode === "extra" ? { date: extraDate, time: extraTime } : pick;
     if (!chosen?.date || !chosen?.time) return;
+    if (data?.scheduleMessage) {
+      setError(data.scheduleMessage);
+      return;
+    }
+    if (duration === "full" && fullDayBlocked(chosen.date)) {
+      setError("That day isn't open for a full day. Pick a four-hour start, or another day.");
+      return;
+    }
+    if (crewBlocks(chosen.date, chosen.time)) {
+      setError("That time isn't available. Please pick another.");
+      return;
+    }
     setSaving(true);
     setError("");
     const res = await fetch(apiPath, {
@@ -263,6 +286,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
 
         <ProductionSchedulingReminder />
 
+        {data.scheduleMessage ? <p className="error">{data.scheduleMessage}</p> : null}
+
         {data.extraRequests.length > 0 ? (
           <div className="sched-notice">
             <p className="muted" style={{ margin: 0 }}>
@@ -305,7 +330,10 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                 >
                   <div className="sched-corner" />
                   {extraDays.map((d) => {
-                    const off = blackout.has(d) || d < data.today;
+                    const off =
+                      blackout.has(d) ||
+                      d < data.today ||
+                      data.slots.every((slot) => crewBlocks(d, slot));
                     return (
                       <div key={d} className={`sched-daycol ${off ? "is-off" : ""}`}>
                         <span className="sched-dow">{dayName(d)}</span>
@@ -317,7 +345,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                     <div key={slot} className="sched-row-contents">
                       <div className="sched-timelabel">{slotLabel(slot)}</div>
                       {extraDays.map((d) => {
-                        const off = blackout.has(d) || isPastSlot(d, slot);
+                        const off = blackout.has(d) || isPastSlot(d, slot) || crewBlocks(d, slot);
                         const selected = extraDate === d && extraTime === slot;
                         return (
                           <button
@@ -360,11 +388,13 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                     onChange={(e) => setExtraTime(e.target.value)}
                   >
                     <option value="">Select one</option>
-                    {data.slots.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {slotLabel(slot)}
-                      </option>
-                    ))}
+                    {data.slots.map((slot) =>
+                      extraDate && crewBlocks(extraDate, slot) ? null : (
+                        <option key={slot} value={slot}>
+                          {slotLabel(slot)}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
               </div>
@@ -395,7 +425,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                   type="button"
                   className={`brief-dur ${duration === "full" ? "is-on" : ""}`}
                   disabled={
-                    extraDate === data.today && "09:00" <= data.currentTime
+                    (extraDate === data.today && "09:00" <= data.currentTime) ||
+                    fullDayBlocked(extraDate)
                   }
                   onClick={() => {
                     setDuration("full");
@@ -635,6 +666,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
 
       <ProductionSchedulingReminder />
 
+      {data.scheduleMessage ? <p className="error">{data.scheduleMessage}</p> : null}
+
       <div className="sched-grid-card">
         <div
           className="sched-grid"
@@ -642,7 +675,10 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         >
           <div className="sched-corner" />
           {days.map((d) => {
-            const off = blackout.has(d) || d < data.today;
+            const off =
+              blackout.has(d) ||
+              d < data.today ||
+              data.slots.every((slot) => crewBlocks(d, slot));
             return (
               <div key={d} className={`sched-daycol ${off ? "is-off" : ""}`}>
                 <span className="sched-dow">{dayName(d)}</span>
@@ -654,7 +690,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             <div key={slot} className="sched-row-contents">
               <div className="sched-timelabel">{slotLabel(slot)}</div>
               {days.map((d) => {
-                const off = blackout.has(d) || isPastSlot(d, slot);
+                const off = blackout.has(d) || isPastSlot(d, slot) || crewBlocks(d, slot);
                 const selected = pick?.date === d && pick?.time === slot;
                 return (
                   <button
@@ -710,7 +746,8 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                 type="button"
                 className={`brief-dur ${duration === "full" ? "is-on" : ""}`}
                 disabled={
-                  pick.date === data.today && "09:00" <= data.currentTime
+                  (pick.date === data.today && "09:00" <= data.currentTime) ||
+                  fullDayBlocked(pick.date)
                 }
                 onClick={() => {
                   setDuration("full");

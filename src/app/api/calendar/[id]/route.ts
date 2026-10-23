@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated, isProductionAuthenticated } from "@/lib/auth";
 import { cancelSend, deleteSend, getSend, updateSend } from "@/lib/calendar";
-import { advanceLastProduction } from "@/lib/cadence";
+import { advanceLastProduction, appDateTime } from "@/lib/cadence";
 import { getRevClient } from "@/lib/revenue";
 import { sendProductionConfirmed } from "@/lib/production-emails";
+import {
+  isProductionRow,
+  syncProductionScheduleEntry,
+  videographerScheduleConflict,
+} from "@/lib/production-schedule-sync";
 import { BRIEF_FIELDS, MAX_FIELD_LENGTH } from "@/lib/scheduling";
 import { isRealDate } from "@/lib/scheduling-rules";
 import { listVideographers } from "@/lib/videographers";
@@ -53,8 +58,24 @@ export async function PATCH(request: Request, { params }: Params) {
     );
   }
   if (typeof body.cancelled === "boolean") {
+    if (!body.cancelled && before.cancelled_at && isProductionRow(before)) {
+      const owner = before.client_id ? getRevClient(before.client_id) : null;
+      const conflict = await videographerScheduleConflict({
+        videographerId: owner?.videographer_id || "",
+        date: before.send_date,
+        time: before.send_time,
+        duration: before.duration === "full" ? "full" : "half",
+        today: appDateTime().date,
+        audience: "admin",
+        excludeEntryId: before.basecamp_schedule_entry_id,
+      });
+      if (!conflict.ok) {
+        return NextResponse.json({ error: conflict.error }, { status: conflict.httpStatus });
+      }
+    }
     const send = cancelSend(id, body.cancelled);
     if (!send) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (isProductionRow(send)) void syncProductionScheduleEntry(send.id);
     return NextResponse.json({ send });
   }
 
@@ -78,6 +99,38 @@ export async function PATCH(request: Request, { params }: Params) {
       );
     }
     productionBrief = JSON.stringify(brief);
+  }
+
+  const nextDate = typeof body.sendDate === "string" ? body.sendDate : before.send_date;
+  const nextTime = typeof body.sendTime === "string" ? body.sendTime : before.send_time;
+  const nextDuration =
+    body.duration === "full" || body.duration === "half"
+      ? body.duration
+      : before.duration === "full"
+        ? "full"
+        : "half";
+  const slotChanged =
+    nextDate !== before.send_date ||
+    nextTime !== before.send_time ||
+    nextDuration !== (before.duration === "full" ? "full" : "half");
+  if (isProductionRow(before) && !before.cancelled_at && slotChanged) {
+    const nextClientId =
+      body.clientId === null || typeof body.clientId === "string"
+        ? body.clientId
+        : before.client_id;
+    const owner = nextClientId ? getRevClient(nextClientId) : null;
+    const conflict = await videographerScheduleConflict({
+      videographerId: owner?.videographer_id || "",
+      date: nextDate,
+      time: nextTime,
+      duration: nextDuration,
+      today: appDateTime().date,
+      audience: "admin",
+      excludeEntryId: before.basecamp_schedule_entry_id,
+    });
+    if (!conflict.ok) {
+      return NextResponse.json({ error: conflict.error }, { status: conflict.httpStatus });
+    }
   }
 
   const send = updateSend(id, {
@@ -123,6 +176,8 @@ export async function PATCH(request: Request, { params }: Params) {
     if (client) await sendProductionConfirmed(client, send);
   }
 
+  if (send && isProductionRow(send)) void syncProductionScheduleEntry(send.id);
+
   return NextResponse.json({ send });
 }
 
@@ -131,6 +186,13 @@ export async function DELETE(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const before = getSend(id);
+  if (before && isProductionRow(before) && !before.cancelled_at) {
+    cancelSend(id, true);
+  }
+  if (before && isProductionRow(before)) {
+    await syncProductionScheduleEntry(id);
+  }
   const ok = deleteSend(id);
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

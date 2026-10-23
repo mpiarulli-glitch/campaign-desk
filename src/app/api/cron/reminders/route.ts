@@ -4,6 +4,7 @@ import { isAdminAuthenticated } from "@/lib/auth";
 import { runReminders } from "@/lib/reminders";
 import { notifyReachouts } from "@/lib/notify";
 import { alertSmsFailures, refreshSmsDeliveries } from "@/lib/production-sms";
+import { backfillProductionSchedule } from "@/lib/production-schedule-sync";
 
 // Constant-time compare so the secret can't be probed by timing.
 function secretMatches(provided: string | null): boolean {
@@ -124,6 +125,19 @@ async function handle(request: Request) {
       paused: result.paused,
       heldByStatus: result.heldByStatus,
     });
+    // Future productions missing from the Video Editing Team schedule. Not at
+    // startup: this rides the reminders cron, after the process is already up.
+    try {
+      const schedule = await backfillProductionSchedule(result.today);
+      if (schedule.created || schedule.failed || schedule.error) {
+        console.log(
+          `[cron] production schedule: added ${schedule.created}, failed ${schedule.failed}` +
+            (schedule.error ? ` (${schedule.error})` : "")
+        );
+      }
+    } catch (err) {
+      console.error("[cron] production schedule backfill failed", (err as Error).message);
+    }
   }
 
   return NextResponse.json(result);

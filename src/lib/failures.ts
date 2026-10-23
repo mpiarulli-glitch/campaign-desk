@@ -22,6 +22,7 @@ export type FailureKind =
   | "basecamp_approval"
   | "basecamp_project"
   | "basecamp_todo"
+  | "basecamp_schedule"
   | "contact_unresolved"
   | "production_sms";
 
