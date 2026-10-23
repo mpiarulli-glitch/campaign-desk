@@ -48,9 +48,10 @@ export function BasecampProjectSelect({
 type MissingClient = { id: string; name: string };
 
 /**
- * Admins see every Forecast client that still has no Basecamp project, and one
- * control to attach one. On open, confident name matches are filled in. A
- * client created later shows up here the next time Forecast is opened.
+ * Admin-only list of real clients that still have no Basecamp project, with one
+ * control to attach one. This stays off Forecast. Confident name matches are
+ * filled in when the section mounts. A client created later shows up the next
+ * time an admin opens it.
  */
 export function MissingBasecampProjects({
   refreshToken = 0,
@@ -244,4 +245,40 @@ export function MissingBasecampProjects({
       ) : null}
     </section>
   );
+}
+
+/**
+ * Forecast loads this and renders nothing. The request fills confident links
+ * in the background and does not wait on the page.
+ */
+export function SilentBasecampClientMatch({
+  onLinked,
+}: {
+  onLinked?: (clientIds: string[]) => void;
+}) {
+  const onLinkedRef = useRef(onLinked);
+  onLinkedRef.current = onLinked;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/basecamp-client-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "match", silent: true }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !json) return;
+        const ids = Array.isArray(json.linked)
+          ? json.linked.map((row: { clientId?: string }) => row?.clientId).filter(Boolean)
+          : [];
+        if (ids.length) onLinkedRef.current?.(ids.map(String));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return null;
 }

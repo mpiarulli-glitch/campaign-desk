@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MoodAvatar, MOOD_LABEL, moodForPct } from "@/components/MoodAvatar";
-import { MissingBasecampProjects } from "@/components/MissingBasecampProjects";
+import { SilentBasecampClientMatch } from "@/components/MissingBasecampProjects";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
 type PersonSummary = {
@@ -123,7 +123,7 @@ export default function ForecastDashboardPage() {
           </div>
         </div>
 
-        <MissingBasecampProjects />
+        <SilentBasecampClientMatch />
 
         {people.length > 0 ? (
           <div className="mood-summary">

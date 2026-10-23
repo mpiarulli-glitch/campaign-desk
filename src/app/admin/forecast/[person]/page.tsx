@@ -4,11 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
-import {
-  BasecampProjectSelect,
-  MissingBasecampProjects,
-  type BasecampLinkState,
-} from "@/components/MissingBasecampProjects";
+import { SilentBasecampClientMatch } from "@/components/MissingBasecampProjects";
 import { ForecastQueue, type AssignedSource } from "@/components/ForecastQueue";
 import {
   ForecastSubtaskButton,
@@ -622,11 +618,7 @@ function ColorPicker({
   );
 }
 
-function todoHint(
-  draft: Draft,
-  state: TodoState | undefined,
-  link?: { isAdmin: boolean; loading: boolean; error: string; projectCount: number }
-): string {
+function todoHint(draft: Draft, state: TodoState | undefined): string {
   if (!draft.clientId) return "";
   if (!state || state.loading) return "";
   if (draft.manual) return "Typing this one by hand, so it won't be linked to Basecamp.";
@@ -645,10 +637,6 @@ function todoHint(
   }
   if (!state.todos.length) {
     if (state.reason === "no-project") {
-      const canChoose = Boolean(link?.isAdmin) && !draft.clientId.startsWith("internal:");
-      if (canChoose && (link?.projectCount || 0) > 0 && !link?.error) return "";
-      if (canChoose && link?.loading) return "Looking up Basecamp projects…";
-      if (canChoose && link?.error) return `${link.error} You can still type the task.`;
       return "This client has no Basecamp project set, so type the task instead.";
     }
     if (state.reason === "not-connected") {
@@ -698,12 +686,6 @@ function AddTaskForm({
   layout,
   autoFocus,
   busy,
-  isAdmin,
-  bcProjects,
-  bcProjectsError,
-  bcProjectsLoading,
-  linkingProject,
-  onLinkProject,
 }: {
   draft: Draft;
   patch: (p: Partial<Draft>) => void;
@@ -717,44 +699,14 @@ function AddTaskForm({
   layout: "row" | "stack";
   autoFocus?: boolean;
   busy?: boolean;
-  isAdmin?: boolean;
-  bcProjects?: Array<{ id: string; name: string }>;
-  bcProjectsError?: string;
-  bcProjectsLoading?: boolean;
-  linkingProject?: boolean;
-  onLinkProject?: (projectId: string) => void;
 }) {
   const stack = layout === "stack";
   const todos = useMemo(() => todoState?.todos || [], [todoState]);
   const meeting = draft.mode === "meeting";
   const selectedCount = draft.todoIds.length;
-  const linkState = {
-    isAdmin: Boolean(isAdmin),
-    loading: Boolean(bcProjectsLoading),
-    error: bcProjectsError || "",
-    projectCount: bcProjects?.length || 0,
-  };
 
   const usePicker = Boolean(draft.clientId) && !draft.manual && todos.length > 0;
-  const hint = meeting ? eventHint(draft, eventState) : todoHint(draft, todoState, linkState);
-  const projectSelect =
-    !meeting &&
-    isAdmin &&
-    draft.clientId &&
-    !draft.clientId.startsWith("internal:") &&
-    !draft.manual &&
-    todoState &&
-    !todoState.loading &&
-    todoState.reason === "no-project" &&
-    (bcProjects?.length || 0) > 0 &&
-    !bcProjectsError ? (
-      <BasecampProjectSelect
-        projects={bcProjects || []}
-        busy={linkingProject}
-        label={`Basecamp project for ${draft.client || "this client"}`}
-        onPick={(projectId) => onLinkProject?.(projectId)}
-      />
-    ) : null;
+  const hint = meeting ? eventHint(draft, eventState) : todoHint(draft, todoState);
 
   // Work or meeting. Kept as two small buttons rather than a select because it
   // switches which fields are shown, and a select there reads like data entry.
@@ -967,7 +919,6 @@ function AddTaskForm({
           </button>
         </div>
         {workToggle}
-        {projectSelect}
         {hint ? (
           <p className="muted" style={{ fontSize: 11, margin: "2px 0 0" }}>
             {hint}
@@ -1000,10 +951,9 @@ function AddTaskForm({
         ) : null}
       </div>
       {meetingToggle}
-      {workToggle || hint || projectSelect ? (
+      {workToggle || hint ? (
         <div className="row" style={{ gap: 10, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
           {workToggle}
-          {projectSelect}
           {hint ? (
             <span className="muted" style={{ fontSize: 12 }}>
               {hint}
@@ -1446,15 +1396,6 @@ export default function PersonForecastPage() {
   // can disable its controls without locking the whole list.
   const [tasksBusyId, setTasksBusyId] = useState<string | null>(null);
   const [tasksSchedulingId, setTasksSchedulingId] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [bcLink, setBcLink] = useState<BasecampLinkState>({
-    loading: false,
-    error: "",
-    projects: [],
-    missingIds: [],
-  });
-  const [linkRefresh, setLinkRefresh] = useState(0);
-  const [linkingClientId, setLinkingClientId] = useState("");
 
   function draftFor(date: string): Draft {
     return drafts[date] || emptyDraft;
@@ -1526,7 +1467,6 @@ export default function PersonForecastPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.authenticated) return;
-        setIsAdmin(data.role === "admin");
         if (data.forecastSubjects === "*") {
           setForecastSubjects("*");
         } else if (Array.isArray(data.forecastSubjects)) {
@@ -1670,38 +1610,12 @@ export default function PersonForecastPage() {
     ensureTodos(clientId);
   }
 
-  async function linkClientToProject(clientId: string, projectId: string) {
-    if (!clientId || clientId.startsWith("internal:")) return;
-    setLinkingClientId(clientId);
-    setError("");
-    try {
-      const res = await fetch("/api/admin/basecamp-client-links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "link", clientId, projectId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setError(json?.error || "Couldn't save that Basecamp project.");
-        return;
-      }
+  function refreshLinkedClients(clientIds: string[]) {
+    for (const clientId of clientIds) {
+      if (!requestedTodos.current.has(clientId)) continue;
       requestedTodos.current.delete(clientId);
-      await ensureTodos(clientId);
-      setLinkRefresh((n) => n + 1);
-    } finally {
-      setLinkingClientId("");
+      void ensureTodos(clientId);
     }
-  }
-
-  function projectLinkProps(clientId: string) {
-    return {
-      isAdmin,
-      bcProjects: bcLink.projects,
-      bcProjectsError: bcLink.error,
-      bcProjectsLoading: bcLink.loading,
-      linkingProject: linkingClientId === clientId,
-      onLinkProject: (projectId: string) => void linkClientToProject(clientId, projectId),
-    };
   }
 
   // Meetings come from the local basecamp_events cache, so this is a cheap read
@@ -3430,17 +3344,7 @@ export default function PersonForecastPage() {
       </div>
 
       <div className="ops-page" data-forecast-look={look}>
-        {isAdmin ? (
-          <MissingBasecampProjects
-            refreshToken={linkRefresh}
-            onReady={setBcLink}
-            onLinked={(clientId) => {
-              if (!requestedTodos.current.has(clientId)) return;
-              requestedTodos.current.delete(clientId);
-              void ensureTodos(clientId);
-            }}
-          />
-        ) : null}
+        <SilentBasecampClientMatch onLinked={refreshLinkedClients} />
         <div className="ops-page-head">
           <div>
             <h1 className="ops-title">{data?.label || person}</h1>
@@ -3821,7 +3725,6 @@ export default function PersonForecastPage() {
                     onAdd={() => addTask(today)}
                     layout="row"
                     busy={saving}
-                    {...projectLinkProps(draft.clientId)}
                   />
                 </CollapsedAdd>
               </div>
@@ -4019,7 +3922,6 @@ export default function PersonForecastPage() {
                   layout="stack"
                   autoFocus
                   busy={saving}
-                  {...projectLinkProps(draftFor(addingFor).clientId)}
                 />
               </SlotPopover>
             ) : null}
@@ -4104,7 +4006,6 @@ export default function PersonForecastPage() {
                       onAdd={() => addTask(date)}
                       layout="row"
                       busy={saving}
-                      {...projectLinkProps(draft.clientId)}
                     />
                   </CollapsedAdd>
                 </section>

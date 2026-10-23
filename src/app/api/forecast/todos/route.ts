@@ -43,8 +43,7 @@ export async function GET(request: Request) {
     projectId = (client.basecamp_project_id || "").trim();
   }
   // A blank project is known from the client row, so say so before asking
-  // whether Basecamp is up. Otherwise a disconnected King Kashflow account
-  // hides the missing link and the admin never gets the project picker.
+  // whether Basecamp is up. A missing link is not the same as Basecamp being down.
   if (!projectId) {
     return NextResponse.json({ todos: [], reason: "no-project" });
   }

@@ -9,9 +9,14 @@
 // since the last listing.
 
 import { basecampConnected, extractProjectId, listProjects, SERVICE } from "./basecamp";
-import { isInternalProject, PROJECT_ALIASES } from "./basecamp-clients";
+import {
+  forecastPersonNames,
+  isInternalProject,
+  PROJECT_ALIASES,
+} from "./basecamp-clients";
 import {
   basecampProjectChoices,
+  isPersonOrInternalClientName,
   matchUnlinkedClients,
   type MatchProject,
 } from "./basecamp-client-match";
@@ -42,6 +47,8 @@ export type LinkMissingReport = {
   ok: boolean;
   dryRun: boolean;
   fromCache: boolean;
+  /** True when a silent Forecast load skipped Basecamp because one just ran. */
+  skipped?: boolean;
   error: string | null;
   linked: LinkedClientProject[];
   ambiguous: Array<{ client: string; options: string[] }>;
@@ -56,26 +63,35 @@ type LinkDeps = {
   dryRun?: boolean;
   /** Bypass the in-memory project cache and list Basecamp again. */
   force?: boolean;
+  /** Forecast page load. Uses the cache, and will not call Basecamp again inside the throttle window. */
+  silent?: boolean;
   now?: () => number;
   connected?: () => boolean;
   loadProjects?: () => Promise<ProjectSource>;
 };
 
 let projectCache: { at: number; projects: MatchProject[] } | null = null;
+let lastSilentNetworkAt = 0;
 
 export function resetBasecampProjectCacheForTests(): void {
   projectCache = null;
+  lastSilentNetworkAt = 0;
 }
 
-/** Active Forecast clients with no Basecamp project. New rows show up here on their own. */
+/** Active Forecast clients with no Basecamp project. People and internal rows are left out. */
 export function listForecastClientsMissingBasecamp(): ForecastClientRef[] {
-  return getDb()
+  const rows = getDb()
     .prepare(
       `SELECT id, name FROM rev_clients
         WHERE active = 1 AND TRIM(IFNULL(basecamp_project_id, '')) = ''
         ORDER BY name COLLATE NOCASE`
     )
     .all() as ForecastClientRef[];
+  const people = forecastPersonNames();
+  return rows.filter(
+    (row) =>
+      row.name.trim() && !isPersonOrInternalClientName(row.name, people, isInternalProject)
+  );
 }
 
 /** Set the project only while the column is still blank. Returns false if it was already set. */
@@ -93,12 +109,28 @@ export function assignBasecampProjectIfBlank(clientId: string, projectId: string
   return result.changes > 0;
 }
 
+function skippedReport(): LinkMissingReport {
+  return {
+    ok: true,
+    dryRun: false,
+    fromCache: false,
+    skipped: true,
+    error: null,
+    linked: [],
+    ambiguous: [],
+    noProject: [],
+    missing: [],
+    projects: [],
+  };
+}
+
 function failure(error: string, dryRun: boolean): LinkMissingReport {
   const missing = safeMissing();
   return {
     ok: false,
     dryRun,
     fromCache: false,
+    skipped: false,
     error,
     linked: [],
     ambiguous: [],
@@ -147,11 +179,13 @@ async function serviceProjects(deps: LinkDeps): Promise<
 }
 
 function planFrom(projects: MatchProject[]) {
+  const people = forecastPersonNames();
   const clients = listRevClients(true).map((c) => ({
     id: c.id,
     name: c.name,
     basecampProjectId: (c.basecamp_project_id || "").trim(),
     active: c.active === 1,
+    eligible: !isPersonOrInternalClientName(c.name, people, isInternalProject),
   }));
   return matchUnlinkedClients(clients, projects, {
     aliases: PROJECT_ALIASES,
@@ -165,7 +199,20 @@ function planFrom(projects: MatchProject[]) {
  */
 export async function linkMissingBasecampProjects(deps?: LinkDeps): Promise<LinkMissingReport> {
   const dryRun = deps?.dryRun === true;
-  const loaded = await serviceProjects(deps ?? {});
+  const silent = deps?.silent === true;
+  const now = deps?.now?.() ?? Date.now();
+  // A Forecast page load must not walk Basecamp on every visit. A fresh cache
+  // still links a client created since the last listing. A failed attempt
+  // waits out the same window instead of retrying on the next click.
+  if (silent && deps?.force !== true) {
+    const cacheFresh = Boolean(
+      projectCache && now - projectCache.at < BASECAMP_PROJECT_CACHE_MS
+    );
+    const throttled = lastSilentNetworkAt > 0 && now - lastSilentNetworkAt < BASECAMP_PROJECT_CACHE_MS;
+    if (!cacheFresh && throttled) return skippedReport();
+    if (!cacheFresh) lastSilentNetworkAt = now;
+  }
+  const loaded = await serviceProjects(silent ? { ...deps, force: false } : deps ?? {});
   if (!loaded.ok) return failure(loaded.error, dryRun);
 
   let plan;
@@ -200,6 +247,7 @@ export async function linkMissingBasecampProjects(deps?: LinkDeps): Promise<Link
     ok: true,
     dryRun,
     fromCache: loaded.fromCache,
+    skipped: false,
     error: null,
     linked,
     ambiguous: plan.ambiguous.map((a) => ({ client: a.clientName, options: a.options })),

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { isAdminAuthenticated, isForecastAuthenticated } from "@/lib/auth";
 import {
   BASECAMP_UNREACHABLE_MESSAGE,
   linkClientToBasecampProject,
@@ -7,10 +7,12 @@ import {
   listForecastClientsMissingBasecamp,
 } from "@/lib/basecamp-client-links";
 
-// Admin list of Forecast clients with no Basecamp project, and the actions that
+// Admin list of real clients with no Basecamp project, and the actions that
 // fill the gap. Nothing here runs at startup. GET only reads the database.
 // POST match lists King Kashflow's projects (cached for a few minutes) and
 // writes confident links. POST link saves the project an admin picked.
+// POST { silent: true } is the Forecast page load: any signed-in user may
+// trigger it, it is throttled, and the response carries no project list.
 
 export async function GET() {
   if (!(await isAdminAuthenticated())) {
@@ -26,10 +28,27 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const silent = body?.silent === true && body?.action !== "link";
+  if (silent) {
+    if (!(await isForecastAuthenticated())) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    try {
+      const report = await linkMissingBasecampProjects({ silent: true });
+      return NextResponse.json({
+        ok: report.ok,
+        skipped: report.skipped === true,
+        linked: report.linked.map((row) => ({ clientId: row.clientId })),
+      });
+    } catch (err) {
+      console.error("[basecamp-client-links] silent match failed", (err as Error).message);
+      return NextResponse.json({ ok: false, skipped: false, linked: [] });
+    }
+  }
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const body = await request.json().catch(() => ({}));
   try {
     if (body?.action === "link") {
       const saved = await linkClientToBasecampProject(
@@ -52,8 +71,8 @@ export async function POST(request: Request) {
 
     const report = await linkMissingBasecampProjects({
       dryRun: body?.dryRun === true,
-      // The Forecast page asks with lazy: true so a second view reuses the
-      // project list. The Match button forces a fresh listing.
+      // The admin section's first look reuses the project list. Match by name
+      // forces a fresh listing. Forecast itself calls with silent: true.
       force: body?.lazy !== true,
     });
     return NextResponse.json(report);

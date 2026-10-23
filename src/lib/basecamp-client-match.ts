@@ -78,6 +78,12 @@ export type MatchClient = {
   basecampProjectId: string;
   /** Inactive rows are not Forecast clients. They still reserve a project id. */
   active?: boolean;
+  /**
+   * False for a person or an internal workspace stored as a client row.
+   * Those are not Forecast clients: they are not linked and not listed as missing.
+   * Omitted means eligible.
+   */
+  eligible?: boolean;
 };
 
 export type MatchProject = {
@@ -97,6 +103,25 @@ export type ClientMatchPlan = {
   ambiguous: Array<{ clientId: string; clientName: string; options: string[] }>;
   unmatched: Array<{ clientId: string; clientName: string }>;
 };
+
+/**
+ * A row whose name is a teammate or an internal MEG workspace is not a client
+ * account. Matching is exact on the normalized name, so "Carlos Cleaning"
+ * stays a client and "Carlos" does not.
+ */
+export function isPersonOrInternalClientName(
+  name: string,
+  personNames: readonly string[],
+  isInternal: (name: string) => boolean
+): boolean {
+  if (isInternal(name)) return true;
+  const key = normalizeClientMatchKey(name);
+  if (!key) return false;
+  for (const person of personNames) {
+    if (normalizeClientMatchKey(person) === key) return true;
+  }
+  return false;
+}
 
 function optionLabel(project: MatchProject): string {
   const name = (project.name || "").trim() || "Untitled project";
@@ -153,7 +178,7 @@ export function matchUnlinkedClients(
   const unmatched: ClientMatchPlan["unmatched"] = [];
 
   for (const client of clients) {
-    if (client.active === false) continue;
+    if (client.active === false || client.eligible === false) continue;
     const clientName = (client.name || "").trim();
     if ((client.basecampProjectId || "").trim()) continue;
 
