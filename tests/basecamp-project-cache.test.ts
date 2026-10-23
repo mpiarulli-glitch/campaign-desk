@@ -9,7 +9,13 @@ process.env.BASECAMP_CLIENT_ID = "test-client";
 process.env.BASECAMP_CLIENT_SECRET = "test-secret";
 process.env.BASECAMP_ACCOUNT_ID = "999";
 
-test("Basecamp project lists are cached and paged together", async (t) => {
+// Basecamp's geared pagination is 15, then 30, then 50, then 100, and the next
+// page is whatever the Link header says. A page shorter than 15 is not the end
+// when that header still has rel="next". Guessing ?page=2 and stopping on a
+// short body is what cut the account list off at 51 (15 + 30 + a short third
+// page) and then cached that as the whole catalog.
+
+test("Basecamp project lists follow Link and keep every page", async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-project-cache-"));
   const originalCwd = process.cwd();
   const realFetch = globalThis.fetch;
@@ -38,50 +44,107 @@ test("Basecamp project lists are cached and paged together", async (t) => {
       nowIso()
     );
 
-  const calls: Array<{ page: number; at: number }> = [];
-  const PAGE_MS = 40;
+  const base = "https://3.basecampapi.com/999";
+  const calls: string[] = [];
+
+  function pageBody(count: number, start: number, name: (i: number) => string) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: start + i,
+      name: name(i),
+    }));
+  }
+
+  // 15 + 30 + 50 + 20 = 115. The third page is the one a "< 15 means done"
+  // walker would have to get past, and the next URL is not ?page=N. A guessed
+  // ?page=2 returns a short body with no Link, which is the old stop.
+  const chain: Record<string, { count: number; start: number; next: string | null; label: string }> = {
+    "/projects.json": { count: 15, start: 1000, next: "/projects.json?page=cursor-2", label: "p1" },
+    "/projects.json?page=cursor-2": { count: 30, start: 2000, next: "/projects.json?page=cursor-3", label: "p2" },
+    "/projects.json?page=cursor-3": { count: 10, start: 3000, next: "/projects.json?page=cursor-4", label: "p3" },
+    "/projects.json?page=cursor-4": { count: 60, start: 4000, next: null, label: "p4" },
+  };
+  const expected = 15 + 30 + 10 + 60;
+
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
-    const page = Number(url.searchParams.get("page") || "1");
-    calls.push({ page, at: performance.now() });
-    await new Promise((resolve) => setTimeout(resolve, PAGE_MS));
-    const full = page <= 7;
-    const body = full
-      ? Array.from({ length: 15 }, (_, i) => ({ id: page * 100 + i, name: `P${page}-${i}` }))
-      : page === 8
-        ? [{ id: 800, name: "Last" }]
-        : [];
-    return new Response(JSON.stringify(body), {
+    const rel = url.pathname.replace(`/999`, "") + url.search;
+    calls.push(rel);
+    if (rel === "/projects.json?page=2") {
+      return new Response(JSON.stringify([{ id: 2, name: "Guessed short page" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const spec = chain[rel];
+    if (!spec) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    const body = pageBody(spec.count, spec.start, (i) =>
+      spec.label === "p4" && i === spec.count - 1 ? "NORLO Peptides" : `${spec.label}-${i}`
+    );
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (spec.next) headers.Link = `<${base}${spec.next}>; rel="next"`;
+    return new Response(JSON.stringify(body), { status: 200, headers });
+  }) as typeof fetch;
+
+  const projects = await basecamp.listProjects();
+  assert.equal(projects.length, expected);
+  assert.equal(projects[projects.length - 1].name, "NORLO Peptides");
+  assert.equal(projects[projects.length - 1].id, 4000 + 60 - 1);
+  assert.deepEqual(calls, [
+    "/projects.json",
+    "/projects.json?page=cursor-2",
+    "/projects.json?page=cursor-3",
+    "/projects.json?page=cursor-4",
+  ]);
+
+  const before = calls.length;
+  const again = await basecamp.listProjects();
+  assert.equal(again.length, projects.length);
+  assert.equal(calls.length, before, "a fresh cache must not page Basecamp again");
+
+  await basecamp.listProjects(undefined, { fresh: true });
+  assert.equal(calls.length, before + 4);
+
+  // A failed later page is not stored. The next call walks Basecamp again.
+  basecamp.clearBasecampProjectCache();
+  getDb().prepare(`DELETE FROM app_settings WHERE key LIKE 'basecamp_project_list%'`).run();
+  calls.length = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    const rel = url.pathname.replace(`/999`, "") + url.search;
+    calls.push(rel);
+    if (rel === "/projects.json") {
+      const body = pageBody(15, 1000, (i) => `only-${i}`);
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          Link: `<${base}/projects.json?page=cursor-2>; rel="next"`,
+        },
+      });
+    }
+    return new Response("nope", { status: 500 });
+  }) as typeof fetch;
+
+  await assert.rejects(() => basecamp.listProjects(), /cut short/);
+  const stored = getDb()
+    .prepare(`SELECT COUNT(*) AS n FROM app_settings WHERE key LIKE 'basecamp_project_list%'`)
+    .get() as { n: number };
+  assert.equal(stored.n, 0);
+
+  calls.length = 0;
+  globalThis.fetch = (async () => {
+    calls.push("retry");
+    return new Response(JSON.stringify([{ id: 7, name: "After failure" }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }) as typeof fetch;
-
-  const started = performance.now();
-  const projects = await basecamp.listProjects();
-  const cold = performance.now() - started;
-  assert.equal(projects.length, 7 * 15 + 1);
-  assert.equal(projects[projects.length - 1].name, "Last");
-  // Page 1, then the next eight pages in one wave. The short page stops the list
-  // before the empty page is included, but that request is already in flight.
-  assert.equal(calls.length, 9);
-
-  const first = calls.find((call) => call.page === 1)!;
-  const later = calls.filter((call) => call.page > 1);
-  const laterSpread = Math.max(...later.map((call) => call.at)) - Math.min(...later.map((call) => call.at));
-  assert.ok(later.every((call) => call.at >= first.at + PAGE_MS - 5));
-  assert.ok(laterSpread < PAGE_MS, `later pages should share a round trip, spread ${laterSpread.toFixed(0)}ms`);
-  // Eight sequential pages would be about 8 * PAGE_MS. Two waves land well under that.
-  assert.ok(cold < PAGE_MS * 4, `cold list took ${cold.toFixed(0)}ms`);
-
-  const before = calls.length;
-  const warmStarted = performance.now();
-  const again = await basecamp.listProjects();
-  const warm = performance.now() - warmStarted;
-  assert.equal(again.length, projects.length);
-  assert.equal(calls.length, before);
-  assert.ok(warm < 20, `warm list took ${warm.toFixed(1)}ms`);
-
-  await basecamp.listProjects(undefined, { fresh: true });
-  assert.equal(calls.length, before + 9);
+  const retried = await basecamp.listProjects();
+  assert.deepEqual(
+    retried.map((p) => p.name),
+    ["After failure"]
+  );
+  assert.equal(calls.length, 1);
 });
