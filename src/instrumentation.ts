@@ -18,11 +18,13 @@ export async function register() {
     ensureKrakBobaPiscatawayGrowthOsClient,
     ensureFloorCoDesignGrowthOsClient,
     ensureSwingInnCafeClient,
+    ensureCoronasDeOroClient,
   } = await import("./lib/basecamp-clients");
   void runBasecampClientBackfillOnce();
   void ensureKrakBobaPiscatawayGrowthOsClient();
   void ensureFloorCoDesignGrowthOsClient();
   void ensureSwingInnCafeClient();
+  void ensureCoronasDeOroClient();
 
   // Exact GoHighLevel location matches, the ones Find matches would pre-tick.
   // Without this, clients like Ecoworkz stay unlinked until someone opens Tools.

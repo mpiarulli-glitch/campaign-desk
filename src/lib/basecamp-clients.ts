@@ -7,10 +7,11 @@ import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
 import { addClientToHub } from "./lifecycle-hub";
-import { OWNER_SLUG } from "./people";
+import { OWNER_SLUG, PEOPLE } from "./people";
 import { currentPeriod } from "./period";
 import { createRevClient, listRevClients, updateRevClient } from "./revenue";
 import {
+  isPersonOrInternalClientName,
   matchUnlinkedClients,
   normalizeClientMatchKey,
 } from "./basecamp-client-match";
@@ -74,6 +75,30 @@ const INTERNAL_PROJECTS = new Set(
 
 export function isInternalProject(name: string): boolean {
   return INTERNAL_PROJECTS.has((name || "").trim().toLowerCase());
+}
+
+/** Teammate labels from the roster and from user accounts. */
+export function forecastPersonNames(): string[] {
+  const names: string[] = PEOPLE.map((person) => person.label);
+  try {
+    const rows = getDb()
+      .prepare(`SELECT label FROM users WHERE active = 1`)
+      .all() as Array<{ label: string }>;
+    for (const row of rows) {
+      if (row.label) names.push(row.label);
+    }
+  } catch {
+    // A partial database may not have users yet. The roster still applies.
+  }
+  return names;
+}
+
+/**
+ * A rev_clients row that is really a person or an internal workspace.
+ * "Carlos" matches the teammate. "Carlos Cleaning" does not.
+ */
+export function isNonClientRecord(name: string): boolean {
+  return isPersonOrInternalClientName(name, forecastPersonNames(), isInternalProject);
 }
 
 // Client projects the forecast todo picker should offer even when they are
@@ -359,11 +384,14 @@ export async function reconcileClients(opts?: {
   // ---- link pass: fill blank project ids on existing clients
   // Confident names only. A substring such as "NORLO" inside "NORLO Peptides"
   // is left blank so an admin can pick it, instead of guessing.
+  const people = forecastPersonNames();
   const plan = matchUnlinkedClients(
     listRevClients(true).map((c) => ({
       id: c.id,
       name: c.name,
       basecampProjectId: (c.basecamp_project_id || "").trim(),
+      active: c.active === 1,
+      eligible: !isPersonOrInternalClientName(c.name, people, isInternalProject),
     })),
     projects,
     { aliases: PROJECT_ALIASES, isInternal: isInternalProject }
@@ -645,5 +673,42 @@ export async function ensureSwingInnCafeClient(): Promise<void> {
     console.log(`[lifecycle-client] ${summary}`);
   } catch (err) {
     console.error("[lifecycle-client] Swing Inn Cafe import failed", (err as Error).message);
+  }
+}
+
+/* ----------------------------------------- Coronas De Oro one-shot import */
+
+const CORONAS_DE_ORO_KEY = "forecast_client_coronas_de_oro_v1";
+
+// https://3.basecamp.com/5338018/projects/49308114
+export const CORONAS_DE_ORO_PROJECT_ID = "49308114";
+export const CORONAS_DE_ORO_CLIENT_NAME = "Coronas De Oro";
+
+/**
+ * Add Coronas De Oro and link Basecamp project 49308114. The project id is
+ * known, so this does not list Basecamp. The one-time client backfill already
+ * ran, and a project created after that stays out of Forecast until someone
+ * clicks Sync. This writes one row on boot, fills a blank project id when the
+ * name is already a client, and does not overwrite a different project id.
+ */
+export async function ensureCoronasDeOroClient(): Promise<void> {
+  try {
+    if (settingDone(CORONAS_DE_ORO_KEY)) return;
+
+    const project = { id: CORONAS_DE_ORO_PROJECT_ID, name: CORONAS_DE_ORO_CLIENT_NAME };
+    const result = bindForecastClientToExactProject(project, CORONAS_DE_ORO_CLIENT_NAME);
+    const row = listRevClients(true).find((c) => c.id === result.clientId);
+    if ((row?.basecamp_project_id || "").trim() !== CORONAS_DE_ORO_PROJECT_ID) {
+      console.log(
+        `[forecast-client] Coronas De Oro is linked to ${row?.basecamp_project_id || "nothing"}; will retry next boot`
+      );
+      return;
+    }
+    const ts = nowIso();
+    const summary = `client=${result.clientName} id=${result.clientId} project=${project.id} created=${result.created} linked=${result.linked} at=${ts}`;
+    markSetting(CORONAS_DE_ORO_KEY, summary);
+    console.log(`[forecast-client] ${summary}`);
+  } catch (err) {
+    console.error("[forecast-client] Coronas De Oro import failed", (err as Error).message);
   }
 }

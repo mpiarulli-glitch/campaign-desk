@@ -663,12 +663,21 @@ export function matchPeople(people: BcPerson[], identifiers: string[]): number[]
 
 /* ------------------------------------------------------------------ todos */
 
-// Basecamp paginates collections at 50 per page and advertises the next page
-// in a Link header. Follow it, but cap the walk so one enormous todo list can't
-// stall the forecast picker. A timed-out or failed page just ends the walk
-// early with whatever was already fetched, rather than throwing — this runs
-// inside Promise.all fan-outs where one bad request must not blank out every
-// other list's results.
+// Basecamp advertises the next page in a Link header. The page size is geared
+// (15, then 30, then 50, then 100), and the next URL is not always `?page=N`,
+// so the header is the only safe way to continue.
+function nextPagePath(linkHeader: string | null): string | null {
+  const match = (linkHeader || "").match(/<([^>]+)>;\s*rel="next"/);
+  if (!match) return null;
+  // The header carries an absolute URL; bc() prepends apiBase(), so strip it.
+  return match[1].replace(apiBase(), "");
+}
+
+// Follow Link, but cap the walk so one enormous todo list can't stall the
+// forecast picker. A timed-out or failed page just ends the walk early with
+// whatever was already fetched, rather than throwing — this runs inside
+// Promise.all fan-outs where one bad request must not blank out every other
+// list's results.
 async function bcCollection<T>(
   path: string,
   maxPages = 4,
@@ -687,10 +696,7 @@ async function bcCollection<T>(
     const batch = await res.json();
     if (!Array.isArray(batch)) break;
     out.push(...(batch as T[]));
-    const link = res.headers.get("Link") || "";
-    const m = link.match(/<([^>]+)>;\s*rel="next"/);
-    // The header carries an absolute URL; bc() prepends apiBase(), so strip it.
-    next = m ? m[1].replace(apiBase(), "") : null;
+    next = nextPagePath(res.headers.get("Link"));
   }
   return out;
 }
@@ -2852,15 +2858,16 @@ export async function listProjectMessages(
 
 type BasecampProject = { id: number; name: string };
 
-// Basecamp pages this endpoint at 15 and does not take a larger page size.
-const PROJECT_PAGE_SIZE = 15;
+// Enough for the geared page sizes (15, 30, 50, then 100) to cover an account
+// far larger than this one. Hitting the cap with a next link still outstanding
+// is an incomplete list, not a successful short one.
 const PROJECT_MAX_PAGES = 30;
 // One account list is a few kilobytes. Hold it long enough that opening
 // Forecast or Assign again in the same sitting does not page Basecamp.
 const PROJECT_CACHE_TTL_MS = 10 * 60 * 1000;
-const PROJECT_CACHE_PREFIX = "basecamp_project_list:";
-// How many pages to ask for at once after the first page proves there is more.
-const PROJECT_PAGE_BATCH = 8;
+// v2: the previous key stored lists that stopped on a short page. Leave those
+// rows unread so a deploy does not keep serving them for the rest of the TTL.
+const PROJECT_CACHE_PREFIX = "basecamp_project_list_v2:";
 
 const projectMemory = new Map<string, { at: number; projects: BasecampProject[] }>();
 const projectInflight = new Map<string, Promise<BasecampProject[]>>();
@@ -2886,43 +2893,66 @@ function writeStoredProjects(key: string, row: { at: number; projects: BasecampP
   setSetting(PROJECT_CACHE_PREFIX + key, JSON.stringify(row));
 }
 
+function totalCountHeader(res: Response): number | null {
+  const raw = res.headers.get("X-Total-Count");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 async function fetchProjectPage(
   identity: BcIdentity,
-  page: number
-): Promise<BasecampProject[] | null> {
-  const res = await bc(`/projects.json?page=${page}`, undefined, identity);
+  path: string
+): Promise<{ projects: BasecampProject[]; next: string | null; total: number | null } | null> {
+  const res = await bc(path, undefined, identity);
   if (!res.ok) return null;
   const arr = await res.json();
   if (!Array.isArray(arr)) return null;
-  const out: BasecampProject[] = [];
-  for (const p of arr) out.push({ id: p.id, name: p.name });
-  return out;
+  const projects: BasecampProject[] = [];
+  for (const p of arr) {
+    if (p?.id == null) continue;
+    projects.push({ id: Number(p.id), name: p.name || "" });
+  }
+  return {
+    projects,
+    next: nextPagePath(res.headers.get("Link")),
+    total: totalCountHeader(res),
+  };
 }
 
 async function fetchAllProjects(
   identity: BcIdentity
 ): Promise<{ projects: BasecampProject[]; complete: boolean }> {
-  const first = await fetchProjectPage(identity, 1);
-  if (!first) return { projects: [], complete: false };
-  if (first.length < PROJECT_PAGE_SIZE) return { projects: first, complete: true };
-
-  const projects = [...first];
-  let page = 2;
-  while (page <= PROJECT_MAX_PAGES) {
-    const batch: number[] = [];
-    while (batch.length < PROJECT_PAGE_BATCH && page <= PROJECT_MAX_PAGES) {
-      batch.push(page);
-      page += 1;
+  const projects: BasecampProject[] = [];
+  const seenIds = new Set<number>();
+  const seenPaths = new Set<string>();
+  let next: string | null = "/projects.json";
+  let reportedTotal: number | null = null;
+  for (let page = 0; page < PROJECT_MAX_PAGES && next; page++) {
+    if (seenPaths.has(next)) return { projects, complete: false };
+    seenPaths.add(next);
+    const result = await fetchProjectPage(identity, next);
+    if (!result) return { projects, complete: false };
+    if (result.total != null) reportedTotal = result.total;
+    for (const project of result.projects) {
+      if (seenIds.has(project.id)) continue;
+      seenIds.add(project.id);
+      projects.push(project);
     }
-    const results = await Promise.all(batch.map((n) => fetchProjectPage(identity, n)));
-    for (const result of results) {
-      if (!result) return { projects, complete: false };
-      if (result.length === 0) return { projects, complete: true };
-      projects.push(...result);
-      if (result.length < PROJECT_PAGE_SIZE) return { projects, complete: true };
+    // A short page is not the end. Geared pagination is 15, then 30, then 50,
+    // so a third page of 8 records is 53 so far and can still carry Link
+    // rel="next". Stopping there is how NORLO Peptides dropped out of the
+    // dropdown. An empty page has nothing left to add.
+    if (result.projects.length === 0) {
+      next = null;
+      break;
     }
+    next = result.next;
   }
-  return { projects, complete: true };
+  // Missing Link is the end only when Basecamp's own total agrees. A short
+  // body with a larger X-Total-Count is a truncated catalog, not a success.
+  const countAgrees = reportedTotal == null || projects.length >= reportedTotal;
+  return { projects, complete: next === null && countAgrees };
 }
 
 function refreshProjectList(key: string, identity: BcIdentity): Promise<BasecampProject[]> {
@@ -2931,14 +2961,15 @@ function refreshProjectList(key: string, identity: BcIdentity): Promise<Basecamp
   // The finally callback runs after this assignment, so it can see `job`.
   const job = (async () => {
     const { projects, complete } = await fetchAllProjects(identity);
-    if (complete) {
-      const row = { at: Date.now(), projects };
-      projectMemory.set(key, row);
-      try {
-        writeStoredProjects(key, row);
-      } catch {
-        // The memory copy still serves this process.
-      }
+    // A partial list must not be cached or handed to the client matcher. The
+    // next call tries Basecamp again instead of reusing the short list.
+    if (!complete) throw new Error("Basecamp project list was cut short");
+    const row = { at: Date.now(), projects };
+    projectMemory.set(key, row);
+    try {
+      writeStoredProjects(key, row);
+    } catch {
+      // The memory copy still serves this process.
     }
     return projects;
   })().finally(() => {
@@ -2956,20 +2987,21 @@ export async function listProjects(
   const now = Date.now();
   if (!opts?.fresh) {
     const cached = projectMemory.get(key) || readStoredProjects(key);
-    if (cached) {
+    if (cached && now - cached.at < PROJECT_CACHE_TTL_MS) {
       projectMemory.set(key, cached);
-      if (now - cached.at < PROJECT_CACHE_TTL_MS) return cached.projects;
-      void refreshProjectList(key, identity).catch(() => {});
       return cached.projects;
     }
   }
+  // A stale stored list is not returned. Reloading Forecast was showing the
+  // truncated catalog while a refresh ran behind it, so the matcher linked
+  // against the short list and NORLO stayed blank.
   return refreshProjectList(key, identity);
 }
 
 export function disconnectBasecamp() {
   getDb()
-    .prepare(`DELETE FROM app_settings WHERE key IN (?, ?) OR key LIKE ?`)
-    .run("basecamp_tokens", "basecamp_service_identity", `${PROJECT_CACHE_PREFIX}%`);
+    .prepare(`DELETE FROM app_settings WHERE key IN (?, ?) OR key LIKE ? ESCAPE '\\'`)
+    .run("basecamp_tokens", "basecamp_service_identity", "basecamp\\_project\\_list%");
   clearBasecampProjectCache();
 }
 

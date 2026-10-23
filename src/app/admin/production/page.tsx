@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usableEmail } from "@/lib/email-address";
 import { FailuresPanel } from "@/components/FailuresPanel";
+import { MissingBasecampProjects } from "@/components/MissingBasecampProjects";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -2612,6 +2613,7 @@ export default function ProductionPage() {
                 ) : null}
               </div>
             ) : null}
+            {isAdmin ? <MissingBasecampProjects /> : null}
             {ghl ? (
               <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>

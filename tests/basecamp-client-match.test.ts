@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   basecampProjectChoices,
+  isPersonOrInternalClientName,
   matchUnlinkedClients,
   normalizeClientMatchKey,
   type MatchClient,
@@ -148,6 +149,22 @@ test("internal projects are omitted from the picker, duplicate titles keep their
     choices.map((c) => c.name),
     ["Acme Growth OS (#1)", "Acme Growth OS (#2)", "NORLO Peptides"]
   );
+});
+
+test("a teammate or internal workspace is not a client to link", () => {
+  const internal = (name: string) => name === "Empire Leadership HQ";
+  assert.equal(isPersonOrInternalClientName("Carlos", ["Carlos", "Sylvia"], internal), true);
+  assert.equal(isPersonOrInternalClientName("carlos", ["Carlos"], internal), true);
+  assert.equal(isPersonOrInternalClientName("Carlos Cleaning", ["Carlos"], internal), false);
+  assert.equal(isPersonOrInternalClientName("Empire Leadership HQ", [], internal), true);
+  assert.equal(isPersonOrInternalClientName("NORLO Peptides", ["Carlos"], internal), false);
+
+  const skipped = matchUnlinkedClients(
+    [client({ id: "carlos", name: "Carlos", eligible: false })],
+    [{ id: "1", name: "Carlos" }]
+  );
+  assert.equal(skipped.matches.length, 0);
+  assert.equal(skipped.unmatched.length, 0);
 });
 
 test("linking fills blanks once, skips guesses, and survives a second run", async (t) => {
@@ -319,4 +336,52 @@ test("linking fills blanks once, skips guesses, and survives a second run", asyn
   });
   assert.equal(internalPick.ok, false);
   assert.equal(getRevClient(acme.id)?.basecamp_project_id, "");
+
+  const carlos = createRevClient({ name: "Carlos", businessModel: "b2b" });
+  const carlosCleaning = createRevClient({
+    name: "Carlos Cleaning",
+    businessModel: "home_service",
+  });
+  const withPeople = await links.linkMissingBasecampProjects({
+    connected: () => true,
+    force: true,
+    now: () => 20_000_000,
+    loadProjects: async () => [
+      { id: "910", name: "Carlos" },
+      { id: "911", name: "Carlos Cleaning" },
+    ],
+  });
+  assert.equal(withPeople.ok, true);
+  assert.equal(getRevClient(carlos.id)?.basecamp_project_id, "");
+  assert.equal(getRevClient(carlosCleaning.id)?.basecamp_project_id, "911");
+  assert.equal(
+    links.listForecastClientsMissingBasecamp().some((row) => row.id === carlos.id),
+    false
+  );
+
+  links.resetBasecampProjectCacheForTests();
+  let silentCalls = 0;
+  const firstSilent = await links.linkMissingBasecampProjects({
+    silent: true,
+    now: () => 30_000_000,
+    connected: () => true,
+    loadProjects: async () => {
+      silentCalls += 1;
+      throw new Error("Basecamp not connected");
+    },
+  });
+  assert.equal(firstSilent.ok, false);
+  assert.equal(silentCalls, 1);
+  const secondSilent = await links.linkMissingBasecampProjects({
+    silent: true,
+    now: () => 30_000_000 + 1_000,
+    connected: () => true,
+    loadProjects: async () => {
+      silentCalls += 1;
+      throw new Error("Basecamp not connected");
+    },
+  });
+  assert.equal(secondSilent.ok, true);
+  assert.equal(secondSilent.skipped, true);
+  assert.equal(silentCalls, 1);
 });
