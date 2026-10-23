@@ -54,43 +54,46 @@ test("Basecamp project lists follow Link and keep every page", async (t) => {
     }));
   }
 
-  // 15 + 30 + 50 + 20 = 115. The third page is the one a "< 15 means done"
-  // walker would have to get past, and the next URL is not ?page=N. A guessed
-  // ?page=2 returns a short body with no Link, which is the old stop.
+  // 15 + 30 + 8 = 53, which is the production dropdown. The third page is short
+  // and still has a next link. Guessing ?page=3 returns that short body with
+  // no Link and would be cached as the whole account, without NORLO.
   const chain: Record<string, { count: number; start: number; next: string | null; label: string }> = {
     "/projects.json": { count: 15, start: 1000, next: "/projects.json?page=cursor-2", label: "p1" },
     "/projects.json?page=cursor-2": { count: 30, start: 2000, next: "/projects.json?page=cursor-3", label: "p2" },
-    "/projects.json?page=cursor-3": { count: 10, start: 3000, next: "/projects.json?page=cursor-4", label: "p3" },
+    "/projects.json?page=cursor-3": { count: 8, start: 3000, next: "/projects.json?page=cursor-4", label: "p3" },
     "/projects.json?page=cursor-4": { count: 60, start: 4000, next: null, label: "p4" },
   };
-  const expected = 15 + 30 + 10 + 60;
+  const expected = 15 + 30 + 8 + 60;
+  const NORLO_ID = 48628386;
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     const rel = url.pathname.replace(`/999`, "") + url.search;
     calls.push(rel);
-    if (rel === "/projects.json?page=2") {
-      return new Response(JSON.stringify([{ id: 2, name: "Guessed short page" }]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (rel === "/projects.json?page=3") {
+      return new Response(
+        JSON.stringify(Array.from({ length: 8 }, (_, i) => ({ id: 9000 + i, name: `Guessed-${i}` }))),
+        { status: 200, headers: { "Content-Type": "application/json", "X-Total-Count": "8" } }
+      );
     }
     const spec = chain[rel];
     if (!spec) {
       return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    const body = pageBody(spec.count, spec.start, (i) =>
-      spec.label === "p4" && i === spec.count - 1 ? "NORLO Peptides" : `${spec.label}-${i}`
-    );
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const body = pageBody(spec.count, spec.start, (i) => `${spec.label}-${i}`);
+    if (spec.label === "p4") body.push({ id: NORLO_ID, name: "NORLO Peptides" });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Total-Count": String(expected + 1),
+    };
     if (spec.next) headers.Link = `<${base}${spec.next}>; rel="next"`;
     return new Response(JSON.stringify(body), { status: 200, headers });
   }) as typeof fetch;
 
   const projects = await basecamp.listProjects();
-  assert.equal(projects.length, expected);
-  assert.equal(projects[projects.length - 1].name, "NORLO Peptides");
-  assert.equal(projects[projects.length - 1].id, 4000 + 60 - 1);
+  assert.equal(projects.length, expected + 1);
+  assert.ok(projects.length > 53);
+  assert.equal(projects.some((p) => p.id === NORLO_ID && p.name === "NORLO Peptides"), true);
   assert.deepEqual(calls, [
     "/projects.json",
     "/projects.json?page=cursor-2",
@@ -105,6 +108,25 @@ test("Basecamp project lists follow Link and keep every page", async (t) => {
 
   await basecamp.listProjects(undefined, { fresh: true });
   assert.equal(calls.length, before + 4);
+
+  // A stored 53-name catalog older than the TTL must not be served on reload.
+  // That is the list production kept showing, and it does not contain NORLO.
+  const stale = {
+    at: Date.now() - 11 * 60 * 1000,
+    projects: Array.from({ length: 53 }, (_, i) => ({ id: i + 1, name: `Stale ${i}` })),
+  };
+  getDb()
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('basecamp_project_list_v2:service', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    )
+    .run(JSON.stringify(stale), new Date().toISOString());
+  basecamp.clearBasecampProjectCache();
+  calls.length = 0;
+  const afterStale = await basecamp.listProjects();
+  assert.equal(afterStale.some((p) => p.id === NORLO_ID), true);
+  assert.equal(afterStale.some((p) => p.name.startsWith("Stale ")), false);
+  assert.ok(calls.length >= 4);
 
   // A failed later page is not stored. The next call walks Basecamp again.
   basecamp.clearBasecampProjectCache();

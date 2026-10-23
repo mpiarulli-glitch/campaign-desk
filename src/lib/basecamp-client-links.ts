@@ -166,7 +166,9 @@ async function serviceProjects(deps: LinkDeps): Promise<
   const connected = deps.connected?.() ?? basecampConnected();
   if (!connected) return { ok: false, error: BASECAMP_DISCONNECTED_MESSAGE };
   try {
-    const listed = await (deps.loadProjects ?? (() => listProjects(SERVICE)))();
+    const listed = await (
+      deps.loadProjects ?? (() => listProjects(SERVICE, force ? { fresh: true } : undefined))
+    )();
     const projects = (listed || [])
       .map((p) => ({ id: String(p.id ?? "").trim(), name: p.name || "" }))
       .filter((p) => p.id);

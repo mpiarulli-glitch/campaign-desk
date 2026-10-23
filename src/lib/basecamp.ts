@@ -2763,10 +2763,17 @@ function writeStoredProjects(key: string, row: { at: number; projects: BasecampP
   setSetting(PROJECT_CACHE_PREFIX + key, JSON.stringify(row));
 }
 
+function totalCountHeader(res: Response): number | null {
+  const raw = res.headers.get("X-Total-Count");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 async function fetchProjectPage(
   identity: BcIdentity,
   path: string
-): Promise<{ projects: BasecampProject[]; next: string | null } | null> {
+): Promise<{ projects: BasecampProject[]; next: string | null; total: number | null } | null> {
   const res = await bc(path, undefined, identity);
   if (!res.ok) return null;
   const arr = await res.json();
@@ -2776,7 +2783,11 @@ async function fetchProjectPage(
     if (p?.id == null) continue;
     projects.push({ id: Number(p.id), name: p.name || "" });
   }
-  return { projects, next: nextPagePath(res.headers.get("Link")) };
+  return {
+    projects,
+    next: nextPagePath(res.headers.get("Link")),
+    total: totalCountHeader(res),
+  };
 }
 
 async function fetchAllProjects(
@@ -2786,23 +2797,32 @@ async function fetchAllProjects(
   const seenIds = new Set<number>();
   const seenPaths = new Set<string>();
   let next: string | null = "/projects.json";
+  let reportedTotal: number | null = null;
   for (let page = 0; page < PROJECT_MAX_PAGES && next; page++) {
     if (seenPaths.has(next)) return { projects, complete: false };
     seenPaths.add(next);
     const result = await fetchProjectPage(identity, next);
     if (!result) return { projects, complete: false };
+    if (result.total != null) reportedTotal = result.total;
     for (const project of result.projects) {
       if (seenIds.has(project.id)) continue;
       seenIds.add(project.id);
       projects.push(project);
     }
-    // A short page is not the end. Geared pagination makes page 2 larger than
-    // page 1, and a page under 15 records can still carry Link rel="next".
-    // An empty page has nothing left to add.
-    if (result.projects.length === 0) return { projects, complete: true };
+    // A short page is not the end. Geared pagination is 15, then 30, then 50,
+    // so a third page of 8 records is 53 so far and can still carry Link
+    // rel="next". Stopping there is how NORLO Peptides dropped out of the
+    // dropdown. An empty page has nothing left to add.
+    if (result.projects.length === 0) {
+      next = null;
+      break;
+    }
     next = result.next;
   }
-  return { projects, complete: next === null };
+  // Missing Link is the end only when Basecamp's own total agrees. A short
+  // body with a larger X-Total-Count is a truncated catalog, not a success.
+  const countAgrees = reportedTotal == null || projects.length >= reportedTotal;
+  return { projects, complete: next === null && countAgrees };
 }
 
 function refreshProjectList(key: string, identity: BcIdentity): Promise<BasecampProject[]> {
@@ -2837,13 +2857,14 @@ export async function listProjects(
   const now = Date.now();
   if (!opts?.fresh) {
     const cached = projectMemory.get(key) || readStoredProjects(key);
-    if (cached) {
+    if (cached && now - cached.at < PROJECT_CACHE_TTL_MS) {
       projectMemory.set(key, cached);
-      if (now - cached.at < PROJECT_CACHE_TTL_MS) return cached.projects;
-      void refreshProjectList(key, identity).catch(() => {});
       return cached.projects;
     }
   }
+  // A stale stored list is not returned. Reloading Forecast was showing the
+  // truncated catalog while a refresh ran behind it, so the matcher linked
+  // against the short list and NORLO stayed blank.
   return refreshProjectList(key, identity);
 }
 
