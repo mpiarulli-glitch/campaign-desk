@@ -229,6 +229,14 @@ test("team status, current task, portrait path, and the fetched label", () => {
     assert.equal(botPortraitSrc(name[0].toUpperCase() + name.slice(1)), `/bots/${name}.jpg`);
   }
   assert.equal(botPortraitSrc("Newbie"), "/bots/newbie.jpg");
+
+  for (const name of BOT_PORTRAIT_NAMES) {
+    const file = path.join("public/bots", `${name}.jpg`);
+    const bytes = fs.readFileSync(file);
+    assert.ok(bytes.length > 0 && bytes.length <= 60 * 1024, `${name} is ${bytes.length} bytes`);
+    assert.equal(bytes[0], 0xff);
+    assert.equal(bytes[1], 0xd8);
+  }
 });
 
 test("the page wires a quiet refresh and the team layout without a second filter", () => {
@@ -251,6 +259,9 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(page, /Dismiss/);
   assert.match(page, /value=\{drafts\[item\.id\]/);
   assert.match(page, /onError=/);
+  assert.match(page, /alt=\{name\}/);
+  assert.match(css, /\.ba-avatar \{[^}]*border-radius: 50%/);
+  assert.match(css, /\.ba-avatar img \{[^}]*object-fit: cover/);
   assert.match(page, /aria-pressed=\{botFilter === bot\.name\}/);
   assert.match(page, /id="ba-bot"/);
   assert.doesNotMatch(page, /setDrafts\(\{\}\)/);

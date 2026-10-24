@@ -25046,7 +25046,7 @@ a.snap-todo-linked-title {
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 50%;
   background: var(--bg);
   color: var(--accent-ink);
   box-shadow:

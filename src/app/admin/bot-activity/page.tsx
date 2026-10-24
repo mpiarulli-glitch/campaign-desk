@@ -140,7 +140,7 @@ function BotPortrait({ name, icon }: { name: string; icon: BotIcon }) {
       ) : (
         // A missing public/bots file falls back to the icon. next/image cannot.
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" width={72} height={72} onError={() => setShowIcon(true)} />
+        <img src={src} alt={name} width={72} height={72} onError={() => setShowIcon(true)} />
       )}
     </span>
   );
