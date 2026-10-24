@@ -363,8 +363,12 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
     case "page.activity":
       return admin;
 
-    // Tools that have always been gated on being an admin.
+    // Admins, plus the SEO writers whose campaign list is blog posts.
+    // Abel is a forecast account; without this he can open blogs but cannot
+    // save one. Other forecast users stay read-only.
     case "tool.campaign_edit":
+      return admin || campaignKindFor(person) === "blog";
+
     case "tool.ai_revise":
     case "tool.client_edit":
       return admin;

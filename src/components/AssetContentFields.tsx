@@ -1,5 +1,6 @@
 "use client";
 
+import { GoogleDocImport } from "@/components/GoogleDocImport";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { kindMeta, type AssetKind, type BodyFormat } from "@/lib/asset-kinds";
 
@@ -29,6 +30,7 @@ type Props = {
   idPrefix?: string;
   htmlRequired?: boolean;
   htmlLabel?: string;
+  onGoogleDocTitle?: (title: string) => void;
 };
 
 export function AssetContentFields({
@@ -42,6 +44,7 @@ export function AssetContentFields({
   idPrefix = "asset",
   htmlRequired = true,
   htmlLabel,
+  onGoogleDocTitle,
 }: Props) {
   const meta = kindMeta(kind);
   const formats = meta.formats;
@@ -73,6 +76,17 @@ export function AssetContentFields({
             ))}
           </div>
         </div>
+      ) : null}
+
+      {kind === "blog" ? (
+        <GoogleDocImport
+          hasContent={Boolean(content.trim())}
+          onImported={({ markdown, title }) => {
+            setFormat("markdown");
+            setContent(markdown);
+            if (title) onGoogleDocTitle?.(title);
+          }}
+        />
       ) : null}
 
       {format === "html" ? (

@@ -449,7 +449,8 @@ export async function isBlogScopedSession(): Promise<boolean> {
 // (admins, plus anyone whose team focus includes campaign work: Abel is
 // user-role and would otherwise be shut out, Roy has an empty focus and is kept
 // out), but the owner can now flip it per person on /admin/access.
-// Creating and editing campaigns is tool.campaign_edit.
+// Creating and editing campaigns is tool.campaign_edit. Blog-focused
+// forecast users (Abel) get that tool by default; other forecast users do not.
 export async function isCampaignsReadAuthenticated(): Promise<boolean> {
   return can("page.campaigns");
 }

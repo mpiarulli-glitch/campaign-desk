@@ -33,6 +33,7 @@ function countMonthOptions(createdAt?: string, selected?: string | null): string
 }
 import { FollowUpButton } from "@/components/lifecycle/FollowUpButton";
 import { AssetContentFields } from "@/components/AssetContentFields";
+import { GoogleDocImport } from "@/components/GoogleDocImport";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { AbVariantBar } from "@/components/AbVariantBar";
 import {
@@ -2325,6 +2326,9 @@ export default function AdminCampaignPage() {
                 media={newEmailMedia}
                 setMedia={setNewEmailMedia}
                 htmlLabel="Version A HTML"
+                onGoogleDocTitle={(next) => {
+                  if (!newEmailTitle.trim() && next) setNewEmailTitle(next);
+                }}
               />
               {newEmailFormat === "html" ? (
                 <div className="stack" style={{ gap: 12 }}>
@@ -2524,6 +2528,17 @@ export default function AdminCampaignPage() {
               </div>
             </div>
           </div>
+        ) : null}
+
+        {(activeEmail.kind ?? "email") === "blog" && !addingEmail ? (
+          <GoogleDocImport
+            campaignId={id}
+            emailId={activeEmail.id}
+            hasContent={Boolean((activeEmail.html_content || htmlDraft).trim())}
+            onImported={() => {
+              void load(activeEmail.id);
+            }}
+          />
         ) : null}
 
         <div className="tabs">

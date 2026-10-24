@@ -197,6 +197,21 @@ test("per-person access", async (t) => {
     assert.equal(access.allows(owner, "page.social_qa"), true);
   });
 
+  await t.test("SEO blog writers can edit the campaigns they already open", () => {
+    const randi = access.subjectFor("randi");
+    assert.equal(access.allows(carlos, "page.campaigns"), true);
+    assert.equal(access.allows(abel, "page.campaigns"), true);
+    assert.equal(access.effectiveCampaignKind(carlos), "blog");
+    assert.equal(access.effectiveCampaignKind(abel), "blog");
+    assert.equal(access.allows(carlos, "tool.campaign_edit"), true);
+    assert.equal(access.allows(abel, "tool.campaign_edit"), true);
+    assert.equal(access.allows(abel, "tool.ai_revise"), false);
+    assert.equal(access.allows(abel, "tool.client_edit"), false);
+    assert.equal(access.allows(randi, "tool.campaign_edit"), false);
+    assert.equal(access.allows(roy, "tool.campaign_edit"), false);
+    assert.equal(access.allows(jack, "tool.campaign_edit"), false);
+  });
+
   await t.test("the campaign pages still follow TEAM_FOCUS", () => {
     // Roy's focus is empty: no campaigns.
     assert.equal(access.allows(roy, "page.campaigns"), false);
@@ -209,10 +224,12 @@ test("per-person access", async (t) => {
   });
 
   await t.test("editing tools stay on admin, and the escalating two on nobody", () => {
-    for (const key of ["tool.campaign_edit", "tool.ai_revise", "tool.client_edit"]) {
+    for (const key of ["tool.ai_revise", "tool.client_edit"]) {
       assert.equal(access.allows(sylvia, key), true, `admin lost ${key}`);
       assert.equal(access.allows(jack, key), false, `user gained ${key}`);
     }
+    assert.equal(access.allows(sylvia, "tool.campaign_edit"), true);
+    assert.equal(access.allows(jack, "tool.campaign_edit"), false);
     for (const who of [sylvia, jack, carlos]) {
       assert.equal(access.allows(who, "tool.impersonate"), false);
       assert.equal(access.allows(who, "tool.accounts"), false);

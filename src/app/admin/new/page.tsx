@@ -384,6 +384,9 @@ export default function NewCampaignPage() {
             setContent={setHtmlContent}
             media={mediaUrl}
             setMedia={setMediaUrl}
+            onGoogleDocTitle={(next) => {
+              if (!title.trim() && next) setTitle(next);
+            }}
           />
 
           {error ? <p className="error">{error}</p> : null}

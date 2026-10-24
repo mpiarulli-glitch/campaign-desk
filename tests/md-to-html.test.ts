@@ -51,6 +51,24 @@ test("mdToHtml renders pipe tables and images", () => {
   assert.match(html, /<td>Active teams<\/td>/);
 });
 
+test("mdToHtml renders underline, bold italic, and a nested list", () => {
+  const html = mdToHtml(
+    [
+      "Keep it ++underlined++ and ***both***.",
+      "",
+      "- parent",
+      "  - child",
+      "- next",
+    ].join("\n")
+  );
+  assert.match(html, /<u>underlined<\/u>/);
+  assert.match(html, /<strong><em>both<\/em><\/strong>/);
+  assert.match(
+    html,
+    /<ul><li>parent<ul><li>child<\/li><\/ul><\/li><li>next<\/li><\/ul>/
+  );
+});
+
 test("mdToHtml escapes HTML and drops unsafe urls", () => {
   const html = mdToHtml(
     'Click [x](javascript:alert(1)) and <script>alert(1)</script> ![bad](javascript:alert(1))'
