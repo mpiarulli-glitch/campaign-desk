@@ -38,24 +38,6 @@ export function nextBoardState<T>(previousKey: string, next: T): { key: string; 
   return { key, board: next };
 }
 
-/**
- * A refresh must not wipe a reply that is being typed. Non-empty text stays
- * with its item id, including when that item's title or detail changes.
- * Returns the same object when nothing was dropped, so setState can bail out.
- */
-export function retainReplyDrafts(drafts: Record<string, string>): Record<string, string> {
-  let changed = false;
-  const next: Record<string, string> = {};
-  for (const [id, text] of Object.entries(drafts)) {
-    if (!text) {
-      changed = true;
-      continue;
-    }
-    next[id] = text;
-  }
-  return changed ? next : drafts;
-}
-
 export type TeamStatus = "Blocked" | "Waiting on you" | "Working" | "Stalled" | "Idle";
 
 /**

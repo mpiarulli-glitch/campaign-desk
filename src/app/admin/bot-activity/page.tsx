@@ -11,14 +11,12 @@ import {
   fetchedLabel,
   forElapsed,
   nextBoardState,
-  retainReplyDrafts,
   teamRank,
   timeAgo,
   type BotHoverSummary,
   type TeamStatus,
 } from "@/lib/bot-activity-live";
 
-type Reply = { id: string; body: string; at: string; when: string };
 type Waiting = {
   id: string;
   bot: string;
@@ -28,7 +26,6 @@ type Waiting = {
   detail: string;
   when: string;
   at: string;
-  replies: Reply[];
 };
 type TimelineEntry = {
   id: string;
@@ -370,18 +367,12 @@ function StatusChip({ status }: { status: TeamStatus }) {
 function WaitingColumn({
   board,
   botFilter,
-  drafts,
   busy,
-  onDraft,
-  onReply,
   onDismiss,
 }: {
   board: Board;
   botFilter: string;
-  drafts: Record<string, string>;
   busy: string;
-  onDraft: (id: string, value: string) => void;
-  onReply: (item: Waiting) => void;
   onDismiss: (item: Waiting) => void;
 }) {
   const items = board.waiting.filter((item) => botFilter === "All bots" || item.bot === botFilter);
@@ -393,58 +384,36 @@ function WaitingColumn({
       </div>
       {items.length === 0 ? <p className="muted">Nothing is waiting on you.</p> : null}
       <div className="ba-stack">
-        {items.map((item) => (
-          <article key={item.id} className="ba-card ba-bubble ba-wait-card">
-            <div className="ba-bot-row">
-              <BotName name={item.bot} />
-              <span className="ba-bot-side">
-                <Icon k={item.icon} />
-              </span>
-            </div>
-            <p className="ba-title">{item.title}</p>
-            {item.detail ? <p className="ba-detail">{item.detail}</p> : null}
-            <form
-              className="ba-reply-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                onReply(item);
-              }}
-            >
-              {item.replies.map((saved) => (
-                <div key={saved.id} className="ba-reply">
-                  <p className="ba-reply-body">{saved.body}</p>
-                  <p className="ba-when">{saved.when}</p>
-                </div>
-              ))}
-              <label className="field">
-                <span className="ba-reply-label">Reply</span>
-                <textarea
-                  rows={3}
-                  placeholder="Write a reply"
-                  value={drafts[item.id] || ""}
-                  onChange={(event) => onDraft(item.id, event.target.value)}
-                />
-              </label>
-              <span className="ba-reply-actions">
-                <button
-                  type="submit"
-                  className="btn ba-send"
-                  disabled={busy === item.id || !(drafts[item.id] || "").trim()}
-                >
-                  Save / Send
-                </button>
+        {items.map((item) => {
+          const href = item.chatHref || grokBotHref(item.bot);
+          return (
+            <article key={item.id} className="ba-card ba-bubble ba-wait-card">
+              <div className="ba-bot-row">
+                <BotName name={item.bot} />
+                <span className="ba-bot-side">
+                  <Icon k={item.icon} />
+                </span>
+              </div>
+              <p className="ba-title">{item.title}</p>
+              {item.detail ? <p className="ba-detail">{item.detail}</p> : null}
+              <div className="ba-wait-actions">
+                {href ? (
+                  <a className="btn ba-open-chat" href={href}>
+                    Open chat
+                  </a>
+                ) : null}
                 <button
                   type="button"
-                  className="btn btn-secondary ba-dismiss"
+                  className="ba-dismiss"
                   onClick={() => onDismiss(item)}
                   disabled={busy === item.id}
                 >
                   Dismiss
                 </button>
-              </span>
-            </form>
-          </article>
-        ))}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -476,13 +445,10 @@ export default function BotActivityPage() {
   const [stamp, setStamp] = useState("Live · Updated …");
   const [botFilter, setBotFilter] = useState("All bots");
   const [workView, setWorkView] = useState<"All" | "In progress" | "Finished">("All");
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [now, setNow] = useState(() => Date.now());
-  const draftsRef = useRef(drafts);
   const busyRef = useRef(busy);
   const epochRef = useRef(0);
-  draftsRef.current = drafts;
   busyRef.current = busy;
 
   useEffect(() => {
@@ -535,7 +501,6 @@ export default function BotActivityPage() {
         boardKey.current = step.key;
         hasBoard.current = true;
         setBoard(step.board);
-        setDrafts((current) => retainReplyDrafts(current));
         setStamp(label);
         setRefreshFailed(false);
         if (first) setError("");
@@ -566,53 +531,6 @@ export default function BotActivityPage() {
     }, 30_000);
     return () => window.clearInterval(id);
   }, []);
-
-  const onDraft = useCallback((id: string, value: string) => {
-    setDrafts((current) => (current[id] === value ? current : { ...current, [id]: value }));
-  }, []);
-
-  const onReply = useCallback(
-    async (item: Waiting) => {
-      const body = (draftsRef.current[item.id] || "").trim();
-      if (!body || busyRef.current) return;
-      setBusy(item.id);
-      setError("");
-      try {
-        const res = await fetch("/api/admin/bot-activity", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "reply", id: item.id, body }),
-        });
-        const redirect = authRedirectForStatus(res.status);
-        if (redirect) {
-          router.push(redirect);
-          return;
-        }
-        if (!res.ok) {
-          setError("Could not save that reply.");
-          return;
-        }
-        const data = (await res.json()) as { reply: Reply };
-        epochRef.current += 1;
-        setBoard((current) =>
-          current
-            ? {
-                ...current,
-                waiting: current.waiting.map((row) =>
-                  row.id === item.id ? { ...row, replies: [...row.replies, data.reply] } : row
-                ),
-              }
-            : current
-        );
-        setDrafts((current) => ({ ...current, [item.id]: "" }));
-      } catch {
-        setError("Could not save that reply.");
-      } finally {
-        setBusy("");
-      }
-    },
-    [router]
-  );
 
   const onDismiss = useCallback(
     async (item: Waiting) => {
@@ -713,15 +631,7 @@ export default function BotActivityPage() {
         <>
           <TeamGrid board={board} botFilter={botFilter} now={now} />
           <div className="ba-board">
-            <WaitingColumn
-              board={board}
-              botFilter={botFilter}
-              drafts={drafts}
-              busy={busy}
-              onDraft={onDraft}
-              onReply={onReply}
-              onDismiss={onDismiss}
-            />
+            <WaitingColumn board={board} botFilter={botFilter} busy={busy} onDismiss={onDismiss} />
             <section className="ba-col ba-timeline">
               <div className="ba-col-head">
                 <h2 className="h2">Timeline</h2>

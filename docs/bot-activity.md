@@ -2,6 +2,8 @@
 
 The Bot Activity page (`/admin/bot-activity`) is Michael's view of what the bots are doing. Only the owner session can open it. Named admins, account managers, forecast users, and signed-out visitors are refused, including on the reply and dismiss API.
 
+The page does not take a reply. A Needs you item shows the request, an Open chat link (`grokbot://app/v1/agent?id=…`) when that bot has an agent id, and a quiet Dismiss. Bots with no agent id show the request and Dismiss only. The reply route is still there for anything that already calls it.
+
 Bots do not use that session. They call `/api/bot-activity` with a bearer token.
 
 ## Token

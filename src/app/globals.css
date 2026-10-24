@@ -25246,8 +25246,7 @@ a.ba-member-name:hover { text-decoration: underline; }
 }
 .ba-title,
 .ba-detail,
-.ba-task-title,
-.ba-reply-body {
+.ba-task-title {
   overflow-wrap: anywhere;
 }
 .ba-bot-row {
@@ -25264,54 +25263,41 @@ a.ba-member-name:hover { text-decoration: underline; }
 .ba-title { margin: 0; color: var(--text); font-size: 14px; line-height: 1.4; }
 .ba-detail { margin: 0; color: var(--text-body); font-size: 13px; line-height: 1.45; }
 .ba-when { margin: 0; color: var(--text-muted); font-size: 12px; }
-.ba-reply {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+.ba-wait-actions {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
 }
-.ba-reply-body { margin: 0; color: var(--text); font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
-.ba-reply-form { display: flex; flex-direction: column; gap: 8px; align-items: stretch; width: 100%; }
-.ba-reply-form .field { width: 100%; }
-.ba-page .ba-reply-form textarea {
-  min-height: 88px;
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
-  color: var(--text);
-  padding: 10px 12px;
-  font-size: 14px;
-  line-height: 1.45;
-}
-.ba-send,
-.ba-dismiss {
+.ba-open-chat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
-  padding: 10px 16px;
-  font-size: 12px;
-}
-.ba-send {
+  padding: 0 18px;
+  border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
-  border-color: transparent;
+  border: 0;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  text-transform: none;
+  letter-spacing: 0;
 }
+.ba-open-chat:hover { filter: brightness(1.06); }
 .ba-dismiss {
-  background: var(--bg-elevated);
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-}
-.ba-dismiss:hover {
-  background: var(--bg-soft);
-  color: var(--text);
-}
-.ba-reply-label {
-  font-size: 11px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  min-height: 0;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-muted);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  cursor: pointer;
 }
+.ba-dismiss:hover { color: var(--text); }
+.ba-dismiss:disabled { opacity: 0.45; cursor: default; }
 .ba-day { margin-bottom: 16px; }
 .ba-day-label {
   margin: 0 0 10px;
@@ -25365,8 +25351,7 @@ a.ba-member-name:hover { text-decoration: underline; }
 :root[data-theme="dark"] .ba-page .ba-title,
 :root[data-theme="dark"] .ba-page .ba-task-title,
 :root[data-theme="dark"] .ba-page .ba-member-name,
-:root[data-theme="dark"] .ba-page .ba-bot,
-:root[data-theme="dark"] .ba-page .ba-reply-body {
+:root[data-theme="dark"] .ba-page .ba-bot {
   color: #f7fbff;
 }
 :root[data-theme="dark"] .ba-page .ba-detail,
@@ -25390,15 +25375,10 @@ a.ba-member-name:hover { text-decoration: underline; }
   border-color: rgba(210, 196, 170, 0.4);
 }
 :root[data-theme="dark"] .ba-page .ba-chip-working { color: #9ee9f5; }
-:root[data-theme="dark"] .ba-page .ba-reply-form textarea {
-  background: #0c1218;
-  border-color: rgba(122, 215, 255, 0.45);
-  color: #f7fbff;
-}
 :root[data-theme="dark"] .ba-page .ba-dismiss {
-  background: #1a222b;
-  color: #f7fbff;
-  border-color: rgba(232, 238, 244, 0.35);
+  background: none;
+  color: rgba(232, 238, 244, 0.62);
+  border: 0;
 }
 :root[data-theme="dark"] .ba-page .ba-member.is-on {
   border-color: rgba(122, 215, 255, 0.7);
@@ -25651,7 +25631,6 @@ a.ba-member-name:hover { text-decoration: underline; }
   color: inherit;
   text-decoration: none;
 }
-.ba-bubble .ba-reply-form { margin-top: 4px; }
 .ba-bubble-kicker {
   font-size: 11px;
   font-weight: 700;
@@ -25662,7 +25641,6 @@ a.ba-member-name:hover { text-decoration: underline; }
 .ba-bubble.is-blocked .ba-bubble-kicker { color: #e4c27a; }
 .ba-bubble-ask,
 .ba-bubble-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ba-reply-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @keyframes ba-glow-cyan {
   0%, 100% { box-shadow: 0 0 0 1px rgba(122, 215, 255, 0.28), 0 0 10px rgba(122, 215, 255, 0.08); }
   50% { box-shadow: 0 0 0 1px rgba(122, 215, 255, 0.75), 0 0 22px rgba(122, 215, 255, 0.28); }
@@ -25740,7 +25718,6 @@ a.ba-member-name:hover { text-decoration: underline; }
 .ba-updated { color: var(--text-muted); font-weight: 450; }
 .ba-live-dot { background: var(--accent); width: 7px; height: 7px; }
 .ba-filter label,
-.ba-reply-label,
 .ba-day-label {
   font-size: 13px;
   font-weight: 500;
@@ -25858,30 +25835,6 @@ a.ba-member-name:hover { text-decoration: underline; }
 .ba-bubble-kicker { letter-spacing: 0; text-transform: none; font-size: 13px; font-weight: 600; }
 .ba-title { font-size: 15px; font-weight: 600; line-height: 1.35; }
 .ba-detail { font-size: 14px; line-height: 1.45; }
-.ba-page .ba-reply-form textarea {
-  min-height: 76px;
-  border-radius: 12px;
-  border-color: color-mix(in srgb, var(--text) 10%, var(--border));
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
-  box-shadow: none;
-}
-.ba-send {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  font-weight: 650;
-  border-radius: 999px;
-  padding: 0 18px;
-}
-.ba-dismiss {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px;
-  font-weight: 550;
-  border-radius: 999px;
-  background: transparent;
-  border-color: color-mix(in srgb, var(--text) 16%, var(--border));
-}
 .ba-pop {
   top: 26px;
   left: 60px;
@@ -25933,34 +25886,38 @@ a.ba-member-name:hover { text-decoration: underline; }
 :root[data-theme="dark"] .ba-page .ba-card {
   border-bottom-color: rgba(122, 215, 255, 0.12);
 }
-:root[data-theme="dark"] .ba-page .ba-reply-form textarea {
-  background: rgba(7, 16, 24, 0.65);
-  border-color: rgba(122, 215, 255, 0.28);
-  color: #f7fbff;
-}
 :root[data-theme="dark"] .ba-page .ba-dismiss {
-  background: transparent;
-  color: #f4f7fb;
-  border-color: rgba(232, 238, 244, 0.28);
+  background: none;
+  color: rgba(232, 238, 244, 0.62);
+  border: 0;
 }
+:root[data-theme="dark"] .ba-page .ba-dismiss:hover { color: #f4f7fb; }
 :root[data-theme="dark"] .ba-pop {
   background: #0c1822;
   border-left-color: rgba(122, 215, 255, 0.4);
   box-shadow: none;
 }
-:root[data-theme="dark"] main.stark.ba-page button.btn.ba-send:not(.btn-secondary) {
+:root[data-theme="dark"] main.stark.ba-page a.btn.ba-open-chat:not(.btn-secondary) {
   background: #1cdcef;
   color: #04333a;
   border-color: transparent;
 }
-:root[data-theme="dark"] main.stark.ba-page button.btn.ba-send:not(.btn-secondary):hover {
+:root[data-theme="dark"] main.stark.ba-page a.btn.ba-open-chat:not(.btn-secondary):hover {
   background: #55e7f6;
   color: #04333a;
 }
-:root[data-theme="dark"] main.stark.ba-page button.btn.ba-dismiss {
-  background: transparent;
-  color: #f4f7fb;
-  border-color: rgba(232, 238, 244, 0.32);
+.ba-page a.btn.ba-open-chat {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 650;
+  font-size: 14px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+.ba-page a.btn.ba-open-chat:hover,
+.ba-page a.btn.ba-open-chat:active {
+  transform: none;
+  box-shadow: none;
 }
 @media (max-width: 800px) {
   .ba-col,

@@ -15,7 +15,6 @@ import {
   fetchedLabel,
   nextBoardState,
   pollDelayMs,
-  retainReplyDrafts,
   statusForBot,
   timeAgo,
   WORKING_FRESH_MS,
@@ -153,7 +152,7 @@ test("401 and 403 stop the refresh and use the same redirects as the first load"
   assert.equal(harness.calls(), 1);
 });
 
-test("an unchanged board is not applied, and a reply draft survives an item update", () => {
+test("an unchanged board is not applied", () => {
   const first = { waiting: [{ id: "w1", detail: "Old detail", title: "Sign in" }] };
   const opened = nextBoardState("", first);
   assert.deepEqual(opened.board, first);
@@ -169,13 +168,6 @@ test("an unchanged board is not applied, and a reply draft survives an item upda
   });
   assert.ok(edited.board);
   assert.equal(edited.board?.waiting[0].detail, "The login form changed.");
-
-  const drafts = { w1: "Use the login I just sent." };
-  const kept = retainReplyDrafts(drafts);
-  assert.equal(kept, drafts);
-  assert.equal(kept.w1, "Use the login I just sent.");
-  const pruned = retainReplyDrafts({ w1: "still typing", w2: "" });
-  assert.deepEqual(pruned, { w1: "still typing" });
 });
 
 test("team status, current task, portrait path, and the fetched label", () => {
@@ -338,7 +330,8 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(page, /visibilitychange/);
   assert.match(page, /poller\.stop\(\)/);
   assert.match(page, /nextBoardState/);
-  assert.match(page, /retainReplyDrafts/);
+  assert.doesNotMatch(page, /retainReplyDrafts/);
+  assert.doesNotMatch(live, /retainReplyDrafts/);
   assert.match(page, /cache:\s*"no-store"/);
   assert.match(page, /Live · Updated/);
   assert.match(page, /ba-live-dot/);
@@ -346,9 +339,12 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(page, /ba-board/);
   assert.match(page, /Couldn't refresh/);
   assert.match(page, /Needs you/);
-  assert.match(page, /Save \/ Send/);
+  assert.doesNotMatch(page, /Save \/ Send/);
+  assert.doesNotMatch(page, /textarea/);
+  assert.doesNotMatch(page, /action: "reply"/);
   assert.match(page, /Dismiss/);
-  assert.match(page, /value=\{drafts\[item\.id\]/);
+  assert.match(page, /item\.chatHref \|\| grokBotHref\(item\.bot\)/);
+  assert.match(page, /className="btn ba-open-chat"/);
   assert.match(page, /onError=/);
   assert.match(page, /alt=\{name\}/);
   assert.match(css, /\.ba-avatar \{[^}]*border-radius: 50%/);
@@ -375,11 +371,11 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(css, /\.ba-pop \{[^}]*position: absolute/);
   assert.doesNotMatch(css, /\.ba-pop \{[^}]*position: fixed/);
   assert.match(css, /\.ba-board \{[^}]*1\.55fr/);
-  assert.match(css, /ba-send/);
-  assert.match(css, /\.ba-send,\s*\n\.ba-dismiss \{[^}]*min-height: 44px/);
+  assert.doesNotMatch(css, /ba-send/);
+  assert.doesNotMatch(css, /ba-reply-form/);
+  assert.match(css, /\.ba-open-chat \{[^}]*min-height: 44px/);
   assert.match(page, /id="ba-bot"/);
-  assert.doesNotMatch(page, /setDrafts\(\{\}\)/);
-  assert.doesNotMatch(page, /setDrafts\(\s*\{\s*\}\s*\)/);
+  assert.doesNotMatch(page, /setDrafts/);
   assert.match(live, /BOT_ACTIVITY_POLL_MS = 5_000/);
   assert.doesNotMatch(page, /new BotActivityRefresh[\s\S]{0,400}30_000/);
   assert.match(css, /ba-needs/);
