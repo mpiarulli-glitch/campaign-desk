@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { grokBotHref, type BotIcon } from "@/lib/bot-activity-icons";
 import {
@@ -12,12 +11,10 @@ import {
   fetchedLabel,
   forElapsed,
   nextBoardState,
-  placePopover,
   retainReplyDrafts,
   teamRank,
   timeAgo,
   type BotHoverSummary,
-  type PopoverPlace,
   type TeamStatus,
 } from "@/lib/bot-activity-live";
 
@@ -33,7 +30,15 @@ type Waiting = {
   at: string;
   replies: Reply[];
 };
-type TimelineEntry = { id: string; bot: string; icon: BotIcon; when: string; text: string; at: string };
+type TimelineEntry = {
+  id: string;
+  bot: string;
+  icon: BotIcon;
+  when: string;
+  text: string;
+  at: string;
+  postedAt?: string;
+};
 type Work = {
   id: string;
   bot: string;
@@ -43,6 +48,7 @@ type Work = {
   state: "progress" | "blocked" | "done";
   when: string;
   at: string;
+  updatedAt?: string;
 };
 type Board = {
   updated: string;
@@ -145,9 +151,27 @@ function BotPortrait({ name, icon }: { name: string; icon: BotIcon }) {
       ) : (
         // A missing public/bots file falls back to the icon. next/image cannot.
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={name} width={72} height={72} onError={() => setShowIcon(true)} />
+        <img src={src} alt={name} width={44} height={44} onError={() => setShowIcon(true)} />
       )}
     </span>
+  );
+}
+
+function toneFor(status: TeamStatus): string {
+  if (status === "Blocked") return "blocked";
+  if (status === "Waiting on you") return "waiting";
+  if (status === "Working") return "working";
+  if (status === "Stalled") return "stalled";
+  return "idle";
+}
+
+function BotName({ name }: { name: string }) {
+  const href = grokBotHref(name);
+  if (!href) return <span className="ba-bot">{name}</span>;
+  return (
+    <a className="ba-bot-link" href={href}>
+      {name}
+    </a>
   );
 }
 
@@ -155,26 +179,16 @@ function TeamGrid({
   board,
   botFilter,
   now,
-  drafts,
-  busy,
-  onDraft,
-  onReply,
-  onDismiss,
 }: {
   board: Board;
   botFilter: string;
   now: number;
-  drafts: Record<string, string>;
-  busy: string;
-  onDraft: (id: string, value: string) => void;
-  onReply: (item: Waiting) => void;
-  onDismiss: (item: Waiting) => void;
 }) {
   const lines = board.timeline.flatMap((day) => day.entries);
   const cards = board.bots
     .map((bot) => ({
       bot,
-      summary: botHoverSummary(bot.name, board.waiting, board.work, lines),
+      summary: botHoverSummary(bot.name, board.waiting, board.work, lines, now),
     }))
     .sort(
       (a, b) => teamRank(a.summary.status) - teamRank(b.summary.status) || a.bot.name.localeCompare(b.bot.name)
@@ -194,13 +208,6 @@ function TeamGrid({
             pressed={botFilter === bot.name}
             now={now}
             summary={summary}
-            questions={board.waiting.filter((item) => item.bot === bot.name)}
-            blockers={board.work.filter((item) => item.bot === bot.name && item.state === "blocked")}
-            drafts={drafts}
-            busy={busy}
-            onDraft={onDraft}
-            onReply={onReply}
-            onDismiss={onDismiss}
           />
         ))}
       </div>
@@ -214,64 +221,33 @@ function TeamCard({
   pressed,
   now,
   summary,
-  questions,
-  blockers,
-  drafts,
-  busy,
-  onDraft,
-  onReply,
-  onDismiss,
 }: {
   name: string;
   icon: BotIcon;
   pressed: boolean;
   now: number;
   summary: BotHoverSummary;
-  questions: Waiting[];
-  blockers: Work[];
-  drafts: Record<string, string>;
-  busy: string;
-  onDraft: (id: string, value: string) => void;
-  onReply: (item: Waiting) => void;
-  onDismiss: (item: Waiting) => void;
 }) {
   const cardRef = useRef<HTMLElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef(false);
-  const popHoverRef = useRef(false);
   const pinRef = useRef(false);
   const closeTimer = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
-  const [box, setBox] = useState<PopoverPlace | null>(null);
   const task = summary.task;
-  const ago = task ? timeAgo(task.at, now) : "";
-  const elapsed = task ? forElapsed(task.at, now) : "";
+  const elapsed = summary.heartbeat ? forElapsed(summary.heartbeat, now) : "";
+  const beatAgo = summary.heartbeat ? timeAgo(summary.heartbeat, now) : "";
   const href = grokBotHref(name);
-  const tone =
-    summary.status === "Blocked"
-      ? "blocked"
-      : summary.status === "Waiting on you"
-        ? "waiting"
-        : summary.status === "Working"
-          ? "working"
-          : "idle";
-  const showBubble = questions.length > 0 || blockers.length > 0;
+  const tone = toneFor(summary.status);
+  const needs = summary.status === "Blocked" || summary.status === "Waiting on you";
   const popId = `ba-pop-${name.replace(/\s+/g, "-")}`;
-  const summarySig = [
-    summary.status,
-    task?.title ?? "",
-    task?.detail ?? "",
-    task?.at ?? "",
-    summary.recent.map((item) => item.at + item.text).join(),
-    summary.needs.map((item) => item.kind + item.at + item.title).join(),
-  ].join("|");
 
   const requestClose = useCallback(() => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
     closeTimer.current = window.setTimeout(() => {
       const active = document.activeElement;
       const inside = !!active && (cardRef.current?.contains(active) || popRef.current?.contains(active));
-      if (hoverRef.current || popHoverRef.current || pinRef.current || inside) return;
+      if (hoverRef.current || pinRef.current || inside) return;
       setOpen(false);
     }, 140);
   }, []);
@@ -284,159 +260,43 @@ function TeamCard({
 
   useEffect(() => {
     if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      pinRef.current = false;
+      hoverRef.current = false;
+      setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     function onPointerDown(event: PointerEvent) {
       if (event.pointerType === "mouse") return;
       const target = event.target as Node | null;
       if (!target) return;
-      if (cardRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      if (cardRef.current?.contains(target)) return;
       pinRef.current = false;
       hoverRef.current = false;
-      popHoverRef.current = false;
       setOpen(false);
     }
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    function measure() {
-      const anchorEl = cardRef.current;
-      const pop = popRef.current;
-      if (!anchorEl || !pop) return;
-      const anchor = anchorEl.getBoundingClientRect();
-      const previous = pop.style.maxHeight;
-      pop.style.maxHeight = "none";
-      const natural = pop.offsetHeight;
-      const width = pop.offsetWidth;
-      pop.style.maxHeight = previous;
-      const next = placePopover(
-        { top: anchor.top, bottom: anchor.bottom, left: anchor.left, width: anchor.width },
-        { width, height: natural },
-        { width: window.innerWidth, height: window.innerHeight }
-      );
-      setBox((current) =>
-        current && current.top === next.top && current.left === next.left && current.maxHeight === next.maxHeight
-          ? current
-          : next
-      );
-    }
-    measure();
-    const scroller = document.querySelector(".app-content");
-    scroller?.addEventListener("scroll", measure, { passive: true });
-    window.addEventListener("resize", measure);
-    return () => {
-      scroller?.removeEventListener("scroll", measure);
-      window.removeEventListener("resize", measure);
-    };
-  }, [open, summarySig]);
-
-  const popover =
-    open && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            ref={popRef}
-            id={popId}
-            role="tooltip"
-            className="ba-pop"
-            style={
-              box
-                ? { top: box.top, left: box.left, maxHeight: box.maxHeight }
-                : { top: 0, left: 8, visibility: "hidden" }
-            }
-            onMouseEnter={() => {
-              popHoverRef.current = true;
-              if (closeTimer.current) window.clearTimeout(closeTimer.current);
-            }}
-            onMouseLeave={() => {
-              popHoverRef.current = false;
-              requestClose();
-            }}
-          >
-            <div className="ba-pop-head">
-              <span className="ba-pop-name">{name}</span>
-              <StatusChip status={summary.status} />
-            </div>
-            <p className="ba-pop-line">{summary.statusLine}</p>
-            <p className="ba-pop-kicker">Now</p>
-            {task ? (
-              <>
-                <p className="ba-pop-title">{task.title}</p>
-                {task.detail ? <p className="ba-pop-detail">{task.detail}</p> : null}
-                {ago ? <p className="ba-ago">{ago}</p> : null}
-              </>
-            ) : (
-              <p className="ba-pop-detail">Nothing running.</p>
-            )}
-            <p className="ba-pop-kicker">Recent</p>
-            {summary.recent.length === 0 ? <p className="ba-pop-detail">No recent activity.</p> : null}
-            {summary.recent.map((item) => (
-              <div key={item.at + item.text} className="ba-pop-recent">
-                <p className="ba-pop-detail">{item.text}</p>
-                <p className="ba-ago">{timeAgo(item.at, now)}</p>
-              </div>
-            ))}
-            {summary.needs.length > 0 ? (
-              <>
-                <p className="ba-pop-kicker">Needs you</p>
-                {summary.needs.map((item) => (
-                  <div key={`${item.kind}-${item.at}-${item.title}`} className="ba-pop-need">
-                    <p className="ba-pop-title">{item.kind === "blocker" ? "Blocker" : "Question"}</p>
-                    <p className="ba-pop-detail">{item.title}</p>
-                    {item.detail ? <p className="ba-pop-detail">{item.detail}</p> : null}
-                  </div>
-                ))}
-              </>
-            ) : null}
-          </div>,
-          document.body
-        )
-      : null;
-
-  const face = (
-    <>
-      <span className="ba-member-top">
-        <span className="ba-avatar-slot">
-          <BotPortrait name={name} icon={icon} />
-        </span>
-        <span className="ba-member-id">
-          <span className="ba-member-name">{name}</span>
-          <StatusChip status={summary.status} />
-        </span>
-      </span>
-      {summary.status === "Working" && task ? (
-        <span className="ba-live">
-          <span className="ba-dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-          <span className="ba-live-label">Working on: {task.title}</span>
-          {elapsed ? <span className="ba-ago">{elapsed}</span> : null}
-          <span className="ba-shimmer" aria-hidden="true" />
-        </span>
-      ) : null}
-      {summary.status === "Idle" ? <span className="ba-task-detail">Nothing running.</span> : null}
-      {href ? <span className="ba-open-label">Open chat</span> : null}
-    </>
-  );
-  const bubbleText = showBubble ? (
-    <>
-      <span className="ba-bubble-kicker">Needs you</span>
-      {blockers.map((item) => (
-        <span key={item.id} className="ba-bubble-block">
-          <span className="ba-pop-title">{item.title}</span>
-          {item.detail ? <span className="ba-pop-detail">{item.detail}</span> : null}
-        </span>
-      ))}
-      {questions.map((item) => (
-        <span key={item.id} className="ba-bubble-ask">
-          <span className="ba-pop-title">{item.title}</span>
-          {item.detail ? <span className="ba-pop-detail">{item.detail}</span> : null}
-        </span>
-      ))}
-    </>
-  ) : null;
+  const stalled =
+    summary.status === "Stalled"
+      ? `${beatAgo ? `Last update ${beatAgo}` : "No recent update"}${task ? `: ${task.title}` : ""}`
+      : "";
+  const requestLine = summary.request.split("\n").find((line) => line.trim()) || "";
+  const shortLine = needs
+    ? requestLine
+    : summary.status === "Working" && task
+      ? `Working on: ${task.title}${elapsed ? ` · ${elapsed}` : ""}`
+      : summary.status === "Stalled"
+        ? stalled
+        : "Nothing running.";
 
   return (
     <article
@@ -464,27 +324,86 @@ function TeamCard({
         setOpen(false);
       }}
     >
-      {href ? (
-        <a className="ba-card-link" href={href} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
-          {face}
-        </a>
-      ) : (
-        <div className="ba-card-link" tabIndex={0} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
-          {face}
-        </div>
-      )}
-      {showBubble ? (
-        <div className={`ba-bubble ${blockers.length > 0 ? "is-blocked" : "is-waiting"}`}>
+      <div className="ba-member-top">
+        <span className="ba-avatar-slot">
+          <BotPortrait name={name} icon={icon} />
+        </span>
+        <span className="ba-member-id">
           {href ? (
-            <a className="ba-bubble-link" href={href}>
-              {bubbleText}
+            <a className="ba-member-name" href={href} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
+              {name}
+              <span className="ba-open-label">Open chat</span>
             </a>
           ) : (
-            <div className="ba-bubble-link">{bubbleText}</div>
+            <span className="ba-member-name" tabIndex={0} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
+              {name}
+            </span>
           )}
-          {questions.map((item) => (
+          <StatusChip status={summary.status} />
+        </span>
+      </div>
+      <p className="ba-member-line">{shortLine}</p>
+      {open ? (
+        <div
+          ref={popRef}
+          id={popId}
+          role="tooltip"
+          className={`ba-pop ${needs ? "is-needs" : "is-status"}`}
+        >
+          <p className="ba-pop-text">{needs ? summary.request : summary.line}</p>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function StatusChip({ status }: { status: TeamStatus }) {
+  const kind = toneFor(status);
+  return (
+    <span className={`ba-chip ba-chip-${kind}`}>
+      <span className={`ba-status-dot ${status === "Working" ? "is-live" : ""}`} aria-hidden="true" />
+      {status}
+    </span>
+  );
+}
+
+function WaitingColumn({
+  board,
+  botFilter,
+  drafts,
+  busy,
+  onDraft,
+  onReply,
+  onDismiss,
+}: {
+  board: Board;
+  botFilter: string;
+  drafts: Record<string, string>;
+  busy: string;
+  onDraft: (id: string, value: string) => void;
+  onReply: (item: Waiting) => void;
+  onDismiss: (item: Waiting) => void;
+}) {
+  const items = board.waiting.filter((item) => botFilter === "All bots" || item.bot === botFilter);
+  return (
+    <section className="ba-col ba-needs" aria-label="Needs you">
+      <div className="ba-col-head">
+        <h2 className="h2">Needs you</h2>
+        <span className="muted">{items.length}</span>
+      </div>
+      {items.length === 0 ? <p className="muted">Nothing is waiting on you.</p> : null}
+      <div className="ba-stack">
+        {items.map((item) => (
+          <article key={item.id} className="ba-card ba-bubble ba-wait-card">
+            <div className="ba-bot-row">
+              <BotName name={item.bot} />
+              <span className="ba-bot-side">
+                <Icon k={item.icon} />
+              </span>
+            </div>
+            <p className="ba-title">{item.title}</p>
+            {item.detail ? <p className="ba-detail">{item.detail}</p> : null}
             <form
-              key={item.id}
               className="ba-reply-form"
               onSubmit={(event) => {
                 event.preventDefault();
@@ -500,7 +419,8 @@ function TeamCard({
               <label className="field">
                 <span className="ba-reply-label">Reply</span>
                 <textarea
-                  rows={2}
+                  rows={3}
+                  placeholder="Write a reply"
                   value={drafts[item.id] || ""}
                   onChange={(event) => onDraft(item.id, event.target.value)}
                 />
@@ -508,14 +428,14 @@ function TeamCard({
               <span className="ba-reply-actions">
                 <button
                   type="submit"
-                  className="btn btn-sm"
+                  className="btn ba-send"
                   disabled={busy === item.id || !(drafts[item.id] || "").trim()}
                 >
                   Save / Send
                 </button>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
+                  className="btn btn-secondary ba-dismiss"
                   onClick={() => onDismiss(item)}
                   disabled={busy === item.id}
                 >
@@ -523,30 +443,19 @@ function TeamCard({
                 </button>
               </span>
             </form>
-          ))}
-        </div>
-      ) : null}
-      {popover}
-    </article>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
-function StatusChip({ status }: { status: TeamStatus }) {
-  const kind =
-    status === "Blocked" ? "blocked" : status === "Waiting on you" ? "waiting" : status === "Working" ? "working" : "idle";
-  return (
-    <span className={`ba-chip ba-chip-${kind}`}>
-      <span className={`ba-status-dot ${status === "Working" ? "is-live" : ""}`} aria-hidden="true" />
-      {status}
-    </span>
-  );
-}
 
 function WorkCard({ item }: { item: Work }) {
   return (
     <article className="ba-card">
       <div className="ba-bot-row">
-        <span className="ba-bot">{item.bot}</span>
+        <BotName name={item.bot} />
         <span className="ba-bot-side">
           <span className={`ba-state ba-state-${item.state}`}>{stateLabel(item.state)}</span>
           <Icon k={item.icon} />
@@ -564,7 +473,7 @@ export default function BotActivityPage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState("");
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [stamp, setStamp] = useState("Fetched …");
+  const [stamp, setStamp] = useState("Live · Updated …");
   const [botFilter, setBotFilter] = useState("All bots");
   const [workView, setWorkView] = useState<"All" | "In progress" | "Finished">("All");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -777,10 +686,11 @@ export default function BotActivityPage() {
   return (
     <main className="container container-wide ba-page stark">
       <div className="ba-head">
-        <div>
+        <div className="ba-title-block">
           <h1 className="h1">Bot Activity</h1>
           <p className="muted ba-updated" aria-live="off">
-            {stamp}
+            <span className="ba-live-dot" aria-hidden="true" />
+            <span>{stamp}</span>
             {refreshFailed ? <span className="ba-refresh-note">{" · Couldn't refresh"}</span> : null}
           </p>
         </div>
@@ -801,18 +711,18 @@ export default function BotActivityPage() {
 
       {board ? (
         <>
-          <TeamGrid
-            board={board}
-            botFilter={botFilter}
-            now={now}
-            drafts={drafts}
-            busy={busy}
-            onDraft={onDraft}
-            onReply={onReply}
-            onDismiss={onDismiss}
-          />
-          <div className="ba-lower">
-            <section className="ba-col">
+          <TeamGrid board={board} botFilter={botFilter} now={now} />
+          <div className="ba-board">
+            <WaitingColumn
+              board={board}
+              botFilter={botFilter}
+              drafts={drafts}
+              busy={busy}
+              onDraft={onDraft}
+              onReply={onReply}
+              onDismiss={onDismiss}
+            />
+            <section className="ba-col ba-timeline">
               <div className="ba-col-head">
                 <h2 className="h2">Timeline</h2>
                 <span className="muted">{timelineCount}</span>
@@ -826,7 +736,7 @@ export default function BotActivityPage() {
                       <div key={entry.id} className="ba-tl">
                         <span className="ba-tl-dot" aria-hidden="true" />
                         <div className="ba-bot-row">
-                          <span className="ba-bot">{entry.bot}</span>
+                          <BotName name={entry.bot} />
                           <span className="ba-bot-side">
                             <span className="ba-when">{entry.when}</span>
                             <Icon k={entry.icon} />
@@ -840,7 +750,7 @@ export default function BotActivityPage() {
               ))}
             </section>
 
-            <section className="ba-col">
+            <section className="ba-col ba-work">
               <div className="ba-col-head">
                 <h2 className="h2">In progress and finished</h2>
                 <span className="muted">{inProgress.length + finished.length}</span>

@@ -178,6 +178,8 @@ test("bot activity", async (t) => {
     assert.match(board.waiting[0].at, /^2026-/);
     assert.match(board.timeline[0].entries[0].at, /^2026-/);
     assert.match(board.work[0].at, /^2026-/);
+    assert.match(board.work[0].updatedAt, /^2026-/);
+    assert.match(board.timeline[0].entries[0].postedAt, /^2026-/);
     assert.equal(board.waiting[0].chatHref, "grokbot://app/v1/agent?id=74308129-2f1d-43a1-973e-029bc428d239");
     assert.equal(board.timeline[0].day, "Sat Oct 24");
     assert.equal(board.timeline[0].entries[0].when, "11:32 AM");

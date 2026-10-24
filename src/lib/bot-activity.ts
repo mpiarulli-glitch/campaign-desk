@@ -95,6 +95,7 @@ type TimelineRow = {
   occurred_at: string;
   day_label: string;
   when_label: string;
+  created_at: string;
 };
 type ReplyRow = { id: string; item_id: string; body: string; created_at: string };
 
@@ -609,7 +610,15 @@ export function botActivityBoard(): {
   }>;
   timeline: Array<{
     day: string;
-    entries: Array<{ id: string; bot: string; icon: BotIcon; when: string; text: string; at: string }>;
+    entries: Array<{
+      id: string;
+      bot: string;
+      icon: BotIcon;
+      when: string;
+      text: string;
+      at: string;
+      postedAt: string;
+    }>;
   }>;
   work: Array<{
     id: string;
@@ -620,6 +629,7 @@ export function botActivityBoard(): {
     state: "progress" | "blocked" | "done";
     when: string;
     at: string;
+    updatedAt: string;
   }>;
 } {
   const db = getDb();
@@ -647,7 +657,7 @@ export function botActivityBoard(): {
 
   const timelineRows = db
     .prepare(
-      `SELECT id, bot, body, occurred_at, day_label, when_label
+      `SELECT id, bot, body, occurred_at, day_label, when_label, created_at
          FROM bot_activity_timeline
         ORDER BY occurred_at DESC, id DESC`
     )
@@ -665,7 +675,15 @@ export function botActivityBoard(): {
 
   const days: Array<{
     day: string;
-    entries: Array<{ id: string; bot: string; icon: BotIcon; when: string; text: string; at: string }>;
+    entries: Array<{
+      id: string;
+      bot: string;
+      icon: BotIcon;
+      when: string;
+      text: string;
+      at: string;
+      postedAt: string;
+    }>;
   }> = [];
   for (const row of timelineRows) {
     const day = row.day_label || formatDayPt(row.occurred_at);
@@ -681,6 +699,7 @@ export function botActivityBoard(): {
       when: row.when_label || formatClockPt(row.occurred_at),
       text: row.body,
       at: row.occurred_at,
+      postedAt: row.created_at,
     });
   }
 
@@ -717,6 +736,7 @@ export function botActivityBoard(): {
       state: row.state === "blocked" || row.state === "done" ? row.state : "progress",
       when: whenOf(row.when_label, row.occurred_at),
       at: row.occurred_at,
+      updatedAt: row.updated_at,
     })),
   };
 }

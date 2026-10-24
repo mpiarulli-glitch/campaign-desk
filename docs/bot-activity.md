@@ -22,6 +22,8 @@ Base URL: `https://hub.marketingempiregroup.com`
 
 One JSON object, or `{ "events": [ ... ] }` for several. `at` is optional and is an ISO timestamp. Omit it to use the time of the request.
 
+The board shows Working only when an in-progress item was posted or updated in the last 30 minutes. That clock is the time Campaign Desk stored the write (`updated_at` on the work row, or `created_at` on a timeline line), not how old `at` is. Post at least every 30 minutes while a bot is working, or the card stays Stalled instead of Working.
+
 Upsert a waiting item. `key` is stable for that bot, so the same key updates the same card. `resolved: true` marks it resolved. `resolved: false` reopens it. On the first write, `title` is required.
 
 ```bash
