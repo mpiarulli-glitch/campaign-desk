@@ -22,9 +22,22 @@ export async function requirePage(capability: string): Promise<void> {
   if (!allows(who, capability)) redirect("/admin/hub");
 }
 
+/**
+ * The owner session, and not a view-as session.
+ *
+ * The owner is the admin session with no person on it. Logging in as Michael
+ * (the only owner account) is what issues that session. A named admin, a
+ * forecast user, or the owner looking at the app as somebody else is refused.
+ */
+export function ownerPageAllowed(
+  who: { owner?: boolean; impersonating?: boolean } | null
+): boolean {
+  return Boolean(who?.owner) && !who?.impersonating;
+}
+
 /** Refuse a page unless this is the owner. */
 export async function requireOwnerPage(): Promise<void> {
   const who = await accessSubject();
   if (!who) redirect("/login");
-  if (!who.owner) redirect("/admin/hub");
+  if (!ownerPageAllowed(who)) redirect("/admin/hub");
 }

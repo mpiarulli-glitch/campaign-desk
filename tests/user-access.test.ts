@@ -97,6 +97,7 @@ test("per-person access", async (t) => {
   await t.test("fixed capabilities are not grantable", () => {
     assert.equal(access.isGrantable("page.home"), false);
     assert.equal(access.isGrantable("tool.access"), false);
+    assert.equal(access.isGrantable("page.bot_activity"), false);
     assert.equal(access.isGrantable("page.clients"), true);
     assert.equal(access.isGrantable("nope"), false);
   });

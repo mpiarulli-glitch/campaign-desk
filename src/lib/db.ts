@@ -11,6 +11,7 @@ import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-
 import { addWeeks, mondayOf } from "./week";
 import { backfillKnownContactEmails } from "./contact-email-backfill";
 import { backfillKnownContactPhones } from "./contact-phone-backfill";
+import { ensureBotActivitySchema } from "./bot-activity-schema";
 import {
   accountManagerSlugFromOwner,
   accountManagerSlugFromReviewerName,
@@ -4296,6 +4297,11 @@ function migrate(database: Database.Database) {
   // Known client phones from Basecamp POC lines. Idempotent: a valid phone
   // already on the row is not replaced. Does not send texts.
   backfillKnownContactPhones(database);
+
+  // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
+  // EXISTS, and the seed refuses to run again or to overwrite rows already
+  // there, so an existing production database boots the same way a new one does.
+  ensureBotActivitySchema(database);
 }
 
 // Insert a login row for every person in the code roster who does not have one
