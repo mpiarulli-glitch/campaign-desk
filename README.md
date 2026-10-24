@@ -343,6 +343,10 @@ Both setup requirements can be turned off with `REQUIRE_2FA=0` and
 automatically when `BASECAMP_CLIENT_ID` and `BASECAMP_CLIENT_SECRET` are unset,
 since there would be nothing to connect to.
 
+## Bot Activity
+
+Michael's Bot Activity page (`/admin/bot-activity`) and the token API bots use to update it are documented in [docs/bot-activity.md](docs/bot-activity.md). Bots authenticate with the existing `CAMPAIGN_DESK_API_TOKEN`. No new environment variable is required.
+
 ## Security notes
 
 - Treat magic links like private URLs. Anyone with the link can view the campaign and leave feedback.

@@ -188,6 +188,15 @@ export const PAGES: Capability[] = [
     blurb: "Who changed what, across the whole app.",
   },
   {
+    key: "page.bot_activity",
+    label: "Bot Activity",
+    group: "page",
+    href: "/admin/bot-activity",
+    icon: "bot",
+    blurb: "Where the bots are. Owner only, and not grantable.",
+    fixed: true,
+  },
+  {
     key: "page.snapshot",
     label: "Snapshots",
     group: "page",
