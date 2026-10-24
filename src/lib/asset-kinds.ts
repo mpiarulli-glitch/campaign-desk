@@ -257,7 +257,8 @@ export function deliverableCardTitle(
 // Minimal markdown -> HTML string converter.
 //
 // Supported subset for blog posts and copy decks: # / ## / ### headings,
-// - and 1. lists, pipe tables, images, > callouts, **bold**, *italic*, and
+// - and 1. lists (including one level of indent), pipe tables, images,
+// > callouts, **bold**, *italic*, ++underline++, ***bold italic***, and
 // [links](url). Text is HTML-escaped before any markup is applied. The output
 // is only ever shown inside a sandboxed, script-disabled iframe.
 // ---------------------------------------------------------------------------
@@ -307,6 +308,8 @@ function inlineMd(raw: string): string {
     const href = safeUrl(url);
     return href ? `<a href="${href}">${label}</a>` : label;
   });
+  text = text.replace(/\+\+(.+?)\+\+/g, "<u>$1</u>");
+  text = text.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/(^|[^*])\*(?!\*)([^*]+?)\*(?!\*)/g, "$1<em>$2</em>");
   return text;
@@ -364,24 +367,63 @@ function renderTable(rows: string[]): string {
   return `<table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
+type ListLine = { indent: number; ordered: boolean; text: string };
+
+function parseListLine(line: string): ListLine | null {
+  const match = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)$/);
+  if (!match) return null;
+  return {
+    indent: match[1].replace(/\t/g, "  ").length,
+    ordered: /\d/.test(match[2]),
+    text: match[3],
+  };
+}
+
+function renderListAt(
+  items: ListLine[],
+  start: number
+): { html: string; next: number } {
+  if (start >= items.length) return { html: "", next: start };
+  const level = items[start].indent;
+  const ordered = items[start].ordered;
+  const tag = ordered ? "ol" : "ul";
+  const parts: string[] = [];
+  let i = start;
+  while (i < items.length && items[i].indent === level && items[i].ordered === ordered) {
+    let inner = inlineMd(items[i].text);
+    i += 1;
+    if (i < items.length && items[i].indent > level) {
+      const nested = renderListAt(items, i);
+      inner += nested.html;
+      i = nested.next;
+    }
+    parts.push(`<li>${inner}</li>`);
+  }
+  return { html: `<${tag}>${parts.join("")}</${tag}>`, next: i };
+}
+
+function renderListBlock(items: ListLine[]): string {
+  let html = "";
+  let i = 0;
+  while (i < items.length) {
+    const rendered = renderListAt(items, i);
+    if (rendered.next <= i) break;
+    html += rendered.html;
+    i = rendered.next;
+  }
+  return html;
+}
+
 export function mdToHtml(md: string): string {
   const lines = (md || "").replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let para: string[] = [];
-  let list: { ordered: boolean; items: string[] } | null = null;
   let quote: string[] = [];
 
   const flushPara = () => {
     if (para.length) {
       out.push(`<p>${inlineMd(para.join(" "))}</p>`);
       para = [];
-    }
-  };
-  const flushList = () => {
-    if (list) {
-      const items = list.items.map((it) => `<li>${inlineMd(it)}</li>`).join("");
-      out.push(list.ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`);
-      list = null;
     }
   };
   const flushQuote = () => {
@@ -392,7 +434,6 @@ export function mdToHtml(md: string): string {
   };
   const flushAll = () => {
     flushPara();
-    flushList();
     flushQuote();
   };
 
@@ -434,24 +475,23 @@ export function mdToHtml(md: string): string {
     }
     if (line.startsWith("> ")) {
       flushPara();
-      flushList();
       quote.push(line.slice(2));
       continue;
     }
-    const ordered = /^\d+\.\s+/.test(line);
-    const bullet = /^[-*]\s+/.test(line);
-    if (ordered || bullet) {
+    const parsedList = parseListLine(line);
+    if (parsedList) {
       flushPara();
       flushQuote();
-      const item = line.replace(ordered ? /^\d+\.\s+/ : /^[-*]\s+/, "");
-      if (!list || list.ordered !== ordered) {
-        flushList();
-        list = { ordered, items: [] };
+      const items = [parsedList];
+      while (i + 1 < lines.length) {
+        const next = parseListLine(lines[i + 1].trimEnd());
+        if (!next) break;
+        i += 1;
+        items.push(next);
       }
-      list.items.push(item);
+      out.push(renderListBlock(items));
       continue;
     }
-    flushList();
     flushQuote();
     para.push(line);
   }
