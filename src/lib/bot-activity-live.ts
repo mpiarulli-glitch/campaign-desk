@@ -28,7 +28,7 @@ export function authRedirectForStatus(status: number): "/login" | "/admin/hub" |
  * 5 second poll does not change the label (or re-render) until the minute turns.
  */
 export function fetchedLabel(at: Date): string {
-  return `Fetched ${formatClockPt(at.toISOString())} PT`;
+  return `Live · Updated ${formatClockPt(at.toISOString())} PT`;
 }
 
 /** null board means the payload matches what is already on screen: do not setState. */
@@ -38,37 +38,74 @@ export function nextBoardState<T>(previousKey: string, next: T): { key: string; 
   return { key, board: next };
 }
 
+export type TeamStatus = "Blocked" | "Waiting on you" | "Working" | "Stalled" | "Idle";
+
 /**
- * A refresh must not wipe a reply that is being typed. Non-empty text stays
- * with its item id, including when that item's title or detail changes.
- * Returns the same object when nothing was dropped, so setState can bail out.
+ * A progress row only counts as Working when something was written this
+ * recently. Bots have to post at least this often while they are working.
  */
-export function retainReplyDrafts(drafts: Record<string, string>): Record<string, string> {
-  let changed = false;
-  const next: Record<string, string> = {};
-  for (const [id, text] of Object.entries(drafts)) {
-    if (!text) {
-      changed = true;
-      continue;
-    }
-    next[id] = text;
-  }
-  return changed ? next : drafts;
+export const WORKING_FRESH_MS = 30 * 60 * 1000;
+
+type WorkBeat = { bot: string; state: string; at?: string; updatedAt?: string };
+type LineBeat = { bot: string; at?: string; postedAt?: string };
+
+function stampMs(value: string | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
 }
 
-export type TeamStatus = "Blocked" | "Waiting on you" | "Working" | "Idle";
+/**
+ * Freshest write for one bot. Progress rows contribute updated_at (and
+ * occurred_at when that is all the row has). Timeline lines contribute the
+ * post time, created_at, and occurred_at. The newest of those is the heartbeat.
+ */
+export function botHeartbeat(
+  bot: string,
+  work: readonly WorkBeat[],
+  lines: readonly LineBeat[] = []
+): string {
+  let best = "";
+  let bestMs = Number.NEGATIVE_INFINITY;
+  const consider = (value: string | undefined) => {
+    const ms = stampMs(value);
+    if (ms === null || ms < bestMs) return;
+    bestMs = ms;
+    best = value || "";
+  };
+  for (const item of work) {
+    if (item.bot !== bot || item.state !== "progress") continue;
+    consider(item.updatedAt);
+    consider(item.at);
+  }
+  for (const line of lines) {
+    if (line.bot !== bot) continue;
+    consider(line.postedAt);
+    consider(line.at);
+  }
+  return best;
+}
 
-/** Blocked wins, then an open waiting item, then in-progress work, otherwise idle. */
+/**
+ * Blocked, then an open question, then Working only when in-progress work has
+ * a heartbeat inside WORKING_FRESH_MS. Older in-progress work is Stalled.
+ * Idle means nothing is open: no question, no block, no in-progress item.
+ */
 export function statusForBot(
   bot: string,
   waiting: readonly { bot: string }[],
-  work: readonly { bot: string; state: string }[]
+  work: readonly WorkBeat[],
+  lines: readonly LineBeat[] = [],
+  nowMs = Date.now()
 ): TeamStatus {
   const tasks = work.filter((item) => item.bot === bot);
   if (tasks.some((item) => item.state === "blocked")) return "Blocked";
   if (waiting.some((item) => item.bot === bot)) return "Waiting on you";
-  if (tasks.some((item) => item.state === "progress")) return "Working";
-  return "Idle";
+  if (!tasks.some((item) => item.state === "progress")) return "Idle";
+  const beat = botHeartbeat(bot, work, lines);
+  const then = stampMs(beat);
+  if (then !== null && nowMs - then <= WORKING_FRESH_MS) return "Working";
+  return "Stalled";
 }
 
 export type CurrentTask = { title: string; detail: string; at: string };
@@ -119,105 +156,73 @@ export const BOT_PORTRAIT_NAMES = [
   "cody",
 ] as const;
 
-/** One plain sentence for the status chip on a team card and its hover card. */
-export function statusLine(status: TeamStatus): string {
-  switch (status) {
-    case "Blocked":
-      return "It is stuck and needs a person to clear the block.";
-    case "Waiting on you":
-      return "It asked you something and is waiting for an answer.";
-    case "Working":
-      return "It is in the middle of a task.";
-    default:
-      return "Nothing is running, and nothing is waiting on you.";
+/**
+ * One line for a Working, Stalled, or Idle card. Needs-you cards use the
+ * request text instead of this sentence.
+ */
+export function activityLine(status: TeamStatus, heartbeat: string, nowMs: number): string {
+  if (status === "Working" || status === "Stalled") {
+    const ago = timeAgo(heartbeat, nowMs);
+    const label = status === "Working" ? "Working" : "Stalled";
+    return ago ? `${label}: last update ${ago}` : `${label}: no recent update`;
   }
+  if (status === "Idle") return "Idle: nothing is running.";
+  return "";
 }
 
-export type BotNeed = {
-  kind: "question" | "blocker";
-  title: string;
-  detail: string;
-  at: string;
-};
+/** Open questions and blockers, newest first, as the text the card can show. */
+export function needsRequestText(
+  bot: string,
+  waiting: readonly { bot: string; title: string; detail: string; at: string }[],
+  work: readonly { bot: string; title: string; detail: string; state: string; at: string }[]
+): string {
+  const parts: { at: string; text: string }[] = [];
+  for (const item of work) {
+    if (item.bot !== bot || item.state !== "blocked") continue;
+    parts.push({ at: item.at, text: [item.title, item.detail].filter(Boolean).join("\n") });
+  }
+  for (const item of waiting) {
+    if (item.bot !== bot) continue;
+    parts.push({ at: item.at, text: [item.title, item.detail].filter(Boolean).join("\n") });
+  }
+  parts.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return parts.map((part) => part.text).join("\n\n");
+}
 
 export type BotHoverSummary = {
   status: TeamStatus;
-  statusLine: string;
+  /** Status plus last update, for Working, Stalled, and Idle. Empty for needs-you. */
+  line: string;
+  /** Question and blocker text. Empty unless the bot is Blocked or Waiting. */
+  request: string;
+  heartbeat: string;
   task: CurrentTask | null;
-  recent: { text: string; at: string }[];
-  needs: BotNeed[];
 };
 
 /**
- * Hover card for one bot, from the board already on the page.
- * Recent activity is the latest timeline lines. Needs-you is every open
- * waiting item plus every blocked task. No new stored fields.
+ * What the on-card overlay says. Blocked and Waiting show the request only.
+ * Every other bot shows status and one line, such as "Working: last update 4m ago".
  */
 export function botHoverSummary(
   bot: string,
   waiting: readonly { bot: string; title: string; detail: string; at: string }[],
-  work: readonly { bot: string; title: string; detail: string; state: string; at: string }[],
-  lines: readonly { bot: string; text: string; at: string }[]
+  work: readonly { bot: string; title: string; detail: string; state: string; at: string; updatedAt?: string }[],
+  lines: readonly { bot: string; text: string; at: string; postedAt?: string }[],
+  nowMs = Date.now()
 ): BotHoverSummary {
-  const status = statusForBot(bot, waiting, work);
-  const recent = lines
-    .filter((line) => line.bot === bot)
-    .slice()
-    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-    .slice(0, 3)
-    .map((line) => ({ text: line.text, at: line.at }));
-  const needs: BotNeed[] = [];
-  for (const item of waiting) {
-    if (item.bot !== bot) continue;
-    needs.push({ kind: "question", title: item.title, detail: item.detail, at: item.at });
-  }
-  for (const item of work) {
-    if (item.bot !== bot || item.state !== "blocked") continue;
-    needs.push({ kind: "blocker", title: item.title, detail: item.detail, at: item.at });
-  }
-  needs.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  const status = statusForBot(bot, waiting, work, lines, nowMs);
+  const heartbeat = botHeartbeat(bot, work, lines);
+  const needsYou = status === "Blocked" || status === "Waiting on you";
   return {
     status,
-    statusLine: statusLine(status),
+    line: needsYou ? "" : activityLine(status, heartbeat, nowMs),
+    request: needsYou ? needsRequestText(bot, waiting, work) : "",
+    heartbeat,
     task: currentAssignment(bot, work, lines),
-    recent,
-    needs,
   };
 }
 
-export type PopoverAnchor = { top: number; bottom: number; left: number; width: number };
-export type PopoverPlace = { top: number; left: number; maxHeight: number };
-
-/**
- * Keep a hover card inside the viewport. Prefer below the card; flip above
- * when that side has more room. Left is clamped, including on a 390px screen.
- */
-export function placePopover(
-  anchor: PopoverAnchor,
-  size: { width: number; height: number },
-  viewport: { width: number; height: number },
-  margin = 8,
-  gap = 8
-): PopoverPlace {
-  const width = Math.min(size.width, Math.max(0, viewport.width - margin * 2));
-  let left = anchor.left;
-  if (left + width > viewport.width - margin) left = viewport.width - margin - width;
-  if (left < margin) left = margin;
-
-  const below = viewport.height - margin - (anchor.bottom + gap);
-  const above = anchor.top - gap - margin;
-  const placeBelow = size.height <= below || below >= above;
-  if (placeBelow) {
-    const top = Math.max(margin, anchor.bottom + gap);
-    return { top, left, maxHeight: Math.max(0, viewport.height - margin - top) };
-  }
-  const maxHeight = Math.max(0, above);
-  const used = Math.min(size.height, maxHeight);
-  const top = Math.max(margin, anchor.top - gap - used);
-  return { top, left, maxHeight };
-}
-
-/** Blocked first, then waiting, then working, then idle. */
+/** Blocked, waiting, fresh work, stalled work, then idle. */
 export function teamRank(status: TeamStatus): number {
   switch (status) {
     case "Blocked":
@@ -226,8 +231,10 @@ export function teamRank(status: TeamStatus): number {
       return 1;
     case "Working":
       return 2;
-    default:
+    case "Stalled":
       return 3;
+    default:
+      return 4;
   }
 }
 

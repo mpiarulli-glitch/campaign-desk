@@ -14,12 +14,10 @@ import {
   teamRank,
   fetchedLabel,
   nextBoardState,
-  placePopover,
   pollDelayMs,
-  retainReplyDrafts,
   statusForBot,
-  statusLine,
   timeAgo,
+  WORKING_FRESH_MS,
 } from "../src/lib/bot-activity-live";
 
 type Timer = { fn: () => void; ms: number };
@@ -154,7 +152,7 @@ test("401 and 403 stop the refresh and use the same redirects as the first load"
   assert.equal(harness.calls(), 1);
 });
 
-test("an unchanged board is not applied, and a reply draft survives an item update", () => {
+test("an unchanged board is not applied", () => {
   const first = { waiting: [{ id: "w1", detail: "Old detail", title: "Sign in" }] };
   const opened = nextBoardState("", first);
   assert.deepEqual(opened.board, first);
@@ -170,13 +168,6 @@ test("an unchanged board is not applied, and a reply draft survives an item upda
   });
   assert.ok(edited.board);
   assert.equal(edited.board?.waiting[0].detail, "The login form changed.");
-
-  const drafts = { w1: "Use the login I just sent." };
-  const kept = retainReplyDrafts(drafts);
-  assert.equal(kept, drafts);
-  assert.equal(kept.w1, "Use the login I just sent.");
-  const pruned = retainReplyDrafts({ w1: "still typing", w2: "" });
-  assert.deepEqual(pruned, { w1: "still typing" });
 });
 
 test("team status, current task, portrait path, and the fetched label", () => {
@@ -195,9 +186,36 @@ test("team status, current task, portrait path, and the fetched label", () => {
     statusForBot("Jessica", [{ bot: "Jessica" }], [{ bot: "Jessica", state: "done" }]),
     "Waiting on you"
   );
-  assert.equal(statusForBot("David", [], [{ bot: "David", state: "progress" }]), "Working");
-  assert.equal(statusForBot("Cody", [], [{ bot: "Cody", state: "done" }]), "Idle");
-  assert.equal(statusForBot("Wes", [], []), "Idle");
+  const freshAt = "2026-10-24T22:00:00.000Z";
+  const now = Date.parse("2026-10-24T22:10:00.000Z");
+  assert.equal(
+    statusForBot("David", [], [{ bot: "David", state: "progress", updatedAt: freshAt }], [], now),
+    "Working"
+  );
+  assert.equal(
+    statusForBot(
+      "Emily",
+      [],
+      [{ bot: "Emily", state: "progress", at: "2026-10-22T22:10:00.000Z", updatedAt: "2026-10-22T22:10:00.000Z" }],
+      [],
+      now
+    ),
+    "Stalled"
+  );
+  assert.equal(statusForBot("David", [], [{ bot: "David", state: "progress" }], [], now), "Stalled");
+  assert.equal(
+    statusForBot(
+      "Rachel",
+      [],
+      [{ bot: "Rachel", state: "progress", updatedAt: "2026-10-22T22:10:00.000Z" }],
+      [{ bot: "Rachel", at: "2026-10-22T22:10:00.000Z", postedAt: freshAt }],
+      now
+    ),
+    "Working"
+  );
+  assert.equal(WORKING_FRESH_MS, 30 * 60 * 1000);
+  assert.equal(statusForBot("Cody", [], [{ bot: "Cody", state: "done" }], [], now), "Idle");
+  assert.equal(statusForBot("Wes", [], [], [], now), "Idle");
 
   const work = [
     { bot: "Daniel", title: "Older block", detail: "stuck", state: "blocked", at: "2026-10-23T00:00:00.000Z" },
@@ -220,14 +238,14 @@ test("team status, current task, portrait path, and the fetched label", () => {
   });
   assert.equal(currentAssignment("Nobody", work, lines), null);
 
-  const now = Date.parse("2026-10-24T22:00:00.000Z");
-  assert.equal(timeAgo("2026-10-24T21:59:40.000Z", now), "just now");
-  assert.equal(timeAgo("2026-10-24T21:55:00.000Z", now), "5m ago");
-  assert.equal(timeAgo("2026-10-24T20:00:00.000Z", now), "2h ago");
-  assert.equal(timeAgo("2026-10-21T22:00:00.000Z", now), "3d ago");
-  assert.equal(timeAgo("not-a-time", now), "");
+  const clock = Date.parse("2026-10-24T22:00:00.000Z");
+  assert.equal(timeAgo("2026-10-24T21:59:40.000Z", clock), "just now");
+  assert.equal(timeAgo("2026-10-24T21:55:00.000Z", clock), "5m ago");
+  assert.equal(timeAgo("2026-10-24T20:00:00.000Z", clock), "2h ago");
+  assert.equal(timeAgo("2026-10-21T22:00:00.000Z", clock), "3d ago");
+  assert.equal(timeAgo("not-a-time", clock), "");
 
-  assert.equal(fetchedLabel(new Date("2026-10-24T22:02:00.000Z")), "Fetched 3:02 PM PT");
+  assert.equal(fetchedLabel(new Date("2026-10-24T22:02:00.000Z")), "Live · Updated 3:02 PM PT");
 
   for (const name of BOT_PORTRAIT_NAMES) {
     assert.equal(botPortraitSrc(name), `/bots/${name}.jpg`);
@@ -252,37 +270,45 @@ test("team status, current task, portrait path, and the fetched label", () => {
     ]
   );
   assert.equal(summary.status, "Blocked");
-  assert.equal(summary.statusLine, statusLine("Blocked"));
+  assert.equal(summary.line, "");
   assert.equal(summary.task?.title, "Launch copy");
-  assert.deepEqual(
-    summary.recent.map((item) => item.text),
-    ["Newest note.", "Second newest.", "Middle note."]
+  assert.match(summary.request, /^Launch copy\nneeds a login\n\nWhich subject line\?\nA or B\n\nOld block\nearlier$/);
+  const working = botHoverSummary(
+    "David",
+    [],
+    [{ bot: "David", title: "Newsletter", detail: "", state: "progress", at: freshAt, updatedAt: freshAt }],
+    [],
+    now
   );
-  assert.deepEqual(
-    summary.needs.map((item) => item.kind + ":" + item.title),
-    ["blocker:Launch copy", "question:Which subject line?", "blocker:Old block"]
+  assert.equal(working.status, "Working");
+  assert.equal(working.request, "");
+  assert.equal(working.line, "Working: last update 10m ago");
+  const stalled = botHoverSummary(
+    "James",
+    [],
+    [
+      {
+        bot: "James",
+        title: "Audit",
+        detail: "",
+        state: "progress",
+        at: "2026-10-22T22:10:00.000Z",
+        updatedAt: "2026-10-22T22:10:00.000Z",
+      },
+    ],
+    [],
+    now
   );
-  assert.equal(botHoverSummary("Cody", [], [], []).statusLine, statusLine("Idle"));
+  assert.equal(stalled.status, "Stalled");
+  assert.equal(stalled.line, "Stalled: last update 2d ago");
+  assert.equal(botHoverSummary("Cody", [], [], [], now).line, "Idle: nothing is running.");
   assert.ok(teamRank("Blocked") < teamRank("Waiting on you"));
   assert.ok(teamRank("Waiting on you") < teamRank("Working"));
-  assert.ok(teamRank("Working") < teamRank("Idle"));
+  assert.ok(teamRank("Working") < teamRank("Stalled"));
+  assert.ok(teamRank("Stalled") < teamRank("Idle"));
   const elapsedNow = Date.parse("2026-10-24T22:12:00.000Z");
   assert.equal(forElapsed("2026-10-24T22:00:00.000Z", elapsedNow), "for 12m");
   assert.equal(forElapsed("2026-10-24T20:12:00.000Z", elapsedNow), "for 2h");
-
-  const narrow = { width: 390, height: 844 };
-  const flipped = placePopover(
-    { top: 700, bottom: 820, left: 16, width: 358 },
-    { width: 374, height: 280 },
-    narrow
-  );
-  assert.ok(flipped.top + Math.min(280, flipped.maxHeight) <= narrow.height - 8);
-  assert.ok(flipped.top < 700);
-  assert.ok(flipped.left >= 8);
-  assert.ok(flipped.left + 374 <= narrow.width - 8);
-  const dropped = placePopover({ top: 80, bottom: 200, left: 16, width: 358 }, { width: 320, height: 180 }, narrow);
-  assert.equal(dropped.top, 208);
-  assert.ok(dropped.left >= 8 && dropped.left + 320 <= narrow.width - 8);
 
   for (const name of BOT_PORTRAIT_NAMES) {
     const file = path.join("public/bots", `${name}.jpg`);
@@ -304,14 +330,21 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(page, /visibilitychange/);
   assert.match(page, /poller\.stop\(\)/);
   assert.match(page, /nextBoardState/);
-  assert.match(page, /retainReplyDrafts/);
+  assert.doesNotMatch(page, /retainReplyDrafts/);
+  assert.doesNotMatch(live, /retainReplyDrafts/);
   assert.match(page, /cache:\s*"no-store"/);
-  assert.match(page, /Fetched/);
+  assert.match(page, /Live · Updated/);
+  assert.match(page, /ba-live-dot/);
+  assert.match(page, /Last update/);
+  assert.match(page, /ba-board/);
   assert.match(page, /Couldn't refresh/);
   assert.match(page, /Needs you/);
-  assert.match(page, /Save \/ Send/);
+  assert.doesNotMatch(page, /Save \/ Send/);
+  assert.doesNotMatch(page, /textarea/);
+  assert.doesNotMatch(page, /action: "reply"/);
   assert.match(page, /Dismiss/);
-  assert.match(page, /value=\{drafts\[item\.id\]/);
+  assert.match(page, /item\.chatHref \|\| grokBotHref\(item\.bot\)/);
+  assert.match(page, /className="btn ba-open-chat"/);
   assert.match(page, /onError=/);
   assert.match(page, /alt=\{name\}/);
   assert.match(css, /\.ba-avatar \{[^}]*border-radius: 50%/);
@@ -334,13 +367,15 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(css, /ba-bob/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(page, /role="tooltip"/);
-  assert.match(page, /createPortal/);
-  assert.match(page, /placePopover/);
-  assert.match(css, /\.ba-pop \{[^}]*position: fixed/);
-  assert.match(css, /width: min\(320px, calc\(100vw - 16px\)\)/);
+  assert.doesNotMatch(page, /createPortal/);
+  assert.match(css, /\.ba-pop \{[^}]*position: absolute/);
+  assert.doesNotMatch(css, /\.ba-pop \{[^}]*position: fixed/);
+  assert.match(css, /\.ba-board \{[^}]*1\.55fr/);
+  assert.doesNotMatch(css, /ba-send/);
+  assert.doesNotMatch(css, /ba-reply-form/);
+  assert.match(css, /\.ba-open-chat \{[^}]*min-height: 44px/);
   assert.match(page, /id="ba-bot"/);
-  assert.doesNotMatch(page, /setDrafts\(\{\}\)/);
-  assert.doesNotMatch(page, /setDrafts\(\s*\{\s*\}\s*\)/);
+  assert.doesNotMatch(page, /setDrafts/);
   assert.match(live, /BOT_ACTIVITY_POLL_MS = 5_000/);
   assert.doesNotMatch(page, /new BotActivityRefresh[\s\S]{0,400}30_000/);
   assert.match(css, /ba-needs/);

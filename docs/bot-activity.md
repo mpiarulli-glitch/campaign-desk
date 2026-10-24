@@ -2,6 +2,8 @@
 
 The Bot Activity page (`/admin/bot-activity`) is Michael's view of what the bots are doing. Only the owner session can open it. Named admins, account managers, forecast users, and signed-out visitors are refused, including on the reply and dismiss API.
 
+The page does not take a reply. A Needs you item shows the request, an Open chat link (`grokbot://app/v1/agent?id=…`) when that bot has an agent id, and a quiet Dismiss. Bots with no agent id show the request and Dismiss only. The reply route is still there for anything that already calls it.
+
 Bots do not use that session. They call `/api/bot-activity` with a bearer token.
 
 ## Token
@@ -21,6 +23,8 @@ Base URL: `https://hub.marketingempiregroup.com`
 ## Post an update
 
 One JSON object, or `{ "events": [ ... ] }` for several. `at` is optional and is an ISO timestamp. Omit it to use the time of the request.
+
+The board shows Working only when an in-progress item was posted or updated in the last 30 minutes. That clock is the time Campaign Desk stored the write (`updated_at` on the work row, or `created_at` on a timeline line), not how old `at` is. Post at least every 30 minutes while a bot is working, or the card stays Stalled instead of Working.
 
 Upsert a waiting item. `key` is stable for that bot, so the same key updates the same card. `resolved: true` marks it resolved. `resolved: false` reopens it. On the first write, `title` is required.
 
