@@ -24950,8 +24950,15 @@ a.snap-todo-linked-title {
   color: var(--text);
 }
 
-/* Bot Activity. Colors come from the theme tokens so light and dark both work. */
-.ba-page { padding-top: 28px; }
+/* Bot Activity. Light mode stays on the app tokens. Dark mode picks up the
+   shared Stark navy field (the .stark class) and these cyan hairlines. */
+.ba-page {
+  padding-top: 22px;
+  padding-bottom: 28px;
+}
+.ba-page .h1 {
+  font-size: clamp(28px, 4vw, 36px);
+}
 .ba-head {
   display: flex;
   flex-wrap: wrap;
@@ -24961,19 +24968,162 @@ a.snap-todo-linked-title {
   margin-bottom: 18px;
 }
 .ba-updated { margin: 8px 0 0; }
-.ba-filter { width: min(100%, 220px); }
-.ba-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
+.ba-refresh-note { color: var(--warning-ink); }
+.ba-filter { width: min(100%, 220px); margin: 0; }
+.ba-needs,
+.ba-team,
 .ba-col {
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
   border-radius: var(--radius);
   background: var(--bg-elevated);
   padding: 16px;
   min-width: 0;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.ba-needs {
+  margin-bottom: 16px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 0 28px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.ba-team { margin-bottom: 16px; }
+.ba-needs-row,
+.ba-team-grid {
+  display: grid;
+  gap: 12px;
+}
+.ba-needs-row { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.ba-team-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.ba-member {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--bg-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.ba-member:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.ba-member:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ba-member.is-on {
+  border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.ba-member-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.ba-member-id {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ba-member-name {
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.ba-avatar {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--bg);
+  color: var(--accent-ink);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.ba-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ba-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+.ba-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: none;
+}
+.ba-chip-working { color: var(--accent-ink); }
+.ba-chip-blocked { color: var(--warning-ink); }
+.ba-chip-waiting { color: var(--accent-ink); }
+.ba-chip-idle { color: var(--text-muted); }
+.ba-status-dot.is-live {
+  animation: ba-pulse 1.8s ease-out infinite;
+}
+@keyframes ba-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 7px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-status-dot.is-live { animation: none; }
+}
+.ba-task-title,
+.ba-task-detail,
+.ba-ago {
+  margin: 0;
+  min-width: 0;
+}
+.ba-task-title {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ba-task-detail {
+  color: var(--text-body);
+  font-size: 13px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ba-ago {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ba-lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 .ba-col-head {
   display: flex;
@@ -24984,13 +25134,20 @@ a.snap-todo-linked-title {
 }
 .ba-stack { display: flex; flex-direction: column; gap: 10px; }
 .ba-card {
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
   border-radius: var(--radius-sm);
   background: var(--bg-soft);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+.ba-title,
+.ba-detail,
+.ba-task-title,
+.ba-reply-body {
+  overflow-wrap: anywhere;
 }
 .ba-bot-row {
   display: flex;
@@ -25065,6 +25222,34 @@ a.snap-todo-linked-title {
 .ba-state-progress { color: var(--accent-ink); background: var(--accent-wash); }
 .ba-state-blocked { color: var(--warning-ink); background: var(--warning-wash); }
 .ba-state-done { color: var(--success-ink); background: var(--success-wash); }
-@media (max-width: 980px) {
-  .ba-grid { grid-template-columns: 1fr; }
+:root[data-theme="dark"] .ba-page .ba-needs,
+:root[data-theme="dark"] .ba-page .ba-team,
+:root[data-theme="dark"] .ba-page .ba-col,
+:root[data-theme="dark"] .ba-page .ba-card,
+:root[data-theme="dark"] .ba-page .ba-member {
+  background: rgba(6, 12, 18, 0.72);
+  border-color: rgba(122, 215, 255, 0.32);
+  color: #e8eef4;
+}
+:root[data-theme="dark"] .ba-page .ba-title,
+:root[data-theme="dark"] .ba-page .ba-task-title,
+:root[data-theme="dark"] .ba-page .ba-member-name,
+:root[data-theme="dark"] .ba-page .ba-bot,
+:root[data-theme="dark"] .ba-page .ba-reply-body {
+  color: #f7fbff;
+}
+:root[data-theme="dark"] .ba-page .ba-detail,
+:root[data-theme="dark"] .ba-page .ba-task-detail {
+  color: rgba(232, 238, 244, 0.82);
+}
+:root[data-theme="dark"] .ba-page .ba-chip-waiting { color: #e4c27a; }
+:root[data-theme="dark"] .ba-page .ba-member.is-on {
+  border-color: rgba(122, 215, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(122, 215, 255, 0.35), 0 0 22px rgba(122, 215, 255, 0.14);
+}
+@media (max-width: 800px) {
+  .ba-lower { grid-template-columns: 1fr; }
+  .ba-needs-row,
+  .ba-team-grid { grid-template-columns: 1fr; }
+  .ba-page { padding-top: 8px; }
 }
