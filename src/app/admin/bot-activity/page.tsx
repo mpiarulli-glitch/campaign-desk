@@ -1,18 +1,23 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import type { BotIcon } from "@/lib/bot-activity-icons";
+import { grokBotHref, type BotIcon } from "@/lib/bot-activity-icons";
 import {
   BotActivityRefresh,
   authRedirectForStatus,
+  botHoverSummary,
   botPortraitSrc,
-  currentAssignment,
   fetchedLabel,
+  forElapsed,
   nextBoardState,
+  placePopover,
   retainReplyDrafts,
-  statusForBot,
+  teamRank,
   timeAgo,
+  type BotHoverSummary,
+  type PopoverPlace,
   type TeamStatus,
 } from "@/lib/bot-activity-live";
 
@@ -146,67 +151,352 @@ function BotPortrait({ name, icon }: { name: string; icon: BotIcon }) {
   );
 }
 
-const NeedsYou = memo(function NeedsYou({
-  items,
+function TeamGrid({
+  board,
+  botFilter,
+  now,
   drafts,
   busy,
   onDraft,
   onReply,
   onDismiss,
 }: {
-  items: Waiting[];
+  board: Board;
+  botFilter: string;
+  now: number;
   drafts: Record<string, string>;
   busy: string;
   onDraft: (id: string, value: string) => void;
   onReply: (item: Waiting) => void;
   onDismiss: (item: Waiting) => void;
 }) {
+  const lines = board.timeline.flatMap((day) => day.entries);
+  const cards = board.bots
+    .map((bot) => ({
+      bot,
+      summary: botHoverSummary(bot.name, board.waiting, board.work, lines),
+    }))
+    .sort(
+      (a, b) => teamRank(a.summary.status) - teamRank(b.summary.status) || a.bot.name.localeCompare(b.bot.name)
+    );
   return (
-    <section className="ba-needs" aria-label="Needs you">
+    <section className="ba-team" aria-label="Team">
       <div className="ba-col-head">
-        <h2 className="h2">Needs you</h2>
-        <span className="muted">{items.length}</span>
+        <h2 className="h2">Team</h2>
+        <span className="muted">{board.bots.length}</span>
       </div>
-      {items.length === 0 ? <p className="muted">Nothing waiting.</p> : null}
-      <div className="ba-needs-row">
-        {items.map((item) => (
-          <article key={item.id} className="ba-card">
-            <div className="ba-bot-row">
-              {item.chatHref ? (
-                <a className="ba-bot-link" href={item.chatHref}>
-                  {item.bot} · reply in chat
-                </a>
-              ) : (
-                <span className="ba-bot">{item.bot}</span>
-              )}
-              <span className="ba-bot-side">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => onDismiss(item)}
-                  disabled={busy === item.id}
-                >
-                  Dismiss
-                </button>
-                <Icon k={item.icon} />
-              </span>
+      <div className="ba-team-grid">
+        {cards.map(({ bot, summary }) => (
+          <TeamCard
+            key={bot.name}
+            name={bot.name}
+            icon={bot.icon}
+            pressed={botFilter === bot.name}
+            now={now}
+            summary={summary}
+            questions={board.waiting.filter((item) => item.bot === bot.name)}
+            blockers={board.work.filter((item) => item.bot === bot.name && item.state === "blocked")}
+            drafts={drafts}
+            busy={busy}
+            onDraft={onDraft}
+            onReply={onReply}
+            onDismiss={onDismiss}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TeamCard({
+  name,
+  icon,
+  pressed,
+  now,
+  summary,
+  questions,
+  blockers,
+  drafts,
+  busy,
+  onDraft,
+  onReply,
+  onDismiss,
+}: {
+  name: string;
+  icon: BotIcon;
+  pressed: boolean;
+  now: number;
+  summary: BotHoverSummary;
+  questions: Waiting[];
+  blockers: Work[];
+  drafts: Record<string, string>;
+  busy: string;
+  onDraft: (id: string, value: string) => void;
+  onReply: (item: Waiting) => void;
+  onDismiss: (item: Waiting) => void;
+}) {
+  const cardRef = useRef<HTMLElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const hoverRef = useRef(false);
+  const popHoverRef = useRef(false);
+  const pinRef = useRef(false);
+  const closeTimer = useRef<number | null>(null);
+  const [open, setOpen] = useState(false);
+  const [box, setBox] = useState<PopoverPlace | null>(null);
+  const task = summary.task;
+  const ago = task ? timeAgo(task.at, now) : "";
+  const elapsed = task ? forElapsed(task.at, now) : "";
+  const href = grokBotHref(name);
+  const tone =
+    summary.status === "Blocked"
+      ? "blocked"
+      : summary.status === "Waiting on you"
+        ? "waiting"
+        : summary.status === "Working"
+          ? "working"
+          : "idle";
+  const showBubble = questions.length > 0 || blockers.length > 0;
+  const popId = `ba-pop-${name.replace(/\s+/g, "-")}`;
+  const summarySig = [
+    summary.status,
+    task?.title ?? "",
+    task?.detail ?? "",
+    task?.at ?? "",
+    summary.recent.map((item) => item.at + item.text).join(),
+    summary.needs.map((item) => item.kind + item.at + item.title).join(),
+  ].join("|");
+
+  const requestClose = useCallback(() => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      const active = document.activeElement;
+      const inside = !!active && (cardRef.current?.contains(active) || popRef.current?.contains(active));
+      if (hoverRef.current || popHoverRef.current || pinRef.current || inside) return;
+      setOpen(false);
+    }, 140);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (event.pointerType === "mouse") return;
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (cardRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      pinRef.current = false;
+      hoverRef.current = false;
+      popHoverRef.current = false;
+      setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    function measure() {
+      const anchorEl = cardRef.current;
+      const pop = popRef.current;
+      if (!anchorEl || !pop) return;
+      const anchor = anchorEl.getBoundingClientRect();
+      const previous = pop.style.maxHeight;
+      pop.style.maxHeight = "none";
+      const natural = pop.offsetHeight;
+      const width = pop.offsetWidth;
+      pop.style.maxHeight = previous;
+      const next = placePopover(
+        { top: anchor.top, bottom: anchor.bottom, left: anchor.left, width: anchor.width },
+        { width, height: natural },
+        { width: window.innerWidth, height: window.innerHeight }
+      );
+      setBox((current) =>
+        current && current.top === next.top && current.left === next.left && current.maxHeight === next.maxHeight
+          ? current
+          : next
+      );
+    }
+    measure();
+    const scroller = document.querySelector(".app-content");
+    scroller?.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      scroller?.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [open, summarySig]);
+
+  const popover =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={popRef}
+            id={popId}
+            role="tooltip"
+            className="ba-pop"
+            style={
+              box
+                ? { top: box.top, left: box.left, maxHeight: box.maxHeight }
+                : { top: 0, left: 8, visibility: "hidden" }
+            }
+            onMouseEnter={() => {
+              popHoverRef.current = true;
+              if (closeTimer.current) window.clearTimeout(closeTimer.current);
+            }}
+            onMouseLeave={() => {
+              popHoverRef.current = false;
+              requestClose();
+            }}
+          >
+            <div className="ba-pop-head">
+              <span className="ba-pop-name">{name}</span>
+              <StatusChip status={summary.status} />
             </div>
-            <p className="ba-title">{item.title}</p>
-            <p className="ba-detail">{item.detail}</p>
-            <p className="ba-when">{item.when}</p>
-            {item.replies.map((saved) => (
-              <div key={saved.id} className="ba-reply">
-                <p className="ba-reply-body">{saved.body}</p>
-                <p className="ba-when">{saved.when}</p>
+            <p className="ba-pop-line">{summary.statusLine}</p>
+            <p className="ba-pop-kicker">Now</p>
+            {task ? (
+              <>
+                <p className="ba-pop-title">{task.title}</p>
+                {task.detail ? <p className="ba-pop-detail">{task.detail}</p> : null}
+                {ago ? <p className="ba-ago">{ago}</p> : null}
+              </>
+            ) : (
+              <p className="ba-pop-detail">Nothing running.</p>
+            )}
+            <p className="ba-pop-kicker">Recent</p>
+            {summary.recent.length === 0 ? <p className="ba-pop-detail">No recent activity.</p> : null}
+            {summary.recent.map((item) => (
+              <div key={item.at + item.text} className="ba-pop-recent">
+                <p className="ba-pop-detail">{item.text}</p>
+                <p className="ba-ago">{timeAgo(item.at, now)}</p>
               </div>
             ))}
+            {summary.needs.length > 0 ? (
+              <>
+                <p className="ba-pop-kicker">Needs you</p>
+                {summary.needs.map((item) => (
+                  <div key={`${item.kind}-${item.at}-${item.title}`} className="ba-pop-need">
+                    <p className="ba-pop-title">{item.kind === "blocker" ? "Blocker" : "Question"}</p>
+                    <p className="ba-pop-detail">{item.title}</p>
+                    {item.detail ? <p className="ba-pop-detail">{item.detail}</p> : null}
+                  </div>
+                ))}
+              </>
+            ) : null}
+          </div>,
+          document.body
+        )
+      : null;
+
+  const face = (
+    <>
+      <span className="ba-member-top">
+        <span className="ba-avatar-slot">
+          <BotPortrait name={name} icon={icon} />
+        </span>
+        <span className="ba-member-id">
+          <span className="ba-member-name">{name}</span>
+          <StatusChip status={summary.status} />
+        </span>
+      </span>
+      {summary.status === "Working" && task ? (
+        <span className="ba-live">
+          <span className="ba-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="ba-live-label">Working on: {task.title}</span>
+          {elapsed ? <span className="ba-ago">{elapsed}</span> : null}
+          <span className="ba-shimmer" aria-hidden="true" />
+        </span>
+      ) : null}
+      {summary.status === "Idle" ? <span className="ba-task-detail">Nothing running.</span> : null}
+      {href ? <span className="ba-open-label">Open chat</span> : null}
+    </>
+  );
+  const bubbleText = showBubble ? (
+    <>
+      <span className="ba-bubble-kicker">Needs you</span>
+      {blockers.map((item) => (
+        <span key={item.id} className="ba-bubble-block">
+          <span className="ba-pop-title">{item.title}</span>
+          {item.detail ? <span className="ba-pop-detail">{item.detail}</span> : null}
+        </span>
+      ))}
+      {questions.map((item) => (
+        <span key={item.id} className="ba-bubble-ask">
+          <span className="ba-pop-title">{item.title}</span>
+          {item.detail ? <span className="ba-pop-detail">{item.detail}</span> : null}
+        </span>
+      ))}
+    </>
+  ) : null;
+
+  return (
+    <article
+      ref={cardRef}
+      data-bot={name}
+      className={`ba-member is-${tone} ${pressed ? "is-on" : ""}`}
+      aria-describedby={open ? popId : undefined}
+      onMouseEnter={() => {
+        hoverRef.current = true;
+        if (closeTimer.current) window.clearTimeout(closeTimer.current);
+        setOpen(true);
+      }}
+      onMouseLeave={() => {
+        hoverRef.current = false;
+        requestClose();
+      }}
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse") return;
+        pinRef.current = true;
+        setOpen(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        pinRef.current = false;
+        setOpen(false);
+      }}
+    >
+      {href ? (
+        <a className="ba-card-link" href={href} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
+          {face}
+        </a>
+      ) : (
+        <div className="ba-card-link" tabIndex={0} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
+          {face}
+        </div>
+      )}
+      {showBubble ? (
+        <div className={`ba-bubble ${blockers.length > 0 ? "is-blocked" : "is-waiting"}`}>
+          {href ? (
+            <a className="ba-bubble-link" href={href}>
+              {bubbleText}
+            </a>
+          ) : (
+            <div className="ba-bubble-link">{bubbleText}</div>
+          )}
+          {questions.map((item) => (
             <form
+              key={item.id}
               className="ba-reply-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 onReply(item);
               }}
             >
+              {item.replies.map((saved) => (
+                <div key={saved.id} className="ba-reply">
+                  <p className="ba-reply-body">{saved.body}</p>
+                  <p className="ba-when">{saved.when}</p>
+                </div>
+              ))}
               <label className="field">
                 <span className="ba-reply-label">Reply</span>
                 <textarea
@@ -215,73 +505,29 @@ const NeedsYou = memo(function NeedsYou({
                   onChange={(event) => onDraft(item.id, event.target.value)}
                 />
               </label>
-              <button
-                type="submit"
-                className="btn btn-sm"
-                disabled={busy === item.id || !(drafts[item.id] || "").trim()}
-              >
-                Save / Send
-              </button>
-            </form>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-});
-
-function TeamGrid({
-  board,
-  botFilter,
-  now,
-  onPick,
-}: {
-  board: Board;
-  botFilter: string;
-  now: number;
-  onPick: (name: string) => void;
-}) {
-  const lines = board.timeline.flatMap((day) => day.entries);
-  return (
-    <section className="ba-team" aria-label="Team">
-      <div className="ba-col-head">
-        <h2 className="h2">Team</h2>
-        <span className="muted">{board.bots.length}</span>
-      </div>
-      <div className="ba-team-grid">
-        {board.bots.map((bot) => {
-          const status = statusForBot(bot.name, board.waiting, board.work);
-          const task = currentAssignment(bot.name, board.work, lines);
-          const ago = task ? timeAgo(task.at, now) : "";
-          return (
-            <button
-              key={bot.name}
-              type="button"
-              className={`ba-member ${botFilter === bot.name ? "is-on" : ""}`}
-              aria-pressed={botFilter === bot.name}
-              onClick={() => onPick(bot.name)}
-            >
-              <span className="ba-member-top">
-                <BotPortrait name={bot.name} icon={bot.icon} />
-                <span className="ba-member-id">
-                  <span className="ba-member-name">{bot.name}</span>
-                  <StatusChip status={status} />
-                </span>
+              <span className="ba-reply-actions">
+                <button
+                  type="submit"
+                  className="btn btn-sm"
+                  disabled={busy === item.id || !(drafts[item.id] || "").trim()}
+                >
+                  Save / Send
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => onDismiss(item)}
+                  disabled={busy === item.id}
+                >
+                  Dismiss
+                </button>
               </span>
-              {task ? (
-                <>
-                  <p className="ba-task-title">{task.title}</p>
-                  {task.detail ? <p className="ba-task-detail">{task.detail}</p> : null}
-                  {ago ? <p className="ba-ago">{ago}</p> : null}
-                </>
-              ) : (
-                <p className="ba-task-detail">Nothing running.</p>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </section>
+            </form>
+          ))}
+        </div>
+      ) : null}
+      {popover}
+    </article>
   );
 }
 
@@ -499,12 +745,6 @@ export default function BotActivityPage() {
     return ["All bots", ...names];
   }, [board, botFilter]);
 
-  const waiting = useMemo(() => {
-    if (!board) return [];
-    if (botFilter === "All bots") return board.waiting;
-    return board.waiting.filter((item) => item.bot === botFilter);
-  }, [board, botFilter]);
-
   const timeline = useMemo(() => {
     if (!board) return [];
     return board.timeline
@@ -561,15 +801,16 @@ export default function BotActivityPage() {
 
       {board ? (
         <>
-          <NeedsYou
-            items={waiting}
+          <TeamGrid
+            board={board}
+            botFilter={botFilter}
+            now={now}
             drafts={drafts}
             busy={busy}
             onDraft={onDraft}
             onReply={onReply}
             onDismiss={onDismiss}
           />
-          <TeamGrid board={board} botFilter={botFilter} now={now} onPick={setBotFilter} />
           <div className="ba-lower">
             <section className="ba-col">
               <div className="ba-col-head">

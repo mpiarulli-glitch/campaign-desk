@@ -119,6 +119,130 @@ export const BOT_PORTRAIT_NAMES = [
   "cody",
 ] as const;
 
+/** One plain sentence for the status chip on a team card and its hover card. */
+export function statusLine(status: TeamStatus): string {
+  switch (status) {
+    case "Blocked":
+      return "It is stuck and needs a person to clear the block.";
+    case "Waiting on you":
+      return "It asked you something and is waiting for an answer.";
+    case "Working":
+      return "It is in the middle of a task.";
+    default:
+      return "Nothing is running, and nothing is waiting on you.";
+  }
+}
+
+export type BotNeed = {
+  kind: "question" | "blocker";
+  title: string;
+  detail: string;
+  at: string;
+};
+
+export type BotHoverSummary = {
+  status: TeamStatus;
+  statusLine: string;
+  task: CurrentTask | null;
+  recent: { text: string; at: string }[];
+  needs: BotNeed[];
+};
+
+/**
+ * Hover card for one bot, from the board already on the page.
+ * Recent activity is the latest timeline lines. Needs-you is every open
+ * waiting item plus every blocked task. No new stored fields.
+ */
+export function botHoverSummary(
+  bot: string,
+  waiting: readonly { bot: string; title: string; detail: string; at: string }[],
+  work: readonly { bot: string; title: string; detail: string; state: string; at: string }[],
+  lines: readonly { bot: string; text: string; at: string }[]
+): BotHoverSummary {
+  const status = statusForBot(bot, waiting, work);
+  const recent = lines
+    .filter((line) => line.bot === bot)
+    .slice()
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    .slice(0, 3)
+    .map((line) => ({ text: line.text, at: line.at }));
+  const needs: BotNeed[] = [];
+  for (const item of waiting) {
+    if (item.bot !== bot) continue;
+    needs.push({ kind: "question", title: item.title, detail: item.detail, at: item.at });
+  }
+  for (const item of work) {
+    if (item.bot !== bot || item.state !== "blocked") continue;
+    needs.push({ kind: "blocker", title: item.title, detail: item.detail, at: item.at });
+  }
+  needs.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return {
+    status,
+    statusLine: statusLine(status),
+    task: currentAssignment(bot, work, lines),
+    recent,
+    needs,
+  };
+}
+
+export type PopoverAnchor = { top: number; bottom: number; left: number; width: number };
+export type PopoverPlace = { top: number; left: number; maxHeight: number };
+
+/**
+ * Keep a hover card inside the viewport. Prefer below the card; flip above
+ * when that side has more room. Left is clamped, including on a 390px screen.
+ */
+export function placePopover(
+  anchor: PopoverAnchor,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  margin = 8,
+  gap = 8
+): PopoverPlace {
+  const width = Math.min(size.width, Math.max(0, viewport.width - margin * 2));
+  let left = anchor.left;
+  if (left + width > viewport.width - margin) left = viewport.width - margin - width;
+  if (left < margin) left = margin;
+
+  const below = viewport.height - margin - (anchor.bottom + gap);
+  const above = anchor.top - gap - margin;
+  const placeBelow = size.height <= below || below >= above;
+  if (placeBelow) {
+    const top = Math.max(margin, anchor.bottom + gap);
+    return { top, left, maxHeight: Math.max(0, viewport.height - margin - top) };
+  }
+  const maxHeight = Math.max(0, above);
+  const used = Math.min(size.height, maxHeight);
+  const top = Math.max(margin, anchor.top - gap - used);
+  return { top, left, maxHeight };
+}
+
+/** Blocked first, then waiting, then working, then idle. */
+export function teamRank(status: TeamStatus): number {
+  switch (status) {
+    case "Blocked":
+      return 0;
+    case "Waiting on you":
+      return 1;
+    case "Working":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+/** How long the current task has been running, from its existing occurred_at. */
+export function forElapsed(iso: string, nowMs: number): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const min = Math.floor(Math.max(0, nowMs - then) / 60000);
+  if (min < 1) return "for <1m";
+  if (min < 60) return `for ${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `for ${hr}h`;
+  return `for ${Math.floor(hr / 24)}d`;
+}
+
 /** Short relative label from an ISO timestamp. Empty when the timestamp is unreadable. */
 export function timeAgo(iso: string, nowMs: number): string {
   const then = Date.parse(iso);
