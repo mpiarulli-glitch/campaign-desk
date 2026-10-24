@@ -175,6 +175,9 @@ test("bot activity", async (t) => {
 
     assert.equal(board.waiting[0].title, schema.WAITING_SEED[0].title);
     assert.equal(board.waiting[0].when, "Fri 5:09 PM");
+    assert.match(board.waiting[0].at, /^2026-/);
+    assert.match(board.timeline[0].entries[0].at, /^2026-/);
+    assert.match(board.work[0].at, /^2026-/);
     assert.equal(board.waiting[0].chatHref, "grokbot://app/v1/agent?id=74308129-2f1d-43a1-973e-029bc428d239");
     assert.equal(board.timeline[0].day, "Sat Oct 24");
     assert.equal(board.timeline[0].entries[0].when, "11:32 AM");
@@ -519,6 +522,24 @@ test("bot activity", async (t) => {
       last = res.status;
     }
     assert.equal(last, 429);
+  });
+
+  await t.test("owner board reads are not counted by the bot rate limit", async () => {
+    ba.resetBotActivityRateLimitForTests();
+    const url = "https://hub.marketingempiregroup.com/api/bot-activity";
+    for (let i = 0; i < ba.BOT_ACTIVITY_RATE_LIMIT; i++) {
+      const res = await ba.botActivityApiGet(
+        request("GET", url, "primary-token-value", undefined, "203.0.113.77")
+      );
+      assert.equal(res.status, 200);
+    }
+    const blocked = await ba.botActivityApiGet(
+      request("GET", url, "primary-token-value", undefined, "203.0.113.77")
+    );
+    assert.equal(blocked.status, 429);
+    for (let i = 0; i < 40; i++) {
+      assert.equal(ba.botActivityAdminGet(michael).status, 200);
+    }
   });
 
   await t.test("an existing database and an empty database both boot", async () => {

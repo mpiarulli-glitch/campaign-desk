@@ -588,6 +588,11 @@ function whenOf(label: string, iso: string): string {
   return label || formatWaitingWhenPt(iso);
 }
 
+// Owner board read. One light set of indexed selects: bots, open waiting,
+// those replies in a single IN query, work, timeline, and the latest
+// occurred_at. Nothing here calls the bot route's 30/min rate limit.
+// `at` is the row's existing occurred_at so the page can say "time ago"
+// without another query or a new column.
 export function botActivityBoard(): {
   updated: string;
   bots: Array<{ name: string; icon: BotIcon; agentId: string }>;
@@ -599,11 +604,12 @@ export function botActivityBoard(): {
     title: string;
     detail: string;
     when: string;
+    at: string;
     replies: Array<{ id: string; body: string; at: string; when: string }>;
   }>;
   timeline: Array<{
     day: string;
-    entries: Array<{ id: string; bot: string; icon: BotIcon; when: string; text: string }>;
+    entries: Array<{ id: string; bot: string; icon: BotIcon; when: string; text: string; at: string }>;
   }>;
   work: Array<{
     id: string;
@@ -613,6 +619,7 @@ export function botActivityBoard(): {
     detail: string;
     state: "progress" | "blocked" | "done";
     when: string;
+    at: string;
   }>;
 } {
   const db = getDb();
@@ -658,7 +665,7 @@ export function botActivityBoard(): {
 
   const days: Array<{
     day: string;
-    entries: Array<{ id: string; bot: string; icon: BotIcon; when: string; text: string }>;
+    entries: Array<{ id: string; bot: string; icon: BotIcon; when: string; text: string; at: string }>;
   }> = [];
   for (const row of timelineRows) {
     const day = row.day_label || formatDayPt(row.occurred_at);
@@ -673,6 +680,7 @@ export function botActivityBoard(): {
       icon: iconFor(bots, row.bot),
       when: row.when_label || formatClockPt(row.occurred_at),
       text: row.body,
+      at: row.occurred_at,
     });
   }
 
@@ -691,6 +699,7 @@ export function botActivityBoard(): {
       title: row.title,
       detail: row.detail,
       when: whenOf(row.when_label, row.occurred_at),
+      at: row.occurred_at,
       replies: (replyMap.get(row.id) || []).map((reply) => ({
         id: reply.id,
         body: reply.body,
@@ -707,10 +716,12 @@ export function botActivityBoard(): {
       detail: row.detail,
       state: row.state === "blocked" || row.state === "done" ? row.state : "progress",
       when: whenOf(row.when_label, row.occurred_at),
+      at: row.occurred_at,
     })),
   };
 }
 
+// Session only. The bot token and its 30/min limit belong to /api/bot-activity.
 export function botActivityAdminGet(actor: BotActivityActor): ApiResult {
   const denied = denyActor(actor);
   if (denied) return denied;
