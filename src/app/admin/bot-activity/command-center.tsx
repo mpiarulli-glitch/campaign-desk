@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { grokBotHref, type BotIcon } from "@/lib/bot-activity-icons";
 import {
   cardStatusLabel,
@@ -254,6 +255,71 @@ export function CommandCenter({
   );
 }
 
+function hoverUnavailable(): boolean {
+  return window.matchMedia("(hover: none)").matches;
+}
+
+function CardPop({
+  anchor,
+  kind,
+  label,
+  onPointer,
+  children,
+}: {
+  anchor: HTMLElement;
+  kind: "needs" | "status";
+  label: string;
+  onPointer: (inside: boolean) => void;
+  children: ReactNode;
+}) {
+  const popRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ top: 0, left: 0, width: 280 });
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const card = anchor.getBoundingClientRect();
+      const height = popRef.current?.offsetHeight ?? 150;
+      const width = Math.max(260, Math.round(card.width));
+      let left = card.left + card.width / 2 - width / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+      let top = card.top - 10 - height;
+      if (top < 8) top = card.top + 8;
+      setBox((prev) => (prev.top === top && prev.left === left && prev.width === width ? prev : { top, left, width }));
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    if (popRef.current) observer.observe(popRef.current);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchor]);
+
+  return createPortal(
+    <div
+      ref={popRef}
+      className={`ba-pop is-${kind}`}
+      role={kind === "needs" ? "dialog" : "tooltip"}
+      aria-label={label}
+      style={{ top: box.top, left: box.left, width: box.width }}
+      onMouseEnter={() => onPointer(true)}
+      onMouseLeave={() => onPointer(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Tab" && event.shiftKey && event.target === popRef.current?.querySelector("a, button")) {
+          event.preventDefault();
+          anchor.focus();
+        }
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function BotCard({
   bot,
   status,
@@ -295,75 +361,134 @@ function BotCard({
     .sort((a, b) => (a.at < b.at ? 1 : -1));
   const featured = live[0] || null;
   const oldOne = featured ? null : old[0] || null;
-  const href = featured ? featured.chatHref || grokBotHref(bot.name) : null;
   const blocked = work.find((item) => item.bot === bot.name && item.state === "blocked" && rowCountsLive(item, now));
+  const needs = Boolean(featured) || Boolean(blocked && needsAttention(status));
+  const chat = grokBotHref(bot.name);
+  const askHref = featured ? featured.chatHref || chat : chat;
+  const cardRef = useRef<HTMLAnchorElement>(null);
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const closeTimer = useRef<number | null>(null);
+  const visible = hover || pinned;
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  function show() {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    setHover(true);
+  }
+  function hideSoon() {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setHover(false), 140);
+  }
 
   return (
-    <article className={`ba-botcard is-${tone} ${celebrating ? "is-done" : ""}`}>
-      {featured ? (
-        <div className="ba-say">
-          <p className="ba-say-kicker">Needs you</p>
-          <p className="ba-say-text">{featured.title}</p>
-          {featured.detail ? <p className="ba-say-detail">{featured.detail}</p> : null}
-          {live.length > 1 ? <p className="ba-old">{live.length - 1} more in the list below</p> : null}
-          <div className="ba-wait-actions">
-            {href ? (
-              <a className="btn ba-open-chat" href={href}>
-                Open chat
-              </a>
-            ) : null}
-            <button
-              type="button"
-              className="ba-dismiss"
-              onClick={() => onDismiss(featured)}
-              disabled={busy === featured.id}
-            >
-              Dismiss
-            </button>
+    <>
+      <a
+        ref={cardRef}
+        className={`ba-botcard is-${tone} ${celebrating ? "is-done" : ""}`}
+        href={chat || "#"}
+        aria-expanded={visible}
+        onMouseEnter={show}
+        onMouseLeave={hideSoon}
+        onFocus={show}
+        onBlur={(event) => {
+          const next = event.relatedTarget;
+          if (next instanceof Node && document.querySelector(".ba-pop")?.contains(next)) return;
+          hideSoon();
+        }}
+        onClick={(event) => {
+          if (hoverUnavailable()) {
+            event.preventDefault();
+            setPinned((open) => !open);
+            return;
+          }
+          if (!chat) event.preventDefault();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setHover(false);
+            setPinned(false);
+          }
+          if (event.key === "Tab" && !event.shiftKey) {
+            const first = document.querySelector<HTMLElement>(".ba-pop a, .ba-pop button");
+            if (first) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+        }}
+      >
+        {needs ? <span className="ba-badge" aria-hidden="true" /> : null}
+        <div className="ba-botcard-top">
+          <Portrait name={bot.name} tone={tone} />
+          <div className="ba-botcard-id">
+            <p className="ba-botcard-name">{bot.name}</p>
+            <p className="ba-botcard-task">{task}</p>
           </div>
         </div>
-      ) : null}
-      {!featured && blocked && needsAttention(status) ? (
-        <div className="ba-say">
-          <p className="ba-say-kicker">Needs you</p>
-          <p className="ba-say-text">{blocked.title}</p>
-          {blocked.detail ? <p className="ba-say-detail">{blocked.detail}</p> : null}
-          {grokBotHref(bot.name) ? (
-            <div className="ba-wait-actions">
-              <a className="btn ba-open-chat" href={grokBotHref(bot.name) || undefined}>
-                Open chat
-              </a>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      {oldOne ? (
-        <p className="ba-old-line">
-          <span>Old request · {oldOne.title}</span>
-          <button
-            type="button"
-            className="ba-dismiss"
-            onClick={() => onDismiss(oldOne)}
-            disabled={busy === oldOne.id}
-          >
-            Dismiss
-          </button>
+        <p className={`ba-status is-${tone}`}>
+          <i aria-hidden="true" />
+          {cardStatusLabel(status)}
+          {celebrating ? <span className="ba-just">Done</span> : null}
         </p>
-      ) : null}
-      <div className="ba-botcard-top">
-        <Portrait name={bot.name} tone={tone} />
-        <div className="ba-botcard-id">
-          <p className="ba-botcard-name">{bot.name}</p>
-          <p className="ba-botcard-task">{task}</p>
-        </div>
-      </div>
-      <p className={`ba-status is-${tone}`}>
-        <i aria-hidden="true" />
-        {cardStatusLabel(status)}
-        {celebrating ? <span className="ba-just">Done</span> : null}
-      </p>
-      <Spark tone={tone} />
-      <p className="ba-card-foot">{footer}</p>
-    </article>
+        <Spark tone={tone} />
+        <p className="ba-card-foot">{footer}</p>
+      </a>
+      {visible && cardRef.current
+        ? needs
+          ? (
+            <CardPop anchor={cardRef.current} kind="needs" label={`Needs you, ${bot.name}`} onPointer={(inside) => (inside ? show() : hideSoon())}>
+              <p className="ba-say-kicker">Needs you</p>
+              <p className="ba-say-text">{featured?.title || blocked?.title}</p>
+              {(featured?.detail || blocked?.detail) ? (
+                <p className="ba-say-detail">{featured?.detail || blocked?.detail}</p>
+              ) : null}
+              {live.length > 1 ? <p className="ba-old">{live.length - 1} more in the list below</p> : null}
+              <div className="ba-wait-actions">
+                {askHref ? (
+                  <a className="btn ba-open-chat" href={askHref}>
+                    Open chat
+                  </a>
+                ) : null}
+                {featured ? (
+                  <button
+                    type="button"
+                    className="ba-dismiss"
+                    onClick={() => onDismiss(featured)}
+                    disabled={busy === featured.id}
+                  >
+                    Dismiss
+                  </button>
+                ) : null}
+              </div>
+            </CardPop>
+          )
+          : (
+            <CardPop anchor={cardRef.current} kind="status" label={bot.name} onPointer={(inside) => (inside ? show() : hideSoon())}>
+              <p className="ba-say-kicker">{cardStatusLabel(status)}</p>
+              <p className="ba-say-text">{task}</p>
+              <p className="ba-old">{footer}</p>
+              {oldOne ? (
+                <div className="ba-wait-actions">
+                  <p className="ba-old">Old request · {oldOne.title}</p>
+                  <button
+                    type="button"
+                    className="ba-dismiss"
+                    onClick={() => onDismiss(oldOne)}
+                    disabled={busy === oldOne.id}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : null}
+            </CardPop>
+          )
+        : null}
+    </>
   );
 }

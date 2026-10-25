@@ -527,8 +527,16 @@ test("the page wires a quiet refresh and the command center without a second fil
   assert.doesNotMatch(icons, /Wes:/);
   assert.match(css, /ba-orb-pulse/);
   assert.match(css, /ba-attention/);
+  assert.match(css, /ba-badge/);
+  assert.match(css, /\.ba-botcard \{[^}]*height: 188px/);
+  assert.match(css, /\.ba-pop \{[^}]*position: fixed/);
+  assert.match(css, /\.ba-pop \{[^}]*right: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.doesNotMatch(page, /createPortal/);
+  assert.match(page, /createPortal/);
+  assert.match(page, /onMouseEnter=/);
+  assert.match(page, /onFocus=/);
+  assert.match(page, /hover: none/);
+  assert.match(page, /"dialog" : "tooltip"/);
   assert.doesNotMatch(page, /textarea/);
   assert.match(css, /\.ba-board \{[^}]*display: block/);
   assert.match(page, /ba-tabs/);
