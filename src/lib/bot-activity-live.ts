@@ -1,7 +1,7 @@
 // Client-safe refresh and team-card rules for the Bot Activity page.
 // No database imports: the page bundle and the node tests both use this.
 
-import { formatClockPt } from "./bot-activity-time";
+import { formatClockPt, formatUpdatedPt } from "./bot-activity-time";
 
 /** Quiet board refresh. Hidden tabs do not poll. */
 export const BOT_ACTIVITY_POLL_MS = 5_000;
@@ -46,13 +46,39 @@ export type TeamStatus = "Blocked" | "Waiting on you" | "Working" | "Stalled" | 
  */
 export const WORKING_FRESH_MS = 30 * 60 * 1000;
 
-type WorkBeat = { bot: string; state: string; at?: string; updatedAt?: string };
-type LineBeat = { bot: string; at?: string; postedAt?: string };
+type WorkBeat = { id?: string; bot: string; state: string; at?: string; updatedAt?: string };
+type LineBeat = { id?: string; bot: string; at?: string; postedAt?: string };
+type WaitingBeat = { id?: string; bot: string; at?: string; updatedAt?: string };
 
 function stampMs(value: string | undefined): number | null {
   if (!value) return null;
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/** A finished beat this recent plays the celebrate, then the walk back to the desk. */
+export const JUST_DONE_MS = 2 * 60 * 1000;
+
+const SEED_ID = /^seed-[wkt]-\d+$/;
+
+/**
+ * Mockup row the bot has not written since. Seed items stored updated_at equal
+ * to occurred_at. A bot upsert sets updated_at to the write time, so those
+ * rows stop matching. Timeline seed rows are append-only and never updated.
+ */
+export function isUntouchedSeed(row: { id?: string; at?: string; updatedAt?: string }): boolean {
+  const id = row.id || "";
+  if (!SEED_ID.test(id)) return false;
+  if (id.startsWith("seed-t-")) return true;
+  if (!row.updatedAt || !row.at) return true;
+  return row.updatedAt === row.at;
+}
+
+/** Untouched seed counts only when its own event time is still inside the fresh window. */
+function countsLive(row: { id?: string; at?: string; updatedAt?: string }, nowMs: number): boolean {
+  if (!isUntouchedSeed(row)) return true;
+  const event = stampMs(row.at);
+  return event !== null && nowMs - event <= WORKING_FRESH_MS;
 }
 
 /**
@@ -63,7 +89,8 @@ function stampMs(value: string | undefined): number | null {
 export function botHeartbeat(
   bot: string,
   work: readonly WorkBeat[],
-  lines: readonly LineBeat[] = []
+  lines: readonly LineBeat[] = [],
+  nowMs = Date.now()
 ): string {
   let best = "";
   let bestMs = Number.NEGATIVE_INFINITY;
@@ -74,16 +101,85 @@ export function botHeartbeat(
     best = value || "";
   };
   for (const item of work) {
-    if (item.bot !== bot || item.state !== "progress") continue;
+    if (item.bot !== bot || item.state !== "progress" || !countsLive(item, nowMs)) continue;
     consider(item.updatedAt);
     consider(item.at);
   }
   for (const line of lines) {
-    if (line.bot !== bot) continue;
+    if (line.bot !== bot || !countsLive(line, nowMs)) continue;
     consider(line.postedAt);
     consider(line.at);
   }
   return best;
+}
+
+type HeardRow = { id?: string; bot: string; at?: string; updatedAt?: string; postedAt?: string };
+
+/** Newest bot write across waiting, work, and timeline. Untouched seed rows do not count. */
+export function lastHeardAt(
+  bot: string,
+  waiting: readonly HeardRow[],
+  work: readonly HeardRow[],
+  lines: readonly HeardRow[]
+): string {
+  let best = "";
+  let bestMs = Number.NEGATIVE_INFINITY;
+  const consider = (row: HeardRow, value: string | undefined) => {
+    if (isUntouchedSeed(row)) return;
+    const ms = stampMs(value);
+    if (ms === null || ms < bestMs) return;
+    bestMs = ms;
+    best = value || "";
+  };
+  for (const item of waiting) {
+    if (item.bot === bot) consider(item, item.updatedAt || item.at);
+  }
+  for (const item of work) {
+    if (item.bot === bot) consider(item, item.updatedAt || item.at);
+  }
+  for (const line of lines) {
+    if (line.bot === bot) consider(line, line.postedAt || line.at);
+  }
+  return best;
+}
+
+/** Newest mockup event for a bot that has not been written by that bot since. */
+export function untouchedSeedAt(
+  bot: string,
+  waiting: readonly HeardRow[],
+  work: readonly HeardRow[],
+  lines: readonly HeardRow[]
+): string {
+  let best = "";
+  let bestMs = Number.NEGATIVE_INFINITY;
+  const consider = (row: HeardRow) => {
+    if (row.bot !== bot || !isUntouchedSeed(row)) return;
+    const ms = stampMs(row.at);
+    if (ms === null || ms < bestMs) return;
+    bestMs = ms;
+    best = row.at || "";
+  };
+  for (const item of waiting) consider(item);
+  for (const item of work) consider(item);
+  for (const line of lines) consider(line);
+  return best;
+}
+
+export function heardLabel(
+  bot: string,
+  waiting: readonly HeardRow[],
+  work: readonly HeardRow[],
+  lines: readonly HeardRow[],
+  nowMs = Date.now()
+): string {
+  const heard = lastHeardAt(bot, waiting, work, lines);
+  if (heard) {
+    const ago = timeAgo(heard, nowMs);
+    return ago ? `Last heard ${ago}` : "Last heard";
+  }
+  const seeded = untouchedSeedAt(bot, waiting, work, lines);
+  if (!seeded) return "No posts yet";
+  return `Not updated since ${formatUpdatedPt(seeded)}`;
 }
 
 /**
@@ -93,16 +189,16 @@ export function botHeartbeat(
  */
 export function statusForBot(
   bot: string,
-  waiting: readonly { bot: string }[],
+  waiting: readonly WaitingBeat[],
   work: readonly WorkBeat[],
   lines: readonly LineBeat[] = [],
   nowMs = Date.now()
 ): TeamStatus {
   const tasks = work.filter((item) => item.bot === bot);
-  if (tasks.some((item) => item.state === "blocked")) return "Blocked";
-  if (waiting.some((item) => item.bot === bot)) return "Waiting on you";
-  if (!tasks.some((item) => item.state === "progress")) return "Idle";
-  const beat = botHeartbeat(bot, work, lines);
+  if (tasks.some((item) => item.state === "blocked" && countsLive(item, nowMs))) return "Blocked";
+  if (waiting.some((item) => item.bot === bot && countsLive(item, nowMs))) return "Waiting on you";
+  if (!tasks.some((item) => item.state === "progress" && countsLive(item, nowMs))) return "Idle";
+  const beat = botHeartbeat(bot, work, lines, nowMs);
   const then = stampMs(beat);
   if (then !== null && nowMs - then <= WORKING_FRESH_MS) return "Working";
   return "Stalled";
@@ -130,6 +226,25 @@ export function currentAssignment(
   for (const line of lines) {
     if (line.bot !== bot) continue;
     if (!best || line.at > best.at) best = { title: line.text, detail: "", at: line.at };
+  }
+  return best;
+}
+
+/** Title of the live in-progress item with the newest write. Empty when none counts. */
+export function doingTitle(
+  bot: string,
+  work: readonly { id?: string; bot: string; title: string; state: string; at?: string; updatedAt?: string }[],
+  nowMs = Date.now()
+): string {
+  let best = "";
+  let bestStamp = "";
+  for (const item of work) {
+    if (item.bot !== bot || item.state !== "progress" || !countsLive(item, nowMs)) continue;
+    const stamp = item.updatedAt || item.at || "";
+    if (stamp >= bestStamp) {
+      bestStamp = stamp;
+      best = item.title;
+    }
   }
   return best;
 }
@@ -173,16 +288,17 @@ export function activityLine(status: TeamStatus, heartbeat: string, nowMs: numbe
 /** Open questions and blockers, newest first, as the text the card can show. */
 export function needsRequestText(
   bot: string,
-  waiting: readonly { bot: string; title: string; detail: string; at: string }[],
-  work: readonly { bot: string; title: string; detail: string; state: string; at: string }[]
+  waiting: readonly { id?: string; bot: string; title: string; detail: string; at: string; updatedAt?: string }[],
+  work: readonly { id?: string; bot: string; title: string; detail: string; state: string; at: string; updatedAt?: string }[],
+  nowMs = Date.now()
 ): string {
   const parts: { at: string; text: string }[] = [];
   for (const item of work) {
-    if (item.bot !== bot || item.state !== "blocked") continue;
+    if (item.bot !== bot || item.state !== "blocked" || !countsLive(item, nowMs)) continue;
     parts.push({ at: item.at, text: [item.title, item.detail].filter(Boolean).join("\n") });
   }
   for (const item of waiting) {
-    if (item.bot !== bot) continue;
+    if (item.bot !== bot || !countsLive(item, nowMs)) continue;
     parts.push({ at: item.at, text: [item.title, item.detail].filter(Boolean).join("\n") });
   }
   parts.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
@@ -196,6 +312,8 @@ export type BotHoverSummary = {
   /** Question and blocker text. Empty unless the bot is Blocked or Waiting. */
   request: string;
   heartbeat: string;
+  /** Last bot write, or the mockup time when the bot has not posted. */
+  heard: string;
   task: CurrentTask | null;
 };
 
@@ -211,13 +329,14 @@ export function botHoverSummary(
   nowMs = Date.now()
 ): BotHoverSummary {
   const status = statusForBot(bot, waiting, work, lines, nowMs);
-  const heartbeat = botHeartbeat(bot, work, lines);
+  const heartbeat = botHeartbeat(bot, work, lines, nowMs);
   const needsYou = status === "Blocked" || status === "Waiting on you";
   return {
     status,
     line: needsYou ? "" : activityLine(status, heartbeat, nowMs),
-    request: needsYou ? needsRequestText(bot, waiting, work) : "",
+    request: needsYou ? needsRequestText(bot, waiting, work, nowMs) : "",
     heartbeat,
+    heard: heardLabel(bot, waiting, work, lines, nowMs),
     task: currentAssignment(bot, work, lines),
   };
 }
@@ -255,7 +374,7 @@ export function timeAgo(iso: string, nowMs: number): string {
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return "";
   const sec = Math.max(0, Math.floor((nowMs - then) / 1000));
-  if (sec < 45) return "just now";
+  if (sec < 60) return "just now";
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);

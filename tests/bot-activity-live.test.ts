@@ -18,7 +18,13 @@ import {
   statusForBot,
   timeAgo,
   WORKING_FRESH_MS,
+  JUST_DONE_MS,
+  isUntouchedSeed,
+  lastHeardAt,
+  heardLabel,
+  doingTitle,
 } from "../src/lib/bot-activity-live";
+import { countFloor, finishedBots, floorSummary, groupByPacificDay, propForTask, timelineStamp } from "../src/lib/bot-activity-office";
 
 type Timer = { fn: () => void; ms: number };
 
@@ -319,8 +325,119 @@ test("team status, current task, portrait path, and the fetched label", () => {
   }
 });
 
+test("untouched seed rows are not live, and a fresh bot write is", () => {
+  const now = Date.parse("2026-10-24T22:10:00.000Z");
+  const fresh = "2026-10-24T22:00:00.000Z";
+  const old = "2026-10-22T22:10:00.000Z";
+  assert.equal(JUST_DONE_MS, 2 * 60 * 1000);
+  assert.equal(isUntouchedSeed({ id: "seed-k-5", at: old, updatedAt: old }), true);
+  assert.equal(isUntouchedSeed({ id: "seed-t-3", at: old, updatedAt: fresh }), true);
+  assert.equal(isUntouchedSeed({ id: "seed-k-5", at: old, updatedAt: fresh }), false);
+  assert.equal(isUntouchedSeed({ id: "abc", at: old, updatedAt: old }), false);
+
+  assert.equal(
+    statusForBot("Emily", [], [{ id: "seed-k-11", bot: "Emily", state: "progress", at: old, updatedAt: old }], [], now),
+    "Idle"
+  );
+  assert.equal(
+    statusForBot(
+      "Jerry",
+      [{ id: "seed-w-1", bot: "Jerry", at: old, updatedAt: old }],
+      [{ id: "seed-k-3", bot: "Jerry", state: "blocked", at: old, updatedAt: old }],
+      [],
+      now
+    ),
+    "Idle"
+  );
+  assert.equal(
+    statusForBot(
+      "David",
+      [],
+      [{ id: "seed-k-5", bot: "David", state: "progress", at: old, updatedAt: fresh }],
+      [],
+      now
+    ),
+    "Working"
+  );
+  assert.equal(
+    statusForBot(
+      "Rachel",
+      [],
+      [{ id: "post-1", bot: "Rachel", state: "progress", at: old, updatedAt: old }],
+      [],
+      now
+    ),
+    "Stalled"
+  );
+  assert.equal(
+    statusForBot(
+      "David",
+      [],
+      [{ id: "seed-k-5", bot: "David", state: "progress", at: fresh, updatedAt: fresh }],
+      [],
+      now
+    ),
+    "Working"
+  );
+  assert.equal(lastHeardAt("David", [], [{ id: "seed-k-5", bot: "David", at: old, updatedAt: old }], []), "");
+  assert.equal(
+    lastHeardAt("David", [], [{ id: "seed-k-5", bot: "David", at: old, updatedAt: fresh }], []),
+    fresh
+  );
+  assert.match(
+    heardLabel("Emily", [], [{ id: "seed-k-11", bot: "Emily", at: old, updatedAt: old }], [], now),
+    /^Not updated since /
+  );
+  assert.equal(
+    heardLabel("David", [], [{ id: "seed-k-5", bot: "David", at: old, updatedAt: fresh }], [], now),
+    "Last heard 10m ago"
+  );
+  assert.equal(doingTitle("David", [{ id: "seed-k-5", bot: "David", title: "Newsletter", state: "progress", at: old, updatedAt: fresh }], now), "Newsletter");
+  assert.equal(propForTask("Weekly newsletter"), "envelope");
+  assert.equal(propForTask("booking automation"), "flow");
+  assert.equal(propForTask("Basecamp todo"), "clipboard");
+  assert.equal(propForTask("DNS record for the site"), "globe");
+  assert.equal(propForTask("audit report"), "search");
+  assert.equal(propForTask("something else"), "gear");
+  assert.equal(floorSummary({ working: 9, need: 2, idle: 2, stalled: 1 }), "9 working · 2 need you · 2 idle · 1 stalled");
+  assert.equal(floorSummary(countFloor(["David", "Emily"], [], [
+    { id: "seed-k-5", bot: "David", state: "progress", at: old, updatedAt: fresh },
+    { id: "seed-k-11", bot: "Emily", state: "progress", at: old, updatedAt: old },
+  ], [], now)), "1 working · 0 need you · 1 idle · 0 stalled");
+
+  const late = "2026-10-24T18:00:00.000Z";
+  const early = "2026-10-24T06:30:00.000Z";
+  const groups = groupByPacificDay([
+    { at: early, text: "night" },
+    { at: late, text: "morning" },
+  ]);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].entries[0].text, "morning");
+  assert.equal(groups[1].entries[0].text, "night");
+  assert.match(timelineStamp(fresh, now), /· 10m ago$/);
+
+  const doneOld = [{ id: "w1", bot: "Jessica", state: "done", at: old, updatedAt: old }];
+  assert.deepEqual(finishedBots(null, { work: doneOld, lines: [] }, now), []);
+  const just = "2026-10-24T22:09:30.000Z";
+  assert.deepEqual(
+    finishedBots(null, { work: [{ id: "w1", bot: "Jessica", state: "done", at: just, updatedAt: just }], lines: [] }, now),
+    ["Jessica"]
+  );
+  assert.deepEqual(
+    finishedBots(
+      { work: [{ id: "w1", bot: "Daniel", state: "progress", at: old, updatedAt: old }], lines: [] },
+      { work: [{ id: "w1", bot: "Daniel", state: "done", at: old, updatedAt: fresh }], lines: [] },
+      now
+    ),
+    ["Daniel"]
+  );
+});
+
 test("the page wires a quiet refresh and the team layout without a second filter", () => {
-  const page = fs.readFileSync(path.join("src/app/admin/bot-activity/page.tsx"), "utf8");
+  const page = [
+    fs.readFileSync(path.join("src/app/admin/bot-activity/page.tsx"), "utf8"),
+    fs.readFileSync(path.join("src/app/admin/bot-activity/office-floor.tsx"), "utf8"),
+  ].join("\n");
   const css = fs.readFileSync(path.join("src/app/globals.css"), "utf8");
   const live = fs.readFileSync(path.join("src/lib/bot-activity-live.ts"), "utf8");
   const lib = fs.readFileSync(path.join("src/lib/bot-activity.ts"), "utf8");
@@ -352,11 +469,16 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(page, /id="ba-bot"/);
   assert.match(page, /grokBotHref/);
   assert.match(page, /Open chat/);
-  assert.match(page, /Working on:/);
+  assert.match(page, /doing:/);
+  assert.match(live, /Last heard/);
+  assert.match(page, /Not updated since/);
+  assert.match(page, /Old request/);
+  assert.match(page, /ba-floor/);
+  assert.match(page, /Michael/);
   assert.match(page, /is-\$\{tone\}/);
   assert.match(page, /ba-bubble/);
   assert.match(page, /onMouseEnter=/);
-  assert.match(page, /onFocus=\{\(\) => setOpen\(true\)\}/);
+  assert.match(page, /onFocus=\{\(\) => setOpen\(bot\.name\)\}/);
   const icons = fs.readFileSync(path.join("src/lib/bot-activity-icons.ts"), "utf8");
   assert.match(icons, /grokbot:\/\/app\/v1\/agent\?id=/);
   assert.match(icons, /Jerry: "74308129-2f1d-43a1-973e-029bc428d239"/);
@@ -379,7 +501,8 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(live, /BOT_ACTIVITY_POLL_MS = 5_000/);
   assert.doesNotMatch(page, /new BotActivityRefresh[\s\S]{0,400}30_000/);
   assert.match(css, /ba-needs/);
-  assert.match(css, /ba-team-grid/);
+  assert.match(css, /ba-desks/);
+  assert.match(css, /ba-floor/);
   assert.match(css, /ba-pulse/);
   assert.match(css, /@media \(max-width: 800px\)/);
 
