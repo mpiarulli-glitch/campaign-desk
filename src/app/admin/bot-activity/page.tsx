@@ -3,19 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { grokBotHref, type BotIcon } from "@/lib/bot-activity-icons";
+import { OfficeFloor, staleWaiting } from "./office-floor";
 import {
   BotActivityRefresh,
   authRedirectForStatus,
-  botHoverSummary,
-  botPortraitSrc,
   fetchedLabel,
-  forElapsed,
+  isUntouchedSeed,
   nextBoardState,
-  teamRank,
-  timeAgo,
-  type BotHoverSummary,
-  type TeamStatus,
+  statusForBot,
 } from "@/lib/bot-activity-live";
+import { finishedBots, needsAttention, timelineStamp } from "@/lib/bot-activity-office";
 
 type Waiting = {
   id: string;
@@ -26,6 +23,7 @@ type Waiting = {
   detail: string;
   when: string;
   at: string;
+  updatedAt?: string;
 };
 type TimelineEntry = {
   id: string;
@@ -138,30 +136,6 @@ function stateLabel(state: Work["state"]): string {
   return "In progress";
 }
 
-function BotPortrait({ name, icon }: { name: string; icon: BotIcon }) {
-  const src = botPortraitSrc(name);
-  const [showIcon, setShowIcon] = useState(false);
-  return (
-    <span className="ba-avatar">
-      {showIcon ? (
-        <Icon k={icon} />
-      ) : (
-        // A missing public/bots file falls back to the icon. next/image cannot.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={name} width={44} height={44} onError={() => setShowIcon(true)} />
-      )}
-    </span>
-  );
-}
-
-function toneFor(status: TeamStatus): string {
-  if (status === "Blocked") return "blocked";
-  if (status === "Waiting on you") return "waiting";
-  if (status === "Working") return "working";
-  if (status === "Stalled") return "stalled";
-  return "idle";
-}
-
 function BotName({ name }: { name: string }) {
   const href = grokBotHref(name);
   if (!href) return <span className="ba-bot">{name}</span>;
@@ -172,207 +146,17 @@ function BotName({ name }: { name: string }) {
   );
 }
 
-function TeamGrid({
-  board,
-  botFilter,
-  now,
-}: {
-  board: Board;
-  botFilter: string;
-  now: number;
-}) {
-  const lines = board.timeline.flatMap((day) => day.entries);
-  const cards = board.bots
-    .map((bot) => ({
-      bot,
-      summary: botHoverSummary(bot.name, board.waiting, board.work, lines, now),
-    }))
-    .sort(
-      (a, b) => teamRank(a.summary.status) - teamRank(b.summary.status) || a.bot.name.localeCompare(b.bot.name)
-    );
-  return (
-    <section className="ba-team" aria-label="Team">
-      <div className="ba-col-head">
-        <h2 className="h2">Team</h2>
-        <span className="muted">{board.bots.length}</span>
-      </div>
-      <div className="ba-team-grid">
-        {cards.map(({ bot, summary }) => (
-          <TeamCard
-            key={bot.name}
-            name={bot.name}
-            icon={bot.icon}
-            pressed={botFilter === bot.name}
-            now={now}
-            summary={summary}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function TeamCard({
-  name,
-  icon,
-  pressed,
-  now,
-  summary,
-}: {
-  name: string;
-  icon: BotIcon;
-  pressed: boolean;
-  now: number;
-  summary: BotHoverSummary;
-}) {
-  const cardRef = useRef<HTMLElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
-  const hoverRef = useRef(false);
-  const pinRef = useRef(false);
-  const closeTimer = useRef<number | null>(null);
-  const [open, setOpen] = useState(false);
-  const task = summary.task;
-  const elapsed = summary.heartbeat ? forElapsed(summary.heartbeat, now) : "";
-  const beatAgo = summary.heartbeat ? timeAgo(summary.heartbeat, now) : "";
-  const href = grokBotHref(name);
-  const tone = toneFor(summary.status);
-  const needs = summary.status === "Blocked" || summary.status === "Waiting on you";
-  const popId = `ba-pop-${name.replace(/\s+/g, "-")}`;
-
-  const requestClose = useCallback(() => {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => {
-      const active = document.activeElement;
-      const inside = !!active && (cardRef.current?.contains(active) || popRef.current?.contains(active));
-      if (hoverRef.current || pinRef.current || inside) return;
-      setOpen(false);
-    }, 140);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      pinRef.current = false;
-      hoverRef.current = false;
-      setOpen(false);
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: PointerEvent) {
-      if (event.pointerType === "mouse") return;
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (cardRef.current?.contains(target)) return;
-      pinRef.current = false;
-      hoverRef.current = false;
-      setOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [open]);
-
-  const stalled =
-    summary.status === "Stalled"
-      ? `${beatAgo ? `Last update ${beatAgo}` : "No recent update"}${task ? `: ${task.title}` : ""}`
-      : "";
-  const requestLine = summary.request.split("\n").find((line) => line.trim()) || "";
-  const shortLine = needs
-    ? requestLine
-    : summary.status === "Working" && task
-      ? `Working on: ${task.title}${elapsed ? ` · ${elapsed}` : ""}`
-      : summary.status === "Stalled"
-        ? stalled
-        : "Nothing running.";
-
-  return (
-    <article
-      ref={cardRef}
-      data-bot={name}
-      className={`ba-member is-${tone} ${pressed ? "is-on" : ""}`}
-      aria-describedby={open ? popId : undefined}
-      onMouseEnter={() => {
-        hoverRef.current = true;
-        if (closeTimer.current) window.clearTimeout(closeTimer.current);
-        setOpen(true);
-      }}
-      onMouseLeave={() => {
-        hoverRef.current = false;
-        requestClose();
-      }}
-      onPointerDown={(event) => {
-        if (event.pointerType === "mouse") return;
-        pinRef.current = true;
-        setOpen(true);
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        pinRef.current = false;
-        setOpen(false);
-      }}
-    >
-      <div className="ba-member-top">
-        <span className="ba-avatar-slot">
-          <BotPortrait name={name} icon={icon} />
-        </span>
-        <span className="ba-member-id">
-          {href ? (
-            <a className="ba-member-name" href={href} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
-              {name}
-              <span className="ba-open-label">Open chat</span>
-            </a>
-          ) : (
-            <span className="ba-member-name" tabIndex={0} onFocus={() => setOpen(true)} onBlur={() => requestClose()}>
-              {name}
-            </span>
-          )}
-          <StatusChip status={summary.status} />
-        </span>
-      </div>
-      <p className="ba-member-line">{shortLine}</p>
-      {open ? (
-        <div
-          ref={popRef}
-          id={popId}
-          role="tooltip"
-          className={`ba-pop ${needs ? "is-needs" : "is-status"}`}
-        >
-          <p className="ba-pop-text">{needs ? summary.request : summary.line}</p>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function StatusChip({ status }: { status: TeamStatus }) {
-  const kind = toneFor(status);
-  return (
-    <span className={`ba-chip ba-chip-${kind}`}>
-      <span className={`ba-status-dot ${status === "Working" ? "is-live" : ""}`} aria-hidden="true" />
-      {status}
-    </span>
-  );
-}
-
 function WaitingColumn({
   board,
   botFilter,
   busy,
+  now,
   onDismiss,
 }: {
   board: Board;
   botFilter: string;
   busy: string;
+  now: number;
   onDismiss: (item: Waiting) => void;
 }) {
   const items = board.waiting.filter((item) => botFilter === "All bots" || item.bot === botFilter);
@@ -396,6 +180,9 @@ function WaitingColumn({
               </div>
               <p className="ba-title">{item.title}</p>
               {item.detail ? <p className="ba-detail">{item.detail}</p> : null}
+              {staleWaiting(item) ? (
+                <p className="ba-old">Old request · Not updated since {timelineStamp(item.at, now)}</p>
+              ) : null}
               <div className="ba-wait-actions">
                 {href ? (
                   <a className="btn ba-open-chat" href={href}>
@@ -420,7 +207,8 @@ function WaitingColumn({
 }
 
 
-function WorkCard({ item }: { item: Work }) {
+function WorkCard({ item, now }: { item: Work; now: number }) {
+  const seeded = isUntouchedSeed(item);
   return (
     <article className="ba-card">
       <div className="ba-bot-row">
@@ -432,7 +220,7 @@ function WorkCard({ item }: { item: Work }) {
       </div>
       <p className="ba-title">{item.title}</p>
       <p className="ba-detail">{item.detail}</p>
-      <p className="ba-when">{item.when}</p>
+      <p className="ba-when">{seeded ? `Not updated since ${timelineStamp(item.at, now)}` : timelineStamp(item.at, now)}</p>
     </article>
   );
 }
@@ -447,8 +235,14 @@ export default function BotActivityPage() {
   const [workView, setWorkView] = useState<"All" | "In progress" | "Finished">("All");
   const [busy, setBusy] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [celebrating, setCelebrating] = useState<string[]>([]);
+  const [returning, setReturning] = useState<string[]>([]);
+  const [heldAway, setHeldAway] = useState<string[]>([]);
   const busyRef = useRef(busy);
   const epochRef = useRef(0);
+  const prevBoard = useRef<Board | null>(null);
+  const celebrateTimer = useRef<number | null>(null);
+  const returnTimer = useRef<number | null>(null);
   busyRef.current = busy;
 
   useEffect(() => {
@@ -532,6 +326,51 @@ export default function BotActivityPage() {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!board) return;
+    const prev = prevBoard.current;
+    const lines = board.timeline.flatMap((day) => day.entries);
+    const prevLines = prev ? prev.timeline.flatMap((day) => day.entries) : [];
+    const names = finishedBots(
+      prev ? { work: prev.work, lines: prevLines } : null,
+      { work: board.work, lines },
+      Date.now()
+    );
+    const awayBefore = new Set<string>();
+    if (prev) {
+      const priorLines = prev.timeline.flatMap((day) => day.entries);
+      for (const bot of prev.bots) {
+        if (needsAttention(statusForBot(bot.name, prev.waiting, prev.work, priorLines, Date.now()))) {
+          awayBefore.add(bot.name);
+        }
+      }
+    }
+    prevBoard.current = board;
+    if (!names.length) return;
+    const hold = names.filter((name) => awayBefore.has(name));
+    setHeldAway(hold);
+    setCelebrating(names);
+    setReturning([]);
+    if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+    if (returnTimer.current) window.clearTimeout(returnTimer.current);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      celebrateTimer.current = window.setTimeout(() => {
+        setCelebrating([]);
+        setHeldAway([]);
+      }, 1200);
+      return;
+    }
+    celebrateTimer.current = window.setTimeout(() => {
+      setCelebrating([]);
+      setReturning(names);
+    }, 1600);
+    returnTimer.current = window.setTimeout(() => {
+      setReturning([]);
+      setHeldAway([]);
+    }, 2500);
+  }, [board]);
+
   const onDismiss = useCallback(
     async (item: Waiting) => {
       if (busyRef.current) return;
@@ -601,6 +440,26 @@ export default function BotActivityPage() {
   const showProgress = workView === "All" || workView === "In progress";
   const showDone = workView === "All" || workView === "Finished";
 
+  const fly = useMemo(() => {
+    const names = new Set<string>();
+    if (!board) return names;
+    const rows = board.timeline.flatMap((day) => day.entries);
+    for (const bot of board.bots) {
+      if (needsAttention(statusForBot(bot.name, board.waiting, board.work, rows, now))) names.add(bot.name);
+    }
+    for (const name of celebrating) {
+      if (heldAway.includes(name)) names.add(name);
+    }
+    return names;
+  }, [board, now, celebrating, heldAway]);
+
+  useEffect(() => {
+    return () => {
+      if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+      if (returnTimer.current) window.clearTimeout(returnTimer.current);
+    };
+  }, []);
+
   return (
     <main className="container container-wide ba-page stark">
       <div className="ba-head">
@@ -629,9 +488,18 @@ export default function BotActivityPage() {
 
       {board ? (
         <>
-          <TeamGrid board={board} botFilter={botFilter} now={now} />
+          <OfficeFloor
+            bots={board.bots}
+            waiting={board.waiting}
+            work={board.work}
+            lines={board.timeline.flatMap((day) => day.entries)}
+            now={now}
+            fly={fly}
+            celebrating={new Set(celebrating)}
+            returning={new Set(returning)}
+          />
           <div className="ba-board">
-            <WaitingColumn board={board} botFilter={botFilter} busy={busy} onDismiss={onDismiss} />
+            <WaitingColumn board={board} botFilter={botFilter} busy={busy} now={now} onDismiss={onDismiss} />
             <section className="ba-col ba-timeline">
               <div className="ba-col-head">
                 <h2 className="h2">Timeline</h2>
@@ -648,7 +516,11 @@ export default function BotActivityPage() {
                         <div className="ba-bot-row">
                           <BotName name={entry.bot} />
                           <span className="ba-bot-side">
-                            <span className="ba-when">{entry.when}</span>
+                            <span className="ba-when">
+                              {isUntouchedSeed(entry)
+                                ? `Not updated since ${timelineStamp(entry.at, now)}`
+                                : timelineStamp(entry.at, now)}
+                            </span>
                             <Icon k={entry.icon} />
                           </span>
                         </div>
@@ -683,7 +555,7 @@ export default function BotActivityPage() {
                   <div className="ba-day-label">In progress ({inProgress.length})</div>
                   {inProgress.length === 0 ? <p className="muted">Nothing in progress.</p> : null}
                   {inProgress.map((item) => (
-                    <WorkCard key={item.id} item={item} />
+                    <WorkCard key={item.id} item={item} now={now} />
                   ))}
                 </div>
               ) : null}
@@ -692,7 +564,7 @@ export default function BotActivityPage() {
                   <div className="ba-day-label">Finished ({finished.length})</div>
                   {finished.length === 0 ? <p className="muted">Nothing finished.</p> : null}
                   {finished.map((item) => (
-                    <WorkCard key={item.id} item={item} />
+                    <WorkCard key={item.id} item={item} now={now} />
                   ))}
                 </div>
               ) : null}

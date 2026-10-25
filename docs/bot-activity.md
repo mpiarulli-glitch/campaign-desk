@@ -26,6 +26,15 @@ One JSON object, or `{ "events": [ ... ] }` for several. `at` is optional and is
 
 The board shows Working only when an in-progress item was posted or updated in the last 30 minutes. That clock is the time Campaign Desk stored the write (`updated_at` on the work row, or `created_at` on a timeline line), not how old `at` is. Post at least every 30 minutes while a bot is working, or the card stays Stalled instead of Working.
 
+The October 24 mockup is inserted once, with ids `seed-w-`, `seed-k-`, and `seed-t-`. Those rows stay in the database. Until a bot upserts that same key, the board labels the row "Not updated since …" and does not treat it as Working or as a live Needs you. An old seeded question stays on the page as Old request, with Dismiss. Last heard from is the newest bot write across that bot's waiting, work, and timeline rows.
+
+To keep a card accurate, post while the work is happening:
+
+- `type: work`, `state: progress`, at least every 30 minutes
+- `type: waiting` (or `state: blocked`) when Michael has to answer, and `resolved: true` when he has
+- `type: work`, `state: done` when the task is finished (a done write in the last 2 minutes plays the walk back to the desk)
+- `type: timeline` for a feed line. Each call adds a line. It does not update an older one.
+
 Upsert a waiting item. `key` is stable for that bot, so the same key updates the same card. `resolved: true` marks it resolved. `resolved: false` reopens it. On the first write, `title` is required.
 
 ```bash

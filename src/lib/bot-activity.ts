@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { clientKey } from "./rate-limit";
 import { asBotIcon, botChatHref, DEFAULT_BOT_ICON, type BotIcon } from "./bot-activity-icons";
+import { groupByPacificDay } from "./bot-activity-office";
 import {
   formatClockPt,
   formatDayPt,
@@ -606,6 +607,7 @@ export function botActivityBoard(): {
     detail: string;
     when: string;
     at: string;
+    updatedAt: string;
     replies: Array<{ id: string; body: string; at: string; when: string }>;
   }>;
   timeline: Array<{
@@ -673,35 +675,17 @@ export function botActivityBoard(): {
     )
     .get() as { at: string | null };
 
-  const days: Array<{
-    day: string;
-    entries: Array<{
-      id: string;
-      bot: string;
-      icon: BotIcon;
-      when: string;
-      text: string;
-      at: string;
-      postedAt: string;
-    }>;
-  }> = [];
-  for (const row of timelineRows) {
-    const day = row.day_label || formatDayPt(row.occurred_at);
-    let group = days.find((entry) => entry.day === day);
-    if (!group) {
-      group = { day, entries: [] };
-      days.push(group);
-    }
-    group.entries.push({
+  const days = groupByPacificDay(
+    timelineRows.map((row) => ({
       id: row.id,
       bot: row.bot,
       icon: iconFor(bots, row.bot),
-      when: row.when_label || formatClockPt(row.occurred_at),
+      when: formatClockPt(row.occurred_at),
       text: row.body,
       at: row.occurred_at,
       postedAt: row.created_at,
-    });
-  }
+    }))
+  );
 
   return {
     updated: formatUpdatedPt(latest.at || new Date().toISOString()),
@@ -719,6 +703,7 @@ export function botActivityBoard(): {
       detail: row.detail,
       when: whenOf(row.when_label, row.occurred_at),
       at: row.occurred_at,
+      updatedAt: row.updated_at,
       replies: (replyMap.get(row.id) || []).map((reply) => ({
         id: reply.id,
         body: reply.body,
