@@ -6716,8 +6716,8 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   left: 0;
   min-width: 100%;
   width: max-content;
-  max-width: 280px;
-  max-height: 244px;
+  max-width: min(420px, 72vw);
+  max-height: min(420px, 50vh);
   overflow-y: auto;
   margin: 0;
   padding: 4px;

@@ -2862,19 +2862,32 @@ type BasecampProject = { id: number; name: string };
 // far larger than this one. Hitting the cap with a next link still outstanding
 // is an incomplete list, not a successful short one.
 const PROJECT_MAX_PAGES = 30;
-// One account list is a few kilobytes. Hold it long enough that opening
-// Forecast or Assign again in the same sitting does not page Basecamp.
-const PROJECT_CACHE_TTL_MS = 10 * 60 * 1000;
+// A few minutes. Opening Forecast again in the same sitting should not page
+// Basecamp, and a project created after this window shows up on the next load
+// or when someone hits Refresh projects.
+const PROJECT_CACHE_TTL_MS = 3 * 60 * 1000;
+// After a rate limit or a failed refresh, keep handing out the last complete
+// list briefly instead of walking Basecamp again on every keystroke.
+const PROJECT_STALE_HOLD_MS = 45 * 1000;
 // v2: the previous key stored lists that stopped on a short page. Leave those
 // rows unread so a deploy does not keep serving them for the rest of the TTL.
 const PROJECT_CACHE_PREFIX = "basecamp_project_list_v2:";
 
 const projectMemory = new Map<string, { at: number; projects: BasecampProject[] }>();
 const projectInflight = new Map<string, Promise<BasecampProject[]>>();
+const projectStaleHold = new Map<string, number>();
+
+export type ProjectCatalog = {
+  projects: BasecampProject[];
+  fromCache: boolean;
+  /** True when a refresh failed and this is the previous complete list. */
+  stale: boolean;
+};
 
 export function clearBasecampProjectCache(): void {
   projectMemory.clear();
   projectInflight.clear();
+  projectStaleHold.clear();
 }
 
 function readStoredProjects(key: string): { at: number; projects: BasecampProject[] } | null {
@@ -2900,12 +2913,42 @@ function totalCountHeader(res: Response): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+function retryDelayMs(res: Response): number {
+  const raw = res.headers.get("Retry-After");
+  if (!raw) return 800;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 2000);
+  const when = Date.parse(raw);
+  if (Number.isFinite(when)) return Math.min(Math.max(0, when - Date.now()), 2000);
+  return 800;
+}
+
+function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// One retry on 429. A second limit, or any other failure, ends the page so the
+// caller can serve the last complete catalog instead of caching a short one.
+async function bcProject(identity: BcIdentity, path: string): Promise<Response | null> {
+  try {
+    let res = await bc(path, undefined, identity);
+    if (res.status === 429) {
+      await sleep(retryDelayMs(res));
+      res = await bc(path, undefined, identity);
+    }
+    return res;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchProjectPage(
   identity: BcIdentity,
   path: string
 ): Promise<{ projects: BasecampProject[]; next: string | null; total: number | null } | null> {
-  const res = await bc(path, undefined, identity);
-  if (!res.ok) return null;
+  const res = await bcProject(identity, path);
+  if (!res || !res.ok) return null;
   const arr = await res.json();
   if (!Array.isArray(arr)) return null;
   const projects: BasecampProject[] = [];
@@ -2979,23 +3022,53 @@ function refreshProjectList(key: string, identity: BcIdentity): Promise<Basecamp
   return job;
 }
 
+/**
+ * The account's project index, following every Link page.
+ *
+ * A list is stored only when the walk finishes. A rate limit or a dropped page
+ * does not replace that copy: the last complete catalog is returned with
+ * `stale: true` so Forecast can keep offering projects. A manual refresh passes
+ * `fresh` and tries Basecamp again immediately.
+ */
+export async function listProjectCatalog(
+  identity: BcIdentity = SERVICE,
+  opts?: { fresh?: boolean }
+): Promise<ProjectCatalog> {
+  const key = identityKey(identity);
+  const now = Date.now();
+  const stored = () => projectMemory.get(key) || readStoredProjects(key);
+  if (!opts?.fresh) {
+    const cached = stored();
+    if (cached && now - cached.at < PROJECT_CACHE_TTL_MS) {
+      projectMemory.set(key, cached);
+      return { projects: cached.projects, fromCache: true, stale: false };
+    }
+    const hold = projectStaleHold.get(key) || 0;
+    if (cached && hold > now) {
+      return { projects: cached.projects, fromCache: true, stale: true };
+    }
+  }
+  try {
+    const projects = await refreshProjectList(key, identity);
+    projectStaleHold.delete(key);
+    return { projects, fromCache: false, stale: false };
+  } catch (err) {
+    const cached = stored();
+    if (cached && cached.projects.length) {
+      projectMemory.set(key, cached);
+      projectStaleHold.set(key, Date.now() + PROJECT_STALE_HOLD_MS);
+      return { projects: cached.projects, fromCache: true, stale: true };
+    }
+    throw err;
+  }
+}
+
 export async function listProjects(
   identity: BcIdentity = SERVICE,
   opts?: { fresh?: boolean }
 ): Promise<BasecampProject[]> {
-  const key = identityKey(identity);
-  const now = Date.now();
-  if (!opts?.fresh) {
-    const cached = projectMemory.get(key) || readStoredProjects(key);
-    if (cached && now - cached.at < PROJECT_CACHE_TTL_MS) {
-      projectMemory.set(key, cached);
-      return cached.projects;
-    }
-  }
-  // A stale stored list is not returned. Reloading Forecast was showing the
-  // truncated catalog while a refresh ran behind it, so the matcher linked
-  // against the short list and NORLO stayed blank.
-  return refreshProjectList(key, identity);
+  const catalog = await listProjectCatalog(identity, opts);
+  return catalog.projects;
 }
 
 export function disconnectBasecamp() {

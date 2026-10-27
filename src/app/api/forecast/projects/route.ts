@@ -1,62 +1,93 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
-import { basecampConnected } from "@/lib/basecamp";
-import { forecastPickerForPerson, reconcileClients } from "@/lib/basecamp-clients";
+import { SERVICE, basecampConnected, listProjectCatalog } from "@/lib/basecamp";
+import {
+  ensureForecastProject,
+  forecastPickerForPerson,
+} from "@/lib/basecamp-clients";
+import { linkMissingBasecampProjects } from "@/lib/basecamp-client-links";
 import { isValidPerson } from "@/lib/forecast";
 
-// Forecast add-task picker: clients and internal projects this person can
-// open in Basecamp. GET is the initial load; POST also imports any new client
-// projects (kept off the production schedule) then returns the same filtered
-// list.
-async function pickerResponse(person: string) {
+// Forecast add-task picker. The catalog is every active Basecamp project on
+// the King Kashflow account, including ones with no client row yet. GET reads
+// the short server cache. POST refreshes it, then links clients whose names
+// already match. POST { action: "ensure" } links or creates the one project
+// somebody just picked. Forecast access is enough for all three — this is how
+// people add their own tasks, not an admin import.
+
+async function pickerResponse(person: string, fresh: boolean) {
+  if (fresh && basecampConnected()) {
+    try {
+      const catalog = await listProjectCatalog(SERVICE, { fresh: true });
+      if (catalog.projects.length) {
+        await linkMissingBasecampProjects({
+          force: true,
+          loadProjects: async () => catalog.projects,
+        });
+      }
+    } catch {
+      // The picker still answers from the last complete list, or from clients.
+    }
+  }
   const picker = await forecastPickerForPerson(person);
   return NextResponse.json(picker);
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const person = url.searchParams.get("person") || "";
-
+async function authorize(person: string): Promise<NextResponse | null> {
   if (!(await isForecastAuthenticated(person))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isValidPerson(person)) {
     return NextResponse.json({ error: "Unknown person" }, { status: 404 });
   }
+  return null;
+}
 
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const person = url.searchParams.get("person") || "";
+  const denied = await authorize(person);
+  if (denied) return denied;
   try {
-    return await pickerResponse(person);
+    return await pickerResponse(person, false);
   } catch {
-    return NextResponse.json({ clients: [], internals: [] });
+    return NextResponse.json({
+      clients: [],
+      internals: [],
+      warning: "Couldn't load the project list. Refresh to try again.",
+      fromCache: false,
+      stale: false,
+    });
   }
 }
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
   const person = url.searchParams.get("person") || "";
+  const denied = await authorize(person);
+  if (denied) return denied;
 
-  if (!(await isForecastAuthenticated(person))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await request.json().catch(() => ({}));
+  if (body?.action === "ensure") {
+    const projectId = typeof body.projectId === "string" ? body.projectId : "";
+    const ensured = await ensureForecastProject(projectId);
+    if (!ensured.ok) {
+      return NextResponse.json({ error: ensured.error }, { status: ensured.status });
+    }
+    return NextResponse.json(ensured);
   }
-  if (!isValidPerson(person)) {
-    return NextResponse.json({ error: "Unknown person" }, { status: 404 });
-  }
+
   if (!basecampConnected()) {
-    return NextResponse.json({ error: "Connect Basecamp first." }, { status: 400 });
+    const picker = await forecastPickerForPerson(person);
+    return NextResponse.json({
+      ...picker,
+      warning: picker.warning || "Basecamp isn't connected. Saved clients are still listed.",
+    });
   }
 
   try {
-    const report = await reconcileClients({ createMissing: true });
-    if (!report.projects) {
-      return NextResponse.json({ error: "No Basecamp projects returned." }, { status: 502 });
-    }
-    const picker = await forecastPickerForPerson(person);
-    return NextResponse.json({
-      created: report.created,
-      linked: report.linked,
-      ...picker,
-    });
+    return await pickerResponse(person, true);
   } catch {
-    return NextResponse.json({ error: "Could not sync projects." }, { status: 502 });
+    return NextResponse.json({ error: "Could not refresh projects." }, { status: 502 });
   }
 }

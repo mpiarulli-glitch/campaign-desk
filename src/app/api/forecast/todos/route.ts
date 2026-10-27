@@ -8,6 +8,7 @@ import {
 } from "@/lib/basecamp";
 import { getConnection } from "@/lib/basecamp-identity";
 import { isValidPerson, personLabel } from "@/lib/forecast";
+import { forecastPickerProjectId } from "@/lib/basecamp-clients";
 import { getRevClient } from "@/lib/revenue";
 
 // Open Basecamp todos for one client's project, narrowed to the forecast person
@@ -32,10 +33,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unknown person" }, { status: 404 });
   }
 
-  let projectId = "";
-  if (rawProjectId) {
+  let projectId = forecastPickerProjectId(rawProjectId) || forecastPickerProjectId(clientId) || "";
+  if (!projectId && rawProjectId) {
     projectId = rawProjectId.trim();
-  } else {
+  } else if (!projectId) {
     const client = clientId ? getRevClient(clientId) : null;
     if (!client) {
       return NextResponse.json({ todos: [], reason: "unknown-client" });

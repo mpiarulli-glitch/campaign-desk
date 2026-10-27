@@ -10,6 +10,7 @@ import {
   updateAssignmentDue,
 } from "@/lib/basecamp";
 import { getConnection } from "@/lib/basecamp-identity";
+import { ensureForecastProject, forecastPickerProjectId } from "@/lib/basecamp-clients";
 import { isValidPerson } from "@/lib/forecast";
 import { getRevClient, listRevClients } from "@/lib/revenue";
 
@@ -17,10 +18,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function projectIdForClient(clientId: string): { projectId: string; error?: string } {
   const raw = clientId.trim();
-  if (raw.startsWith("internal:")) {
-    const projectId = raw.slice("internal:".length).trim();
-    if (!projectId) return { projectId: "", error: "Missing Basecamp project." };
-    return { projectId };
+  const fromPicker = forecastPickerProjectId(raw);
+  if (fromPicker) return { projectId: fromPicker };
+  if (raw.startsWith("internal:") || raw.startsWith("project:")) {
+    return { projectId: "", error: "Missing Basecamp project." };
   }
   const client = getRevClient(raw);
   if (!client) return { projectId: "", error: "Unknown client." };
@@ -123,6 +124,13 @@ export async function POST(request: Request) {
       },
       { status: 400 }
     );
+  }
+
+  if (clientId.startsWith("project:")) {
+    const ensured = await ensureForecastProject(clientId.slice("project:".length));
+    if (!ensured.ok) {
+      return NextResponse.json({ error: ensured.error }, { status: ensured.status });
+    }
   }
 
   const resolved = projectIdForClient(clientId);

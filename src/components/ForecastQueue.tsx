@@ -12,7 +12,12 @@ import { isOnGrid, type CalendarTask } from "./ForecastCalendar";
 import { formatTracked, isRunning, trackedSeconds } from "@/lib/forecast-timer";
 import { normalizeTaskColor } from "@/lib/forecast-colors";
 
-export type QueueClient = { id: string; name: string; internal?: boolean };
+export type QueueClient = {
+  id: string;
+  name: string;
+  internal?: boolean;
+  unlinked?: boolean;
+};
 
 // Basecamp todos for one client or internal project, as the picker endpoint
 // returns them. `reason` explains an empty list.
@@ -80,7 +85,7 @@ function emptyReason({
       <>
         This client has no Basecamp project set.{" "}
         <button type="button" className="linklike" onClick={onSyncProjects} disabled={syncing}>
-          {syncing ? "Syncing projects…" : "Sync projects."}
+          {syncing ? "Refreshing projects…" : "Refresh projects."}
         </button>
       </>
     );
@@ -165,6 +170,7 @@ export function ForecastQueue({
 }) {
   const [tab, setTab] = useState<Tab>("queue");
   const [query, setQuery] = useState("");
+  const [clientQuery, setClientQuery] = useState("");
   const [assignedOnly, setAssignedOnly] = useState(true);
 
   // No start time, or a time the grid doesn't reach — a 6am row is real work
@@ -184,6 +190,18 @@ export function ForecastQueue({
   const booked = useMemo(() => bookedRecordingIds(tasks), [tasks]);
 
   const client = clients.find((c) => c.id === clientId);
+  const clientChoices = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return clients;
+    const starts: QueueClient[] = [];
+    const contains: QueueClient[] = [];
+    for (const c of clients) {
+      const name = c.name.toLowerCase();
+      if (name.startsWith(q)) starts.push(c);
+      else if (name.includes(q)) contains.push(c);
+    }
+    return [...starts, ...contains];
+  }, [clients, clientQuery]);
 
   // Basecamp items, minus anything already booked this week, then filtered and
   // sorted for picking. Subtasks keep their parent's name beside them so a
@@ -325,17 +343,28 @@ export function ForecastQueue({
         </div>
       ) : (
         <div className="fc-queue-body">
+          <div className="fc-combo">
+            <input
+              value={clientQuery}
+              onChange={(e) => setClientQuery(e.target.value)}
+              placeholder={client?.name || "Search clients and projects"}
+              aria-label="Search clients and projects"
+            />
+          </div>
           <select
             className="fc-queue-select"
             value={clientId}
-            onChange={(e) => onPickClient(e.target.value)}
+            onChange={(e) => {
+              onPickClient(e.target.value);
+              setClientQuery("");
+            }}
             aria-label="Client or internal project"
           >
             <option value="">Everything assigned to me</option>
-            {clients.map((c) => (
+            {clientChoices.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
-                {c.internal ? " (internal)" : ""}
+                {c.internal ? " (internal)" : c.unlinked ? " (not linked)" : ""}
               </option>
             ))}
           </select>
@@ -447,7 +476,7 @@ export function ForecastQueue({
           notices something missing. */}
       <div className="fc-queue-foot">
         <button type="button" onClick={onSyncProjects} disabled={syncing}>
-          {syncing ? "Syncing…" : "Sync projects"}
+          {syncing ? "Refreshing…" : "Refresh projects"}
         </button>
         <button type="button" onClick={onSyncMeetings} disabled={syncingMeetings}>
           {syncingMeetings ? "Syncing…" : "Sync meetings"}
