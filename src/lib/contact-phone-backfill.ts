@@ -1,6 +1,6 @@
 // Idempotent fill of client phone numbers taken from Basecamp POC lines.
-// Runs from the database migration on boot (including every deploy).
-// A valid phone already on the client is left alone. Nothing is texted.
+// Runs from deferred startup, after the server is listening, including every
+// deploy. A valid phone already on the client is left alone. Nothing is texted.
 
 import type BetterSqlite from "better-sqlite3";
 import { foldContactName } from "./contact-email-backfill";

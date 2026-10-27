@@ -9,8 +9,6 @@ import { PEOPLE, OWNER_SLUG } from "./people";
 import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
 import { addWeeks, mondayOf } from "./week";
-import { backfillKnownContactEmails } from "./contact-email-backfill";
-import { backfillKnownContactPhones } from "./contact-phone-backfill";
 import { ensureBotActivitySchema } from "./bot-activity-schema";
 import {
   accountManagerSlugFromOwner,
@@ -4294,13 +4292,11 @@ function migrate(database: Database.Database) {
     );
   }
 
-  // Known client inboxes that were blank or held a masked Basecamp address.
-  // Idempotent: a valid email already on the row is not replaced, and an
-  // empty database logs nothing. Does not send mail or touch old failures.
-  backfillKnownContactEmails(database);
-  // Known client phones from Basecamp POC lines. Idempotent: a valid phone
-  // already on the row is not replaced. Does not send texts.
-  backfillKnownContactPhones(database);
+  // Contact email and phone repair used to run here, on the first getDb().
+  // That call happened inside register(), before Next listened, and the scan
+  // across every client was still logging past Railway's 30s healthcheck.
+  // The same repairs now run from deferred startup, after the server is up.
+  // Schema changes stay in this function so the first real query sees them.
 
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already

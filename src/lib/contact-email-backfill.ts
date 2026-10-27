@@ -1,6 +1,6 @@
-// One-time, idempotent fill of client contact emails that were blank or
-// masked. Runs from the database migration on boot (including every deploy).
-// A valid address already on the client is left alone. Nothing is emailed.
+// Idempotent fill of client contact emails that were blank or masked.
+// Runs from deferred startup, after the server is listening, including every
+// deploy. A valid address already on the client is left alone. Nothing is emailed.
 
 import type BetterSqlite from "better-sqlite3";
 import { isUsableEmail } from "./email-address";

@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
 
+// Railway hits this within 30 seconds of container start and marks the deploy
+// failed if it gets no answer. Do not open the database here. The first
+// getDb() applies the schema synchronously, and startup repairs used to run
+// on that same call, before Next was listening.
 export async function GET() {
-  try {
-    getDb().prepare("SELECT 1").get();
-    return NextResponse.json({ status: "ok" });
-  } catch (err) {
-    return NextResponse.json(
-      { status: "error", message: err instanceof Error ? err.message : "unknown" },
-      { status: 503 }
-    );
-  }
+  return NextResponse.json({ status: "ok" });
 }
