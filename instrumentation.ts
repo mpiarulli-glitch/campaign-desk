@@ -1,22 +1,32 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("./sentry.server.config");
-    // Root instrumentation.ts is the file Next.js loads. The Basecamp Forecast
-    // bind lives here so it actually runs in production (src/instrumentation.ts
-    // is not this entry).
-    const {
-      ensureKrakBobaPiscatawayGrowthOsClient,
-      ensureFloorCoDesignGrowthOsClient,
-      ensureCoronasDeOroClient,
-    } = await import("./src/lib/basecamp-clients");
-    void ensureKrakBobaPiscatawayGrowthOsClient();
-    void ensureFloorCoDesignGrowthOsClient();
-    // Known project id, SQLite only. Does not page Basecamp.
-    void ensureCoronasDeOroClient();
-    // Background. Links or creates a client for each active project that
-    // does not have one. Writes nothing when the catalog is already linked.
-    const { linkAllBasecampProjectsOnStartup } = await import("./src/lib/basecamp-link-all");
-    linkAllBasecampProjectsOnStartup();
+    // Root instrumentation.ts is the file Next.js loads in production.
+    // src/instrumentation.ts is not this entry. Nothing below may touch the
+    // database or Basecamp before this function returns: Next awaits
+    // register() before it listens, and Railway's /api/health allows 30s.
+    const { enqueueDeferredStartupJob, runContactRepairs } = await import(
+      "./src/lib/deferred-startup"
+    );
+    enqueueDeferredStartupJob("deferred-startup", async () => {
+      // Contact repair used to finish inside the first getDb(), before these
+      // binds and link-all were started. Keep that order, then let the
+      // network calls overlap the way the void calls did.
+      await runContactRepairs();
+      const {
+        ensureKrakBobaPiscatawayGrowthOsClient,
+        ensureFloorCoDesignGrowthOsClient,
+        ensureCoronasDeOroClient,
+      } = await import("./src/lib/basecamp-clients");
+      const { linkAllBasecampProjectsOnStartup } = await import("./src/lib/basecamp-link-all");
+      linkAllBasecampProjectsOnStartup();
+      await Promise.all([
+        ensureKrakBobaPiscatawayGrowthOsClient(),
+        ensureFloorCoDesignGrowthOsClient(),
+        ensureCoronasDeOroClient(),
+      ]);
+    });
+    console.log(`[boot] ready to listen in ${Math.round(process.uptime() * 1000)}ms`);
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

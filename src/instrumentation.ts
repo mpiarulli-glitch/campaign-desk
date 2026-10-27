@@ -1,4 +1,7 @@
-// Next.js runs register() once when the server starts.
+// Next.js runs register() once when the server starts, when this file is the
+// instrumentation entry. Production currently loads the root instrumentation.ts
+// instead. This copy stays in step so a build that picks src/ does not open
+// the database before the process can answer /api/health.
 //
 // Home for one-time data tasks that need more than the sync migration path in
 // lib/db can do. Each guards itself with a flag in app_settings, so every boot
@@ -7,36 +10,33 @@ export async function register() {
   // Only the Node runtime can reach SQLite; skip the edge runtime pass.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  // Local and synchronous, so it finishes before the server takes traffic.
-  const { runClientCleanupOnce } = await import("./lib/client-cleanup");
-  runClientCleanupOnce();
+  const { enqueueDeferredStartupJob, runContactRepairs } = await import("./lib/deferred-startup");
+  enqueueDeferredStartupJob("deferred-startup", async () => {
+    await runContactRepairs();
+    const { runClientCleanupOnce } = await import("./lib/client-cleanup");
+    runClientCleanupOnce();
 
-  // Both call Basecamp, so deliberately not awaited — a slow or unreachable
-  // Basecamp must not hold up the server coming online.
-  const {
-    runBasecampClientBackfillOnce,
-    ensureKrakBobaPiscatawayGrowthOsClient,
-    ensureFloorCoDesignGrowthOsClient,
-    ensureSwingInnCafeClient,
-    ensureCoronasDeOroClient,
-  } = await import("./lib/basecamp-clients");
-  void runBasecampClientBackfillOnce();
-  void ensureKrakBobaPiscatawayGrowthOsClient();
-  void ensureFloorCoDesignGrowthOsClient();
-  void ensureSwingInnCafeClient();
-  void ensureCoronasDeOroClient();
+    const {
+      runBasecampClientBackfillOnce,
+      ensureKrakBobaPiscatawayGrowthOsClient,
+      ensureFloorCoDesignGrowthOsClient,
+      ensureSwingInnCafeClient,
+      ensureCoronasDeOroClient,
+    } = await import("./lib/basecamp-clients");
+    const { runGhlExactLinkBackfillOnce } = await import("./lib/ghl-links");
+    const { syncBasecampEventsIfStale } = await import("./lib/basecamp-events");
+    const { syncClientMessagesIfStale } = await import("./lib/basecamp-messages");
+    await Promise.all([
+      runBasecampClientBackfillOnce(),
+      ensureKrakBobaPiscatawayGrowthOsClient(),
+      ensureFloorCoDesignGrowthOsClient(),
+      ensureSwingInnCafeClient(),
+      ensureCoronasDeOroClient(),
+      runGhlExactLinkBackfillOnce(),
+      syncBasecampEventsIfStale(),
+      syncClientMessagesIfStale(),
+    ]);
+  });
 
-  // Exact GoHighLevel location matches, the ones Find matches would pre-tick.
-  // Without this, clients like Ecoworkz stay unlinked until someone opens Tools.
-  const { runGhlExactLinkBackfillOnce } = await import("./lib/ghl-links");
-  void runGhlExactLinkBackfillOnce();
-
-  // Refreshes the calendar's event cache when it's empty or over 12h old.
-  // There's no scheduler here, so boot is what keeps it current.
-  const { syncBasecampEventsIfStale } = await import("./lib/basecamp-events");
-  void syncBasecampEventsIfStale();
-
-  // Same deal for the unanswered-client-messages cache behind that report.
-  const { syncClientMessagesIfStale } = await import("./lib/basecamp-messages");
-  void syncClientMessagesIfStale();
+  console.log(`[boot] ready to listen in ${Math.round(process.uptime() * 1000)}ms`);
 }
