@@ -1,5 +1,9 @@
 // Fetches a client's logo once and stores the bytes under data/client-logos.
-// Page loads never call this. The Clients view reads the stored file only.
+// The Clients view reads the stored file, then a favicon from that same
+// folder, then initials. It does not hotlink.
+//
+// The domain is the one Lifecycle cards already use (rev_clients.website),
+// and when that is empty the Lifecycle account links. See client-logo-domain.
 //
 // Chain: apple-touch-icon, then the largest favicon, then og:image, then a
 // few well-known icon paths, then Google's favicon service downloaded and
@@ -12,7 +16,10 @@ import { BlockList, isIP } from "node:net";
 import {
   classifyLogoBytes,
   clientLogoPublicUrl,
+  faviconPublicUrl,
+  readCachedFavicon,
   readClientLogo,
+  saveCachedFavicon,
   saveClientLogo,
 } from "./client-logos";
 import { getDb } from "./db";
@@ -74,8 +81,15 @@ export type LogoPullReport = {
   fetched: Array<{ id: string; name: string; source: string }>;
   failed: Array<{ id: string; name: string; error: string }>;
   skipped: Array<{ id: string; name: string; reason: string }>;
-  planned: Array<{ id: string; name: string; website: string }>;
+  planned: Array<{ id: string; name: string; website: string; source: string }>;
+  /** Clients whose Lifecycle records have no usable domain. */
+  unresolved: Array<{ id: string; name: string }>;
 };
+
+/** How many missing logos one Clients view load will start. */
+export const LOGO_RESOLVE_BATCH = 4;
+const LOGO_RESOLVE_GAP_MS = 200;
+const LOGO_RESOLVE_COOLDOWN_MS = 10 * 60 * 1000;
 
 type ClientLogoRow = {
   id: string;
@@ -468,8 +482,52 @@ function storedLogoExists(clientId: string, logoPath: string): boolean {
   return readClientLogo(clientId, stored) !== null;
 }
 
+const NO_DOMAIN = "No domain on the Lifecycle record.";
+
+async function cacheLifecycleFavicon(host: string, transport: LogoTransport): Promise<boolean> {
+  if (readCachedFavicon(host)) return true;
+  const url = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`;
+  const response = await transport(url);
+  if (!response.ok || response.status < 200 || response.status >= 300) return false;
+  return saveCachedFavicon(host, response.body);
+}
+
 /**
- * Pull logos for clients that have a website and no stored file.
+ * Download the logo for one domain and store it.
+ * An empty website is filled with the host after a file actually lands,
+ * so a miss does not pin a bad domain.
+ */
+async function storeResolvedLogo(
+  row: ClientLogoRow,
+  domain: { host: string; fetchUrl: string },
+  transport?: LogoTransport
+): Promise<{ ok: true; source: string } | { ok: false; error: string; faviconCached: boolean }> {
+  let faviconCached = false;
+  try {
+    faviconCached = await cacheLifecycleFavicon(domain.host, transport || fetchPublicBuffer);
+  } catch {
+    faviconCached = false;
+  }
+  const fetched = await fetchStoredLogo(domain.fetchUrl, transport);
+  const websiteMissing = !(row.website || "").trim();
+  if (!fetched.ok) {
+    if (websiteMissing && faviconCached) updateRevClient(row.id, { website: domain.host });
+    return { ok: false, error: fetched.error, faviconCached };
+  }
+  const saved = saveClientLogo(row.id, fetched.data, fetched.mime);
+  if (!saved.ok) {
+    if (websiteMissing && faviconCached) updateRevClient(row.id, { website: domain.host });
+    return { ok: false, error: saved.error, faviconCached };
+  }
+  updateRevClient(row.id, {
+    logoPath: saved.filename,
+    ...(websiteMissing ? { website: domain.host } : {}),
+  });
+  return { ok: true, source: fetched.source };
+}
+
+/**
+ * Pull logos for clients that have a Lifecycle domain and no stored file.
  * Safe to run again: an existing file is left alone unless `force` is set.
  * `dryRun` lists who would be fetched and does not touch the network.
  */
@@ -486,14 +544,23 @@ export async function pullMissingClientLogos(options?: {
   const rows = getDb()
     .prepare(`SELECT id, name, website, logo_path FROM rev_clients ORDER BY name COLLATE NOCASE`)
     .all() as ClientLogoRow[];
+  const { loadLifecycleLogoDomains } = await import("./client-logo-domain");
+  const domains = loadLifecycleLogoDomains(rows);
 
-  const report: LogoPullReport = { fetched: [], failed: [], skipped: [], planned: [] };
+  const report: LogoPullReport = {
+    fetched: [],
+    failed: [],
+    skipped: [],
+    planned: [],
+    unresolved: [],
+  };
   for (const row of rows) {
     if (only && row.id !== only) continue;
     const name = row.name || row.id;
-    const website = (row.website || "").trim();
-    if (!publicWebsiteUrl(website)) {
-      report.skipped.push({ id: row.id, name, reason: "No website on the client record." });
+    const domain = domains.get(row.id);
+    if (!domain) {
+      report.unresolved.push({ id: row.id, name });
+      report.skipped.push({ id: row.id, name, reason: NO_DOMAIN });
       continue;
     }
     if (!force && storedLogoExists(row.id, row.logo_path || "")) {
@@ -501,21 +568,24 @@ export async function pullMissingClientLogos(options?: {
       continue;
     }
     if (dryRun) {
-      report.planned.push({ id: row.id, name, website });
+      report.planned.push({
+        id: row.id,
+        name,
+        website: domain.host,
+        source: domain.source,
+      });
       continue;
     }
-    const fetched = await fetchStoredLogo(website, transport);
-    if (!fetched.ok) {
-      report.failed.push({ id: row.id, name, error: fetched.error });
+    const stored = await storeResolvedLogo(row, domain, transport);
+    if (!stored.ok) {
+      if (stored.faviconCached) {
+        report.fetched.push({ id: row.id, name, source: "favicon-cache" });
+      } else {
+        report.failed.push({ id: row.id, name, error: stored.error });
+      }
       continue;
     }
-    const saved = saveClientLogo(row.id, fetched.data, fetched.mime);
-    if (!saved.ok) {
-      report.failed.push({ id: row.id, name, error: saved.error });
-      continue;
-    }
-    updateRevClient(row.id, { logoPath: saved.filename });
-    report.fetched.push({ id: row.id, name, source: fetched.source });
+    report.fetched.push({ id: row.id, name, source: stored.source });
   }
   return report;
 }
@@ -532,11 +602,19 @@ export async function refreshClientLogo(
   const success = report.fetched[0];
   if (success) {
     const updated = getRevClient(clientId);
-    return {
-      ok: true,
-      logoUrl: clientLogoPublicUrl(clientId, updated?.updated_at),
-      source: success.source,
-    };
+    if (updated?.logo_path && readClientLogo(clientId, updated.logo_path)) {
+      return {
+        ok: true,
+        logoUrl: clientLogoPublicUrl(clientId, updated.updated_at),
+        source: success.source,
+      };
+    }
+    const { loadLifecycleLogoDomains } = await import("./client-logo-domain");
+    const domain = updated
+      ? loadLifecycleLogoDomains([{ id: updated.id, website: updated.website }]).get(updated.id)
+      : null;
+    const cached = domain && readCachedFavicon(domain.host) ? faviconPublicUrl(domain.host) : null;
+    if (cached) return { ok: true, logoUrl: cached, source: success.source };
   }
   const failed = report.failed[0];
   if (failed) return { ok: false, error: failed.error, status: 400 };
@@ -546,4 +624,92 @@ export async function refreshClientLogo(
     error: skipped?.reason || "Could not refresh that logo.",
     status: 400,
   };
+}
+
+const logoResolveQueued = new Set<string>();
+const logoResolveInFlight = new Set<string>();
+const logoResolveCooldown = new Map<string, number>();
+let logoResolveChain: Promise<void> = Promise.resolve();
+
+/** Clears the in-process queue. Tests only. */
+export function resetClientLogoResolveForTests(): void {
+  logoResolveQueued.clear();
+  logoResolveInFlight.clear();
+  logoResolveCooldown.clear();
+  logoResolveChain = Promise.resolve();
+}
+
+function wait(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Start logo fetches for clients on the Clients view that have no stored file.
+ * One call starts at most `limit` clients that have a Lifecycle domain.
+ * A client already queued or in flight is not started again. A failed fetch
+ * cools down so the next load can move on. Callers on the request path should
+ * not await this.
+ */
+export function scheduleMissingClientLogos(
+  clientIds: string[],
+  options?: { transport?: LogoTransport; limit?: number; gapMs?: number; now?: number }
+): Promise<string[]> {
+  const run = logoResolveChain.then(() => resolveMissingClientLogos(clientIds, options));
+  logoResolveChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function resolveMissingClientLogos(
+  clientIds: string[],
+  options?: { transport?: LogoTransport; limit?: number; gapMs?: number; now?: number }
+): Promise<string[]> {
+  const limit = options?.limit ?? LOGO_RESOLVE_BATCH;
+  const gapMs = options?.gapMs ?? LOGO_RESOLVE_GAP_MS;
+  const now = options?.now ?? Date.now();
+  const ordered = [...new Set(clientIds.map((id) => id.trim()).filter(Boolean))];
+  if (!ordered.length || limit <= 0) return [];
+
+  const rows = getDb()
+    .prepare(
+      `SELECT id, name, website, logo_path FROM rev_clients
+        WHERE id IN (${ordered.map(() => "?").join(",")})`
+    )
+    .all(...ordered) as ClientLogoRow[];
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const { loadLifecycleLogoDomains } = await import("./client-logo-domain");
+  const domains = loadLifecycleLogoDomains(rows);
+  const picked: ClientLogoRow[] = [];
+  for (const id of ordered) {
+    if (picked.length >= limit) break;
+    const row = byId.get(id);
+    if (!row || !domains.has(id)) continue;
+    if (logoResolveQueued.has(id) || logoResolveInFlight.has(id)) continue;
+    if ((logoResolveCooldown.get(id) || 0) > now) continue;
+    if (storedLogoExists(row.id, row.logo_path || "")) continue;
+    logoResolveQueued.add(id);
+    picked.push(row);
+  }
+  const started = picked.map((row) => row.id);
+  for (const row of picked) {
+    logoResolveQueued.delete(row.id);
+    logoResolveInFlight.add(row.id);
+    try {
+      const domain = domains.get(row.id);
+      if (!domain) continue;
+      const stored = await storeResolvedLogo(row, domain, options?.transport);
+      if (!stored.ok && !stored.faviconCached) {
+        logoResolveCooldown.set(row.id, Date.now() + LOGO_RESOLVE_COOLDOWN_MS);
+      }
+    } catch {
+      logoResolveCooldown.set(row.id, Date.now() + LOGO_RESOLVE_COOLDOWN_MS);
+    } finally {
+      logoResolveInFlight.delete(row.id);
+    }
+    await wait(gapMs);
+  }
+  return started;
 }

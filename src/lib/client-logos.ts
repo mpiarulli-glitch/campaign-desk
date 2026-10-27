@@ -172,3 +172,64 @@ export function saveClientLogo(
   fs.writeFileSync(path.join(root, filename), classified.data);
   return { ok: true, filename };
 }
+
+const FAVICON_EXTS = ["png", "jpg", "webp", "gif", "svg"] as const;
+
+/** Hostname safe to use as a favicon cache filename. Null when it is not. */
+export function faviconCacheHost(host: string): string | null {
+  const safe = (host || "").trim().toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  if (!safe || safe.length > 253) return null;
+  if (!/^[a-z0-9.-]+$/.test(safe)) return null;
+  if (safe.startsWith(".") || safe.endsWith(".") || safe.includes("..")) return null;
+  return safe;
+}
+
+export function faviconPublicUrl(host: string): string | null {
+  const safe = faviconCacheHost(host);
+  if (!safe) return null;
+  return `/api/client-favicons/${safe}`;
+}
+
+function faviconCacheDir(): string {
+  return path.join(clientLogosRoot(), "favicons");
+}
+
+/** A favicon we downloaded earlier. Never triggers a network fetch. */
+export function readCachedFavicon(host: string): { buffer: Buffer; mime: string } | null {
+  const safe = faviconCacheHost(host);
+  if (!safe) return null;
+  const dir = faviconCacheDir();
+  for (const ext of FAVICON_EXTS) {
+    const file = path.join(dir, `${safe}.${ext}`);
+    if (!fs.existsSync(file)) continue;
+    const buffer = fs.readFileSync(file);
+    const classified = classifyLogoBytes(buffer);
+    if (!classified) return null;
+    return { buffer: classified.data, mime: classified.mime };
+  }
+  return null;
+}
+
+/** Writes a favicon under data/client-logos/favicons. Bytes must be a real image. */
+export function saveCachedFavicon(host: string, data: Buffer): boolean {
+  const safe = faviconCacheHost(host);
+  if (!safe) return false;
+  const classified = classifyLogoBytes(data);
+  if (!classified) return false;
+  const ext = extForLogoMime(classified.mime);
+  if (!ext) return false;
+  const dir = faviconCacheDir();
+  fs.mkdirSync(dir, { recursive: true });
+  for (const old of FAVICON_EXTS) {
+    const prior = path.join(dir, `${safe}.${old}`);
+    if (old !== ext && fs.existsSync(prior)) {
+      try {
+        fs.unlinkSync(prior);
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+  fs.writeFileSync(path.join(dir, `${safe}.${ext}`), classified.data);
+  return true;
+}

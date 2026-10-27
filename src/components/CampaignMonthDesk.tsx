@@ -333,10 +333,6 @@ export function CampaignMonthDesk() {
 
   async function refreshLogo() {
     if (!detail?.id) return;
-    if (!(detail.website || "").trim()) {
-      setLogoNote("Add a website first.");
-      return;
-    }
     setSavingLogo(true);
     setLogoNote("");
     const res = await fetch(`/api/revenue/clients/${detail.id}/logo/refresh`, {
@@ -405,12 +401,8 @@ export function CampaignMonthDesk() {
                     </button>
                     <button
                       type="button"
-                      disabled={savingLogo || !(detail.website || "").trim()}
-                      title={
-                        (detail.website || "").trim()
-                          ? "Fetch the logo from the website and save it"
-                          : "Add a website first"
-                      }
+                      disabled={savingLogo}
+                      title="Fetch the logo from the same domain Lifecycle uses and save it"
                       onClick={() => void refreshLogo()}
                     >
                       {savingLogo ? "Saving logo…" : "Refresh logo"}
