@@ -383,7 +383,7 @@ function ClientCombobox({
                   }}
                   onMouseEnter={() => setActive(i)}
                 >
-                  {c.name}
+                  <span className="fc-combo-name">{c.name}</span>
                   {c.unlinked ? <span className="fc-combo-tag">not linked</span> : null}
                   {c.internal ? <span className="fc-combo-tag">internal</span> : null}
                 </button>

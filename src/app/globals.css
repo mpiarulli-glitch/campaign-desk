@@ -6716,8 +6716,9 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   left: 0;
   min-width: 100%;
   width: max-content;
-  max-width: min(420px, 72vw);
+  max-width: min(560px, 86vw);
   max-height: min(420px, 50vh);
+  overflow-x: hidden;
   overflow-y: auto;
   margin: 0;
   padding: 4px;
@@ -6746,14 +6747,35 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
    moving the mouse can't both look selected at once. */
 .fc-combo-item.is-active { background: var(--bg-tint); color: var(--accent-ink); }
 .fc-combo-item.is-picked { font-weight: 600; }
+/* The list used to size to the full title, then clip. Give it a real width so
+   the name can ellipsize and "not linked" stays inside the box. */
+.fc-combo:not(.fc-combo-todos) .fc-combo-list {
+  width: min(560px, 86vw);
+  max-width: min(560px, 86vw);
+}
+.fc-combo:not(.fc-combo-todos) .fc-combo-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.fc-combo-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .fc-combo-tag {
   margin-left: 8px;
+  flex: 0 0 auto;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.fc-combo:not(.fc-combo-todos) .fc-combo-tag { margin-left: auto; }
 .fc-combo-empty {
   padding: 8px 9px;
   font-size: 12px;
