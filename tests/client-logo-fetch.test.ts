@@ -8,7 +8,9 @@ import {
   fetchStoredLogo,
   isBlockedIp,
   logoAttempts,
+  logoFetchHeaders,
   publicWebsiteUrl,
+  pullClientLogosInBatches,
   pullMissingClientLogos,
   refreshClientLogo,
   resetClientLogoResolveForTests,
@@ -17,12 +19,17 @@ import {
   type LogoTransport,
 } from "../src/lib/client-logo-fetch";
 import { pickLifecycleLogoDomain } from "../src/lib/client-logo-domain";
-import { faviconCacheHost, saveCachedFavicon } from "../src/lib/client-logos";
+import { assessLogoBytes, faviconCacheHost, saveCachedFavicon } from "../src/lib/client-logos";
+import { solidPng } from "./solid-png";
 
-const PNG = Buffer.from(
+const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64"
 );
+const PNG = solidPng(180, 180, [20, 80, 180, 255]);
+const WHITE_PNG = solidPng(180, 180, [255, 255, 255, 255]);
+const SMALL_PNG = solidPng(64, 64, [200, 40, 40, 255]);
+const WIDE_PNG = solidPng(1200, 630, [10, 20, 30, 255]);
 
 const PAGE = `<!doctype html><html><head>
 <link rel="icon" href="/favicon-32.png" sizes="32x32">
@@ -30,6 +37,9 @@ const PAGE = `<!doctype html><html><head>
 <link rel="apple-touch-icon" href="/apple-120.png" sizes="120x120">
 <link rel="icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="http://127.0.0.1/secret.png">
+<link rel="logo" href="/brand-logo.png">
+<img alt="logo" src="http://127.0.0.1/logo.png">
+<img class="site-logo" src="/header-logo.png">
 <meta property="og:image" content="https://cdn.example.com/og.jpg">
 </head></html>`;
 
@@ -131,12 +141,13 @@ test("fetch order prefers the apple icon and skips private urls", () => {
     [
       "apple-touch-icon https://example.com/apple-180.png",
       "apple-touch-icon https://example.com/apple-120.png",
-      "favicon https://example.com/favicon-32.png",
+      "logo https://example.com/brand-logo.png",
+      "logo https://example.com/header-logo.png",
       "og:image https://cdn.example.com/og.jpg",
+      "favicon https://example.com/favicon-32.png",
       "site-icon https://example.com/apple-touch-icon.png",
       "site-icon https://example.com/apple-touch-icon-precomposed.png",
       "site-icon https://example.com/favicon.png",
-      "site-icon https://example.com/favicon.svg",
       "favicon-service https://www.google.com/s2/favicons?domain=example.com&sz=128",
     ]
   );
@@ -171,6 +182,75 @@ test("a loopback url is refused before any connection", async () => {
   const result = await fetchPublicBuffer("http://127.0.0.1:9/logo.png");
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.error, /not allowed/i);
+});
+
+test("tiny and blank images are rejected in favor of a square mark", () => {
+  assert.equal(assessLogoBytes(TINY_PNG)?.tiny, true);
+  assert.equal(assessLogoBytes(WHITE_PNG)?.blank, true);
+  assert.equal(assessLogoBytes(solidPng(180, 180, [0, 0, 0, 0]))?.blank, true);
+  const square = assessLogoBytes(PNG);
+  const wide = assessLogoBytes(WIDE_PNG);
+  const small = assessLogoBytes(SMALL_PNG);
+  assert.equal(square?.blank, false);
+  assert.equal(square?.tiny, false);
+  assert.ok((square?.score || 0) > (wide?.score || 0));
+  assert.ok((small?.score || 0) > (wide?.score || 0));
+});
+
+test("logo requests use a browser user agent", () => {
+  const headers = logoFetchHeaders(new URL("https://example.com/a.png"));
+  assert.match(headers["User-Agent"], /Mozilla\/5.0/);
+  assert.equal(headers["User-Agent"].includes("CampaignDesk"), false);
+  assert.match(headers.Accept, /text\/html/);
+});
+
+test("a tiny apple icon loses to a square logo, and a blank one is skipped", async () => {
+  const calls: string[] = [];
+  const transport: LogoTransport = async (url) => {
+    calls.push(url);
+    if (url.endsWith("/apple-180.png")) {
+      return { ok: true, status: 200, contentType: "image/png", body: TINY_PNG, url };
+    }
+    if (url.endsWith("/brand-logo.png")) {
+      return { ok: true, status: 200, contentType: "image/png", body: PNG, url };
+    }
+    if (url === "https://example.com/") {
+      return { ok: true, status: 200, contentType: "text/html", body: Buffer.from(PAGE), url };
+    }
+    return { ok: false, error: "miss" };
+  };
+  const result = await fetchStoredLogo("example.com", transport);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.source, "logo");
+  assert.equal(calls.includes("https://example.com/favicon-32.png"), false);
+
+  const blankThenSmall: LogoTransport = async (url) => {
+    if (url.endsWith("/apple-180.png")) {
+      return { ok: true, status: 200, contentType: "image/png", body: WHITE_PNG, url };
+    }
+    if (url.endsWith("/favicon-32.png")) {
+      return { ok: true, status: 200, contentType: "image/png", body: SMALL_PNG, url };
+    }
+    if (url === "https://example.com/") {
+      return { ok: true, status: 200, contentType: "text/html", body: Buffer.from(PAGE), url };
+    }
+    return { ok: false, error: "miss" };
+  };
+  const fallback = await fetchStoredLogo("example.com", blankThenSmall);
+  assert.equal(fallback.ok, true);
+  if (fallback.ok) assert.equal(fallback.source, "favicon");
+});
+
+test("a 403 from the site still stores the favicon service image", async () => {
+  const transport: LogoTransport = async (url) => {
+    if (url.includes("google.com/s2/favicons")) {
+      return { ok: true, status: 200, contentType: "image/png", body: PNG, url };
+    }
+    return { ok: false, error: "Logo request failed (403)." };
+  };
+  const result = await fetchStoredLogo("https://blocked.example", transport);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.source, "favicon-service");
 });
 
 test("a direct image url is stored without scraping", async () => {
@@ -366,5 +446,38 @@ describe("pull missing client logos", { concurrency: 1 }, () => {
     const again = await scheduleMissingClientLogos(ids, { transport, limit: 4, gapMs: 0 });
     assert.deepEqual(again, []);
     assert.equal(pages.length, 5);
+  });
+
+  test("a batch keeps going when one logo fetch throws", async (t) => {
+    const originalCwd = process.cwd();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-logo-batch-throw-"));
+    process.chdir(tmp);
+    const { closeDbForTests } = await import("../src/lib/db");
+    closeDbForTests();
+    resetClientLogoResolveForTests();
+    const { createRevClient, updateRevClient } = await import("../src/lib/revenue");
+    const { readClientLogo } = await import("../src/lib/client-logos");
+
+    t.after(() => {
+      resetClientLogoResolveForTests();
+      closeDbForTests();
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    const boom = createRevClient({ name: "Boom", businessModel: "b2b" });
+    const ok = createRevClient({ name: "Ok", businessModel: "b2b" });
+    updateRevClient(boom.id, { website: "https://boom.example" });
+    updateRevClient(ok.id, { website: "https://ok.example" });
+    const transport: LogoTransport = async (url) => {
+      if (url.startsWith("https://boom.example")) throw new Error("blocked");
+      if (url.startsWith("https://ok.example")) {
+        return { ok: true, status: 200, contentType: "image/png", body: PNG, url };
+      }
+      return { ok: false, error: "miss" };
+    };
+    await pullClientLogosInBatches([boom.id, ok.id], { transport, batchSize: 2, gapMs: 0 });
+    assert.equal(readClientLogo(boom.id, `${boom.id}.png`), null);
+    assert.ok(readClientLogo(ok.id, `${ok.id}.png`));
   });
 });

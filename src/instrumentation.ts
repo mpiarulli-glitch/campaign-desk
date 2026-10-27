@@ -4,8 +4,8 @@
 // the database before the process can answer /api/health.
 //
 // Home for one-time data tasks that need more than the sync migration path in
-// lib/db can do. Each guards itself with a flag in app_settings, so every boot
-// after the first is a no-op.
+// lib/db can do. Each guards itself with a flag in app_settings. The client
+// website seed retries a name that did not match for a few boots, then stops.
 export async function register() {
   // Only the Node runtime can reach SQLite; skip the edge runtime pass.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
@@ -36,6 +36,11 @@ export async function register() {
       syncBasecampEventsIfStale(),
       syncClientMessagesIfStale(),
     ]);
+  });
+
+  enqueueDeferredStartupJob("client-websites", async () => {
+    const { runClientWebsiteSeedOnStartup } = await import("./lib/client-website-seed");
+    await runClientWebsiteSeedOnStartup();
   });
 
   console.log(`[boot] ready to listen in ${Math.round(process.uptime() * 1000)}ms`);

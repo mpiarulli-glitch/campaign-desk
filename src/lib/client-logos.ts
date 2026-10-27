@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 
 const LOGO_DIR = "client-logos";
 export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
@@ -232,4 +233,241 @@ export function saveCachedFavicon(host: string, data: Buffer): boolean {
   }
   fs.writeFileSync(path.join(dir, `${safe}.${ext}`), classified.data);
   return true;
+}
+
+/** Shorter side below this is a tracking pixel or a tiny icon, not a card logo. */
+export const LOGO_MIN_PX = 24;
+
+export type LogoByteAssessment = {
+  width: number;
+  height: number;
+  /** min(width, height) / max(width, height). 1 is square. */
+  ratio: number;
+  /** Higher is a better card logo. Negative means reject. */
+  score: number;
+  blank: boolean;
+  tiny: boolean;
+};
+
+function finishLogoSize(
+  width: number,
+  height: number,
+  blank: boolean
+): LogoByteAssessment | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width <= 0 || height <= 0 || width > 8000 || height > 8000) {
+    return { width: 0, height: 0, ratio: 0, score: -1, blank: false, tiny: true };
+  }
+  const minSide = Math.min(width, height);
+  const maxSide = Math.max(width, height);
+  const ratio = minSide / maxSide;
+  const tiny = minSide < LOGO_MIN_PX;
+  const squareWeight = ratio >= 0.85 ? 1 : 0.2;
+  const score = blank || tiny ? -1 : minSide * ratio * ratio * squareWeight;
+  return { width, height, ratio, score, blank, tiny };
+}
+
+function paeth(left: number, up: number, upLeft: number): number {
+  const p = left + up - upLeft;
+  const pa = Math.abs(p - left);
+  const pb = Math.abs(p - up);
+  const pc = Math.abs(p - upLeft);
+  if (pa <= pb && pa <= pc) return left;
+  if (pb <= pc) return up;
+  return upLeft;
+}
+
+function unfilterPng(raw: Buffer, height: number, stride: number, bpp: number): Buffer | null {
+  const expected = height * (stride + 1);
+  if (raw.length < expected) return null;
+  const out = Buffer.alloc(height * stride);
+  let src = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = raw[src++];
+    const row = y * stride;
+    const prev = y > 0 ? row - stride : -1;
+    for (let x = 0; x < stride; x++) {
+      const byte = raw[src++];
+      const left = x >= bpp ? out[row + x - bpp] : 0;
+      const up = prev >= 0 ? out[prev + x] : 0;
+      const upLeft = prev >= 0 && x >= bpp ? out[prev + x - bpp] : 0;
+      let value = byte;
+      if (filter === 1) value = (byte + left) & 255;
+      else if (filter === 2) value = (byte + up) & 255;
+      else if (filter === 3) value = (byte + ((left + up) >> 1)) & 255;
+      else if (filter === 4) value = (byte + paeth(left, up, upLeft)) & 255;
+      else if (filter !== 0) return null;
+      out[row + x] = value;
+    }
+  }
+  return out;
+}
+
+function pngLooksBlank(pixels: Buffer, channels: number): boolean {
+  let visible = 0;
+  let colored = 0;
+  for (let i = 0; i + channels <= pixels.length; i += channels) {
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let a = 255;
+    if (channels === 4) {
+      r = pixels[i];
+      g = pixels[i + 1];
+      b = pixels[i + 2];
+      a = pixels[i + 3];
+    } else if (channels === 3) {
+      r = pixels[i];
+      g = pixels[i + 1];
+      b = pixels[i + 2];
+    } else if (channels === 2) {
+      r = g = b = pixels[i];
+      a = pixels[i + 1];
+    } else {
+      r = g = b = pixels[i];
+    }
+    if (a <= 16) continue;
+    visible += 1;
+    if (r < 245 || g < 245 || b < 245) colored += 1;
+  }
+  return visible === 0 || colored === 0;
+}
+
+type PngChunk = { type: string; data: Buffer };
+
+function pngChunks(data: Buffer): PngChunk[] | null {
+  if (data.length < 8 || !data.subarray(0, PNG_SIG.length).equals(PNG_SIG)) return null;
+  const chunks: PngChunk[] = [];
+  let offset = 8;
+  while (offset + 8 <= data.length) {
+    const length = data.readUInt32BE(offset);
+    if (length < 0 || offset + 12 + length > data.length) return chunks.length ? chunks : null;
+    const type = data.toString("ascii", offset + 4, offset + 8);
+    chunks.push({ type, data: data.subarray(offset + 8, offset + 8 + length) });
+    offset += 12 + length;
+    if (type === "IEND") break;
+  }
+  return chunks;
+}
+
+function assessPng(data: Buffer): LogoByteAssessment | null {
+  const chunks = pngChunks(data);
+  if (!chunks) return null;
+  const ihdr = chunks.find((chunk) => chunk.type === "IHDR");
+  if (!ihdr || ihdr.data.length < 13) return null;
+  const width = ihdr.data.readUInt32BE(0);
+  const height = ihdr.data.readUInt32BE(4);
+  const depth = ihdr.data[8];
+  const color = ihdr.data[9];
+  const interlace = ihdr.data[12];
+  const channels = color === 6 ? 4 : color === 2 ? 3 : color === 4 ? 2 : color === 0 ? 1 : 0;
+  const sized = finishLogoSize(width, height, false);
+  if (!sized || sized.tiny || sized.score < 0) return sized;
+  if (
+    !channels ||
+    depth !== 8 ||
+    interlace !== 0 ||
+    width * height > 1_500_000
+  ) {
+    return sized;
+  }
+  const idat = Buffer.concat(
+    chunks.filter((chunk) => chunk.type === "IDAT").map((chunk) => chunk.data)
+  );
+  if (!idat.length) return sized;
+  let raw: Buffer;
+  try {
+    raw = zlib.inflateSync(idat);
+  } catch {
+    return sized;
+  }
+  const pixels = unfilterPng(raw, height, width * channels, channels);
+  if (!pixels) return sized;
+  return finishLogoSize(width, height, pngLooksBlank(pixels, channels));
+}
+
+function assessGif(data: Buffer): LogoByteAssessment | null {
+  const sig = data.subarray(0, 6).toString("ascii");
+  if ((sig !== "GIF87a" && sig !== "GIF89a") || data.length < 10) return null;
+  return finishLogoSize(data.readUInt16LE(6), data.readUInt16LE(8), false);
+}
+
+function assessJpeg(data: Buffer): LogoByteAssessment | null {
+  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < data.length) {
+    if (data[i] !== 0xff) {
+      i += 1;
+      continue;
+    }
+    const marker = data[i + 1];
+    if (marker === 0xd8 || marker === 0x01) {
+      i += 2;
+      continue;
+    }
+    if (marker === 0xd9) break;
+    if (i + 4 > data.length) break;
+    const len = data.readUInt16BE(i + 2);
+    if (len < 2) break;
+    const sof =
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc;
+    if (sof) {
+      return finishLogoSize(data.readUInt16BE(i + 7), data.readUInt16BE(i + 5), false);
+    }
+    i += 2 + len;
+  }
+  return null;
+}
+
+function assessWebp(data: Buffer): LogoByteAssessment | null {
+  if (data.length < 30) return null;
+  if (data.toString("ascii", 0, 4) !== "RIFF" || data.toString("ascii", 8, 12) !== "WEBP") {
+    return null;
+  }
+  if (data.toString("ascii", 12, 16) !== "VP8X") return null;
+  const width = 1 + data.readUIntLE(24, 3);
+  const height = 1 + data.readUIntLE(27, 3);
+  return finishLogoSize(width, height, false);
+}
+
+function assessSvg(data: Buffer): LogoByteAssessment | null {
+  const text = data.toString("utf8");
+  const head = text.trimStart().slice(0, 400).toLowerCase();
+  if (!(head.startsWith("<svg") || head.startsWith("<?xml"))) return null;
+  if (!/<svg[\s>]/i.test(text)) return null;
+  const blank = !/<(path|rect|circle|ellipse|polygon|polyline|image|text|use|line)\b/i.test(text);
+  let width = 0;
+  let height = 0;
+  const viewBox = text.match(
+    /viewBox\s*=\s*["']\s*[-+\d.]+\s+[-+\d.]+\s+([+\d.]+)\s+([+\d.]+)\s*["']/i
+  );
+  if (viewBox) {
+    width = Number(viewBox[1]);
+    height = Number(viewBox[2]);
+  } else {
+    const w = text.match(/\bwidth\s*=\s*["']\s*([+\d.]+)/i);
+    const h = text.match(/\bheight\s*=\s*["']\s*([+\d.]+)/i);
+    if (w && h) {
+      width = Number(w[1]);
+      height = Number(h[1]);
+    }
+  }
+  if (!(width > 0 && height > 0)) {
+    return blank ? finishLogoSize(1, 1, true) : finishLogoSize(128, 128, false);
+  }
+  return finishLogoSize(width, height, blank);
+}
+
+/**
+ * Size and emptiness of a logo file. Null when the format is an image we
+ * accept but cannot measure. A negative score, `tiny`, or `blank` should not
+ * be stored as the client's mark.
+ */
+export function assessLogoBytes(data: Buffer): LogoByteAssessment | null {
+  if (!data.length) return null;
+  return assessPng(data) || assessGif(data) || assessJpeg(data) || assessWebp(data) || assessSvg(data);
 }

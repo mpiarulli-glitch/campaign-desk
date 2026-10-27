@@ -5,15 +5,19 @@
 // The domain is the one Lifecycle cards already use (rev_clients.website),
 // and when that is empty the Lifecycle account links. See client-logo-domain.
 //
-// Chain: apple-touch-icon, then the largest favicon, then og:image, then a
-// few well-known icon paths, then Google's favicon service downloaded and
-// saved. Nothing is hotlinked.
+// Chain: apple-touch-icon, then a logo link, then og:image, then the largest
+// favicon, then a few well-known icon paths, then Google's favicon service
+// downloaded and saved. A square image about apple-touch size stops the
+// search. Tiny and blank images are skipped. Nothing is hotlinked.
+// Sites that answer 403/406 to a bot get a normal browser User-Agent, and a
+// miss still falls through to the favicon service.
 
 import { lookup } from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP } from "node:net";
 import {
+  assessLogoBytes,
   classifyLogoBytes,
   clientLogoPublicUrl,
   faviconPublicUrl,
@@ -198,6 +202,33 @@ function iconSize(sizes: string): number {
   return match ? Number(match[1]) : 0;
 }
 
+function collectLogoLinks(html: string): string[] {
+  const found: string[] = [];
+  const push = (href: string) => {
+    const value = (href || "").trim();
+    if (!value || found.includes(value) || found.length >= 3) return;
+    found.push(value);
+  };
+  const links = html.match(/<link\b[^>]*>/gi) || [];
+  for (const tag of links) {
+    const attrs = readAttrs(tag);
+    const rel = (attrs.get("rel") || "").toLowerCase().split(/\s+/);
+    if (!rel.some((token) => token === "logo" || token.endsWith("-logo"))) continue;
+    push(attrs.get("href") || "");
+  }
+  const images = html.match(/<img\b[^>]*>/gi) || [];
+  for (const tag of images) {
+    const attrs = readAttrs(tag);
+    const hint = `${attrs.get("id") || ""} ${attrs.get("class") || ""} ${attrs.get("alt") || ""} ${attrs.get("src") || ""}`.toLowerCase();
+    if (!/\blogo\b/.test(hint)) continue;
+    push(attrs.get("src") || "");
+  }
+  const jsonLogo = /"logo"\s*:\s*"([^"]+)"/gi;
+  let match: RegExpExecArray | null;
+  while ((match = jsonLogo.exec(html))) push(match[1]);
+  return found;
+}
+
 function collectIcons(
   html: string,
   kind: "apple" | "icon"
@@ -252,13 +283,14 @@ export function logoAttempts(
   if (html) {
     const apples = collectIcons(html, "apple").sort((a, b) => b.size - a.size);
     for (const item of apples) push(item.href, "apple-touch-icon");
+    for (const href of collectLogoLinks(html)) push(href, "logo");
+    const og = firstOgImage(html);
+    if (og) push(og, "og:image");
     const icons = collectIcons(html, "icon").sort((a, b) => b.size - a.size);
     for (const item of icons) {
       if (/\.ico(?:$|\?)/i.test(item.href)) continue;
       push(item.href, "favicon");
     }
-    const og = firstOgImage(html);
-    if (og) push(og, "og:image");
   }
 
   for (const path of [
@@ -364,11 +396,7 @@ function requestOnce(
         port: url.port || (url.protocol === "https:" ? 443 : 80),
         path: `${url.pathname}${url.search}`,
         method: "GET",
-        headers: {
-          Host: url.host,
-          "User-Agent": "CampaignDesk/1.0",
-          Accept: "image/avif,image/webp,image/png,image/svg+xml,image/jpeg,image/gif,text/html;q=0.5",
-        },
+        headers: logoFetchHeaders(url),
         servername: url.hostname,
         lookup: ((hostname, options, callback) => {
           const cb = typeof options === "function" ? options : callback;
@@ -416,6 +444,21 @@ function requestOnce(
   });
 }
 
+export const LOGO_BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/** Browser-like headers. Several client sites answer 403 or 406 to a bot name. */
+export function logoFetchHeaders(target: URL): Record<string, string> {
+  return {
+    Host: target.host,
+    "User-Agent": LOGO_BROWSER_USER_AGENT,
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,image/png,image/svg+xml,image/jpeg,image/gif,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: `${target.origin}/`,
+  };
+}
+
 /** One GET, with DNS pinned to addresses checked before the connection. */
 export async function fetchPublicBuffer(rawUrl: string, redirects = 0): Promise<LogoTransportResponse> {
   const checked = validateLogoUrl(rawUrl);
@@ -448,6 +491,38 @@ export async function fetchPublicBuffer(rawUrl: string, redirects = 0): Promise<
   };
 }
 
+type LogoCandidate = {
+  data: Buffer;
+  mime: string;
+  source: string;
+  score: number;
+};
+
+/** A square about the size of an apple touch icon is enough to stop looking. */
+const LOGO_STOP_MIN_PX = 160;
+const LOGO_STOP_RATIO = 0.85;
+
+function logoCandidate(
+  body: Buffer,
+  source: string
+): { candidate: LogoCandidate; stop: boolean } | null {
+  const image = classifyLogoBytes(body);
+  if (!image) return null;
+  const assessed = assessLogoBytes(image.data);
+  if (assessed?.blank || (assessed && assessed.score < 0)) return null;
+  const minSide = assessed ? Math.min(assessed.width, assessed.height) : 0;
+  const ratio = assessed?.ratio ?? 0;
+  return {
+    candidate: {
+      data: image.data,
+      mime: image.mime,
+      source,
+      score: assessed ? assessed.score : 40,
+    },
+    stop: ratio >= LOGO_STOP_RATIO && minSide >= LOGO_STOP_MIN_PX,
+  };
+}
+
 export async function fetchStoredLogo(
   website: string,
   transport: LogoTransport = fetchPublicBuffer
@@ -456,11 +531,25 @@ export async function fetchStoredLogo(
   if (!page) return { ok: false, error: "No website on the client record." };
 
   let html: string | null = null;
+  let best: LogoCandidate | null = null;
+  const keep = (body: Buffer, source: string): boolean => {
+    const found = logoCandidate(body, source);
+    if (!found) return false;
+    if (!best || found.candidate.score > best.score) best = found.candidate;
+    return found.stop;
+  };
+  const finish = (): LogoFetchResult => {
+    if (!best) return { ok: false, error: "Could not find a logo on that website." };
+    return { ok: true, data: best.data, mime: best.mime, source: best.source };
+  };
+
   const first = await transport(page.toString());
   if (first.ok && first.status >= 200 && first.status < 300) {
-    const image = classifyLogoBytes(first.body);
-    if (image) return { ok: true, data: image.data, mime: image.mime, source: "website-image" };
-    if (looksLikeHtml(first.contentType, first.body)) html = first.body.toString("utf8");
+    if (classifyLogoBytes(first.body)) {
+      if (keep(first.body, "website-image")) return finish();
+    } else if (looksLikeHtml(first.contentType, first.body)) {
+      html = first.body.toString("utf8");
+    }
   }
 
   const attempts = logoAttempts(website, html, page.toString()).filter(
@@ -469,11 +558,9 @@ export async function fetchStoredLogo(
   for (const attempt of attempts) {
     const response = await transport(attempt.url);
     if (!response.ok || response.status < 200 || response.status >= 300) continue;
-    const image = classifyLogoBytes(response.body);
-    if (!image) continue;
-    return { ok: true, data: image.data, mime: image.mime, source: attempt.source };
+    if (keep(response.body, attempt.source)) break;
   }
-  return { ok: false, error: "Could not find a logo on that website." };
+  return finish();
 }
 
 function storedLogoExists(clientId: string, logoPath: string): boolean {
@@ -712,4 +799,46 @@ async function resolveMissingClientLogos(
     await wait(gapMs);
   }
   return started;
+}
+
+/**
+ * Pull stored logos for these clients, a few at a time. An existing file is
+ * skipped. A failed fetch is cooled down so the next page load does not
+ * immediately hit the same site again. One failure does not stop the batch.
+ */
+export async function pullClientLogosInBatches(
+  clientIds: string[],
+  options?: { transport?: LogoTransport; batchSize?: number; gapMs?: number }
+): Promise<void> {
+  const batchSize = Math.max(1, options?.batchSize ?? 3);
+  const gapMs = options?.gapMs ?? LOGO_RESOLVE_GAP_MS;
+  const ids = [...new Set(clientIds.map((id) => id.trim()).filter(Boolean))];
+  for (let index = 0; index < ids.length; index += batchSize) {
+    const batch = ids.slice(index, index + batchSize);
+    await Promise.all(
+      batch.map(async (id) => {
+        if (logoResolveInFlight.has(id) || logoResolveQueued.has(id)) return;
+        logoResolveInFlight.add(id);
+        try {
+          const report = await pullMissingClientLogos({
+            clientId: id,
+            transport: options?.transport,
+          });
+          if (report.failed.some((row) => row.id === id)) {
+            logoResolveCooldown.set(id, Date.now() + LOGO_RESOLVE_COOLDOWN_MS);
+          }
+        } catch (err) {
+          logoResolveCooldown.set(id, Date.now() + LOGO_RESOLVE_COOLDOWN_MS);
+          console.error(
+            "[client-logos] pull failed",
+            id,
+            err instanceof Error ? err.message : err
+          );
+        } finally {
+          logoResolveInFlight.delete(id);
+        }
+      })
+    );
+    if (index + batchSize < ids.length && gapMs > 0) await wait(gapMs);
+  }
 }
