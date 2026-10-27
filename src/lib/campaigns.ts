@@ -94,6 +94,8 @@ export function createCampaign(input: {
   triggerFormFormat?: TriggerFormFormat;
   triggerFormHtml?: string;
   triggerFormMediaUrl?: string | null;
+  /** YYYY-MM. Stored on board_period (Counts for month). Omitted leaves it null. */
+  boardPeriod?: string | null;
 }): Campaign {
   const db = getDb();
   const id = nanoid(12);
@@ -160,6 +162,13 @@ export function createCampaign(input: {
       (id, campaign_id, email_id, html_content, note, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(nanoid(12), id, emailId, input.htmlContent, "Initial upload", ts);
+
+  if (input.boardPeriod && /^\d{4}-\d{2}$/.test(input.boardPeriod)) {
+    db.prepare(`UPDATE campaigns SET board_period = ? WHERE id = ?`).run(
+      input.boardPeriod,
+      id
+    );
+  }
 
   syncCampaignPreview(id);
   if (presentation === "automation") {

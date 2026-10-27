@@ -34,6 +34,7 @@ import {
 import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from "@/lib/asset-kinds";
 import type { CampaignKindScope } from "@/lib/people";
 import { isCampaignKindScope } from "@/lib/people";
+import { CampaignMonthDesk } from "@/components/CampaignMonthDesk";
 
 type CampaignRow = {
   id: string;
@@ -86,11 +87,11 @@ const TYPE_LABEL: Record<AssetKind, string> = {
 };
 
 const VIEW_STORAGE_KEY = "cd-campaigns-view";
-type CampaignView = "list" | "board" | "review";
+type CampaignView = "list" | "board" | "review" | "clients";
 type CampaignScope = "mine" | "approved";
 
 function isCampaignView(value: string | null): value is CampaignView {
-  return value === "list" || value === "board" || value === "review";
+  return value === "list" || value === "board" || value === "review" || value === "clients";
 }
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
@@ -928,6 +929,13 @@ export default function AdminPage() {
                     Needs your review
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  aria-pressed={view === "clients"}
+                  onClick={() => rememberView("clients")}
+                >
+                  Clients
+                </button>
               </div>
             ) : null}
             <Link className="clist-done" href="/admin/campaigns/done">
@@ -941,6 +949,7 @@ export default function AdminPage() {
 
           {error ? <p className="error">{error}</p> : null}
 
+          {listingView === "clients" ? null : (
           <div className="clist-bar">
             <label className="clist-field clist-search">
               <span>Search</span>
@@ -1049,10 +1058,13 @@ export default function AdminPage() {
               </button>
             ) : null}
           </div>
+          )}
 
           <div className={listingView === "board" ? "dashboard-grid clist-board-wrap" : "dashboard-grid"}>
             <div className="stack" style={{ gap: 12 }}>
-              {loading ? (
+              {listingView === "clients" ? (
+                <CampaignMonthDesk />
+              ) : loading ? (
                 <p className="muted">Loading...</p>
               ) : campaigns.length === 0 ? (
                 filter === "archived" ? (

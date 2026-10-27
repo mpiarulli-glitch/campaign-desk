@@ -1,10 +1,11 @@
 import { getRevClient } from "@/lib/revenue";
-import { readClientLogo } from "@/lib/client-logos";
+import { logoResponseHeaders, readClientLogo } from "@/lib/client-logos";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Serves an uploaded client logo. Public so img tags work without auth; the
-// client id is an opaque token and the file only exists when someone uploaded it.
+// Serves a stored client logo (uploaded or fetched). Public so img tags work
+// without auth; the client id is an opaque token and the file only exists
+// after a logo was saved for that client. SVG is served as an image.
 export async function GET(_request: Request, { params }: Params) {
   const { id } = await params;
   const client = getRevClient(id);
@@ -16,10 +17,6 @@ export async function GET(_request: Request, { params }: Params) {
     return new Response("Not found", { status: 404 });
   }
   return new Response(new Uint8Array(file.buffer), {
-    headers: {
-      "Content-Type": file.mime,
-      "Content-Length": String(file.buffer.length),
-      "Cache-Control": "public, max-age=86400",
-    },
+    headers: logoResponseHeaders(file.mime, file.buffer.length),
   });
 }

@@ -249,9 +249,10 @@ export interface Campaign {
   /** 1 when this row was logged from the board for work done outside Campaign Desk. */
   logged_off_app: number;
   /**
-   * YYYY-MM this campaign counts toward on the deliverables board.
-   * Null means the month of created_at. Set when work for a later month
-   * was already sent to the client.
+   * YYYY-MM this campaign counts for. The deliverables board treats null as
+   * the UTC month of created_at. The Campaigns Clients view reads the same
+   * column as "Counts for month" and, when it is null, uses the scheduled
+   * send month, then the created month. Null rows are not rewritten.
    */
   board_period: string | null;
   // When status is scheduled, the Pacific send instant (UTC ISO). Cron flips
@@ -420,9 +421,11 @@ export interface RevClient {
   account_manager: string;
   // Manually-set account tier: ""|standard|premium|vip.
   tier: string;
-  // Client website (bare domain or full URL) used to auto-derive a brand logo.
+  // Client website (bare domain or full URL). The Clients view can fetch a
+  // logo from it and store the file. Lifecycle still hotlinks a favicon when
+  // no file is stored.
   website: string;
-  // Uploaded logo filename under data/client-logos/. Empty = use website favicon.
+  // Logo filename under data/client-logos/. Empty means no stored logo.
   logo_path: string;
   // Manual account-sentiment override: ""|healthy|watch|at_risk. Empty means
   // fall back to the metric-derived sentiment.
