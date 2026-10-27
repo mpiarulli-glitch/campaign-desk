@@ -221,6 +221,7 @@ type Campaign = {
   scheduled_send_id?: string | null;
   created_at?: string;
   board_period?: string | null;
+  basecamp_due_on?: string | null;
   suggested_send?: SuggestedSend | null;
 };
 
@@ -2068,6 +2069,7 @@ export default function AdminCampaignPage() {
                 board_period: campaign.board_period,
                 scheduled_send_at: campaign.scheduled_send_at,
                 created_at: campaign.created_at,
+                due_on: campaign.basecamp_due_on,
                 email_sends: emails.map((email) => email.scheduled_send_at),
               })}
               onChange={(e) => void saveCountMonth(e.target.value)}
@@ -2078,6 +2080,7 @@ export default function AdminCampaignPage() {
                   board_period: campaign.board_period,
                   scheduled_send_at: campaign.scheduled_send_at,
                   created_at: campaign.created_at,
+                  due_on: campaign.basecamp_due_on,
                   email_sends: emails.map((email) => email.scheduled_send_at),
                 })
               ).map((period) => (

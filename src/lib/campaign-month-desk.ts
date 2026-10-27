@@ -1,5 +1,10 @@
 // Counts for the Campaigns "Clients" view only.
 //
+// A campaign row is a review package (a batch). The emails in that batch are
+// rows in campaign_emails. The monthly quota is a count of emails, so this
+// view counts each email, not the package. Status and Counts for month are
+// stored once on the package, and every email in it inherits both.
+//
 // Nothing in here is used by the campaigns list, the lifecycle deliverables
 // board, or Forecast. Status meanings elsewhere stay as they are.
 
@@ -58,16 +63,36 @@ export type CountsForMonthInput = {
   board_period?: string | null;
   scheduled_send_at?: string | null;
   created_at?: string | null;
+  /** YYYY-MM-DD, or any string that starts with YYYY-MM. Used when no send is set. */
+  due_on?: string | null;
   email_sends?: Array<string | null | undefined>;
+};
+
+export type MonthDeskEmailInput = {
+  id: string;
+  title: string;
+  /** Asset kind. Only `email` ticks the monthly email quota. */
+  kind?: string | null;
+  scheduled_send_at?: string | null;
 };
 
 export type MonthDeskCampaignInput = CountsForMonthInput & {
   id: string;
+  /** Set once a package has been expanded to one row per email. */
+  email_id?: string | null;
   title: string;
   client_id?: string | null;
   client_name?: string | null;
   status: string;
   approved_channel?: string | null;
+  /**
+   * Items inside the package. Omitted means the caller did not load them and
+   * the package counts as one email. An empty list means it was loaded and
+   * has no emails.
+   */
+  emails?: MonthDeskEmailInput[];
+  /** Send time to show for this email. It does not choose the month. */
+  row_send_at?: string | null;
 };
 
 export type MonthDeskClientInput = {
@@ -95,7 +120,10 @@ export type MonthDeskProgress = {
 };
 
 export type MonthDeskCampaign = {
+  /** The review package. Several emails in one batch share this id. */
   id: string;
+  /** The email inside the package, when the row is one deliverable. */
+  emailId: string | null;
   title: string;
   status: string;
   approved_channel: string | null;
@@ -154,11 +182,14 @@ function firstScheduledInstant(input: CountsForMonthInput): string | null {
 }
 
 /**
- * Month a campaign is filed under on this view.
+ * Month a campaign is filed under on this view. The card and the month
+ * folders both use this, so a blank Counts for month cannot put the number
+ * in one month and the list in another.
  * 1. `board_period` when it is a YYYY-MM (the stored Counts for month).
  * 2. Otherwise the business-timezone month of the campaign send time.
  * 3. Otherwise the earliest item send time (packages schedule each item).
- * 4. Otherwise the business-timezone month of `created_at`.
+ * 4. Otherwise the month of the due date (`due_on`, YYYY-MM-DD, no timezone shift).
+ * 5. Otherwise the business-timezone month of `created_at`.
  *
  * Null `board_period` is not rewritten. The lifecycle board still treats a
  * null as the UTC month of `created_at`.
@@ -171,9 +202,64 @@ export function countsForMonth(
   if (isValidPeriod(pinned)) return pinned;
   const fromSend = instantPeriod(firstScheduledInstant(input));
   if (fromSend) return fromSend;
+  const fromDue = periodFromDue(input.due_on);
+  if (fromDue) return fromDue;
   const fromCreated = instantPeriod(input.created_at);
   if (fromCreated) return fromCreated;
   return currentPeriod(now);
+}
+
+/** Due dates are calendar days. Reading them as instants shifts the 1st into the previous month. */
+function periodFromDue(value: string | null | undefined): string | null {
+  const raw = (value || "").trim();
+  if (!/^\d{4}-\d{2}/.test(raw)) return null;
+  const period = raw.slice(0, 7);
+  return isValidPeriod(period) ? period : null;
+}
+
+function isQuotaEmail(email: MonthDeskEmailInput): boolean {
+  return (email.kind || "email").trim() === "email";
+}
+
+function rowSendAt(campaign: MonthDeskCampaignInput, email: MonthDeskEmailInput): string | null {
+  const own = (email.scheduled_send_at || "").trim();
+  if (own) return own;
+  const campaignSend = (campaign.scheduled_send_at || "").trim();
+  return campaignSend || null;
+}
+
+function deliverableTitle(campaignTitle: string, emailTitle: string, emailCount: number): string {
+  if (emailCount <= 1) return campaignTitle;
+  const email = emailTitle.trim() || "Email";
+  if (email.toLowerCase() === campaignTitle.trim().toLowerCase()) return campaignTitle;
+  return `${campaignTitle} — ${email}`;
+}
+
+/**
+ * One quota row per email in the package. A text, blog, or other asset in
+ * the same batch is not an email and does not tick the quota. Every email
+ * keeps the package's status and the package's month inputs, so the card
+ * and the folder file them together.
+ */
+function emailDeliverables(campaign: MonthDeskCampaignInput): MonthDeskCampaignInput[] {
+  if (!campaign.emails) return [campaign];
+  const emails = campaign.emails.filter(isQuotaEmail);
+  const itemSends = campaign.emails.map((email) => email.scheduled_send_at);
+  const monthFields: CountsForMonthInput = {
+    board_period: campaign.board_period,
+    scheduled_send_at: campaign.scheduled_send_at,
+    created_at: campaign.created_at,
+    due_on: campaign.due_on,
+    email_sends: [...(campaign.email_sends || []), ...itemSends],
+  };
+  return emails.map((email) => ({
+    ...campaign,
+    ...monthFields,
+    emails: undefined,
+    email_id: email.id,
+    title: deliverableTitle(campaign.title, email.title, emails.length),
+    row_send_at: rowSendAt(campaign, email),
+  }));
 }
 
 /**
@@ -412,7 +498,9 @@ export function buildMonthDesk(input: {
       active: linked ? linked.active : true,
       campaigns: [],
     });
-    bucket.campaigns.push(campaign);
+    for (const deliverable of emailDeliverables(campaign)) {
+      bucket.campaigns.push(deliverable);
+    }
   }
 
   const cards: MonthDeskCard[] = [];
@@ -447,13 +535,18 @@ export function buildMonthDesk(input: {
       const campaigns = rows
         .map((row) => ({
           id: row.id,
+          emailId: row.email_id || null,
           title: row.title,
           status: row.status,
           approved_channel: row.approved_channel || null,
-          sendAt: pickDisplayedSendAt(
-            [row.scheduled_send_at, ...(row.email_sends || [])],
-            nowIso
-          ).at,
+          // An expanded email shows its own send. A package that was not
+          // loaded item-by-item still shows the package send.
+          sendAt: row.email_id
+            ? (row.row_send_at || "").trim() || null
+            : pickDisplayedSendAt(
+                [row.scheduled_send_at, ...(row.email_sends || [])],
+                nowIso
+              ).at,
           period: month,
         }))
         .sort((a, b) => {
