@@ -544,7 +544,7 @@ export function CampaignMonthDesk() {
                   ) : (
                     <ul className="cmd-campaigns">
                       {folder.campaigns.map((campaign) => (
-                        <li key={campaign.id}>
+                        <li key={campaign.emailId ? `${campaign.id}:${campaign.emailId}` : campaign.id}>
                           <Link href={`/admin/campaigns/${campaign.id}`} className="cmd-campaign">
                             <span className="cmd-campaign-title">{campaign.title}</span>
                             <StatusBadge

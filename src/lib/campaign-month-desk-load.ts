@@ -9,6 +9,7 @@ import {
   campaignsVisibleToViewer,
 } from "./campaign-review-queue";
 import {
+  listCampaignDeskEmails,
   listCampaigns,
   listCampaignsForKindScope,
   listClientAccountManagers,
@@ -53,6 +54,7 @@ export function loadCampaignMonthDesk(
     "main"
   );
   const sends = listEmailScheduledInstants();
+  const deskEmails = listCampaignDeskEmails();
   const clientRows = getDb()
     .prepare(
       `SELECT id, name, active, monthly_email_quota, website, logo_path, updated_at
@@ -81,7 +83,9 @@ export function loadCampaignMonthDesk(
     board_period: campaign.board_period,
     scheduled_send_at: campaign.scheduled_send_at,
     created_at: campaign.created_at,
+    due_on: campaign.basecamp_due_on,
     email_sends: sends.get(campaign.id) || [],
+    emails: deskEmails.get(campaign.id) || [],
   }));
 
   // Account managers, and anyone whose list is limited to one asset kind,

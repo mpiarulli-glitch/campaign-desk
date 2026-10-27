@@ -252,7 +252,8 @@ export interface Campaign {
    * YYYY-MM this campaign counts for. The deliverables board treats null as
    * the UTC month of created_at. The Campaigns Clients view reads the same
    * column as "Counts for month" and, when it is null, uses the scheduled
-   * send month, then the created month. Null rows are not rewritten.
+   * send month, then the due date, then the created month. Null rows are not
+   * rewritten. That view counts each email in the package, not the row.
    */
   board_period: string | null;
   // When status is scheduled, the Pacific send instant (UTC ISO). Cron flips

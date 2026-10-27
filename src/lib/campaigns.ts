@@ -1883,6 +1883,43 @@ export function listClientAccountManagers(): Map<string, string> {
   return new Map(rows.map((row) => [row.id, (row.account_manager || "").trim()]));
 }
 
+export type CampaignDeskEmail = {
+  id: string;
+  title: string;
+  kind: string;
+  scheduled_send_at: string | null;
+};
+
+/** Every item in every package, in package order. The Clients view counts emails from this. */
+export function listCampaignDeskEmails(): Map<string, CampaignDeskEmail[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, campaign_id, title, kind, scheduled_send_at
+         FROM campaign_emails
+        ORDER BY sort_order ASC, created_at ASC`
+    )
+    .all() as Array<{
+    id: string;
+    campaign_id: string;
+    title: string;
+    kind: string;
+    scheduled_send_at: string | null;
+  }>;
+  const map = new Map<string, CampaignDeskEmail[]>();
+  for (const row of rows) {
+    const item: CampaignDeskEmail = {
+      id: row.id,
+      title: row.title,
+      kind: row.kind,
+      scheduled_send_at: row.scheduled_send_at,
+    };
+    const list = map.get(row.campaign_id);
+    if (list) list.push(item);
+    else map.set(row.campaign_id, [item]);
+  }
+  return map;
+}
+
 export function listEmailScheduledInstants(): Map<string, string[]> {
   const rows = getDb()
     .prepare(
