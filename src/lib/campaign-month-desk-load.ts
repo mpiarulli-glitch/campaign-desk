@@ -21,7 +21,7 @@ import {
 } from "./campaign-month-desk";
 import { getDb } from "./db";
 import type { CampaignKindScope } from "./people";
-import { resolveClientLogoUrl } from "./revenue";
+import { clientLogoPublicUrl } from "./client-logos";
 
 type ClientRow = {
   id: string;
@@ -58,12 +58,12 @@ export function loadCampaignMonthDesk(
     name: row.name,
     active: row.active !== 0,
     monthly_email_quota: row.monthly_email_quota || 0,
-    logoUrl: resolveClientLogoUrl({
-      id: row.id,
-      website: row.website || "",
-      logo_path: row.logo_path || "",
-      updated_at: row.updated_at,
-    }),
+    website: row.website || "",
+    // Stored file only. A website with no saved logo stays on the initials
+    // circle so this page does not hotlink a favicon service.
+    logoUrl: row.logo_path
+      ? clientLogoPublicUrl(row.id, row.updated_at)
+      : null,
   }));
 
   const campaigns: MonthDeskCampaignInput[] = visible.map((campaign) => ({

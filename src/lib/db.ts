@@ -421,9 +421,11 @@ export interface RevClient {
   account_manager: string;
   // Manually-set account tier: ""|standard|premium|vip.
   tier: string;
-  // Client website (bare domain or full URL) used to auto-derive a brand logo.
+  // Client website (bare domain or full URL). The Clients view can fetch a
+  // logo from it and store the file. Lifecycle still hotlinks a favicon when
+  // no file is stored.
   website: string;
-  // Uploaded logo filename under data/client-logos/. Empty = use website favicon.
+  // Logo filename under data/client-logos/. Empty means no stored logo.
   logo_path: string;
   // Manual account-sentiment override: ""|healthy|watch|at_risk. Empty means
   // fall back to the metric-derived sentiment.

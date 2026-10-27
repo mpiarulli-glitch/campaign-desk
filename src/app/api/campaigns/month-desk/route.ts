@@ -14,6 +14,7 @@ function summary(card: MonthDeskCard) {
     id: card.id,
     name: card.name,
     logoUrl: card.logoUrl,
+    website: card.website,
     target: card.target,
     thisMonth: card.thisMonth,
     nextMonth: card.nextMonth,

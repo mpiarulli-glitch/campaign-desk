@@ -49,9 +49,9 @@ export function normalizeHost(website: string): string {
   }
 }
 
-// Auto-derive a brand logo from the client's website. Uses Google's keyless
-// favicon service so no upload or API token is needed; the UI falls back to an
-// initials avatar when this returns null or the image fails to load.
+// Lifecycle and snapshot cards still hotlink Google's favicon when no file is
+// stored. The Campaigns Clients view does not use this; it only shows a logo
+// that has been saved under data/client-logos.
 export function logoUrlFor(website: string): string | null {
   const host = normalizeHost(website);
   if (!host) return null;

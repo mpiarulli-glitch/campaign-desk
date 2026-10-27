@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   MONTH_DESK_NEXT_MONTH_RULE,
@@ -123,7 +123,7 @@ function ClientMark({ name, logoUrl }: { name: string; logoUrl: string | null })
   const [failed, setFailed] = useState(false);
   if (logoUrl && !failed) {
     return (
-      <span className="snap-pick-logo">
+      <span className="snap-pick-logo cmd-logo-tile">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logoUrl} alt="" width={44} height={44} onError={() => setFailed(true)} />
       </span>
@@ -151,6 +151,12 @@ export function CampaignMonthDesk() {
   const [savingTarget, setSavingTarget] = useState(false);
   const [cardTargetKey, setCardTargetKey] = useState("");
   const [cardTargetDraft, setCardTargetDraft] = useState("");
+  const [websiteDraft, setWebsiteDraft] = useState("");
+  const [editingWebsite, setEditingWebsite] = useState(false);
+  const [savingWebsite, setSavingWebsite] = useState(false);
+  const [logoNote, setLogoNote] = useState("");
+  const [savingLogo, setSavingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const loadSummary = useCallback(async () => {
     const res = await fetch("/api/campaigns/month-desk");
@@ -184,6 +190,9 @@ export function CampaignMonthDesk() {
     setDetail(data.client || null);
     setCanSetTarget(Boolean(data.canSetTarget));
     setTargetDraft(String(data.client?.target || ""));
+    setWebsiteDraft(data.client?.website || "");
+    setEditingWebsite(false);
+    setLogoNote("");
   }, []);
 
   useEffect(() => {
@@ -214,6 +223,8 @@ export function CampaignMonthDesk() {
     setClientKey(key);
     setMonth("");
     setEditingTarget(false);
+    setEditingWebsite(false);
+    setLogoNote("");
     writeParams(key, "");
     void loadDetail(key);
   }
@@ -272,6 +283,75 @@ export function CampaignMonthDesk() {
     await loadDetail(detail.key);
   }
 
+  async function saveWebsite(raw: string) {
+    if (!detail?.id) return;
+    const next = raw.trim();
+    if (next === (detail.website || "")) {
+      setEditingWebsite(false);
+      return;
+    }
+    setSavingWebsite(true);
+    setLogoNote("");
+    const res = await fetch(`/api/revenue/clients/${detail.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ website: next }),
+    });
+    setSavingWebsite(false);
+    if (!res.ok) {
+      setLogoNote("Could not save the website.");
+      return;
+    }
+    setEditingWebsite(false);
+    await loadSummary();
+    await loadDetail(detail.key);
+  }
+
+  async function uploadLogo(file: File) {
+    if (!detail?.id) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoNote("Logo must be 2 MB or smaller.");
+      return;
+    }
+    setSavingLogo(true);
+    setLogoNote("");
+    const body = new FormData();
+    body.append("logo", file);
+    const res = await fetch(`/api/revenue/clients/${detail.id}/logo`, {
+      method: "POST",
+      body,
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingLogo(false);
+    if (!res.ok) {
+      setLogoNote(typeof data.error === "string" ? data.error : "Could not upload that logo.");
+      return;
+    }
+    await loadSummary();
+    await loadDetail(detail.key);
+  }
+
+  async function refreshLogo() {
+    if (!detail?.id) return;
+    if (!(detail.website || "").trim()) {
+      setLogoNote("Add a website first.");
+      return;
+    }
+    setSavingLogo(true);
+    setLogoNote("");
+    const res = await fetch(`/api/revenue/clients/${detail.id}/logo/refresh`, {
+      method: "POST",
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingLogo(false);
+    if (!res.ok) {
+      setLogoNote(typeof data.error === "string" ? data.error : "Could not refresh that logo.");
+      return;
+    }
+    await loadSummary();
+    await loadDetail(detail.key);
+  }
+
   const openFolder: MonthDeskFolder | null = useMemo(() => {
     if (!detail) return null;
     const selected =
@@ -303,6 +383,41 @@ export function CampaignMonthDesk() {
                 <p className="cmd-rule">
                   {MONTH_DESK_NEXT_MONTH_RULE}. {MONTH_DESK_THIS_MONTH_RULE}.
                 </p>
+                {detail.id && canSetTarget ? (
+                  <div className="cmd-logo-actions">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.svg"
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void uploadLogo(file);
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={savingLogo}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      Upload logo
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingLogo || !(detail.website || "").trim()}
+                      title={
+                        (detail.website || "").trim()
+                          ? "Fetch the logo from the website and save it"
+                          : "Add a website first"
+                      }
+                      onClick={() => void refreshLogo()}
+                    >
+                      {savingLogo ? "Saving logo…" : "Refresh logo"}
+                    </button>
+                    {logoNote ? <span className="cmd-logo-note">{logoNote}</span> : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -329,6 +444,31 @@ export function CampaignMonthDesk() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     void saveTarget(targetDraft);
+                  }
+                }}
+              />
+            </label>
+          ) : null}
+          {detail?.id && canSetTarget ? (
+            <label className="cmd-target cmd-website">
+              <span>Website</span>
+              <input
+                type="text"
+                inputMode="url"
+                value={editingWebsite ? websiteDraft : detail.website || ""}
+                placeholder="example.com"
+                aria-label={`Website for ${detail.name}`}
+                disabled={savingWebsite}
+                onFocus={() => {
+                  setEditingWebsite(true);
+                  setWebsiteDraft(detail.website || "");
+                }}
+                onChange={(e) => setWebsiteDraft(e.target.value)}
+                onBlur={() => void saveWebsite(websiteDraft)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void saveWebsite(websiteDraft);
                   }
                 }}
               />

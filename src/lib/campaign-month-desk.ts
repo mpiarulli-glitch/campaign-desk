@@ -76,6 +76,7 @@ export type MonthDeskClientInput = {
   active: boolean;
   /** Contracted monthly deliverable count. 0 means unset. */
   monthly_email_quota: number;
+  website?: string | null;
   logoUrl?: string | null;
 };
 
@@ -119,6 +120,7 @@ export type MonthDeskCard = {
   id: string | null;
   name: string;
   logoUrl: string | null;
+  website: string;
   target: number;
   thisMonth: MonthDeskProgress;
   nextMonth: MonthDeskProgress & {
@@ -362,6 +364,7 @@ export function buildMonthDesk(input: {
     id: string | null;
     name: string;
     logoUrl: string | null;
+    website: string;
     target: number;
     active: boolean;
     campaigns: MonthDeskCampaignInput[];
@@ -383,6 +386,7 @@ export function buildMonthDesk(input: {
         id: client.id,
         name: client.name,
         logoUrl: client.logoUrl || null,
+        website: (client.website || "").trim(),
         target: Math.max(0, client.monthly_email_quota || 0),
         active: true,
         campaigns: [],
@@ -403,6 +407,7 @@ export function buildMonthDesk(input: {
       id: linked?.id || null,
       name: linked?.name || (campaign.client_name || "").trim() || "No client",
       logoUrl: linked?.logoUrl || null,
+      website: (linked?.website || "").trim(),
       target: Math.max(0, linked?.monthly_email_quota || 0),
       active: linked ? linked.active : true,
       campaigns: [],
@@ -483,6 +488,7 @@ export function buildMonthDesk(input: {
       id: bucket.id,
       name: bucket.name,
       logoUrl: bucket.logoUrl,
+      website: bucket.website,
       target: bucket.target,
       thisMonth,
       nextMonth: {

@@ -248,8 +248,20 @@ describe("campaign month desk loader", { concurrency: 1 }, () => {
 
     const harbor = createRevClient({ name: "Harbor & Co", businessModel: "home_service" });
     const luisClient = createRevClient({ name: "Luis Only Co", businessModel: "home_service" });
-    updateRevClient(harbor.id, { monthlyEmailQuota: 2, accountManager: "cassidy" });
+    updateRevClient(harbor.id, {
+      monthlyEmailQuota: 2,
+      accountManager: "cassidy",
+      website: "harbor.example",
+    });
     updateRevClient(luisClient.id, { monthlyEmailQuota: 2, accountManager: "luis" });
+    const { saveClientLogo } = await import("../src/lib/client-logos");
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64"
+    );
+    const logo = saveClientLogo(luisClient.id, png, "image/png");
+    assert.equal(logo.ok, true);
+    if (logo.ok) updateRevClient(luisClient.id, { logoPath: logo.filename });
 
     const pinned = campaigns.createCampaign({
       title: "November promo",
@@ -299,6 +311,9 @@ describe("campaign month desk loader", { concurrency: 1 }, () => {
     assert.ok(adminHarbor);
     assert.ok(adminLuis);
     assert.equal(adminHarbor.target, 2);
+    assert.equal(adminHarbor.website, "harbor.example");
+    assert.equal(adminHarbor.logoUrl, null);
+    assert.match(adminLuis.logoUrl || "", new RegExp(`/api/clients/${luisClient.id}/logo`));
     assert.equal(adminHarbor.nextMonth.done, 2);
     assert.equal(adminHarbor.thisMonth.done, 0);
     const november = adminHarbor.months.find((month) => month.period === "2026-11")!;

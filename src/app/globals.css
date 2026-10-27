@@ -26321,6 +26321,52 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
   width: 120px;
 }
 
+.cmd-website input {
+  width: 200px;
+}
+
+.cmd-desk .cmd-logo-tile {
+  border-radius: 12px;
+  background: #f6f3ec;
+  border: 1px solid rgba(20, 16, 12, 0.12);
+}
+
+.cmd-desk .cmd-logo-tile img {
+  object-fit: contain;
+  padding: 4px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.cmd-logo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.cmd-logo-actions button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cmd-logo-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cmd-logo-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .cmd-folders-layout {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
