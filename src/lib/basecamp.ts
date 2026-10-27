@@ -2964,12 +2964,13 @@ async function fetchProjectPage(
 }
 
 async function fetchAllProjects(
-  identity: BcIdentity
+  identity: BcIdentity,
+  start = "/projects.json"
 ): Promise<{ projects: BasecampProject[]; complete: boolean }> {
   const projects: BasecampProject[] = [];
   const seenIds = new Set<number>();
   const seenPaths = new Set<string>();
-  let next: string | null = "/projects.json";
+  let next: string | null = start;
   let reportedTotal: number | null = null;
   for (let page = 0; page < PROJECT_MAX_PAGES && next; page++) {
     if (seenPaths.has(next)) return { projects, complete: false };
@@ -2998,12 +2999,16 @@ async function fetchAllProjects(
   return { projects, complete: next === null && countAgrees };
 }
 
-function refreshProjectList(key: string, identity: BcIdentity): Promise<BasecampProject[]> {
+function refreshProjectList(
+  key: string,
+  identity: BcIdentity,
+  start: string
+): Promise<BasecampProject[]> {
   const existing = projectInflight.get(key);
   if (existing) return existing;
   // The finally callback runs after this assignment, so it can see `job`.
   const job = (async () => {
-    const { projects, complete } = await fetchAllProjects(identity);
+    const { projects, complete } = await fetchAllProjects(identity, start);
     // A partial list must not be cached or handed to the client matcher. The
     // next call tries Basecamp again instead of reusing the short list.
     if (!complete) throw new Error("Basecamp project list was cut short");
@@ -3032,9 +3037,14 @@ function refreshProjectList(key: string, identity: BcIdentity): Promise<Basecamp
  */
 export async function listProjectCatalog(
   identity: BcIdentity = SERVICE,
-  opts?: { fresh?: boolean }
+  opts?: { fresh?: boolean; status?: "active" | "archived" }
 ): Promise<ProjectCatalog> {
-  const key = identityKey(identity);
+  const status = opts?.status === "archived" ? "archived" : "active";
+  // Archived projects live on a different index. They must not share the
+  // active catalog cache the Forecast picker reads.
+  const key = identityKey(identity) + (status === "archived" ? ":archived" : "");
+  const start =
+    status === "archived" ? "/projects.json?status=archived" : "/projects.json";
   const now = Date.now();
   const stored = () => projectMemory.get(key) || readStoredProjects(key);
   if (!opts?.fresh) {
@@ -3049,7 +3059,7 @@ export async function listProjectCatalog(
     }
   }
   try {
-    const projects = await refreshProjectList(key, identity);
+    const projects = await refreshProjectList(key, identity, start);
     projectStaleHold.delete(key);
     return { projects, fromCache: false, stale: false };
   } catch (err) {

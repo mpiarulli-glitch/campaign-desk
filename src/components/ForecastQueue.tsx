@@ -123,6 +123,8 @@ export function ForecastQueue({
   onHoursDraft,
   onSyncProjects,
   onSyncMeetings,
+  onLinkAll,
+  linkingAll,
   syncing,
   syncingMeetings,
   drag,
@@ -150,6 +152,8 @@ export function ForecastQueue({
   onHoursDraft: (value: string) => void;
   onSyncProjects: () => void;
   onSyncMeetings: () => void;
+  onLinkAll?: () => void;
+  linkingAll?: boolean;
   syncing: boolean;
   syncingMeetings: boolean;
   drag: ForecastDrag | null;
@@ -478,6 +482,11 @@ export function ForecastQueue({
         <button type="button" onClick={onSyncProjects} disabled={syncing}>
           {syncing ? "Refreshing…" : "Refresh projects"}
         </button>
+        {onLinkAll ? (
+          <button type="button" onClick={onLinkAll} disabled={linkingAll}>
+            {linkingAll ? "Linking…" : "Link all projects"}
+          </button>
+        ) : null}
         <button type="button" onClick={onSyncMeetings} disabled={syncingMeetings}>
           {syncingMeetings ? "Syncing…" : "Sync meetings"}
         </button>

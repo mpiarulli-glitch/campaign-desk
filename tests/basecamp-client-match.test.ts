@@ -40,6 +40,9 @@ test("normalizeClientMatchKey folds case, punctuation, and, and legal suffixes",
   assert.equal(normalizeClientMatchKey("Smith and Sons, Inc."), "smith and sons");
   assert.equal(normalizeClientMatchKey("Smith&Sons"), "smith and sons");
   assert.equal(normalizeClientMatchKey("Smith Co."), "smith");
+  assert.equal(normalizeClientMatchKey("LMX Health - Marketing"), "lmx health");
+  assert.equal(normalizeClientMatchKey("LMX Health – Marketing"), "lmx health");
+  assert.equal(normalizeClientMatchKey("LMX Health Marketing"), "lmx health marketing");
   assert.equal(normalizeClientMatchKey("FloorCo Design"), "floorco design");
   assert.equal(normalizeClientMatchKey("Café Olé"), "cafe ole");
   assert.equal(normalizeClientMatchKey("D'Angelo's"), "dangelos");

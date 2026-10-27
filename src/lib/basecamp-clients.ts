@@ -40,6 +40,7 @@ export function clientNameFor(projectName: string): string {
   return (projectName || "")
     .replace(/\s*[-–—]?\s*growth os.*$/i, "")
     .replace(/\s*[-–—]?\s*powered by.*$/i, "")
+    .replace(/\s*[-–—]\s*marketing\b.*$/i, "")
     .trim();
 }
 

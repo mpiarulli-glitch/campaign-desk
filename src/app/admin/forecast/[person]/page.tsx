@@ -1325,6 +1325,9 @@ export default function PersonForecastPage() {
   // page is now the only place that cache is used.
   const [syncingEvents, setSyncingEvents] = useState(false);
   const [syncingProjects, setSyncingProjects] = useState(false);
+  const [canLinkAll, setCanLinkAll] = useState(false);
+  const [linkingAll, setLinkingAll] = useState(false);
+  const [linkAllNote, setLinkAllNote] = useState("");
   // A quiet line when Basecamp was rate-limited or unreachable. Not a banner.
   const [projectsNote, setProjectsNote] = useState("");
   const [syncingGoogle, setSyncingGoogle] = useState(false);
@@ -1483,6 +1486,7 @@ export default function PersonForecastPage() {
         } else if (Array.isArray(data.forecastSubjects)) {
           setForecastSubjects(data.forecastSubjects);
         }
+        setCanLinkAll(data.role === "admin");
       })
       .catch(() => {});
   }, []);
@@ -1770,6 +1774,27 @@ export default function PersonForecastPage() {
     }
     const json = await res.json().catch(() => null);
     if (json) applyPicker(json);
+  }
+
+  async function linkAllProjects() {
+    setLinkingAll(true);
+    setError("");
+    const res = await fetch("/api/admin/basecamp-link-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dryRun: false }),
+    });
+    const json = await res.json().catch(() => null);
+    setLinkingAll(false);
+    setLinkAllNote(
+      (json && typeof json.summary === "string" && json.summary) ||
+        (json && typeof json.error === "string" && json.error) ||
+        "Couldn't link projects."
+    );
+    if (!res.ok) return;
+    const picker = await fetch(`/api/forecast/projects?person=${person}`);
+    const next = picker.ok ? await picker.json().catch(() => null) : null;
+    if (next) applyPicker(next);
   }
 
   // Switching mode clears whatever was picked under the old one, so a half-filled
@@ -3558,14 +3583,27 @@ export default function PersonForecastPage() {
             {/* Both syncs live in the queue sidebar on the calendar, next to the
                 pickers they actually feed, rather than up here in the chrome. */}
             {view === "calendar" ? null : (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={syncProjects}
-                disabled={syncingProjects}
-                title="Reload every Basecamp project. Clients whose names match are linked. A project with no client stays pickable."
-              >
-                {syncingProjects ? "Refreshing…" : "Refresh projects"}
-              </button>
+              <>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={syncProjects}
+                  disabled={syncingProjects}
+                  title="Reload every Basecamp project. Clients whose names match are linked. A project with no client stays pickable."
+                >
+                  {syncingProjects ? "Refreshing…" : "Refresh projects"}
+                </button>
+                {canLinkAll ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => void linkAllProjects()}
+                    disabled={linkingAll}
+                    title="Link every active Basecamp project to a client. A confident name match fills a blank link. Otherwise a forecasting client is created. An existing link is left as it is."
+                  >
+                    {linkingAll ? "Linking…" : "Link all projects"}
+                  </button>
+                ) : null}
+              </>
             )}
             {view === "calendar" || view === "tasks" ? null : (
               <button
@@ -3601,6 +3639,9 @@ export default function PersonForecastPage() {
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
         {projectsNote ? (
           <p className="muted" style={{ marginBottom: 16 }}>{projectsNote}</p>
+        ) : null}
+        {linkAllNote ? (
+          <p className="muted" style={{ marginBottom: 16 }}>{linkAllNote}</p>
         ) : null}
 
         {planNotice ? (
@@ -3826,6 +3867,8 @@ export default function PersonForecastPage() {
               onHoursDraft={setQueueHours}
               onSyncProjects={syncProjects}
               onSyncMeetings={syncMeetings}
+              onLinkAll={canLinkAll ? () => void linkAllProjects() : undefined}
+              linkingAll={linkingAll}
               syncing={syncingProjects}
               syncingMeetings={syncingEvents}
               drag={drag}

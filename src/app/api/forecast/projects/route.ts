@@ -5,24 +5,24 @@ import {
   ensureForecastProject,
   forecastPickerForPerson,
 } from "@/lib/basecamp-clients";
-import { linkMissingBasecampProjects } from "@/lib/basecamp-client-links";
+import { linkAllBasecampProjects } from "@/lib/basecamp-link-all";
 import { isValidPerson } from "@/lib/forecast";
 
 // Forecast add-task picker. The catalog is every active Basecamp project on
 // the King Kashflow account, including ones with no client row yet. GET reads
-// the short server cache. POST refreshes it, then links clients whose names
-// already match. POST { action: "ensure" } links or creates the one project
-// somebody just picked. Forecast access is enough for all three — this is how
-// people add their own tasks, not an admin import.
+// the short server cache. POST refreshes it, then links every project that
+// does not already have a client. POST { action: "ensure" } links or creates
+// the one project somebody just picked. Forecast access is enough for all
+// three — this is how people add their own tasks, not an admin import.
 
 async function pickerResponse(person: string, fresh: boolean) {
   if (fresh && basecampConnected()) {
     try {
       const catalog = await listProjectCatalog(SERVICE, { fresh: true });
       if (catalog.projects.length) {
-        await linkMissingBasecampProjects({
-          force: true,
-          loadProjects: async () => catalog.projects,
+        await linkAllBasecampProjects({
+          projects: catalog.projects,
+          fresh: true,
         });
       }
     } catch {
