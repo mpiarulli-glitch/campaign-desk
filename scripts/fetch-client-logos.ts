@@ -1,6 +1,8 @@
 /**
- * Pull a stored logo for every client that has a website and does not yet
- * have one. Safe to run again: clients that already have a file are skipped.
+ * Pull a stored logo for every client that has a Lifecycle domain and does
+ * not yet have one. The domain is rev_clients.website when it is set, and
+ * otherwise a Lifecycle account link. Safe to run again: clients that
+ * already have a file are skipped.
  *
  *   npx tsx scripts/fetch-client-logos.ts
  *   npx tsx scripts/fetch-client-logos.ts --dry-run
@@ -22,13 +24,18 @@ const report = await pullMissingClientLogos({ dryRun, force });
 
 if (dryRun) {
   console.log(`Would fetch ${report.planned.length} client(s):`);
-  for (const row of report.planned) console.log(`  ${row.name} — ${row.website}`);
+  for (const row of report.planned) {
+    console.log(`  ${row.name} — ${row.website} (${row.source})`);
+  }
 } else {
   console.log(`Succeeded: ${report.fetched.length}`);
   for (const row of report.fetched) console.log(`  ${row.name} — ${row.source}`);
   console.log(`Failed: ${report.failed.length}`);
   for (const row of report.failed) console.log(`  ${row.name} — ${row.error}`);
 }
+
+console.log(`No domain: ${report.unresolved.length}`);
+for (const row of report.unresolved) console.log(`  ${row.name}`);
 
 console.log(`Skipped: ${report.skipped.length}`);
 const reasons = new Map<string, number>();

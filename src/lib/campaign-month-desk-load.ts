@@ -21,7 +21,14 @@ import {
 } from "./campaign-month-desk";
 import { getDb } from "./db";
 import type { CampaignKindScope } from "./people";
-import { clientLogoPublicUrl } from "./client-logos";
+import { loadLifecycleLogoDomains } from "./client-logo-domain";
+import { clientLogoPublicUrl, faviconPublicUrl, readCachedFavicon } from "./client-logos";
+
+function logoUrlForRow(row: ClientRow, host: string): string | null {
+  if ((row.logo_path || "").trim()) return clientLogoPublicUrl(row.id, row.updated_at);
+  if (!host || !readCachedFavicon(host)) return null;
+  return faviconPublicUrl(host);
+}
 
 type ClientRow = {
   id: string;
@@ -53,17 +60,15 @@ export function loadCampaignMonthDesk(
     )
     .all() as ClientRow[];
 
+  const domains = loadLifecycleLogoDomains(clientRows);
   const clients: MonthDeskClientInput[] = clientRows.map((row) => ({
     id: row.id,
     name: row.name,
     active: row.active !== 0,
     monthly_email_quota: row.monthly_email_quota || 0,
     website: row.website || "",
-    // Stored file only. A website with no saved logo stays on the initials
-    // circle so this page does not hotlink a favicon service.
-    logoUrl: row.logo_path
-      ? clientLogoPublicUrl(row.id, row.updated_at)
-      : null,
+    // Stored file, then a favicon we already saved. Never a hotlinked URL.
+    logoUrl: logoUrlForRow(row, domains.get(row.id)?.host || ""),
   }));
 
   const campaigns: MonthDeskCampaignInput[] = visible.map((campaign) => ({

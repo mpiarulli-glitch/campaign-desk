@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { can, getSession, isCampaignsReadAuthenticated, sessionCampaignKind } from "@/lib/auth";
 import { accountManagerViewerSlug } from "@/lib/campaign-review-queue";
 import { loadCampaignMonthDesk } from "@/lib/campaign-month-desk-load";
+import { scheduleMissingClientLogos } from "@/lib/client-logo-fetch";
 import {
   MONTH_DESK_NEXT_MONTH_RULE,
   MONTH_DESK_THIS_MONTH_RULE,
@@ -49,6 +50,9 @@ export async function GET(request: Request) {
       client,
     });
   }
+
+  const ids = desk.clients.map((card) => card.id).filter((id): id is string => Boolean(id));
+  after(() => scheduleMissingClientLogos(ids));
 
   return NextResponse.json({
     period: desk.period,

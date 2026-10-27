@@ -10,9 +10,14 @@ import {
   logoAttempts,
   publicWebsiteUrl,
   pullMissingClientLogos,
+  refreshClientLogo,
+  resetClientLogoResolveForTests,
+  scheduleMissingClientLogos,
   validateLogoUrl,
   type LogoTransport,
 } from "../src/lib/client-logo-fetch";
+import { pickLifecycleLogoDomain } from "../src/lib/client-logo-domain";
+import { faviconCacheHost, saveCachedFavicon } from "../src/lib/client-logos";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -27,6 +32,56 @@ const PAGE = `<!doctype html><html><head>
 <link rel="apple-touch-icon" href="http://127.0.0.1/secret.png">
 <meta property="og:image" content="https://cdn.example.com/og.jpg">
 </head></html>`;
+
+test("lifecycle domain prefers the website, then the account links", () => {
+  assert.equal(
+    pickLifecycleLogoDomain({
+      website: "https://harbor.example/menu",
+      logoAssetsUrl: "https://other.example",
+    })?.source,
+    "website"
+  );
+  assert.equal(
+    pickLifecycleLogoDomain({
+      website: "https://harbor.example/menu",
+    })?.host,
+    "harbor.example"
+  );
+  assert.equal(
+    pickLifecycleLogoDomain({
+      website: "",
+      logoAssetsUrl: "https://loodahousepawn.com",
+    })?.source,
+    "brand-kit"
+  );
+  assert.equal(
+    pickLifecycleLogoDomain({
+      logoAssetsUrl: "https://docs.google.com/document/d/abc",
+      replyToEmail: "Hello <studio@lumen.example>",
+    })?.source,
+    "reply-to"
+  );
+  assert.equal(
+    pickLifecycleLogoDomain({
+      logoAssetsUrl: "http://127.0.0.1/logo.png",
+      offerUrls: ["https://offers.example/spring"],
+    })?.source,
+    "offer"
+  );
+  assert.equal(
+    pickLifecycleLogoDomain({
+      optInUrls: ["https://join.example"],
+    })?.host,
+    "join.example"
+  );
+  assert.equal(
+    pickLifecycleLogoDomain({ replyToEmail: "owner@gmail.com" }),
+    null
+  );
+  assert.equal(pickLifecycleLogoDomain({ website: "", replyToEmail: "" }), null);
+  assert.equal(faviconCacheHost("../etc/passwd"), null);
+  assert.equal(faviconCacheHost("harbor.example"), "harbor.example");
+});
 
 test("private and loopback addresses are blocked", () => {
   for (const ip of [
@@ -164,7 +219,7 @@ describe("pull missing client logos", { concurrency: 1 }, () => {
     assert.equal(dry.planned.length, 1);
     assert.equal(dry.planned[0].name, "Harbor & Co");
     assert.equal(calls.length, 0);
-    assert.ok(dry.skipped.some((row) => row.name === "Quiet Client"));
+    assert.ok(dry.skipped.some((row) => row.id === quiet.id));
 
     const first = await pullMissingClientLogos({ transport });
     assert.equal(first.fetched.length, 1);
@@ -180,5 +235,136 @@ describe("pull missing client logos", { concurrency: 1 }, () => {
     const callsAfterFirst = calls.length;
     await pullMissingClientLogos({ force: true, clientId: harbor.id, transport });
     assert.ok(calls.length > callsAfterFirst);
+  });
+
+  test("an empty website uses the lifecycle brand kit, then the card shows the stored logo", async (t) => {
+    const originalCwd = process.cwd();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-logo-brand-"));
+    process.chdir(tmp);
+    const { closeDbForTests } = await import("../src/lib/db");
+    closeDbForTests();
+    const { createRevClient, getRevClient } = await import("../src/lib/revenue");
+    const { saveAccountBrandGuidelines } = await import("../src/lib/lifecycle-account-playbook");
+    const { loadCampaignMonthDesk } = await import("../src/lib/campaign-month-desk-load");
+
+    t.after(() => {
+      closeDbForTests();
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    const harbor = createRevClient({ name: "Harbor & Co", businessModel: "home_service" });
+    const northwind = createRevClient({ name: "Northwind", businessModel: "b2b" });
+    assert.equal(getRevClient(harbor.id)?.website, "");
+    saveAccountBrandGuidelines(harbor.id, {
+      logoAssetsUrl: "https://harbor.example/about",
+    });
+
+    const transport: LogoTransport = async (url) => {
+      if (url.startsWith("https://harbor.example")) {
+        return { ok: true, status: 200, contentType: "image/png", body: PNG, url };
+      }
+      return { ok: false, error: "miss" };
+    };
+
+    const report = await pullMissingClientLogos({ transport });
+    assert.equal(report.fetched.length, 1);
+    assert.equal(report.fetched[0].source, "website-image");
+    assert.equal(getRevClient(harbor.id)?.website, "harbor.example");
+    assert.ok((getRevClient(harbor.id)?.logo_path || "").endsWith(".png"));
+    assert.ok(report.unresolved.some((row) => row.name === "Northwind"));
+
+    const desk = loadCampaignMonthDesk({ role: "admin", person: null }, null);
+    const card = desk.clients.find((client) => client.id === harbor.id);
+    const blank = desk.clients.find((client) => client.id === northwind.id);
+    assert.match(card?.logoUrl || "", new RegExp(`/api/clients/${harbor.id}/logo`));
+    assert.equal(/google\.com/.test(card?.logoUrl || ""), false);
+    assert.equal(blank?.logoUrl, null);
+
+    const refreshed = await refreshClientLogo(harbor.id, transport);
+    assert.equal(refreshed.ok, true);
+    if (refreshed.ok) {
+      assert.match(refreshed.logoUrl, new RegExp(`/api/clients/${harbor.id}/logo`));
+    }
+  });
+
+  test("a cached favicon shows when the logo file is not stored yet", async (t) => {
+    const originalCwd = process.cwd();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-logo-favicon-"));
+    process.chdir(tmp);
+    const { closeDbForTests } = await import("../src/lib/db");
+    closeDbForTests();
+    const { createRevClient } = await import("../src/lib/revenue");
+    const { saveAccountBrandGuidelines } = await import("../src/lib/lifecycle-account-playbook");
+    const { loadCampaignMonthDesk } = await import("../src/lib/campaign-month-desk-load");
+
+    t.after(() => {
+      closeDbForTests();
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    const lumen = createRevClient({ name: "Lumen Studio", businessModel: "b2b" });
+    saveAccountBrandGuidelines(lumen.id, { replyToEmail: "hello@lumen.example" });
+    assert.equal(saveCachedFavicon("lumen.example", PNG), true);
+
+    const desk = loadCampaignMonthDesk({ role: "admin", person: null }, null);
+    const card = desk.clients.find((client) => client.id === lumen.id);
+    assert.equal(card?.website, "");
+    assert.equal(card?.logoUrl, "/api/client-favicons/lumen.example");
+  });
+
+  test("a page load resolves a limited, deduped batch and skips clients with no domain", async (t) => {
+    const originalCwd = process.cwd();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-logo-batch-"));
+    process.chdir(tmp);
+    const { closeDbForTests } = await import("../src/lib/db");
+    closeDbForTests();
+    resetClientLogoResolveForTests();
+    const { createRevClient, updateRevClient } = await import("../src/lib/revenue");
+
+    t.after(() => {
+      resetClientLogoResolveForTests();
+      closeDbForTests();
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const client = createRevClient({ name: `Client ${i}`, businessModel: "home_service" });
+      updateRevClient(client.id, { website: `https://c${i}.example` });
+      ids.push(client.id);
+    }
+    const quiet = createRevClient({ name: "No Domain", businessModel: "b2b" });
+    const pages: string[] = [];
+    const transport: LogoTransport = async (url) => {
+      if (/^https:\/\/c\d\.example\/$/.test(url)) {
+        pages.push(url);
+        return { ok: true, status: 200, contentType: "image/png", body: PNG, url };
+      }
+      return { ok: false, error: "miss" };
+    };
+
+    const first = scheduleMissingClientLogos([quiet.id, ...ids], {
+      transport,
+      limit: 4,
+      gapMs: 0,
+    });
+    const second = scheduleMissingClientLogos([quiet.id, ...ids], {
+      transport,
+      limit: 4,
+      gapMs: 0,
+    });
+    const [startedFirst, startedSecond] = await Promise.all([first, second]);
+    assert.equal(startedFirst.length, 4);
+    assert.equal(startedFirst.includes(quiet.id), false);
+    assert.equal(startedSecond.length, 1);
+    assert.equal(new Set([...startedFirst, ...startedSecond]).size, 5);
+    assert.equal(pages.length, 5);
+
+    const again = await scheduleMissingClientLogos(ids, { transport, limit: 4, gapMs: 0 });
+    assert.deepEqual(again, []);
+    assert.equal(pages.length, 5);
   });
 });

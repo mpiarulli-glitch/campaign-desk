@@ -50,8 +50,8 @@ export function normalizeHost(website: string): string {
 }
 
 // Lifecycle and snapshot cards still hotlink Google's favicon when no file is
-// stored. The Campaigns Clients view does not use this; it only shows a logo
-// that has been saved under data/client-logos.
+// stored. The Campaigns Clients view does not use this URL. It shows a file
+// saved under data/client-logos, or a favicon from that same cache.
 export function logoUrlFor(website: string): string | null {
   const host = normalizeHost(website);
   if (!host) return null;
