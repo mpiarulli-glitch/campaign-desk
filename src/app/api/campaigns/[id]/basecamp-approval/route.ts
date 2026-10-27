@@ -5,11 +5,16 @@ import {
   asPerson,
   basecampCardAppUrl,
   basecampConnected,
-  findClientContact,
   getProjectPeopleForMention,
   hasConnection,
+  readProjectDescription,
   sendApprovalToDeliverables,
 } from "@/lib/basecamp";
+import {
+  loadSendRoster,
+  pickApprovalRecipient,
+  sendRosterIdentities,
+} from "@/lib/approval-roster";
 import {
   resolveApprovalEmailTo,
   sendApprovalEmail,
@@ -127,9 +132,13 @@ export async function GET(_request: Request, { params }: Params) {
   let defaultRecipientId: number | null = null;
   if (state.client?.basecamp_project_id && basecampConnected()) {
     try {
-      const roster = await getProjectPeopleForMention(
-        state.client.basecamp_project_id
-      );
+      const loaded = await loadSendRoster({
+        clientId: state.client.id,
+        clientName: state.client.name,
+        projectId: state.client.basecamp_project_id,
+        identities: await sendRosterIdentities(),
+      });
+      const roster = loaded.people;
       people = roster
         .map((person) => ({
           id: person.id,
@@ -142,25 +151,27 @@ export async function GET(_request: Request, { params }: Params) {
           if (a.isClient !== b.isClient) return a.isClient ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
-      if (!people.length) {
-        peopleReason =
-          "Nobody came back for that project. Check the project id, and that King Kashflow is a member of it.";
+      peopleReason = loaded.peopleReason;
+      // The project description names the POC ("Mehtab Singh - piscataway@…")
+      // when the client row itself has no contact yet. Read it with the same
+      // account that opened the roster, so a mascot that is not on the project
+      // does not hide the person.
+      let description = "";
+      if (roster.length && loaded.reader) {
+        description = await readProjectDescription(loaded.projectId, loaded.reader);
       }
-      // Whoever the account already points at, so the form opens on the usual
-      // recipient and sending stays one click for every client that has one.
-      const saved =
-        state.client.basecamp_contact_id ||
-        findClientContact(
-          roster,
-          state.client.contact_email,
-          state.client.contact_name
-        )?.id ||
-        0;
-      if (saved && people.some((person) => person.id === saved)) {
-        defaultRecipientId = saved;
+      const picked = pickApprovalRecipient({
+        people: roster,
+        contactId: state.client.basecamp_contact_id,
+        contactEmail: state.client.contact_email,
+        contactName: state.client.contact_name,
+        projectDescription: description,
+      });
+      if (picked && people.some((person) => person.id === picked.id)) {
+        defaultRecipientId = picked.id;
       }
     } catch {
-      peopleReason = "Could not load the Basecamp project roster.";
+      peopleReason = `Couldn't reach Basecamp to load people for ${state.client.name}.`;
     }
   }
 

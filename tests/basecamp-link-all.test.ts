@@ -156,3 +156,75 @@ test("link-all links, creates, and reports what it will not guess", async (t) =>
   assert.match(again.summary, /Nothing new to link/);
   assert.equal(linkAll.readLinkAllReport()?.skipped, true);
 });
+
+test("link-all rewrites a saved id that is not a live project", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-link-repair-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+  const { closeDbForTests } = await import("../src/lib/db");
+  closeDbForTests();
+
+  t.after(() => {
+    closeDbForTests();
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const { createRevClient, getRevClient, updateRevClient } = await import("../src/lib/revenue");
+  const { getDb } = await import("../src/lib/db");
+  const linkAll = await import("../src/lib/basecamp-link-all");
+
+  // 4258259 is the Krak Boba Piscataway client company, not the project.
+  const krak = createRevClient({ name: "Krak Boba Piscataway", businessModel: "home_service" });
+  updateRevClient(krak.id, { basecampProjectId: "4258259" });
+  const kept = createRevClient({ name: "Harbor Dental", businessModel: "home_service" });
+  updateRevClient(kept.id, { basecampProjectId: "1003" });
+  const dotted = createRevClient({ name: "Pinnacle Roofing", businessModel: "home_service" });
+  updateRevClient(dotted.id, { basecampProjectId: "1002.0" });
+  const twin = createRevClient({ name: "Twin", businessModel: "home_service" });
+  updateRevClient(twin.id, { basecampProjectId: "999" });
+
+  const projects = [
+    { id: "49040791", name: "Krak Boba Piscataway Growth OS – Powered by the Empire Method™" },
+    { id: "1003", name: "Harbor Dental Growth OS" },
+    { id: "1002", name: "Pinnacle Roofing - Marketing" },
+    { id: "2001", name: "Twin Growth OS" },
+    { id: "2002", name: "Twin - Marketing" },
+  ];
+
+  const report = await linkAll.linkAllBasecampProjects({
+    dryRun: false,
+    projects,
+    archived: [],
+  });
+
+  assert.equal(getRevClient(krak.id)?.basecamp_project_id, "49040791");
+  assert.equal(getRevClient(kept.id)?.basecamp_project_id, "1003");
+  assert.equal(getRevClient(dotted.id)?.basecamp_project_id, "1002");
+  assert.equal(getRevClient(twin.id)?.basecamp_project_id, "999");
+  assert.deepEqual(
+    report.relinked.map((row) => row.client).sort(),
+    ["Krak Boba Piscataway", "Pinnacle Roofing"]
+  );
+  const krakRelink = report.relinked.find((row) => row.client === "Krak Boba Piscataway");
+  assert.equal(krakRelink?.fromProjectId, "4258259");
+  assert.equal(krakRelink?.projectId, "49040791");
+  assert.ok(report.staleProjectLinks.some((row) => row.client === "Twin" && row.projectId === "999"));
+  assert.ok(
+    report.ambiguous.some(
+      (row) => row.kind === "several-projects" && row.clients.includes("Twin")
+    )
+  );
+  assert.equal(
+    (getDb().prepare(`SELECT COUNT(*) AS n FROM forecast_tasks`).get() as { n: number }).n,
+    0
+  );
+
+  const again = await linkAll.linkAllBasecampProjects({
+    dryRun: false,
+    projects,
+    archived: [],
+  });
+  assert.equal(again.relinked.length, 0);
+  assert.equal(getRevClient(krak.id)?.basecamp_project_id, "49040791");
+});

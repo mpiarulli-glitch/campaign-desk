@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { isProductionAuthenticated } from "@/lib/auth";
 import { getRevClient } from "@/lib/revenue";
-import { basecampConnected, getProjectPeopleForMention } from "@/lib/basecamp";
+import { basecampConnected } from "@/lib/basecamp";
+import { loadSendRoster, sendRosterIdentities } from "@/lib/approval-roster";
 import { usableEmail } from "@/lib/email-address";
 
 // The roster of a client's Basecamp project, for picking their contact.
@@ -40,17 +41,21 @@ export async function GET(_request: Request, { params }: Params) {
     });
   }
 
-  const people = await getProjectPeopleForMention(client.basecamp_project_id);
-  if (!people.length) {
+  const loaded = await loadSendRoster({
+    clientId: client.id,
+    clientName: client.name,
+    projectId: client.basecamp_project_id,
+    identities: await sendRosterIdentities(),
+  });
+  if (!loaded.people.length) {
     return NextResponse.json({
       people: [],
-      reason:
-        "Nobody came back for that project. Check the project id, and that King Kashflow is a member of it.",
+      reason: loaded.peopleReason,
     });
   }
 
   return NextResponse.json({
-    people: people
+    people: loaded.people
       .map((person) => ({
         id: person.id,
         name: person.name,

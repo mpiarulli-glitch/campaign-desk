@@ -323,6 +323,25 @@ export function extractProjectId(input: string): string {
   return m ? m[1] : s.replace(/[^\d]/g, "");
 }
 
+/**
+ * The project id Basecamp's API will accept.
+ *
+ * A stored value can be the digits, a project URL, or a whole number SQLite
+ * handed back with a trailing ".0". Anything else (a company id is still
+ * digits; a title is not) is returned only when it is already all digits.
+ * A title stays empty so a people lookup is not aimed at an invented id.
+ */
+export function canonicalBasecampProjectId(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const fromUrl = text.match(/projects\/(\d+)/);
+  if (fromUrl) return fromUrl[1];
+  const dotted = text.match(/^(\d+)\.0+$/);
+  if (dotted) return dotted[1];
+  return /^\d+$/.test(text) ? text : "";
+}
+
 export interface CardResult {
   ok: boolean;
   error?: string;
@@ -462,25 +481,86 @@ function asBcPerson(p: {
   };
 }
 
+export type ProjectRosterProblem = "not_open" | "forbidden" | "empty" | "unreachable";
+
+type RawBcPerson = {
+  id?: number;
+  name?: string;
+  email_address?: string;
+  client?: boolean;
+  employee?: boolean;
+  attachable_sgid?: string;
+};
+
+/**
+ * People on a project, plus why the list is empty.
+ *
+ * Basecamp answers 404 both when the id is not a live project and when this
+ * token is not on it. Those used to collapse into "nobody came back", which
+ * hid a wrong saved id and a mascot account that was never added.
+ */
+export async function readProjectRoster(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ people: BcPerson[]; problem: ProjectRosterProblem | null }> {
+  const id = canonicalBasecampProjectId(projectId);
+  if (!id) return { people: [], problem: "not_open" };
+  try {
+    const first = await bc(`/projects/${id}/people.json`, undefined, identity);
+    if (first.status === 404) return { people: [], problem: "not_open" };
+    if (first.status === 403) return { people: [], problem: "forbidden" };
+    if (!first.ok) return { people: [], problem: "unreachable" };
+    const batch = await first.json();
+    if (!Array.isArray(batch)) return { people: [], problem: "unreachable" };
+    const raw: RawBcPerson[] = [...batch];
+    let next = nextPagePath(first.headers.get("Link"));
+    for (let page = 1; page < PROJECT_PEOPLE_MAX_PAGES && next; page++) {
+      let res: Response;
+      try {
+        res = await bc(next, undefined, identity);
+      } catch {
+        break;
+      }
+      if (!res.ok) break;
+      const more = await res.json();
+      if (!Array.isArray(more)) break;
+      raw.push(...(more as RawBcPerson[]));
+      next = nextPagePath(res.headers.get("Link"));
+    }
+    const people = raw.map(asBcPerson).filter((person): person is BcPerson => person !== null);
+    if (!people.length) return { people: [], problem: "empty" };
+    return { people, problem: null };
+  } catch {
+    return { people: [], problem: "unreachable" };
+  }
+}
+
 // People with access to a project. Used to resolve a contact / account manager
 // (given as an email or name) to the Basecamp person id we tag on a card.
+// An empty list is either a real empty project or a call that did not open.
+// Callers that need to tell those apart use readProjectRoster.
 export async function getProjectPeople(
   projectId: string,
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
-  if (!projectId) return [];
+  const roster = await readProjectRoster(projectId, identity);
+  return roster.people;
+}
+
+/** The project's description, used to find the POC line. Empty when it cannot be opened. */
+export async function readProjectDescription(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<string> {
+  const id = canonicalBasecampProjectId(projectId);
+  if (!id) return "";
   try {
-    const arr = await bcCollection<{
-      id?: number;
-      name?: string;
-      email_address?: string;
-      client?: boolean;
-      employee?: boolean;
-      attachable_sgid?: string;
-    }>(`/projects/${projectId}/people.json`, PROJECT_PEOPLE_MAX_PAGES, identity);
-    return arr.map(asBcPerson).filter((person): person is BcPerson => person !== null);
+    const res = await bc(`/projects/${id}.json`, undefined, identity);
+    if (!res.ok) return "";
+    const body = await res.json();
+    return typeof body?.description === "string" ? body.description : "";
   } catch {
-    return [];
+    return "";
   }
 }
 
@@ -535,21 +615,29 @@ export function mergePingableDetails(
 // mentions silently degraded to plain text. /circles/people.json ("pingable")
 // carries both for the whole account, so the two are merged: membership comes
 // from the project, contact details from pingable.
+export async function readProjectRosterForMention(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ people: BcPerson[]; problem: ProjectRosterProblem | null }> {
+  const roster = await readProjectRoster(projectId, identity);
+  if (!roster.people.length) return roster;
+  try {
+    const pingable = await listPingablePeople(identity);
+    if (!pingable.length) return roster;
+    return { people: mergePingableDetails(roster.people, pingable), problem: null };
+  } catch {
+    // Enrichment is best effort. Falling back to the plain roster keeps the card
+    // going out, just without an email match or a real mention.
+    return roster;
+  }
+}
+
 export async function getProjectPeopleForMention(
   projectId: string,
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
-  const members = await getProjectPeople(projectId, identity);
-  if (!members.length) return members;
-  try {
-    const pingable = await listPingablePeople(identity);
-    if (!pingable.length) return members;
-    return mergePingableDetails(members, pingable);
-  } catch {
-    // Enrichment is best effort. Falling back to the plain roster keeps the card
-    // going out, just without an email match or a real mention.
-    return members;
-  }
+  const roster = await readProjectRosterForMention(projectId, identity);
+  return roster.people;
 }
 
 // Rich-text @-mention markup for a person, to embed directly in card content.

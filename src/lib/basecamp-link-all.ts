@@ -2,11 +2,20 @@
 //
 // Confident name matches fill a blank basecamp_project_id, using the same
 // normalizer as the weekly Forecast auto-link. Anything else that is not an
-// internal workspace or a person gets one forecasting-only client. An id that
-// is already set is never overwritten. Ambiguous names are reported and left
+// internal workspace or a person gets one forecasting-only client. A saved id
+// that still opens a live project is left alone, including a manual one. A
+// saved id that is not on the active catalog is replaced when the client name
+// matches exactly one live project. Ambiguous names are reported and left
 // alone. This does not create or edit Forecast tasks.
 
-import { SERVICE, listProjectCatalog } from "./basecamp";
+import {
+  SERVICE,
+  asPerson,
+  canonicalBasecampProjectId,
+  hasConnection,
+  listProjectCatalog,
+} from "./basecamp";
+import { OWNER_SLUG } from "./people";
 import {
   clientNameFor,
   forecastPersonNames,
@@ -38,6 +47,11 @@ export type LinkAllName = {
   project: string;
 };
 
+export type LinkAllRelink = LinkAllName & {
+  /** The id that was saved and did not open a live project, or a non-canonical form of the same id. */
+  fromProjectId: string;
+};
+
 export type LinkAllAmbiguous = {
   /** several-clients: one project, two clients. several-projects: one client, two projects. name-already-linked: the name belongs to a client that already has a different project. */
   kind: "several-clients" | "several-projects" | "name-already-linked";
@@ -57,7 +71,7 @@ export type LinkAllStale = {
 export type LinkAllReport = {
   ok: boolean;
   dryRun: boolean;
-  /** True when there was nothing to link or create. Existing links were not touched. */
+  /** True when there was nothing to link, create, or repair. Live links were not touched. */
   skipped: boolean;
   error: string | null;
   /** The active catalog used for this run was the previous complete list. */
@@ -67,6 +81,8 @@ export type LinkAllReport = {
   activeProjects: number;
   linked: LinkAllName[];
   created: LinkAllName[];
+  /** Saved ids that did not open a live project and were pointed at the name match. */
+  relinked: LinkAllRelink[];
   ambiguous: LinkAllAmbiguous[];
   skippedInternal: string[];
   skippedPeople: string[];
@@ -83,9 +99,15 @@ type ClientRow = {
   active: boolean;
 };
 
+type PlannedClient = ClientRow & {
+  /** Value as stored, before canonicalizing a trailing ".0" or a project URL. */
+  storedProjectId: string;
+};
+
 type Plan = {
   toLink: LinkAllName[];
   toCreate: Array<{ projectId: string; project: string; client: string }>;
+  toRelink: LinkAllRelink[];
   ambiguous: LinkAllAmbiguous[];
   skippedInternal: string[];
   skippedPeople: string[];
@@ -123,18 +145,29 @@ export function planBasecampLinkAll(input: {
   const nameFor = input.nameFor ?? ((name: string) => name.trim());
 
   const projects = input.projects
-    .map((p) => ({ id: String(p.id ?? "").trim(), name: (p.name || "").trim() }))
+    .map((p) => ({
+      id: canonicalBasecampProjectId(p.id) || String(p.id ?? "").trim(),
+      name: (p.name || "").trim(),
+    }))
     .filter((p) => p.id);
   const archived = input.archived
-    .map((p) => ({ id: String(p.id ?? "").trim(), name: (p.name || "").trim() }))
+    .map((p) => ({
+      id: canonicalBasecampProjectId(p.id) || String(p.id ?? "").trim(),
+      name: (p.name || "").trim(),
+    }))
     .filter((p) => p.id);
 
-  const clients = input.clients.map((c) => ({
-    id: c.id,
-    name: (c.name || "").trim(),
-    basecampProjectId: (c.basecampProjectId || "").trim(),
-    active: c.active !== false,
-  }));
+  const clients: PlannedClient[] = input.clients.map((c) => {
+    const storedProjectId = (c.basecampProjectId || "").trim();
+    const canonical = canonicalBasecampProjectId(storedProjectId);
+    return {
+      id: c.id,
+      name: (c.name || "").trim(),
+      basecampProjectId: canonical || storedProjectId,
+      storedProjectId,
+      active: c.active !== false,
+    };
+  });
 
   const eligible = (client: ClientRow) =>
     client.active &&
@@ -220,7 +253,122 @@ export function planBasecampLinkAll(input: {
     clientsWithoutProject.push({ clientId: row.clientId, client: row.clientName });
   }
 
-  const claimed = new Set<string>([...taken, ...linkedProjectIds, ...blocked]);
+  const activeIds = new Set(
+    projects.map((project) => canonicalBasecampProjectId(project.id) || project.id)
+  );
+  const archivedById = new Map(
+    archived.map((project) => [canonicalBasecampProjectId(project.id) || project.id, project])
+  );
+  const resolvingIds = new Set<string>();
+  for (const client of clients) {
+    const id = canonicalBasecampProjectId(client.basecampProjectId);
+    if (id && activeIds.has(id)) resolvingIds.add(id);
+  }
+
+  const toRelink: LinkAllRelink[] = [];
+  const staleProjectLinks: LinkAllStale[] = [];
+  const relinkClaimed = new Set<string>();
+  type StaleGroup = { client: PlannedClient; stale: LinkAllStale };
+  const staleByKey = new Map<string, StaleGroup[]>();
+
+  for (const client of clients) {
+    const stored = client.storedProjectId;
+    if (!stored) continue;
+    const id = canonicalBasecampProjectId(stored);
+    if (id && activeIds.has(id)) {
+      if (stored !== id) {
+        const project = projects.find(
+          (row) => (canonicalBasecampProjectId(row.id) || row.id) === id
+        );
+        toRelink.push({
+          clientId: client.id,
+          client: client.name,
+          fromProjectId: stored,
+          projectId: id,
+          project: project?.name || client.name,
+        });
+      }
+      continue;
+    }
+    const archivedProject =
+      input.archivedCatalog === "ok" ? archivedById.get(id || stored) : undefined;
+    const stale: LinkAllStale = {
+      clientId: client.id,
+      client: client.name,
+      projectId: stored,
+      status: archivedProject ? "archived" : "missing",
+      project: archivedProject ? archivedProject.name || null : null,
+    };
+    if (!eligible(client)) {
+      staleProjectLinks.push(stale);
+      continue;
+    }
+    const key = normalizeClientMatchKey(client.name);
+    if (!key) {
+      staleProjectLinks.push(stale);
+      continue;
+    }
+    const group = staleByKey.get(key);
+    const entry = { client, stale };
+    if (group) group.push(entry);
+    else staleByKey.set(key, [entry]);
+  }
+
+  for (const [key, group] of staleByKey) {
+    const hits = (byKey.get(key) ?? []).filter(
+      (project) =>
+        !resolvingIds.has(project.id) &&
+        !linkedProjectIds.has(project.id) &&
+        !blocked.has(project.id) &&
+        !relinkClaimed.has(project.id)
+    );
+    if (group.length === 1 && hits.length === 1) {
+      const project = hits[0];
+      relinkClaimed.add(project.id);
+      toRelink.push({
+        clientId: group[0].client.id,
+        client: group[0].client.name,
+        fromProjectId: group[0].client.storedProjectId,
+        projectId: project.id,
+        project: project.name,
+      });
+      continue;
+    }
+    if (hits.length > 1) {
+      for (const project of hits) blocked.add(project.id);
+      ambiguous.push({
+        kind: "several-projects",
+        clients: group.map((row) => row.client.name),
+        projects: hits.map(projectLabel),
+      });
+      for (const row of group) staleProjectLinks.push(row.stale);
+      continue;
+    }
+    if (group.length > 1 && hits.length === 1) {
+      blocked.add(hits[0].id);
+      ambiguous.push({
+        kind: "several-clients",
+        clients: group.map((row) => row.client.name),
+        projects: [projectLabel(hits[0])],
+      });
+      for (const row of group) staleProjectLinks.push(row.stale);
+      continue;
+    }
+    const takenHits = (byKey.get(key) ?? []).filter(
+      (project) => resolvingIds.has(project.id) || linkedProjectIds.has(project.id)
+    );
+    if (hits.length === 0 && takenHits.length > 0) {
+      for (const project of takenHits) blocked.add(project.id);
+      ambiguous.push({
+        kind: "name-already-linked",
+        clients: group.map((row) => row.client.name),
+        projects: takenHits.map(projectLabel),
+      });
+    }
+    for (const row of group) staleProjectLinks.push(row.stale);
+  }
+
+  const claimed = new Set<string>([...taken, ...linkedProjectIds, ...blocked, ...relinkClaimed]);
   const toCreate: Plan["toCreate"] = [];
   const skippedInternal: string[] = [];
   const skippedPeople: string[] = [];
@@ -261,27 +409,11 @@ export function planBasecampLinkAll(input: {
     if (key) clientKeys.set(key, [display]);
   }
 
-  const activeIds = new Set(projects.map((project) => project.id));
-  const archivedById = new Map(archived.map((project) => [project.id, project]));
-  const staleProjectLinks: LinkAllStale[] = [];
-  for (const client of clients) {
-    const projectId = client.basecampProjectId;
-    if (!projectId || activeIds.has(projectId)) continue;
-    const archivedProject =
-      input.archivedCatalog === "ok" ? archivedById.get(projectId) : undefined;
-    staleProjectLinks.push({
-      clientId: client.id,
-      client: client.name,
-      projectId,
-      status: archivedProject ? "archived" : "missing",
-      project: archivedProject ? archivedProject.name || null : null,
-    });
-  }
-
   const byName = (a: { client: string }, b: { client: string }) =>
     a.client.localeCompare(b.client, undefined, { sensitivity: "base" });
   toLink.sort(byName);
   toCreate.sort((a, b) => a.client.localeCompare(b.client, undefined, { sensitivity: "base" }));
+  toRelink.sort(byName);
   clientsWithoutProject.sort(byName);
   staleProjectLinks.sort(byName);
   skippedInternal.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
@@ -290,6 +422,7 @@ export function planBasecampLinkAll(input: {
   return {
     toLink,
     toCreate,
+    toRelink,
     ambiguous,
     skippedInternal,
     skippedPeople,
@@ -309,6 +442,7 @@ export function summarizeLinkAll(
     | "archivedCatalog"
     | "linked"
     | "created"
+    | "relinked"
     | "ambiguous"
     | "clientsWithoutProject"
     | "staleProjectLinks"
@@ -321,7 +455,13 @@ export function summarizeLinkAll(
     parts.push("Using the last complete project list because Basecamp didn't return a fresh one.");
   }
   if (report.skipped) parts.push("Nothing new to link.");
-  else parts.push(`Linked ${report.linked.length}. Created ${report.created.length}.`);
+  else if (report.linked.length || report.created.length) {
+    parts.push(`Linked ${report.linked.length}. Created ${report.created.length}.`);
+  }
+  if (report.relinked?.length) {
+    const lines = report.relinked.map((row) => `${row.client} now uses ${row.project}`);
+    parts.push(`Re-linked ${report.relinked.length}: ${lines.join("; ")}.`);
+  }
 
   if (report.ambiguous.length) {
     const lines = report.ambiguous.map((row) => {
@@ -372,6 +512,7 @@ function emptyReport(partial: Partial<LinkAllReport> & Pick<LinkAllReport, "ok" 
     activeProjects: partial.activeProjects ?? 0,
     linked: partial.linked ?? [],
     created: partial.created ?? [],
+    relinked: partial.relinked ?? [],
     ambiguous: partial.ambiguous ?? [],
     skippedInternal: partial.skippedInternal ?? [],
     skippedPeople: partial.skippedPeople ?? [],
@@ -393,12 +534,75 @@ function readClients(): ClientRow[] {
   }));
 }
 
+/** Write a new project id only while the saved value is still the one we planned from. */
+export function replaceProjectIdIfUnchanged(
+  clientId: string,
+  fromProjectId: string,
+  toProjectId: string
+): boolean {
+  const from = (fromProjectId || "").trim();
+  const to = canonicalBasecampProjectId(toProjectId);
+  if (!clientId || !from || !to || from === to) return false;
+  const row = listRevClients(true).find((client) => client.id === clientId);
+  if (!row || (row.basecamp_project_id || "").trim() !== from) return false;
+  updateRevClient(clientId, { basecampProjectId: to });
+  return true;
+}
+
+/**
+ * Point one client at a live project when the saved id is not on this catalog
+ * and the name matches exactly one project. A link that is already on the
+ * catalog is left as it was.
+ */
+export function relinkUnresolvedClient(
+  clientId: string,
+  projects: Array<{ id: string | number; name: string }>
+): { projectId: string; project: string } | null {
+  const plan = planBasecampLinkAll({
+    clients: readClients(),
+    projects: projects.map((project) => ({ id: String(project.id), name: project.name })),
+    archived: [],
+    archivedCatalog: "unavailable",
+    personNames: forecastPersonNames(),
+    isInternal: isInternalProject,
+    aliases: PROJECT_ALIASES,
+    nameFor: clientNameFor,
+  });
+  const row = plan.toRelink.find((item) => item.clientId === clientId);
+  if (!row) return null;
+  if (!replaceProjectIdIfUnchanged(row.clientId, row.fromProjectId, row.projectId)) return null;
+  return { projectId: row.projectId, project: row.project };
+}
+
 function normalizeListed(
   projects: Array<{ id: string | number; name: string }>
 ): MatchProject[] {
   return projects
     .map((project) => ({ id: String(project.id ?? "").trim(), name: project.name || "" }))
     .filter((project) => project.id);
+}
+
+/**
+ * Projects the owner can see that the service account cannot.
+ *
+ * King Kashflow is not on every client project. Krak Boba Piscataway is one
+ * of those: the mascot's catalog omits it, so a bad saved id would never find
+ * its name match. The owner's list is only used to repair ids that do not
+ * open. A link that already opens stays as it was.
+ */
+async function mergeOwnerProjects(projects: MatchProject[], fresh: boolean): Promise<MatchProject[]> {
+  if (!hasConnection(OWNER_SLUG)) return projects;
+  try {
+    const catalog = await listProjectCatalog(asPerson(OWNER_SLUG), { fresh });
+    const seen = new Set(projects.map((project) => canonicalBasecampProjectId(project.id) || project.id));
+    const extra = normalizeListed(catalog.projects).filter((project) => {
+      const id = canonicalBasecampProjectId(project.id) || project.id;
+      return id && !seen.has(id);
+    });
+    return extra.length ? projects.concat(extra) : projects;
+  } catch {
+    return projects;
+  }
 }
 
 let linkAllInflight: Promise<LinkAllReport> | null = null;
@@ -468,6 +672,7 @@ async function runLinkAll(opts?: {
       const catalog = await listProjectCatalog(SERVICE, { fresh });
       projects = normalizeListed(catalog.projects);
       catalogStale = catalog.stale;
+      projects = await mergeOwnerProjects(projects, fresh);
     } catch {
       return emptyReport({ ok: false, dryRun, error: LINK_ALL_UNAVAILABLE });
     }
@@ -511,7 +716,17 @@ async function runLinkAll(opts?: {
 
   const linked: LinkAllName[] = [];
   const created: LinkAllName[] = [];
+  const relinked: LinkAllRelink[] = [];
   const db = getDb();
+
+  for (const row of plan.toRelink) {
+    if (dryRun) {
+      relinked.push(row);
+      continue;
+    }
+    if (!replaceProjectIdIfUnchanged(row.clientId, row.fromProjectId, row.projectId)) continue;
+    relinked.push(row);
+  }
 
   for (const row of plan.toLink) {
     if (dryRun) {
@@ -558,12 +773,13 @@ async function runLinkAll(opts?: {
   const report = emptyReport({
     ok: true,
     dryRun,
-    skipped: linked.length === 0 && created.length === 0,
+    skipped: linked.length === 0 && created.length === 0 && relinked.length === 0,
     catalogStale,
     archivedCatalog,
     activeProjects: projects.length,
     linked,
     created,
+    relinked,
     ambiguous: plan.ambiguous,
     skippedInternal: plan.skippedInternal,
     skippedPeople: plan.skippedPeople,
@@ -577,7 +793,8 @@ async function runLinkAll(opts?: {
 
 /**
  * Once per process, after the server is up. Does not block startup. Writes
- * only when a project still has no client. A Basecamp outage is logged and
+ * when a project still has no client, or when a saved id does not open a live
+ * project and the client name matches one. A Basecamp outage is logged and
  * does not stop the app.
  */
 export function linkAllBasecampProjectsOnStartup(): void {
