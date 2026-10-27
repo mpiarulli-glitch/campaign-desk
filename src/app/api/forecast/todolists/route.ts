@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isForecastAuthenticated } from "@/lib/auth";
 import { asPerson, basecampConnected, hasConnection, listProjectTodolists } from "@/lib/basecamp";
+import { forecastPickerProjectId } from "@/lib/basecamp-clients";
 import { isValidPerson } from "@/lib/forecast";
 import { getRevClient } from "@/lib/revenue";
 
@@ -20,13 +21,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ lists: [], reason: "not-connected" });
   }
 
-  let projectId = rawProjectId.trim();
+  let projectId =
+    forecastPickerProjectId(rawProjectId) || forecastPickerProjectId(clientId) || rawProjectId.trim();
   if (!projectId && clientId) {
-    if (clientId.startsWith("internal:")) {
-      projectId = clientId.slice("internal:".length).trim();
-    } else {
-      projectId = (getRevClient(clientId)?.basecamp_project_id || "").trim();
-    }
+    projectId = (getRevClient(clientId)?.basecamp_project_id || "").trim();
   }
   if (!projectId) {
     return NextResponse.json({ lists: [], reason: "no-project" });

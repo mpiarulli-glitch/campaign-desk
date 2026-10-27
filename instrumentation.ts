@@ -13,6 +13,10 @@ export async function register() {
     void ensureFloorCoDesignGrowthOsClient();
     // Known project id, SQLite only. Does not page Basecamp.
     void ensureCoronasDeOroClient();
+    // Background. Links or creates a client for each active project that
+    // does not have one. Writes nothing when the catalog is already linked.
+    const { linkAllBasecampProjectsOnStartup } = await import("./src/lib/basecamp-link-all");
+    linkAllBasecampProjectsOnStartup();
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

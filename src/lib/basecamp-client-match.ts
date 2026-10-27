@@ -54,9 +54,9 @@ function stripLegalSuffixes(tokens: string[]): string[] {
  * Fold a client or project title down to the words that identify the account.
  *
  * Case, punctuation, accents, "&" vs "and", a trailing "Growth OS" / "Powered
- * by…" campaign suffix, and legal suffixes (LLC, Inc, Co, L.L.C., …) all fold
- * away. The remaining words stay in order, so "NORLO" does not equal
- * "NORLO Peptides".
+ * by…" campaign suffix, a trailing "- Marketing" label, and legal suffixes
+ * (LLC, Inc, Co, L.L.C., …) all fold away. The remaining words stay in order,
+ * so "NORLO" does not equal "NORLO Peptides".
  */
 export function normalizeClientMatchKey(name: string): string {
   let s = (name || "")
@@ -67,6 +67,9 @@ export function normalizeClientMatchKey(name: string): string {
   s = s.replace(/&/g, " and ");
   s = s.replace(/\s*[-–—]?\s*growth os\b.*$/i, " ");
   s = s.replace(/\s*[-–—]?\s*powered by\b.*$/i, " ");
+  // A trailing campaign label, not a word in the account name. "Acme Marketing"
+  // stays "acme marketing"; "Acme - Marketing" folds to "acme".
+  s = s.replace(/\s*[-–—]\s*marketing\b.*$/i, " ");
   s = s.replace(/[^a-z0-9]+/g, " ").trim();
   if (!s) return "";
   return stripLegalSuffixes(s.split(" ").filter(Boolean)).join(" ");

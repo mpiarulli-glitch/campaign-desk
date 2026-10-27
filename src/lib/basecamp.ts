@@ -323,6 +323,25 @@ export function extractProjectId(input: string): string {
   return m ? m[1] : s.replace(/[^\d]/g, "");
 }
 
+/**
+ * The project id Basecamp's API will accept.
+ *
+ * A stored value can be the digits, a project URL, or a whole number SQLite
+ * handed back with a trailing ".0". Anything else (a company id is still
+ * digits; a title is not) is returned only when it is already all digits.
+ * A title stays empty so a people lookup is not aimed at an invented id.
+ */
+export function canonicalBasecampProjectId(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const fromUrl = text.match(/projects\/(\d+)/);
+  if (fromUrl) return fromUrl[1];
+  const dotted = text.match(/^(\d+)\.0+$/);
+  if (dotted) return dotted[1];
+  return /^\d+$/.test(text) ? text : "";
+}
+
 export interface CardResult {
   ok: boolean;
   error?: string;
@@ -462,25 +481,86 @@ function asBcPerson(p: {
   };
 }
 
+export type ProjectRosterProblem = "not_open" | "forbidden" | "empty" | "unreachable";
+
+type RawBcPerson = {
+  id?: number;
+  name?: string;
+  email_address?: string;
+  client?: boolean;
+  employee?: boolean;
+  attachable_sgid?: string;
+};
+
+/**
+ * People on a project, plus why the list is empty.
+ *
+ * Basecamp answers 404 both when the id is not a live project and when this
+ * token is not on it. Those used to collapse into "nobody came back", which
+ * hid a wrong saved id and a mascot account that was never added.
+ */
+export async function readProjectRoster(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ people: BcPerson[]; problem: ProjectRosterProblem | null }> {
+  const id = canonicalBasecampProjectId(projectId);
+  if (!id) return { people: [], problem: "not_open" };
+  try {
+    const first = await bc(`/projects/${id}/people.json`, undefined, identity);
+    if (first.status === 404) return { people: [], problem: "not_open" };
+    if (first.status === 403) return { people: [], problem: "forbidden" };
+    if (!first.ok) return { people: [], problem: "unreachable" };
+    const batch = await first.json();
+    if (!Array.isArray(batch)) return { people: [], problem: "unreachable" };
+    const raw: RawBcPerson[] = [...batch];
+    let next = nextPagePath(first.headers.get("Link"));
+    for (let page = 1; page < PROJECT_PEOPLE_MAX_PAGES && next; page++) {
+      let res: Response;
+      try {
+        res = await bc(next, undefined, identity);
+      } catch {
+        break;
+      }
+      if (!res.ok) break;
+      const more = await res.json();
+      if (!Array.isArray(more)) break;
+      raw.push(...(more as RawBcPerson[]));
+      next = nextPagePath(res.headers.get("Link"));
+    }
+    const people = raw.map(asBcPerson).filter((person): person is BcPerson => person !== null);
+    if (!people.length) return { people: [], problem: "empty" };
+    return { people, problem: null };
+  } catch {
+    return { people: [], problem: "unreachable" };
+  }
+}
+
 // People with access to a project. Used to resolve a contact / account manager
 // (given as an email or name) to the Basecamp person id we tag on a card.
+// An empty list is either a real empty project or a call that did not open.
+// Callers that need to tell those apart use readProjectRoster.
 export async function getProjectPeople(
   projectId: string,
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
-  if (!projectId) return [];
+  const roster = await readProjectRoster(projectId, identity);
+  return roster.people;
+}
+
+/** The project's description, used to find the POC line. Empty when it cannot be opened. */
+export async function readProjectDescription(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<string> {
+  const id = canonicalBasecampProjectId(projectId);
+  if (!id) return "";
   try {
-    const arr = await bcCollection<{
-      id?: number;
-      name?: string;
-      email_address?: string;
-      client?: boolean;
-      employee?: boolean;
-      attachable_sgid?: string;
-    }>(`/projects/${projectId}/people.json`, PROJECT_PEOPLE_MAX_PAGES, identity);
-    return arr.map(asBcPerson).filter((person): person is BcPerson => person !== null);
+    const res = await bc(`/projects/${id}.json`, undefined, identity);
+    if (!res.ok) return "";
+    const body = await res.json();
+    return typeof body?.description === "string" ? body.description : "";
   } catch {
-    return [];
+    return "";
   }
 }
 
@@ -535,21 +615,29 @@ export function mergePingableDetails(
 // mentions silently degraded to plain text. /circles/people.json ("pingable")
 // carries both for the whole account, so the two are merged: membership comes
 // from the project, contact details from pingable.
+export async function readProjectRosterForMention(
+  projectId: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ people: BcPerson[]; problem: ProjectRosterProblem | null }> {
+  const roster = await readProjectRoster(projectId, identity);
+  if (!roster.people.length) return roster;
+  try {
+    const pingable = await listPingablePeople(identity);
+    if (!pingable.length) return roster;
+    return { people: mergePingableDetails(roster.people, pingable), problem: null };
+  } catch {
+    // Enrichment is best effort. Falling back to the plain roster keeps the card
+    // going out, just without an email match or a real mention.
+    return roster;
+  }
+}
+
 export async function getProjectPeopleForMention(
   projectId: string,
   identity: BcIdentity = SERVICE
 ): Promise<BcPerson[]> {
-  const members = await getProjectPeople(projectId, identity);
-  if (!members.length) return members;
-  try {
-    const pingable = await listPingablePeople(identity);
-    if (!pingable.length) return members;
-    return mergePingableDetails(members, pingable);
-  } catch {
-    // Enrichment is best effort. Falling back to the plain roster keeps the card
-    // going out, just without an email match or a real mention.
-    return members;
-  }
+  const roster = await readProjectRosterForMention(projectId, identity);
+  return roster.people;
 }
 
 // Rich-text @-mention markup for a person, to embed directly in card content.
@@ -2862,19 +2950,32 @@ type BasecampProject = { id: number; name: string };
 // far larger than this one. Hitting the cap with a next link still outstanding
 // is an incomplete list, not a successful short one.
 const PROJECT_MAX_PAGES = 30;
-// One account list is a few kilobytes. Hold it long enough that opening
-// Forecast or Assign again in the same sitting does not page Basecamp.
-const PROJECT_CACHE_TTL_MS = 10 * 60 * 1000;
+// A few minutes. Opening Forecast again in the same sitting should not page
+// Basecamp, and a project created after this window shows up on the next load
+// or when someone hits Refresh projects.
+const PROJECT_CACHE_TTL_MS = 3 * 60 * 1000;
+// After a rate limit or a failed refresh, keep handing out the last complete
+// list briefly instead of walking Basecamp again on every keystroke.
+const PROJECT_STALE_HOLD_MS = 45 * 1000;
 // v2: the previous key stored lists that stopped on a short page. Leave those
 // rows unread so a deploy does not keep serving them for the rest of the TTL.
 const PROJECT_CACHE_PREFIX = "basecamp_project_list_v2:";
 
 const projectMemory = new Map<string, { at: number; projects: BasecampProject[] }>();
 const projectInflight = new Map<string, Promise<BasecampProject[]>>();
+const projectStaleHold = new Map<string, number>();
+
+export type ProjectCatalog = {
+  projects: BasecampProject[];
+  fromCache: boolean;
+  /** True when a refresh failed and this is the previous complete list. */
+  stale: boolean;
+};
 
 export function clearBasecampProjectCache(): void {
   projectMemory.clear();
   projectInflight.clear();
+  projectStaleHold.clear();
 }
 
 function readStoredProjects(key: string): { at: number; projects: BasecampProject[] } | null {
@@ -2900,12 +3001,42 @@ function totalCountHeader(res: Response): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+function retryDelayMs(res: Response): number {
+  const raw = res.headers.get("Retry-After");
+  if (!raw) return 800;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 2000);
+  const when = Date.parse(raw);
+  if (Number.isFinite(when)) return Math.min(Math.max(0, when - Date.now()), 2000);
+  return 800;
+}
+
+function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// One retry on 429. A second limit, or any other failure, ends the page so the
+// caller can serve the last complete catalog instead of caching a short one.
+async function bcProject(identity: BcIdentity, path: string): Promise<Response | null> {
+  try {
+    let res = await bc(path, undefined, identity);
+    if (res.status === 429) {
+      await sleep(retryDelayMs(res));
+      res = await bc(path, undefined, identity);
+    }
+    return res;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchProjectPage(
   identity: BcIdentity,
   path: string
 ): Promise<{ projects: BasecampProject[]; next: string | null; total: number | null } | null> {
-  const res = await bc(path, undefined, identity);
-  if (!res.ok) return null;
+  const res = await bcProject(identity, path);
+  if (!res || !res.ok) return null;
   const arr = await res.json();
   if (!Array.isArray(arr)) return null;
   const projects: BasecampProject[] = [];
@@ -2921,12 +3052,13 @@ async function fetchProjectPage(
 }
 
 async function fetchAllProjects(
-  identity: BcIdentity
+  identity: BcIdentity,
+  start = "/projects.json"
 ): Promise<{ projects: BasecampProject[]; complete: boolean }> {
   const projects: BasecampProject[] = [];
   const seenIds = new Set<number>();
   const seenPaths = new Set<string>();
-  let next: string | null = "/projects.json";
+  let next: string | null = start;
   let reportedTotal: number | null = null;
   for (let page = 0; page < PROJECT_MAX_PAGES && next; page++) {
     if (seenPaths.has(next)) return { projects, complete: false };
@@ -2955,12 +3087,16 @@ async function fetchAllProjects(
   return { projects, complete: next === null && countAgrees };
 }
 
-function refreshProjectList(key: string, identity: BcIdentity): Promise<BasecampProject[]> {
+function refreshProjectList(
+  key: string,
+  identity: BcIdentity,
+  start: string
+): Promise<BasecampProject[]> {
   const existing = projectInflight.get(key);
   if (existing) return existing;
   // The finally callback runs after this assignment, so it can see `job`.
   const job = (async () => {
-    const { projects, complete } = await fetchAllProjects(identity);
+    const { projects, complete } = await fetchAllProjects(identity, start);
     // A partial list must not be cached or handed to the client matcher. The
     // next call tries Basecamp again instead of reusing the short list.
     if (!complete) throw new Error("Basecamp project list was cut short");
@@ -2979,23 +3115,58 @@ function refreshProjectList(key: string, identity: BcIdentity): Promise<Basecamp
   return job;
 }
 
+/**
+ * The account's project index, following every Link page.
+ *
+ * A list is stored only when the walk finishes. A rate limit or a dropped page
+ * does not replace that copy: the last complete catalog is returned with
+ * `stale: true` so Forecast can keep offering projects. A manual refresh passes
+ * `fresh` and tries Basecamp again immediately.
+ */
+export async function listProjectCatalog(
+  identity: BcIdentity = SERVICE,
+  opts?: { fresh?: boolean; status?: "active" | "archived" }
+): Promise<ProjectCatalog> {
+  const status = opts?.status === "archived" ? "archived" : "active";
+  // Archived projects live on a different index. They must not share the
+  // active catalog cache the Forecast picker reads.
+  const key = identityKey(identity) + (status === "archived" ? ":archived" : "");
+  const start =
+    status === "archived" ? "/projects.json?status=archived" : "/projects.json";
+  const now = Date.now();
+  const stored = () => projectMemory.get(key) || readStoredProjects(key);
+  if (!opts?.fresh) {
+    const cached = stored();
+    if (cached && now - cached.at < PROJECT_CACHE_TTL_MS) {
+      projectMemory.set(key, cached);
+      return { projects: cached.projects, fromCache: true, stale: false };
+    }
+    const hold = projectStaleHold.get(key) || 0;
+    if (cached && hold > now) {
+      return { projects: cached.projects, fromCache: true, stale: true };
+    }
+  }
+  try {
+    const projects = await refreshProjectList(key, identity, start);
+    projectStaleHold.delete(key);
+    return { projects, fromCache: false, stale: false };
+  } catch (err) {
+    const cached = stored();
+    if (cached && cached.projects.length) {
+      projectMemory.set(key, cached);
+      projectStaleHold.set(key, Date.now() + PROJECT_STALE_HOLD_MS);
+      return { projects: cached.projects, fromCache: true, stale: true };
+    }
+    throw err;
+  }
+}
+
 export async function listProjects(
   identity: BcIdentity = SERVICE,
   opts?: { fresh?: boolean }
 ): Promise<BasecampProject[]> {
-  const key = identityKey(identity);
-  const now = Date.now();
-  if (!opts?.fresh) {
-    const cached = projectMemory.get(key) || readStoredProjects(key);
-    if (cached && now - cached.at < PROJECT_CACHE_TTL_MS) {
-      projectMemory.set(key, cached);
-      return cached.projects;
-    }
-  }
-  // A stale stored list is not returned. Reloading Forecast was showing the
-  // truncated catalog while a refresh ran behind it, so the matcher linked
-  // against the short list and NORLO stayed blank.
-  return refreshProjectList(key, identity);
+  const catalog = await listProjectCatalog(identity, opts);
+  return catalog.projects;
 }
 
 export function disconnectBasecamp() {

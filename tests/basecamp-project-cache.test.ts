@@ -169,4 +169,89 @@ test("Basecamp project lists follow Link and keep every page", async (t) => {
     ["After failure"]
   );
   assert.equal(calls.length, 1);
+
+  // A 429 is retried once. The recovered page is the catalog, not an error.
+  let hits = 0;
+  globalThis.fetch = (async () => {
+    hits += 1;
+    if (hits === 1) {
+      return new Response("slow down", {
+        status: 429,
+        headers: { "Retry-After": "0" },
+      });
+    }
+    return new Response(
+      JSON.stringify([
+        { id: 8, name: "After retry" },
+        { id: 9, name: "Harbor Dental Growth OS" },
+      ]),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }) as typeof fetch;
+  const recovered = await basecamp.listProjectCatalog(undefined, { fresh: true });
+  assert.equal(recovered.stale, false);
+  assert.equal(recovered.projects.some((p) => p.name === "Harbor Dental Growth OS"), true);
+  assert.equal(hits, 2);
+
+  // Past the TTL, a rate limit that does not clear serves the last complete
+  // list and does not walk Basecamp again until the short hold passes.
+  const aged = {
+    at: Date.now() - 4 * 60 * 1000,
+    projects: recovered.projects,
+  };
+  getDb()
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('basecamp_project_list_v2:service', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    )
+    .run(JSON.stringify(aged), new Date().toISOString());
+  basecamp.clearBasecampProjectCache();
+  hits = 0;
+  globalThis.fetch = (async () => {
+    hits += 1;
+    return new Response("slow down", {
+      status: 429,
+      headers: { "Retry-After": "0" },
+    });
+  }) as typeof fetch;
+  const limited = await basecamp.listProjectCatalog();
+  assert.equal(limited.stale, true);
+  assert.equal(limited.projects.some((p) => p.name === "Harbor Dental Growth OS"), true);
+  assert.equal(hits, 2);
+
+  hits = 0;
+  const held = await basecamp.listProjectCatalog();
+  assert.equal(held.stale, true);
+  assert.equal(held.projects.length, limited.projects.length);
+  assert.equal(hits, 0);
+
+  // A short page from a rate limit is not stored as the whole account.
+  basecamp.clearBasecampProjectCache();
+  getDb().prepare(`DELETE FROM app_settings WHERE key LIKE 'basecamp_project_list%'`).run();
+  hits = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    hits += 1;
+    const url = new URL(String(input));
+    const rel = url.pathname.replace(`/999`, "") + url.search;
+    if (rel === "/projects.json") {
+      return new Response(JSON.stringify([{ id: 1, name: "Only page" }]), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          Link: `<${base}/projects.json?page=cursor-2>; rel="next"`,
+          "X-Total-Count": "40",
+        },
+      });
+    }
+    return new Response("slow down", {
+      status: 429,
+      headers: { "Retry-After": "0" },
+    });
+  }) as typeof fetch;
+  await assert.rejects(() => basecamp.listProjects(), /cut short/);
+  const afterLimit = getDb()
+    .prepare(`SELECT COUNT(*) AS n FROM app_settings WHERE key LIKE 'basecamp_project_list%'`)
+    .get() as { n: number };
+  assert.equal(afterLimit.n, 0);
+  assert.ok(hits >= 2);
 });

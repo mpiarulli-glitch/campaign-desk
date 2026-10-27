@@ -77,6 +77,7 @@ test("internal Basecamp projects stay out of client import and show in forecast"
       clientNameFor("FloorCo Design Growth OS – Powered by the Empire Method™"),
       "FloorCo Design"
     );
+    assert.equal(clientNameFor("LMX Health - Marketing"), "LMX Health");
 
     const {
       pickKrakBobaPiscatawayGrowthOsProject,

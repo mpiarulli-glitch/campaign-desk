@@ -99,6 +99,7 @@ test("booking a Basecamp meeting into the forecast", async (t) => {
 
   await t.test("typed meeting project id comes from internal or explicit", () => {
     assert.equal(schedule.resolveForecastProjectId({ clientId: "internal:999" }), "999");
+    assert.equal(schedule.resolveForecastProjectId({ clientId: "project:48628386" }), "48628386");
     assert.equal(
       schedule.resolveForecastProjectId({
         clientId: "internal:1",

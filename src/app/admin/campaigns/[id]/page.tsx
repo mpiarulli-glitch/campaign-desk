@@ -3694,8 +3694,7 @@ export default function AdminCampaignPage() {
                       <option value="">
                         {basecampApproval.people.length
                           ? "Pick a person..."
-                          : basecampApproval.peopleReason ||
-                            "No project roster available"}
+                          : "No one available"}
                       </option>
                       {basecampApproval.people.map((person) => (
                         <option key={person.id} value={person.id}>
@@ -3705,6 +3704,9 @@ export default function AdminCampaignPage() {
                         </option>
                       ))}
                     </select>
+                    {basecampApproval.peopleReason ? (
+                      <span className="field-hint">{basecampApproval.peopleReason}</span>
+                    ) : null}
                   </div>
                   <div className="field">
                     <label htmlFor="bc-due">Due date</label>

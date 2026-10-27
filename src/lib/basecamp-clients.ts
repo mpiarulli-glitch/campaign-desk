@@ -5,11 +5,18 @@
 
 import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
-import { SERVICE, asPerson, hasConnection, listProjects, type BcIdentity } from "./basecamp";
+import {
+  SERVICE,
+  asPerson,
+  hasConnection,
+  listProjectCatalog,
+  listProjects,
+  type BcIdentity,
+} from "./basecamp";
 import { addClientToHub } from "./lifecycle-hub";
 import { OWNER_SLUG, PEOPLE } from "./people";
 import { currentPeriod } from "./period";
-import { createRevClient, listRevClients, updateRevClient } from "./revenue";
+import { createRevClient, getRevClient, listRevClients, updateRevClient } from "./revenue";
 import {
   isPersonOrInternalClientName,
   matchUnlinkedClients,
@@ -33,6 +40,7 @@ export function clientNameFor(projectName: string): string {
   return (projectName || "")
     .replace(/\s*[-–—]?\s*growth os.*$/i, "")
     .replace(/\s*[-–—]?\s*powered by.*$/i, "")
+    .replace(/\s*[-–—]\s*marketing\b.*$/i, "")
     .trim();
 }
 
@@ -264,9 +272,9 @@ export async function listInternalProjects(
   return filterInternalProjects(await listProjects(identity));
 }
 
-// Clients whose Basecamp project this person can actually open. Unlinked
-// clients (no project id) stay visible so a task can still be typed against
-// the name; a linked project they are not a member of does not.
+// Kept for callers that still want a membership subset. The Forecast add-task
+// picker does not use this: a new client's project was invisible whenever the
+// signed-in person had not been added to it in Basecamp.
 export function clientsOnAccessibleProjects(
   clients: Array<{ id: string; name: string; basecamp_project_id: string }>,
   accessibleProjectIds: Set<string>
@@ -281,38 +289,280 @@ export function clientsOnAccessibleProjects(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Forecast add-task picker for one person: revenue clients they can open in
-// Basecamp, plus internal MEG workspaces they belong to. Listed as them, never
-// as the shared service account, so Leadership HQ and other private projects
-// cannot leak to staff who are not members.
-export async function forecastPickerForPerson(person: string): Promise<{
-  clients: Array<{ id: string; name: string }>;
-  internals: Array<{ id: string; name: string }>;
-}> {
-  const allClients = () =>
-    listRevClients(false)
-      .map((c) => ({ id: c.id, name: c.name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+/** Picker id for a Basecamp project that has no Campaign Desk client yet. */
+export const FORECAST_UNLINKED_PREFIX = "project:";
 
-  // Without their own connection we cannot tell what they can see, so internals
-  // stay empty (the leak we are preventing) and the client list stays the
-  // registry they already had.
-  if (!hasConnection(person)) {
-    return { clients: allClients(), internals: [] };
+export const FORECAST_PROJECTS_STALE =
+  "Basecamp is limiting requests, so this is the last full project list. Refresh to try again.";
+
+export const FORECAST_PROJECTS_EMPTY =
+  "Basecamp didn't return any projects. Saved clients are still listed. Refresh to try again.";
+
+export const FORECAST_PROJECTS_UNAVAILABLE =
+  "Couldn't reach Basecamp for the project list. Saved clients are still listed. Refresh to try again.";
+
+export type ForecastPickerClient = {
+  id: string;
+  name: string;
+  unlinked?: boolean;
+};
+
+export type ForecastPicker = {
+  clients: ForecastPickerClient[];
+  internals: Array<{ id: string; name: string }>;
+  warning: string | null;
+  fromCache: boolean;
+  stale: boolean;
+};
+
+/**
+ * A raw Basecamp project id carried on a picker choice.
+ *
+ * `internal:` is an MEG workspace and is never turned into a client.
+ * `project:` is a client project that is not linked yet. A plain client id
+ * returns null so the caller looks the project up on the client row.
+ */
+export function forecastPickerProjectId(pickerId: string): string | null {
+  const raw = (pickerId || "").trim();
+  for (const prefix of ["internal:", FORECAST_UNLINKED_PREFIX]) {
+    if (!raw.startsWith(prefix)) continue;
+    const id = raw.slice(prefix.length).trim();
+    return /^\d+$/.test(id) ? id : null;
+  }
+  return null;
+}
+
+type PickerClientRow = {
+  id: string;
+  name: string;
+  basecamp_project_id: string;
+  active?: number;
+};
+
+/**
+ * Everything the add-task picker offers.
+ *
+ * Active clients come first. Every other project on the account catalog is
+ * included, whether or not a client row exists and whether or not the person
+ * picking is a member of it in Basecamp. Internal workspaces stay tagged and
+ * are not imported as clients. A project an active client already points at is
+ * not listed twice.
+ */
+export function buildForecastPicker(
+  clients: PickerClientRow[],
+  projects: Array<{ id: number | string; name: string }>
+): { clients: ForecastPickerClient[]; internals: Array<{ id: string; name: string }> } {
+  const active = clients.filter((c) => c.active !== 0 && (c.name || "").trim());
+  const linkedIds = new Set(
+    active.map((c) => (c.basecamp_project_id || "").trim()).filter(Boolean)
+  );
+  const clientOptions: ForecastPickerClient[] = active
+    .map((c) => ({ id: c.id, name: c.name.trim() }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  const seen = new Set<string>();
+  const unlinked: ForecastPickerClient[] = [];
+  const internals: Array<{ id: string; name: string }> = [];
+  for (const project of projects) {
+    const id = String(project.id ?? "").trim();
+    const name = (project.name || "").trim();
+    if (!id || !name || seen.has(id) || linkedIds.has(id)) continue;
+    seen.add(id);
+    if (isInternalProject(name)) {
+      internals.push({ id, name });
+    } else {
+      unlinked.push({ id: `${FORECAST_UNLINKED_PREFIX}${id}`, name, unlinked: true });
+    }
+  }
+  unlinked.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  internals.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  const names = new Map<string, number>();
+  for (const row of [...clientOptions, ...unlinked, ...internals]) {
+    names.set(row.name, (names.get(row.name) ?? 0) + 1);
+  }
+  const label = (row: { id: string; name: string }) => {
+    if ((names.get(row.name) ?? 0) < 2) return row.name;
+    const projectId = forecastPickerProjectId(row.id) || row.id;
+    return `${row.name} (#${projectId})`;
+  };
+  return {
+    clients: [
+      ...clientOptions.map((row) => ({ ...row, name: label(row) })),
+      ...unlinked.map((row) => ({ ...row, name: label(row) })),
+    ],
+    internals: internals.map((row) => ({ ...row, name: label(row) })),
+  };
+}
+
+export type EnsuredForecastProject = {
+  clientId: string;
+  clientName: string;
+  projectId: string;
+  internal: boolean;
+  created: boolean;
+  linked: boolean;
+};
+
+/**
+ * Make a picked Basecamp project safe to add a forecast task against.
+ *
+ * An internal workspace is left as a project. A project that already has a
+ * client is reused, and an inactive row is turned back on. A blank client whose
+ * name matches is linked, the same confident match the weekly auto-link uses.
+ * Otherwise one forecasting client is created and kept off the production
+ * schedule. A name that already belongs to a different project is not copied
+ * into a second client; the task can still name this project.
+ */
+export function ensureForecastClientForProject(project: {
+  id: string | number;
+  name: string;
+}): EnsuredForecastProject {
+  const projectId = String(project.id ?? "").trim();
+  const projectName = (project.name || "").trim();
+  const empty = (partial: Partial<EnsuredForecastProject>): EnsuredForecastProject => ({
+    clientId: "",
+    clientName: projectName,
+    projectId,
+    internal: false,
+    created: false,
+    linked: false,
+    ...partial,
+  });
+  if (!projectId) return empty({});
+  if (isInternalProject(projectName)) {
+    return empty({ internal: true, clientName: projectName });
   }
 
-  const projects = await listProjects(asPerson(person));
-  const ids = new Set(projects.map((p) => String(p.id)));
-  const clients = listRevClients(false);
-  const linkedIds = new Set(
-    clients.map((c) => (c.basecamp_project_id || "").trim()).filter((id) => ids.has(id))
+  const all = listRevClients(true);
+  const existing = all.find((c) => (c.basecamp_project_id || "").trim() === projectId);
+  if (existing) {
+    if (!existing.active) updateRevClient(existing.id, { active: true });
+    return empty({
+      clientId: existing.id,
+      clientName: existing.name,
+      linked: false,
+      created: false,
+    });
+  }
+
+  const people = forecastPersonNames();
+  const plan = matchUnlinkedClients(
+    all.map((c) => ({
+      id: c.id,
+      name: c.name,
+      basecampProjectId: (c.basecamp_project_id || "").trim(),
+      active: c.active === 1,
+      eligible: !isPersonOrInternalClientName(c.name, people, isInternalProject),
+    })),
+    [{ id: projectId, name: projectName }],
+    { aliases: PROJECT_ALIASES, isInternal: isInternalProject }
   );
-  return {
-    clients: clientsOnAccessibleProjects(clients, ids),
-    // A linked client is already in the client list. Keep the extra project
-    // only when there is no client row pointing at that Basecamp project.
-    internals: filterInternalProjects(projects).filter((p) => !linkedIds.has(p.id)),
-  };
+  const match = plan.matches.find((row) => row.projectId === projectId);
+  if (match) {
+    const row = getRevClient(match.clientId);
+    if (row && !(row.basecamp_project_id || "").trim()) {
+      updateRevClient(row.id, { basecampProjectId: projectId, active: true });
+      return empty({
+        clientId: row.id,
+        clientName: row.name,
+        linked: true,
+      });
+    }
+  }
+
+  const takenAgain = listRevClients(true).find(
+    (c) => (c.basecamp_project_id || "").trim() === projectId
+  );
+  if (takenAgain) {
+    return empty({ clientId: takenAgain.id, clientName: takenAgain.name });
+  }
+
+  const display = clientNameFor(projectName) || projectName;
+  if (isPersonOrInternalClientName(display, people, isInternalProject)) {
+    return empty({ clientName: projectName });
+  }
+  const key = normalizeClientMatchKey(projectName);
+  if (key && all.some((c) => normalizeClientMatchKey(c.name) === key)) {
+    return empty({ clientName: display });
+  }
+
+  const created = createRevClient({ name: display, businessModel: "home_service" });
+  updateRevClient(created.id, {
+    basecampProjectId: projectId,
+    productionEnrolled: false,
+  });
+  return empty({
+    clientId: created.id,
+    clientName: display,
+    created: true,
+    linked: true,
+  });
+}
+
+export async function ensureForecastProject(
+  rawProjectId: string
+): Promise<
+  | ({ ok: true } & EnsuredForecastProject)
+  | { ok: false; error: string; status: number }
+> {
+  const projectId = String(rawProjectId || "").trim();
+  if (!/^\d+$/.test(projectId)) {
+    return { ok: false, error: "Choose a Basecamp project.", status: 400 };
+  }
+  let projects: Array<{ id: number; name: string }> = [];
+  try {
+    projects = (await listProjectCatalog(SERVICE)).projects;
+  } catch {
+    return { ok: false, error: FORECAST_PROJECTS_UNAVAILABLE, status: 502 };
+  }
+  const project = projects.find((p) => String(p.id) === projectId);
+  if (!project) {
+    return {
+      ok: false,
+      error: "That project isn't on the King Kashflow account. Refresh the project list and try again.",
+      status: 400,
+    };
+  }
+  return { ok: true, ...ensureForecastClientForProject(project) };
+}
+
+/**
+ * Add-task picker for anyone who can open this forecast.
+ *
+ * The list is the King Kashflow account catalog, every page, not the projects
+ * the signed-in Basecamp user happens to belong to. `person` is who is asking.
+ * It does not filter the catalog.
+ */
+export async function forecastPickerForPerson(
+  person: string,
+  opts?: { fresh?: boolean }
+): Promise<ForecastPicker> {
+  void person;
+  let projects: Array<{ id: number; name: string }> = [];
+  let fromCache = false;
+  let stale = false;
+  let warning: string | null = null;
+  try {
+    const catalog = await listProjectCatalog(SERVICE, { fresh: opts?.fresh === true });
+    projects = catalog.projects;
+    fromCache = catalog.fromCache;
+    stale = catalog.stale;
+    if (stale) warning = FORECAST_PROJECTS_STALE;
+    else if (!projects.length) warning = FORECAST_PROJECTS_EMPTY;
+  } catch {
+    warning = FORECAST_PROJECTS_UNAVAILABLE;
+  }
+  const picker = buildForecastPicker(
+    listRevClients(false).map((c) => ({
+      id: c.id,
+      name: c.name,
+      basecamp_project_id: c.basecamp_project_id || "",
+      active: c.active,
+    })),
+    projects
+  );
+  return { ...picker, warning, fromCache, stale };
 }
 
 // Clients whose app name and Basecamp project name differ too much for name

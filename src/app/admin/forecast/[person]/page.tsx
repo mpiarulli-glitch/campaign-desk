@@ -110,7 +110,13 @@ type Data = {
   } | null;
 };
 
-type ClientOption = { id: string; name: string; internal?: boolean };
+type ClientOption = { id: string; name: string; internal?: boolean; unlinked?: boolean };
+
+function pickerProjectId(clientId: string): string {
+  if (clientId.startsWith("internal:")) return clientId.slice("internal:".length);
+  if (clientId.startsWith("project:")) return clientId.slice("project:".length);
+  return "";
+}
 
 type BcTodo = {
   id: string;
@@ -377,7 +383,8 @@ function ClientCombobox({
                   }}
                   onMouseEnter={() => setActive(i)}
                 >
-                  {c.name}
+                  <span className="fc-combo-name">{c.name}</span>
+                  {c.unlinked ? <span className="fc-combo-tag">not linked</span> : null}
                   {c.internal ? <span className="fc-combo-tag">internal</span> : null}
                 </button>
               </li>
@@ -1318,6 +1325,11 @@ export default function PersonForecastPage() {
   // page is now the only place that cache is used.
   const [syncingEvents, setSyncingEvents] = useState(false);
   const [syncingProjects, setSyncingProjects] = useState(false);
+  const [canLinkAll, setCanLinkAll] = useState(false);
+  const [linkingAll, setLinkingAll] = useState(false);
+  const [linkAllNote, setLinkAllNote] = useState("");
+  // A quiet line when Basecamp was rate-limited or unreachable. Not a banner.
+  const [projectsNote, setProjectsNote] = useState("");
   const [syncingGoogle, setSyncingGoogle] = useState(false);
   // taskId -> hours typed into that task's "log time" box. Logging is explicit:
   // the hours go onto a client-visible Basecamp timesheet and can't be unsent,
@@ -1405,13 +1417,14 @@ export default function PersonForecastPage() {
   }
 
   function applyPicker(json: {
-    clients?: Array<{ id: string; name: string }>;
+    clients?: Array<{ id: string; name: string; unlinked?: boolean }>;
     internals?: Array<{ id: string; name: string }>;
+    warning?: string | null;
   }) {
     if (Array.isArray(json.clients)) {
       setClients(
         json.clients
-          .map((c) => ({ id: c.id, name: c.name }))
+          .map((c) => ({ id: c.id, name: c.name, unlinked: Boolean(c.unlinked) }))
           .sort((a, b) => a.name.localeCompare(b.name))
       );
     }
@@ -1424,6 +1437,7 @@ export default function PersonForecastPage() {
         }))
       );
     }
+    setProjectsNote(typeof json.warning === "string" ? json.warning : "");
   }
 
   // silent = true skips the loading indicator so the whole task list doesn't
@@ -1472,6 +1486,7 @@ export default function PersonForecastPage() {
         } else if (Array.isArray(data.forecastSubjects)) {
           setForecastSubjects(data.forecastSubjects);
         }
+        setCanLinkAll(data.role === "admin");
       })
       .catch(() => {});
   }, []);
@@ -1543,8 +1558,9 @@ export default function PersonForecastPage() {
         },
       }));
       try {
-        const query = clientId.startsWith("internal:")
-          ? `project=${encodeURIComponent(clientId.slice("internal:".length))}`
+        const projectId = pickerProjectId(clientId);
+        const query = projectId
+          ? `project=${encodeURIComponent(projectId)}`
           : `client=${encodeURIComponent(clientId)}`;
         const res = await fetch(`/api/forecast/todos?person=${person}&${query}`);
         const json = res.ok ? await res.json() : null;
@@ -1580,34 +1596,98 @@ export default function PersonForecastPage() {
     [person]
   );
 
-  function pickClient(date: string, clientId: string) {
+  const pickGen = useRef<Record<string, number>>({});
+
+  function adoptLinkedClient(row: { clientId: string; clientName: string; projectId: string }) {
+    if (!row.clientId) return;
+    setClients((prev) => {
+      const next = prev.filter(
+        (c) => c.id !== row.clientId && c.id !== `project:${row.projectId}`
+      );
+      next.push({ id: row.clientId, name: row.clientName });
+      next.sort((a, b) => a.name.localeCompare(b.name));
+      return next;
+    });
+  }
+
+  // A project with no client yet is linked, or a forecasting client is created,
+  // at the moment someone picks it. Internal workspaces stay projects.
+  async function resolvePickerChoice(clientId: string): Promise<{
+    clientId: string;
+    name: string;
+    projectId: string;
+  }> {
     const hit = pickerClients.find((c) => c.id === clientId);
+    const name = hit?.name || "";
+    const direct = pickerProjectId(clientId);
+    if (!clientId.startsWith("project:")) {
+      return { clientId, name, projectId: direct };
+    }
+    const res = await fetch(`/api/forecast/projects?person=${person}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "ensure", projectId: direct }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json || json.ok === false) {
+      setError(
+        (json && typeof json.error === "string" && json.error) ||
+          "Couldn't open that project. You can still type the task."
+      );
+      return { clientId, name, projectId: direct };
+    }
+    if (json.internal) {
+      return {
+        clientId: `internal:${json.projectId || direct}`,
+        name: json.clientName || name,
+        projectId: json.projectId || direct,
+      };
+    }
+    if (json.clientId) {
+      adoptLinkedClient({
+        clientId: json.clientId,
+        clientName: json.clientName || name,
+        projectId: json.projectId || direct,
+      });
+      return {
+        clientId: json.clientId,
+        name: json.clientName || name,
+        projectId: json.projectId || direct,
+      };
+    }
+    return {
+      clientId,
+      name: json.clientName || name,
+      projectId: json.projectId || direct,
+    };
+  }
+
+  async function pickClient(date: string, clientId: string) {
+    const gen = (pickGen.current[date] || 0) + 1;
+    pickGen.current[date] = gen;
+    const resolved = await resolvePickerChoice(clientId);
+    if (pickGen.current[date] !== gen) return;
     const current = draftFor(date);
     // Completing is when a typed meeting names its client. Don't wipe notes.
     if (current.mode === "meeting") {
-      const projectId = clientId.startsWith("internal:")
-        ? clientId.slice("internal:".length)
-        : "";
       setDraft(date, {
-        clientId,
-        client: hit?.name || "",
-        projectId,
+        clientId: resolved.clientId,
+        client: resolved.name,
+        projectId: resolved.projectId,
       });
-      if (!projectId) ensureTodos(clientId);
+      if (!resolved.projectId) ensureTodos(resolved.clientId);
       return;
     }
     // Changing client invalidates whatever task was picked for the old one.
     setDraft(date, {
-      clientId,
-      client: hit?.name || "",
+      clientId: resolved.clientId,
+      client: resolved.name,
       notes: "",
       todoIds: [],
-      projectId: clientId.startsWith("internal:")
-        ? clientId.slice("internal:".length)
-        : "",
+      projectId: resolved.projectId,
       manual: false,
     });
-    ensureTodos(clientId);
+    ensureTodos(resolved.clientId);
   }
 
   function refreshLinkedClients(clientIds: string[]) {
@@ -1694,6 +1774,27 @@ export default function PersonForecastPage() {
     }
     const json = await res.json().catch(() => null);
     if (json) applyPicker(json);
+  }
+
+  async function linkAllProjects() {
+    setLinkingAll(true);
+    setError("");
+    const res = await fetch("/api/admin/basecamp-link-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dryRun: false }),
+    });
+    const json = await res.json().catch(() => null);
+    setLinkingAll(false);
+    setLinkAllNote(
+      (json && typeof json.summary === "string" && json.summary) ||
+        (json && typeof json.error === "string" && json.error) ||
+        "Couldn't link projects."
+    );
+    if (!res.ok) return;
+    const picker = await fetch(`/api/forecast/projects?person=${person}`);
+    const next = picker.ok ? await picker.json().catch(() => null) : null;
+    if (next) applyPicker(next);
   }
 
   // Switching mode clears whatever was picked under the old one, so a half-filled
@@ -2485,9 +2586,7 @@ export default function PersonForecastPage() {
   function meetingClientPayload() {
     const hit = pickerClients.find((c) => c.id === logLinkClientId);
     if (!hit) return null;
-    const projectId = hit.id.startsWith("internal:")
-      ? hit.id.slice("internal:".length)
-      : logAskTodos?.projectId || "";
+    const projectId = pickerProjectId(hit.id) || logAskTodos?.projectId || "";
     return { clientId: hit.id, client: hit.name, projectId };
   }
 
@@ -2559,9 +2658,14 @@ export default function PersonForecastPage() {
     setAddAnchor(null);
   }
 
-  function pickQueueClient(clientId: string) {
-    setQueueClientId(clientId);
-    if (clientId) ensureTodos(clientId);
+  async function pickQueueClient(clientId: string) {
+    if (!clientId) {
+      setQueueClientId("");
+      return;
+    }
+    const resolved = await resolvePickerChoice(clientId);
+    setQueueClientId(resolved.clientId);
+    ensureTodos(resolved.clientId);
   }
 
   async function onDayDrop(e: React.DragEvent, date: string) {
@@ -3478,25 +3582,38 @@ export default function PersonForecastPage() {
             ) : null}
             {/* Both syncs live in the queue sidebar on the calendar, next to the
                 pickers they actually feed, rather than up here in the chrome. */}
-            {view === "calendar" || view === "tasks" ? null : (
+            {view === "calendar" ? null : (
               <>
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={syncProjects}
                   disabled={syncingProjects}
-                  title="Pull new Basecamp projects into the picker, including internal MEG workspaces."
+                  title="Reload every Basecamp project. Clients whose names match are linked. A project with no client stays pickable."
                 >
-                  {syncingProjects ? "Syncing…" : "Sync projects"}
+                  {syncingProjects ? "Refreshing…" : "Refresh projects"}
                 </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={syncMeetings}
-                  disabled={syncingEvents}
-                  title="Re-read every project's schedule from Basecamp, so today's meetings show up in the picker."
-                >
-                  {syncingEvents ? "Syncing…" : "Sync meetings"}
-                </button>
+                {canLinkAll ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => void linkAllProjects()}
+                    disabled={linkingAll}
+                    title="Link every active Basecamp project to a client. A confident name match fills a blank link. Otherwise a forecasting client is created. An existing link is left as it is."
+                  >
+                    {linkingAll ? "Linking…" : "Link all projects"}
+                  </button>
+                ) : null}
               </>
+            )}
+            {view === "calendar" || view === "tasks" ? null : (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={syncMeetings}
+                disabled={syncingEvents}
+                title="Re-read every project's schedule from Basecamp, so today's meetings show up in the picker."
+              >
+                {syncingEvents ? "Syncing…" : "Sync meetings"}
+              </button>
             )}
             </div>
           </div>
@@ -3520,6 +3637,12 @@ export default function PersonForecastPage() {
         ) : null}
 
         {error ? <p className="error" style={{ marginBottom: 16 }}>{error}</p> : null}
+        {projectsNote ? (
+          <p className="muted" style={{ marginBottom: 16 }}>{projectsNote}</p>
+        ) : null}
+        {linkAllNote ? (
+          <p className="muted" style={{ marginBottom: 16 }}>{linkAllNote}</p>
+        ) : null}
 
         {planNotice ? (
           <p className="fc-moved">
@@ -3744,6 +3867,8 @@ export default function PersonForecastPage() {
               onHoursDraft={setQueueHours}
               onSyncProjects={syncProjects}
               onSyncMeetings={syncMeetings}
+              onLinkAll={canLinkAll ? () => void linkAllProjects() : undefined}
+              linkingAll={linkingAll}
               syncing={syncingProjects}
               syncingMeetings={syncingEvents}
               drag={drag}
@@ -4080,8 +4205,13 @@ export default function PersonForecastPage() {
                 clients={pickerClients}
                 value={logLinkClientId}
                 onPick={(clientId) => {
-                  setLogLinkClientId(clientId);
-                  setLogLinkTodoId("");
+                  void resolvePickerChoice(clientId).then((resolved) => {
+                    setLogLinkClientId(resolved.clientId);
+                    setLogLinkTodoId("");
+                    if (!isForecastMeeting(logAskTask) && !logAskAsMeeting) {
+                      ensureTodos(resolved.clientId);
+                    }
+                  });
                 }}
                 autoFocus
                 placeholder="Which client was this for?"
@@ -4101,9 +4231,11 @@ export default function PersonForecastPage() {
                 clients={pickerClients}
                 value={logLinkClientId}
                 onPick={(clientId) => {
-                  setLogLinkClientId(clientId);
-                  setLogLinkTodoId("");
-                  void ensureTodos(clientId);
+                  void resolvePickerChoice(clientId).then((resolved) => {
+                    setLogLinkClientId(resolved.clientId);
+                    setLogLinkTodoId("");
+                    void ensureTodos(resolved.clientId);
+                  });
                 }}
               />
               {logLinkClientId ? (

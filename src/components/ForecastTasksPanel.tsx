@@ -17,7 +17,12 @@ import type { AssignedSource } from "./ForecastQueue";
 import { SyncedForecastSection } from "./SyncedForecastItems";
 import type { ForecastSyncItemView } from "@/lib/forecast-sync-view";
 
-export type TaskClientOption = { id: string; name: string };
+export type TaskClientOption = {
+  id: string;
+  name: string;
+  internal?: boolean;
+  unlinked?: boolean;
+};
 
 function shortDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -508,6 +513,7 @@ function NewTodoForm({
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+                {c.internal ? " (internal)" : c.unlinked ? " (not linked)" : ""}
               </option>
             ))}
           </select>

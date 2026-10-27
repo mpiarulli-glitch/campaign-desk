@@ -18,6 +18,7 @@ export function resolveForecastProjectId(input: {
   if (explicit) return explicit;
   const clientId = (input.clientId || "").trim();
   if (clientId.startsWith("internal:")) return clientId.slice("internal:".length);
+  if (clientId.startsWith("project:")) return clientId.slice("project:".length);
   if (!clientId) return "";
   return (getRevClient(clientId)?.basecamp_project_id || "").trim();
 }
@@ -84,7 +85,10 @@ export async function bookTypedMeetingOnBasecamp(input: {
   cacheScheduleEntry({
     id: created.id,
     projectId,
-    clientId: clientId.startsWith("internal:") ? null : clientId || null,
+    clientId:
+      clientId.startsWith("internal:") || clientId.startsWith("project:")
+        ? null
+        : clientId || null,
     clientName: input.clientName || "",
     projectName: created.projectName,
     title: created.title,
