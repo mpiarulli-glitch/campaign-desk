@@ -19,6 +19,7 @@ import {
   statusAfterMarkRevisionDone,
 } from "@/lib/campaign-status";
 import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
+import { countsForMonth } from "@/lib/campaign-month-desk";
 import { APP_TIME_ZONE, currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
 
@@ -1319,15 +1320,13 @@ export default function AdminCampaignPage() {
 
   async function saveCountMonth(period: string) {
     if (!campaign) return;
-    const created = campaign.created_at?.slice(0, 7) || "";
-    const boardPeriod = period === created ? null : period;
     setSaving(true);
     setMessage("");
     setError("");
     const res = await fetch(`/api/campaigns/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ boardPeriod }),
+      body: JSON.stringify({ boardPeriod: period }),
     });
     const data = await res.json().catch(() => ({}));
     setSaving(false);
@@ -1336,7 +1335,7 @@ export default function AdminCampaignPage() {
       return;
     }
     if (data.campaign) setCampaign(data.campaign);
-    setMessage(`Counts toward ${periodLabel(period)}.`);
+    setMessage(`Counts for ${periodLabel(period)}.`);
   }
 
   async function saveSendPlan() {
@@ -2063,21 +2062,27 @@ export default function AdminCampaignPage() {
             </select>
             <select
               className="select-clean"
-              aria-label="Month this counts toward"
+              aria-label="Counts for month"
               disabled={saving}
-              value={
-                campaign.board_period ||
-                campaign.created_at?.slice(0, 7) ||
-                currentPeriod()
-              }
+              value={countsForMonth({
+                board_period: campaign.board_period,
+                scheduled_send_at: campaign.scheduled_send_at,
+                created_at: campaign.created_at,
+                email_sends: emails.map((email) => email.scheduled_send_at),
+              })}
               onChange={(e) => void saveCountMonth(e.target.value)}
             >
               {countMonthOptions(
                 campaign.created_at,
-                campaign.board_period
+                countsForMonth({
+                  board_period: campaign.board_period,
+                  scheduled_send_at: campaign.scheduled_send_at,
+                  created_at: campaign.created_at,
+                  email_sends: emails.map((email) => email.scheduled_send_at),
+                })
               ).map((period) => (
                 <option key={period} value={period}>
-                  Counts toward {periodLabel(period)}
+                  Counts for {periodLabel(period)}
                 </option>
               ))}
             </select>

@@ -183,6 +183,11 @@ export async function POST(request: Request) {
     );
   }
 
+  const boardPeriod =
+    typeof body.boardPeriod === "string" && /^\d{4}-\d{2}$/.test(body.boardPeriod)
+      ? body.boardPeriod
+      : null;
+
   const campaign = createCampaign({
     title,
     clientName,
@@ -191,6 +196,7 @@ export async function POST(request: Request) {
     audience,
     htmlContent: htmlContent.trim() ? htmlContent : "<p></p>",
     emailTitle: presentation === "automation" ? "Email 1" : emailTitle,
+    boardPeriod,
     kind,
     bodyFormat,
     mediaUrl,

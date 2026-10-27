@@ -249,9 +249,10 @@ export interface Campaign {
   /** 1 when this row was logged from the board for work done outside Campaign Desk. */
   logged_off_app: number;
   /**
-   * YYYY-MM this campaign counts toward on the deliverables board.
-   * Null means the month of created_at. Set when work for a later month
-   * was already sent to the client.
+   * YYYY-MM this campaign counts for. The deliverables board treats null as
+   * the UTC month of created_at. The Campaigns Clients view reads the same
+   * column as "Counts for month" and, when it is null, uses the scheduled
+   * send month, then the created month. Null rows are not rewritten.
    */
   board_period: string | null;
   // When status is scheduled, the Pacific send instant (UTC ISO). Cron flips

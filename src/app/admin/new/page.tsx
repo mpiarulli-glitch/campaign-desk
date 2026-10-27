@@ -19,6 +19,7 @@ import {
   type TriggerFormFormat,
   type TriggerKind,
 } from "@/lib/automation-map";
+import { currentPeriod, shiftPeriod } from "@/lib/period";
 
 type RevClientOption = { id: string; name: string };
 
@@ -50,6 +51,9 @@ export default function NewCampaignPage() {
     useState<TriggerFormFormat>("");
   const [triggerFormHtml, setTriggerFormHtml] = useState("");
   const [triggerFormMediaUrl, setTriggerFormMediaUrl] = useState("");
+  const [countsForMonth, setCountsForMonth] = useState(() =>
+    shiftPeriod(currentPeriod(), 1)
+  );
 
   useEffect(() => {
     fetch("/api/auth")
@@ -111,6 +115,7 @@ export default function NewCampaignPage() {
           presentation === "automation" && triggerFormFormat === "image"
             ? triggerFormMediaUrl
             : "",
+        boardPeriod: countsForMonth,
       }),
     });
 
@@ -316,6 +321,20 @@ export default function NewCampaignPage() {
                 <option key={c.id} value={c.name} />
               ))}
             </datalist>
+          </div>
+
+          <div className="field">
+            <label htmlFor="counts-for-month">Counts for month</label>
+            <input
+              id="counts-for-month"
+              type="month"
+              value={countsForMonth}
+              required
+              onChange={(e) => setCountsForMonth(e.target.value)}
+            />
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+              The month this campaign is filed under. Defaults to next month.
+            </p>
           </div>
 
           <div className="field">
