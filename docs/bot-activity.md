@@ -32,7 +32,7 @@ To keep a card accurate, post while the work is happening:
 
 - `type: work`, `state: progress`, at least every 30 minutes
 - `type: waiting` (or `state: blocked`) when Michael has to answer, and `resolved: true` when he has
-- `type: work`, `state: done` when the task is finished (a done write in the last 2 minutes plays the walk back to the desk)
+- `type: work`, `state: done` when the task is finished (a done write in the last 2 minutes flashes Done on that bot's card)
 - `type: timeline` for a feed line. Each call adds a line. It does not update an older one.
 
 Upsert a waiting item. `key` is stable for that bot, so the same key updates the same card. `resolved: true` marks it resolved. `resolved: false` reopens it. On the first write, `title` is required.

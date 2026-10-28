@@ -75,7 +75,7 @@ export function isUntouchedSeed(row: { id?: string; at?: string; updatedAt?: str
 }
 
 /** Untouched seed counts only when its own event time is still inside the fresh window. */
-function countsLive(row: { id?: string; at?: string; updatedAt?: string }, nowMs: number): boolean {
+export function rowCountsLive(row: { id?: string; at?: string; updatedAt?: string }, nowMs: number): boolean {
   if (!isUntouchedSeed(row)) return true;
   const event = stampMs(row.at);
   return event !== null && nowMs - event <= WORKING_FRESH_MS;
@@ -101,12 +101,12 @@ export function botHeartbeat(
     best = value || "";
   };
   for (const item of work) {
-    if (item.bot !== bot || item.state !== "progress" || !countsLive(item, nowMs)) continue;
+    if (item.bot !== bot || item.state !== "progress" || !rowCountsLive(item, nowMs)) continue;
     consider(item.updatedAt);
     consider(item.at);
   }
   for (const line of lines) {
-    if (line.bot !== bot || !countsLive(line, nowMs)) continue;
+    if (line.bot !== bot || !rowCountsLive(line, nowMs)) continue;
     consider(line.postedAt);
     consider(line.at);
   }
@@ -195,9 +195,9 @@ export function statusForBot(
   nowMs = Date.now()
 ): TeamStatus {
   const tasks = work.filter((item) => item.bot === bot);
-  if (tasks.some((item) => item.state === "blocked" && countsLive(item, nowMs))) return "Blocked";
-  if (waiting.some((item) => item.bot === bot && countsLive(item, nowMs))) return "Waiting on you";
-  if (!tasks.some((item) => item.state === "progress" && countsLive(item, nowMs))) return "Idle";
+  if (tasks.some((item) => item.state === "blocked" && rowCountsLive(item, nowMs))) return "Blocked";
+  if (waiting.some((item) => item.bot === bot && rowCountsLive(item, nowMs))) return "Waiting on you";
+  if (!tasks.some((item) => item.state === "progress" && rowCountsLive(item, nowMs))) return "Idle";
   const beat = botHeartbeat(bot, work, lines, nowMs);
   const then = stampMs(beat);
   if (then !== null && nowMs - then <= WORKING_FRESH_MS) return "Working";
@@ -239,7 +239,7 @@ export function doingTitle(
   let best = "";
   let bestStamp = "";
   for (const item of work) {
-    if (item.bot !== bot || item.state !== "progress" || !countsLive(item, nowMs)) continue;
+    if (item.bot !== bot || item.state !== "progress" || !rowCountsLive(item, nowMs)) continue;
     const stamp = item.updatedAt || item.at || "";
     if (stamp >= bestStamp) {
       bestStamp = stamp;
@@ -294,11 +294,11 @@ export function needsRequestText(
 ): string {
   const parts: { at: string; text: string }[] = [];
   for (const item of work) {
-    if (item.bot !== bot || item.state !== "blocked" || !countsLive(item, nowMs)) continue;
+    if (item.bot !== bot || item.state !== "blocked" || !rowCountsLive(item, nowMs)) continue;
     parts.push({ at: item.at, text: [item.title, item.detail].filter(Boolean).join("\n") });
   }
   for (const item of waiting) {
-    if (item.bot !== bot || !countsLive(item, nowMs)) continue;
+    if (item.bot !== bot || !rowCountsLive(item, nowMs)) continue;
     parts.push({ at: item.at, text: [item.title, item.detail].filter(Boolean).join("\n") });
   }
   parts.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
