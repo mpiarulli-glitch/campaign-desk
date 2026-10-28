@@ -26,6 +26,12 @@ export async function register() {
         ensureCoronasDeOroClient(),
       ]);
     });
+    enqueueDeferredStartupJob("client-websites", async () => {
+      const { runClientWebsiteSeedOnStartup } = await import(
+        "./src/lib/client-website-seed"
+      );
+      await runClientWebsiteSeedOnStartup();
+    });
     console.log(`[boot] ready to listen in ${Math.round(process.uptime() * 1000)}ms`);
   }
 
