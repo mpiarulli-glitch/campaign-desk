@@ -47,38 +47,39 @@ export function clientNameFor(projectName: string): string {
 // Basecamp projects that are internal MEG workspaces, not client accounts.
 // Curated rather than pattern-matched: a pattern like /HQ|Team|Internal/ would
 // eventually swallow a real client. Anything here is never imported as a
-// rev_client. The forecast picker can reach their todos, but only for people
-// who are actually on that project in Basecamp — Leadership HQ stays hidden
-// from staff who are not members. Add a new internal workspace by its exact
-// Basecamp name.
+// rev_client. The add-task picker still offers them. Add a new internal
+// workspace by its exact Basecamp name. "Test Poject" is the live project's
+// spelling.
+export const FORECAST_INTERNAL_PROJECT_NAMES = [
+  "Department To-Do's Library",
+  "EMPIRE Analytics",
+  "Claude",
+  "Test Poject",
+  "Michael's Hub",
+  "EOS EMPIRE",
+  "MarTech Stack Recommendations",
+  "MEG Marketing HQ",
+  "Marketing Empire Group HQ",
+  "SOPs & Job Descriptions",
+  "MEG HQ Social",
+  "SEO HQ",
+  "M.E.G Scripts & Prompts",
+  "Email/SMS + Automation + Linkedin Department",
+  "Social Media and Graphic Design Team",
+  "MEG Web HQ",
+  "MEG InFrame app",
+  "Video Editing Team",
+  "Empire Ads Team",
+  "Empire Leadership HQ",
+  "EMPIRE Sales",
+  "Kentina Passport Internal",
+  "MY911 Internal Only",
+  "Amanda Barkey (EOS Implementer)",
+  "Deliverable Templates",
+] as const;
+
 const INTERNAL_PROJECTS = new Set(
-  [
-    "Department To-Do's Library",
-    "EMPIRE Analytics",
-    "Claude",
-    "Test Poject",
-    "Michael's Hub",
-    "EOS EMPIRE",
-    "MarTech Stack Recommendations",
-    "MEG Marketing HQ",
-    "Marketing Empire Group HQ",
-    "SOPs & Job Descriptions",
-    "MEG HQ Social",
-    "SEO HQ",
-    "M.E.G Scripts & Prompts",
-    "Email/SMS + Automation + Linkedin Department",
-    "Social Media and Graphic Design Team",
-    "MEG Web HQ",
-    "MEG InFrame app",
-    "Video Editing Team",
-    "Empire Ads Team",
-    "Empire Leadership HQ",
-    "EMPIRE Sales",
-    "Kentina Passport Internal",
-    "MY911 Internal Only",
-    "Amanda Barkey (EOS Implementer)",
-    "Deliverable Templates",
-  ].map((n) => n.trim().toLowerCase())
+  FORECAST_INTERNAL_PROJECT_NAMES.map((n) => n.trim().toLowerCase())
 );
 
 export function isInternalProject(name: string): boolean {
@@ -112,11 +113,51 @@ export function isNonClientRecord(name: string): boolean {
 // Client projects the forecast todo picker should offer even when they are
 // not linked to a revenue client yet. Matched on the name with the Growth OS
 // suffix stripped, so "Temecula Limos Growth OS - Powered by…" still hits.
-// Membership still applies: only people on the Basecamp project see it.
-const FORECAST_EXTRA_PROJECTS = new Set(["temecula limos"]);
+// Resolved the same way as the internal allowlist: by this exact name, not a
+// hardcoded project id.
+export const FORECAST_EXTRA_PROJECT_NAMES = ["Temecula Limos"] as const;
+
+const FORECAST_EXTRA_PROJECTS = new Set(
+  FORECAST_EXTRA_PROJECT_NAMES.map((n) => norm(n))
+);
 
 export function isForecastExtraProject(name: string): boolean {
   return FORECAST_EXTRA_PROJECTS.has(norm(name));
+}
+
+/** Internal allowlist or the extra client projects the old picker always offered. */
+export function isForecastPickerAllowlisted(name: string): boolean {
+  return isInternalProject(name) || isForecastExtraProject(name);
+}
+
+/**
+ * Stable key for one allowlisted picker project.
+ *
+ * Internal workspaces match the exact Basecamp title. Extras match after the
+ * Growth OS suffix is stripped, so a renamed campaign title still hits.
+ */
+export function forecastAllowlistKey(name: string): string | null {
+  if (isInternalProject(name)) return (name || "").trim().toLowerCase();
+  if (isForecastExtraProject(name)) return norm(name);
+  return null;
+}
+
+export function forecastAllowlistKeys(): string[] {
+  return [
+    ...FORECAST_INTERNAL_PROJECT_NAMES.map((n) => n.trim().toLowerCase()),
+    ...FORECAST_EXTRA_PROJECT_NAMES.map((n) => norm(n)),
+  ];
+}
+
+export function forecastAllowlistCovered(
+  projects: Array<{ name: string }>
+): boolean {
+  const present = new Set<string>();
+  for (const project of projects) {
+    const key = forecastAllowlistKey(project.name);
+    if (key) present.add(key);
+  }
+  return forecastAllowlistKeys().every((key) => present.has(key));
 }
 
 // Forecast display name after stripping the Growth OS suffix, same casing as
@@ -261,9 +302,60 @@ export function filterInternalProjects(
   projects: Array<{ id: number | string; name: string }>
 ): Array<{ id: string; name: string }> {
   return projects
-    .filter((p) => isInternalProject(p.name) || isForecastExtraProject(p.name))
+    .filter((p) => isForecastPickerAllowlisted(p.name))
     .map((p) => ({ id: String(p.id), name: p.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Add allowlisted projects that `base` does not already name.
+ *
+ * Non-allowlisted rows in `extra` are ignored, so a person's private projects
+ * do not join the account-wide client list. An allowlisted name already
+ * present keeps its first id.
+ */
+export function mergeAllowlistedPickerProjects(
+  base: Array<{ id: number | string; name: string }>,
+  extra: Array<{ id: number | string; name: string }>
+): Array<{ id: string; name: string }> {
+  const merged = new Map<string, { id: string; name: string }>();
+  const put = (project: { id: number | string; name: string }) => {
+    const id = String(project.id ?? "").trim();
+    const name = (project.name || "").trim();
+    if (!id || !name || merged.has(id)) return;
+    merged.set(id, { id, name });
+  };
+  for (const project of base) put(project);
+  const covered = new Set<string>();
+  for (const project of merged.values()) {
+    const key = forecastAllowlistKey(project.name);
+    if (key) covered.add(key);
+  }
+  for (const project of filterInternalProjects(extra)) {
+    const key = forecastAllowlistKey(project.name);
+    if (!key || covered.has(key) || merged.has(project.id)) continue;
+    merged.set(project.id, { id: project.id, name: project.name });
+    covered.add(key);
+  }
+  return [...merged.values()];
+}
+
+/**
+ * Service catalog first, then the person's own projects, then the owner's.
+ *
+ * The catalog is every client project. Allowlisted internal workspaces the
+ * service account cannot see are filled from the same name match the picker
+ * used before that catalog replaced it.
+ */
+export function assembleForecastPickerProjects(
+  serviceProjects: Array<{ id: number | string; name: string }>,
+  personProjects: Array<{ id: number | string; name: string }> = [],
+  ownerProjects: Array<{ id: number | string; name: string }> = []
+): Array<{ id: string; name: string }> {
+  return mergeAllowlistedPickerProjects(
+    mergeAllowlistedPickerProjects(serviceProjects, personProjects),
+    ownerProjects
+  );
 }
 
 export async function listInternalProjects(
@@ -342,10 +434,11 @@ type PickerClientRow = {
 /**
  * Everything the add-task picker offers.
  *
- * Active clients come first. Every other project on the account catalog is
- * included, whether or not a client row exists and whether or not the person
- * picking is a member of it in Basecamp. Internal workspaces stay tagged and
- * are not imported as clients. A project an active client already points at is
+ * Active clients come first. Every other client project on the account catalog
+ * is included, whether or not a client row exists and whether or not the person
+ * picking is a member of it in Basecamp. Allowlisted internal workspaces and
+ * extras such as Temecula Limos stay in the picker, labeled internal, and are
+ * not imported as clients. A project an active client already points at is
  * not listed twice.
  */
 export function buildForecastPicker(
@@ -368,7 +461,9 @@ export function buildForecastPicker(
     const name = (project.name || "").trim();
     if (!id || !name || seen.has(id) || linkedIds.has(id)) continue;
     seen.add(id);
-    if (isInternalProject(name)) {
+    // Allowlisted workspaces stay in the picker. Link-all and the person-name
+    // skip refuse to create clients for them; that skip must not hide them here.
+    if (isForecastPickerAllowlisted(name)) {
       internals.push({ id, name });
     } else {
       unlinked.push({ id: `${FORECAST_UNLINKED_PREFIX}${id}`, name, unlinked: true });
@@ -527,24 +622,72 @@ export async function ensureForecastProject(
   return { ok: true, ...ensureForecastClientForProject(project) };
 }
 
+async function memberProjectList(
+  slug: string,
+  fresh: boolean
+): Promise<Array<{ id: number; name: string }>> {
+  const person = (slug || "").trim();
+  if (!person || !hasConnection(person)) return [];
+  try {
+    return await listProjects(asPerson(person), fresh ? { fresh: true } : undefined);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Account catalog, plus allowlisted projects the service account cannot see.
+ *
+ * Client projects stay the full King Kashflow catalog. An internal workspace
+ * is resolved by its allowlisted name. The service catalog is checked first.
+ * Anything still missing is taken from the asking person's own Basecamp
+ * projects, then from the owner's list. Those extra reads are skipped once
+ * every allowlisted name is already present, and they are not part of startup.
+ */
+async function projectsForForecastPicker(
+  serviceProjects: Array<{ id: number | string; name: string }>,
+  person: string,
+  fresh: boolean
+): Promise<Array<{ id: string; name: string }>> {
+  let projects = serviceProjects
+    .map((project) => ({
+      id: String(project.id ?? "").trim(),
+      name: (project.name || "").trim(),
+    }))
+    .filter((project) => project.id && project.name);
+  if (forecastAllowlistCovered(projects)) return projects;
+
+  const slug = (person || "").trim();
+  projects = mergeAllowlistedPickerProjects(
+    projects,
+    await memberProjectList(slug, fresh)
+  );
+  if (forecastAllowlistCovered(projects) || slug === OWNER_SLUG) return projects;
+  return mergeAllowlistedPickerProjects(
+    projects,
+    await memberProjectList(OWNER_SLUG, fresh)
+  );
+}
+
 /**
  * Add-task picker for anyone who can open this forecast.
  *
- * The list is the King Kashflow account catalog, every page, not the projects
- * the signed-in Basecamp user happens to belong to. `person` is who is asking.
- * It does not filter the catalog.
+ * Client projects are the King Kashflow account catalog, every page, not the
+ * projects the signed-in person happens to belong to. Allowlisted internal
+ * workspaces are included even when that catalog omits them. `person` is who
+ * is asking, and is only used to resolve those missing internal projects.
  */
 export async function forecastPickerForPerson(
   person: string,
   opts?: { fresh?: boolean }
 ): Promise<ForecastPicker> {
-  void person;
+  const fresh = opts?.fresh === true;
   let projects: Array<{ id: number; name: string }> = [];
   let fromCache = false;
   let stale = false;
   let warning: string | null = null;
   try {
-    const catalog = await listProjectCatalog(SERVICE, { fresh: opts?.fresh === true });
+    const catalog = await listProjectCatalog(SERVICE, { fresh });
     projects = catalog.projects;
     fromCache = catalog.fromCache;
     stale = catalog.stale;
@@ -553,6 +696,7 @@ export async function forecastPickerForPerson(
   } catch {
     warning = FORECAST_PROJECTS_UNAVAILABLE;
   }
+  const merged = await projectsForForecastPicker(projects, person, fresh);
   const picker = buildForecastPicker(
     listRevClients(false).map((c) => ({
       id: c.id,
@@ -560,7 +704,7 @@ export async function forecastPickerForPerson(
       basecamp_project_id: c.basecamp_project_id || "",
       active: c.active,
     })),
-    projects
+    merged
   );
   return { ...picker, warning, fromCache, stale };
 }
