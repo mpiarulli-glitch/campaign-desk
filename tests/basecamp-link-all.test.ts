@@ -228,3 +228,70 @@ test("link-all rewrites a saved id that is not a live project", async (t) => {
   assert.equal(again.relinked.length, 0);
   assert.equal(getRevClient(krak.id)?.basecamp_project_id, "49040791");
 });
+
+test("link-all does not create clients for allowlisted internal projects", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cd-link-all-internal-"));
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
+  const { closeDbForTests } = await import("../src/lib/db");
+  closeDbForTests();
+
+  t.after(() => {
+    closeDbForTests();
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const { listRevClients } = await import("../src/lib/revenue");
+  const { getDb } = await import("../src/lib/db");
+  const linkAll = await import("../src/lib/basecamp-link-all");
+  const { FORECAST_INTERNAL_PROJECT_NAMES } = await import("../src/lib/basecamp-clients");
+
+  const projects = [
+    ...FORECAST_INTERNAL_PROJECT_NAMES.map((name, index) => ({
+      id: String(8000 + index),
+      name,
+    })),
+    { id: "1003", name: "Harbor Dental Growth OS" },
+    { id: "1005", name: "Jack" },
+    {
+      id: "1008",
+      name: "Temecula Limos Growth OS - Powered by the Empire Method",
+    },
+  ];
+
+  const report = await linkAll.linkAllBasecampProjects({
+    dryRun: false,
+    projects,
+    archived: [],
+  });
+
+  assert.equal(report.ok, true);
+  assert.deepEqual(
+    report.created.map((row) => row.client).sort(),
+    ["Harbor Dental", "Temecula Limos"]
+  );
+  const skipped = [...report.skippedInternal].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+  assert.deepEqual(
+    skipped,
+    [...FORECAST_INTERNAL_PROJECT_NAMES].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    )
+  );
+  assert.ok(report.skippedPeople.some((name) => name === "Jack"));
+  const names = new Set(listRevClients(true).map((row) => row.name));
+  for (const name of FORECAST_INTERNAL_PROJECT_NAMES) {
+    assert.equal(names.has(name), false, name);
+  }
+  assert.equal(names.has("Jack"), false);
+  assert.equal(
+    (getDb().prepare(`SELECT COUNT(*) AS n FROM forecast_tasks`).get() as { n: number }).n,
+    0
+  );
+  assert.equal(
+    (getDb().prepare(`SELECT COUNT(*) AS n FROM forecast_time_logs`).get() as { n: number }).n,
+    0
+  );
+});

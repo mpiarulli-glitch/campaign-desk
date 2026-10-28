@@ -11,6 +11,7 @@ import {
 import { isOnGrid, type CalendarTask } from "./ForecastCalendar";
 import { formatTracked, isRunning, trackedSeconds } from "@/lib/forecast-timer";
 import { normalizeTaskColor } from "@/lib/forecast-colors";
+import { rankForecastPickerOptions } from "@/lib/forecast-picker-search";
 
 export type QueueClient = {
   id: string;
@@ -194,18 +195,10 @@ export function ForecastQueue({
   const booked = useMemo(() => bookedRecordingIds(tasks), [tasks]);
 
   const client = clients.find((c) => c.id === clientId);
-  const clientChoices = useMemo(() => {
-    const q = clientQuery.trim().toLowerCase();
-    if (!q) return clients;
-    const starts: QueueClient[] = [];
-    const contains: QueueClient[] = [];
-    for (const c of clients) {
-      const name = c.name.toLowerCase();
-      if (name.startsWith(q)) starts.push(c);
-      else if (name.includes(q)) contains.push(c);
-    }
-    return [...starts, ...contains];
-  }, [clients, clientQuery]);
+  const clientChoices = useMemo(
+    () => rankForecastPickerOptions(clients, clientQuery),
+    [clients, clientQuery]
+  );
 
   // Basecamp items, minus anything already booked this week, then filtered and
   // sorted for picking. Subtasks keep their parent's name beside them so a

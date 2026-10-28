@@ -17,6 +17,7 @@ import {
   type ForecastSyncDayHours,
   type ForecastSyncItemView,
 } from "@/lib/forecast-sync-view";
+import { rankForecastPickerOptions } from "@/lib/forecast-picker-search";
 import {
   TASK_COLORS,
   normalizeTaskColor,
@@ -247,10 +248,12 @@ const emptyDraft: Draft = {
  * Type-to-filter client picker.
  *
  * Replaces a plain <select>, which meant scrolling ~60 accounts to find one.
- * Filtering ranks a leading match above a match anywhere in the name, so typing
- * "kr" puts Krak Boba above "Looda House Pawn (Krak)" rather than ordering
- * alphabetically and burying the obvious hit. Internal MEG projects sit in the
- * same list, tagged so they don't read as billing clients.
+ * Filtering is case-insensitive. A leading match ranks above a word that
+ * starts with the query ("leader" finds Leadership), which ranks above a
+ * match anywhere in the name, so typing "kr" puts Krak Boba above
+ * "Looda House Pawn (Krak)". Punctuation is ignored, so "todo" finds
+ * "To-Do's". Internal MEG projects sit in the same list, tagged so they
+ * don't read as billing clients.
  */
 function ClientCombobox({
   clients,
@@ -276,18 +279,10 @@ function ClientCombobox({
 
   const selected = clients.find((c) => c.id === value);
 
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return clients;
-    const starts: ClientOption[] = [];
-    const contains: ClientOption[] = [];
-    for (const c of clients) {
-      const n = c.name.toLowerCase();
-      if (n.startsWith(q)) starts.push(c);
-      else if (n.includes(q)) contains.push(c);
-    }
-    return [...starts, ...contains];
-  }, [clients, query]);
+  const matches = useMemo(
+    () => rankForecastPickerOptions(clients, query),
+    [clients, query]
+  );
 
   // The list shrinks as you type, so the highlight has to come back in range or
   // Enter would pick nothing.
