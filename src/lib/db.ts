@@ -4363,6 +4363,11 @@ function migrate(database: Database.Database) {
       `ALTER TABLE snapshot_department_items ADD COLUMN source_key TEXT NOT NULL DEFAULT ''`
     );
   }
+  if (deptItemCols.length && !deptItemCols.includes("mark")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_items ADD COLUMN mark TEXT NOT NULL DEFAULT ''`
+    );
+  }
 
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already

@@ -36,23 +36,24 @@ export type DepartmentSuggestion = {
   mark?: "done" | "sent";
 };
 
-const KEYWORD_RULES: { department: SnapshotDepartmentSlug; pattern: RegExp }[] = [
-  { department: "seo", pattern: /\b(?:seo|blogs?)\b/i },
-  { department: "social", pattern: /\b(?:social|instagram|facebook|tiktok|linkedin|reels?)\b/i },
-  { department: "video", pattern: /\b(?:videos?|youtube|film(?:ing|ed)?|shoot)\b/i },
-  { department: "web", pattern: /\b(?:website|web)\b/i },
-  {
-    department: "lifecycle",
-    pattern: /\b(?:emails?|sms|automations?|klaviyo|lifecycle|newsletters?)\b/i,
-  },
-  { department: "strategy", pattern: /\b(?:strategy|strategic)\b/i },
-];
+// Lifecycle is tested first. A list that mentions LinkedIn and also email, SMS,
+// or automations belongs to Lifecycle, not Social Media.
+const LIFECYCLE_RE =
+  /\b(?:emails?|sms|texts?|mms|linkedin|automations?|flows?|klaviyo|ghl|go high level|mailchimp|hubspot|newsletters?|drips?|lifecycle|retention|loyalty|push)\b/i;
+const SOCIAL_RE = /\b(?:social|instagram|facebook|tiktok|content calendar|posts)\b/i;
+const VIDEO_RE = /\b(?:videos?|youtube|filming|editing|reels?)\b/i;
+const WEB_RE = /\b(?:website|web|landing page|wordpress|shopify|dev)\b/i;
+const SEO_RE = /\b(?:seo|blogs?|keywords|google business|gmb|backlinks)\b/i;
+const STRATEGY_RE = /\b(?:strategy|meetings?|reports?|planning|onboarding|kickoffs?)\b/i;
 
 function keywordDepartment(text: string): SnapshotDepartmentSlug | null {
   const value = text || "";
-  for (const rule of KEYWORD_RULES) {
-    if (rule.pattern.test(value)) return rule.department;
-  }
+  if (LIFECYCLE_RE.test(value)) return "lifecycle";
+  if (SOCIAL_RE.test(value)) return "social";
+  if (VIDEO_RE.test(value)) return "video";
+  if (WEB_RE.test(value)) return "web";
+  if (SEO_RE.test(value)) return "seo";
+  if (STRATEGY_RE.test(value)) return "strategy";
   return null;
 }
 
@@ -86,8 +87,9 @@ export function departmentForAssigneeName(name: string): SnapshotDepartmentSlug 
 }
 
 /**
- * List or column name wins, then the to-do title, then a specialist assignee.
- * Anything still unmatched is unsorted so a person can choose the department.
+ * The Basecamp list, group, card table, or column name decides the department.
+ * The to-do or card title is used only when that name does not match.
+ * Anything still unmatched is unsorted.
  */
 export function matchSnapshotDepartment(input: {
   title: string;
@@ -98,10 +100,6 @@ export function matchSnapshotDepartment(input: {
   if (fromPlace) return fromPlace;
   const fromTitle = keywordDepartment(input.title || "");
   if (fromTitle) return fromTitle;
-  for (const name of input.assigneeNames || []) {
-    const fromPerson = departmentForAssigneeName(name);
-    if (fromPerson) return fromPerson;
-  }
   return "unsorted";
 }
 
