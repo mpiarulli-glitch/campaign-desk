@@ -394,6 +394,10 @@ test("weekly snapshot outreach", async (t) => {
       receivedOn: "2026-08-03",
       notes: "",
     });
+    const enrollment = await import("../src/lib/snapshot-enrollment");
+    enrollment.enrollSnapshotClient(volt.id);
+    enrollment.enrollSnapshotClient(kentina.id);
+    enrollment.enrollSnapshotClient(pipe.id);
 
     const weekStart = cs.currentWeekStart("2026-08-21");
     const before = cs.outreachForWeek(weekStart).length;
@@ -577,6 +581,8 @@ test("weekly snapshot outreach", async (t) => {
       accountManager: "Cassidy",
       basecampProjectId: "515151",
     });
+    const enrollment = await import("../src/lib/snapshot-enrollment");
+    enrollment.enrollSnapshotClient(cipo.id);
     snapshot.addLead({
       clientId: cipo.id,
       firstName: "Sky",

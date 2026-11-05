@@ -3,14 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { cell, mapColumns, parseCsv } from "@/lib/csv";
-import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 
 // The per-client panel behind a client name in the Client Services Hub.
 //
-// Three jobs in the order the week runs: queue the leads we want the client to
-// confirm, log the wins worth telling them about, then send the ask that
-// carries both. Everything here reuses endpoints that already existed, so the
-// panel adds no new way to reach a client.
+// The week panel: leads the team has logged, wins worth telling the client,
+// then the Friday ask. Clients are not asked to mark leads.
 
 type Lead = {
   id: string;
@@ -389,14 +386,12 @@ export function ClientServicePanel({
             </p>
           </div>
           <div className="csp-head-side">
-            {isSnapshotAllowlisted(client.name) ? (
-              <Link
-                className="btn btn-ghost btn-sm"
-                href={`/admin/snapshot/${client.clientId}`}
-              >
-                Full account
-              </Link>
-            ) : null}
+            <Link
+              className="btn btn-ghost btn-sm"
+              href={`/admin/snapshot/${client.clientId}`}
+            >
+              Full account
+            </Link>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>
               Close
             </button>

@@ -4330,6 +4330,12 @@ function migrate(database: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_snapdept_items
       ON snapshot_department_items(client_id, week_start, department, sort_order);
+    CREATE TABLE IF NOT EXISTS snapshot_enrollments (
+      client_id TEXT PRIMARY KEY,
+      enrolled_at TEXT NOT NULL,
+      enrolled_by TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS snapshot_suggestion_dismissals (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,

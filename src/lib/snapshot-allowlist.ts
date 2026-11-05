@@ -1,8 +1,8 @@
-// Visible allowlist for team-facing account snapshots and the Friday ask.
+// One-time seed for who started on weekly snapshots.
 //
-// Other clients stay in the database and in the rest of the app (revenue,
-// calendar). They just do not appear on the snapshot pick-list, the behind
-// report, the team fill desk, or Friday outreach until they are added here.
+// The live roster is snapshot_enrollments. This list is matched once, the
+// first time that roster is read, so today's clients stay enrolled. Adding
+// or removing a client after that does not consult these names again.
 // Phrases are what Michael typed; matching is fuzzy because the stored name
 // may differ in punctuation, spelling, or a word ("Medspa" vs "Spa").
 

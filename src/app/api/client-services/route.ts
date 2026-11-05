@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { can, isAdminWithAccess } from "@/lib/auth";
-import { getRevClient, updateRevClient } from "@/lib/revenue";
+import { can, isAdminWithAccess, sessionActor } from "@/lib/auth";
+import { basecampConnected, listProjects } from "@/lib/basecamp";
+import {
+  enrollSnapshotClient,
+  isSnapshotEnrolled,
+  unenrollSnapshotClient,
+} from "@/lib/snapshot-enrollment";
+import { getRevClient, listRevClients, updateRevClient } from "@/lib/revenue";
 import { listLeads, listWins } from "@/lib/snapshot";
 import {
   clientServiceRows,
@@ -18,6 +24,35 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const url = new URL(request.url);
+  if (url.searchParams.get("picker") === "1") {
+    if (!(await isAdminWithAccess("page.client_services"))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const clients = listRevClients().map((client) => ({
+      id: client.id,
+      name: client.name,
+      accountManager: client.account_manager || "",
+      contactEmail: client.contact_email || "",
+      basecampProjectId: client.basecamp_project_id || "",
+      enrolled: isSnapshotEnrolled(client.id),
+    }));
+    let projects: Array<{ id: string; name: string }> = [];
+    let projectsError = "";
+    if (basecampConnected()) {
+      try {
+        const listed = await listProjects();
+        projects = listed
+          .map((project) => ({ id: String(project.id), name: project.name || "" }))
+          .filter((project) => project.id && project.name)
+          .sort((a, b) => a.name.localeCompare(b.name));
+      } catch {
+        projectsError = "Basecamp projects could not be loaded.";
+      }
+    } else {
+      projectsError = "Basecamp is not connected.";
+    }
+    return NextResponse.json({ clients, projects, projectsError });
+  }
   const clientId = url.searchParams.get("clientId");
   // A single client: the outreach history behind the row's expanded view, plus
   // the leads and wins the hub's client panel works with. One response rather
@@ -57,6 +92,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }
 
+  if (action === "enroll") {
+    const projectId = typeof body.basecampProjectId === "string" ? body.basecampProjectId.trim() : "";
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "Choose a Basecamp project before adding this client." },
+        { status: 400 }
+      );
+    }
+    const accountManager = typeof body.accountManager === "string" ? body.accountManager : undefined;
+    const contactEmail = typeof body.contactEmail === "string" ? body.contactEmail : undefined;
+    const updated = updateRevClient(clientId, {
+      basecampProjectId: projectId,
+      ...(accountManager !== undefined ? { accountManager } : {}),
+      ...(contactEmail !== undefined ? { contactEmail } : {}),
+    });
+    if (!updated?.basecamp_project_id) {
+      return NextResponse.json(
+        { error: "Choose a Basecamp project before adding this client." },
+        { status: 400 }
+      );
+    }
+    enrollSnapshotClient(clientId, await sessionActor());
+    const rows = clientServiceRows();
+    return NextResponse.json({ ok: true, rows, summary: clientServiceSummary(rows) });
+  }
+
+  if (action === "unenroll") {
+    unenrollSnapshotClient(clientId);
+    const rows = clientServiceRows();
+    return NextResponse.json({ ok: true, rows, summary: clientServiceSummary(rows) });
+  }
+
   if (action === "pause" || action === "resume") {
     updateRevClient(clientId, { outreachPaused: action === "pause" });
     const rows = clientServiceRows();
@@ -81,7 +148,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(
-    { error: "action must be send, pause, or resume" },
+    { error: "action must be send, pause, resume, enroll, or unenroll" },
     { status: 400 }
   );
 }

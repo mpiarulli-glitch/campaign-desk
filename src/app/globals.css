@@ -16023,9 +16023,64 @@ button.am-node:hover .am-edit-cue,
 .cs-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  white-space: nowrap;
+}
+
+.snap-enroll h2 {
+  font-size: 1.05rem;
+}
+
+.snap-enroll-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.snap-enroll-list button {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.snap-enroll-list button.is-on {
+  border-color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+
+.snap-enroll-picked {
+  margin: 0 0 8px;
+}
+
+.snap-enroll-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.snap-enroll-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .snap-enroll-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- the progress cell -------------------------------------------------

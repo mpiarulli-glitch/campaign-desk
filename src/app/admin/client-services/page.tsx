@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { teamLabel } from "@/lib/team";
 import { canSeeFridayAsk } from "@/lib/people";
-import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
 import {
   SnapshotAccountGrid,
@@ -21,6 +20,16 @@ type AskStatus =
   | "opened"
   | "bounced"
   | "submitted";
+
+type PickerClient = {
+  id: string;
+  name: string;
+  accountManager: string;
+  contactEmail: string;
+  basecampProjectId: string;
+  enrolled: boolean;
+};
+type PickerProject = { id: string; name: string };
 
 type Row = {
   clientId: string;
@@ -196,6 +205,17 @@ export default function ClientServicesPage() {
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [candidates, setCandidates] = useState<PickerClient[]>([]);
+  const [projects, setProjects] = useState<PickerProject[]>([]);
+  const [projectsError, setProjectsError] = useState("");
+  const [clientQuery, setClientQuery] = useState("");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [pickedClient, setPickedClient] = useState<PickerClient | null>(null);
+  const [pickedProject, setPickedProject] = useState<PickerProject | null>(null);
+  const [amDraft, setAmDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [edit, setEdit] = useState<{ id: string; field: EditField } | null>(null);
   const [editVal, setEditVal] = useState("");
@@ -417,7 +437,10 @@ export default function ClientServicesPage() {
     );
   }
 
-  async function act(clientId: string, action: "send" | "pause" | "resume") {
+  async function act(
+    clientId: string,
+    action: "send" | "pause" | "resume" | "unenroll"
+  ) {
     if (action === "send") {
       const row = rows.find((r) => r.clientId === clientId);
       const prompt =
@@ -452,9 +475,80 @@ export default function ClientServicesPage() {
       else if (r?.basecamp?.skipped) parts.push(`no message (${r.basecamp.skipped})`);
       else if (r?.basecamp?.error) parts.push(`Basecamp failed (${r.basecamp.error})`);
       setMessage(parts.length ? `Done: ${parts.join(", ")}.` : "Nothing was sent.");
+    } else if (action === "unenroll") {
+      setMessage("Removed from snapshots. Their account and history are still here.");
+      setConfirmRemoveId(null);
     } else {
       setMessage(action === "pause" ? "Outreach paused." : "Outreach resumed.");
     }
+  }
+
+  async function openAddClient() {
+    setAddOpen(true);
+    setError("");
+    setClientQuery("");
+    setProjectQuery("");
+    setPickedClient(null);
+    setPickedProject(null);
+    setAmDraft("");
+    setEmailDraft("");
+    try {
+      const res = await fetch("/api/client-services?picker=1");
+      if (!res.ok) {
+        setError("Could not load clients to add.");
+        return;
+      }
+      const data = await res.json();
+      setCandidates(data.clients || []);
+      setProjects(data.projects || []);
+      setProjectsError(typeof data.projectsError === "string" ? data.projectsError : "");
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    }
+  }
+
+  function chooseClient(client: PickerClient) {
+    setPickedClient(client);
+    setAmDraft(client.accountManager);
+    setEmailDraft(client.contactEmail);
+    const linked = projects.find((project) => project.id === client.basecampProjectId);
+    setPickedProject(
+      linked ||
+        (client.basecampProjectId
+          ? { id: client.basecampProjectId, name: `Project ${client.basecampProjectId}` }
+          : null)
+    );
+    setProjectQuery("");
+  }
+
+  async function enrollPicked(event: FormEvent) {
+    event.preventDefault();
+    if (!pickedClient || !pickedProject) return;
+    setBusyId(pickedClient.id);
+    setError("");
+    const res = await fetch("/api/client-services", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "enroll",
+        clientId: pickedClient.id,
+        basecampProjectId: pickedProject.id,
+        accountManager: amDraft,
+        contactEmail: emailDraft,
+      }),
+    });
+    setBusyId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not add that client.");
+      return;
+    }
+    const data = await res.json();
+    setRows(data.rows || []);
+    setSummary(data.summary || null);
+    setAddOpen(false);
+    setMessage(`${pickedClient.name} is on weekly snapshots.`);
+    setTab("dashboard");
   }
 
   async function toggleHistory(clientId: string) {
@@ -485,15 +579,11 @@ export default function ClientServicesPage() {
     const data = await res.json();
     const createdName =
       typeof data.client?.name === "string" ? data.client.name : newName;
-    if (isSnapshotAllowlisted(createdName) && data.client?.id) {
-      router.push(`/admin/snapshot/${data.client.id}`);
-      return;
-    }
     setNewName("");
     setAdding(false);
     setError("");
     setMessage(
-      `${createdName} was added, but it is not on the snapshot list so it will not appear here.`
+      `${createdName} was created. Add them to weekly snapshots from the Friday ask tab once a Basecamp project is linked.`
     );
     load();
     loadAccounts();
@@ -663,10 +753,120 @@ export default function ClientServicesPage() {
               <span className="tab-count">{rows.length}</span>
             </button>
           ) : null}
+          {isAdmin && view === "dashboard" ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{ marginLeft: "auto" }}
+              onClick={() => (addOpen ? setAddOpen(false) : void openAddClient())}
+            >
+              {addOpen ? "Cancel" : "Add client"}
+            </button>
+          ) : null}
         </div>
 
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success">{message}</p> : null}
+
+        {isAdmin && view === "dashboard" && addOpen ? (
+          <form className="card card-pad snap-enroll" onSubmit={enrollPicked}>
+            <h2 className="h3" style={{ marginTop: 0 }}>Add a client to weekly snapshots</h2>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Pick someone who already exists, then confirm their Basecamp project.
+              Removing them later only takes them off this list.
+            </p>
+            <label className="field">
+              <span>Client</span>
+              <input
+                value={clientQuery}
+                onChange={(event) => setClientQuery(event.target.value)}
+                placeholder="Search clients"
+                aria-label="Search clients"
+              />
+            </label>
+            <ul className="snap-enroll-list" aria-label="Clients">
+              {candidates
+                .filter((client) => !client.enrolled)
+                .filter((client) =>
+                  client.name.toLowerCase().includes(clientQuery.trim().toLowerCase())
+                )
+                .slice(0, 8)
+                .map((client) => (
+                  <li key={client.id}>
+                    <button
+                      type="button"
+                      className={pickedClient?.id === client.id ? "is-on" : ""}
+                      onClick={() => chooseClient(client)}
+                    >
+                      {client.name}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+            {pickedClient ? (
+              <>
+                <label className="field">
+                  <span>Basecamp project</span>
+                  <input
+                    value={projectQuery}
+                    onChange={(event) => setProjectQuery(event.target.value)}
+                    placeholder="Search Basecamp projects"
+                    aria-label="Search Basecamp projects"
+                  />
+                </label>
+                {pickedProject ? (
+                  <p className="snap-enroll-picked">
+                    Linked project: <strong>{pickedProject.name}</strong>
+                  </p>
+                ) : (
+                  <p className="muted">No Basecamp project linked yet. Pick one below.</p>
+                )}
+                {projectsError ? <p className="muted">{projectsError}</p> : null}
+                <ul className="snap-enroll-list" aria-label="Basecamp projects">
+                  {projects
+                    .filter((project) =>
+                      project.name.toLowerCase().includes(projectQuery.trim().toLowerCase())
+                    )
+                    .slice(0, 8)
+                    .map((project) => (
+                      <li key={project.id}>
+                        <button
+                          type="button"
+                          className={pickedProject?.id === project.id ? "is-on" : ""}
+                          onClick={() => setPickedProject(project)}
+                        >
+                          {project.name}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+                <div className="snap-enroll-fields">
+                  <label className="field">
+                    <span>Account manager</span>
+                    <input
+                      value={amDraft}
+                      onChange={(event) => setAmDraft(event.target.value)}
+                      aria-label="Account manager"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Snapshot email</span>
+                    <input
+                      type="email"
+                      value={emailDraft}
+                      onChange={(event) => setEmailDraft(event.target.value)}
+                      aria-label="Snapshot email"
+                      placeholder="Where the Friday email goes"
+                    />
+                  </label>
+                </div>
+                <button className="btn btn-sm" type="submit" disabled={!pickedProject || busyId === pickedClient.id}>
+                  {busyId === pickedClient.id ? "Adding..." : "Add to snapshots"}
+                </button>
+              </>
+            ) : null}
+          </form>
+        ) : null}
 
         {view === "dashboard" ? (
           loading ? (
@@ -1002,6 +1202,36 @@ export default function ClientServicesPage() {
                                     >
                                       {row.paused ? "Resume" : "Pause"}
                                     </button>
+                                  ) : null}
+                                  {isAdmin ? (
+                                    confirmRemoveId === row.clientId ? (
+                                      <span className="snap-enroll-confirm">
+                                        <span>Remove from snapshots?</span>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm"
+                                          disabled={busyId === row.clientId}
+                                          onClick={() => act(row.clientId, "unenroll")}
+                                        >
+                                          Confirm
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-ghost btn-sm"
+                                          onClick={() => setConfirmRemoveId(null)}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setConfirmRemoveId(row.clientId)}
+                                      >
+                                        Remove from snapshots
+                                      </button>
+                                    )
                                   ) : null}
                                 </div>
                               </td>

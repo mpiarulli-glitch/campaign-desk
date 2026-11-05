@@ -27,7 +27,7 @@ import {
   type SnapshotOutreachChannel,
 } from "./db";
 import { listRevClients } from "./revenue";
-import { isSnapshotAllowlisted } from "./snapshot-allowlist";
+import { enrolledClientIds } from "./snapshot-enrollment";
 import {
   getOrCreateToken,
   listLeads,
@@ -37,9 +37,10 @@ import {
 } from "./snapshot";
 import { filledDepartmentNotes } from "./snapshot-departments";
 
-/** Same roster as Deliverable setup — not every revenue client. */
+/** Clients enrolled on the weekly snapshot roster, not every revenue client. */
 function listFridayAskClients(): RevClient[] {
-  return listRevClients().filter((c) => isSnapshotAllowlisted(c.name));
+  const enrolled = enrolledClientIds();
+  return listRevClients().filter((c) => enrolled.has(c.id));
 }
 import { slugForName, teamLabel } from "./team";
 import { basecampNameForManager } from "./people";
