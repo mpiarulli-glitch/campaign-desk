@@ -119,7 +119,7 @@ function normSource(raw: string): string {
 }
 
 const CONVERTED_LABEL: Record<Lead["converted"], string> = {
-  unknown: "Waiting on them",
+  unknown: "Not marked",
   yes: "Converted",
   no: "Did not convert",
 };
@@ -367,7 +367,6 @@ export function ClientServicePanel({
     setWin({ body: "", happenedOn: todayYmd() });
   }
 
-  const unanswered = leads.filter((l) => l.converted === "unknown");
   const asked = Boolean(client.emailSentAt || client.basecampSentAt);
   const dead = !client.contactEmail.trim() && !client.hasBasecamp;
 
@@ -413,11 +412,6 @@ export function ClientServicePanel({
             {client.paused ? <span className="cs-pill">Paused</span> : null}
           </div>
           <ul className="csp-ask">
-            <li className={unanswered.length ? "is-open" : "is-done"}>
-              {unanswered.length
-                ? `${unanswered.length} lead${unanswered.length === 1 ? "" : "s"} for them to confirm`
-                : "No leads waiting on them"}
-            </li>
             <li className={client.revenueIn ? "is-done" : "is-open"}>
               {client.revenueIn
                 ? "Revenue is in"
@@ -454,19 +448,17 @@ export function ClientServicePanel({
           ) : null}
         </section>
 
-        {/* ---- 2. leads we want confirmed */}
+        {/* Stored leads. The Friday ask does not ask the client to mark these. */}
         <section className="csp-sec">
           <div className="csp-sec-head">
-            <h3>Leads to confirm</h3>
-            <span className="csp-count">{unanswered.length} waiting</span>
+            <h3>Leads</h3>
+            <span className="csp-count">{leads.length} logged</span>
           </div>
 
           {loading ? (
             <p className="muted">Loading...</p>
           ) : leads.length === 0 ? (
-            <p className="muted csp-empty">
-              No leads logged yet. Add the ones you want this client to confirm.
-            </p>
+            <p className="muted csp-empty">No leads logged yet.</p>
           ) : (
             <ul className="csp-list">
               {leads.slice(0, 8).map((l) => (

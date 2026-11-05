@@ -163,8 +163,8 @@ export default function SnapshotInstructionsPage() {
               the desk).
             </li>
             <li>
-              <strong>Leads</strong> — add or update leads; clients can mark
-              Converted / Not yet on their link.
+              <strong>Leads</strong> — add or update leads. Clients are not asked
+              to mark them.
             </li>
             <li>
               <strong>Wins</strong> — short wins with a date (shows on the
@@ -187,7 +187,7 @@ export default function SnapshotInstructionsPage() {
           <p>
             Their token link shows the win for that week, then a card for each
             department that has something written. Empty departments are left out.
-            They can still answer leads and report revenue.
+            They can still report revenue. They are not asked about leads.
           </p>
           <ul>
             <li>They do <strong>not</strong> edit the department notes or Setup.</li>

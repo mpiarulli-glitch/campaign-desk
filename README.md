@@ -117,9 +117,9 @@ Not sent → Sent → Delivered → Opened → Submitted, with Bounced and Pause
 the side. Submitted outranks Opened deliberately, because a client who answered
 without the tracking pixel ever firing has plainly engaged.
 
-**Submitted is derived, not tracked.** It reads off the answers themselves: this
-month's revenue report exists and no lead is left unanswered. That keeps it true
-when a client phones the numbers in and somebody keys them by hand.
+**Submitted is derived, not tracked.** It reads off the revenue report for the
+month. Lead outcomes are not part of the ask. That keeps Submitted true when a
+client phones the number in and somebody keys it by hand.
 
 **Opens are approximate and the page says so.** Apple Mail Privacy Protection
 pre-fetches images, which registers an open nobody made, and an image-blocking

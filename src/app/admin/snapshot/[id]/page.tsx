@@ -51,7 +51,7 @@ type RevenueReport = {
   accepted_at: string;
 };
 const CONVERTED_LABEL: Record<Converted, string> = {
-  unknown: "Waiting on client",
+  unknown: "Not marked",
   yes: "Converted",
   no: "Did not convert",
 };
@@ -249,7 +249,7 @@ export default function SnapshotEditorPage() {
   }
 
   async function removeLead(leadId: string) {
-    if (!confirm("Remove this lead? The client's answer goes with it.")) return;
+    if (!confirm("Remove this lead?")) return;
     await fetch(`/api/snapshot/lead/${leadId}`, { method: "DELETE" });
     fetchLeads(week, leadScope);
   }

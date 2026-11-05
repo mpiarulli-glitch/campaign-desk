@@ -917,15 +917,6 @@ export default function ClientServicesPage() {
                               <td>
                                 <div className="cs-asked">
                                   <span
-                                    className={
-                                      row.leadsWaiting > 0 ? "cs-open" : "cs-done"
-                                    }
-                                  >
-                                    {row.leadsWaiting > 0
-                                      ? `${row.leadsWaiting} lead${row.leadsWaiting === 1 ? "" : "s"} to confirm`
-                                      : "Leads confirmed"}
-                                  </span>
-                                  <span
                                     className={row.revenueIn ? "cs-done" : "cs-open"}
                                   >
                                     {row.revenueIn

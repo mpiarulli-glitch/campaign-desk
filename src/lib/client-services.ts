@@ -1,5 +1,6 @@
-// The weekly Client Services ask: "here are the leads we sent you, did they
-// turn into anything, and what did the month do in revenue?"
+// The weekly Client Services ask: what did the month do in revenue, and here
+// is the snapshot of the week. Lead outcomes stay in the database for the
+// team. Clients are not asked whether a lead closed.
 //
 // One ask goes out per client per week, from Marketing Empire Group, on
 // two channels: an email and a Basecamp message on their project. Both point at
@@ -134,7 +135,7 @@ export function senderFor(am: AccountManager | null): {
 export interface WeeklyAsk {
   month: string;
   monthLabel: string;
-  /** Leads the client has not said yes or no to yet. */
+  /** Stored leads still marked unknown. Not part of the ask. */
   unansweredLeads: SnapshotLead[];
   /** True once we have this month's revenue figure from them. */
   revenueIn: boolean;
@@ -144,9 +145,7 @@ export interface WeeklyAsk {
 export function weeklyAskFor(clientId: string, today?: string): WeeklyAsk | null {
   const ask = revenueAsk(clientId, today);
   // revenueAsk returns null when we already know the month's revenue from
-  // another source, which is the one case where there is nothing to ask about
-  // on the revenue side. Leads can still be outstanding, so the month is
-  // recovered rather than bailing out.
+  // another source. That is a closed revenue ask, not a missing one.
   const month = ask?.month || previousMonthKey(today || todayYmd());
   const leads = listLeads(clientId).filter((lead) => lead.converted === "unknown");
   return {
@@ -165,9 +164,9 @@ function previousMonthKey(ymd: string): string {
   return d.toISOString().slice(0, 7);
 }
 
-/** Nothing outstanding means there is nothing worth emailing about. */
+/** Revenue still owed is the only reason to ask. Lead outcomes are not. */
 export function hasSomethingToAsk(ask: WeeklyAsk): boolean {
-  return !ask.revenueIn || ask.unansweredLeads.length > 0;
+  return !ask.revenueIn;
 }
 
 /* ------------------------------------------------------- the outreach log */
@@ -861,7 +860,7 @@ export interface ClientServiceRow {
   leadsWaiting: number;
   revenueIn: boolean;
   revenueAmount: number | null;
-  /** Fully answered: revenue in and no lead left hanging. */
+  /** Fully answered: this month's revenue is in. */
   submitted: boolean;
   status: AskStatus;
   emailSentAt: string | null;
@@ -894,7 +893,7 @@ export function clientServiceRows(today?: string): ClientServiceRow[] {
 
     const leadsWaiting = ask?.unansweredLeads.length ?? 0;
     const revenueIn = ask?.revenueIn ?? true;
-    const submitted = revenueIn && leadsWaiting === 0;
+    const submitted = revenueIn;
 
     let status: AskStatus;
     if (submitted) status = "submitted";

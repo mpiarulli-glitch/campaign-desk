@@ -713,9 +713,8 @@ export type LeadSource = "form" | "call" | "other";
 // How the client answered "did this one turn into business?".
 export type LeadConverted = "unknown" | "yes" | "no";
 
-// A lead the client service team saw come through, logged so we can ask the
-// client whether it converted. `converted` and `client_note` are written by
-// the CLIENT from the shared snapshot link — everything else is team-entered.
+// A lead the team logged. `converted` and `client_note` are team-entered now.
+// The shared snapshot link no longer asks the client to mark a lead.
 export interface SnapshotLead {
   id: string;
   client_id: string;

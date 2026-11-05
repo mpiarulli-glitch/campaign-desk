@@ -69,7 +69,7 @@ test("weekly snapshot outreach", async (t) => {
     assert.deepEqual(cs.senderFor(null), { from: undefined, replyTo: undefined });
   });
 
-  await t.test("an unanswered lead is something to ask about", () => {
+  await t.test("missing revenue is something to ask about", () => {
     snapshot.addLead({
       clientId: acme.id,
       firstName: "Jo",
@@ -87,9 +87,7 @@ test("weekly snapshot outreach", async (t) => {
     assert.equal(cs.hasSomethingToAsk(ask), true);
   });
 
-  await t.test("answering everything leaves nothing to ask", () => {
-    const leads = snapshot.listLeads(acme.id);
-    snapshot.answerLead(acme.id, leads[0].id, "yes");
+  await t.test("an unanswered lead does not keep the ask open once revenue is in", () => {
     snapshot.upsertRevenueReport({
       clientId: acme.id,
       month: "2026-07",
@@ -98,9 +96,36 @@ test("weekly snapshot outreach", async (t) => {
     });
     const ask = cs.weeklyAskFor(acme.id, "2026-08-21");
     assert.ok(ask);
-    assert.equal(ask.unansweredLeads.length, 0);
+    assert.equal(ask.unansweredLeads.length, 1);
     assert.equal(ask.revenueIn, true);
     assert.equal(cs.hasSomethingToAsk(ask), false);
+    const row = cs.clientServiceRows("2026-08-21").find((r) => r.clientId === acme.id);
+    assert.equal(row?.leadsWaiting, 1);
+    assert.equal(row?.submitted, true);
+  });
+
+  await t.test("the client link no longer records a lead outcome", async () => {
+    const route = await import("../src/app/api/snapshot/shared/[token]/lead/route");
+    const token = snapshot.getOrCreateToken(acme.id);
+    const lead = snapshot.listLeads(acme.id)[0];
+    assert.equal(lead.converted, "unknown");
+    const res = await route.POST(
+      new Request("http://localhost/lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: lead.id, converted: "yes", clientNote: "Closed it" }),
+      }),
+      { params: Promise.resolve({ token: token || "" }) }
+    );
+    assert.equal(res.status, 410);
+    const stored = snapshot.listLeads(acme.id).find((row) => row.id === lead.id);
+    assert.equal(stored?.converted, "unknown");
+    assert.equal(stored?.client_note || "", "");
+    const missing = await route.POST(
+      new Request("http://localhost/lead", { method: "POST", body: "{}" }),
+      { params: Promise.resolve({ token: "not-a-token" }) }
+    );
+    assert.equal(missing.status, 404);
   });
 
   await t.test("a client who answered everything reads as submitted", () => {
@@ -121,8 +146,8 @@ test("weekly snapshot outreach", async (t) => {
 
   await t.test("the pipeline advances as events arrive", () => {
     const weekStart = cs.currentWeekStart("2026-08-21");
-    // Give Ecoworkz something outstanding so it is not short-circuited by
-    // "submitted", which deliberately outranks every delivery state.
+    // Revenue is still owed, so Submitted does not outrank the delivery states.
+    // An unanswered lead must not be what holds the row open.
     snapshot.addLead({
       clientId: quiet.id,
       firstName: "Sam",
@@ -326,6 +351,30 @@ test("weekly snapshot outreach", async (t) => {
       receivedOn: "2026-08-03",
       notes: "",
     });
+    const pipe = revenue.createRevClient({
+      name: "Pipe It Right",
+      businessModel: "home_service",
+    });
+    revenue.updateRevClient(pipe.id, {
+      contactName: "Pat Pipe",
+      contactEmail: "pat@pipe.test",
+    });
+    snapshot.addLead({
+      clientId: pipe.id,
+      firstName: "Una",
+      lastName: "Nswered",
+      email: "una@lead.test",
+      phone: "",
+      source: "form",
+      receivedOn: "2026-08-03",
+      notes: "",
+    });
+    snapshot.upsertRevenueReport({
+      clientId: pipe.id,
+      month: "2026-07",
+      amount: 1000,
+      note: "",
+    });
     const kentina = revenue.createRevClient({
       name: "Kentina Hospitality",
       businessModel: "home_service",
@@ -360,7 +409,12 @@ test("weekly snapshot outreach", async (t) => {
       assert.equal(result.sendingEnabled, true);
       assert.equal(result.skipped.paused >= 1, true, "Kentina stays paused");
       const asked = result.sent.find((row) => row.clientId === volt.id);
-      assert.ok(asked, "a client with something to ask is still reported");
+      assert.ok(asked, "missing revenue is still reported");
+      assert.equal(
+        result.sent.some((row) => row.clientId === pipe.id),
+        false,
+        "an unanswered lead is not something to ask once revenue is in"
+      );
       assert.equal(asked.email.skipped, "dry run");
       assert.equal(asked.basecamp.skipped, "dry run");
       assert.equal(
