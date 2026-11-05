@@ -8982,6 +8982,10 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   text-transform: none;
   color: var(--text-muted);
 }
+.ops-list-day-forecast {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
 .ops-list-day-meta {
   display: flex;
   align-items: center;
@@ -9000,10 +9004,6 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-.ops-list-day.is-today .ops-list-day-chip.is-hours {
-  background: var(--accent-wash);
-  color: var(--accent-ink);
 }
 .ops-list-day.is-drop-target .ops-list-stack,
 .fc-today.is-drop-target .ops-list-stack {

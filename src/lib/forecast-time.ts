@@ -93,6 +93,22 @@ export function sumDayHours(hours: number[]): number {
   return Math.round(minutes / 6) / 10;
 }
 
+// The day header shows the plan, including checked rows and hundredths such as
+// 0.15h. Summing in hundredths avoids 0.1 + 0.2 printing as 0.30000000000000004.
+export function sumForecastedHours(hours: number[]): number {
+  const hundredths = hours.reduce((sum, value) => {
+    if (!Number.isFinite(value)) return sum;
+    return sum + Math.round(value * 100);
+  }, 0);
+  return hundredths / 100;
+}
+
+export function formatForecastedHours(hours: number): string {
+  const rounded = Math.round((Number.isFinite(hours) ? hours : 0) * 100) / 100;
+  const text = rounded.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return `${text}h`;
+}
+
 export function isoToStartTime(iso: string, timeZone: string): string {
   if (!iso || /^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
   const d = new Date(iso);

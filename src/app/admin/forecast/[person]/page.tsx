@@ -33,10 +33,12 @@ import {
   type QueueTodo,
 } from "@/lib/forecast-queue";
 import {
+  formatForecastedHours,
   formatTimeLabel,
   padTime,
   parseTimeInput,
   staggerStartTimes,
+  sumForecastedHours,
 } from "@/lib/forecast-time";
 import {
   FORECAST_TIMER_CHANGED,
@@ -4070,9 +4072,14 @@ export default function PersonForecastPage() {
             {days.map((date) => {
               const tasks = tasksByDay.get(date) || [];
               const synced = syncItemsByDay.get(date) || [];
-              const dayHours =
-                tasks.reduce((sum, t) => sum + t.hours, 0) +
-                synced.reduce((sum, item) => sum + item.hours, 0);
+              // Checked rows stay in the total. Forecasted means the plan for
+              // the day, and ticking a task off does not take those hours back.
+              // Client work and internal projects are the same task list; synced
+              // rows render in this day, so their hours count too.
+              const forecasted = sumForecastedHours([
+                ...tasks.map((t) => t.hours),
+                ...synced.map((item) => item.hours),
+              ]);
               const doneCount = tasks.filter((t) => t.completed).length;
               const draft = draftFor(date);
               return (
@@ -4086,7 +4093,13 @@ export default function PersonForecastPage() {
                   <header className="ops-list-day-head">
                     <h2 className="ops-list-day-title">
                       {dayName(date)}
-                      <span className="ops-list-day-date">{dayShortDate(date)}</span>
+                      <span className="ops-list-day-date">
+                        {dayShortDate(date)}
+                        <span className="ops-list-day-forecast">
+                          {" · "}
+                          {formatForecastedHours(forecasted)} forecasted
+                        </span>
+                      </span>
                     </h2>
                     <div className="ops-list-day-meta">
                       {tasks.length > 0 ? (
@@ -4094,9 +4107,6 @@ export default function PersonForecastPage() {
                           {doneCount}/{tasks.length} done
                         </span>
                       ) : null}
-                      <span className="ops-list-day-chip is-hours">
-                        {dayHours || 0}h
-                      </span>
                     </div>
                   </header>
 
