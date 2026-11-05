@@ -41,37 +41,34 @@ test("snapshot Basecamp suggestion mapping and dedupe", async (t) => {
   await t.test("title keywords pick a department when the list does not", () => {
     assert.equal(matchSnapshotDepartment({ title: "Publish the blog", place: "To-dos" }), "seo");
     assert.equal(matchSnapshotDepartment({ title: "Schedule Instagram reels", place: "To-dos" }), "social");
-    assert.equal(matchSnapshotDepartment({ title: "Film the testimonial", place: "To-dos" }), "video");
+    assert.equal(matchSnapshotDepartment({ title: "Filming the testimonial", place: "To-dos" }), "video");
     assert.equal(matchSnapshotDepartment({ title: "Update the website hero", place: "To-dos" }), "web");
     assert.equal(matchSnapshotDepartment({ title: "Send the SMS blast", place: "To-dos" }), "lifecycle");
     assert.equal(matchSnapshotDepartment({ title: "Klaviyo automation review", place: "To-dos" }), "lifecycle");
     assert.equal(matchSnapshotDepartment({ title: "Quarterly strategy deck", place: "To-dos" }), "strategy");
   });
 
-  await t.test("a specialist assignee is used only when the words do not match", () => {
-    assert.equal(
-      matchSnapshotDepartment({ title: "Follow up", place: "To-dos", assigneeNames: ["Abel"] }),
-      "seo"
-    );
-    assert.equal(
-      matchSnapshotDepartment({ title: "Follow up", place: "To-dos", assigneeNames: ["Randi"] }),
-      "social"
-    );
-    assert.equal(
-      matchSnapshotDepartment({ title: "Follow up", place: "To-dos", assigneeNames: ["Roy"] }),
-      "web"
-    );
-    assert.equal(
-      matchSnapshotDepartment({ title: "Follow up", place: "To-dos", assigneeNames: ["Michael"] }),
-      "lifecycle"
-    );
+  await t.test("the list name decides the department, and LinkedIn stays in Lifecycle", () => {
     assert.equal(
       matchSnapshotDepartment({
-        title: "Post the reel",
-        place: "To-dos",
-        assigneeNames: ["Abel"],
+        title: "Move Mystery Discount",
+        place: "Email / SMS / LinkedIn / Automations",
       }),
+      "lifecycle"
+    );
+    assert.equal(matchSnapshotDepartment({ title: "Anything", place: "SEO" }), "seo");
+    assert.equal(matchSnapshotDepartment({ title: "Post a reel", place: "LinkedIn" }), "lifecycle");
+    assert.equal(
+      matchSnapshotDepartment({ title: "Send the newsletter", place: "Instagram" }),
       "social"
+    );
+    assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Videos" }), "video");
+    assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Landing page" }), "web");
+    assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Google Business" }), "seo");
+    assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Kickoff" }), "strategy");
+    assert.equal(
+      matchSnapshotDepartment({ title: "Follow up", place: "To-dos", assigneeNames: ["Abel"] }),
+      "unsorted"
     );
   });
 

@@ -7,6 +7,7 @@ import {
   departmentItemClientId,
   departmentNotesForWeek,
   isSnapshotDepartment,
+  moveDepartmentItem,
   updateDepartmentItem,
 } from "@/lib/snapshot-departments";
 
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     loggedBy: await sessionActor(),
     completed: body.completed === true,
     sourceKey: typeof body.sourceKey === "string" ? body.sourceKey : "",
+    mark: body.mark === "sent" ? "sent" : "",
   });
   if (!item) {
     return NextResponse.json({ error: "Write an item before adding it." }, { status: 400 });
@@ -85,12 +87,25 @@ export async function PATCH(request: Request) {
   const itemId = typeof body.itemId === "string" ? body.itemId : "";
   const hasBody = typeof body.body === "string";
   const hasCompleted = typeof body.completed === "boolean";
-  if (!itemId || (!hasBody && !hasCompleted)) {
+  const moveTo = typeof body.department === "string" ? body.department : "";
+  const moving = isSnapshotDepartment(moveTo);
+  if (!itemId || (!hasBody && !hasCompleted && !moving)) {
     return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   }
   const clientId = departmentItemClientId(itemId);
   if (!clientId || !(await allowedClient(clientId))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (moving) {
+    const beforeId = typeof body.beforeId === "string" ? body.beforeId : null;
+    const moved = moveDepartmentItem({ itemId, department: moveTo, beforeId });
+    if (!moved) {
+      return NextResponse.json({ error: "Could not move that item." }, { status: 400 });
+    }
+    return NextResponse.json({
+      ok: true,
+      departments: departmentNotesForWeek(moved.clientId, moved.weekStart),
+    });
   }
   const item = updateDepartmentItem({
     itemId,

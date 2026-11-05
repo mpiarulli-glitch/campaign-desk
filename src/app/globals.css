@@ -20227,6 +20227,65 @@ article.snap-pick-card.lh-pick-card:hover {
   font-size: 12px;
 }
 
+.snap-dept.is-drop {
+  outline: 2px solid #0e7490;
+  outline-offset: 2px;
+}
+
+.snap-dept-items li.is-drop-before,
+.snap-suggest li.is-drop-before {
+  box-shadow: inset 0 2px 0 #0e7490;
+}
+
+.snap-dept-items li[draggable="true"],
+.snap-suggest li[draggable="true"] {
+  cursor: grab;
+}
+
+.snap-move {
+  position: relative;
+}
+
+.snap-move summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-move summary::-webkit-details-marker {
+  display: none;
+}
+
+.snap-move-menu {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  top: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, #fff);
+  box-shadow: var(--shadow, 0 8px 24px rgba(0, 0, 0, 0.12));
+}
+
+.snap-move-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.snap-move-menu button:hover {
+  background: var(--bg-muted, rgba(0, 0, 0, 0.05));
+}
+
 .snap-dept-items {
   list-style: none;
   margin: 0 0 10px;

@@ -265,4 +265,69 @@ test("weekly snapshot department items", async (t) => {
   await t.test("another week does not reuse this week's items", () => {
     assert.equal(depts.filledDepartmentNotes(client.id, "2026-11-09").length, 0);
   });
+
+  await t.test("moving keeps the text, check, Basecamp id, and sent badge", () => {
+    const sent = depts.addDepartmentItem({
+      clientId: client.id,
+      weekStart: week,
+      department: "lifecycle",
+      body: "Move Mystery Discount",
+      completed: false,
+      sourceKey: "todo:mystery",
+      mark: "sent",
+    });
+    const second = depts.addDepartmentItem({
+      clientId: client.id,
+      weekStart: week,
+      department: "lifecycle",
+      body: "Send the SMS blast",
+      completed: true,
+      sourceKey: "todo:sms",
+    });
+    const web = depts.addDepartmentItem({
+      clientId: client.id,
+      weekStart: week,
+      department: "web",
+      body: "Update the website hero",
+      completed: true,
+      sourceKey: "card:hero",
+    });
+    assert.equal(sent?.mark, "sent");
+    assert.equal(
+      depts.moveDepartmentItem({
+        itemId: sent!.id,
+        department: "web",
+        beforeId: web!.id,
+      })?.weekStart,
+      week
+    );
+    const after = depts.departmentNotesForWeek(client.id, week);
+    const webItems = after.find((note) => note.department === "web")!.items;
+    const mystery = webItems.find((item) => item.id === sent!.id)!;
+    const heroAt = webItems.findIndex((item) => item.id === web!.id);
+    const mysteryAt = webItems.findIndex((item) => item.id === sent!.id);
+    assert.ok(mysteryAt >= 0 && mysteryAt < heroAt);
+    assert.equal(mystery.body, "Move Mystery Discount");
+    assert.equal(mystery.completed, false);
+    assert.equal(mystery.sourceKey, "todo:mystery");
+    assert.equal(mystery.mark, "sent");
+    assert.equal(
+      after.find((note) => note.department === "lifecycle")!.items.some((item) => item.id === sent!.id),
+      false
+    );
+    assert.equal(
+      depts.moveDepartmentItem({
+        itemId: second!.id,
+        department: "lifecycle",
+        beforeId: null,
+      }) !== null,
+      true
+    );
+    const lifecycle = depts
+      .departmentNotesForWeek(client.id, week)
+      .find((note) => note.department === "lifecycle")!;
+    assert.equal(lifecycle.items[lifecycle.items.length - 1].id, second!.id);
+    assert.equal(lifecycle.items[lifecycle.items.length - 1].completed, true);
+    assert.equal(lifecycle.items[lifecycle.items.length - 1].sourceKey, "todo:sms");
+  });
 });

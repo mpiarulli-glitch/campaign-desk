@@ -29,6 +29,8 @@ export type SnapshotDepartmentItem = {
   /** True when this came from a completed Basecamp to-do, or was marked done. */
   completed: boolean;
   sourceKey: string;
+  /** "sent" keeps the Sent for approval badge. Empty for a normal line. */
+  mark: "" | "sent";
 };
 
 export type SnapshotDepartmentNote = {
@@ -44,6 +46,7 @@ type ItemRow = {
   sort_order: number;
   completed: number;
   source_key: string;
+  mark: string;
 };
 
 /** Copy each unmigrated single-note blob into one list item. Idempotent. */
@@ -103,7 +106,7 @@ export function departmentNotesForWeek(
   migrateLegacyDepartmentNotes();
   const rows = getDb()
     .prepare(
-      `SELECT id, department, body, sort_order, completed, source_key
+      `SELECT id, department, body, sort_order, completed, source_key, mark
        FROM snapshot_department_items
        WHERE client_id = ? AND week_start = ?
        ORDER BY sort_order ASC, created_at ASC, id ASC`
@@ -119,6 +122,7 @@ export function departmentNotesForWeek(
       body,
       completed: Boolean(row.completed),
       sourceKey: row.source_key || "",
+      mark: row.mark === "sent" ? "sent" : "",
     });
     bySlug.set(row.department, list);
   }
@@ -146,6 +150,8 @@ export function addDepartmentItem(input: {
   /** Set when the line is a completed Basecamp to-do. */
   completed?: boolean;
   sourceKey?: string;
+  /** "sent" when the line came from a Sent-for-approval card. */
+  mark?: "" | "sent";
 }): SnapshotDepartmentItem | null {
   const body = input.body.trim();
   if (!body) return null;
@@ -162,11 +168,12 @@ export function addDepartmentItem(input: {
   const id = nanoid(12);
   const completed = input.completed ? 1 : 0;
   const sourceKey = (input.sourceKey || "").trim();
+  const mark = input.mark === "sent" ? "sent" : "";
   db.prepare(
     `INSERT INTO snapshot_department_items
        (id, client_id, week_start, department, body, sort_order, logged_by,
-        created_at, updated_at, completed, source_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        created_at, updated_at, completed, source_key, mark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.clientId,
@@ -178,9 +185,10 @@ export function addDepartmentItem(input: {
     now,
     now,
     completed,
-    sourceKey
+    sourceKey,
+    mark
   );
-  return { id, body, completed: Boolean(completed), sourceKey };
+  return { id, body, completed: Boolean(completed), sourceKey, mark };
 }
 
 export function updateDepartmentItem(input: {
@@ -192,10 +200,10 @@ export function updateDepartmentItem(input: {
   const db = getDb();
   const existing = db
     .prepare(
-      `SELECT id, body, completed, source_key FROM snapshot_department_items WHERE id = ?`
+      `SELECT id, body, completed, source_key, mark FROM snapshot_department_items WHERE id = ?`
     )
     .get(input.itemId) as
-    | { id: string; body: string; completed: number; source_key: string }
+    | { id: string; body: string; completed: number; source_key: string; mark: string }
     | undefined;
   if (!existing) return null;
   const body = input.body === undefined ? existing.body : input.body.trim();
@@ -211,7 +219,55 @@ export function updateDepartmentItem(input: {
     body,
     completed: Boolean(completed),
     sourceKey: existing.source_key || "",
+    mark: existing.mark === "sent" ? "sent" : "",
   };
+}
+
+/**
+ * Move an item to a department and place it before `beforeId`, or at the end.
+ * Text, check, Basecamp id, and sent-for-approval mark stay on the row.
+ */
+export function moveDepartmentItem(input: {
+  itemId: string;
+  department: SnapshotDepartmentSlug;
+  beforeId?: string | null;
+}): { clientId: string; weekStart: string } | null {
+  const db = getDb();
+  const existing = db
+    .prepare(
+      `SELECT id, client_id, week_start FROM snapshot_department_items WHERE id = ?`
+    )
+    .get(input.itemId) as
+    | { id: string; client_id: string; week_start: string }
+    | undefined;
+  if (!existing) return null;
+  const siblings = db
+    .prepare(
+      `SELECT id FROM snapshot_department_items
+       WHERE client_id = ? AND week_start = ? AND department = ? AND id != ?
+       ORDER BY sort_order ASC, created_at ASC, id ASC`
+    )
+    .all(existing.client_id, existing.week_start, input.department, existing.id) as Array<{
+    id: string;
+  }>;
+  const ids = siblings.map((row) => row.id);
+  const before = (input.beforeId || "").trim();
+  const index = before ? ids.indexOf(before) : -1;
+  if (index >= 0) ids.splice(index, 0, existing.id);
+  else ids.push(existing.id);
+  const now = nowIso();
+  const place = db.prepare(
+    `UPDATE snapshot_department_items
+       SET department = ?, sort_order = ?, updated_at = ?
+     WHERE id = ?`
+  );
+  const run = db.transaction(() => {
+    ids.forEach((id, order) => {
+      place.run(input.department, order, now, id);
+    });
+  });
+  run();
+  return { clientId: existing.client_id, weekStart: existing.week_start };
 }
 
 export function departmentItemClientId(itemId: string): string | null {

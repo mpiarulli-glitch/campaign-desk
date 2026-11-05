@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   SNAPSHOT_DEPARTMENTS,
   type SnapshotDepartmentSlug,
 } from "@/lib/snapshot-department-list";
 
-type Item = { id: string; body: string; completed?: boolean };
+type Item = {
+  id: string;
+  body: string;
+  completed?: boolean;
+  sourceKey?: string;
+  mark?: "" | "sent";
+};
 type Note = {
   department: SnapshotDepartmentSlug;
   label: string;
@@ -22,6 +28,16 @@ type Suggestion = {
   mark?: "done" | "sent";
 };
 type SuggestStatus = "" | "ok" | "no_project" | "error";
+type DragKind = "item" | "suggestion";
+type DropList = SnapshotDepartmentSlug | "unsorted";
+
+function otherDepartments(current: DropList, includeUnsorted: boolean) {
+  const rows: { value: DropList; label: string }[] = SNAPSHOT_DEPARTMENTS.filter(
+    (dept) => dept.slug !== current
+  ).map((dept) => ({ value: dept.slug, label: dept.label.replace(" Department", "") }));
+  if (includeUnsorted && current !== "unsorted") rows.push({ value: "unsorted", label: "Unsorted" });
+  return rows;
+}
 
 function scrollParent(node: HTMLElement): Element | null {
   let el: HTMLElement | null = node.parentElement;
@@ -63,6 +79,8 @@ export function SnapshotWeekDepartments({
   const [inView, setInView] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const requestGen = useRef(0);
+  const dragRef = useRef<{ kind: DragKind; id: string } | null>(null);
+  const [dropAt, setDropAt] = useState<{ list: DropList; beforeId: string | null } | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -265,6 +283,7 @@ export function SnapshotWeekDepartments({
           body: suggestion.title,
           completed: suggestion.mark !== "sent",
           sourceKey: suggestion.sourceKey,
+          mark: suggestion.mark === "sent" ? "sent" : "",
         }),
       });
       if (!added.ok) {
@@ -297,6 +316,100 @@ export function SnapshotWeekDepartments({
     }
   }
 
+  function placeSuggestion(sourceKey: string, to: DropList, beforeId: string | null) {
+    setSuggestions((cur) => {
+      const moving = cur.find((row) => row.sourceKey === sourceKey);
+      if (!moving) return cur;
+      const rest = cur.filter((row) => row.sourceKey !== sourceKey);
+      const next = { ...moving, department: to };
+      const at = beforeId ? rest.findIndex((row) => row.sourceKey === beforeId) : -1;
+      if (at >= 0) {
+        rest.splice(at, 0, next);
+        return rest;
+      }
+      let last = -1;
+      rest.forEach((row, index) => {
+        if (row.department === to) last = index;
+      });
+      rest.splice(last + 1, 0, next);
+      return rest;
+    });
+  }
+
+  async function placeItem(itemId: string, to: SnapshotDepartmentSlug, beforeId: string | null) {
+    let previous: Note[] | null = null;
+    setNotes((cur) => {
+      previous = cur;
+      let moving: Item | null = null;
+      const stripped = cur.map((note) => ({
+        ...note,
+        items: note.items.filter((item) => {
+          if (item.id !== itemId) return true;
+          moving = item;
+          return false;
+        }),
+      }));
+      if (!moving) return cur;
+      return stripped.map((note) => {
+        if (note.department !== to) return note;
+        const items = [...note.items];
+        const at = beforeId ? items.findIndex((item) => item.id === beforeId) : -1;
+        if (at >= 0) items.splice(at, 0, moving as Item);
+        else items.push(moving as Item);
+        return { ...note, items };
+      });
+    });
+    try {
+      const res = await fetch("/api/snapshot/departments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, department: to, beforeId }),
+      });
+      if (!res.ok) throw new Error("move");
+      const data = await res.json();
+      if (data.departments) setNotes(data.departments);
+    } catch {
+      if (previous) setNotes(previous);
+      setError("Could not move that item.");
+    }
+  }
+
+  function startDrag(event: DragEvent, kind: DragKind, id: string) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, summary, a")) {
+      event.preventDefault();
+      return;
+    }
+    dragRef.current = { kind, id };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+  }
+
+  function allowDrop(event: DragEvent, list: DropList, beforeId: string | null) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (drag.kind === "item" && list === "unsorted") return;
+    if (drag.id === beforeId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDropAt({ list, beforeId });
+  }
+
+  function finishDrop(event: DragEvent, list: DropList, beforeId: string | null) {
+    event.preventDefault();
+    event.stopPropagation();
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDropAt(null);
+    if (!drag) return;
+    if (drag.kind === "suggestion") {
+      placeSuggestion(drag.id, list, beforeId);
+      return;
+    }
+    if (list === "unsorted") return;
+    void placeItem(drag.id, list, beforeId);
+  }
+
   function suggestionText(suggestion: Suggestion): string {
     const edited = suggestionEdits[suggestion.sourceKey];
     return edited !== undefined ? edited : suggestion.title;
@@ -311,19 +424,35 @@ export function SnapshotWeekDepartments({
     );
   }
 
-  function suggestionBlock(rows: Suggestion[], department?: SnapshotDepartmentSlug) {
+  function suggestionBlock(rows: Suggestion[], department: DropList) {
     if (!rows.length) return null;
+    const picking = department === "unsorted";
     return (
       <div className="snap-suggest">
         <p className="snap-suggest-label">From Basecamp</p>
         <ul>
           {rows.map((suggestion) => {
-            const target = department || unsortedDept[suggestion.sourceKey] || "lifecycle";
+            const target = picking
+              ? unsortedDept[suggestion.sourceKey] || "lifecycle"
+              : (department as SnapshotDepartmentSlug);
             const text = suggestionText(suggestion);
             const editingThis = editingSuggestion === suggestion.sourceKey;
             const sent = suggestion.mark === "sent";
+            const armed =
+              dropAt?.list === department && dropAt.beforeId === suggestion.sourceKey;
             return (
-                <li key={suggestion.sourceKey}>
+                <li
+                  key={suggestion.sourceKey}
+                  className={armed ? "is-drop-before" : undefined}
+                  draggable
+                  onDragStart={(event) => startDrag(event, "suggestion", suggestion.sourceKey)}
+                  onDragEnd={() => {
+                    dragRef.current = null;
+                    setDropAt(null);
+                  }}
+                  onDragOver={(event) => allowDrop(event, department, suggestion.sourceKey)}
+                  onDrop={(event) => finishDrop(event, department, suggestion.sourceKey)}
+                >
                 {sent ? (
                   <span className="snap-sent" aria-label="Sent for approval">
                     Sent for approval
@@ -372,7 +501,7 @@ export function SnapshotWeekDepartments({
                     {suggestion.place ? <span>{suggestion.place}</span> : null}
                   </button>
                 )}
-                {department ? null : (
+                {picking ? (
                   <select
                     aria-label={`Department for ${suggestion.title}`}
                     value={target}
@@ -389,7 +518,7 @@ export function SnapshotWeekDepartments({
                       </option>
                     ))}
                   </select>
-                )}
+                ) : null}
                 {editingThis ? null : (
                   <button
                     type="button"
@@ -416,6 +545,21 @@ export function SnapshotWeekDepartments({
                 >
                   Dismiss
                 </button>
+                <details className="snap-move">
+                  <summary>Move to…</summary>
+                  <div className="snap-move-menu" role="menu">
+                    {otherDepartments(department, true).map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => placeSuggestion(suggestion.sourceKey, choice.value, null)}
+                      >
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                </details>
               </li>
             );
           })}
@@ -449,7 +593,12 @@ export function SnapshotWeekDepartments({
       ) : null}
       {error ? <p className="error">{error}</p> : null}
       {notes.map((note) => (
-        <section key={note.department} className="snap-dept">
+        <section
+          key={note.department}
+          className={`snap-dept${dropAt?.list === note.department && !dropAt.beforeId ? " is-drop" : ""}`}
+          onDragOver={(event) => allowDrop(event, note.department, null)}
+          onDrop={(event) => finishDrop(event, note.department, null)}
+        >
           <div className="snap-dept-head">
             <strong>{note.label}</strong>
             <span>What we did this week</span>
@@ -461,7 +610,27 @@ export function SnapshotWeekDepartments({
           {note.items.length > 0 ? (
             <ul className="snap-dept-items">
               {note.items.map((item) => (
-                <li key={item.id}>
+                <li
+                  key={item.id}
+                  className={
+                    dropAt?.list === note.department && dropAt.beforeId === item.id
+                      ? "is-drop-before"
+                      : undefined
+                  }
+                  draggable
+                  onDragStart={(event) => startDrag(event, "item", item.id)}
+                  onDragEnd={() => {
+                    dragRef.current = null;
+                    setDropAt(null);
+                  }}
+                  onDragOver={(event) => allowDrop(event, note.department, item.id)}
+                  onDrop={(event) => finishDrop(event, note.department, item.id)}
+                >
+                  {item.mark === "sent" ? (
+                    <span className="snap-sent" aria-label="Sent for approval">
+                      Sent for approval
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     className={`snap-check ${item.completed ? "is-on" : ""}`}
@@ -510,6 +679,27 @@ export function SnapshotWeekDepartments({
                         >
                           Remove
                         </button>
+                        <details className="snap-move">
+                          <summary>Move to…</summary>
+                          <div className="snap-move-menu" role="menu">
+                            {otherDepartments(note.department, false).map((choice) => (
+                              <button
+                                key={choice.value}
+                                type="button"
+                                role="menuitem"
+                                onClick={() =>
+                                  void placeItem(
+                                    item.id,
+                                    choice.value as SnapshotDepartmentSlug,
+                                    null
+                                  )
+                                }
+                              >
+                                {choice.label}
+                              </button>
+                            ))}
+                          </div>
+                        </details>
                       </span>
                     </>
                   )}
@@ -533,12 +723,16 @@ export function SnapshotWeekDepartments({
         </section>
       ))}
       {unsorted.length > 0 ? (
-        <section className="snap-dept">
+        <section
+          className={`snap-dept${dropAt?.list === "unsorted" && !dropAt.beforeId ? " is-drop" : ""}`}
+          onDragOver={(event) => allowDrop(event, "unsorted", null)}
+          onDrop={(event) => finishDrop(event, "unsorted", null)}
+        >
           <div className="snap-dept-head">
             <strong>Unsorted</strong>
             <span>Pick a department</span>
           </div>
-          {suggestionBlock(unsorted)}
+          {suggestionBlock(unsorted, "unsorted")}
         </section>
       ) : null}
     </div>
