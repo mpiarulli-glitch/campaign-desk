@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  completedInSnapshotWeek,
   matchSnapshotDepartment,
   suggestionsForWeek,
   type BasecampActivity,
@@ -113,6 +114,47 @@ test("snapshot Basecamp suggestion mapping and dedupe", async (t) => {
     );
     assert.equal(shown[0].department, "lifecycle");
     assert.equal(shown[1].department, "unsorted");
+  });
+
+  await t.test("the Pacific week keeps Friday evening and drops the next Monday", () => {
+    // 2026-11-02 is a Monday. Pacific is PST (UTC-8) after the November change.
+    assert.equal(completedInSnapshotWeek("2026-11-03T20:02:54Z", WEEK), true);
+    assert.equal(completedInSnapshotWeek("2026-11-02T08:00:00Z", WEEK), true);
+    assert.equal(completedInSnapshotWeek("2026-11-09T07:59:59Z", WEEK), true);
+    assert.equal(completedInSnapshotWeek("2026-11-02T07:59:59Z", WEEK), false);
+    assert.equal(completedInSnapshotWeek("2026-11-09T08:00:00Z", WEEK), false);
+    const shown = suggestionsForWeek({
+      activities: [
+        activity({
+          sourceKey: "todo:10472139656",
+          title: "Update current blog content",
+          place: "SEO",
+          completedAt: "2026-11-03T20:02:54Z",
+        }),
+        activity({
+          sourceKey: "card:1",
+          title: "Update the website hero",
+          place: "Done",
+          completedAt: "2026-11-04T18:00:00Z",
+        }),
+        activity({
+          sourceKey: "card:2",
+          title: "Call the vendor",
+          place: "Done",
+          completedAt: "2026-10-28T18:00:00Z",
+        }),
+      ],
+      weekStart: WEEK,
+      existingItems: [],
+      dismissedKeys: [],
+    });
+    assert.deepEqual(
+      shown.map((row) => [row.sourceKey, row.department]),
+      [
+        ["todo:10472139656", "seo"],
+        ["card:1", "web"],
+      ]
+    );
   });
 
   await t.test("a reworded list item still hides the to-do it came from", () => {

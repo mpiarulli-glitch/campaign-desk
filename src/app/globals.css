@@ -20270,6 +20270,19 @@ article.snap-pick-card.lh-pick-card:hover {
   justify-content: flex-end;
 }
 
+.snap-suggest-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.snap-suggest-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .snap-suggest-label {
   margin: 0 0 6px;
   font-size: 11px;
@@ -20346,6 +20359,28 @@ button.snap-suggest-title {
   color: #fff;
   background: #188038;
   border-color: #188038;
+}
+
+.snap-sent {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 6px;
+  padding: 2px 7px;
+  border: 1px solid #c2410c;
+  border-radius: 999px;
+  background: transparent;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .snap-sent {
+  color: #fdba74;
+  border-color: #fdba74;
 }
 
 button.snap-check {
