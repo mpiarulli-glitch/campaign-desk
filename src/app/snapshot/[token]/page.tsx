@@ -36,7 +36,7 @@ function formatClientWinDate(ymd: string): string {
     year: "numeric",
   });
 }
-type DepartmentNote = { label: string; body: string };
+type DepartmentNote = { label: string; items: string[] };
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
 function ymdLabel(ymd: string): string {
@@ -115,7 +115,12 @@ export default function SnapshotClientPage() {
           setAccountName(data.account.name);
           setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
           setDepartments(
-            ((data.departments || []) as DepartmentNote[]).filter((note) => note.body.trim())
+            ((data.departments || []) as DepartmentNote[])
+              .map((note) => ({
+                label: note.label,
+                items: (note.items || []).map((item) => item.trim()).filter(Boolean),
+              }))
+              .filter((note) => note.items.length > 0)
           );
           setWins(data.wins || []);
           setMetrics(data.metrics || []);
@@ -435,7 +440,11 @@ export default function SnapshotClientPage() {
                   {departments.map((note) => (
                     <div key={note.label} className="snap-dept-client">
                       <h3>{note.label}</h3>
-                      <p>{note.body}</p>
+                      <ul>
+                        {note.items.map((item, index) => (
+                          <li key={`${note.label}-${index}`}>{item}</li>
+                        ))}
+                      </ul>
                     </div>
                   ))}
                 </div>

@@ -4298,8 +4298,10 @@ function migrate(database: Database.Database) {
   // The same repairs now run from deferred startup, after the server is up.
   // Schema changes stay in this function so the first real query sees them.
 
-  // Weekly snapshot department notes. One free-text note per department per
-  // client per week. Deliverable rows stay; this does not read or delete them.
+  // Weekly snapshot department notes. The original table held one blob per
+  // department. Items are the list the team edits now. The blob is kept and
+  // copied once into a single item (see migrateLegacyDepartmentNotes) so a
+  // note written before the list is not dropped. Deliverable rows are untouched.
   database.exec(`
     CREATE TABLE IF NOT EXISTS snapshot_department_notes (
       id TEXT PRIMARY KEY,
@@ -4315,7 +4317,27 @@ function migrate(database: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_snapdept_week
       ON snapshot_department_notes(client_id, week_start);
+    CREATE TABLE IF NOT EXISTS snapshot_department_items (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      department TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      logged_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapdept_items
+      ON snapshot_department_items(client_id, week_start, department, sort_order);
   `);
+  const deptNoteCols = tableColumns(database, "snapshot_department_notes");
+  if (deptNoteCols.length && !deptNoteCols.includes("migrated")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_notes ADD COLUMN migrated INTEGER NOT NULL DEFAULT 0`
+    );
+  }
 
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already

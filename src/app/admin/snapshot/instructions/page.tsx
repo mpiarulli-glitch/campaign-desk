@@ -51,9 +51,9 @@ export default function SnapshotInstructionsPage() {
               starts with the weekly win, then one box per department.
             </li>
             <li>
-              Use the week picker if you need last week. Log the win, then write
-              what that department did. Leave a department blank if it did no
-              work — the client will not see it.
+              Use the week picker if you need last week. Log the win, then add
+              one item at a time under each department. A department with no
+              items is left off what the client sees.
             </li>
             <li>
               Setup still holds the contracted deliverables. The Behind report

@@ -1,14 +1,18 @@
 // What each department did on a client's weekly snapshot.
 //
-// Six fixed sections, always shown to the team. The client, the Friday email,
-// and the Basecamp post only receive the ones that have text. Deliverable
-// rows are a different record and are not read or removed here.
+// Six fixed sections, always shown to the team. Each one is an ordered list
+// of items. The client, the Friday email, and the Basecamp post only receive
+// departments that have at least one item. Deliverable rows are a different
+// record and are not read or removed here.
+//
+// Older builds stored one text blob in snapshot_department_notes. The first
+// read copies that blob into a single list item and marks the blob migrated,
+// so clearing the list later does not bring the blob back.
 
 import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import {
   SNAPSHOT_DEPARTMENTS,
-  departmentLabel,
   type SnapshotDepartmentSlug,
 } from "./snapshot-department-list";
 
@@ -19,80 +23,178 @@ export {
   type SnapshotDepartmentSlug,
 } from "./snapshot-department-list";
 
-export type SnapshotDepartmentNote = {
-  department: SnapshotDepartmentSlug;
-  label: string;
+export type SnapshotDepartmentItem = {
+  id: string;
   body: string;
 };
 
-/** All six sections, in display order. Missing rows are empty strings. */
+export type SnapshotDepartmentNote = {
+  department: SnapshotDepartmentSlug;
+  label: string;
+  items: SnapshotDepartmentItem[];
+};
+
+type ItemRow = {
+  id: string;
+  department: string;
+  body: string;
+  sort_order: number;
+};
+
+/** Copy each unmigrated single-note blob into one list item. Idempotent. */
+export function migrateLegacyDepartmentNotes(): void {
+  const db = getDb();
+  const pending = db
+    .prepare(
+      `SELECT id, client_id, week_start, department, body, logged_by, created_at
+       FROM snapshot_department_notes
+       WHERE migrated = 0`
+    )
+    .all() as Array<{
+    id: string;
+    client_id: string;
+    week_start: string;
+    department: string;
+    body: string;
+    logged_by: string;
+    created_at: string;
+  }>;
+  if (!pending.length) return;
+  const insert = db.prepare(
+    `INSERT INTO snapshot_department_items
+       (id, client_id, week_start, department, body, sort_order, logged_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`
+  );
+  const mark = db.prepare(
+    `UPDATE snapshot_department_notes SET migrated = 1 WHERE id = ?`
+  );
+  const now = nowIso();
+  const run = db.transaction(() => {
+    for (const row of pending) {
+      const body = (row.body || "").trim();
+      if (body) {
+        insert.run(
+          nanoid(12),
+          row.client_id,
+          row.week_start,
+          row.department,
+          body,
+          row.logged_by || "",
+          row.created_at || now,
+          now
+        );
+      }
+      mark.run(row.id);
+    }
+  });
+  run();
+}
+
+/** All six sections, in display order. A department with no items has []. */
 export function departmentNotesForWeek(
   clientId: string,
   weekStart: string
 ): SnapshotDepartmentNote[] {
+  migrateLegacyDepartmentNotes();
   const rows = getDb()
     .prepare(
-      `SELECT department, body FROM snapshot_department_notes
-       WHERE client_id = ? AND week_start = ?`
+      `SELECT id, department, body, sort_order
+       FROM snapshot_department_items
+       WHERE client_id = ? AND week_start = ?
+       ORDER BY sort_order ASC, created_at ASC, id ASC`
     )
-    .all(clientId, weekStart) as Array<{ department: string; body: string }>;
-  const bySlug = new Map(rows.map((row) => [row.department, row.body || ""]));
+    .all(clientId, weekStart) as ItemRow[];
+  const bySlug = new Map<string, SnapshotDepartmentItem[]>();
+  for (const row of rows) {
+    const body = (row.body || "").trim();
+    if (!body) continue;
+    const list = bySlug.get(row.department) || [];
+    list.push({ id: row.id, body });
+    bySlug.set(row.department, list);
+  }
   return SNAPSHOT_DEPARTMENTS.map((dept) => ({
     department: dept.slug,
     label: dept.label,
-    body: bySlug.get(dept.slug) || "",
+    items: bySlug.get(dept.slug) || [],
   }));
 }
 
-/** Client-facing list: filled departments only, still in display order. */
+/** Client-facing list: departments that have items, still in display order. */
 export function filledDepartmentNotes(
   clientId: string,
   weekStart: string
 ): SnapshotDepartmentNote[] {
-  return departmentNotesForWeek(clientId, weekStart).filter((note) => note.body.trim());
+  return departmentNotesForWeek(clientId, weekStart).filter((note) => note.items.length > 0);
 }
 
-export function saveDepartmentNote(input: {
+export function addDepartmentItem(input: {
   clientId: string;
   weekStart: string;
   department: SnapshotDepartmentSlug;
   body: string;
   loggedBy?: string;
-}): SnapshotDepartmentNote {
+}): SnapshotDepartmentItem | null {
+  const body = input.body.trim();
+  if (!body) return null;
+  migrateLegacyDepartmentNotes();
   const db = getDb();
   const now = nowIso();
-  const body = input.body;
-  const existing = db
+  const max = db
     .prepare(
-      `SELECT id FROM snapshot_department_notes
+      `SELECT COALESCE(MAX(sort_order), -1) AS n
+       FROM snapshot_department_items
        WHERE client_id = ? AND week_start = ? AND department = ?`
     )
-    .get(input.clientId, input.weekStart, input.department) as { id: string } | undefined;
-  if (existing) {
-    db.prepare(
-      `UPDATE snapshot_department_notes
-         SET body = ?, logged_by = ?, updated_at = ?
-       WHERE id = ?`
-    ).run(body, input.loggedBy || "", now, existing.id);
-  } else {
-    db.prepare(
-      `INSERT INTO snapshot_department_notes
-         (id, client_id, week_start, department, body, logged_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      nanoid(12),
-      input.clientId,
-      input.weekStart,
-      input.department,
-      body,
-      input.loggedBy || "",
-      now,
-      now
-    );
-  }
-  return {
-    department: input.department,
-    label: departmentLabel(input.department),
+    .get(input.clientId, input.weekStart, input.department) as { n: number };
+  const id = nanoid(12);
+  db.prepare(
+    `INSERT INTO snapshot_department_items
+       (id, client_id, week_start, department, body, sort_order, logged_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    input.clientId,
+    input.weekStart,
+    input.department,
     body,
-  };
+    (max?.n ?? -1) + 1,
+    input.loggedBy || "",
+    now,
+    now
+  );
+  return { id, body };
+}
+
+export function updateDepartmentItem(input: {
+  itemId: string;
+  body: string;
+  loggedBy?: string;
+}): SnapshotDepartmentItem | null {
+  const body = input.body.trim();
+  if (!body) return null;
+  const db = getDb();
+  const existing = db
+    .prepare(`SELECT id, client_id FROM snapshot_department_items WHERE id = ?`)
+    .get(input.itemId) as { id: string; client_id: string } | undefined;
+  if (!existing) return null;
+  db.prepare(
+    `UPDATE snapshot_department_items
+       SET body = ?, logged_by = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(body, input.loggedBy || "", nowIso(), input.itemId);
+  return { id: existing.id, body };
+}
+
+export function departmentItemClientId(itemId: string): string | null {
+  const row = getDb()
+    .prepare(`SELECT client_id FROM snapshot_department_items WHERE id = ?`)
+    .get(itemId) as { client_id: string } | undefined;
+  return row?.client_id || null;
+}
+
+export function deleteDepartmentItem(itemId: string): boolean {
+  const res = getDb()
+    .prepare(`DELETE FROM snapshot_department_items WHERE id = ?`)
+    .run(itemId);
+  return res.changes > 0;
 }

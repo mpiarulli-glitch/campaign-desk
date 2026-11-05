@@ -288,15 +288,22 @@ const LOGO =
 
 export type SnapshotWeekCopy = {
   wins?: string[];
-  departments?: { label: string; body: string }[];
+  departments?: { label: string; items: string[] }[];
 };
 
-/** Wins and filled departments only. Blank departments are omitted. */
+function filledWeekDepartments(work?: SnapshotWeekCopy): { label: string; items: string[] }[] {
+  return (work?.departments || [])
+    .map((dept) => ({
+      label: dept.label,
+      items: (dept.items || []).map((item) => item.trim()).filter(Boolean),
+    }))
+    .filter((dept) => dept.items.length > 0);
+}
+
+/** Wins and filled departments only. A department with no items is omitted. */
 export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text: string } {
   const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
-  const departments = (work?.departments || [])
-    .map((dept) => ({ label: dept.label, body: dept.body.trim() }))
-    .filter((dept) => dept.body);
+  const departments = filledWeekDepartments(work);
   if (!wins.length && !departments.length) return { html: "", text: "" };
 
   const html: string[] = [];
@@ -316,29 +323,33 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
   for (const dept of departments) {
     html.push(
       `<p style="margin:14px 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#666666;">${esc(dept.label)}</p>` +
-        `<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#222222;">${esc(dept.body).replace(/\n/g, "<br>")}</p>`
+        `<ul style="margin:0 0 8px;padding-left:20px;">` +
+        dept.items
+          .map(
+            (item) =>
+              `<li style="margin:0 0 4px;font-size:16px;line-height:1.5;color:#222222;">${esc(item)}</li>`
+          )
+          .join("") +
+        `</ul>`
     );
-    text.push(dept.label, dept.body, "");
+    text.push(dept.label, ...dept.items.map((item) => `- ${item}`), "");
   }
   return { html: html.join(""), text: text.join("\n") };
 }
 
 function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
-  const copy = snapshotWeekCopy(work);
-  if (!copy.text) return "";
   const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
-  const departments = (work?.departments || [])
-    .map((dept) => ({ label: dept.label, body: dept.body.trim() }))
-    .filter((dept) => dept.body);
+  const departments = filledWeekDepartments(work);
+  if (!wins.length && !departments.length) return "";
   let html = "";
   if (wins.length) {
     html += `<div><br><strong>Wins</strong></div>`;
     for (const line of wins) html += `<div>${esc(line)}</div>`;
   }
   for (const dept of departments) {
-    html +=
-      `<div><br><strong>${esc(dept.label)}</strong></div>` +
-      `<div>${esc(dept.body).replace(/\n/g, "<br>")}</div>`;
+    html += `<div><br><strong>${esc(dept.label)}</strong></div><ul>`;
+    for (const item of dept.items) html += `<li>${esc(item)}</li>`;
+    html += `</ul>`;
   }
   return html;
 }
@@ -582,7 +593,10 @@ export async function sendWeeklyAsk(args: {
     wins: weekWins(weekStart)
       .filter((row) => row.client_id === client.id)
       .map((row) => row.body),
-    departments: filledDepartmentNotes(client.id, weekStart),
+    departments: filledDepartmentNotes(client.id, weekStart).map((note) => ({
+      label: note.label,
+      items: note.items.map((item) => item.body),
+    })),
   };
   const { from, replyTo } = senderFor(am);
 
