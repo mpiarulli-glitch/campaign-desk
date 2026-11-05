@@ -22,12 +22,16 @@ export async function GET(request: Request) {
     );
   }
   if (!getVisibleSnapshotAccount(clientId)) {
-    return NextResponse.json({ suggestions: [] });
+    return NextResponse.json({ suggestions: [], status: "ok" });
   }
-  const suggestions = await weekBasecampSuggestions(clientId, week, {
+  const result = await weekBasecampSuggestions(clientId, week, {
     refresh: url.searchParams.get("refresh") === "1",
   });
-  return NextResponse.json({ suggestions });
+  return NextResponse.json({
+    suggestions: result.suggestions,
+    status: result.status,
+    ...(result.message ? { message: result.message } : {}),
+  });
 }
 
 export async function POST(request: Request) {

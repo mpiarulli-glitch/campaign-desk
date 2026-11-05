@@ -20270,6 +20270,19 @@ article.snap-pick-card.lh-pick-card:hover {
   justify-content: flex-end;
 }
 
+.snap-suggest-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.snap-suggest-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .snap-suggest-label {
   margin: 0 0 6px;
   font-size: 11px;

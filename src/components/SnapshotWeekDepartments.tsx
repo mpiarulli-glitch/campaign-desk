@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   SNAPSHOT_DEPARTMENTS,
   type SnapshotDepartmentSlug,
@@ -18,6 +19,17 @@ type Suggestion = {
   place: string;
   department: SnapshotDepartmentSlug | "unsorted";
 };
+type SuggestStatus = "" | "ok" | "no_project" | "error";
+
+function scrollParent(node: HTMLElement): Element | null {
+  let el: HTMLElement | null = node.parentElement;
+  while (el) {
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return el;
+    el = el.parentElement;
+  }
+  return null;
+}
 
 /**
  * The six department lists for one client-week. Every section is always on
@@ -45,6 +57,10 @@ export function SnapshotWeekDepartments({
   const [unsortedDept, setUnsortedDept] = useState<Record<string, SnapshotDepartmentSlug>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>("");
+  const [inView, setInView] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const requestGen = useRef(0);
 
   const load = useCallback(async () => {
     setError("");
@@ -66,34 +82,68 @@ export function SnapshotWeekDepartments({
 
   const loadSuggestions = useCallback(
     async (refresh = false) => {
+      const gen = ++requestGen.current;
       if (refresh) setRefreshing(true);
       try {
         const res = await fetch(
           `/api/snapshot/departments/suggestions?clientId=${encodeURIComponent(clientId)}&week=${weekStart}${refresh ? "&refresh=1" : ""}`
         );
+        if (requestGen.current !== gen) return;
         if (!res.ok) {
           setSuggestions([]);
+          setSuggestStatus("error");
           return;
         }
         const data = await res.json();
+        const status = data.status;
         setSuggestions((data.suggestions || []) as Suggestion[]);
+        setSuggestStatus(
+          status === "no_project" || status === "error" || status === "ok" ? status : "ok"
+        );
       } catch {
+        if (requestGen.current !== gen) return;
         setSuggestions([]);
+        setSuggestStatus("error");
       } finally {
-        if (refresh) setRefreshing(false);
+        if (requestGen.current === gen) setRefreshing(false);
       }
     },
     [clientId, weekStart]
   );
 
   useEffect(() => {
+    const node = rootRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setInView(true);
+      },
+      { root: scrollParent(node), rootMargin: "160px 0px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [clientId]);
+
+  useEffect(() => {
     setDraft({});
     setEditing(null);
     setSuggestionEdits({});
     setEditingSuggestion(null);
+    setSuggestions([]);
+    setSuggestStatus("");
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!inView) return;
     void loadSuggestions(false);
-  }, [load, loadSuggestions]);
+    return () => {
+      requestGen.current += 1;
+    };
+  }, [inView, loadSuggestions]);
 
   async function addItem(event: FormEvent, department: SnapshotDepartmentSlug) {
     event.preventDefault();
@@ -368,7 +418,7 @@ export function SnapshotWeekDepartments({
   const unsorted = suggestions.filter((row) => row.department === "unsorted");
 
   return (
-    <div className="snap-dept-list">
+    <div className="snap-dept-list" ref={rootRef}>
       <div className="snap-suggest-refresh">
         <button
           type="button"
@@ -379,6 +429,15 @@ export function SnapshotWeekDepartments({
           {refreshing ? "Refreshing…" : "Refresh Basecamp"}
         </button>
       </div>
+      {suggestStatus === "no_project" ? (
+        <p className="snap-suggest-note">
+          No Basecamp project linked.{" "}
+          <Link href="/admin/production">Link a Basecamp project</Link>
+        </p>
+      ) : null}
+      {suggestStatus === "error" ? (
+        <p className="snap-suggest-note">Couldn&apos;t reach Basecamp, try Refresh</p>
+      ) : null}
       {error ? <p className="error">{error}</p> : null}
       {notes.map((note) => (
         <section key={note.department} className="snap-dept">

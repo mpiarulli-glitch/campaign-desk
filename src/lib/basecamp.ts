@@ -761,6 +761,19 @@ function nextPagePath(linkHeader: string | null): string | null {
   return match[1].replace(apiBase(), "");
 }
 
+/** GET one Basecamp path. Status codes, including 429, are left to the caller. */
+export function basecampGet(
+  path: string,
+  identity: BcIdentity = SERVICE
+): Promise<Response> {
+  return bc(path, undefined, identity);
+}
+
+/** Path of the next page advertised in a Link header, or null when this is the last. */
+export function basecampNextPagePath(linkHeader: string | null): string | null {
+  return nextPagePath(linkHeader);
+}
+
 // Follow Link, but cap the walk so one enormous todo list can't stall the
 // forecast picker. A timed-out or failed page just ends the walk early with
 // whatever was already fetched, rather than throwing — this runs inside
