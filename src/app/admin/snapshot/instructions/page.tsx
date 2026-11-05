@@ -47,19 +47,18 @@ export default function SnapshotInstructionsPage() {
           <ol>
             <li>
               Open{" "}
-              <Link href="/admin/snapshot/desk">This week</Link> — every
-              client&apos;s deliverables in one list.
+              <Link href="/admin/snapshot/desk">This week</Link>. Each account
+              starts with the weekly win, then one box per department.
             </li>
             <li>
-              Use the week picker if you need last week. The list starts on{" "}
-              <em>All</em>. Filter to <em>Needs update</em> if you only want
-              what still needs a status.
+              Use the week picker if you need last week. Log the win, then write
+              what that department did. Leave a department blank if it did no
+              work — the client will not see it.
             </li>
             <li>
-              For each deliverable: set status. Choose <strong>Completed</strong>{" "}
-              when it shipped — you&apos;ll pick the date — then expand the row
-              to add <em>What we did</em> / <em>Next steps</em> if the client
-              should see context.
+              Setup still holds the contracted deliverables. The Behind report
+              and campaign progress keep using those. They are not the weekly
+              note.
             </li>
             <li>
               Open a client name for setup, leads, wins, or the client link.
@@ -186,15 +185,15 @@ export default function SnapshotInstructionsPage() {
         <section id="client-view" className="snap-instr-card">
           <h2>What clients see</h2>
           <p>
-            Their token link is read-focused: glance, wins, revenue they
-            report, leads they can answer, this week’s logged work, contract
-            overview, and performance charts.
+            Their token link shows wins, then only the departments that have
+            something written for that week. Empty departments are left out.
+            They can still answer leads and report revenue.
           </p>
           <ul>
-            <li>They do <strong>not</strong> edit status, catch up, or Setup.</li>
+            <li>They do <strong>not</strong> edit the department notes or Setup.</li>
             <li>
-              Only write clear <em>What we did</em> / <em>Next steps</em> —
-              that’s the story they read.
+              Write the week in plain language. That text is what the snapshot,
+              the Friday email, and the Basecamp post show.
             </li>
           </ul>
         </section>

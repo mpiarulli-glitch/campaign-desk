@@ -4298,6 +4298,25 @@ function migrate(database: Database.Database) {
   // The same repairs now run from deferred startup, after the server is up.
   // Schema changes stay in this function so the first real query sees them.
 
+  // Weekly snapshot department notes. One free-text note per department per
+  // client per week. Deliverable rows stay; this does not read or delete them.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS snapshot_department_notes (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      department TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      logged_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, week_start, department),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapdept_week
+      ON snapshot_department_notes(client_id, week_start);
+  `);
+
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already
   // there, so an existing production database boots the same way a new one does.

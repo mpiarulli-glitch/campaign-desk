@@ -32,7 +32,9 @@ import {
   listLeads,
   metricPeriodLabel,
   revenueAsk,
+  weekWins,
 } from "./snapshot";
+import { filledDepartmentNotes } from "./snapshot-departments";
 
 /** Same roster as Deliverable setup — not every revenue client. */
 function listFridayAskClients(): RevClient[] {
@@ -284,13 +286,72 @@ function esc(s: string): string {
 const LOGO =
   "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
+export type SnapshotWeekCopy = {
+  wins?: string[];
+  departments?: { label: string; body: string }[];
+};
+
+/** Wins and filled departments only. Blank departments are omitted. */
+export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text: string } {
+  const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
+  const departments = (work?.departments || [])
+    .map((dept) => ({ label: dept.label, body: dept.body.trim() }))
+    .filter((dept) => dept.body);
+  if (!wins.length && !departments.length) return { html: "", text: "" };
+
+  const html: string[] = [];
+  const text: string[] = [];
+  if (wins.length) {
+    html.push(
+      `<p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#666666;">Wins</p>` +
+        wins
+          .map(
+            (line) =>
+              `<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#222222;">${esc(line)}</p>`
+          )
+          .join("")
+    );
+    text.push("Wins", ...wins, "");
+  }
+  for (const dept of departments) {
+    html.push(
+      `<p style="margin:14px 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#666666;">${esc(dept.label)}</p>` +
+        `<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#222222;">${esc(dept.body).replace(/\n/g, "<br>")}</p>`
+    );
+    text.push(dept.label, dept.body, "");
+  }
+  return { html: html.join(""), text: text.join("\n") };
+}
+
+function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
+  const copy = snapshotWeekCopy(work);
+  if (!copy.text) return "";
+  const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
+  const departments = (work?.departments || [])
+    .map((dept) => ({ label: dept.label, body: dept.body.trim() }))
+    .filter((dept) => dept.body);
+  let html = "";
+  if (wins.length) {
+    html += `<div><br><strong>Wins</strong></div>`;
+    for (const line of wins) html += `<div>${esc(line)}</div>`;
+  }
+  for (const dept of departments) {
+    html +=
+      `<div><br><strong>${esc(dept.label)}</strong></div>` +
+      `<div>${esc(dept.body).replace(/\n/g, "<br>")}</div>`;
+  }
+  return html;
+}
+
 export function weeklyAskEmail(args: {
   client: RevClient;
   am: AccountManager | null;
   ask: WeeklyAsk;
   link: string;
+  work?: SnapshotWeekCopy;
 }): { subject: string; html: string; text: string } {
   const { client, am, link } = args;
+  const workCopy = snapshotWeekCopy(args.work);
   const first = (client.contact_name || "").trim().split(/\s+/)[0];
   const greeting = first ? `Hi ${esc(first)},` : "Hi there,";
   const signer = am?.label || "Marketing Empire Group";
@@ -331,8 +392,9 @@ export function weeklyAskEmail(args: {
             <h1 class="h1" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Your weekly snapshot</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
             <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#333333;">${esc(line1)}</p>
-            <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;">
+            <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
+            ${workCopy.html}
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
               <tr><td>
                 <!--[if mso]>
                 <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
@@ -370,6 +432,7 @@ export function weeklyAskEmail(args: {
     line1,
     line2,
     "",
+    ...(workCopy.text ? [workCopy.text] : []),
     `Open your snapshot: ${link}`,
     "",
     "Thanks,",
@@ -438,8 +501,10 @@ export function weeklyAskMessageContent(args: {
   amLabel: string;
   /** Real Basecamp @mention HTML for Sylvia's CC line, when resolved. */
   sylviaMention?: string;
+  work?: SnapshotWeekCopy;
 }): { title: string; body: string } {
   const { link, mention, amLabel } = args;
+  const workHtml = snapshotWeekBasecamp(args.work);
   const amMention = (args.amMention || "").trim();
   const thanks = amMention
     ? `Thanks, ${amMention}`
@@ -447,6 +512,7 @@ export function weeklyAskMessageContent(args: {
   const body =
     `<div>${mention} your weekly snapshot is ready to review.</div>` +
     `<div>See what went on across your account this week.</div>` +
+    workHtml +
     `<div><br><a href="${esc(link)}">Open your snapshot</a></div>` +
     `<div><br>${thanks}</div>` +
     sylviaCcHtml(args.sylviaMention);
@@ -512,6 +578,12 @@ export async function sendWeeklyAsk(args: {
   }
   const link = `${appUrl.replace(/\/$/, "")}/snapshot/${token}`;
   const am = accountManagerFor(client);
+  const work = {
+    wins: weekWins(weekStart)
+      .filter((row) => row.client_id === client.id)
+      .map((row) => row.body),
+    departments: filledDepartmentNotes(client.id, weekStart),
+  };
   const { from, replyTo } = senderFor(am);
 
   // ---- email
@@ -529,7 +601,7 @@ export async function sendWeeklyAsk(args: {
   } else if (simulate) {
     out.email = { ok: true, skipped: heldReason };
   } else {
-    const { subject, html, text } = weeklyAskEmail({ client, am, ask, link });
+    const { subject, html, text } = weeklyAskEmail({ client, am, ask, link, work });
     const res = await sendEmailWithId({
       to,
       subject,
@@ -601,6 +673,7 @@ export async function sendWeeklyAsk(args: {
           amMention: manager ? mentionHtml(manager) : "",
           amLabel: am?.label || "Marketing Empire Group",
           sylviaMention: sylvia ? mentionHtml(sylvia) : "",
+          work,
         });
         // Notify the same people the card used to assign. Omitting this list
         // would ping everyone on the project.
