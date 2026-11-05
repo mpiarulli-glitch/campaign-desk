@@ -83,13 +83,14 @@ export async function weekBasecampSuggestions(
   const projectId = (getRevClient(clientId)?.basecamp_project_id || "").trim();
   if (!projectId) return [];
   const activities = await activitiesForProject(projectId, Boolean(opts?.refresh));
-  const existing = departmentNotesForWeek(clientId, weekStart).flatMap((note) =>
-    note.items.map((item) => item.body)
-  );
+  const notes = departmentNotesForWeek(clientId, weekStart);
   return suggestionsForWeek({
     activities,
     weekStart,
-    existingItems: existing,
+    existingItems: notes.flatMap((note) => note.items.map((item) => item.body)),
+    existingSourceKeys: notes.flatMap((note) =>
+      note.items.map((item) => item.sourceKey).filter(Boolean)
+    ),
     dismissedKeys: dismissedSuggestionKeys(clientId, weekStart),
   });
 }

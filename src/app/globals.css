@@ -20240,10 +20240,34 @@ article.snap-pick-card.lh-pick-card:hover {
   flex-wrap: wrap;
 }
 
-.snap-suggest-title {
+.snap-suggest-title,
+.snap-suggest-edit {
   flex: 1;
   min-width: 160px;
   line-height: 1.4;
+}
+
+button.snap-suggest-title {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: text;
+}
+
+.snap-suggest-title span,
+.snap-suggest-edit span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-suggest-edit input {
+  width: 100%;
+  font: inherit;
 }
 
 .snap-check {

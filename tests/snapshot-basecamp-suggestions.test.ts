@@ -114,4 +114,21 @@ test("snapshot Basecamp suggestion mapping and dedupe", async (t) => {
     assert.equal(shown[0].department, "lifecycle");
     assert.equal(shown[1].department, "unsorted");
   });
+
+  await t.test("a reworded list item still hides the to-do it came from", () => {
+    const shown = suggestionsForWeek({
+      activities: [
+        activity({ sourceKey: "todo:1", title: "Publish the blog", place: "SEO" }),
+        activity({ sourceKey: "todo:8", title: "Publish the blog", place: "SEO" }),
+      ],
+      weekStart: WEEK,
+      existingItems: ["Published the November blog"],
+      existingSourceKeys: ["todo:1"],
+      dismissedKeys: [],
+    });
+    assert.deepEqual(
+      shown.map((row) => row.sourceKey),
+      ["todo:8"]
+    );
+  });
 });

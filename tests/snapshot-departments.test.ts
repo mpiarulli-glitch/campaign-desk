@@ -233,6 +233,33 @@ test("weekly snapshot department items", async (t) => {
       },
     });
     assert.match(card.body, /&#10003; Film the testimonial/);
+
+    const reworded = depts.updateDepartmentItem({
+      itemId: checked!.id,
+      body: "Filmed the customer testimonial",
+    });
+    assert.equal(reworded?.body, "Filmed the customer testimonial");
+    assert.equal(reworded?.completed, true);
+    assert.equal(reworded?.sourceKey, "todo:44");
+    const after = depts
+      .departmentNotesForWeek(client.id, week)
+      .find((note) => note.department === "video");
+    assert.equal(after?.items[0].sourceKey, "todo:44");
+    assert.equal(after?.items[0].completed, true);
+    const clientCopy = cs.snapshotWeekCopy({
+      departments: [
+        {
+          label: "Video Department",
+          items: (after?.items || []).map((item) => ({
+            body: item.body,
+            completed: item.completed,
+          })),
+        },
+      ],
+    });
+    assert.match(clientCopy.text, /✓ Filmed the customer testimonial/);
+    assert.doesNotMatch(clientCopy.text, /Film the testimonial/);
+    assert.doesNotMatch(clientCopy.html, /todo:44/);
   });
 
   await t.test("another week does not reuse this week's items", () => {

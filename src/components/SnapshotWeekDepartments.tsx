@@ -40,6 +40,8 @@ export function SnapshotWeekDepartments({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
+  const [suggestionEdits, setSuggestionEdits] = useState<Record<string, string>>({});
+  const [editingSuggestion, setEditingSuggestion] = useState<string | null>(null);
   const [unsortedDept, setUnsortedDept] = useState<Record<string, SnapshotDepartmentSlug>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -87,6 +89,8 @@ export function SnapshotWeekDepartments({
   useEffect(() => {
     setDraft({});
     setEditing(null);
+    setSuggestionEdits({});
+    setEditingSuggestion(null);
     void load();
     void loadSuggestions(false);
   }, [load, loadSuggestions]);
@@ -241,6 +245,20 @@ export function SnapshotWeekDepartments({
     }
   }
 
+  function suggestionText(suggestion: Suggestion): string {
+    const edited = suggestionEdits[suggestion.sourceKey];
+    return edited !== undefined ? edited : suggestion.title;
+  }
+
+  function beginSuggestionEdit(suggestion: Suggestion) {
+    setEditingSuggestion(suggestion.sourceKey);
+    setSuggestionEdits((cur) =>
+      cur[suggestion.sourceKey] !== undefined
+        ? cur
+        : { ...cur, [suggestion.sourceKey]: suggestion.title }
+    );
+  }
+
   function suggestionBlock(rows: Suggestion[], department?: SnapshotDepartmentSlug) {
     if (!rows.length) return null;
     return (
@@ -249,15 +267,52 @@ export function SnapshotWeekDepartments({
         <ul>
           {rows.map((suggestion) => {
             const target = department || unsortedDept[suggestion.sourceKey] || "lifecycle";
+            const text = suggestionText(suggestion);
+            const editingThis = editingSuggestion === suggestion.sourceKey;
             return (
                 <li key={suggestion.sourceKey}>
                 <span className="snap-check is-on" aria-label="Completed in Basecamp">
                   ✓
                 </span>
-                <span className="snap-suggest-title">
-                  {suggestion.title}
-                  {suggestion.place ? <span>{suggestion.place}</span> : null}
-                </span>
+                {editingThis ? (
+                  <span className="snap-suggest-edit">
+                    <input
+                      value={text}
+                      aria-label={`Edit ${suggestion.title}`}
+                      autoFocus
+                      onChange={(event) =>
+                        setSuggestionEdits((cur) => ({
+                          ...cur,
+                          [suggestion.sourceKey]: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setSuggestionEdits((cur) => {
+                            const next = { ...cur };
+                            delete next[suggestion.sourceKey];
+                            return next;
+                          });
+                          setEditingSuggestion(null);
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          setEditingSuggestion(null);
+                        }
+                      }}
+                    />
+                    {suggestion.place ? <span>{suggestion.place}</span> : null}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="snap-suggest-title"
+                    onClick={() => beginSuggestionEdit(suggestion)}
+                  >
+                    {text}
+                    {suggestion.place ? <span>{suggestion.place}</span> : null}
+                  </button>
+                )}
                 {department ? null : (
                   <select
                     aria-label={`Department for ${suggestion.title}`}
@@ -276,10 +331,22 @@ export function SnapshotWeekDepartments({
                     ))}
                   </select>
                 )}
+                {editingThis ? null : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => beginSuggestionEdit(suggestion)}
+                  >
+                    Edit
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => void acceptSuggestion(suggestion, target)}
+                  disabled={!text.trim()}
+                  onClick={() =>
+                    void acceptSuggestion({ ...suggestion, title: text.trim() }, target)
+                  }
                 >
                   Add
                 </button>

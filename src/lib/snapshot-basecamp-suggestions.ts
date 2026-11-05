@@ -131,16 +131,20 @@ export function normalizeSuggestionText(value: string): string {
 }
 
 /**
- * Suggestions for one week. Dismissed keys stay hidden. An item already on
- * any department list, with the same wording, is not suggested again.
+ * Suggestions for one week. Dismissed keys stay hidden. A to-do already on a
+ * department list stays hidden even after its wording is edited. The same
+ * wording, with no source id, is also hidden.
  */
 export function suggestionsForWeek(input: {
   activities: BasecampActivity[];
   weekStart: string;
   existingItems: string[];
+  /** source_key values already stored on this week's list items. */
+  existingSourceKeys?: string[];
   dismissedKeys: string[];
 }): DepartmentSuggestion[] {
   const dismissed = new Set(input.dismissedKeys);
+  const takenKeys = new Set((input.existingSourceKeys || []).map((key) => key.trim()).filter(Boolean));
   const taken = new Set(
     input.existingItems.map((item) => normalizeSuggestionText(item)).filter(Boolean)
   );
@@ -149,7 +153,9 @@ export function suggestionsForWeek(input: {
   for (const activity of input.activities) {
     const title = (activity.title || "").trim();
     if (!title) continue;
-    if (!activity.sourceKey || dismissed.has(activity.sourceKey)) continue;
+    if (!activity.sourceKey || dismissed.has(activity.sourceKey) || takenKeys.has(activity.sourceKey)) {
+      continue;
+    }
     if (!completedInSnapshotWeek(activity.completedAt, input.weekStart)) continue;
     const key = normalizeSuggestionText(title);
     if (!key || taken.has(key) || seenTitle.has(key)) continue;
