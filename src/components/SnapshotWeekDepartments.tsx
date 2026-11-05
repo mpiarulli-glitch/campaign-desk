@@ -50,7 +50,7 @@ function scrollParent(node: HTMLElement): Element | null {
 }
 
 /**
- * The six department lists for one client-week. Every section is always on
+ * Every department list for one client-week. Every section is always on
  * screen here. A department with no items is omitted only on the client snapshot.
  */
 export function SnapshotWeekDepartments({
@@ -375,14 +375,37 @@ export function SnapshotWeekDepartments({
   }
 
   function startDrag(event: DragEvent, kind: DragKind, id: string) {
-    const target = event.target as HTMLElement;
-    if (target.closest("button, input, select, textarea, summary, a")) {
-      event.preventDefault();
-      return;
-    }
     dragRef.current = { kind, id };
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", id);
+    event.stopPropagation();
+  }
+
+  function dragGrip(kind: DragKind, id: string, label: string) {
+    return (
+      <span
+        className="snap-drag"
+        draggable
+        role="button"
+        tabIndex={0}
+        aria-label={`Drag ${label}`}
+        title="Drag"
+        onDragStart={(event) => startDrag(event, kind, id)}
+        onDragEnd={() => {
+          dragRef.current = null;
+          setDropAt(null);
+        }}
+      >
+        <svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true">
+          <circle cx="2" cy="2" r="1.15" fill="currentColor" />
+          <circle cx="8" cy="2" r="1.15" fill="currentColor" />
+          <circle cx="2" cy="8" r="1.15" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.15" fill="currentColor" />
+          <circle cx="2" cy="14" r="1.15" fill="currentColor" />
+          <circle cx="8" cy="14" r="1.15" fill="currentColor" />
+        </svg>
+      </span>
+    );
   }
 
   function allowDrop(event: DragEvent, list: DropList, beforeId: string | null) {
@@ -444,15 +467,10 @@ export function SnapshotWeekDepartments({
                 <li
                   key={suggestion.sourceKey}
                   className={armed ? "is-drop-before" : undefined}
-                  draggable
-                  onDragStart={(event) => startDrag(event, "suggestion", suggestion.sourceKey)}
-                  onDragEnd={() => {
-                    dragRef.current = null;
-                    setDropAt(null);
-                  }}
                   onDragOver={(event) => allowDrop(event, department, suggestion.sourceKey)}
                   onDrop={(event) => finishDrop(event, department, suggestion.sourceKey)}
                 >
+                {dragGrip("suggestion", suggestion.sourceKey, suggestion.title)}
                 {sent ? (
                   <span className="snap-sent" aria-label="Sent for approval">
                     Sent for approval
@@ -617,15 +635,10 @@ export function SnapshotWeekDepartments({
                       ? "is-drop-before"
                       : undefined
                   }
-                  draggable
-                  onDragStart={(event) => startDrag(event, "item", item.id)}
-                  onDragEnd={() => {
-                    dragRef.current = null;
-                    setDropAt(null);
-                  }}
                   onDragOver={(event) => allowDrop(event, note.department, item.id)}
                   onDrop={(event) => finishDrop(event, note.department, item.id)}
                 >
+                  {dragGrip("item", item.id, item.body)}
                   {item.mark === "sent" ? (
                     <span className="snap-sent" aria-label="Sent for approval">
                       Sent for approval

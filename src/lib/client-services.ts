@@ -595,6 +595,14 @@ export async function sendWeeklyAsk(args: {
   dryRun?: boolean;
 }): Promise<AskSendResult> {
   const { client, weekStart, appUrl, dryRun } = args;
+  if (client.outreach_paused) {
+    return {
+      clientId: client.id,
+      clientName: client.name,
+      email: { ok: false, skipped: "paused" },
+      basecamp: { ok: false, skipped: "paused" },
+    };
+  }
   // dryRun reports the ask and writes nothing. CLIENT_SERVICES_SENDING does
   // not hold a send: the Client Services button is a person deciding to send,
   // and the scheduled sweep never calls this without dryRun.

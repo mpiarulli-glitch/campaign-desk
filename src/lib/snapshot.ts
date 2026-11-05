@@ -806,6 +806,7 @@ export type DeskWeekRow = WeekRow & {
   client_id: string;
   client_name: string;
   launch_date: string | null;
+  outreach_paused: boolean;
 };
 
 /** Every allowlisted client's week rows, for the company-wide fill desk. */
@@ -822,6 +823,7 @@ export function weekDesk(
         client_id: account.id,
         client_name: account.name,
         launch_date,
+        outreach_paused: Boolean(account.outreach_paused),
       });
     }
   }

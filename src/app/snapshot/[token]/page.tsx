@@ -24,6 +24,7 @@ type DepartmentNote = { slug: string; label: string; items: DepartmentItem[] };
 const DEPT_ACCENT: Record<string, string> = {
   lifecycle: "#04808d",
   social: "#1a6f9a",
+  ads: "#c2410c",
   video: "#6b4c8a",
   web: "#1f7a4d",
   seo: "#8a6200",
@@ -66,6 +67,15 @@ function DeptMark({ slug }: { slug: string }) {
         <circle cx="17" cy="7" r="2.2" />
         <circle cx="17" cy="17" r="2.2" />
         <path d="m8.6 11.2 6.2-3.1M8.6 12.8l6.2 3.1" />
+      </svg>
+    );
+  }
+  if (slug === "ads") {
+    return (
+      <svg {...props}>
+        <path d="M4 10v4h3l5 3V7L7 10H4z" />
+        <path d="M16 9.5a3 3 0 0 1 0 5" />
+        <path d="M17.5 7.5a6 6 0 0 1 0 9" />
       </svg>
     );
   }

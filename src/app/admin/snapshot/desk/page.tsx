@@ -7,7 +7,7 @@ import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type D
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { type SnapshotFillRowData } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
-import { canSeeFridayAsk, teamLabelFor } from "@/lib/people";
+import { canSeeFridayAsk, personTeam, teamLabelFor } from "@/lib/people";
 import {
   fillCanSeeAll,
   fillFocusTeam,
@@ -22,6 +22,7 @@ type DeskRow = SnapshotFillRowData & {
   client_id: string;
   client_name: string;
   launch_date: string | null;
+  outreach_paused?: boolean;
 };
 
 export default function SnapshotDeskPage() {
@@ -36,6 +37,7 @@ export default function SnapshotDeskPage() {
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
   const [weekWins, setWeekWins] = useState<DeskWeekWin[]>([]);
+  const [sendingId, setSendingId] = useState("");
 
   const fetchWeek = useCallback(
     async (w: string) => {
@@ -135,6 +137,35 @@ export default function SnapshotDeskPage() {
         ? "All teams"
         : `${teamLabelFor(focusTeam)} team`;
 
+  const canSend = viewer.owner || viewer.role === "admin";
+  const canOpenServices =
+    canSend || personTeam(viewer.person) === "client_services" || canSeeFridayAsk(viewer);
+
+  async function sendToClient(clientId: string, clientName: string, paused: boolean) {
+    if (!canSend || paused || sendingId) return;
+    const prompt = `Send this week's snapshot ask to ${clientName} now?`;
+    if (!window.confirm(prompt)) return;
+    setSendingId(clientId);
+    setError("");
+    try {
+      const res = await fetch("/api/client-services", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send", clientId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not send that snapshot.");
+        return;
+      }
+      setError("");
+    } catch {
+      setError("Network error. Check your connection and try again.");
+    } finally {
+      setSendingId("");
+    }
+  }
+
   const groups = useMemo(() => {
     const map = new Map<string, { id: string; name: string; launch: string | null; rows: DeskRow[] }>();
     for (const row of searched) {
@@ -151,9 +182,9 @@ export default function SnapshotDeskPage() {
   return (
     <div className="ops-page snap-desk">
       <div className="page-actions">
-        {canSeeFridayAsk(viewer) ? (
+        {canOpenServices ? (
           <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
-            Friday ask
+            Client Services
           </Link>
         ) : null}
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
@@ -253,6 +284,27 @@ export default function SnapshotDeskPage() {
             <div key={group.id} className="snap-n-db">
               <div className="snap-n-group">
                 <Link href={`/admin/snapshot/${group.id}`}>{group.name}</Link>
+                {canSend ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={Boolean(group.rows[0]?.outreach_paused) || sendingId === group.id}
+                    title={
+                      group.rows[0]?.outreach_paused
+                        ? "Outreach is paused for this client."
+                        : "Send this week's snapshot. You confirm before it goes out."
+                    }
+                    onClick={() =>
+                      void sendToClient(
+                        group.id,
+                        group.name,
+                        Boolean(group.rows[0]?.outreach_paused)
+                      )
+                    }
+                  >
+                    {sendingId === group.id ? "Sending…" : "Send to client"}
+                  </button>
+                ) : null}
                 <label className="snap-n-group-view">
                   <select
                     value={view}

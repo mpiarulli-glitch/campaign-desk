@@ -66,6 +66,17 @@ test("snapshot Basecamp suggestion mapping and dedupe", async (t) => {
     assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Landing page" }), "web");
     assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Google Business" }), "seo");
     assert.equal(matchSnapshotDepartment({ title: "Check in", place: "Kickoff" }), "strategy");
+    assert.equal(matchSnapshotDepartment({ title: "Boost the offer", place: "Meta Ads" }), "ads");
+    assert.equal(matchSnapshotDepartment({ title: "Boost the offer", place: "Paid Social" }), "ads");
+    assert.equal(matchSnapshotDepartment({ title: "Boost the offer", place: "Facebook Ads" }), "ads");
+    assert.equal(matchSnapshotDepartment({ title: "Post the reel", place: "Social" }), "social");
+    assert.equal(
+      matchSnapshotDepartment({
+        title: "Retarget the buyers",
+        place: "Email / SMS / LinkedIn / Automations",
+      }),
+      "lifecycle"
+    );
     assert.equal(
       matchSnapshotDepartment({ title: "Follow up", place: "To-dos", assigneeNames: ["Abel"] }),
       "unsorted"

@@ -309,7 +309,12 @@ test("per-person access", async (t) => {
     assert.ok(!pages.includes("/admin/social-qa"), "roy is not on the social QA list");
     assert.ok(pages.includes("/admin/whiteboard"));
     assert.ok(pages.includes("/admin/snapshot/desk"));
+    assert.ok(!pages.includes("/admin/client-services"), "roy is not on Client Services");
     assert.ok(!pages.includes("/admin"), "old dashboard is no longer a nav item");
+    assert.ok(access.visiblePages(owner).some((p) => p.href === "/admin/client-services"));
+    assert.ok(
+      access.visiblePages(access.subjectFor("cassidy")).some((p) => p.href === "/admin/client-services")
+    );
 
     // Every page with an href, and nothing without one.
     const ownerPages = access.visiblePages(owner).map((p) => p.href);
