@@ -197,7 +197,6 @@ export default function ClientServicesPage() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [sendingOn, setSendingOn] = useState(true);
   const [edit, setEdit] = useState<{ id: string; field: EditField } | null>(null);
   const [editVal, setEditVal] = useState("");
   const skipEditCommit = useRef(false);
@@ -216,7 +215,6 @@ export default function ClientServicesPage() {
       const data = await res.json();
       setRows(data.rows || []);
       setSummary(data.summary || null);
-      setSendingOn(data.sendingEnabled !== false);
     } catch {
       setError("Network error. Check your connection and try again.");
     } finally {
@@ -422,11 +420,9 @@ export default function ClientServicesPage() {
   async function act(clientId: string, action: "send" | "pause" | "resume") {
     if (action === "send") {
       const row = rows.find((r) => r.clientId === clientId);
-      const prompt = sendingOn
-        ? `Send this week's snapshot ask to ${row?.contactName || row?.name} now?` +
-          (row?.contactEmail ? `\n\nEmail: ${row.contactEmail}` : "")
-        : `Sending is switched off, so nothing will actually go out.\n\n` +
-          `Run the ask for ${row?.contactName || row?.name} and show what it would do?`;
+      const prompt =
+        `Send this week's snapshot ask to ${row?.contactName || row?.name} now?` +
+        (row?.contactEmail ? `\n\nEmail: ${row.contactEmail}` : "");
       if (!confirm(prompt)) return;
     }
     setBusyId(clientId);
@@ -446,22 +442,16 @@ export default function ClientServicesPage() {
     const data = await res.json();
     setRows(data.rows || []);
     setSummary(data.summary || null);
-    if (typeof data.sendingEnabled === "boolean") setSendingOn(data.sendingEnabled);
     if (action === "send") {
       const r = data.result;
       const parts: string[] = [];
-      if (r?.email?.ok) parts.push("emailed");
+      if (r?.email?.ok && !r?.email?.skipped) parts.push("emailed");
       else if (r?.email?.skipped) parts.push(`no email (${r.email.skipped})`);
-      if (r?.basecamp?.ok) parts.push("Basecamp message posted");
+      else if (r?.email?.error) parts.push(`email failed (${r.email.error})`);
+      if (r?.basecamp?.ok && !r?.basecamp?.skipped) parts.push("Basecamp message posted");
       else if (r?.basecamp?.skipped) parts.push(`no message (${r.basecamp.skipped})`);
-      setMessage(
-        sendingOn
-          ? parts.length
-            ? `Done: ${parts.join(", ")}.`
-            : "Nothing was sent."
-          : "Sending is switched off, so nothing left the building. " +
-            "Set CLIENT_SERVICES_SENDING=on to arm it."
-      );
+      else if (r?.basecamp?.error) parts.push(`Basecamp failed (${r.basecamp.error})`);
+      setMessage(parts.length ? `Done: ${parts.join(", ")}.` : "Nothing was sent.");
     } else {
       setMessage(action === "pause" ? "Outreach paused." : "Outreach resumed.");
     }
@@ -674,19 +664,6 @@ export default function ClientServicesPage() {
             </button>
           ) : null}
         </div>
-
-        {!sendingOn && fridayAsk ? (
-          <div className="cs-disarmed">
-            <strong>Sending is switched off.</strong>
-            <span>
-              The dashboard is live and the Friday sweep is not scheduled.
-              Nothing is emailed to a client and no Basecamp message is posted,
-              including from <em>Send now</em>, which reports what it would have
-              done instead. Set <code>CLIENT_SERVICES_SENDING=on</code> on the
-              service to arm it.
-            </span>
-          </div>
-        ) : null}
 
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success">{message}</p> : null}
@@ -1125,7 +1102,6 @@ export default function ClientServicesPage() {
         <ClientServicePanel
           client={panel}
           isAdmin={isAdmin}
-          sendingOn={sendingOn}
           sending={busyId === panel.clientId}
           onClose={() => setPanelId(null)}
           onSend={() => act(panel.clientId, "send")}

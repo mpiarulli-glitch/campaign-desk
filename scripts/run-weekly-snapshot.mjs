@@ -1,7 +1,8 @@
 /**
- * Railway / GitHub cron entrypoint for the Friday weekly snapshot ask.
+ * Dry-run entrypoint for the Friday weekly snapshot ask.
  *
- * Pass --dry-run to see who would be contacted without sending anything.
+ * This cannot send email or Basecamp posts. The cron endpoint refuses a live
+ * send. A person sends from Client Services.
  */
 const appUrl = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "")
   .trim()
@@ -15,8 +16,7 @@ if (!appUrl || !secret) {
   process.exit(1);
 }
 
-const dryRun = process.argv.includes("--dry-run");
-const url = `${appUrl}/api/cron/weekly-snapshot${dryRun ? "?dryRun=1" : ""}`;
+const url = `${appUrl}/api/cron/weekly-snapshot?dryRun=1`;
 
 const response = await fetch(url, {
   method: "POST",

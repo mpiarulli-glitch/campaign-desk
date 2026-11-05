@@ -65,16 +65,10 @@ function todayYmd(): string {
 }
 
 /**
- * The master switch for anything that leaves the building.
+ * Reads CLIENT_SERVICES_SENDING. It does not arm or block a Friday ask.
  *
- * Off unless CLIENT_SERVICES_SENDING is explicitly turned on, so the feature
- * ships dark: the sweep, the cron route and the Send now button all run their
- * full logic and report what they would have done, but no client is emailed and
- * no Basecamp message is posted. Defaulting to off rather than on means forgetting
- * to set it cannot mail the whole book by accident, which is the failure that
- * actually matters here.
- *
- * Flip it by setting CLIENT_SERVICES_SENDING=on.
+ * The scheduled sweep never sends, whatever this is set to. A signed-in admin
+ * clicking Send on Client Services does send, whether this is on or off.
  */
 export function sendingEnabled(): boolean {
   const v = (process.env.CLIENT_SERVICES_SENDING || "").trim().toLowerCase();
@@ -474,7 +468,7 @@ export interface WeeklyRunResult {
   sent: AskSendResult[];
   skipped: { paused: number; nothingToAsk: number; alreadySent: number };
   dryRun: boolean;
-  /** False when CLIENT_SERVICES_SENDING is off, i.e. nothing actually left. */
+  /** The CLIENT_SERVICES_SENDING env value. The sweep ignores it and never sends. */
   sendingEnabled: boolean;
 }
 
@@ -492,12 +486,11 @@ export async function sendWeeklyAsk(args: {
   dryRun?: boolean;
 }): Promise<AskSendResult> {
   const { client, weekStart, appUrl, dryRun } = args;
-  // A run with sending switched off behaves exactly like a dry run: everything
-  // is resolved and reported, nothing is sent, and nothing is written to the
-  // outreach log (so the week does not look spent when it was not).
-  const held = !dryRun && !sendingEnabled();
-  const simulate = Boolean(dryRun) || held;
-  const heldReason = held ? "sending disabled" : "dry run";
+  // dryRun reports the ask and writes nothing. CLIENT_SERVICES_SENDING does
+  // not hold a send: the Client Services button is a person deciding to send,
+  // and the scheduled sweep never calls this without dryRun.
+  const simulate = Boolean(dryRun);
+  const heldReason = "dry run";
   const out: AskSendResult = {
     clientId: client.id,
     clientName: client.name,
@@ -661,11 +654,15 @@ export async function sendWeeklyAsk(args: {
 /**
  * The Friday sweep.
  *
- * Skips a client who is paused, who has nothing outstanding to be asked about,
- * or who has already been asked this week. That last one is what makes the run
- * safe to repeat: a re-run on the same Friday sends nothing twice.
+ * This path never emails a client and never posts to Basecamp. A person sends
+ * one client from Client Services, which calls sendWeeklyAsk. `dryRun` on the
+ * options is ignored so a cron caller cannot turn a live send back on.
+ *
+ * Still skips a client who is paused, who has nothing outstanding, or who was
+ * already asked this week, and reports what a real send would have done.
  */
 export async function runWeeklyAsks(opts?: {
+  /** Ignored. The sweep never sends. */
   dryRun?: boolean;
   only?: string;
   today?: string;
@@ -674,21 +671,22 @@ export async function runWeeklyAsks(opts?: {
   const weekStart = currentWeekStart(today);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
   const already = new Set(outreachForWeek(weekStart).map((row) => row.client_id));
+  const dryRun = true;
 
   const result: WeeklyRunResult = {
     weekStart,
     considered: 0,
     sent: [],
     skipped: { paused: 0, nothingToAsk: 0, alreadySent: 0 },
-    dryRun: Boolean(opts?.dryRun),
+    dryRun,
     sendingEnabled: sendingEnabled(),
   };
 
   for (const client of listFridayAskClients()) {
     if (opts?.only && client.id !== opts.only && client.name !== opts.only) continue;
     result.considered++;
-    // Targeting a single client by hand lifts the pacing gates, so a test send
-    // is not silently swallowed by "already sent this week".
+    // Targeting one client lifts the pacing gates in this report, so a dry run
+    // can still show them. It does not send. A real send is sendWeeklyAsk.
     const targeted = Boolean(opts?.only);
     if (!targeted && client.outreach_paused) {
       result.skipped.paused++;
@@ -708,7 +706,7 @@ export async function runWeeklyAsks(opts?: {
         client,
         weekStart,
         appUrl,
-        dryRun: opts?.dryRun,
+        dryRun,
       })
     );
   }

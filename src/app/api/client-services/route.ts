@@ -39,9 +39,9 @@ export async function GET(request: Request) {
   });
 }
 
-// Send one client's ask now, or pause/resume their outreach. Both are admin-only
-// because both are outward-facing: one emails a client, the other stops them
-// being contacted at all.
+// Send one client's ask now, or pause/resume their outreach. Both stay
+// admin-only. Send delivers email and a Basecamp post whether or not
+// CLIENT_SERVICES_SENDING is set. The scheduled sweep never sends.
 export async function POST(request: Request) {
   if (!(await isAdminWithAccess("page.client_services"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

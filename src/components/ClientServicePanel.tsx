@@ -149,7 +149,6 @@ function fmtDay(ymd: string): string {
 export function ClientServicePanel({
   client,
   isAdmin,
-  sendingOn,
   onClose,
   onSend,
   onChanged,
@@ -157,7 +156,6 @@ export function ClientServicePanel({
 }: {
   client: PanelClient;
   isAdmin: boolean;
-  sendingOn: boolean;
   onClose: () => void;
   onSend: () => void;
   /** Adding a lead changes the client's outstanding count, so the hub's row and
@@ -448,11 +446,9 @@ export function ClientServicePanel({
               <span className="csp-send-note">
                 {dead
                   ? "Add a contact email or a Basecamp project first."
-                  : !sendingOn
-                    ? "Sending is switched off, so this reports what it would have done."
-                    : asked
-                      ? "Already asked this week. Sending again re-sends the same ask."
-                      : "Emails the contact and posts a Basecamp message where both are set."}
+                  : asked
+                    ? "Already asked this week. Sending again re-sends the same ask."
+                    : "Emails the contact and posts a Basecamp message where both are set."}
               </span>
             </div>
           ) : null}

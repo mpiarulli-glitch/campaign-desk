@@ -303,36 +303,197 @@ test("weekly snapshot outreach", async (t) => {
     else process.env.CLIENT_SERVICES_SENDING = prior;
   });
 
-  await t.test("with sending off, a send writes nothing and says why", async () => {
-    delete process.env.CLIENT_SERVICES_SENDING;
-    const weekStart = cs.currentWeekStart("2026-08-21");
-    const before = cs.outreachForWeek(weekStart).length;
-    const client = revenue.getRevClient(acme.id)!;
-
-    const result = await cs.sendWeeklyAsk({
-      client,
-      weekStart,
-      appUrl: "https://hub.example.com",
+  await t.test("the sweep never sends, even when CLIENT_SERVICES_SENDING is on", async () => {
+    process.env.CLIENT_SERVICES_SENDING = "on";
+    process.env.RESEND_API_KEY = "re_test_key";
+    const volt = revenue.createRevClient({
+      name: "12 Volt Power",
+      businessModel: "home_service",
+    });
+    revenue.updateRevClient(volt.id, {
+      contactName: "Pat Volt",
+      contactEmail: "pat@volt.test",
+      accountManager: "Cassidy",
+      basecampProjectId: "424242",
+    });
+    snapshot.addLead({
+      clientId: volt.id,
+      firstName: "Ada",
+      lastName: "Volt",
+      email: "ada@lead.test",
+      phone: "",
+      source: "form",
+      receivedOn: "2026-08-03",
+      notes: "",
+    });
+    const kentina = revenue.createRevClient({
+      name: "Kentina Hospitality",
+      businessModel: "home_service",
+    });
+    revenue.updateRevClient(kentina.id, {
+      contactName: "Ken Tina",
+      contactEmail: "ken@kentina.test",
+      outreachPaused: true,
+    });
+    snapshot.addLead({
+      clientId: kentina.id,
+      firstName: "Guest",
+      lastName: "One",
+      email: "guest@lead.test",
+      phone: "",
+      source: "form",
+      receivedOn: "2026-08-03",
+      notes: "",
     });
 
-    assert.equal(result.email.skipped, "sending disabled");
-    assert.equal(
-      cs.outreachForWeek(weekStart).length,
-      before,
-      "a held send must not log an outreach row, or the week looks spent"
-    );
+    const weekStart = cs.currentWeekStart("2026-08-21");
+    const before = cs.outreachForWeek(weekStart).length;
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(`${init?.method || "GET"} ${String(input)}`);
+      return new Response("sweep must not send", { status: 500 });
+    }) as typeof fetch;
+    try {
+      const result = await cs.runWeeklyAsks({ today: "2026-08-21" });
+      assert.equal(result.dryRun, true);
+      assert.equal(result.sendingEnabled, true);
+      assert.equal(result.skipped.paused >= 1, true, "Kentina stays paused");
+      const asked = result.sent.find((row) => row.clientId === volt.id);
+      assert.ok(asked, "a client with something to ask is still reported");
+      assert.equal(asked.email.skipped, "dry run");
+      assert.equal(asked.basecamp.skipped, "dry run");
+      assert.equal(
+        result.sent.some((row) => row.clientId === kentina.id),
+        false,
+        "a paused client is not sent"
+      );
+      assert.equal(calls.length, 0, "the sweep must not call Resend or Basecamp");
+      assert.equal(cs.outreachForWeek(weekStart).length, before);
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.RESEND_API_KEY;
+      delete process.env.CLIENT_SERVICES_SENDING;
+    }
   });
 
-  await t.test("a held sweep reports that nothing left", async () => {
+  await t.test("a manual send still delivers when CLIENT_SERVICES_SENDING is off", async () => {
     delete process.env.CLIENT_SERVICES_SENDING;
-    const result = await cs.runWeeklyAsks({ today: "2026-08-21" });
-    assert.equal(result.sendingEnabled, false);
-    for (const row of result.sent) {
-      assert.notEqual(
-        row.email.skipped,
-        undefined,
-        `${row.clientName} should have been held, not sent`
+    process.env.RESEND_API_KEY = "re_test_key";
+    const client = revenue.getRevClient(
+      revenue
+        .listRevClients()
+        .find((row) => row.name === "12 Volt Power")!.id
+    )!;
+    const weekStart = cs.currentWeekStart("2026-08-21");
+    const before = cs.outreachForWeek(weekStart).length;
+    getDb()
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES ('basecamp_tokens', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(
+        JSON.stringify({
+          access_token: "test-token",
+          refresh_token: "test-refresh",
+          expires_at: Date.now() + 86_400_000,
+        }),
+        nowIso()
       );
+
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+      calls.push(`${method} ${url}`);
+      if (url.includes("api.resend.com/emails")) {
+        return new Response(JSON.stringify({ id: "email-manual-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/projects/424242/people.json")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 11,
+              name: "Pat Volt",
+              email_address: "pat@volt.test",
+              attachable_sgid: "sgid-pat",
+            },
+            {
+              id: 22,
+              name: "Cassidy Merideth",
+              email_address: "cassidy@meg.test",
+              attachable_sgid: "sgid-cassidy",
+            },
+            {
+              id: 33,
+              name: "Sylvia Artiga",
+              email_address: "sylvia@meg.test",
+              attachable_sgid: "sgid-sylvia",
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/circles/people.json")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/projects/424242.json")) {
+        return new Response(
+          JSON.stringify({
+            dock: [{ id: 77, name: "message_board", enabled: true }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/message_boards/77/messages.json") && method === "POST") {
+        return new Response(
+          JSON.stringify({ id: 9001, app_url: "https://3.basecamp.com/p/9001" }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(`unexpected ${method} ${url}`, { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await cs.sendWeeklyAsk({
+        client,
+        weekStart,
+        appUrl: "https://hub.example.com",
+      });
+      assert.equal(result.email.ok, true);
+      assert.equal(result.email.skipped, undefined);
+      assert.equal(result.basecamp.ok, true);
+      assert.equal(result.basecamp.skipped, undefined);
+      assert.equal(
+        calls.some((line) => line.startsWith("POST ") && line.includes("api.resend.com/emails")),
+        true
+      );
+      assert.equal(
+        calls.some(
+          (line) => line.startsWith("POST ") && line.includes("/message_boards/77/messages.json")
+        ),
+        true
+      );
+      const after = cs.outreachForWeek(weekStart);
+      assert.equal(after.length, before + 2);
+      assert.equal(
+        after.some((row) => row.client_id === client.id && row.channel === "email"),
+        true
+      );
+      assert.equal(
+        after.some((row) => row.client_id === client.id && row.channel === "basecamp"),
+        true
+      );
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.RESEND_API_KEY;
     }
   });
 
@@ -346,5 +507,73 @@ test("weekly snapshot outreach", async (t) => {
       before,
       "a dry run must not write an outreach row"
     );
+  });
+
+  await t.test("the cron endpoint refuses a live send even when sending is on", async () => {
+    process.env.CLIENT_SERVICES_SENDING = "on";
+    process.env.CRON_SECRET = "cron-test-secret";
+    process.env.RESEND_API_KEY = "re_test_key";
+    const cipo = revenue.createRevClient({
+      name: "CIPO Cloud Software",
+      businessModel: "home_service",
+    });
+    revenue.updateRevClient(cipo.id, {
+      contactName: "Cipo Cloud",
+      contactEmail: "cipo@cloud.test",
+      accountManager: "Cassidy",
+      basecampProjectId: "515151",
+    });
+    snapshot.addLead({
+      clientId: cipo.id,
+      firstName: "Sky",
+      lastName: "Cloud",
+      email: "sky@lead.test",
+      phone: "",
+      source: "form",
+      receivedOn: "2026-08-04",
+      notes: "",
+    });
+
+    const weekStart = cs.currentWeekStart("2026-08-21");
+    const before = cs.outreachForWeek(weekStart).length;
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(`${init?.method || "GET"} ${String(input)}`);
+      return new Response("cron must not send", { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const route = await import("../src/app/api/cron/weekly-snapshot/route");
+      const res = await route.POST(
+        new Request(
+          "https://hub.example.com/api/cron/weekly-snapshot?dryRun=0&today=2026-08-21",
+          {
+            method: "POST",
+            headers: { Authorization: "Bearer cron-test-secret" },
+          }
+        )
+      );
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as {
+        dryRun: boolean;
+        sendingEnabled: boolean;
+        sent: Array<{ clientId: string; email: { skipped?: string }; basecamp: { skipped?: string } }>;
+        skipped: { paused: number };
+      };
+      assert.equal(body.dryRun, true);
+      assert.equal(body.sendingEnabled, true);
+      const asked = body.sent.find((row) => row.clientId === cipo.id);
+      assert.ok(asked);
+      assert.equal(asked.email.skipped, "dry run");
+      assert.equal(asked.basecamp.skipped, "dry run");
+      assert.equal(calls.length, 0);
+      assert.equal(cs.outreachForWeek(weekStart).length, before);
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.RESEND_API_KEY;
+      delete process.env.CLIENT_SERVICES_SENDING;
+      delete process.env.CRON_SECRET;
+    }
   });
 });

@@ -1,32 +1,19 @@
 name: Weekly snapshot ask
 
-# Asks every active client about their leads and last month's revenue, from
-# their account manager, by email and as a message on their Basecamp message board.
-#
-# Live path (both required):
-#   1. CLIENT_SERVICES_SENDING=on on the Railway service (arms email + Basecamp).
-#   2. The schedule below (or a manual Actions run with dryRun unchecked).
-# With sending off, cron and Send now still run but only report what they
-# would have done.
+# Does not send the Friday ask. A signed-in admin sends one client at a time
+# from Client Services (Friday ask tab, Send now). This workflow has no
+# schedule. A manual Actions run only asks the hub for a dry run, and the
+# cron endpoint refuses a live send even if that query flag is dropped.
 
 on:
-  schedule:
-    # Fridays 5:30 PM Pacific (PDT). 00:30 UTC Saturday = 5:30 PM Fri PDT /
-    # 4:30 PM Fri PST. GitHub may delay a few minutes.
-    - cron: "30 0 * * 6"
   workflow_dispatch:
-    inputs:
-      dryRun:
-        description: "Report who would be asked without sending"
-        type: boolean
-        default: true
 
 jobs:
   weekly-snapshot:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger weekly snapshot sweep
+      - name: Trigger weekly snapshot dry run
         run: |
           curl -fsS --show-error -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://hub.marketingempiregroup.com/api/cron/weekly-snapshot${{ inputs.dryRun && '?dryRun=1' || '' }}"
+            "https://hub.marketingempiregroup.com/api/cron/weekly-snapshot?dryRun=1"
