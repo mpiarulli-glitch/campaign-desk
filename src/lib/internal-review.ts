@@ -1,17 +1,21 @@
 import {
   SERVICE,
+  CAMPAIGN_REVIEW_TODOLIST_NAME,
   basecampConnected,
   commentOnCard,
   createAssignedTodo,
+  findOpenTodoOnList,
   findOpenTodoOnNamedList,
   findPersonByName,
   getProjectPeopleForMention,
   grantProjectAccess,
   listPingablePeople,
+  listProjectTodolists,
   mentionHtml,
   resolveSylviaMention,
   type BcIdentity,
   type BcPerson,
+  type BcTodolist,
 } from "./basecamp";
 import { createTodo, getTodo, updateTodo, type TodoView } from "./todos";
 import {
@@ -356,6 +360,92 @@ export function internalReviewFollowupHtml(input: {
   ].join(BC_BLANK_LINE);
 }
 
+// Same folding as Deliverables board matching: case and punctuation do not
+// count, so "Client Services", "CLIENT SERVICES", and "Client-Services" agree.
+function normalizedTodolistTitle(value: string): string {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/^the /, "");
+}
+
+// A trailing "to-do" / "list" is how a project labels the same list, not a
+// different one. "Client Services To-Do" and "Client Service List" both count.
+const TODOLIST_TAIL = / (?:to dos?|todos?|lists?|checklists?)$/;
+
+function clientServicesCore(title: string): { core: string; peeled: boolean } {
+  let label = normalizedTodolistTitle(title);
+  let peeled = false;
+  while (TODOLIST_TAIL.test(label)) {
+    label = label.replace(TODOLIST_TAIL, "");
+    peeled = true;
+  }
+  return { core: label, peeled };
+}
+
+/**
+ * Lower is a closer Client Services list. -1 is not that list.
+ * Exact "Client Services" beats a suffixed variation and the singular form.
+ */
+export function scoreClientServicesTodolist(title: string): number {
+  const { core, peeled } = clientServicesCore(title);
+  if (core === "client services") return peeled ? 2 : 0;
+  if (core === "client service") return peeled ? 3 : 1;
+  return -1;
+}
+
+export function pickClientServicesTodolist<T extends { title: string }>(
+  lists: T[]
+): T | null {
+  let best: T | null = null;
+  let bestScore = Infinity;
+  for (const list of lists) {
+    const score = scoreClientServicesTodolist(list.title);
+    if (score < 0 || score >= bestScore) continue;
+    best = list;
+    bestScore = score;
+  }
+  return best;
+}
+
+// Internal review used to ask for "Campaign Review". That lookup only reads
+// the first to-do set, and client projects put the Onboarding checklist first,
+// so the to-do was created on the Onboarding page. Search every set for
+// Client Services. When the project has no such list, keep the Campaign Review
+// get-or-create so the send still lands. Other flows name their own lists.
+async function internalReviewTodolistTarget(
+  projectId: string,
+  identity: BcIdentity
+): Promise<{ listId: string } | { listName: string }> {
+  const lists = await listProjectTodolists(projectId, identity);
+  const hit = pickClientServicesTodolist(lists);
+  if (hit) return { listId: hit.id };
+  return { listName: CAMPAIGN_REVIEW_TODOLIST_NAME };
+}
+
+async function findPostedInternalReviewTodo(
+  projectId: string,
+  title: string,
+  identity: BcIdentity
+): Promise<{ id: string; url: string } | null> {
+  const lists = await listProjectTodolists(projectId, identity);
+  const ranked = lists
+    .map((list) => ({ list, score: scoreClientServicesTodolist(list.title) }))
+    .filter((row): row is { list: BcTodolist; score: number } => row.score >= 0)
+    .sort((a, b) => a.score - b.score);
+  for (const row of ranked) {
+    const found = await findOpenTodoOnList(projectId, row.list.id, title, identity);
+    if (found) return found;
+  }
+  return findOpenTodoOnNamedList(
+    projectId,
+    CAMPAIGN_REVIEW_TODOLIST_NAME,
+    title,
+    identity
+  );
+}
+
 export function deskInternalReviewTodo(campaignId: string): TodoView | null {
   const needle = `/admin/campaigns/${campaignId}`;
   const row = getDb()
@@ -465,6 +555,10 @@ export async function sendCampaignForInternalReview(input: {
   const updated = applyOperatorCampaignStatus(input.campaignId, "internal_review");
   const status = updated?.status || "internal_review";
 
+  const target = await internalReviewTodolistTarget(
+    client.basecamp_project_id,
+    identity
+  );
   const created = await createAssignedTodo({
     projectId: client.basecamp_project_id,
     title: content.title,
@@ -472,7 +566,7 @@ export async function sendCampaignForInternalReview(input: {
     assigneeIds: [reviewer.id],
     dueOn,
     identity,
-    listName: "Campaign Review",
+    ...("listId" in target ? { listId: target.listId } : { listName: target.listName }),
   });
   if (!created.ok) {
     return { ok: false, error: created.error, status: 502 };
@@ -502,6 +596,7 @@ export async function sendCampaignForInternalReview(input: {
       assignee: assigneeSlug,
       dueDate: dueOn,
       source: "internal_review",
+      // Desk grouping for the workboard. The Basecamp list is chosen above.
       listName: "Campaign Review",
     });
   }
@@ -679,10 +774,10 @@ export async function internalReviewState(
         mention: "",
         reviewUrl: reviewUrl(campaign.magic_token),
       }).title;
-    const found = await findOpenTodoOnNamedList(
+    const found = await findPostedInternalReviewTodo(
       client.basecamp_project_id,
-      "Campaign Review",
-      title
+      title,
+      identity
     );
     if (found) {
       recordInternalReviewTodo(campaignId, { todoId: found.id, todoUrl: found.url });

@@ -7,12 +7,14 @@ import {
   addHoursToTime,
   afterHoursLabel,
   classifyForecastStart,
+  formatForecastedHours,
   formatTimeLabel,
   hoursFromResize,
   layoutTimedBlocks,
   minutesFromMidnight,
   parseTimeInput,
   sumDayHours,
+  sumForecastedHours,
   timeAtOffset,
   staggerStartTimes,
   scheduleEntryTimes,
@@ -46,6 +48,17 @@ test("an on-grid startTime is timed", () => {
   assert.equal(classifyForecastStart("09:30"), "timed");
   assert.equal(classifyForecastStart("07:00"), "timed");
   assert.equal(classifyForecastStart("18:45"), "timed");
+});
+
+test("forecasted day hours keep checked work and hundredths", () => {
+  assert.equal(sumForecastedHours([0.1, 0.2]), 0.3);
+  assert.equal(formatForecastedHours(0), "0h");
+  assert.equal(formatForecastedHours(1), "1h");
+  assert.equal(formatForecastedHours(1.5), "1.5h");
+  assert.equal(formatForecastedHours(9.65), "9.65h");
+  // The Thursday list in the forecast screenshot: one checked 1h row plus the rest.
+  const thursday = [1, 1, 1, 1, 1, 1.5, 1, 0.5, 1, 0.5, 0.15];
+  assert.equal(formatForecastedHours(sumForecastedHours(thursday)), "9.65h");
 });
 
 test("a day total of 2.95 rounds to 3 instead of 2.9", () => {

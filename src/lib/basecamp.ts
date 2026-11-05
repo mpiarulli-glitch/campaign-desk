@@ -1982,15 +1982,42 @@ async function getOrCreateNamedTodolist(
   return { error: "Basecamp did not return a to-do list." };
 }
 
+export async function findOpenTodoOnList(
+  projectId: string,
+  listId: string,
+  title: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ id: string; url: string } | null> {
+  const wantedTitle = title.trim().toLowerCase();
+  const id = listId.trim();
+  if (!projectId || !wantedTitle || !id) return null;
+  try {
+    const todos = await bcCollection<{
+      id: number;
+      content?: string;
+      title?: string;
+      app_url?: string;
+    }>(`/buckets/${projectId}/todolists/${id}/todos.json`, 2, identity);
+    const matches = todos.filter(
+      (row) => (row.content || row.title || "").trim().toLowerCase() === wantedTitle
+    );
+    const hit = matches.at(-1);
+    if (!hit?.id) return null;
+    const todoId = String(hit.id);
+    return { id: todoId, url: basecampTodoAppUrl(projectId, todoId, hit.app_url) };
+  } catch {
+    return null;
+  }
+}
+
 export async function findOpenTodoOnNamedList(
   projectId: string,
   listName: string,
   title: string,
   identity: BcIdentity = SERVICE
 ): Promise<{ id: string; url: string } | null> {
-  const wantedTitle = title.trim().toLowerCase();
   const wantedList = listName.trim().toLowerCase();
-  if (!projectId || !wantedTitle || !wantedList) return null;
+  if (!projectId || !title.trim() || !wantedList) return null;
   try {
     const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
     if (!pr.ok) return null;
@@ -2007,19 +2034,7 @@ export async function findOpenTodoOnNamedList(
       (row) => (row.title || row.name || "").trim().toLowerCase() === wantedList
     );
     if (!list) return null;
-    const todos = await bcCollection<{
-      id: number;
-      content?: string;
-      title?: string;
-      app_url?: string;
-    }>(`/buckets/${projectId}/todolists/${list.id}/todos.json`, 2, identity);
-    const matches = todos.filter(
-      (row) => (row.content || row.title || "").trim().toLowerCase() === wantedTitle
-    );
-    const hit = matches.at(-1);
-    if (!hit?.id) return null;
-    const id = String(hit.id);
-    return { id, url: basecampTodoAppUrl(projectId, id, hit.app_url) };
+    return findOpenTodoOnList(projectId, String(list.id), title, identity);
   } catch {
     return null;
   }
@@ -2032,7 +2047,7 @@ export async function createAssignedTodo(input: {
   assigneeIds: number[];
   dueOn?: string | null;
   identity?: BcIdentity;
-  /** Defaults to Campaign Review so internal review stays on that list. */
+  /** Defaults to Campaign Review. Internal review passes a list id instead. */
   listName?: string;
   /** When set, create on this list and skip get-or-create by name. */
   listId?: string;

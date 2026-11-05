@@ -11,11 +11,44 @@ import {
   internalReviewTodoMessageText,
   parseInternalReviewDueOn,
   findMappedAccountManager,
+  pickClientServicesTodolist,
   pickDefaultInternalReviewer,
   reviewersForInternalReview,
+  scoreClientServicesTodolist,
   teamPeopleForInternalReview,
   withInternalReviewGreeting,
 } from "../src/lib/internal-review";
+
+test("Client Services list matching prefers the exact name and ignores Onboarding", () => {
+  assert.equal(scoreClientServicesTodolist("Client Services"), 0);
+  assert.equal(scoreClientServicesTodolist("CLIENT SERVICES"), 0);
+  assert.equal(scoreClientServicesTodolist("Client-Services"), 0);
+  assert.equal(scoreClientServicesTodolist("Client Services To-Do"), 2);
+  assert.equal(scoreClientServicesTodolist("Client Services To-Dos"), 2);
+  assert.equal(scoreClientServicesTodolist("Client Services List"), 2);
+  assert.equal(scoreClientServicesTodolist("The Client Services Checklist"), 2);
+  assert.equal(scoreClientServicesTodolist("Client Service"), 1);
+  assert.equal(scoreClientServicesTodolist("Onboarding"), -1);
+  assert.equal(scoreClientServicesTodolist("Onboarding Checklist"), -1);
+  assert.equal(scoreClientServicesTodolist("Campaign Review"), -1);
+  assert.equal(scoreClientServicesTodolist("New Client Services"), -1);
+
+  const lists = [
+    { id: "11", title: "Onboarding" },
+    { id: "22", title: "Client Services To-Do" },
+    { id: "33", title: "Client Services" },
+    { id: "44", title: "Client Service List" },
+  ];
+  assert.equal(pickClientServicesTodolist(lists)?.id, "33");
+  assert.equal(
+    pickClientServicesTodolist([
+      { id: "1", title: "Onboarding" },
+      { id: "2", title: "Client Services To-Do" },
+    ])?.id,
+    "2"
+  );
+  assert.equal(pickClientServicesTodolist([{ id: "1", title: "Onboarding" }]), null);
+});
 
 test("internal review todo copy mentions the AM and only the review link", () => {
   const content = internalReviewTodoContent({
@@ -265,6 +298,15 @@ test("sending a campaign for internal review", async (t) => {
     assignee_ids?: number[];
     due_on?: string;
   } | null = null;
+  let lastTodoUrl = "";
+  let createdList: { name: string; url: string } | null = null;
+  const todoGets: string[] = [];
+  let projectDock: Array<{ id: number; name: string; title?: string; enabled?: boolean }> = [
+    { id: 9, name: "todoset", enabled: true, title: "Onboarding Checklist" },
+  ];
+  let listsBySet: Record<string, Array<{ id: number; title: string }>> = {
+    "9": [{ id: 7, title: "Campaign Review" }],
+  };
   const createdTodos: Array<{ id: number; content: string; app_url: string }> = [];
   let nextTodoId = 99;
   const realFetch = globalThis.fetch;
@@ -308,19 +350,27 @@ test("sending a campaign for internal review", async (t) => {
       return json({ granted: JSON.parse(String(init?.body || "{}")).grant });
     }
     if (url.includes("/projects/") && method === "GET") {
-      return json({ dock: [{ id: 9, name: "todoset", enabled: true }] });
+      return json({ dock: projectDock });
     }
     if (url.includes("/todolists.json") && method === "GET") {
-      return json([{ id: 7, title: "Campaign Review" }]);
+      const setId = url.match(/todosets\/(\d+)\/todolists/)?.[1] || "";
+      return json(listsBySet[setId] || []);
+    }
+    if (url.includes("/todolists.json") && method === "POST") {
+      const body = JSON.parse(String(init?.body || "{}")) as { name?: string };
+      createdList = { name: body.name || "", url };
+      return json({ id: 77, title: body.name, name: body.name });
     }
     if (url.includes("/todos.json") && method === "POST") {
       lastTodo = JSON.parse(String(init?.body || "{}"));
+      lastTodoUrl = url;
       const id = nextTodoId++;
       const app_url = `https://3.basecamp.com/todo/${id}`;
       createdTodos.push({ id, content: lastTodo?.content || "", app_url });
       return json({ id, app_url });
     }
     if (url.includes("/todos.json") && method === "GET") {
+      todoGets.push(url);
       return json(createdTodos);
     }
     if (url.includes("/comments.json") && method === "POST") {
@@ -363,6 +413,8 @@ test("sending a campaign for internal review", async (t) => {
     assert.equal(result.dueOn, "2026-08-25");
     assert.equal(lastTodo?.assignee_ids?.[0], 2);
     assert.equal(lastTodo?.due_on, "2026-08-25");
+    assert.match(lastTodoUrl, /todolists\/7\/todos\.json/);
+    assert.equal(createdList, null);
     assert.match(lastTodo?.content || "", /April newsletter/);
     assert.match(lastTodo?.description || "", /bc-attachment sgid="sgid-cassidy"/);
     assert.match(lastTodo?.description || "", /bc-attachment sgid="sgid-sylvia"/);
@@ -552,6 +604,94 @@ https://desk.example/review/custom`,
       globalThis.fetch = previous;
     }
   });
+
+  await t.test("posts the internal review to-do on Client Services, not Onboarding", async () => {
+    projectDock = [
+      { id: 1, name: "todoset", enabled: true, title: "Onboarding Checklist" },
+      { id: 2, name: "todoset", enabled: true, title: "To Dos" },
+    ];
+    listsBySet = {
+      "1": [{ id: 11, title: "Onboarding" }],
+      "2": [{ id: 22, title: "Client Services To-Do" }],
+    };
+    createdList = null;
+    lastTodoUrl = "";
+    const result = await internal.sendCampaignForInternalReview({
+      campaignId: created.id,
+      reviewerId: 2,
+      dueOn: "2026-09-01",
+    });
+    assert.equal(result.ok, true);
+    assert.match(lastTodoUrl, /todolists\/22\/todos\.json/);
+    assert.doesNotMatch(lastTodoUrl, /todolists\/11\/todos\.json/);
+    assert.equal(createdList, null);
+  });
+
+  await t.test("without a Client Services list, keeps the Campaign Review fallback", async () => {
+    projectDock = [
+      { id: 1, name: "todoset", enabled: true, title: "Onboarding Checklist" },
+      { id: 2, name: "todoset", enabled: true, title: "To Dos" },
+    ];
+    listsBySet = {
+      "1": [{ id: 11, title: "Onboarding" }],
+      "2": [{ id: 44, title: "SEO" }],
+    };
+    createdList = { name: "", url: "" };
+    lastTodoUrl = "";
+    const result = await internal.sendCampaignForInternalReview({
+      campaignId: created.id,
+      reviewerId: 2,
+      dueOn: "2026-09-02",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(createdList.name, "Campaign Review");
+    assert.match(createdList.url, /todosets\/1\/todolists\.json/);
+    assert.match(lastTodoUrl, /todolists\/77\/todos\.json/);
+    assert.doesNotMatch(lastTodoUrl, /todolists\/11\/todos\.json/);
+  });
+
+  await t.test("a lost to-do link is recovered from Client Services", async () => {
+    projectDock = [
+      { id: 1, name: "todoset", enabled: true, title: "Onboarding Checklist" },
+      { id: 2, name: "todoset", enabled: true, title: "To Dos" },
+    ];
+    listsBySet = {
+      "1": [{ id: 11, title: "Onboarding" }],
+      "2": [
+        { id: 22, title: "Client Services To-Do" },
+        { id: 33, title: "Client Services" },
+      ],
+    };
+    getDb()
+      .prepare(
+        `UPDATE campaigns SET internal_review_todo_id = NULL, internal_review_todo_url = NULL WHERE id = ?`
+      )
+      .run(created.id);
+    todoGets.length = 0;
+    const state = await internal.internalReviewState(created.id);
+    assert.ok(state?.todoUrl);
+    assert.match(todoGets[0] || "", /todolists\/33\/todos\.json/);
+    assert.equal(
+      todoGets.some((url) => url.includes("/todolists/11/")),
+      false
+    );
+  });
+});
+
+test("other to-do flows still name their own lists", () => {
+  const social = fs.readFileSync(path.join("src/lib/social-qa.ts"), "utf8");
+  const assign = fs.readFileSync(path.join("src/lib/assign-todo.ts"), "utf8");
+  const forecast = fs.readFileSync(
+    path.join("src/app/api/forecast/assignments/route.ts"),
+    "utf8"
+  );
+  const strategy = fs.readFileSync(path.join("src/lib/strategy.ts"), "utf8");
+  assert.match(social, /listName: SOCIAL_QA_TODOLIST_NAME/);
+  assert.match(assign, /OPS_TODOLIST_NAME/);
+  assert.match(forecast, /OPS_TODOLIST_NAME/);
+  assert.match(strategy, /list: "Onboarding"/);
+  assert.doesNotMatch(social, /Client Services/);
+  assert.doesNotMatch(strategy, /pickClientServicesTodolist/);
 });
 
 test("campaign detail shows a Basecamp to-do link after internal review", () => {
