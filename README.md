@@ -98,12 +98,12 @@ The console for the weekly client ask. Two tabs: a dashboard of every active
 client, and the account snapshots that used to live at `/admin/snapshot` (that
 path now redirects here).
 
-**The weekly ask.** Every Friday at 8am Pacific, each active client gets one ask
-from their account manager, by email and as a message on their Basecamp message board.
-Both point at the client's existing snapshot share link, so this is a prompt
-rather than a second thing to fill in. The ask names only what is actually
-outstanding: a client who already gave us the revenue is asked about leads
-alone, and a client who owes nothing is not contacted at all.
+**The weekly ask.** Nothing is scheduled. An admin opens this page, the Friday
+ask tab, and clicks **Send now** on one client. That emails the contact and
+posts a message on their Basecamp message board. Both point at the client's
+existing snapshot share link, so this is a prompt rather than a second thing
+to fill in. `CLIENT_SERVICES_SENDING` does not block that click, and it cannot
+turn the cron endpoint into a live send.
 
 **Who it comes from.** Every email this app sends is from Marketing Empire
 Group, on the verified address in `EMAIL_FROM`. `rev_clients.account_manager`
@@ -117,9 +117,9 @@ Not sent → Sent → Delivered → Opened → Submitted, with Bounced and Pause
 the side. Submitted outranks Opened deliberately, because a client who answered
 without the tracking pixel ever firing has plainly engaged.
 
-**Submitted is derived, not tracked.** It reads off the answers themselves: this
-month's revenue report exists and no lead is left unanswered. That keeps it true
-when a client phones the numbers in and somebody keys them by hand.
+**Submitted is derived, not tracked.** It reads off the revenue report for the
+month. Lead outcomes are not part of the ask. That keeps Submitted true when a
+client phones the number in and somebody keys it by hand.
 
 **Opens are approximate and the page says so.** Apple Mail Privacy Protection
 pre-fetches images, which registers an open nobody made, and an image-blocking
@@ -132,15 +132,14 @@ and a webhook endpoint pointed at `/api/webhooks/resend` subscribed to
 its signing secret in `RESEND_WEBHOOK_SECRET`. Without that secret the route
 rejects everything, so that nobody can forge an open.
 
-**Re-running is safe.** The sweep skips anyone paused, anyone with nothing
-outstanding, and anyone already asked this week, so a repeat run on the same
-Friday sends nothing twice. Targeting one client by hand (`?only=`, or **Send
-now** on the row) lifts those gates, which is what makes a test send work.
-
-Dry run without sending anything:
+**The sweep does not send.** GitHub no longer runs it on a schedule. The cron
+endpoint and `npm run cron:weekly-snapshot` only report who is paused, who
+has nothing outstanding, and who was already asked. A paused client such as
+Kentina stays out of that report's send list. **Send now** on a row is the
+send, and it asks for confirmation first. Clicking it again sends again.
 
 ```bash
-npm run cron:weekly-snapshot -- --dry-run
+npm run cron:weekly-snapshot
 ```
 
 ## Reading the weekly snapshot

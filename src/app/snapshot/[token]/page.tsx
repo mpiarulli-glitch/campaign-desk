@@ -4,30 +4,10 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
-import { isSnapshotContractMet, isThisWeeksWork, snapshotStatusLabel, type SnapshotStatus } from "@/lib/snapshot-status";
-import { categoryTagTone } from "@/lib/snapshot-fill";
+import { SNAPSHOT_DEPARTMENTS, isSnapshotDepartment } from "@/lib/snapshot-department-list";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
-type Win = { id: string; body: string; happened_on: string };
-type Converted = "unknown" | "yes" | "no";
-type Lead = {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string;
-  source: "form" | "call" | "other";
-  received_on: string;
-  week_start: string;
-  converted: Converted;
-  client_note: string;
-  answered_at: string;
-};
-const SOURCE_LABEL: Record<Lead["source"], string> = {
-  form: "Filled a form",
-  call: "Called in",
-  other: "Other",
-};
+type Win = { id: string; body: string; happened_on: string; week_start?: string };
 
 function formatClientWinDate(ymd: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
@@ -38,33 +18,89 @@ function formatClientWinDate(ymd: string): string {
     year: "numeric",
   });
 }
-type Status = SnapshotStatus;
-const STATUS_LABEL = (status: Status) => snapshotStatusLabel(status);
+type DepartmentItem = { body: string; completed: boolean };
+type DepartmentNote = { slug: string; label: string; items: DepartmentItem[] };
 
-type Row = {
-  deliverable_id: string;
-  category: string;
-  name: string;
-  cadence: string;
-  kind?: "recurring" | "one_time";
-  week_start: string;
-  created_at?: string;
-  updated_at?: string;
-  status: Status;
-  work_done: string;
-  next_steps: string;
-  notes: string;
-  basecamp_todo_id?: string;
-  basecamp_todo_title?: string;
-  basecamp_todo_url?: string;
-  basecamp_todo_completed_at?: string;
-  basecamp_todos?: Array<{
-    id: string;
-    title: string;
-    url: string;
-    completedAt: string;
-  }>;
+const DEPT_ACCENT: Record<string, string> = {
+  lifecycle: "#04808d",
+  social: "#1a6f9a",
+  video: "#6b4c8a",
+  web: "#1f7a4d",
+  seo: "#8a6200",
+  strategy: "#3d4a5c",
 };
+
+function departmentSlug(note: { slug?: string; label: string }): string {
+  if (note.slug && isSnapshotDepartment(note.slug)) return note.slug;
+  return SNAPSHOT_DEPARTMENTS.find((dept) => dept.label === note.label)?.slug || "strategy";
+}
+
+function updateCount(n: number): string {
+  return n === 1 ? "1 update" : `${n} updates`;
+}
+
+function DeptMark({ slug }: { slug: string }) {
+  const props = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  if (slug === "lifecycle") {
+    return (
+      <svg {...props}>
+        <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+        <path d="m4 7 8 6 8-6" />
+      </svg>
+    );
+  }
+  if (slug === "social") {
+    return (
+      <svg {...props}>
+        <circle cx="6.5" cy="12" r="2.2" />
+        <circle cx="17" cy="7" r="2.2" />
+        <circle cx="17" cy="17" r="2.2" />
+        <path d="m8.6 11.2 6.2-3.1M8.6 12.8l6.2 3.1" />
+      </svg>
+    );
+  }
+  if (slug === "video") {
+    return (
+      <svg {...props}>
+        <rect x="3" y="6.5" width="12" height="11" rx="2" />
+        <path d="m15 10.5 5.5-2.8v8.6L15 13.5" />
+      </svg>
+    );
+  }
+  if (slug === "web") {
+    return (
+      <svg {...props}>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M4 12h16" />
+        <path d="M12 4c2.2 2.3 3.4 5 3.4 8s-1.2 5.7-3.4 8c-2.2-2.3-3.4-5-3.4-8s1.2-5.7 3.4-8" />
+      </svg>
+    );
+  }
+  if (slug === "seo") {
+    return (
+      <svg {...props}>
+        <circle cx="11" cy="11" r="6" />
+        <path d="m15.8 15.8 4 4" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...props}>
+      <path d="M5 4.5h9.5L12 8.5 14.5 12.5H5z" />
+      <path d="M5 4.5v15" />
+    </svg>
+  );
+}
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
 function ymdLabel(ymd: string): string {
@@ -97,35 +133,13 @@ function money(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
-function leadName(l: Lead): string {
-  return [l.first_name, l.last_name].filter(Boolean).join(" ") || "Unnamed lead";
-}
-
-function completedTodoDate(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function hasUpdate(r: Row, viewWeek: string): boolean {
-  return isThisWeeksWork(r, viewWeek);
-}
-
 export default function SnapshotClientPage() {
   const { token } = useParams<{ token: string }>();
   const [accountName, setAccountName] = useState("");
   const [launchDate, setLaunchDate] = useState<string | null>(null);
-  const [rows, setRows] = useState<Row[]>([]);
+  const [departments, setDepartments] = useState<DepartmentNote[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
   const [metrics, setMetrics] = useState<MetricSeries[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [leadWeeks, setLeadWeeks] = useState<string[]>([]);
-  const [leadScope, setLeadScope] = useState<"week" | "all">("week");
   const [week, setWeek] = useState(currentWeek());
   // How far the week picker may move. Empty until the first load answers.
   const [bounds, setBounds] = useState<{ earliest: string; latest: string }>({
@@ -145,24 +159,38 @@ export default function SnapshotClientPage() {
   const [revEditing, setRevEditing] = useState(false);
 
   const load = useCallback(
-    async (w: string, scope: "week" | "all") => {
+    async (w: string) => {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch(
-          `/api/snapshot/shared/${token}?week=${w}${scope === "all" ? "&leads=all" : ""}`
-        );
+        const res = await fetch(`/api/snapshot/shared/${token}?week=${w}`);
         if (res.status === 404) { setNotFound(true); return; }
         if (res.ok) {
           const data = await res.json();
           setAccountName(data.account.name);
           setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
-          setRows(data.rows || []);
+          setDepartments(
+            ((data.departments || []) as Array<{
+              slug?: string;
+              label: string;
+              items: Array<string | DepartmentItem>;
+            }>)
+              .map((note) => ({
+                slug: departmentSlug(note),
+                label: note.label,
+                items: (note.items || [])
+                  .map((item) =>
+                    typeof item === "string"
+                      ? { body: item.trim(), completed: false }
+                      : { body: (item.body || "").trim(), completed: Boolean(item.completed) }
+                  )
+                  .filter((item) => item.body),
+              }))
+              .filter((note) => note.items.length > 0)
+          );
           setWins(data.wins || []);
           setMetrics(data.metrics || []);
           if (data.bounds) setBounds(data.bounds);
-          setLeads(data.leads || []);
-          setLeadWeeks(data.leadWeeks || []);
           setRevAsk(data.revenueAsk || null);
         }
       } catch {
@@ -174,7 +202,7 @@ export default function SnapshotClientPage() {
     [token]
   );
 
-  useEffect(() => { load(week, leadScope); }, [week, leadScope, load]);
+  useEffect(() => { load(week); }, [week, load]);
 
   async function submitRevenue(e: React.FormEvent) {
     e.preventDefault();
@@ -204,32 +232,7 @@ export default function SnapshotClientPage() {
     }
   }
 
-  // Answer optimistically so the buttons feel instant, then reconcile with
-  // whatever the server actually stored.
-  async function answerLead(leadId: string, converted: Converted) {
-    const prev = leads;
-    setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, converted } : l)));
-    try {
-      const res = await fetch(`/api/snapshot/shared/${token}/lead`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId, converted }),
-      });
-      if (!res.ok) throw new Error("save failed");
-      const data = await res.json();
-      setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, ...data.lead } : l)));
-    } catch {
-      setLeads(prev);
-      setError("Could not save that answer. Try again.");
-    }
-  }
-
-  const updatedRows = useMemo(() => rows.filter((r) => hasUpdate(r, week)), [rows, week]);
-
-  // At-a-glance figures for the report header.
   const glance = useMemo(() => {
-    const delivered = updatedRows.filter((r) => isSnapshotContractMet(r.status)).length;
-    const active = updatedRows.filter((r) => r.status === "in_progress").length;
     const headline = metrics.find((m) => m.points.length >= 2) || metrics.find((m) => m.points.length > 0);
     let headlineText: string | null = null;
     if (headline) {
@@ -239,18 +242,8 @@ export default function SnapshotClientPage() {
       const pct = firstV !== 0 ? Math.round(((latest - firstV) / Math.abs(firstV)) * 100) : null;
       headlineText = pct !== null ? `${headline.metric} ${pct >= 0 ? "+" : ""}${pct}%` : headline.metric;
     }
-    return { delivered, active, wins: wins.length, headlineText };
-  }, [updatedRows, metrics, wins]);
-
-  const leadAnswered = useMemo(
-    () => ({
-      total: leads.length,
-      yes: leads.filter((l) => l.converted === "yes").length,
-      no: leads.filter((l) => l.converted === "no").length,
-      pending: leads.filter((l) => l.converted === "unknown").length,
-    }),
-    [leads]
-  );
+    return { wins: wins.length, headlineText };
+  }, [metrics, wins]);
 
   if (notFound) {
     return (
@@ -263,8 +256,6 @@ export default function SnapshotClientPage() {
     );
   }
 
-  const anyUpdates = updatedRows.length > 0;
-
   // Bounds are only enforced once the server has stated them, so the arrows are
   // never dead on the first paint. An account with no entries at all reports no
   // earliest week, which leaves back disabled because there is nothing behind.
@@ -272,6 +263,9 @@ export default function SnapshotClientPage() {
   const canGoForward = !bounds.latest || week < bounds.latest;
 
   const hasMetrics = metrics.some((m) => m.points.length > 0);
+  const weekWins = wins.filter((w) => w.week_start === week);
+  const showWeekCallout = departments.length > 0 && weekWins.length > 0;
+  const listedWins = showWeekCallout ? wins.filter((w) => w.week_start !== week) : wins;
 
   return (
     <div className="app-shell snap-client">
@@ -296,19 +290,13 @@ export default function SnapshotClientPage() {
                 </p>
                 <h1>{accountName || "Weekly snapshot"}</h1>
                 <p className="snap-lede">
-                  <b>{glance.delivered}</b> delivered
-                  <span className="snap-dot" aria-hidden="true">
-                    ·
-                  </span>
-                  <b>{glance.active}</b> in progress
                   {glance.wins > 0 ? (
                     <>
-                      <span className="snap-dot" aria-hidden="true">
-                        ·
-                      </span>
                       <b>{glance.wins}</b> win{glance.wins === 1 ? "" : "s"}
                     </>
-                  ) : null}
+                  ) : (
+                    <span>Your week with Marketing Empire Group</span>
+                  )}
                   {glance.headlineText ? (
                     <>
                       <span className="snap-dot" aria-hidden="true">
@@ -349,13 +337,13 @@ export default function SnapshotClientPage() {
             </header>
 
             {/* WINS — up top */}
-            {wins.length > 0 ? (
+            {listedWins.length > 0 ? (
               <section className="snap-panel t-wins">
                 <header className="snap-sec-head">
                   <h2>Wins</h2>
                 </header>
                 <div className="snap-wins2">
-                  {wins.map((w) => (
+                  {listedWins.map((w) => (
                     <div key={w.id} className="snap-win2">
                       <div className="snap-win2-mark" aria-hidden="true">★</div>
                       <div>
@@ -420,171 +408,67 @@ export default function SnapshotClientPage() {
               </section>
             ) : null}
 
-            {/* LEADS — the client answers these */}
-            {leads.length > 0 || leadWeeks.length > 0 ? (
-              <section className="snap-panel t-leads">
+            {departments.length > 0 ? (
+              <section className="snap-panel t-work" id="this-week">
                 <header className="snap-sec-head">
-                  <h2>Leads</h2>
-                  <select
-                    className="snap-lead-scope"
-                    aria-label="Which leads to show"
-                    value={leadScope}
-                    onChange={(e) => setLeadScope(e.target.value as "week" | "all")}
-                  >
-                    <option value="week">This week</option>
-                    <option value="all">All</option>
-                  </select>
+                  <h2>This week</h2>
+                  <span className="snap-week-range">{weekLabel(week)}</span>
                 </header>
-                {leadAnswered.total > 0 ? (
-                  <p className="snap-lead-tally">
-                    <b>{leadAnswered.yes}</b> converted · <b>{leadAnswered.no}</b> did not ·{" "}
-                    <b>{leadAnswered.pending}</b> still to answer
-                  </p>
-                ) : null}
-                {leads.length === 0 ? (
-                  <p className="muted" style={{ margin: 0 }}>
-                    No leads logged for this week. Switch to &quot;All leads&quot; to see earlier ones.
-                  </p>
-                ) : (
-                  <div className="snap-leads">
-                    {leads.map((l) => (
-                      <div key={l.id} className={`snap-lead conv-${l.converted}`}>
-                        <div className="snap-lead-main">
-                          <div className="snap-lead-name">{leadName(l)}</div>
-                          <div className="snap-lead-meta">
-                            {l.email ? <a href={`mailto:${l.email}`}>{l.email}</a> : null}
-                            {l.phone ? <a href={`tel:${l.phone}`}>{l.phone}</a> : null}
-                            <span>
-                              {SOURCE_LABEL[l.source]} · {ymdLabel(l.received_on)}
-                            </span>
-                          </div>
+                {showWeekCallout ? (
+                  <div className="snap-week-callout">
+                    {weekWins.map((w) => (
+                      <div key={w.id} className="snap-week-win">
+                        <div className="snap-week-win-mark" aria-hidden="true">
+                          ★
                         </div>
-                        <div className="snap-lead-answer">
-                          <button
-                            className={`snap-lead-btn yes ${l.converted === "yes" ? "on" : ""}`}
-                            onClick={() => answerLead(l.id, l.converted === "yes" ? "unknown" : "yes")}
-                          >
-                            Converted
-                          </button>
-                          <button
-                            className={`snap-lead-btn no ${l.converted === "no" ? "on" : ""}`}
-                            onClick={() => answerLead(l.id, l.converted === "no" ? "unknown" : "no")}
-                          >
-                            Not yet
-                          </button>
+                        <div>
+                          <p className="snap-week-kicker">Win</p>
+                          <p>{w.body}</p>
+                          {w.happened_on ? (
+                            <span className="snap-week-win-date">{formatClientWinDate(w.happened_on)}</span>
+                          ) : null}
                         </div>
                       </div>
                     ))}
                   </div>
-                )}
-              </section>
-            ) : null}
-
-            {/* This week's work */}
-            <section className="snap-panel t-work">
-              <header className="snap-sec-head">
-                <h2>This week</h2>
-              </header>
-              <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
-                Notes stay with the week they were written. Use the arrows above to
-                read last week without changing this one.
-              </p>
-              {rows.length === 0 ? (
-                <p className="muted" style={{ margin: 0 }}>No deliverables set up yet.</p>
-              ) : !anyUpdates ? (
-                <p className="muted" style={{ margin: 0 }}>No updates logged for this week yet.</p>
-              ) : (
-                <div className="snap-n-db">
-                  <div className="snap-n-cols snap-n-head" aria-hidden="true">
-                    <span>This week</span>
-                    <span>Category</span>
-                    <span>Status</span>
-                  </div>
-                  {updatedRows.map((r) => (
-                    <div key={r.deliverable_id} className="snap-n-row">
-                      <div className="snap-n-cols snap-n-cols-client">
-                        <div className="snap-n-title" >
-                          <span className="snap-n-ico" aria-hidden="true">
-                            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4">
-                              <path d="M4.5 2.5h5.2L12.5 5.3V13.5h-8v-11z" />
-                              <path d="M9.5 2.5V5.5h3" />
-                            </svg>
-                          </span>
-                          <span className="snap-n-name">{r.name}</span>
-                        </div>
-                        <span className={`snap-n-tag snap-n-tag-${categoryTagTone(r.category || "Other")}`}>
-                          {r.category.trim() || "Other"}
+                ) : null}
+                <div className="snap-week-grid">
+                  {departments.map((note) => (
+                    <article
+                      key={note.slug}
+                      className="snap-week-card"
+                      style={{ ["--dept" as string]: DEPT_ACCENT[note.slug] || DEPT_ACCENT.strategy }}
+                    >
+                      <header className="snap-week-card-head">
+                        <span className="snap-week-icon">
+                          <DeptMark slug={note.slug} />
                         </span>
-                        <span className={`snap-n-pill status-${r.status}`}>{STATUS_LABEL(r.status)}</span>
-                      </div>
-                      {(() => {
-                        const todos =
-                          r.basecamp_todos && r.basecamp_todos.length
-                            ? r.basecamp_todos
-                            : (r.basecamp_todo_title || "").trim()
-                              ? [
-                                  {
-                                    id: r.basecamp_todo_id || "todo",
-                                    title: (r.basecamp_todo_title || "").trim(),
-                                    url: r.basecamp_todo_url || "",
-                                    completedAt: r.basecamp_todo_completed_at || "",
-                                  },
-                                ]
-                              : [];
-                        const todoTitles = todos.map((t) => t.title.trim()).filter(Boolean).join("\n");
-                        const work = r.work_done.trim();
-                        const workIsJustTitle = Boolean(todoTitles && work === todoTitles);
-                        const showWork = Boolean(work && !workIsJustTitle);
-                        const showTodo = todos.length > 0;
-                        const showWhat =
-                          showWork || showTodo || r.next_steps.trim() || r.notes.trim();
-                        if (!showWhat) return null;
-                        return (
-                        <div className="snap-n-letter">
-                          {showWork || showTodo ? (
-                            <div className="snap-ro">
-                              <span className="snap-ro-label">What we did</span>
-                              {showWork ? <p>{work}</p> : null}
-                              {todos.map((todo) => (
-                                <p key={todo.id} className={`snap-ro-todo ${showWork ? "is-extra" : ""}`}>
-                                  {todo.url ? (
-                                    <a className="snap-ro-todo-title" href={todo.url} target="_blank" rel="noreferrer">
-                                      {todo.title}
-                                    </a>
-                                  ) : (
-                                    <span className="snap-ro-todo-title">{todo.title}</span>
-                                  )}
-                                  {todo.completedAt ? (
-                                    <span className="snap-ro-todo-when">
-                                      Completed {completedTodoDate(todo.completedAt)}
-                                    </span>
-                                  ) : (
-                                    <span className="snap-ro-todo-when">In Basecamp</span>
-                                  )}
-                                </p>
-                              ))}
-                            </div>
-                          ) : null}
-                          {r.next_steps.trim() ? (
-                            <div className="snap-ro">
-                              <span className="snap-ro-label">Next steps</span>
-                              <p>{r.next_steps}</p>
-                            </div>
-                          ) : null}
-                          {r.notes.trim() ? (
-                            <div className="snap-ro">
-                              <span className="snap-ro-label">Notes</span>
-                              <p>{r.notes}</p>
-                            </div>
-                          ) : null}
+                        <div>
+                          <h3>{note.label}</h3>
+                          <p className="snap-week-count">{updateCount(note.items.length)}</p>
                         </div>
-                        );
-                      })()}
-                    </div>
+                      </header>
+                      <ul className="snap-week-items">
+                        {note.items.map((item, index) => (
+                          <li key={`${note.slug}-${index}`}>
+                            <span className="snap-week-mark">
+                              {item.completed ? (
+                                <span className="snap-check is-on" aria-label="Completed">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="snap-week-dot" aria-hidden="true" />
+                              )}
+                            </span>
+                            <span>{item.body}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </article>
                   ))}
                 </div>
-              )}
-            </section>
+              </section>
+            ) : null}
 
             {/* Performance */}
             {hasMetrics ? (

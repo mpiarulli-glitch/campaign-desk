@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 import { isTeam } from "./people";
 import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
 import { deliverableVisibleTo, forcedDepartmentTeam, teamToStore } from "./snapshot-fill";
-import { isSnapshotAllowlisted } from "./snapshot-allowlist";
+import { enrolledClientIds, isSnapshotEnrolled } from "./snapshot-enrollment";
 import { inferDeliverableCadenceLabel, inferDeliverableKind } from "./snapshot-kind";
 import {
   isSnapshotContractMet,
@@ -127,7 +127,8 @@ export function listAccounts(): SnapshotAccount[] {
        ORDER BY c.name COLLATE NOCASE`
     )
     .all() as SnapshotAccount[];
-  return rows.filter((row) => isSnapshotAllowlisted(row.name));
+  const enrolled = enrolledClientIds();
+  return rows.filter((row) => enrolled.has(row.id));
 }
 
 export type SnapshotPickerStatus = "active" | "behind";
@@ -208,7 +209,7 @@ export function getAccount(id: string): RevClient | null {
 /** Team-facing snapshot only: allowlisted accounts. Other clients still exist. */
 export function getVisibleSnapshotAccount(id: string): RevClient | null {
   const acct = getAccount(id);
-  if (!acct || !isSnapshotAllowlisted(acct.name)) return null;
+  if (!acct || !isSnapshotEnrolled(acct.id)) return null;
   return acct;
 }
 
@@ -2251,9 +2252,10 @@ export function behindReportAllClients(): ClientBehindReport[] {
   const clients = getDb()
     .prepare(`SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name COLLATE NOCASE`)
     .all() as Array<{ id: string; name: string }>;
+  const enrolled = enrolledClientIds();
   const out: ClientBehindReport[] = [];
   for (const c of clients) {
-    if (!isSnapshotAllowlisted(c.name)) continue;
+    if (!enrolled.has(c.id)) continue;
     const items = behindDeliverablesForClient(c.id);
     if (items.length) out.push({ client_id: c.id, client_name: c.name, items });
   }
@@ -2313,7 +2315,7 @@ export function resetSnapshotProgress(opts?: {
   }
 
   if (allowlistedOnly) {
-    clients = clients.filter((c) => isSnapshotAllowlisted(c.name));
+    clients = clients.filter((c) => isSnapshotEnrolled(c.id));
   }
 
   const deleted = deleteSnapshotProgress(

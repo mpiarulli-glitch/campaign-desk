@@ -16023,9 +16023,64 @@ button.am-node:hover .am-edit-cue,
 .cs-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  white-space: nowrap;
+}
+
+.snap-enroll h2 {
+  font-size: 1.05rem;
+}
+
+.snap-enroll-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.snap-enroll-list button {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.snap-enroll-list button.is-on {
+  border-color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+
+.snap-enroll-picked {
+  margin: 0 0 8px;
+}
+
+.snap-enroll-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.snap-enroll-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .snap-enroll-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- the progress cell -------------------------------------------------
@@ -20141,6 +20196,314 @@ article.snap-pick-card.lh-pick-card:hover {
 .snap-desk-win-form input {
   flex: 1;
   min-width: 0;
+}
+
+.snap-dept-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 14px;
+}
+
+.snap-dept {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg);
+}
+
+.snap-dept-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.snap-dept-head span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.snap-dept-items {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snap-dept-items li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.snap-dept-item-body {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.snap-dept-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.snap-dept-add {
+  display: flex;
+  gap: 8px;
+}
+
+.snap-dept-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.snap-suggest-refresh {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.snap-suggest-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snap-suggest ul {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snap-suggest li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snap-suggest-title,
+.snap-suggest-edit {
+  flex: 1;
+  min-width: 160px;
+  line-height: 1.4;
+}
+
+button.snap-suggest-title {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: text;
+}
+
+.snap-suggest-title span,
+.snap-suggest-edit span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-suggest-edit input {
+  width: 100%;
+  font: inherit;
+}
+
+.snap-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border: 1.5px solid #9aa3ad;
+  border-radius: 3px;
+  background: #fff;
+  color: transparent;
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.snap-check.is-on {
+  color: #fff;
+  background: #188038;
+  border-color: #188038;
+}
+
+button.snap-check {
+  padding: 0;
+  cursor: pointer;
+}
+
+.snap-week-range {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.snap-week-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.snap-week-win {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--warning-wash);
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--border));
+}
+
+.snap-week-win-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex: none;
+  background: color-mix(in srgb, #e0a400 24%, var(--bg-elevated));
+  color: var(--warning-ink);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.snap-week-kicker {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--warning-ink);
+}
+
+.snap-week-win p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.snap-week-win-date {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-week-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.snap-week-card {
+  --dept: var(--accent-ink);
+  min-width: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px 4px;
+}
+
+.snap-week-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.snap-week-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex: none;
+  background: color-mix(in srgb, var(--dept) 14%, var(--bg-elevated));
+  color: var(--dept);
+}
+
+.snap-week-card h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.snap-week-count {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.snap-week-items {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.snap-week-items li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.snap-week-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  flex: none;
+}
+
+.snap-week-mark .snap-check {
+  margin: 0;
+}
+
+.snap-week-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+@media (max-width: 700px) {
+  .snap-week-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .snap-n-pane {

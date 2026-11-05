@@ -1,5 +1,6 @@
-// The weekly Client Services ask: "here are the leads we sent you, did they
-// turn into anything, and what did the month do in revenue?"
+// The weekly Client Services ask: what did the month do in revenue, and here
+// is the snapshot of the week. Lead outcomes stay in the database for the
+// team. Clients are not asked whether a lead closed.
 //
 // One ask goes out per client per week, from Marketing Empire Group, on
 // two channels: an email and a Basecamp message on their project. Both point at
@@ -26,17 +27,20 @@ import {
   type SnapshotOutreachChannel,
 } from "./db";
 import { listRevClients } from "./revenue";
-import { isSnapshotAllowlisted } from "./snapshot-allowlist";
+import { enrolledClientIds } from "./snapshot-enrollment";
 import {
   getOrCreateToken,
   listLeads,
   metricPeriodLabel,
   revenueAsk,
+  weekWins,
 } from "./snapshot";
+import { filledDepartmentNotes } from "./snapshot-departments";
 
-/** Same roster as Deliverable setup — not every revenue client. */
+/** Clients enrolled on the weekly snapshot roster, not every revenue client. */
 function listFridayAskClients(): RevClient[] {
-  return listRevClients().filter((c) => isSnapshotAllowlisted(c.name));
+  const enrolled = enrolledClientIds();
+  return listRevClients().filter((c) => enrolled.has(c.id));
 }
 import { slugForName, teamLabel } from "./team";
 import { basecampNameForManager } from "./people";
@@ -65,16 +69,10 @@ function todayYmd(): string {
 }
 
 /**
- * The master switch for anything that leaves the building.
+ * Reads CLIENT_SERVICES_SENDING. It does not arm or block a Friday ask.
  *
- * Off unless CLIENT_SERVICES_SENDING is explicitly turned on, so the feature
- * ships dark: the sweep, the cron route and the Send now button all run their
- * full logic and report what they would have done, but no client is emailed and
- * no Basecamp message is posted. Defaulting to off rather than on means forgetting
- * to set it cannot mail the whole book by accident, which is the failure that
- * actually matters here.
- *
- * Flip it by setting CLIENT_SERVICES_SENDING=on.
+ * The scheduled sweep never sends, whatever this is set to. A signed-in admin
+ * clicking Send on Client Services does send, whether this is on or off.
  */
 export function sendingEnabled(): boolean {
   const v = (process.env.CLIENT_SERVICES_SENDING || "").trim().toLowerCase();
@@ -138,7 +136,7 @@ export function senderFor(am: AccountManager | null): {
 export interface WeeklyAsk {
   month: string;
   monthLabel: string;
-  /** Leads the client has not said yes or no to yet. */
+  /** Stored leads still marked unknown. Not part of the ask. */
   unansweredLeads: SnapshotLead[];
   /** True once we have this month's revenue figure from them. */
   revenueIn: boolean;
@@ -148,9 +146,7 @@ export interface WeeklyAsk {
 export function weeklyAskFor(clientId: string, today?: string): WeeklyAsk | null {
   const ask = revenueAsk(clientId, today);
   // revenueAsk returns null when we already know the month's revenue from
-  // another source, which is the one case where there is nothing to ask about
-  // on the revenue side. Leads can still be outstanding, so the month is
-  // recovered rather than bailing out.
+  // another source. That is a closed revenue ask, not a missing one.
   const month = ask?.month || previousMonthKey(today || todayYmd());
   const leads = listLeads(clientId).filter((lead) => lead.converted === "unknown");
   return {
@@ -169,9 +165,9 @@ function previousMonthKey(ymd: string): string {
   return d.toISOString().slice(0, 7);
 }
 
-/** Nothing outstanding means there is nothing worth emailing about. */
+/** Revenue still owed is the only reason to ask. Lead outcomes are not. */
 export function hasSomethingToAsk(ask: WeeklyAsk): boolean {
-  return !ask.revenueIn || ask.unansweredLeads.length > 0;
+  return !ask.revenueIn;
 }
 
 /* ------------------------------------------------------- the outreach log */
@@ -290,13 +286,115 @@ function esc(s: string): string {
 const LOGO =
   "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
+export type SnapshotWeekItem = { body: string; completed?: boolean };
+
+export type SnapshotWeekCopy = {
+  wins?: string[];
+  departments?: { label: string; items: Array<string | SnapshotWeekItem> }[];
+};
+
+function weekItem(item: string | SnapshotWeekItem): SnapshotWeekItem | null {
+  if (typeof item === "string") {
+    const body = item.trim();
+    return body ? { body, completed: false } : null;
+  }
+  const body = (item?.body || "").trim();
+  return body ? { body, completed: Boolean(item.completed) } : null;
+}
+
+function filledWeekDepartments(
+  work?: SnapshotWeekCopy
+): { label: string; items: SnapshotWeekItem[] }[] {
+  return (work?.departments || [])
+    .map((dept) => ({
+      label: dept.label,
+      items: (dept.items || []).map(weekItem).filter((item): item is SnapshotWeekItem => Boolean(item)),
+    }))
+    .filter((dept) => dept.items.length > 0);
+}
+
+function completedMarkHtml(): string {
+  return `<span style="color:#188038;font-weight:bold;">&#10003;&nbsp;</span>`;
+}
+
+function updateCount(n: number): string {
+  return n === 1 ? "1 update" : `${n} updates`;
+}
+
+/** Wins and filled departments only. A department with no items is omitted. */
+export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text: string } {
+  const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
+  const departments = filledWeekDepartments(work);
+  if (!wins.length && !departments.length) return { html: "", text: "" };
+
+  const html: string[] = [];
+  const text: string[] = [];
+  if (wins.length) {
+    html.push(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;">` +
+        wins
+          .map(
+            (line) =>
+              `<tr><td style="padding:12px 14px;background-color:#fff8e6;border-left:3px solid #c48a00;">` +
+              `<p style="margin:0 0 4px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#8a6200;font-weight:bold;">Win</p>` +
+              `<p style="margin:0;font-size:16px;line-height:1.5;color:#222222;">${esc(line)}</p>` +
+              `</td></tr>`
+          )
+          .join(`<tr><td style="height:8px;font-size:0;line-height:0;">&nbsp;</td></tr>`) +
+        `</table>`
+    );
+    text.push("Win", ...wins, "");
+  }
+  for (const dept of departments) {
+    const count = updateCount(dept.items.length);
+    html.push(
+      `<p style="margin:16px 0 6px;font-size:15px;line-height:1.4;color:#111111;font-weight:bold;">${esc(dept.label)} <span style="font-weight:normal;color:#666666;">· ${esc(count)}</span></p>` +
+        `<ul style="margin:0 0 8px;padding-left:20px;">` +
+        dept.items
+          .map(
+            (item) =>
+              `<li style="margin:0 0 4px;font-size:16px;line-height:1.5;color:#222222;">${item.completed ? completedMarkHtml() : ""}${esc(item.body)}</li>`
+          )
+          .join("") +
+        `</ul>`
+    );
+    text.push(
+      `${dept.label} · ${count}`,
+      ...dept.items.map((item) => `${item.completed ? "✓" : "-"} ${item.body}`),
+      ""
+    );
+  }
+  return { html: html.join(""), text: text.join("\n") };
+}
+
+function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
+  const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
+  const departments = filledWeekDepartments(work);
+  if (!wins.length && !departments.length) return "";
+  let html = "";
+  if (wins.length) {
+    html += `<div><br><strong>Win</strong></div>`;
+    for (const line of wins) html += `<div>${esc(line)}</div>`;
+  }
+  for (const dept of departments) {
+    html += `<div><br><strong>${esc(dept.label)}</strong> · ${esc(updateCount(dept.items.length))}</div><ul>`;
+    for (const item of dept.items) {
+      html += `<li>${item.completed ? "&#10003; " : ""}${esc(item.body)}</li>`;
+    }
+    html += `</ul>`;
+  }
+  return html;
+}
+
 export function weeklyAskEmail(args: {
   client: RevClient;
   am: AccountManager | null;
   ask: WeeklyAsk;
   link: string;
+  work?: SnapshotWeekCopy;
 }): { subject: string; html: string; text: string } {
   const { client, am, link } = args;
+  const workCopy = snapshotWeekCopy(args.work);
   const first = (client.contact_name || "").trim().split(/\s+/)[0];
   const greeting = first ? `Hi ${esc(first)},` : "Hi there,";
   const signer = am?.label || "Marketing Empire Group";
@@ -337,8 +435,9 @@ export function weeklyAskEmail(args: {
             <h1 class="h1" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Your weekly snapshot</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
             <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#333333;">${esc(line1)}</p>
-            <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;">
+            <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
+            ${workCopy.html}
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
               <tr><td>
                 <!--[if mso]>
                 <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
@@ -376,6 +475,7 @@ export function weeklyAskEmail(args: {
     line1,
     line2,
     "",
+    ...(workCopy.text ? [workCopy.text] : []),
     `Open your snapshot: ${link}`,
     "",
     "Thanks,",
@@ -444,8 +544,10 @@ export function weeklyAskMessageContent(args: {
   amLabel: string;
   /** Real Basecamp @mention HTML for Sylvia's CC line, when resolved. */
   sylviaMention?: string;
+  work?: SnapshotWeekCopy;
 }): { title: string; body: string } {
   const { link, mention, amLabel } = args;
+  const workHtml = snapshotWeekBasecamp(args.work);
   const amMention = (args.amMention || "").trim();
   const thanks = amMention
     ? `Thanks, ${amMention}`
@@ -453,6 +555,7 @@ export function weeklyAskMessageContent(args: {
   const body =
     `<div>${mention} your weekly snapshot is ready to review.</div>` +
     `<div>See what went on across your account this week.</div>` +
+    workHtml +
     `<div><br><a href="${esc(link)}">Open your snapshot</a></div>` +
     `<div><br>${thanks}</div>` +
     sylviaCcHtml(args.sylviaMention);
@@ -474,7 +577,7 @@ export interface WeeklyRunResult {
   sent: AskSendResult[];
   skipped: { paused: number; nothingToAsk: number; alreadySent: number };
   dryRun: boolean;
-  /** False when CLIENT_SERVICES_SENDING is off, i.e. nothing actually left. */
+  /** The CLIENT_SERVICES_SENDING env value. The sweep ignores it and never sends. */
   sendingEnabled: boolean;
 }
 
@@ -492,12 +595,11 @@ export async function sendWeeklyAsk(args: {
   dryRun?: boolean;
 }): Promise<AskSendResult> {
   const { client, weekStart, appUrl, dryRun } = args;
-  // A run with sending switched off behaves exactly like a dry run: everything
-  // is resolved and reported, nothing is sent, and nothing is written to the
-  // outreach log (so the week does not look spent when it was not).
-  const held = !dryRun && !sendingEnabled();
-  const simulate = Boolean(dryRun) || held;
-  const heldReason = held ? "sending disabled" : "dry run";
+  // dryRun reports the ask and writes nothing. CLIENT_SERVICES_SENDING does
+  // not hold a send: the Client Services button is a person deciding to send,
+  // and the scheduled sweep never calls this without dryRun.
+  const simulate = Boolean(dryRun);
+  const heldReason = "dry run";
   const out: AskSendResult = {
     clientId: client.id,
     clientName: client.name,
@@ -519,6 +621,15 @@ export async function sendWeeklyAsk(args: {
   }
   const link = `${appUrl.replace(/\/$/, "")}/snapshot/${token}`;
   const am = accountManagerFor(client);
+  const work = {
+    wins: weekWins(weekStart)
+      .filter((row) => row.client_id === client.id)
+      .map((row) => row.body),
+    departments: filledDepartmentNotes(client.id, weekStart).map((note) => ({
+      label: note.label,
+      items: note.items.map((item) => ({ body: item.body, completed: item.completed })),
+    })),
+  };
   const { from, replyTo } = senderFor(am);
 
   // ---- email
@@ -536,7 +647,7 @@ export async function sendWeeklyAsk(args: {
   } else if (simulate) {
     out.email = { ok: true, skipped: heldReason };
   } else {
-    const { subject, html, text } = weeklyAskEmail({ client, am, ask, link });
+    const { subject, html, text } = weeklyAskEmail({ client, am, ask, link, work });
     const res = await sendEmailWithId({
       to,
       subject,
@@ -608,6 +719,7 @@ export async function sendWeeklyAsk(args: {
           amMention: manager ? mentionHtml(manager) : "",
           amLabel: am?.label || "Marketing Empire Group",
           sylviaMention: sylvia ? mentionHtml(sylvia) : "",
+          work,
         });
         // Notify the same people the card used to assign. Omitting this list
         // would ping everyone on the project.
@@ -661,11 +773,15 @@ export async function sendWeeklyAsk(args: {
 /**
  * The Friday sweep.
  *
- * Skips a client who is paused, who has nothing outstanding to be asked about,
- * or who has already been asked this week. That last one is what makes the run
- * safe to repeat: a re-run on the same Friday sends nothing twice.
+ * This path never emails a client and never posts to Basecamp. A person sends
+ * one client from Client Services, which calls sendWeeklyAsk. `dryRun` on the
+ * options is ignored so a cron caller cannot turn a live send back on.
+ *
+ * Still skips a client who is paused, who has nothing outstanding, or who was
+ * already asked this week, and reports what a real send would have done.
  */
 export async function runWeeklyAsks(opts?: {
+  /** Ignored. The sweep never sends. */
   dryRun?: boolean;
   only?: string;
   today?: string;
@@ -674,21 +790,22 @@ export async function runWeeklyAsks(opts?: {
   const weekStart = currentWeekStart(today);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
   const already = new Set(outreachForWeek(weekStart).map((row) => row.client_id));
+  const dryRun = true;
 
   const result: WeeklyRunResult = {
     weekStart,
     considered: 0,
     sent: [],
     skipped: { paused: 0, nothingToAsk: 0, alreadySent: 0 },
-    dryRun: Boolean(opts?.dryRun),
+    dryRun,
     sendingEnabled: sendingEnabled(),
   };
 
   for (const client of listFridayAskClients()) {
     if (opts?.only && client.id !== opts.only && client.name !== opts.only) continue;
     result.considered++;
-    // Targeting a single client by hand lifts the pacing gates, so a test send
-    // is not silently swallowed by "already sent this week".
+    // Targeting one client lifts the pacing gates in this report, so a dry run
+    // can still show them. It does not send. A real send is sendWeeklyAsk.
     const targeted = Boolean(opts?.only);
     if (!targeted && client.outreach_paused) {
       result.skipped.paused++;
@@ -708,7 +825,7 @@ export async function runWeeklyAsks(opts?: {
         client,
         weekStart,
         appUrl,
-        dryRun: opts?.dryRun,
+        dryRun,
       })
     );
   }
@@ -744,7 +861,7 @@ export interface ClientServiceRow {
   leadsWaiting: number;
   revenueIn: boolean;
   revenueAmount: number | null;
-  /** Fully answered: revenue in and no lead left hanging. */
+  /** Fully answered: this month's revenue is in. */
   submitted: boolean;
   status: AskStatus;
   emailSentAt: string | null;
@@ -777,7 +894,7 @@ export function clientServiceRows(today?: string): ClientServiceRow[] {
 
     const leadsWaiting = ask?.unansweredLeads.length ?? 0;
     const revenueIn = ask?.revenueIn ?? true;
-    const submitted = revenueIn && leadsWaiting === 0;
+    const submitted = revenueIn;
 
     let status: AskStatus;
     if (submitted) status = "submitted";

@@ -2,26 +2,14 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
-import { SnapshotFillRow, type SnapshotFillSaveOpts, type SnapshotFillSaveState, type SnapshotLinkedTodo } from "@/components/SnapshotFillRow";
+import { SnapshotDeskWeeklyWin, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
+import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
-import { defaultLoggedForDate } from "@/lib/snapshot-entry-date";
-import { TEAMS, teamLabelFor } from "@/lib/people";
+import { TEAMS } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
-import { type SnapshotStatus } from "@/lib/snapshot-status";
-import {
-  fillCanSeeAll,
-  fillCounts,
-  fillFocusTeam,
-  fillIsAccountManager,
-  fillLane,
-  fillPassSummary,
-  filterFillRows,
-  visibleFillRows,
-  type FillFilter,
-  type FillViewer,
-} from "@/lib/snapshot-fill";
+import { fillViewerSlug, type FillViewer } from "@/lib/snapshot-fill";
 
 type Section = "week" | "leads" | "wins" | "setup" | "client";
 
@@ -33,7 +21,7 @@ const SECTIONS: { value: Section; label: string }[] = [
   { value: "client", label: "Client view" },
 ];
 
-type Win = { id: string; body: string; happened_on: string };
+type Win = { id: string; body: string; happened_on: string; week_start?: string; logged_by?: string };
 type Converted = "unknown" | "yes" | "no";
 type LeadSource = "form" | "call" | "other";
 type Lead = {
@@ -63,7 +51,7 @@ type RevenueReport = {
   accepted_at: string;
 };
 const CONVERTED_LABEL: Record<Converted, string> = {
-  unknown: "Waiting on client",
+  unknown: "Not marked",
   yes: "Converted",
   no: "Did not convert",
 };
@@ -75,8 +63,6 @@ type Contract = {
   onTrack: boolean;
   label: string;
 };
-
-type Status = SnapshotStatus;
 
 type Kind = "recurring" | "one_time";
 type CadenceUnit = "weekly" | "monthly" | "quarterly";
@@ -95,48 +81,6 @@ type Deliverable = {
   cadence_unit: CadenceUnit;
   due_date: string | null;
 };
-type BehindItem = {
-  deliverable_id: string;
-  category: string;
-  name: string;
-  kind: Kind;
-  cadence_unit: CadenceUnit | null;
-  due_date: string;
-  status: Status;
-};
-type Row = {
-  deliverable_id: string;
-  category: string;
-  team: string;
-  name: string;
-  cadence: string;
-  kind: Kind;
-  cadence_unit: CadenceUnit;
-  due_date: string | null;
-  period_start: string;
-  week_start: string;
-  created_at: string;
-  status: Status;
-  work_done: string;
-  next_steps: string;
-  notes: string;
-  logged_by: string;
-  updated_at: string;
-  basecamp_todos: SnapshotLinkedTodo[];
-  basecamp_todo_id: string;
-  basecamp_project_id: string;
-  basecamp_todo_title: string;
-  basecamp_todo_url: string;
-  basecamp_todo_completed_at: string;
-  logged_from: string;
-  logged_to: string;
-};
-
-// Per-row save state. A save that failed has to look different from one that
-// worked: the old code fired the request and never read the response, so a
-// dropped connection left the typed text on screen looking saved.
-type SaveState = SnapshotFillSaveState;
-
 export default function SnapshotEditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -145,16 +89,10 @@ export default function SnapshotEditorPage() {
   const [contractEnd, setContractEnd] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
-  const [rows, setRows] = useState<Row[]>([]);
   const [week, setWeek] = useState(currentWeek());
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [section, setSection] = useState<Section>("week");
-  const [fillFilter, setFillFilter] = useState<FillFilter>("all");
-  const [seeAll, setSeeAll] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [weekLoaded, setWeekLoaded] = useState("");
   const [nd, setNd] = useState<{
     category: string;
     team: string;
@@ -174,14 +112,6 @@ export default function SnapshotEditorPage() {
   });
   const [wins, setWins] = useState<Win[]>([]);
   const [contract, setContract] = useState<Contract | null>(null);
-  const [behind, setBehind] = useState<BehindItem[]>([]);
-  const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
-  // What failed to save, per row, so Retry re-sends every field and not just the
-  // last one the person happened to leave.
-  const [failedPatch, setFailedPatch] = useState<Record<string, Partial<Row>>>({});
-  /** Per-row backdate override; resets when the viewed week changes. */
-  const [loggedForByRow, setLoggedForByRow] = useState<Record<string, string>>({});
-  const [keptIds, setKeptIds] = useState<string[]>([]);
   const [nw, setNw] = useState({ body: "", happenedOn: "" });
   const [leads, setLeads] = useState<Lead[]>([]);
   const [revReports, setRevReports] = useState<RevenueReport[]>([]);
@@ -204,35 +134,12 @@ export default function SnapshotEditorPage() {
     notes: "",
   });
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
-  const [viewerReady, setViewerReady] = useState(false);
   const isAdmin = viewer.role === "admin";
 
   const shareUrl =
     token && typeof window !== "undefined"
       ? `${window.location.origin}/snapshot/${token}`
       : "";
-
-  const fetchWeek = useCallback(
-    async (w: string) => {
-      try {
-        const res = await fetch(`/api/snapshot/accounts/${id}/week?week=${w}`);
-        if (res.status === 401) return router.push("/login");
-        if (res.ok) {
-          setRows((await res.json()).rows || []);
-          setWeekLoaded(w);
-          // Save badges belong to the week that was on screen. Carrying a "failed"
-          // marker into a different week would point at the wrong row.
-          setSaveState({});
-          setFailedPatch({});
-          setLoggedForByRow({});
-          setKeptIds([]);
-        }
-      } catch {
-        setError("Network error. Check your connection and try again.");
-      }
-    },
-    [id, router]
-  );
 
   const loadMeta = useCallback(async () => {
     try {
@@ -247,7 +154,6 @@ export default function SnapshotEditorPage() {
       setToken(data.token || null);
       setWins(data.wins || []);
       setContract(data.contract || null);
-      setBehind(data.behind || []);
       setRevReports(data.revenueReports || []);
     } catch {
       setError("Network error. Check your connection and try again.");
@@ -343,7 +249,7 @@ export default function SnapshotEditorPage() {
   }
 
   async function removeLead(leadId: string) {
-    if (!confirm("Remove this lead? The client's answer goes with it.")) return;
+    if (!confirm("Remove this lead?")) return;
     await fetch(`/api/snapshot/lead/${leadId}`, { method: "DELETE" });
     fetchLeads(week, leadScope);
   }
@@ -371,7 +277,6 @@ export default function SnapshotEditorPage() {
   }
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
-  useEffect(() => { fetchWeek(week); }, [week, fetchWeek]);
   useEffect(() => { fetchLeads(week, leadScope); }, [week, leadScope, fetchLeads]);
   useEffect(() => {
     fetch("/api/auth")
@@ -384,129 +289,8 @@ export default function SnapshotEditorPage() {
           owner: Boolean(data.owner),
         });
       })
-      .catch(() => {})
-      .finally(() => setViewerReady(true));
+      .catch(() => {});
   }, []);
-
-  // Undefined keys are dropped rather than assigned, so a caller passing a field
-  // it has no news about ("the response did not include an author") leaves the
-  // existing value alone instead of blanking it.
-  function patchRow(delivId: string, patch: Partial<Row>) {
-    const defined = Object.fromEntries(
-      Object.entries(patch).filter(([, v]) => v !== undefined)
-    ) as Partial<Row>;
-    setRows((rs) => rs.map((r) => (r.deliverable_id === delivId ? { ...r, ...defined } : r)));
-  }
-
-  /**
-   * Write one field of one row.
-   *
-   * The result is read and shown. This used to be fire-and-forget: the request
-   * went out, the response was dropped on the floor, and a failed save was
-   * indistinguishable from a good one — the text stayed on screen and vanished on
-   * the next reload. Now a row says saving, saved, or failed, and a failure keeps
-   * a Retry next to it so the typing is not lost.
-   */
-  async function saveEntry(
-    delivId: string,
-    patch: Partial<Row>,
-    opts?: SnapshotFillSaveOpts
-  ) {
-    setSaveState((s) => ({ ...s, [delivId]: "saving" }));
-    if (patch.status && fillLane({ deliverable_id: delivId, status: patch.status }, behindIds) === "done") {
-      setKeptIds((ids) => (ids.includes(delivId) ? ids : [...ids, delivId]));
-      setOpenId(delivId);
-    }
-    const loggedFor = opts?.loggedFor ?? loggedForForRow(delivId);
-    let basecampTodo = opts?.basecampTodo;
-    const basecampTodos = opts?.basecampTodos;
-    if (
-      basecampTodos === undefined &&
-      basecampTodo === undefined &&
-      Object.prototype.hasOwnProperty.call(patch, "basecamp_todo_id")
-    ) {
-      const id = (patch.basecamp_todo_id || "").trim();
-      basecampTodo = id
-        ? {
-            id,
-            projectId: (patch.basecamp_project_id || "").trim(),
-            title: (patch.basecamp_todo_title || "").trim(),
-            url: (patch.basecamp_todo_url || "").trim(),
-            completedAt: (patch.basecamp_todo_completed_at || "").trim(),
-          }
-        : null;
-    }
-    try {
-      const body: Record<string, unknown> = {
-        deliverableId: delivId,
-        weekStart: week,
-        loggedFor,
-        status: patch.status,
-        workDone: patch.work_done,
-        nextSteps: patch.next_steps,
-        notes: patch.notes,
-      };
-      if (basecampTodos !== undefined) body.basecampTodos = basecampTodos;
-      else if (basecampTodo !== undefined) body.basecampTodo = basecampTodo;
-      if (opts?.loggedRange !== undefined) {
-        body.loggedFrom = opts.loggedRange?.from || "";
-        body.loggedTo = opts.loggedRange?.to || "";
-      }
-      const res = await fetch("/api/snapshot/entry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) {
-        router.push("/login");
-        return;
-      }
-      if (!res.ok) {
-        setSaveState((s) => ({ ...s, [delivId]: "failed" }));
-        setFailedPatch((f) => ({ ...f, [delivId]: { ...(f[delivId] || {}), ...patch } }));
-        return;
-      }
-      // Reflect the new author on the row without reloading the whole week.
-      const data = await res.json().catch(() => ({}));
-      patchRow(delivId, {
-        logged_by: typeof data.loggedBy === "string" ? data.loggedBy : undefined,
-        updated_at: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
-      });
-      setSaveState((s) => ({ ...s, [delivId]: "saved" }));
-      setFailedPatch((f) => {
-        if (!f[delivId]) return f;
-        const next = { ...f };
-        delete next[delivId];
-        return next;
-      });
-      if (loggedFor !== defaultLoggedForDate(week)) {
-        void loadMeta();
-        void fetchWeek(week);
-      }
-    } catch {
-      setSaveState((s) => ({ ...s, [delivId]: "failed" }));
-      setFailedPatch((f) => ({ ...f, [delivId]: { ...(f[delivId] || {}), ...patch } }));
-    }
-  }
-
-  // Re-send everything that failed on this row, not just the last field touched.
-  async function retryEntry(delivId: string) {
-    const pending = failedPatch[delivId];
-    if (!pending) return;
-    await saveEntry(delivId, pending);
-  }
-
-  function loggedForForRow(delivId: string): string {
-    // Prefer an explicit date the user picked. Otherwise stamp new activity to
-    // today-in-this-week so monthly/quarterly progress shows on the client view
-    // for this week instead of staying filed under the 1st of the month.
-    if (loggedForByRow[delivId]) return loggedForByRow[delivId];
-    return defaultLoggedForDate(week);
-  }
-
-  function setLoggedFor(delivId: string, loggedFor: string) {
-    setLoggedForByRow((m) => ({ ...m, [delivId]: loggedFor }));
-  }
 
   async function addDeliverable(e: FormEvent) {
     e.preventDefault();
@@ -521,7 +305,6 @@ export default function SnapshotEditorPage() {
     // a group at a time.
     setNd({ category: nd.category, team: nd.team, name: "", cadence: "", kind: nd.kind, cadenceUnit: nd.cadenceUnit, dueDate: "" });
     await loadMeta();
-    fetchWeek(week);
   }
 
   async function updateDeliverable(dId: string, patch: Partial<Deliverable>) {
@@ -535,14 +318,12 @@ export default function SnapshotEditorPage() {
       body: JSON.stringify(body),
     });
     await loadMeta();
-    fetchWeek(week);
   }
 
   async function removeDeliverable(dId: string) {
     if (!confirm("Remove this deliverable? Past entries are kept but it stops showing.")) return;
     await fetch(`/api/snapshot/deliverables/${dId}`, { method: "DELETE" });
     await loadMeta();
-    fetchWeek(week);
   }
 
   async function copyShare() {
@@ -552,52 +333,8 @@ export default function SnapshotEditorPage() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  const behindIds = useMemo(
-    () => new Set(behind.map((b) => b.deliverable_id)),
-    [behind]
-  );
-  const focusTeam = fillFocusTeam(viewer);
-  const canSeeAll = fillCanSeeAll(viewer);
-  const isAm = fillIsAccountManager(viewer);
-  const viewerTeam = seeAll || isAm ? null : focusTeam;
-  const scopedRows = useMemo(() => {
-    // Auth has not landed yet: an unscoped default would flash every team's
-    // rows to Michael before the owner session is classified as email.
-    if (!viewerReady) return [];
-    const visible = visibleFillRows(rows, viewerTeam, { accountManager: isAm });
-    const q = query.trim().toLowerCase();
-    if (!q) return visible;
-    return visible.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.category.toLowerCase().includes(q)
-    );
-  }, [rows, viewerTeam, isAm, query, viewerReady]);
-  const counts = fillCounts(scopedRows, behindIds);
-  const stayOnList = useMemo(() => {
-    const ids = new Set(keptIds);
-    if (openId) ids.add(openId);
-    return ids;
-  }, [keptIds, openId]);
-  const filteredRows = filterFillRows(scopedRows, fillFilter, behindIds, stayOnList);
   const pendingRev = revReports.filter((r) => !r.accepted_at);
   const leadsWaiting = leads.filter((l) => l.converted === "unknown").length;
-  const passLine = fillPassSummary(counts, isCurrentWeek(week));
-  const scopeLabel = !viewerReady
-    ? "Loading your list"
-    : isAm
-    ? "All deliverables · strategy first"
-    : seeAll || !focusTeam
-      ? "All teams"
-      : `${teamLabelFor(focusTeam)} team`;
-
-  useEffect(() => {
-    if (weekLoaded !== week) return;
-    const first = scopedRows.find((r) => fillLane(r, behindIds) !== "done");
-    setOpenId(first?.deliverable_id ?? null);
-    // Only when that week's rows arrive, not on every keystroke in a field.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- weekLoaded is the gate
-  }, [week, weekLoaded]);
 
   return (
     <div className="ops-page snap-desk">
@@ -610,15 +347,6 @@ export default function SnapshotEditorPage() {
           <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}/backfill`}>
             Past six months
           </Link>
-        ) : null}
-        {canSeeAll ? (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setSeeAll((v) => !v)}
-          >
-            {seeAll ? `Show ${teamLabelFor(focusTeam || "email")} team` : "See all"}
-          </button>
         ) : null}
       </div>
 
@@ -636,13 +364,12 @@ export default function SnapshotEditorPage() {
               {SECTIONS.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
-                  {s.value === "week" && counts.attention ? ` (${counts.attention})` : ""}
                   {s.value === "leads" && leadsWaiting ? ` (${leadsWaiting})` : ""}
                 </option>
               ))}
             </select>
           </label>
-          <p className="ops-sub">{scopeLabel}</p>
+          <p className="ops-sub">Log the weekly win, then what each department did.</p>
           <label className="snap-launch">
             <span>Launch</span>
             <input
@@ -678,12 +405,6 @@ export default function SnapshotEditorPage() {
 
       {section === "week" ? (
         <>
-          {counts.total > 0 ? (
-            <div className={`ads-pass-banner ${counts.attention === 0 ? "is-clear" : "is-work"}`}>
-              <p className="ads-pass-banner-line">{passLine}</p>
-            </div>
-          ) : null}
-
           {pendingRev.length > 0 ? (
             <div className="snap-desk-inbox">
               <strong>Client-reported revenue waiting</strong>
@@ -704,92 +425,42 @@ export default function SnapshotEditorPage() {
             </div>
           ) : null}
 
-          {counts.total > 0 ? (
-            <label className="snap-desk-search snap-desk-client">
-              <span>Show</span>
-              <select
-                value={fillFilter}
-                aria-label="Filter this week"
-                onChange={(e) => setFillFilter(e.target.value as FillFilter)}
-              >
-                <option value="all">All · {counts.total}</option>
-                <option value="todo">Needs update · {counts.attention}</option>
-                <option value="overdue">Overdue · {counts.overdue}</option>
-                <option value="done">Logged · {counts.done}</option>
-              </select>
-            </label>
-          ) : null}
-
-          {scopedRows.length > 8 ? (
-            <label className="snap-desk-search">
-              <span>Find a deliverable</span>
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name or category"
-              />
-            </label>
-          ) : null}
-
-          {!viewerReady ? (
-            <div className="empty">
-              <p>Loading this week&apos;s pass…</p>
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="empty">
-              <p>No deliverables yet. Open Setup to add what this account bought.</p>
-              <button type="button" className="btn btn-sm" onClick={() => setSection("setup")}>Open setup</button>
-            </div>
-          ) : filteredRows.length === 0 ? (
-            <div className="empty">
-              <p>
-                {query.trim()
-                  ? "Nothing matches that search."
-                  : fillFilter === "todo"
-                    ? "Clear — nothing left to update in this view."
-                    : "Nothing in this filter."}
-              </p>
-              {fillFilter !== "all" && !query.trim() ? (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFillFilter("all")}>
-                  View all
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="snap-n-db">
-              <div className="snap-n-cols snap-n-head" aria-hidden="true">
-                <span>Deliverable</span>
-                <span>Category</span>
-                <span>Status</span>
-                <span>Period</span>
-                <span />
-              </div>
-              {filteredRows.map((r) => (
-                <SnapshotFillRow
-                  key={r.deliverable_id}
-                  row={r}
-                  clientId={id}
-                  viewWeek={week}
-                  loggedFor={loggedForForRow(r.deliverable_id)}
-                  overdue={behindIds.has(r.deliverable_id)}
-                  overdueDetail={behind.find((b) => b.deliverable_id === r.deliverable_id) || null}
-                  open={openId === r.deliverable_id}
-                  saveState={saveState[r.deliverable_id]}
-                  onToggle={() => setOpenId(openId === r.deliverable_id ? null : r.deliverable_id)}
-                  onPatch={(patch) => patchRow(r.deliverable_id, patch)}
-                  onLoggedForChange={(d) => setLoggedFor(r.deliverable_id, d)}
-                  onSave={(patch, opts) => void saveEntry(r.deliverable_id, patch, opts)}
-                  onRetry={() => void retryEntry(r.deliverable_id)}
-                  onCatchUpDone={() => {
-                    void loadMeta();
-                    void fetchWeek(week);
-                  }}
-                  launchDate={launchDate}
-                />
-              ))}
-            </div>
-          )}
+          <div className="snap-n-db">
+            <SnapshotDeskWeeklyWin
+              clientId={id}
+              clientName={name || "this account"}
+              weekStart={week}
+              viewerSlug={fillViewerSlug(viewer)}
+              wins={wins
+                .filter((w) => (w.week_start || "") === week)
+                .map(
+                  (w): DeskWeekWin => ({
+                    id: w.id,
+                    client_id: id,
+                    body: w.body,
+                    happened_on: w.happened_on,
+                    logged_by: w.logged_by || "",
+                  })
+                )}
+              onAdded={(win) =>
+                setWins((cur) =>
+                  cur.some((w) => w.id === win.id)
+                    ? cur
+                    : [
+                        ...cur,
+                        {
+                          id: win.id,
+                          body: win.body,
+                          happened_on: win.happened_on,
+                          week_start: week,
+                          logged_by: win.logged_by,
+                        },
+                      ]
+                )
+              }
+            />
+            <SnapshotWeekDepartments clientId={id} weekStart={week} />
+          </div>
         </>
       ) : null}
 
@@ -909,7 +580,6 @@ export default function SnapshotEditorPage() {
               clientId={id}
               onAdded={() => {
                 loadMeta();
-                fetchWeek(week);
               }}
             />
           ) : null}

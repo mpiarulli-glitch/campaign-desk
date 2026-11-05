@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import {
   getAccountByToken,
-  listLeads,
   listWins,
   metricsSeries,
   revenueAsk,
   snapshotLaunchDateFor,
   weekBounds,
   weekData,
-  weeksWithLeads,
 } from "@/lib/snapshot";
+import { filledDepartmentNotes } from "@/lib/snapshot-departments";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -29,9 +28,6 @@ export async function GET(request: Request, { params }: Params) {
   }
   // Not team-scoped: the client is shown their whole account, not one team's slice.
   const rows = weekData(account.id, week);
-  // Leads default to the week being viewed; ?leads=all opens it up to every
-  // lead we've ever logged for the account.
-  const allLeads = params_.get("leads") === "all";
   return NextResponse.json({
     account: {
       name: account.name,
@@ -46,12 +42,15 @@ export async function GET(request: Request, { params }: Params) {
     }),
     // Full contract / deliverable overview is hidden from the client view for now.
     wins: listWins(account.id),
+    departments: filledDepartmentNotes(account.id, week).map((note) => ({
+      slug: note.department,
+      label: note.label,
+      items: note.items.map((item) => ({ body: item.body, completed: item.completed })),
+    })),
     metrics: metricsSeries(account.id),
     // Bounds for the week picker, so it stops rather than paging into empty
     // future weeks that read like an account gone quiet.
     bounds: weekBounds(account.id),
-    leads: listLeads(account.id, allLeads ? undefined : { week }),
-    leadWeeks: weeksWithLeads(account.id),
     // Last month's revenue, if we're still asking them for it.
     revenueAsk: revenueAsk(account.id),
   });

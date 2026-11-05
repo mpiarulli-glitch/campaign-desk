@@ -713,9 +713,8 @@ export type LeadSource = "form" | "call" | "other";
 // How the client answered "did this one turn into business?".
 export type LeadConverted = "unknown" | "yes" | "no";
 
-// A lead the client service team saw come through, logged so we can ask the
-// client whether it converted. `converted` and `client_note` are written by
-// the CLIENT from the shared snapshot link — everything else is team-entered.
+// A lead the team logged. `converted` and `client_note` are team-entered now.
+// The shared snapshot link no longer asks the client to mark a lead.
 export interface SnapshotLead {
   id: string;
   client_id: string;
@@ -4297,6 +4296,73 @@ function migrate(database: Database.Database) {
   // across every client was still logging past Railway's 30s healthcheck.
   // The same repairs now run from deferred startup, after the server is up.
   // Schema changes stay in this function so the first real query sees them.
+
+  // Weekly snapshot department notes. The original table held one blob per
+  // department. Items are the list the team edits now. The blob is kept and
+  // copied once into a single item (see migrateLegacyDepartmentNotes) so a
+  // note written before the list is not dropped. Deliverable rows are untouched.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS snapshot_department_notes (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      department TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      logged_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (client_id, week_start, department),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapdept_week
+      ON snapshot_department_notes(client_id, week_start);
+    CREATE TABLE IF NOT EXISTS snapshot_department_items (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      department TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      logged_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapdept_items
+      ON snapshot_department_items(client_id, week_start, department, sort_order);
+    CREATE TABLE IF NOT EXISTS snapshot_enrollments (
+      client_id TEXT PRIMARY KEY,
+      enrolled_at TEXT NOT NULL,
+      enrolled_by TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS snapshot_suggestion_dismissals (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      source_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (client_id, week_start, source_key),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+  `);
+  const deptNoteCols = tableColumns(database, "snapshot_department_notes");
+  if (deptNoteCols.length && !deptNoteCols.includes("migrated")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_notes ADD COLUMN migrated INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  const deptItemCols = tableColumns(database, "snapshot_department_items");
+  if (deptItemCols.length && !deptItemCols.includes("completed")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_items ADD COLUMN completed INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (deptItemCols.length && !deptItemCols.includes("source_key")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_items ADD COLUMN source_key TEXT NOT NULL DEFAULT ''`
+    );
+  }
 
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already

@@ -3,14 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { cell, mapColumns, parseCsv } from "@/lib/csv";
-import { isSnapshotAllowlisted } from "@/lib/snapshot-allowlist";
 
 // The per-client panel behind a client name in the Client Services Hub.
 //
-// Three jobs in the order the week runs: queue the leads we want the client to
-// confirm, log the wins worth telling them about, then send the ask that
-// carries both. Everything here reuses endpoints that already existed, so the
-// panel adds no new way to reach a client.
+// The week panel: leads the team has logged, wins worth telling the client,
+// then the Friday ask. Clients are not asked to mark leads.
 
 type Lead = {
   id: string;
@@ -119,7 +116,7 @@ function normSource(raw: string): string {
 }
 
 const CONVERTED_LABEL: Record<Lead["converted"], string> = {
-  unknown: "Waiting on them",
+  unknown: "Not marked",
   yes: "Converted",
   no: "Did not convert",
 };
@@ -149,7 +146,6 @@ function fmtDay(ymd: string): string {
 export function ClientServicePanel({
   client,
   isAdmin,
-  sendingOn,
   onClose,
   onSend,
   onChanged,
@@ -157,7 +153,6 @@ export function ClientServicePanel({
 }: {
   client: PanelClient;
   isAdmin: boolean;
-  sendingOn: boolean;
   onClose: () => void;
   onSend: () => void;
   /** Adding a lead changes the client's outstanding count, so the hub's row and
@@ -369,7 +364,6 @@ export function ClientServicePanel({
     setWin({ body: "", happenedOn: todayYmd() });
   }
 
-  const unanswered = leads.filter((l) => l.converted === "unknown");
   const asked = Boolean(client.emailSentAt || client.basecampSentAt);
   const dead = !client.contactEmail.trim() && !client.hasBasecamp;
 
@@ -392,14 +386,12 @@ export function ClientServicePanel({
             </p>
           </div>
           <div className="csp-head-side">
-            {isSnapshotAllowlisted(client.name) ? (
-              <Link
-                className="btn btn-ghost btn-sm"
-                href={`/admin/snapshot/${client.clientId}`}
-              >
-                Full account
-              </Link>
-            ) : null}
+            <Link
+              className="btn btn-ghost btn-sm"
+              href={`/admin/snapshot/${client.clientId}`}
+            >
+              Full account
+            </Link>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>
               Close
             </button>
@@ -415,11 +407,6 @@ export function ClientServicePanel({
             {client.paused ? <span className="cs-pill">Paused</span> : null}
           </div>
           <ul className="csp-ask">
-            <li className={unanswered.length ? "is-open" : "is-done"}>
-              {unanswered.length
-                ? `${unanswered.length} lead${unanswered.length === 1 ? "" : "s"} for them to confirm`
-                : "No leads waiting on them"}
-            </li>
             <li className={client.revenueIn ? "is-done" : "is-open"}>
               {client.revenueIn
                 ? "Revenue is in"
@@ -448,29 +435,25 @@ export function ClientServicePanel({
               <span className="csp-send-note">
                 {dead
                   ? "Add a contact email or a Basecamp project first."
-                  : !sendingOn
-                    ? "Sending is switched off, so this reports what it would have done."
-                    : asked
-                      ? "Already asked this week. Sending again re-sends the same ask."
-                      : "Emails the contact and posts a Basecamp message where both are set."}
+                  : asked
+                    ? "Already asked this week. Sending again re-sends the same ask."
+                    : "Emails the contact and posts a Basecamp message where both are set."}
               </span>
             </div>
           ) : null}
         </section>
 
-        {/* ---- 2. leads we want confirmed */}
+        {/* Stored leads. The Friday ask does not ask the client to mark these. */}
         <section className="csp-sec">
           <div className="csp-sec-head">
-            <h3>Leads to confirm</h3>
-            <span className="csp-count">{unanswered.length} waiting</span>
+            <h3>Leads</h3>
+            <span className="csp-count">{leads.length} logged</span>
           </div>
 
           {loading ? (
             <p className="muted">Loading...</p>
           ) : leads.length === 0 ? (
-            <p className="muted csp-empty">
-              No leads logged yet. Add the ones you want this client to confirm.
-            </p>
+            <p className="muted csp-empty">No leads logged yet.</p>
           ) : (
             <ul className="csp-list">
               {leads.slice(0, 8).map((l) => (
