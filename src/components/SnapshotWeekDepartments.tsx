@@ -12,6 +12,12 @@ type Note = {
   label: string;
   items: Item[];
 };
+type Suggestion = {
+  sourceKey: string;
+  title: string;
+  place: string;
+  department: SnapshotDepartmentSlug | "unsorted";
+};
 
 /**
  * The six department lists for one client-week. Every section is always on
@@ -31,8 +37,11 @@ export function SnapshotWeekDepartments({
       items: [],
     }))
   );
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
+  const [unsortedDept, setUnsortedDept] = useState<Record<string, SnapshotDepartmentSlug>>({});
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -53,11 +62,34 @@ export function SnapshotWeekDepartments({
     }
   }, [clientId, weekStart]);
 
+  const loadSuggestions = useCallback(
+    async (refresh = false) => {
+      if (refresh) setRefreshing(true);
+      try {
+        const res = await fetch(
+          `/api/snapshot/departments/suggestions?clientId=${encodeURIComponent(clientId)}&week=${weekStart}${refresh ? "&refresh=1" : ""}`
+        );
+        if (!res.ok) {
+          setSuggestions([]);
+          return;
+        }
+        const data = await res.json();
+        setSuggestions((data.suggestions || []) as Suggestion[]);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        if (refresh) setRefreshing(false);
+      }
+    },
+    [clientId, weekStart]
+  );
+
   useEffect(() => {
     setDraft({});
     setEditing(null);
     void load();
-  }, [load]);
+    void loadSuggestions(false);
+  }, [load, loadSuggestions]);
 
   async function addItem(event: FormEvent, department: SnapshotDepartmentSlug) {
     event.preventDefault();
@@ -77,6 +109,7 @@ export function SnapshotWeekDepartments({
       const data = await res.json();
       if (data.departments) setNotes(data.departments);
       setDraft((cur) => ({ ...cur, [department]: "" }));
+      void loadSuggestions(false);
     } catch {
       setError("Network error. Try again.");
     }
@@ -135,8 +168,117 @@ export function SnapshotWeekDepartments({
     }
   }
 
+  async function acceptSuggestion(suggestion: Suggestion, department: SnapshotDepartmentSlug) {
+    setError("");
+    try {
+      const added = await fetch("/api/snapshot/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          weekStart,
+          department,
+          body: suggestion.title,
+        }),
+      });
+      if (!added.ok) {
+        setError("Could not add that item.");
+        return;
+      }
+      const data = await added.json();
+      if (data.departments) setNotes(data.departments);
+      await fetch("/api/snapshot/departments/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, weekStart, sourceKey: suggestion.sourceKey }),
+      });
+      setSuggestions((cur) => cur.filter((row) => row.sourceKey !== suggestion.sourceKey));
+    } catch {
+      setError("Network error. Try again.");
+    }
+  }
+
+  async function dismissSuggestion(sourceKey: string) {
+    setSuggestions((cur) => cur.filter((row) => row.sourceKey !== sourceKey));
+    try {
+      await fetch("/api/snapshot/departments/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, weekStart, sourceKey }),
+      });
+    } catch {
+      void loadSuggestions(false);
+    }
+  }
+
+  function suggestionBlock(rows: Suggestion[], department?: SnapshotDepartmentSlug) {
+    if (!rows.length) return null;
+    return (
+      <div className="snap-suggest">
+        <p className="snap-suggest-label">From Basecamp</p>
+        <ul>
+          {rows.map((suggestion) => {
+            const target = department || unsortedDept[suggestion.sourceKey] || "lifecycle";
+            return (
+              <li key={suggestion.sourceKey}>
+                <span className="snap-suggest-title">
+                  {suggestion.title}
+                  {suggestion.place ? <span>{suggestion.place}</span> : null}
+                </span>
+                {department ? null : (
+                  <select
+                    aria-label={`Department for ${suggestion.title}`}
+                    value={target}
+                    onChange={(event) =>
+                      setUnsortedDept((cur) => ({
+                        ...cur,
+                        [suggestion.sourceKey]: event.target.value as SnapshotDepartmentSlug,
+                      }))
+                    }
+                  >
+                    {SNAPSHOT_DEPARTMENTS.map((dept) => (
+                      <option key={dept.slug} value={dept.slug}>
+                        {dept.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void acceptSuggestion(suggestion, target)}
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void dismissSuggestion(suggestion.sourceKey)}
+                >
+                  Dismiss
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
+  const unsorted = suggestions.filter((row) => row.department === "unsorted");
+
   return (
     <div className="snap-dept-list">
+      <div className="snap-suggest-refresh">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => void loadSuggestions(true)}
+          disabled={refreshing}
+        >
+          {refreshing ? "Refreshing…" : "Refresh Basecamp"}
+        </button>
+      </div>
       {error ? <p className="error">{error}</p> : null}
       {notes.map((note) => (
         <section key={note.department} className="snap-dept">
@@ -144,6 +286,10 @@ export function SnapshotWeekDepartments({
             <strong>{note.label}</strong>
             <span>What we did this week</span>
           </div>
+          {suggestionBlock(
+            suggestions.filter((row) => row.department === note.department),
+            note.department
+          )}
           {note.items.length > 0 ? (
             <ul className="snap-dept-items">
               {note.items.map((item) => (
@@ -209,6 +355,15 @@ export function SnapshotWeekDepartments({
           </form>
         </section>
       ))}
+      {unsorted.length > 0 ? (
+        <section className="snap-dept">
+          <div className="snap-dept-head">
+            <strong>Unsorted</strong>
+            <span>Pick a department</span>
+          </div>
+          {suggestionBlock(unsorted)}
+        </section>
+      ) : null}
     </div>
   );
 }

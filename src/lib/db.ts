@@ -4331,6 +4331,15 @@ function migrate(database: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_snapdept_items
       ON snapshot_department_items(client_id, week_start, department, sort_order);
+    CREATE TABLE IF NOT EXISTS snapshot_suggestion_dismissals (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      week_start TEXT NOT NULL,
+      source_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (client_id, week_start, source_key),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
   `);
   const deptNoteCols = tableColumns(database, "snapshot_department_notes");
   if (deptNoteCols.length && !deptNoteCols.includes("migrated")) {

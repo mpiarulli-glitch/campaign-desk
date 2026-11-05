@@ -20210,6 +20210,48 @@ article.snap-pick-card.lh-pick-card:hover {
   min-width: 0;
 }
 
+.snap-suggest-refresh {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.snap-suggest-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snap-suggest ul {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snap-suggest li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snap-suggest-title {
+  flex: 1;
+  min-width: 160px;
+  line-height: 1.4;
+}
+
+.snap-suggest-title span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .snap-dept-client-list {
   display: flex;
   flex-direction: column;
