@@ -6,7 +6,7 @@ import {
   type SnapshotDepartmentSlug,
 } from "@/lib/snapshot-department-list";
 
-type Item = { id: string; body: string };
+type Item = { id: string; body: string; completed?: boolean };
 type Note = {
   department: SnapshotDepartmentSlug;
   label: string;
@@ -168,6 +168,34 @@ export function SnapshotWeekDepartments({
     }
   }
 
+  async function toggleDone(item: Item) {
+    const completed = !item.completed;
+    setNotes((cur) =>
+      cur.map((note) => ({
+        ...note,
+        items: note.items.map((row) => (row.id === item.id ? { ...row, completed } : row)),
+      }))
+    );
+    try {
+      const res = await fetch("/api/snapshot/departments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id, completed }),
+      });
+      if (!res.ok) throw new Error("save failed");
+    } catch {
+      setNotes((cur) =>
+        cur.map((note) => ({
+          ...note,
+          items: note.items.map((row) =>
+            row.id === item.id ? { ...row, completed: item.completed } : row
+          ),
+        }))
+      );
+      setError("Could not update that check.");
+    }
+  }
+
   async function acceptSuggestion(suggestion: Suggestion, department: SnapshotDepartmentSlug) {
     setError("");
     try {
@@ -179,6 +207,8 @@ export function SnapshotWeekDepartments({
           weekStart,
           department,
           body: suggestion.title,
+          completed: true,
+          sourceKey: suggestion.sourceKey,
         }),
       });
       if (!added.ok) {
@@ -220,7 +250,10 @@ export function SnapshotWeekDepartments({
           {rows.map((suggestion) => {
             const target = department || unsortedDept[suggestion.sourceKey] || "lifecycle";
             return (
-              <li key={suggestion.sourceKey}>
+                <li key={suggestion.sourceKey}>
+                <span className="snap-check is-on" aria-label="Completed in Basecamp">
+                  ✓
+                </span>
                 <span className="snap-suggest-title">
                   {suggestion.title}
                   {suggestion.place ? <span>{suggestion.place}</span> : null}
@@ -294,6 +327,15 @@ export function SnapshotWeekDepartments({
             <ul className="snap-dept-items">
               {note.items.map((item) => (
                 <li key={item.id}>
+                  <button
+                    type="button"
+                    className={`snap-check ${item.completed ? "is-on" : ""}`}
+                    aria-pressed={Boolean(item.completed)}
+                    aria-label={item.completed ? "Completed. Click to clear." : "Mark done"}
+                    onClick={() => void toggleDone(item)}
+                  >
+                    {item.completed ? "✓" : ""}
+                  </button>
                   {editing?.id === item.id ? (
                     <form
                       className="snap-dept-add"

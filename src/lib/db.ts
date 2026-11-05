@@ -4347,6 +4347,17 @@ function migrate(database: Database.Database) {
       `ALTER TABLE snapshot_department_notes ADD COLUMN migrated INTEGER NOT NULL DEFAULT 0`
     );
   }
+  const deptItemCols = tableColumns(database, "snapshot_department_items");
+  if (deptItemCols.length && !deptItemCols.includes("completed")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_items ADD COLUMN completed INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (deptItemCols.length && !deptItemCols.includes("source_key")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_items ADD COLUMN source_key TEXT NOT NULL DEFAULT ''`
+    );
+  }
 
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already

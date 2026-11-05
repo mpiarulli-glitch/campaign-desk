@@ -164,6 +164,74 @@ test("weekly snapshot department items", async (t) => {
     assert.doesNotMatch(card.body, /SEO Department/);
   });
 
+  await t.test("a Basecamp item stays checked, and a typed item does not until marked done", () => {
+    const checked = depts.addDepartmentItem({
+      clientId: client.id,
+      weekStart: week,
+      department: "video",
+      body: "Film the testimonial",
+      completed: true,
+      sourceKey: "todo:44",
+    });
+    assert.equal(checked?.completed, true);
+    assert.equal(checked?.sourceKey, "todo:44");
+    const typed = depts.addDepartmentItem({
+      clientId: client.id,
+      weekStart: week,
+      department: "video",
+      body: "Rough cut notes",
+    });
+    assert.equal(typed?.completed, false);
+    const marked = depts.updateDepartmentItem({ itemId: typed!.id, completed: true });
+    assert.equal(marked?.completed, true);
+    const stored = depts
+      .departmentNotesForWeek(client.id, week)
+      .find((note) => note.department === "video");
+    assert.deepEqual(
+      stored?.items.map((item) => [item.body, item.completed]),
+      [
+        ["Film the testimonial", true],
+        ["Rough cut notes", true],
+      ]
+    );
+
+    const mail = cs.snapshotWeekCopy({
+      departments: [
+        {
+          label: "Video Department",
+          items: (stored?.items || []).map((item) => ({
+            body: item.body,
+            completed: item.completed,
+          })),
+        },
+      ],
+    });
+    assert.match(mail.html, /&#10003;/);
+    assert.match(mail.text, /✓ Film the testimonial/);
+    assert.match(mail.text, /✓ Rough cut notes/);
+    const card = cs.weeklyAskMessageContent({
+      ask: {
+        month: "2026-10",
+        monthLabel: "October 2026",
+        unansweredLeads: [],
+        revenueIn: true,
+        revenueAmount: null,
+      },
+      link: "https://hub.example.com/snapshot/tok",
+      mention: "@Pat",
+      amLabel: "Cassidy",
+      work: {
+        departments: [
+          {
+            label: "Video Department",
+            items: [{ body: "Film the testimonial", completed: true }],
+          },
+        ],
+      },
+    });
+    assert.match(card.body, /&#10003; Film the testimonial/);
+  });
+
   await t.test("another week does not reuse this week's items", () => {
     assert.equal(depts.filledDepartmentNotes(client.id, "2026-11-09").length, 0);
   });

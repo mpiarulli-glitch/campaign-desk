@@ -36,7 +36,8 @@ function formatClientWinDate(ymd: string): string {
     year: "numeric",
   });
 }
-type DepartmentNote = { label: string; items: string[] };
+type DepartmentItem = { body: string; completed: boolean };
+type DepartmentNote = { label: string; items: DepartmentItem[] };
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
 function ymdLabel(ymd: string): string {
@@ -115,10 +116,16 @@ export default function SnapshotClientPage() {
           setAccountName(data.account.name);
           setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
           setDepartments(
-            ((data.departments || []) as DepartmentNote[])
+            ((data.departments || []) as Array<{ label: string; items: Array<string | DepartmentItem> }>)
               .map((note) => ({
                 label: note.label,
-                items: (note.items || []).map((item) => item.trim()).filter(Boolean),
+                items: (note.items || [])
+                  .map((item) =>
+                    typeof item === "string"
+                      ? { body: item.trim(), completed: false }
+                      : { body: (item.body || "").trim(), completed: Boolean(item.completed) }
+                  )
+                  .filter((item) => item.body),
               }))
               .filter((note) => note.items.length > 0)
           );
@@ -442,7 +449,14 @@ export default function SnapshotClientPage() {
                       <h3>{note.label}</h3>
                       <ul>
                         {note.items.map((item, index) => (
-                          <li key={`${note.label}-${index}`}>{item}</li>
+                          <li key={`${note.label}-${index}`}>
+                            {item.completed ? (
+                              <span className="snap-check is-on" aria-label="Completed">
+                                ✓
+                              </span>
+                            ) : null}
+                            {item.body}
+                          </li>
                         ))}
                       </ul>
                     </div>

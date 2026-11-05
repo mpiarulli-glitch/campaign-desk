@@ -286,18 +286,35 @@ function esc(s: string): string {
 const LOGO =
   "https://assets.cdn.filesafe.space/0GKlxMiOTyF1FJ3vPBfo/media/6916cb146c431e860eb696b9.png";
 
+export type SnapshotWeekItem = { body: string; completed?: boolean };
+
 export type SnapshotWeekCopy = {
   wins?: string[];
-  departments?: { label: string; items: string[] }[];
+  departments?: { label: string; items: Array<string | SnapshotWeekItem> }[];
 };
 
-function filledWeekDepartments(work?: SnapshotWeekCopy): { label: string; items: string[] }[] {
+function weekItem(item: string | SnapshotWeekItem): SnapshotWeekItem | null {
+  if (typeof item === "string") {
+    const body = item.trim();
+    return body ? { body, completed: false } : null;
+  }
+  const body = (item?.body || "").trim();
+  return body ? { body, completed: Boolean(item.completed) } : null;
+}
+
+function filledWeekDepartments(
+  work?: SnapshotWeekCopy
+): { label: string; items: SnapshotWeekItem[] }[] {
   return (work?.departments || [])
     .map((dept) => ({
       label: dept.label,
-      items: (dept.items || []).map((item) => item.trim()).filter(Boolean),
+      items: (dept.items || []).map(weekItem).filter((item): item is SnapshotWeekItem => Boolean(item)),
     }))
     .filter((dept) => dept.items.length > 0);
+}
+
+function completedMarkHtml(): string {
+  return `<span style="color:#188038;font-weight:bold;">&#10003;&nbsp;</span>`;
 }
 
 /** Wins and filled departments only. A department with no items is omitted. */
@@ -327,12 +344,16 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
         dept.items
           .map(
             (item) =>
-              `<li style="margin:0 0 4px;font-size:16px;line-height:1.5;color:#222222;">${esc(item)}</li>`
+              `<li style="margin:0 0 4px;font-size:16px;line-height:1.5;color:#222222;">${item.completed ? completedMarkHtml() : ""}${esc(item.body)}</li>`
           )
           .join("") +
         `</ul>`
     );
-    text.push(dept.label, ...dept.items.map((item) => `- ${item}`), "");
+    text.push(
+      dept.label,
+      ...dept.items.map((item) => `${item.completed ? "✓" : "-"} ${item.body}`),
+      ""
+    );
   }
   return { html: html.join(""), text: text.join("\n") };
 }
@@ -348,7 +369,9 @@ function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
   }
   for (const dept of departments) {
     html += `<div><br><strong>${esc(dept.label)}</strong></div><ul>`;
-    for (const item of dept.items) html += `<li>${esc(item)}</li>`;
+    for (const item of dept.items) {
+      html += `<li>${item.completed ? "&#10003; " : ""}${esc(item.body)}</li>`;
+    }
     html += `</ul>`;
   }
   return html;
@@ -595,7 +618,7 @@ export async function sendWeeklyAsk(args: {
       .map((row) => row.body),
     departments: filledDepartmentNotes(client.id, weekStart).map((note) => ({
       label: note.label,
-      items: note.items.map((item) => item.body),
+      items: note.items.map((item) => ({ body: item.body, completed: item.completed })),
     })),
   };
   const { from, replyTo } = senderFor(am);

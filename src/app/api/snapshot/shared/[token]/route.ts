@@ -49,7 +49,7 @@ export async function GET(request: Request, { params }: Params) {
     wins: listWins(account.id),
     departments: filledDepartmentNotes(account.id, week).map((note) => ({
       label: note.label,
-      items: note.items.map((item) => item.body),
+      items: note.items.map((item) => ({ body: item.body, completed: item.completed })),
     })),
     metrics: metricsSeries(account.id),
     // Bounds for the week picker, so it stops rather than paging into empty

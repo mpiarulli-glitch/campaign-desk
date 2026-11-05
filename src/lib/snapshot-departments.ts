@@ -26,6 +26,9 @@ export {
 export type SnapshotDepartmentItem = {
   id: string;
   body: string;
+  /** True when this came from a completed Basecamp to-do, or was marked done. */
+  completed: boolean;
+  sourceKey: string;
 };
 
 export type SnapshotDepartmentNote = {
@@ -39,6 +42,8 @@ type ItemRow = {
   department: string;
   body: string;
   sort_order: number;
+  completed: number;
+  source_key: string;
 };
 
 /** Copy each unmigrated single-note blob into one list item. Idempotent. */
@@ -98,7 +103,7 @@ export function departmentNotesForWeek(
   migrateLegacyDepartmentNotes();
   const rows = getDb()
     .prepare(
-      `SELECT id, department, body, sort_order
+      `SELECT id, department, body, sort_order, completed, source_key
        FROM snapshot_department_items
        WHERE client_id = ? AND week_start = ?
        ORDER BY sort_order ASC, created_at ASC, id ASC`
@@ -109,7 +114,12 @@ export function departmentNotesForWeek(
     const body = (row.body || "").trim();
     if (!body) continue;
     const list = bySlug.get(row.department) || [];
-    list.push({ id: row.id, body });
+    list.push({
+      id: row.id,
+      body,
+      completed: Boolean(row.completed),
+      sourceKey: row.source_key || "",
+    });
     bySlug.set(row.department, list);
   }
   return SNAPSHOT_DEPARTMENTS.map((dept) => ({
@@ -133,6 +143,9 @@ export function addDepartmentItem(input: {
   department: SnapshotDepartmentSlug;
   body: string;
   loggedBy?: string;
+  /** Set when the line is a completed Basecamp to-do. */
+  completed?: boolean;
+  sourceKey?: string;
 }): SnapshotDepartmentItem | null {
   const body = input.body.trim();
   if (!body) return null;
@@ -147,10 +160,13 @@ export function addDepartmentItem(input: {
     )
     .get(input.clientId, input.weekStart, input.department) as { n: number };
   const id = nanoid(12);
+  const completed = input.completed ? 1 : 0;
+  const sourceKey = (input.sourceKey || "").trim();
   db.prepare(
     `INSERT INTO snapshot_department_items
-       (id, client_id, week_start, department, body, sort_order, logged_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, client_id, week_start, department, body, sort_order, logged_by,
+        created_at, updated_at, completed, source_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.clientId,
@@ -160,29 +176,42 @@ export function addDepartmentItem(input: {
     (max?.n ?? -1) + 1,
     input.loggedBy || "",
     now,
-    now
+    now,
+    completed,
+    sourceKey
   );
-  return { id, body };
+  return { id, body, completed: Boolean(completed), sourceKey };
 }
 
 export function updateDepartmentItem(input: {
   itemId: string;
-  body: string;
+  body?: string;
+  completed?: boolean;
   loggedBy?: string;
 }): SnapshotDepartmentItem | null {
-  const body = input.body.trim();
-  if (!body) return null;
   const db = getDb();
   const existing = db
-    .prepare(`SELECT id, client_id FROM snapshot_department_items WHERE id = ?`)
-    .get(input.itemId) as { id: string; client_id: string } | undefined;
+    .prepare(
+      `SELECT id, body, completed, source_key FROM snapshot_department_items WHERE id = ?`
+    )
+    .get(input.itemId) as
+    | { id: string; body: string; completed: number; source_key: string }
+    | undefined;
   if (!existing) return null;
+  const body = input.body === undefined ? existing.body : input.body.trim();
+  if (!body) return null;
+  const completed = input.completed === undefined ? existing.completed : input.completed ? 1 : 0;
   db.prepare(
     `UPDATE snapshot_department_items
-       SET body = ?, logged_by = ?, updated_at = ?
+       SET body = ?, completed = ?, logged_by = ?, updated_at = ?
      WHERE id = ?`
-  ).run(body, input.loggedBy || "", nowIso(), input.itemId);
-  return { id: existing.id, body };
+  ).run(body, completed, input.loggedBy || "", nowIso(), input.itemId);
+  return {
+    id: existing.id,
+    body,
+    completed: Boolean(completed),
+    sourceKey: existing.source_key || "",
+  };
 }
 
 export function departmentItemClientId(itemId: string): string | null {

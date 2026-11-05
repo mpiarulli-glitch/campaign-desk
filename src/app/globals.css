@@ -20246,10 +20246,36 @@ article.snap-pick-card.lh-pick-card:hover {
   line-height: 1.4;
 }
 
-.snap-suggest-title span {
-  display: block;
-  font-size: 12px;
-  color: var(--text-muted);
+.snap-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border: 1.5px solid #9aa3ad;
+  border-radius: 3px;
+  background: #fff;
+  color: transparent;
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.snap-check.is-on {
+  color: #fff;
+  background: #188038;
+  border-color: #188038;
+}
+
+button.snap-check {
+  padding: 0;
+  cursor: pointer;
+}
+
+.snap-dept-client li .snap-check {
+  margin-right: 8px;
 }
 
 .snap-dept-client-list {

@@ -64,6 +64,8 @@ export async function POST(request: Request) {
     department,
     body: text,
     loggedBy: await sessionActor(),
+    completed: body.completed === true,
+    sourceKey: typeof body.sourceKey === "string" ? body.sourceKey : "",
   });
   if (!item) {
     return NextResponse.json({ error: "Write an item before adding it." }, { status: 400 });
@@ -81,8 +83,9 @@ export async function PATCH(request: Request) {
   }
   const body = await request.json().catch(() => ({}));
   const itemId = typeof body.itemId === "string" ? body.itemId : "";
-  const text = typeof body.body === "string" ? body.body : "";
-  if (!itemId) {
+  const hasBody = typeof body.body === "string";
+  const hasCompleted = typeof body.completed === "boolean";
+  if (!itemId || (!hasBody && !hasCompleted)) {
     return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   }
   const clientId = departmentItemClientId(itemId);
@@ -91,7 +94,8 @@ export async function PATCH(request: Request) {
   }
   const item = updateDepartmentItem({
     itemId,
-    body: text,
+    ...(hasBody ? { body: body.body as string } : {}),
+    ...(hasCompleted ? { completed: body.completed as boolean } : {}),
     loggedBy: await sessionActor(),
   });
   if (!item) {
