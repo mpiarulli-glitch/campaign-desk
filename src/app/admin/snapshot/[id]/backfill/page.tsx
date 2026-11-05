@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { SnapshotBackfillGrid } from "@/components/SnapshotBackfillGrid";
+import { SnapshotNavLinks } from "@/components/SnapshotNavLinks";
 
 export default function SnapshotBackfillPage() {
   const { id } = useParams<{ id: string }>();
@@ -13,9 +14,7 @@ export default function SnapshotBackfillPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
           All snapshots
         </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
+        <SnapshotNavLinks />
         <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}`}>
           This week
         </Link>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SnapshotNavLinks } from "@/components/SnapshotNavLinks";
 
 const SECTIONS = [
   { id: "weekly-pass", label: "Weekly pass" },
@@ -17,9 +18,7 @@ export default function SnapshotInstructionsPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
           All snapshots
         </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
-          Behind report
-        </Link>
+        <SnapshotNavLinks />
       </div>
 
       <div className="ops-page-head">
