@@ -40,6 +40,7 @@ import {
   hasProductionAccess,
   hasSocialQaAccess,
   personLabel,
+  personTeam,
   type CampaignKindScope,
 } from "./people";
 
@@ -164,6 +165,14 @@ export const PAGES: Capability[] = [
     href: "/admin/whiteboard",
     icon: "board",
     blurb: "Shared canvases and their revisions.",
+  },
+  {
+    key: "page.client_services_hub",
+    label: "Client Services",
+    group: "page",
+    href: "/admin/client-services",
+    icon: "mail",
+    blurb: "Send a weekly snapshot by hand, and add a client to the roster.",
   },
   {
     key: "page.client_services",
@@ -362,6 +371,10 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
     case "page.client_services":
     case "page.snapshot":
       return true;
+
+    // The send dashboard. Admins, and anyone on the Client Services team.
+    case "page.client_services_hub":
+      return admin || personTeam(person) === "client_services";
 
     // Admin sidebar only: each one aggregates across every client or person.
     case "page.clients":

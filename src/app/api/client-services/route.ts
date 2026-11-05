@@ -6,6 +6,7 @@ import {
   isSnapshotEnrolled,
   unenrollSnapshotClient,
 } from "@/lib/snapshot-enrollment";
+import { addSnapshotClient, lookupSnapshotProject } from "@/lib/snapshot-add-client";
 import { getRevClient, listRevClients, updateRevClient } from "@/lib/revenue";
 import { listLeads, listWins } from "@/lib/snapshot";
 import {
@@ -24,6 +25,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const url = new URL(request.url);
+  if (url.searchParams.has("project")) {
+    if (!(await isAdminWithAccess("page.client_services"))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const looked = await lookupSnapshotProject(url.searchParams.get("project") || "");
+    if (!looked.ok) {
+      return NextResponse.json({ ok: false, error: looked.error }, { status: 400 });
+    }
+    return NextResponse.json({
+      ok: true,
+      projectId: looked.projectId,
+      projectName: looked.projectName,
+    });
+  }
   if (url.searchParams.get("picker") === "1") {
     if (!(await isAdminWithAccess("page.client_services"))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -84,6 +99,30 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const action = typeof body.action === "string" ? body.action : "";
   const clientId = typeof body.clientId === "string" ? body.clientId : "";
+
+  if (action === "add") {
+    const result = await addSnapshotClient({
+      name: typeof body.name === "string" ? body.name : "",
+      contactName: typeof body.contactName === "string" ? body.contactName : "",
+      email: typeof body.email === "string" ? body.email : "",
+      phone: typeof body.phone === "string" ? body.phone : "",
+      basecampProjectId: typeof body.basecampProjectId === "string" ? body.basecampProjectId : "",
+      enrolledBy: await sessionActor(),
+    });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, field: result.field }, { status: 400 });
+    }
+    const rows = clientServiceRows();
+    return NextResponse.json({
+      ok: true,
+      linked: result.linked,
+      clientId: result.clientId,
+      projectName: result.projectName,
+      rows,
+      summary: clientServiceSummary(rows),
+    });
+  }
+
   if (!clientId) {
     return NextResponse.json({ error: "clientId is required" }, { status: 400 });
   }
@@ -131,6 +170,12 @@ export async function POST(request: Request) {
   }
 
   if (action === "send") {
+    if (client.outreach_paused) {
+      return NextResponse.json(
+        { error: "Outreach is paused for this client." },
+        { status: 400 }
+      );
+    }
     const result = await sendWeeklyAsk({
       client,
       weekStart: currentWeekStart(),
@@ -148,7 +193,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(
-    { error: "action must be send, pause, resume, enroll, or unenroll" },
+    { error: "action must be send, pause, resume, enroll, add, or unenroll" },
     { status: 400 }
   );
 }

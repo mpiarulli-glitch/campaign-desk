@@ -21,16 +21,6 @@ type AskStatus =
   | "bounced"
   | "submitted";
 
-type PickerClient = {
-  id: string;
-  name: string;
-  accountManager: string;
-  contactEmail: string;
-  basecampProjectId: string;
-  enrolled: boolean;
-};
-type PickerProject = { id: string; name: string };
-
 type Row = {
   clientId: string;
   name: string;
@@ -206,15 +196,17 @@ export default function ClientServicesPage() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  const [candidates, setCandidates] = useState<PickerClient[]>([]);
-  const [projects, setProjects] = useState<PickerProject[]>([]);
-  const [projectsError, setProjectsError] = useState("");
-  const [clientQuery, setClientQuery] = useState("");
-  const [projectQuery, setProjectQuery] = useState("");
-  const [pickedClient, setPickedClient] = useState<PickerClient | null>(null);
-  const [pickedProject, setPickedProject] = useState<PickerProject | null>(null);
-  const [amDraft, setAmDraft] = useState("");
-  const [emailDraft, setEmailDraft] = useState("");
+  const [addForm, setAddForm] = useState({
+    name: "",
+    contactName: "",
+    email: "",
+    phone: "",
+    basecampProjectId: "",
+  });
+  const [addField, setAddField] = useState("");
+  const [addError, setAddError] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [checkingProject, setCheckingProject] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [edit, setEdit] = useState<{ id: string; field: EditField } | null>(null);
@@ -483,71 +475,69 @@ export default function ClientServicesPage() {
     }
   }
 
-  async function openAddClient() {
+  function openAddClient() {
     setAddOpen(true);
     setError("");
-    setClientQuery("");
-    setProjectQuery("");
-    setPickedClient(null);
-    setPickedProject(null);
-    setAmDraft("");
-    setEmailDraft("");
+    setAddError("");
+    setAddField("");
+    setProjectName("");
+    setAddForm({ name: "", contactName: "", email: "", phone: "", basecampProjectId: "" });
+  }
+
+  async function checkProject() {
+    const raw = addForm.basecampProjectId.trim();
+    setProjectName("");
+    if (!raw) return;
+    setCheckingProject(true);
+    setAddField("");
+    setAddError("");
     try {
-      const res = await fetch("/api/client-services?picker=1");
+      const res = await fetch(`/api/client-services?project=${encodeURIComponent(raw)}`);
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError("Could not load clients to add.");
+        setAddField("basecampProjectId");
+        setAddError(data.error || "That Basecamp project was not found.");
         return;
       }
-      const data = await res.json();
-      setCandidates(data.clients || []);
-      setProjects(data.projects || []);
-      setProjectsError(typeof data.projectsError === "string" ? data.projectsError : "");
+      setProjectName(data.projectName || "");
+      if (data.projectId) {
+        setAddForm((cur) => ({ ...cur, basecampProjectId: data.projectId }));
+      }
     } catch {
-      setError("Network error. Check your connection and try again.");
+      setAddField("basecampProjectId");
+      setAddError("Could not reach Basecamp.");
+    } finally {
+      setCheckingProject(false);
     }
   }
 
-  function chooseClient(client: PickerClient) {
-    setPickedClient(client);
-    setAmDraft(client.accountManager);
-    setEmailDraft(client.contactEmail);
-    const linked = projects.find((project) => project.id === client.basecampProjectId);
-    setPickedProject(
-      linked ||
-        (client.basecampProjectId
-          ? { id: client.basecampProjectId, name: `Project ${client.basecampProjectId}` }
-          : null)
-    );
-    setProjectQuery("");
-  }
-
-  async function enrollPicked(event: FormEvent) {
+  async function submitAddClient(event: FormEvent) {
     event.preventDefault();
-    if (!pickedClient || !pickedProject) return;
-    setBusyId(pickedClient.id);
+    setBusyId("add");
+    setAddError("");
+    setAddField("");
     setError("");
     const res = await fetch("/api/client-services", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "enroll",
-        clientId: pickedClient.id,
-        basecampProjectId: pickedProject.id,
-        accountManager: amDraft,
-        contactEmail: emailDraft,
-      }),
+      body: JSON.stringify({ action: "add", ...addForm }),
     });
     setBusyId(null);
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not add that client.");
+      setAddField(typeof data.field === "string" ? data.field : "");
+      setAddError(data.error || "Could not add that client.");
       return;
     }
-    const data = await res.json();
     setRows(data.rows || []);
     setSummary(data.summary || null);
     setAddOpen(false);
-    setMessage(`${pickedClient.name} is on weekly snapshots.`);
+    setProjectName(data.projectName || projectName);
+    setMessage(
+      data.linked
+        ? `Linked the existing client. Basecamp project: ${data.projectName}.`
+        : `Added to weekly snapshots. Basecamp project: ${data.projectName}.`
+    );
     setTab("dashboard");
   }
 
@@ -758,7 +748,7 @@ export default function ClientServicesPage() {
               type="button"
               className="btn btn-sm"
               style={{ marginLeft: "auto" }}
-              onClick={() => (addOpen ? setAddOpen(false) : void openAddClient())}
+              onClick={() => (addOpen ? setAddOpen(false) : openAddClient())}
             >
               {addOpen ? "Cancel" : "Add client"}
             </button>
@@ -769,102 +759,59 @@ export default function ClientServicesPage() {
         {message ? <p className="success">{message}</p> : null}
 
         {isAdmin && view === "dashboard" && addOpen ? (
-          <form className="card card-pad snap-enroll" onSubmit={enrollPicked}>
-            <h2 className="h3" style={{ marginTop: 0 }}>Add a client to weekly snapshots</h2>
+          <form className="card card-pad snap-enroll" onSubmit={submitAddClient}>
+            <h2 className="h3" style={{ marginTop: 0 }}>Add a client</h2>
             <p className="muted" style={{ marginTop: 0 }}>
-              Pick someone who already exists, then confirm their Basecamp project.
-              Removing them later only takes them off this list.
+              If this business or Basecamp project is already here, it is linked
+              instead of created again. Removing them later only takes them off this list.
             </p>
+            {(
+              [
+                ["name", "Business name", "text", "Business name"],
+                ["contactName", "Point of contact name", "text", "Point of contact"],
+                ["email", "Email", "email", "Email"],
+                ["phone", "Phone", "tel", "Phone"],
+              ] as const
+            ).map(([key, label, type, aria]) => (
+              <label className="field" key={key}>
+                <span>{label}</span>
+                <input
+                  type={type}
+                  value={addForm[key]}
+                  aria-label={aria}
+                  aria-invalid={addField === key}
+                  onChange={(event) =>
+                    setAddForm((cur) => ({ ...cur, [key]: event.target.value }))
+                  }
+                />
+                {addField === key ? <p className="error">{addError}</p> : null}
+              </label>
+            ))}
             <label className="field">
-              <span>Client</span>
+              <span>Basecamp project ID</span>
               <input
-                value={clientQuery}
-                onChange={(event) => setClientQuery(event.target.value)}
-                placeholder="Search clients"
-                aria-label="Search clients"
+                value={addForm.basecampProjectId}
+                aria-label="Basecamp project ID"
+                aria-invalid={addField === "basecampProjectId"}
+                placeholder="Project ID or Basecamp URL"
+                onChange={(event) => {
+                  setProjectName("");
+                  setAddForm((cur) => ({ ...cur, basecampProjectId: event.target.value }));
+                }}
+                onBlur={() => void checkProject()}
               />
+              {checkingProject ? <p className="muted">Checking Basecamp…</p> : null}
+              {projectName ? (
+                <p className="snap-enroll-picked">
+                  Basecamp project: <strong>{projectName}</strong>
+                </p>
+              ) : null}
+              {addField === "basecampProjectId" ? <p className="error">{addError}</p> : null}
             </label>
-            <ul className="snap-enroll-list" aria-label="Clients">
-              {candidates
-                .filter((client) => !client.enrolled)
-                .filter((client) =>
-                  client.name.toLowerCase().includes(clientQuery.trim().toLowerCase())
-                )
-                .slice(0, 8)
-                .map((client) => (
-                  <li key={client.id}>
-                    <button
-                      type="button"
-                      className={pickedClient?.id === client.id ? "is-on" : ""}
-                      onClick={() => chooseClient(client)}
-                    >
-                      {client.name}
-                    </button>
-                  </li>
-                ))}
-            </ul>
-            {pickedClient ? (
-              <>
-                <label className="field">
-                  <span>Basecamp project</span>
-                  <input
-                    value={projectQuery}
-                    onChange={(event) => setProjectQuery(event.target.value)}
-                    placeholder="Search Basecamp projects"
-                    aria-label="Search Basecamp projects"
-                  />
-                </label>
-                {pickedProject ? (
-                  <p className="snap-enroll-picked">
-                    Linked project: <strong>{pickedProject.name}</strong>
-                  </p>
-                ) : (
-                  <p className="muted">No Basecamp project linked yet. Pick one below.</p>
-                )}
-                {projectsError ? <p className="muted">{projectsError}</p> : null}
-                <ul className="snap-enroll-list" aria-label="Basecamp projects">
-                  {projects
-                    .filter((project) =>
-                      project.name.toLowerCase().includes(projectQuery.trim().toLowerCase())
-                    )
-                    .slice(0, 8)
-                    .map((project) => (
-                      <li key={project.id}>
-                        <button
-                          type="button"
-                          className={pickedProject?.id === project.id ? "is-on" : ""}
-                          onClick={() => setPickedProject(project)}
-                        >
-                          {project.name}
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-                <div className="snap-enroll-fields">
-                  <label className="field">
-                    <span>Account manager</span>
-                    <input
-                      value={amDraft}
-                      onChange={(event) => setAmDraft(event.target.value)}
-                      aria-label="Account manager"
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Snapshot email</span>
-                    <input
-                      type="email"
-                      value={emailDraft}
-                      onChange={(event) => setEmailDraft(event.target.value)}
-                      aria-label="Snapshot email"
-                      placeholder="Where the Friday email goes"
-                    />
-                  </label>
-                </div>
-                <button className="btn btn-sm" type="submit" disabled={!pickedProject || busyId === pickedClient.id}>
-                  {busyId === pickedClient.id ? "Adding..." : "Add to snapshots"}
-                </button>
-              </>
-            ) : null}
+            {addError && !addField ? <p className="error">{addError}</p> : null}
+            <button className="btn btn-sm" type="submit" disabled={busyId === "add" || checkingProject}>
+              {busyId === "add" ? "Adding..." : "Add client"}
+            </button>
           </form>
         ) : null}
 

@@ -40,6 +40,9 @@ export type DepartmentSuggestion = {
 // or automations belongs to Lifecycle, not Social Media.
 const LIFECYCLE_RE =
   /\b(?:emails?|sms|texts?|mms|linkedin|automations?|flows?|klaviyo|ghl|go high level|mailchimp|hubspot|newsletters?|drips?|lifecycle|retention|loyalty|push)\b/i;
+// Checked before Social. "Paid Social" and "Meta Ads" are Ads, not Social Media.
+const ADS_RE =
+  /\b(?:google ads|meta ads|facebook ads|paid social|campaign budget|retargeting|ads|ad|paid|ppc|sem)\b/i;
 const SOCIAL_RE = /\b(?:social|instagram|facebook|tiktok|content calendar|posts)\b/i;
 const VIDEO_RE = /\b(?:videos?|youtube|filming|editing|reels?)\b/i;
 const WEB_RE = /\b(?:website|web|landing page|wordpress|shopify|dev)\b/i;
@@ -49,6 +52,7 @@ const STRATEGY_RE = /\b(?:strategy|meetings?|reports?|planning|onboarding|kickof
 function keywordDepartment(text: string): SnapshotDepartmentSlug | null {
   const value = text || "";
   if (LIFECYCLE_RE.test(value)) return "lifecycle";
+  if (ADS_RE.test(value)) return "ads";
   if (SOCIAL_RE.test(value)) return "social";
   if (VIDEO_RE.test(value)) return "video";
   if (WEB_RE.test(value)) return "web";

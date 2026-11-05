@@ -24,13 +24,14 @@ test("weekly snapshot department items", async (t) => {
   });
   const week = "2026-11-02";
 
-  await t.test("the editor always has six departments, in order, with no items yet", () => {
+  await t.test("the editor always has every department, in order, with no items yet", () => {
     const notes = depts.departmentNotesForWeek(client.id, week);
     assert.deepEqual(
       notes.map((note) => note.label),
       [
         "Lifecycle Department",
         "Social Media Department",
+        "Ads Department",
         "Video Department",
         "Web Department",
         "SEO Department",
@@ -106,10 +107,16 @@ test("weekly snapshot department items", async (t) => {
       filled.map((note) => note.department),
       ["social", "web"]
     );
-    assert.equal(depts.departmentNotesForWeek(client.id, week).length, 6);
+    assert.equal(depts.departmentNotesForWeek(client.id, week).length, 7);
   });
 
   await t.test("the Friday email and Basecamp post bullet only the filled departments", () => {
+    depts.addDepartmentItem({
+      clientId: client.id,
+      weekStart: week,
+      department: "ads",
+      body: "Launched the retargeting set.",
+    });
     const work = {
       wins: ["Booked the holiday shoot."],
       departments: depts.filledDepartmentNotes(client.id, week).map((note) => ({
@@ -139,6 +146,8 @@ test("weekly snapshot department items", async (t) => {
     assert.match(mail.html, /Shipped the landing page/);
     assert.match(mail.html, /2 updates/);
     assert.match(mail.text, /Social Media Department · 2 updates/);
+    assert.match(mail.text, /Ads Department · 1 update/);
+    assert.match(mail.text, /- Launched the retargeting set\./);
     assert.match(mail.html, /border-left:3px solid #c48a00/);
     assert.doesNotMatch(mail.text, /Lifecycle Department/);
     assert.doesNotMatch(mail.text, /Video Department/);
@@ -162,6 +171,8 @@ test("weekly snapshot department items", async (t) => {
     assert.match(card.body, /<ul>/);
     assert.match(card.body, /<li>Posted four Reels\.<\/li>/);
     assert.match(card.body, /Social Media Department/);
+    assert.match(card.body, /Ads Department/);
+    assert.match(card.body, /<li>Launched the retargeting set\.<\/li>/);
     assert.match(card.body, /Web Department/);
     assert.doesNotMatch(card.body, /Lifecycle Department/);
     assert.doesNotMatch(card.body, /SEO Department/);

@@ -1,6 +1,6 @@
 // What each department did on a client's weekly snapshot.
 //
-// Six fixed sections, always shown to the team. Each one is an ordered list
+// Every department section, always shown to the team. Each one is an ordered list
 // of items. The client, the Friday email, and the Basecamp post only receive
 // departments that have at least one item. Deliverable rows are a different
 // record and are not read or removed here.
