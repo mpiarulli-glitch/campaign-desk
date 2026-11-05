@@ -6,8 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { type SnapshotFillRowData } from "@/components/SnapshotFillRow";
+import { SnapshotNavLinks } from "@/components/SnapshotNavLinks";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
-import { canSeeFridayAsk, teamLabelFor } from "@/lib/people";
+import { teamLabelFor } from "@/lib/people";
 import {
   fillCanSeeAll,
   fillFocusTeam,
@@ -151,17 +152,7 @@ export default function SnapshotDeskPage() {
   return (
     <div className="ops-page snap-desk">
       <div className="page-actions">
-        {canSeeFridayAsk(viewer) ? (
-          <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
-            Friday ask
-          </Link>
-        ) : null}
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
-          Behind report
-        </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
+        <SnapshotNavLinks />
         {canSeeAll ? (
           <button
             type="button"

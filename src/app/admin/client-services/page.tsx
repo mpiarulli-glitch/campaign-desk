@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Fragment, FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { SnapshotNavLinks } from "@/components/SnapshotNavLinks";
 import { teamLabel } from "@/lib/team";
 import { canSeeFridayAsk } from "@/lib/people";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
@@ -183,8 +184,10 @@ function urgency(row: Row): number {
   return 3;
 }
 
-export default function ClientServicesPage() {
+function ClientServicesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const openCreateClient = searchParams.get("add") === "1";
   const [tab, setTab] = useState<Tab>("accounts");
   const [rows, setRows] = useState<Row[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -223,6 +226,14 @@ export default function ClientServicesPage() {
   const isAdmin = role === "admin";
   const fridayAsk = canSeeFridayAsk({ person, owner });
   const view = fridayAsk ? tab : "accounts";
+
+  // Arriving from the snapshot "Add client" link. The form lives on Deliverable
+  // setup and only renders for an admin, so wait until the role is known.
+  useEffect(() => {
+    if (!openCreateClient) return;
+    setTab("accounts");
+    if (isAdmin) setAdding(true);
+  }, [openCreateClient, isAdmin]);
 
   async function load() {
     try {
@@ -707,12 +718,13 @@ export default function ClientServicesPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
           Fill this week
         </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
-          Behind report
-        </Link>
+        <SnapshotNavLinks
+          hideDashboard
+          onAddClient={() => {
+            setTab("accounts");
+            setAdding(true);
+          }}
+        />
         {isAdmin && view === "accounts" ? (
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
             {adding ? "Cancel" : "Add account"}
@@ -1330,5 +1342,22 @@ export default function ClientServicesPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+// useSearchParams needs a boundary or the page cannot be prerendered.
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <div className="app-shell">
+          <main className="container">
+            <p className="muted">Loading…</p>
+          </main>
+        </div>
+      }
+    >
+      <ClientServicesPage />
+    </Suspense>
   );
 }

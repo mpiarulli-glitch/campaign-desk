@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { SnapshotNavLinks } from "@/components/SnapshotNavLinks";
 
 type CadenceUnit = "weekly" | "monthly" | "quarterly";
 const CADENCE_UNIT_LABEL: Record<CadenceUnit, string> = {
@@ -60,9 +61,7 @@ export default function BehindReportPage() {
     <div className="app-shell">
       <div className="page-actions">
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">All snapshots</Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
+        <SnapshotNavLinks />
       </div>
 
       <main className="container stack">
