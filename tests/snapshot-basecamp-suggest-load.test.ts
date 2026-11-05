@@ -7,10 +7,12 @@ import {
   activitiesFromRecordings,
   isCompletedCard,
   isDoneColumn,
+  isSentForApprovalColumn,
   recordingCompletedAt,
   recordingOlderThanWeek,
   type BcRecording,
 } from "../src/lib/snapshot-basecamp-recordings";
+import { suggestionsForWeek } from "../src/lib/snapshot-basecamp-suggestions";
 
 const WEEK = "2026-11-02";
 
@@ -74,6 +76,72 @@ test("card completion and the week cutoff", () => {
   assert.equal(recordingOlderThanWeek("2026-11-02T07:59:59Z", WEEK), true);
   assert.equal(recordingOlderThanWeek("2026-10-20T12:00:00Z", WEEK), true);
   assert.equal(recordingOlderThanWeek("", WEEK), false);
+
+  assert.equal(isSentForApprovalColumn({ title: "Sent for Approval" }), true);
+  assert.equal(isSentForApprovalColumn({ title: "sent for approval" }), true);
+  assert.equal(isSentForApprovalColumn({ title: "SENT FOR APPROVAL" }), true);
+  assert.equal(isSentForApprovalColumn({ title: "Sent to client for approval" }), true);
+  assert.equal(isSentForApprovalColumn({ title: "Sent to the client for approval" }), true);
+  assert.equal(isSentForApprovalColumn({ title: "Needs Approval" }), false);
+  assert.equal(isSentForApprovalColumn({ title: "Approved" }), false);
+  assert.equal(isSentForApprovalColumn({ title: "Done" }), false);
+  assert.equal(isSentForApprovalColumn({ title: "Triage" }), false);
+
+  const sentThisWeek: BcRecording = {
+    id: 88010,
+    title: "Send the newsletter",
+    completed: false,
+    updated_at: "2026-11-04T15:00:00Z",
+    parent: { title: "Sent for Approval", type: "Kanban::Column" },
+  };
+  const sentToClient: BcRecording = {
+    id: 88011,
+    title: "Homepage copy",
+    completed: false,
+    updated_at: "2026-11-05T16:00:00Z",
+    parent: { title: "Sent to client for approval", type: "Kanban::Column" },
+  };
+  const sentLastWeek: BcRecording = {
+    id: 88012,
+    title: "October newsletter",
+    completed: false,
+    updated_at: "2026-10-28T15:00:00Z",
+    parent: { title: "Sent for Approval", type: "Kanban::Column" },
+  };
+  const needsApproval: BcRecording = {
+    id: 88013,
+    title: "Draft the blast",
+    completed: false,
+    updated_at: "2026-11-04T15:00:00Z",
+    parent: { title: "Needs Approval", type: "Kanban::Column" },
+  };
+  const sentActivities = activitiesFromRecordings(
+    [sentThisWeek, sentToClient, sentLastWeek, needsApproval, doneColumn],
+    "card"
+  );
+  assert.deepEqual(
+    sentActivities.map((row) => [row.sourceKey, row.mark, row.place]),
+    [
+      ["card:88010", "sent", "Sent for Approval"],
+      ["card:88011", "sent", "Sent to client for approval"],
+      ["card:88012", "sent", "Sent for Approval"],
+      ["card:88001", "done", "Done"],
+    ]
+  );
+  const shown = suggestionsForWeek({
+    activities: sentActivities,
+    weekStart: WEEK,
+    existingItems: [],
+    dismissedKeys: [],
+  });
+  assert.deepEqual(
+    shown.map((row) => [row.sourceKey, row.mark, row.department]),
+    [
+      ["card:88010", "sent", "lifecycle"],
+      ["card:88011", "sent", "unsorted"],
+      ["card:88001", "done", "web"],
+    ]
+  );
 });
 
 test("suggestion loading reports status and does not cache a failed read", async (t) => {

@@ -18,8 +18,13 @@ export type BasecampActivity = {
   /** Where it lived: todo list, group, or card column. */
   place: string;
   assigneeNames?: string[];
-  /** Basecamp completed_at, ISO or YYYY-MM-DD. */
+  /** Basecamp completed_at, ISO or YYYY-MM-DD. For a sent card, when it moved. */
   completedAt?: string | null;
+  /**
+   * "sent" is a card moved to a Sent-for-approval column. It was delivered,
+   * and it is not a completed check.
+   */
+  mark?: "done" | "sent";
 };
 
 export type DepartmentSuggestion = {
@@ -27,6 +32,8 @@ export type DepartmentSuggestion = {
   title: string;
   place: string;
   department: SnapshotSuggestionDepartment;
+  /** "sent" keeps the suggestion off the green completed check. */
+  mark?: "done" | "sent";
 };
 
 const KEYWORD_RULES: { department: SnapshotDepartmentSlug; pattern: RegExp }[] = [
@@ -169,6 +176,7 @@ export function suggestionsForWeek(input: {
         place: activity.place || "",
         assigneeNames: activity.assigneeNames,
       }),
+      mark: activity.mark === "sent" ? "sent" : "done",
     });
   }
   return out;

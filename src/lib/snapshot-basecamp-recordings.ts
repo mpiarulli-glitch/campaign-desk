@@ -1,9 +1,9 @@
 // Turn one Basecamp recording into a snapshot suggestion activity.
 //
 // Pure: no network. Weekly suggestions read Todo and Kanban::Card recordings
-// instead of walking every list. A card counts as done when Basecamp marks it
-// completed or parks it on a Done column. The week check itself stays in
-// suggestionsForWeek, using the completion time when Basecamp sent one.
+// instead of walking every list. A card counts when Basecamp marks it
+// completed, parks it on a Done column, or moves it to a Sent-for-approval
+// column. The week check itself stays in suggestionsForWeek.
 
 import type { BasecampActivity } from "./snapshot-basecamp-suggestions";
 import { pacificYmd } from "./snapshot-basecamp-suggestions";
@@ -33,6 +33,17 @@ export function isDoneColumn(parent: BcRecordingParent | null | undefined): bool
   if (type === "Kanban::DoneColumn") return true;
   const title = (parent?.title || parent?.name || "").trim();
   return /^(done|complete|completed)\b/i.test(title);
+}
+
+/**
+ * A column the team uses once work has gone out for approval.
+ * "Sent for Approval" and "Sent to client for approval" both count.
+ * "Needs Approval" does not — that card has not been sent.
+ */
+export function isSentForApprovalColumn(parent: BcRecordingParent | null | undefined): boolean {
+  const title = (parent?.title || parent?.name || "").trim();
+  if (!title) return false;
+  return /\bsent\b[\s\w'’-]{0,40}\bapproval\b/i.test(title);
 }
 
 /** completion.created_at on a recording, or the completed_at field on a list row. */
@@ -84,8 +95,9 @@ export function activityFromRecording(
   recording: BcRecording,
   kind: "todo" | "card"
 ): BasecampActivity | null {
+  const sent = kind === "card" && isSentForApprovalColumn(recording.parent);
   const done = kind === "card" ? isCompletedCard(recording) : isCompletedTodo(recording);
-  if (!done) return null;
+  if (!sent && !done) return null;
   const title = (recording.title || recording.content || "").trim();
   const id = String(recording.id ?? "").trim();
   if (!title || !id) return null;
@@ -93,12 +105,18 @@ export function activityFromRecording(
   const assigneeNames = (recording.assignees || [])
     .map((person) => (person?.name || "").trim())
     .filter(Boolean);
+  // A sent column wins over a completed flag. The move is updated_at, since
+  // Basecamp does not record when a card changed columns.
+  const completedAt = sent
+    ? (recording.updated_at || "").trim() || recordingCompletedAt(recording)
+    : recordingCompletedAt(recording);
   return {
     sourceKey: `${kind}:${id}`,
     title,
     place,
     assigneeNames,
-    completedAt: recordingCompletedAt(recording) || null,
+    completedAt: completedAt || null,
+    mark: sent ? "sent" : "done",
   };
 }
 

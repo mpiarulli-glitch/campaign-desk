@@ -18,6 +18,8 @@ type Suggestion = {
   title: string;
   place: string;
   department: SnapshotDepartmentSlug | "unsorted";
+  /** "sent" was delivered for approval and is not a completed check. */
+  mark?: "done" | "sent";
 };
 type SuggestStatus = "" | "ok" | "no_project" | "error";
 
@@ -261,7 +263,7 @@ export function SnapshotWeekDepartments({
           weekStart,
           department,
           body: suggestion.title,
-          completed: true,
+          completed: suggestion.mark !== "sent",
           sourceKey: suggestion.sourceKey,
         }),
       });
@@ -319,11 +321,18 @@ export function SnapshotWeekDepartments({
             const target = department || unsortedDept[suggestion.sourceKey] || "lifecycle";
             const text = suggestionText(suggestion);
             const editingThis = editingSuggestion === suggestion.sourceKey;
+            const sent = suggestion.mark === "sent";
             return (
                 <li key={suggestion.sourceKey}>
-                <span className="snap-check is-on" aria-label="Completed in Basecamp">
-                  ✓
-                </span>
+                {sent ? (
+                  <span className="snap-sent" aria-label="Sent for approval">
+                    Sent for approval
+                  </span>
+                ) : (
+                  <span className="snap-check is-on" aria-label="Completed in Basecamp">
+                    ✓
+                  </span>
+                )}
                 {editingThis ? (
                   <span className="snap-suggest-edit">
                     <input
