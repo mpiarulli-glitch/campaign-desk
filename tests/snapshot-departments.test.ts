@@ -137,6 +137,9 @@ test("weekly snapshot department items", async (t) => {
     assert.match(mail.html, /<ul/);
     assert.match(mail.html, /<li/);
     assert.match(mail.html, /Shipped the landing page/);
+    assert.match(mail.html, /2 updates/);
+    assert.match(mail.text, /Social Media Department · 2 updates/);
+    assert.match(mail.html, /border-left:3px solid #c48a00/);
     assert.doesNotMatch(mail.text, /Lifecycle Department/);
     assert.doesNotMatch(mail.text, /Video Department/);
     assert.doesNotMatch(mail.text, /SEO Department/);

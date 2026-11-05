@@ -317,6 +317,10 @@ function completedMarkHtml(): string {
   return `<span style="color:#188038;font-weight:bold;">&#10003;&nbsp;</span>`;
 }
 
+function updateCount(n: number): string {
+  return n === 1 ? "1 update" : `${n} updates`;
+}
+
 /** Wins and filled departments only. A department with no items is omitted. */
 export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text: string } {
   const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
@@ -327,19 +331,24 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
   const text: string[] = [];
   if (wins.length) {
     html.push(
-      `<p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#666666;">Wins</p>` +
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;">` +
         wins
           .map(
             (line) =>
-              `<p style="margin:0 0 8px;font-size:16px;line-height:1.5;color:#222222;">${esc(line)}</p>`
+              `<tr><td style="padding:12px 14px;background-color:#fff8e6;border-left:3px solid #c48a00;">` +
+              `<p style="margin:0 0 4px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#8a6200;font-weight:bold;">Win</p>` +
+              `<p style="margin:0;font-size:16px;line-height:1.5;color:#222222;">${esc(line)}</p>` +
+              `</td></tr>`
           )
-          .join("")
+          .join(`<tr><td style="height:8px;font-size:0;line-height:0;">&nbsp;</td></tr>`) +
+        `</table>`
     );
-    text.push("Wins", ...wins, "");
+    text.push("Win", ...wins, "");
   }
   for (const dept of departments) {
+    const count = updateCount(dept.items.length);
     html.push(
-      `<p style="margin:14px 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#666666;">${esc(dept.label)}</p>` +
+      `<p style="margin:16px 0 6px;font-size:15px;line-height:1.4;color:#111111;font-weight:bold;">${esc(dept.label)} <span style="font-weight:normal;color:#666666;">· ${esc(count)}</span></p>` +
         `<ul style="margin:0 0 8px;padding-left:20px;">` +
         dept.items
           .map(
@@ -350,7 +359,7 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
         `</ul>`
     );
     text.push(
-      dept.label,
+      `${dept.label} · ${count}`,
       ...dept.items.map((item) => `${item.completed ? "✓" : "-"} ${item.body}`),
       ""
     );
@@ -364,11 +373,11 @@ function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
   if (!wins.length && !departments.length) return "";
   let html = "";
   if (wins.length) {
-    html += `<div><br><strong>Wins</strong></div>`;
+    html += `<div><br><strong>Win</strong></div>`;
     for (const line of wins) html += `<div>${esc(line)}</div>`;
   }
   for (const dept of departments) {
-    html += `<div><br><strong>${esc(dept.label)}</strong></div><ul>`;
+    html += `<div><br><strong>${esc(dept.label)}</strong> · ${esc(updateCount(dept.items.length))}</div><ul>`;
     for (const item of dept.items) {
       html += `<li>${item.completed ? "&#10003; " : ""}${esc(item.body)}</li>`;
     }

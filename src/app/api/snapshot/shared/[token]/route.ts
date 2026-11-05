@@ -48,6 +48,7 @@ export async function GET(request: Request, { params }: Params) {
     // Full contract / deliverable overview is hidden from the client view for now.
     wins: listWins(account.id),
     departments: filledDepartmentNotes(account.id, week).map((note) => ({
+      slug: note.department,
       label: note.label,
       items: note.items.map((item) => ({ body: item.body, completed: item.completed })),
     })),

@@ -185,8 +185,8 @@ export default function SnapshotInstructionsPage() {
         <section id="client-view" className="snap-instr-card">
           <h2>What clients see</h2>
           <p>
-            Their token link shows wins, then only the departments that have
-            something written for that week. Empty departments are left out.
+            Their token link shows the win for that week, then a card for each
+            department that has something written. Empty departments are left out.
             They can still answer leads and report revenue.
           </p>
           <ul>

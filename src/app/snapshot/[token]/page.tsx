@@ -4,9 +4,10 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
+import { SNAPSHOT_DEPARTMENTS, isSnapshotDepartment } from "@/lib/snapshot-department-list";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 
-type Win = { id: string; body: string; happened_on: string };
+type Win = { id: string; body: string; happened_on: string; week_start?: string };
 type Converted = "unknown" | "yes" | "no";
 type Lead = {
   id: string;
@@ -37,7 +38,88 @@ function formatClientWinDate(ymd: string): string {
   });
 }
 type DepartmentItem = { body: string; completed: boolean };
-type DepartmentNote = { label: string; items: DepartmentItem[] };
+type DepartmentNote = { slug: string; label: string; items: DepartmentItem[] };
+
+const DEPT_ACCENT: Record<string, string> = {
+  lifecycle: "#04808d",
+  social: "#1a6f9a",
+  video: "#6b4c8a",
+  web: "#1f7a4d",
+  seo: "#8a6200",
+  strategy: "#3d4a5c",
+};
+
+function departmentSlug(note: { slug?: string; label: string }): string {
+  if (note.slug && isSnapshotDepartment(note.slug)) return note.slug;
+  return SNAPSHOT_DEPARTMENTS.find((dept) => dept.label === note.label)?.slug || "strategy";
+}
+
+function updateCount(n: number): string {
+  return n === 1 ? "1 update" : `${n} updates`;
+}
+
+function DeptMark({ slug }: { slug: string }) {
+  const props = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  if (slug === "lifecycle") {
+    return (
+      <svg {...props}>
+        <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+        <path d="m4 7 8 6 8-6" />
+      </svg>
+    );
+  }
+  if (slug === "social") {
+    return (
+      <svg {...props}>
+        <circle cx="6.5" cy="12" r="2.2" />
+        <circle cx="17" cy="7" r="2.2" />
+        <circle cx="17" cy="17" r="2.2" />
+        <path d="m8.6 11.2 6.2-3.1M8.6 12.8l6.2 3.1" />
+      </svg>
+    );
+  }
+  if (slug === "video") {
+    return (
+      <svg {...props}>
+        <rect x="3" y="6.5" width="12" height="11" rx="2" />
+        <path d="m15 10.5 5.5-2.8v8.6L15 13.5" />
+      </svg>
+    );
+  }
+  if (slug === "web") {
+    return (
+      <svg {...props}>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M4 12h16" />
+        <path d="M12 4c2.2 2.3 3.4 5 3.4 8s-1.2 5.7-3.4 8c-2.2-2.3-3.4-5-3.4-8s1.2-5.7 3.4-8" />
+      </svg>
+    );
+  }
+  if (slug === "seo") {
+    return (
+      <svg {...props}>
+        <circle cx="11" cy="11" r="6" />
+        <path d="m15.8 15.8 4 4" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...props}>
+      <path d="M5 4.5h9.5L12 8.5 14.5 12.5H5z" />
+      <path d="M5 4.5v15" />
+    </svg>
+  );
+}
 
 // "Aug 6, 2026" from a YYYY-MM-DD, without timezone drift.
 function ymdLabel(ymd: string): string {
@@ -116,8 +198,13 @@ export default function SnapshotClientPage() {
           setAccountName(data.account.name);
           setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
           setDepartments(
-            ((data.departments || []) as Array<{ label: string; items: Array<string | DepartmentItem> }>)
+            ((data.departments || []) as Array<{
+              slug?: string;
+              label: string;
+              items: Array<string | DepartmentItem>;
+            }>)
               .map((note) => ({
+                slug: departmentSlug(note),
                 label: note.label,
                 items: (note.items || [])
                   .map((item) =>
@@ -236,6 +323,9 @@ export default function SnapshotClientPage() {
   const canGoForward = !bounds.latest || week < bounds.latest;
 
   const hasMetrics = metrics.some((m) => m.points.length > 0);
+  const weekWins = wins.filter((w) => w.week_start === week);
+  const showWeekCallout = departments.length > 0 && weekWins.length > 0;
+  const listedWins = showWeekCallout ? wins.filter((w) => w.week_start !== week) : wins;
 
   return (
     <div className="app-shell snap-client">
@@ -307,13 +397,13 @@ export default function SnapshotClientPage() {
             </header>
 
             {/* WINS — up top */}
-            {wins.length > 0 ? (
+            {listedWins.length > 0 ? (
               <section className="snap-panel t-wins">
                 <header className="snap-sec-head">
                   <h2>Wins</h2>
                 </header>
                 <div className="snap-wins2">
-                  {wins.map((w) => (
+                  {listedWins.map((w) => (
                     <div key={w.id} className="snap-win2">
                       <div className="snap-win2-mark" aria-hidden="true">★</div>
                       <div>
@@ -439,27 +529,62 @@ export default function SnapshotClientPage() {
             ) : null}
 
             {departments.length > 0 ? (
-              <section className="snap-panel t-work">
+              <section className="snap-panel t-work" id="this-week">
                 <header className="snap-sec-head">
                   <h2>This week</h2>
+                  <span className="snap-week-range">{weekLabel(week)}</span>
                 </header>
-                <div className="snap-dept-client-list">
+                {showWeekCallout ? (
+                  <div className="snap-week-callout">
+                    {weekWins.map((w) => (
+                      <div key={w.id} className="snap-week-win">
+                        <div className="snap-week-win-mark" aria-hidden="true">
+                          ★
+                        </div>
+                        <div>
+                          <p className="snap-week-kicker">Win</p>
+                          <p>{w.body}</p>
+                          {w.happened_on ? (
+                            <span className="snap-week-win-date">{formatClientWinDate(w.happened_on)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="snap-week-grid">
                   {departments.map((note) => (
-                    <div key={note.label} className="snap-dept-client">
-                      <h3>{note.label}</h3>
-                      <ul>
+                    <article
+                      key={note.slug}
+                      className="snap-week-card"
+                      style={{ ["--dept" as string]: DEPT_ACCENT[note.slug] || DEPT_ACCENT.strategy }}
+                    >
+                      <header className="snap-week-card-head">
+                        <span className="snap-week-icon">
+                          <DeptMark slug={note.slug} />
+                        </span>
+                        <div>
+                          <h3>{note.label}</h3>
+                          <p className="snap-week-count">{updateCount(note.items.length)}</p>
+                        </div>
+                      </header>
+                      <ul className="snap-week-items">
                         {note.items.map((item, index) => (
-                          <li key={`${note.label}-${index}`}>
-                            {item.completed ? (
-                              <span className="snap-check is-on" aria-label="Completed">
-                                ✓
-                              </span>
-                            ) : null}
-                            {item.body}
+                          <li key={`${note.slug}-${index}`}>
+                            <span className="snap-week-mark">
+                              {item.completed ? (
+                                <span className="snap-check is-on" aria-label="Completed">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="snap-week-dot" aria-hidden="true" />
+                              )}
+                            </span>
+                            <span>{item.body}</span>
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </article>
                   ))}
                 </div>
               </section>
