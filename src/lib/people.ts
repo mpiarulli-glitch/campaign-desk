@@ -137,9 +137,11 @@ export function kindAllowedForCampaignScope(
 /* ---------------------------------------------------------------------------
    Teams
    ---------------------------------------------------------------------------
-   A team owns deliverables. The weekly snapshot shows someone the portion their
-   team is responsible for, which needs two halves: which team a person is on
-   (below) and which team owns a deliverable (snapshot_deliverables.team).
+   A team owns deliverables. Deliverable editors can show someone the portion
+   their team is responsible for, which needs two halves: which team a person
+   is on (below) and which team owns a deliverable (snapshot_deliverables.team).
+   The weekly snapshot desk still shows every department section on each
+   account, including Ads, no matter which team is signed in.
 
    Specialists (a slug in PERSON_TEAM) default to their own work. Account
    managers are an explicit list (SNAPSHOT_ACCOUNT_MANAGERS): they see every

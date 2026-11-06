@@ -809,6 +809,34 @@ export type DeskWeekRow = WeekRow & {
   outreach_paused: boolean;
 };
 
+export type SnapshotDeskAccount = {
+  id: string;
+  name: string;
+  launch_date: string | null;
+  outreach_paused: boolean;
+};
+
+/**
+ * Every enrolled snapshot account, for the team desk.
+ *
+ * This list is not narrowed by the viewer's team. Deliverable rows can still
+ * be sliced for a specialist elsewhere; the department sections on the desk
+ * are drawn for each of these accounts, including ones with no deliverables.
+ */
+export function listSnapshotDeskAccounts(): SnapshotDeskAccount[] {
+  return listAccounts().map((account) => ({
+    id: account.id,
+    name: account.name,
+    launch_date: snapshotLaunchDateFor(account),
+    outreach_paused: Boolean(account.outreach_paused),
+  }));
+}
+
+/** Wins filed on this Monday, for the client portal. Other weeks stay stored. */
+export function winsForClientWeek(clientId: string, weekStart: string): SnapshotWin[] {
+  return listWins(clientId).filter((win) => win.week_start === weekStart);
+}
+
 /** Every allowlisted client's week rows, for the company-wide fill desk. */
 export function weekDesk(
   weekStart: string,

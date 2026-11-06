@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { can, sessionTeam } from "@/lib/auth";
-import { behindItemsForDesk, weekDesk, weekWins } from "@/lib/snapshot";
+import { can } from "@/lib/auth";
+import { behindItemsForDesk, listSnapshotDeskAccounts, weekDesk, weekWins } from "@/lib/snapshot";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -14,7 +14,10 @@ export async function GET(request: Request) {
   }
   return NextResponse.json({
     week,
-    rows: weekDesk(week, { team: await sessionTeam() }),
+    // Accounts are the whole roster. A specialist's team still scopes
+    // deliverable editors elsewhere; it must not drop a department section.
+    accounts: listSnapshotDeskAccounts(),
+    rows: weekDesk(week),
     behind: behindItemsForDesk(),
     wins: weekWins(week),
   });

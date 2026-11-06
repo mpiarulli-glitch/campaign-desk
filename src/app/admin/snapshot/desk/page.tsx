@@ -7,16 +7,8 @@ import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type D
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { type SnapshotFillRowData } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
-import { canSeeFridayAsk, personTeam, teamLabelFor } from "@/lib/people";
-import {
-  fillCanSeeAll,
-  fillFocusTeam,
-  fillIsAccountManager,
-  fillViewerSlug,
-  visibleFillRows,
-  winLoggedByMatches,
-  type FillViewer,
-} from "@/lib/snapshot-fill";
+import { canSeeFridayAsk, personTeam } from "@/lib/people";
+import { fillViewerSlug, winLoggedByMatches, type FillViewer } from "@/lib/snapshot-fill";
 
 type DeskRow = SnapshotFillRowData & {
   client_id: string;
@@ -25,12 +17,19 @@ type DeskRow = SnapshotFillRowData & {
   outreach_paused?: boolean;
 };
 
+type DeskAccount = {
+  id: string;
+  name: string;
+  launch_date: string | null;
+  outreach_paused: boolean;
+};
+
 export default function SnapshotDeskPage() {
   const router = useRouter();
   const [rows, setRows] = useState<DeskRow[]>([]);
+  const [accounts, setAccounts] = useState<DeskAccount[]>([]);
   const [week, setWeek] = useState(currentWeek());
   const [error, setError] = useState("");
-  const [seeAll, setSeeAll] = useState(false);
   const [query, setQuery] = useState("");
   const [clientId, setClientId] = useState("all");
   const [groupView, setGroupView] = useState<Record<string, "week" | "wins" | "client">>({});
@@ -50,6 +49,7 @@ export default function SnapshotDeskPage() {
         }
         const data = await res.json();
         setRows(data.rows || []);
+        setAccounts(data.accounts || []);
         setWeekWins(data.wins || []);
       } catch {
         setError("Network error. Check your connection and try again.");
@@ -77,45 +77,33 @@ export default function SnapshotDeskPage() {
       .finally(() => setViewerReady(true));
   }, []);
 
-  const focusTeam = fillFocusTeam(viewer);
-  const canSeeAll = fillCanSeeAll(viewer);
-  const isAm = fillIsAccountManager(viewer);
-  const viewerTeam = seeAll || isAm ? null : focusTeam;
-
-  const scopedRows = useMemo(() => {
-    if (!viewerReady) return [];
-    return visibleFillRows(rows, viewerTeam, { accountManager: isAm });
-  }, [rows, viewerTeam, isAm, viewerReady]);
-
+  // Department sections follow the roster, not the viewer's team. A Lifecycle
+  // person and a Social person see the same sections on each account.
   const clients = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const row of scopedRows) {
-      if (!seen.has(row.client_id)) seen.set(row.client_id, row.client_name);
-    }
-    return [...seen.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }, [scopedRows]);
-
-  const clientScoped = useMemo(
-    () => (clientId === "all" ? scopedRows : scopedRows.filter((r) => r.client_id === clientId)),
-    [scopedRows, clientId]
-  );
-
-  const searched = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return clientScoped;
-    return clientScoped.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.category.toLowerCase().includes(q) ||
-        r.client_name.toLowerCase().includes(q)
+    return [...accounts].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
-  }, [clientScoped, query]);
+  }, [accounts]);
+
+  const visibleAccounts = useMemo(() => {
+    const picked = clientId === "all" ? clients : clients.filter((a) => a.id === clientId);
+    const q = query.trim().toLowerCase();
+    if (!q) return picked;
+    return picked.filter((account) => {
+      if (account.name.toLowerCase().includes(q)) return true;
+      return rows.some(
+        (row) =>
+          row.client_id === account.id &&
+          (row.name.toLowerCase().includes(q) ||
+            row.category.toLowerCase().includes(q) ||
+            row.client_name.toLowerCase().includes(q))
+      );
+    });
+  }, [clients, clientId, query, rows]);
 
   const viewerSlug = fillViewerSlug(viewer);
   const accountsMissingWin = useMemo(() => {
-    const ids = [...new Set(clientScoped.map((r) => r.client_id))];
+    const ids = visibleAccounts.map((account) => account.id);
     if (!viewerSlug) return new Set(ids);
     const have = new Set(
       weekWins
@@ -123,19 +111,15 @@ export default function SnapshotDeskPage() {
         .map((w) => w.client_id)
     );
     return new Set(ids.filter((id) => !have.has(id)));
-  }, [clientScoped, weekWins, viewerSlug]);
+  }, [visibleAccounts, weekWins, viewerSlug]);
   const winNeeded = accountsMissingWin.size;
   const winLine =
     winNeeded === 0
       ? "Your weekly win is in on every account in this list."
       : `${winNeeded} account${winNeeded === 1 ? "" : "s"} still need your win this week.`;
-  const scopeLabel = !viewerReady
-    ? "Loading your list"
-    : isAm
-      ? "All deliverables"
-      : seeAll || !focusTeam
-        ? "All teams"
-        : `${teamLabelFor(focusTeam)} team`;
+  const scopeLabel = viewerReady
+    ? "Every department, on every account"
+    : "Loading your list";
 
   const canSend = viewer.owner || viewer.role === "admin";
   const canOpenServices =
@@ -166,18 +150,16 @@ export default function SnapshotDeskPage() {
     }
   }
 
-  const groups = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; launch: string | null; rows: DeskRow[] }>();
-    for (const row of searched) {
-      let group = map.get(row.client_id);
-      if (!group) {
-        group = { id: row.client_id, name: row.client_name, launch: row.launch_date, rows: [] };
-        map.set(row.client_id, group);
-      }
-      group.rows.push(row);
-    }
-    return [...map.values()];
-  }, [searched]);
+  const groups = useMemo(
+    () =>
+      visibleAccounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        launch: account.launch_date,
+        paused: account.outreach_paused,
+      })),
+    [visibleAccounts]
+  );
 
   return (
     <div className="ops-page snap-desk">
@@ -193,15 +175,6 @@ export default function SnapshotDeskPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
           How to fill
         </Link>
-        {canSeeAll ? (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setSeeAll((v) => !v)}
-          >
-            {seeAll ? `Show ${teamLabelFor(focusTeam || "email")} team` : "See all"}
-          </button>
-        ) : null}
       </div>
 
       <div className="ops-page-head">
@@ -223,7 +196,7 @@ export default function SnapshotDeskPage() {
 
       {error ? <p className="error">{error}</p> : null}
 
-      {winNeeded > 0 || scopedRows.length > 0 ? (
+      {winNeeded > 0 || accounts.length > 0 ? (
         <div className={`ads-pass-banner ${winNeeded === 0 ? "is-clear" : "is-work"}`}>
           <p className="ads-pass-banner-line">{winLine}</p>
         </div>
@@ -247,7 +220,7 @@ export default function SnapshotDeskPage() {
         </label>
       ) : null}
 
-      {scopedRows.length > 8 ? (
+      {accounts.length > 8 ? (
         <label className="snap-desk-search">
           <span>Find</span>
           <input
@@ -263,14 +236,14 @@ export default function SnapshotDeskPage() {
         <div className="empty">
           <p>Loading this week&apos;s pass…</p>
         </div>
-      ) : rows.length === 0 ? (
+      ) : accounts.length === 0 ? (
         <div className="empty">
-          <p>No deliverables on the snapshot roster yet.</p>
+          <p>No accounts on the snapshot roster yet.</p>
           <Link className="btn btn-sm" href="/admin/client-services">
             Open deliverable setup
           </Link>
         </div>
-      ) : searched.length === 0 ? (
+      ) : groups.length === 0 ? (
         <div className="empty">
           <p>
             {query.trim() ? "Nothing matches that search." : "Nothing in this list."}
@@ -288,19 +261,13 @@ export default function SnapshotDeskPage() {
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    disabled={Boolean(group.rows[0]?.outreach_paused) || sendingId === group.id}
+                    disabled={group.paused || sendingId === group.id}
                     title={
-                      group.rows[0]?.outreach_paused
+                      group.paused
                         ? "Outreach is paused for this client."
                         : "Send this week's snapshot. You confirm before it goes out."
                     }
-                    onClick={() =>
-                      void sendToClient(
-                        group.id,
-                        group.name,
-                        Boolean(group.rows[0]?.outreach_paused)
-                      )
-                    }
+                    onClick={() => void sendToClient(group.id, group.name, group.paused)}
                   >
                     {sendingId === group.id ? "Sending…" : "Send to client"}
                   </button>
