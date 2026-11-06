@@ -402,14 +402,17 @@ export function weeklyAskEmail(args: {
   link: string;
   work?: SnapshotWeekCopy;
 }): { subject: string; html: string; text: string } {
+  // Wins and department lists stay off this email. The snapshot page and the
+  // Basecamp post still carry them, so `work` is accepted and ignored.
   const { client, am, link } = args;
-  const workCopy = snapshotWeekCopy(args.work);
   const first = (client.contact_name || "").trim().split(/\s+/)[0];
   const greeting = first ? `Hi ${esc(first)},` : "Hi there,";
   const signer = am?.label || "Marketing Empire Group";
   const subject = "Your New Weekly Snapshot is ready.";
-  const line1 = "Your weekly snapshot is ready to review.";
-  const line2 = "See what went on across your account this week.";
+  const line1 = "Your Weekly Snapshot is ready to be viewed.";
+  const line2 = "This will cover all the work across your account this week.";
+  const line3 = "Please view.";
+  const preheader = `${line1} ${line2} ${line3}`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -427,7 +430,7 @@ export function weeklyAskEmail(args: {
 </style>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f4;">
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${esc(line1)} ${esc(line2)}</div>
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${esc(preheader)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
   <tr>
     <td align="center" style="padding:28px 12px;">
@@ -444,8 +447,8 @@ export function weeklyAskEmail(args: {
             <h1 class="h1" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:1.25;color:#111111;font-weight:600;">Your weekly snapshot</h1>
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#333333;">${greeting}</p>
             <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#333333;">${esc(line1)}</p>
-            <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
-            ${workCopy.html}
+            <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#333333;">${esc(line2)}</p>
+            <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#333333;">${esc(line3)}</p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
               <tr><td>
                 <!--[if mso]>
@@ -483,8 +486,8 @@ export function weeklyAskEmail(args: {
     "",
     line1,
     line2,
+    line3,
     "",
-    ...(workCopy.text ? [workCopy.text] : []),
     `Open your snapshot: ${link}`,
     "",
     "Thanks,",
