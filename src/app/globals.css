@@ -20378,58 +20378,124 @@ form.snap-desk-win-line {
   min-width: 0;
 }
 
-.snap-suggest-refresh {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.snap-todo-search {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-  min-width: 220px;
-}
-
-.snap-todo-search input {
-  flex: 1;
-  min-width: 0;
-}
-
-.snap-todo-hits {
-  list-style: none;
-  margin: 8px 12px 0;
-  padding: 0;
+.snap-add {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.snap-todo-hits li {
+.snap-add-row {
   display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  align-items: center;
 }
 
-.snap-todo-hits li > span:first-child {
+.snap-add-row > .fc-combo,
+.snap-add-row > input {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
 }
 
-.snap-todo-hits li > span:first-child span,
-.snap-todo-where {
+.snap-add-row > select {
+  flex: 0 1 190px;
+  min-width: 140px;
+}
+
+.snap-add-row > input,
+.snap-add-row > select,
+.snap-add-combo > input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.snap-add-combo > input {
+  width: 100%;
+}
+
+.snap-add-row > input:focus,
+.snap-add-row > select:focus,
+.snap-add-combo > input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+.snap-add-row > input::placeholder,
+.snap-add-combo > input::placeholder {
   color: var(--text-muted);
+}
+
+.snap-add-combo.is-open {
+  z-index: 6;
+}
+
+.snap-add-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  width: min(480px, 86vw);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+.snap-add-pop .fc-combo-list {
+  position: static;
+  width: 100%;
+  max-width: none;
+  max-height: 280px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.snap-picker-refresh {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
   font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.snap-picker-refresh:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.snap-add-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.snap-add-switch .linklike {
+  font-size: 12px;
+}
+
+.snap-add-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.snap-add-row > .snap-status {
+  flex-shrink: 0;
 }
 
 .snap-status-wrap {

@@ -819,6 +819,9 @@ export interface BcTodo {
   parentTitle?: string;
   // Set when listing completed to-dos (snapshot "what happened" picker).
   completedAt?: string | null;
+  // Basecamp starts_on, when the to-do has one. The snapshot picker treats a
+  // future start as Scheduled.
+  startsOn?: string | null;
   appUrl?: string;
 }
 
@@ -827,6 +830,7 @@ interface BcTodoRaw {
   content?: string;
   title?: string;
   due_on?: string | null;
+  starts_on?: string | null;
   completed_at?: string | null;
   app_url?: string;
   assignees?: Array<{ id: number }>;
@@ -952,6 +956,7 @@ async function walkProjectTodos(
           assigneeIds: (t.assignees || []).map((a) => a.id),
           dueOn: t.due_on || null,
           completedAt: t.completed_at || null,
+          startsOn: t.starts_on || null,
           appUrl: t.app_url || undefined,
         }));
       })

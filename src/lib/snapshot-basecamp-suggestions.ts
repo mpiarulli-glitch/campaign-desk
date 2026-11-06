@@ -143,6 +143,72 @@ export function snapshotTodoHit(
   };
 }
 
+/**
+ * Drop the todoset prefix Basecamp's project walk puts on a list label
+ * ("To Dos › Meta Ads" → "Meta Ads") so department matching sees the list,
+ * not the todoset. A bare name is left as-is.
+ */
+export function snapshotListPlace(label: string): string {
+  const parts = (label || "")
+    .split(" › ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return (label || "").trim();
+  return parts.slice(1).join(" › ");
+}
+
+/** Project to-dos, as the snapshot add picker receives them from Basecamp. */
+export function snapshotHitsForPicker(
+  rows: Array<{
+    id: string;
+    title: string;
+    list: string;
+    completedAt?: string | null;
+    startsOn?: string | null;
+  }>,
+  today: string
+): SnapshotTodoHit[] {
+  const out: SnapshotTodoHit[] = [];
+  for (const row of rows) {
+    const hit = snapshotTodoHit(
+      {
+        id: row.id,
+        title: row.title,
+        type: "Todo",
+        completed: Boolean((row.completedAt || "").trim()),
+        completed_at: row.completedAt,
+        starts_on: row.startsOn,
+        parent: { title: snapshotListPlace(row.list) },
+      },
+      today
+    );
+    if (hit) out.push(hit);
+  }
+  return out;
+}
+
+/**
+ * To-dos the add row for one department can offer.
+ * A list that maps to this department is ready to add. An unmatched list is
+ * offered too, and the row has to ask which department it belongs to.
+ * Anything already on this week is hidden.
+ */
+export function pickerTodosForDepartment(
+  todos: SnapshotTodoHit[],
+  department: SnapshotDepartmentSlug,
+  takenSourceKeys: string[]
+): { matched: SnapshotTodoHit[]; unmatched: SnapshotTodoHit[] } {
+  const taken = new Set(takenSourceKeys.map((key) => key.trim()).filter(Boolean));
+  const matched: SnapshotTodoHit[] = [];
+  const unmatched: SnapshotTodoHit[] = [];
+  for (const todo of todos) {
+    if (!todo.sourceKey || taken.has(todo.sourceKey)) continue;
+    if (todo.department === department) matched.push(todo);
+    else if (todo.department === "unsorted") unmatched.push(todo);
+  }
+  return { matched, unmatched };
+}
+
 export function matchSnapshotDepartment(input: {
   title: string;
   place: string;

@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { DragEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   SNAPSHOT_DEPARTMENTS,
   snapshotItemStatusLabel,
   type SnapshotDepartmentSlug,
   type SnapshotItemStatus,
 } from "@/lib/snapshot-department-list";
+import { SnapshotDepartmentAdd, type SnapshotAddTodo } from "@/components/SnapshotDepartmentAdd";
 
 type Item = {
   id: string;
@@ -18,13 +19,6 @@ type Item = {
   mark?: "" | "sent";
 };
 
-type TodoHit = {
-  sourceKey: string;
-  title: string;
-  place: string;
-  department: SnapshotDepartmentSlug | "unsorted";
-  status: SnapshotItemStatus;
-};
 type Note = {
   department: SnapshotDepartmentSlug;
   label: string;
@@ -79,7 +73,6 @@ export function SnapshotWeekDepartments({
     }))
   );
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [draft, setDraft] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
   const [suggestionEdits, setSuggestionEdits] = useState<Record<string, string>>({});
   const [editingSuggestion, setEditingSuggestion] = useState<string | null>(null);
@@ -87,14 +80,13 @@ export function SnapshotWeekDepartments({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>("");
-  const [todoQuery, setTodoQuery] = useState("");
-  const [todoHits, setTodoHits] = useState<TodoHit[]>([]);
-  const [todoNote, setTodoNote] = useState("");
-  const [todoSearching, setTodoSearching] = useState(false);
-  const [todoDept, setTodoDept] = useState<Record<string, SnapshotDepartmentSlug>>({});
+  const [todos, setTodos] = useState<SnapshotAddTodo[]>([]);
+  const [todoStatus, setTodoStatus] = useState<SuggestStatus>("");
+  const [todoLoading, setTodoLoading] = useState(false);
   const [inView, setInView] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const requestGen = useRef(0);
+  const todoGen = useRef(0);
   const dragRef = useRef<{ kind: DragKind; id: string } | null>(null);
   const [dropAt, setDropAt] = useState<{ list: DropList; beforeId: string | null } | null>(null);
 
@@ -119,7 +111,6 @@ export function SnapshotWeekDepartments({
   const loadSuggestions = useCallback(
     async (refresh = false) => {
       const gen = ++requestGen.current;
-      if (refresh) setRefreshing(true);
       try {
         const res = await fetch(
           `/api/snapshot/departments/suggestions?clientId=${encodeURIComponent(clientId)}&week=${weekStart}${refresh ? "&refresh=1" : ""}`
@@ -140,12 +131,47 @@ export function SnapshotWeekDepartments({
         if (requestGen.current !== gen) return;
         setSuggestions([]);
         setSuggestStatus("error");
-      } finally {
-        if (requestGen.current === gen) setRefreshing(false);
       }
     },
     [clientId, weekStart]
   );
+
+  const loadTodos = useCallback(async () => {
+    const gen = ++todoGen.current;
+    setTodoLoading(true);
+    try {
+      const res = await fetch(
+        `/api/snapshot/departments/todos?clientId=${encodeURIComponent(clientId)}`
+      );
+      if (todoGen.current !== gen) return;
+      if (!res.ok) {
+        setTodos([]);
+        setTodoStatus("error");
+        return;
+      }
+      const data = await res.json();
+      const status = data.status;
+      setTodos((data.todos || []) as SnapshotAddTodo[]);
+      setTodoStatus(
+        status === "no_project" || status === "error" || status === "ok" ? status : "ok"
+      );
+    } catch {
+      if (todoGen.current !== gen) return;
+      setTodos([]);
+      setTodoStatus("error");
+    } finally {
+      if (todoGen.current === gen) setTodoLoading(false);
+    }
+  }, [clientId]);
+
+  async function refreshBasecamp() {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadSuggestions(true), loadTodos()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     const node = rootRef.current;
@@ -164,44 +190,66 @@ export function SnapshotWeekDepartments({
   }, [clientId]);
 
   useEffect(() => {
-    setDraft({});
     setEditing(null);
     setSuggestionEdits({});
     setEditingSuggestion(null);
     setSuggestions([]);
     setSuggestStatus("");
+    setTodos([]);
+    setTodoStatus("");
     void load();
   }, [load]);
 
   useEffect(() => {
     if (!inView) return;
     void loadSuggestions(false);
+    void loadTodos();
     return () => {
       requestGen.current += 1;
+      todoGen.current += 1;
     };
-  }, [inView, loadSuggestions]);
+  }, [inView, loadSuggestions, loadTodos]);
 
-  async function addItem(event: FormEvent, department: SnapshotDepartmentSlug) {
-    event.preventDefault();
-    const body = (draft[department] || "").trim();
-    if (!body) return;
-    setError("");
+  async function addText(department: SnapshotDepartmentSlug, body: string): Promise<string> {
+    const text = body.trim();
+    if (!text) return "Write an item before adding it.";
     try {
       const res = await fetch("/api/snapshot/departments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, weekStart, department, body }),
+        body: JSON.stringify({ clientId, weekStart, department, body: text }),
       });
-      if (!res.ok) {
-        setError("Could not add that item.");
-        return;
-      }
+      if (!res.ok) return "Could not add that item.";
       const data = await res.json();
       if (data.departments) setNotes(data.departments);
-      setDraft((cur) => ({ ...cur, [department]: "" }));
       void loadSuggestions(false);
+      return "";
     } catch {
-      setError("Network error. Try again.");
+      return "Network error. Try again.";
+    }
+  }
+
+  async function addTodo(todo: SnapshotAddTodo, department: SnapshotDepartmentSlug): Promise<string> {
+    try {
+      const res = await fetch("/api/snapshot/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          weekStart,
+          department,
+          body: todo.title,
+          sourceKey: todo.sourceKey,
+          status: todo.status,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return "Could not add that to-do.";
+      if (data.departments) setNotes(data.departments);
+      void loadSuggestions(false);
+      return data.already ? "Already on this week." : "";
+    } catch {
+      return "Could not add that to-do.";
     }
   }
 
@@ -286,71 +334,6 @@ export function SnapshotWeekDepartments({
         }))
       );
       setError("Could not update that status.");
-    }
-  }
-
-  async function searchTodos(event: FormEvent) {
-    event.preventDefault();
-    const q = todoQuery.trim();
-    setTodoNote("");
-    setTodoHits([]);
-    if (q.length < 2) {
-      setTodoNote("Type at least two letters.");
-      return;
-    }
-    setTodoSearching(true);
-    try {
-      const res = await fetch(
-        `/api/snapshot/departments/search?clientId=${encodeURIComponent(clientId)}&q=${encodeURIComponent(q)}`
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.status === "error") {
-        setTodoNote("Couldn't reach Basecamp, try again.");
-        return;
-      }
-      if (data.status === "no_project") {
-        setTodoNote("No Basecamp project linked.");
-        return;
-      }
-      const hits = (data.hits || []) as TodoHit[];
-      setTodoHits(hits);
-      if (!hits.length) setTodoNote("No to-dos matched in this project.");
-    } catch {
-      setTodoNote("Couldn't reach Basecamp, try again.");
-    } finally {
-      setTodoSearching(false);
-    }
-  }
-
-  async function addTodoHit(hit: TodoHit, department: string) {
-    if (!department) {
-      setTodoNote("Pick a department for that to-do.");
-      return;
-    }
-    setTodoNote("");
-    try {
-      const res = await fetch("/api/snapshot/departments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId,
-          weekStart,
-          department,
-          body: hit.title,
-          sourceKey: hit.sourceKey,
-          status: hit.status,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setTodoNote("Could not add that to-do.");
-        return;
-      }
-      if (data.departments) setNotes(data.departments);
-      setTodoHits((cur) => cur.filter((row) => row.sourceKey !== hit.sourceKey));
-      setTodoNote(data.already ? "Already on this week." : "");
-    } catch {
-      setTodoNote("Could not add that to-do.");
     }
   }
 
@@ -670,91 +653,35 @@ export function SnapshotWeekDepartments({
   }
 
   const unsorted = suggestions.filter((row) => row.department === "unsorted");
+  const takenSourceKeys = notes.flatMap((note) =>
+    note.items.map((item) => item.sourceKey || "").filter(Boolean)
+  );
+  const projectStatus = todoStatus === "no_project" || suggestStatus === "no_project"
+    ? "no_project"
+    : todoStatus === "error" || suggestStatus === "error"
+      ? "error"
+      : todoStatus || suggestStatus;
 
   return (
     <div className="snap-dept-list" ref={rootRef}>
-      <div className="snap-suggest-refresh">
-        <form className="snap-todo-search" onSubmit={(event) => void searchTodos(event)}>
-          <input
-            value={todoQuery}
-            onChange={(event) => setTodoQuery(event.target.value)}
-            placeholder="Search this project's to-dos"
-            aria-label="Search Basecamp to-dos"
-          />
-          <button className="btn btn-ghost btn-sm" type="submit" disabled={todoSearching}>
-            {todoSearching ? "Searching…" : "Search"}
-          </button>
-        </form>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => void loadSuggestions(true)}
-          disabled={refreshing}
-        >
-          {refreshing ? "Refreshing…" : "Refresh Basecamp"}
-        </button>
-      </div>
-      {todoNote ? <p className="snap-suggest-note">{todoNote}</p> : null}
-      {todoHits.length > 0 ? (
-        <ul className="snap-todo-hits">
-          {todoHits.map((hit) => {
-            const matched = hit.department !== "unsorted" ? hit.department : "";
-            const chosen = matched || todoDept[hit.sourceKey] || "";
-            return (
-              <li key={hit.sourceKey}>
-                <span>
-                  <strong>{hit.title}</strong>
-                  <span>
-                    {snapshotItemStatusLabel(hit.status)}
-                    {hit.place ? ` · ${hit.place}` : ""}
-                  </span>
-                </span>
-                {matched ? (
-                  <span className="snap-todo-where">
-                    {SNAPSHOT_DEPARTMENTS.find((dept) => dept.slug === matched)?.label.replace(
-                      " Department",
-                      ""
-                    )}
-                  </span>
-                ) : (
-                  <select
-                    aria-label={`Department for ${hit.title}`}
-                    value={chosen}
-                    onChange={(event) =>
-                      setTodoDept((cur) => ({
-                        ...cur,
-                        [hit.sourceKey]: event.target.value as SnapshotDepartmentSlug,
-                      }))
-                    }
-                  >
-                    <option value="">Pick a department</option>
-                    {SNAPSHOT_DEPARTMENTS.map((dept) => (
-                      <option key={dept.slug} value={dept.slug}>
-                        {dept.label.replace(" Department", "")}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => void addTodoHit(hit, chosen)}
-                >
-                  Add
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      {suggestStatus === "no_project" ? (
+      {projectStatus === "no_project" ? (
         <p className="snap-suggest-note">
           No Basecamp project linked.{" "}
           <Link href="/admin/production">Link a Basecamp project</Link>
         </p>
       ) : null}
-      {suggestStatus === "error" ? (
-        <p className="snap-suggest-note">Couldn&apos;t reach Basecamp, try Refresh</p>
+      {projectStatus === "error" ? (
+        <p className="snap-suggest-note">
+          Couldn&apos;t reach Basecamp.{" "}
+          <button
+            type="button"
+            className="linklike"
+            onClick={() => void refreshBasecamp()}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing…" : "Refresh Basecamp"}
+          </button>
+        </p>
       ) : null}
       {error ? <p className="error">{error}</p> : null}
       {notes.map((note) => (
@@ -872,19 +799,19 @@ export function SnapshotWeekDepartments({
               ))}
             </ul>
           ) : null}
-          <form className="snap-dept-add" onSubmit={(event) => void addItem(event, note.department)}>
-            <input
-              value={draft[note.department] || ""}
-              aria-label={`${note.label}: add an item`}
-              placeholder="Add an item"
-              onChange={(event) =>
-                setDraft((cur) => ({ ...cur, [note.department]: event.target.value }))
-              }
-            />
-            <button className="btn btn-sm" type="submit" disabled={!(draft[note.department] || "").trim()}>
-              Add
-            </button>
-          </form>
+          <SnapshotDepartmentAdd
+            department={note.department}
+            label={note.label}
+            todos={todos}
+            takenSourceKeys={takenSourceKeys}
+            loading={todoLoading}
+            projectStatus={projectStatus}
+            showRefresh={note.department === notes[0]?.department}
+            refreshing={refreshing}
+            onAddText={(body) => addText(note.department, body)}
+            onAddTodo={addTodo}
+            onRefresh={() => void refreshBasecamp()}
+          />
         </section>
       ))}
       {unsorted.length > 0 ? (
