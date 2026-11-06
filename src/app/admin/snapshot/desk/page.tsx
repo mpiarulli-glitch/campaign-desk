@@ -263,6 +263,7 @@ export default function SnapshotDeskPage() {
                     )
                   )
                 }
+                onRemoved={(winId) => setWeekWins((cur) => cur.filter((row) => row.id !== winId))}
               />
               {view === "wins" ? (
                 <SnapshotDeskWins clientId={group.id} weekStart={week} />

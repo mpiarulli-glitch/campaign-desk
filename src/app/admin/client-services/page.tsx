@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { teamSnapshotHref } from "@/lib/friday-ask-nav";
 import { teamLabel } from "@/lib/team";
 import { canSeeFridayAsk } from "@/lib/people";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
@@ -175,7 +176,10 @@ function urgency(row: Row): number {
 
 export default function ClientServicesPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("accounts");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(
+    searchParams.get("tab") === "friday" ? "dashboard" : "accounts"
+  );
   const [rows, setRows] = useState<Row[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -214,6 +218,9 @@ export default function ClientServicesPage() {
   const skipEditCommit = useRef(false);
   const isAdmin = role === "admin";
   const fridayAsk = canSeeFridayAsk({ person, owner });
+  // Same people the send route accepts: Friday ask allowlist, and an admin
+  // session. Pause and remove stay on isAdmin.
+  const canSendSnapshot = fridayAsk && isAdmin;
   const view = fridayAsk ? tab : "accounts";
 
   async function load() {
@@ -989,13 +996,12 @@ export default function ClientServicesPage() {
                                 .join(" ")}
                             >
                               <td>
-                                <button
-                                  type="button"
+                                <Link
                                   className="cs-client"
-                                  onClick={() => setPanelId(row.clientId)}
+                                  href={teamSnapshotHref(row.clientId, summary?.weekStart || "")}
                                 >
                                   {row.name}
-                                </button>
+                                </Link>
                                 {editableText(
                                   row,
                                   "contactName",
@@ -1106,7 +1112,7 @@ export default function ClientServicesPage() {
                               </td>
                               <td>
                                 <div className="cs-actions">
-                                  {isAdmin ? (
+                                  {canSendSnapshot ? (
                                     <button
                                       className="btn btn-secondary btn-sm"
                                       disabled={busyId === row.clientId || dead}
@@ -1263,7 +1269,7 @@ export default function ClientServicesPage() {
       {panel ? (
         <ClientServicePanel
           client={panel}
-          isAdmin={isAdmin}
+          isAdmin={canSendSnapshot}
           sending={busyId === panel.clientId}
           onClose={() => setPanelId(null)}
           onSend={() => act(panel.clientId, "send")}
