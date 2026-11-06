@@ -163,19 +163,13 @@ export default function SnapshotDeskPage() {
 
   return (
     <div className="ops-page snap-desk">
-      <div className="page-actions">
-        {canOpenServices ? (
+      {canOpenServices ? (
+        <div className="page-actions">
           <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
             Client Services
           </Link>
-        ) : null}
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
-          Behind report
-        </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
-      </div>
+        </div>
+      ) : null}
 
       <div className="ops-page-head">
         <div>

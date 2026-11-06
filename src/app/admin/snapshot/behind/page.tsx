@@ -60,9 +60,6 @@ export default function BehindReportPage() {
     <div className="app-shell">
       <div className="page-actions">
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">All snapshots</Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
       </div>
 
       <main className="container stack">

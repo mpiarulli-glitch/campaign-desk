@@ -697,12 +697,6 @@ export default function ClientServicesPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
           Fill this week
         </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/instructions">
-          How to fill
-        </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
-          Behind report
-        </Link>
         {isAdmin && view === "accounts" ? (
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
             {adding ? "Cancel" : "Add account"}
