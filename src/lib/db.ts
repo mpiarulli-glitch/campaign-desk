@@ -4368,6 +4368,19 @@ function migrate(database: Database.Database) {
       `ALTER TABLE snapshot_department_items ADD COLUMN mark TEXT NOT NULL DEFAULT ''`
     );
   }
+  if (deptItemCols.length && !deptItemCols.includes("status")) {
+    database.exec(
+      `ALTER TABLE snapshot_department_items ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'`
+    );
+    database.exec(
+      `UPDATE snapshot_department_items SET status = 'completed' WHERE completed = 1`
+    );
+    database.exec(
+      `UPDATE snapshot_department_items
+         SET status = 'scheduled'
+       WHERE completed = 0 AND mark = 'sent'`
+    );
+  }
 
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already

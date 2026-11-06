@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { can, sessionActor } from "@/lib/auth";
 import { getVisibleSnapshotAccount } from "@/lib/snapshot";
+import { isSnapshotItemStatus } from "@/lib/snapshot-department-list";
 import {
   addDepartmentItem,
   deleteDepartmentItem,
+  departmentHasSourceKey,
   departmentItemClientId,
   departmentNotesForWeek,
   isSnapshotDepartment,
@@ -59,6 +61,15 @@ export async function POST(request: Request) {
   if (!(await allowedClient(clientId))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const sourceKey = typeof body.sourceKey === "string" ? body.sourceKey : "";
+  if (sourceKey && departmentHasSourceKey(clientId, weekStart, sourceKey)) {
+    return NextResponse.json({
+      ok: true,
+      already: true,
+      departments: departmentNotesForWeek(clientId, weekStart),
+    });
+  }
+  const status = typeof body.status === "string" && isSnapshotItemStatus(body.status) ? body.status : undefined;
   const item = addDepartmentItem({
     clientId,
     weekStart,
@@ -66,7 +77,8 @@ export async function POST(request: Request) {
     body: text,
     loggedBy: await sessionActor(),
     completed: body.completed === true,
-    sourceKey: typeof body.sourceKey === "string" ? body.sourceKey : "",
+    status,
+    sourceKey,
     mark: body.mark === "sent" ? "sent" : "",
   });
   if (!item) {
@@ -87,9 +99,10 @@ export async function PATCH(request: Request) {
   const itemId = typeof body.itemId === "string" ? body.itemId : "";
   const hasBody = typeof body.body === "string";
   const hasCompleted = typeof body.completed === "boolean";
+  const status = typeof body.status === "string" && isSnapshotItemStatus(body.status) ? body.status : undefined;
   const moveTo = typeof body.department === "string" ? body.department : "";
   const moving = isSnapshotDepartment(moveTo);
-  if (!itemId || (!hasBody && !hasCompleted && !moving)) {
+  if (!itemId || (!hasBody && !hasCompleted && !status && !moving)) {
     return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   }
   const clientId = departmentItemClientId(itemId);
@@ -111,6 +124,7 @@ export async function PATCH(request: Request) {
     itemId,
     ...(hasBody ? { body: body.body as string } : {}),
     ...(hasCompleted ? { completed: body.completed as boolean } : {}),
+    ...(status ? { status } : {}),
     loggedBy: await sessionActor(),
   });
   if (!item) {

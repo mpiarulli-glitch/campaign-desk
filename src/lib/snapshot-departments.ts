@@ -13,7 +13,9 @@ import { nanoid } from "nanoid";
 import { getDb, nowIso } from "./db";
 import {
   SNAPSHOT_DEPARTMENTS,
+  snapshotItemStatusFrom,
   type SnapshotDepartmentSlug,
+  type SnapshotItemStatus,
 } from "./snapshot-department-list";
 
 export {
@@ -26,8 +28,9 @@ export {
 export type SnapshotDepartmentItem = {
   id: string;
   body: string;
-  /** True when this came from a completed Basecamp to-do, or was marked done. */
+  /** True when status is completed. Kept so older readers still see the check. */
   completed: boolean;
+  status: SnapshotItemStatus;
   sourceKey: string;
   /** "sent" keeps the Sent for approval badge. Empty for a normal line. */
   mark: "" | "sent";
@@ -47,6 +50,7 @@ type ItemRow = {
   completed: number;
   source_key: string;
   mark: string;
+  status?: string;
 };
 
 /** Copy each unmigrated single-note blob into one list item. Idempotent. */
@@ -106,7 +110,7 @@ export function departmentNotesForWeek(
   migrateLegacyDepartmentNotes();
   const rows = getDb()
     .prepare(
-      `SELECT id, department, body, sort_order, completed, source_key, mark
+      `SELECT id, department, body, sort_order, completed, source_key, mark, status
        FROM snapshot_department_items
        WHERE client_id = ? AND week_start = ?
        ORDER BY sort_order ASC, created_at ASC, id ASC`
@@ -117,12 +121,19 @@ export function departmentNotesForWeek(
     const body = (row.body || "").trim();
     if (!body) continue;
     const list = bySlug.get(row.department) || [];
+    const mark = row.mark === "sent" ? "sent" : "";
+    const status = snapshotItemStatusFrom({
+      status: row.status,
+      completed: row.completed,
+      mark,
+    });
     list.push({
       id: row.id,
       body,
-      completed: Boolean(row.completed),
+      completed: status === "completed",
+      status,
       sourceKey: row.source_key || "",
-      mark: row.mark === "sent" ? "sent" : "",
+      mark,
     });
     bySlug.set(row.department, list);
   }
@@ -149,6 +160,7 @@ export function addDepartmentItem(input: {
   loggedBy?: string;
   /** Set when the line is a completed Basecamp to-do. */
   completed?: boolean;
+  status?: SnapshotItemStatus;
   sourceKey?: string;
   /** "sent" when the line came from a Sent-for-approval card. */
   mark?: "" | "sent";
@@ -166,14 +178,19 @@ export function addDepartmentItem(input: {
     )
     .get(input.clientId, input.weekStart, input.department) as { n: number };
   const id = nanoid(12);
-  const completed = input.completed ? 1 : 0;
   const sourceKey = (input.sourceKey || "").trim();
   const mark = input.mark === "sent" ? "sent" : "";
+  const status = snapshotItemStatusFrom({
+    status: input.status,
+    completed: input.completed,
+    mark,
+  });
+  const completed = status === "completed" ? 1 : 0;
   db.prepare(
     `INSERT INTO snapshot_department_items
        (id, client_id, week_start, department, body, sort_order, logged_by,
-        created_at, updated_at, completed, source_key, mark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        created_at, updated_at, completed, source_key, mark, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.clientId,
@@ -186,40 +203,60 @@ export function addDepartmentItem(input: {
     now,
     completed,
     sourceKey,
-    mark
+    mark,
+    status
   );
-  return { id, body, completed: Boolean(completed), sourceKey, mark };
+  return { id, body, completed: Boolean(completed), status, sourceKey, mark };
 }
 
 export function updateDepartmentItem(input: {
   itemId: string;
   body?: string;
   completed?: boolean;
+  status?: SnapshotItemStatus;
   loggedBy?: string;
 }): SnapshotDepartmentItem | null {
   const db = getDb();
   const existing = db
     .prepare(
-      `SELECT id, body, completed, source_key, mark FROM snapshot_department_items WHERE id = ?`
+      `SELECT id, body, completed, source_key, mark, status
+       FROM snapshot_department_items WHERE id = ?`
     )
     .get(input.itemId) as
-    | { id: string; body: string; completed: number; source_key: string; mark: string }
+    | {
+        id: string;
+        body: string;
+        completed: number;
+        source_key: string;
+        mark: string;
+        status: string;
+      }
     | undefined;
   if (!existing) return null;
   const body = input.body === undefined ? existing.body : input.body.trim();
   if (!body) return null;
-  const completed = input.completed === undefined ? existing.completed : input.completed ? 1 : 0;
+  const mark = existing.mark === "sent" ? "sent" : "";
+  let status = snapshotItemStatusFrom({
+    status: existing.status,
+    completed: existing.completed,
+    mark,
+  });
+  if (input.status) status = input.status;
+  else if (input.completed === true) status = "completed";
+  else if (input.completed === false && status === "completed") status = "in_progress";
+  const completed = status === "completed" ? 1 : 0;
   db.prepare(
     `UPDATE snapshot_department_items
-       SET body = ?, completed = ?, logged_by = ?, updated_at = ?
+       SET body = ?, completed = ?, status = ?, logged_by = ?, updated_at = ?
      WHERE id = ?`
-  ).run(body, completed, input.loggedBy || "", nowIso(), input.itemId);
+  ).run(body, completed, status, input.loggedBy || "", nowIso(), input.itemId);
   return {
     id: existing.id,
     body,
     completed: Boolean(completed),
+    status,
     sourceKey: existing.source_key || "",
-    mark: existing.mark === "sent" ? "sent" : "",
+    mark,
   };
 }
 
@@ -268,6 +305,23 @@ export function moveDepartmentItem(input: {
   });
   run();
   return { clientId: existing.client_id, weekStart: existing.week_start };
+}
+
+export function departmentHasSourceKey(
+  clientId: string,
+  weekStart: string,
+  sourceKey: string
+): boolean {
+  const key = sourceKey.trim();
+  if (!key) return false;
+  const row = getDb()
+    .prepare(
+      `SELECT id FROM snapshot_department_items
+       WHERE client_id = ? AND week_start = ? AND source_key = ?
+       LIMIT 1`
+    )
+    .get(clientId, weekStart, key) as { id: string } | undefined;
+  return Boolean(row);
 }
 
 export function departmentItemClientId(itemId: string): string | null {

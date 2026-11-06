@@ -13,9 +13,11 @@ import { nanoid } from "nanoid";
 import { getRevClient } from "./revenue";
 import { departmentNotesForWeek } from "./snapshot-departments";
 import {
+  snapshotTodoHit,
   suggestionsForWeek,
   type BasecampActivity,
   type DepartmentSuggestion,
+  type SnapshotTodoHit,
 } from "./snapshot-basecamp-suggestions";
 import {
   activitiesFromRecordings,
@@ -242,6 +244,85 @@ function projectIdForClient(clientId: string): string {
   const raw = (getRevClient(clientId)?.basecamp_project_id || "").trim();
   if (!raw) return "";
   return canonicalBasecampProjectId(raw) || raw;
+}
+
+function pacificToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/**
+ * Find to-dos in the client's Basecamp project, including work that is not
+ * finished yet. Failures are not cached. A 429 is retried like suggestions.
+ */
+export async function searchClientBasecampTodos(
+  clientId: string,
+  query: string
+): Promise<{ hits: SnapshotTodoHit[]; status: SuggestionStatus; message?: string }> {
+  const q = query.trim();
+  if (q.length < 2) return { hits: [], status: "ok" };
+  const projectId = projectIdForClient(clientId);
+  if (!projectId) {
+    return { hits: [], status: "no_project", message: "No Basecamp project linked" };
+  }
+  const params = new URLSearchParams({
+    q,
+    type: "Todo",
+    bucket_id: projectId,
+  });
+  try {
+    const res = await basecampGetRetry(`/search.json?${params.toString()}`);
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new SuggestionReadError(res.status);
+    }
+    const data: unknown = await res.json().catch(() => null);
+    const rows = Array.isArray(data)
+      ? data
+      : data &&
+          typeof data === "object" &&
+          Array.isArray((data as { results?: unknown }).results)
+        ? (data as { results: unknown[] }).results
+        : null;
+    if (!rows) throw new SuggestionReadError(res.status || 0);
+    const today = pacificToday();
+    const hits: SnapshotTodoHit[] = [];
+    for (const row of rows) {
+      if (!row || typeof row !== "object") continue;
+      const record = row as {
+        id?: number | string;
+        title?: string;
+        type?: string;
+        completed?: boolean;
+        completed_at?: string | null;
+        starts_on?: string | null;
+        parent?: { title?: string; name?: string } | null;
+        bucket?: { id?: number | string } | null;
+      };
+      const bucket = String(record.bucket?.id ?? "");
+      if (bucket && bucket !== projectId) continue;
+      const hit = snapshotTodoHit(record, today);
+      if (hit) hits.push(hit);
+      if (hits.length >= 20) break;
+    }
+    return { hits, status: "ok" };
+  } catch (err) {
+    const status = err instanceof SuggestionReadError ? err.status : undefined;
+    console.error("[basecamp] todo search", {
+      projectId,
+      status,
+      error: safeError(err),
+    });
+    return {
+      hits: [],
+      status: "error",
+      message: "Couldn't reach Basecamp",
+    };
+  }
 }
 
 export async function weekBasecampSuggestions(

@@ -6,7 +6,7 @@
 
 import { ACCOUNT_MANAGER_BASECAMP_NAME, personTeam, type Team } from "./people";
 import { slugForName } from "./team";
-import type { SnapshotDepartmentSlug } from "./snapshot-department-list";
+import type { SnapshotDepartmentSlug, SnapshotItemStatus } from "./snapshot-department-list";
 import { addWeeks } from "./week";
 
 export type SnapshotSuggestionDepartment = SnapshotDepartmentSlug | "unsorted";
@@ -95,6 +95,54 @@ export function departmentForAssigneeName(name: string): SnapshotDepartmentSlug 
  * The to-do or card title is used only when that name does not match.
  * Anything still unmatched is unsorted.
  */
+export type SnapshotTodoHit = {
+  sourceKey: string;
+  title: string;
+  place: string;
+  department: SnapshotSuggestionDepartment;
+  status: SnapshotItemStatus;
+};
+
+/**
+ * One Basecamp search row, already limited to the client's project.
+ * A finished to-do is Completed. A future start date is Scheduled.
+ * Anything else still open is In progress.
+ */
+export function snapshotTodoHit(
+  row: {
+    id?: number | string;
+    title?: string;
+    content?: string;
+    type?: string;
+    completed?: boolean;
+    completed_at?: string | null;
+    starts_on?: string | null;
+    parent?: { title?: string; name?: string } | null;
+  },
+  today: string
+): SnapshotTodoHit | null {
+  const kind = (row.type || "Todo").trim();
+  if (kind && kind !== "Todo") return null;
+  const title = (row.title || row.content || "").trim();
+  const id = String(row.id ?? "").trim();
+  if (!title || !id) return null;
+  const place = (row.parent?.title || row.parent?.name || "").trim();
+  const finished = row.completed === true || Boolean((row.completed_at || "").trim());
+  const starts = (row.starts_on || "").trim();
+  const status: SnapshotItemStatus = finished
+    ? "completed"
+    : starts && today && starts > today
+      ? "scheduled"
+      : "in_progress";
+  return {
+    sourceKey: `todo:${id}`,
+    title,
+    place,
+    department: matchSnapshotDepartment({ title, place }),
+    status,
+  };
+}
+
 export function matchSnapshotDepartment(input: {
   title: string;
   place: string;

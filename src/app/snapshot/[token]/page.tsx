@@ -18,7 +18,11 @@ function formatClientWinDate(ymd: string): string {
     year: "numeric",
   });
 }
-type DepartmentItem = { body: string; completed: boolean };
+type DepartmentItem = {
+  body: string;
+  completed: boolean;
+  status?: "in_progress" | "scheduled" | "completed";
+};
 type DepartmentNote = { slug: string; label: string; items: DepartmentItem[] };
 
 const DEPT_ACCENT: Record<string, string> = {
@@ -192,7 +196,18 @@ export default function SnapshotClientPage() {
                   .map((item) =>
                     typeof item === "string"
                       ? { body: item.trim(), completed: false }
-                      : { body: (item.body || "").trim(), completed: Boolean(item.completed) }
+                      : {
+                          body: (item.body || "").trim(),
+                          completed: Boolean(item.completed),
+                          status:
+                            item.status === "completed" ||
+                            item.status === "scheduled" ||
+                            item.status === "in_progress"
+                              ? item.status
+                              : item.completed
+                                ? "completed"
+                                : "in_progress",
+                        }
                   )
                   .filter((item) => item.body),
               }))
@@ -442,15 +457,27 @@ export default function SnapshotClientPage() {
                         {note.items.map((item, index) => (
                           <li key={`${note.slug}-${index}`}>
                             <span className="snap-week-mark">
-                              {item.completed ? (
+                              {item.status === "completed" || item.completed ? (
                                 <span className="snap-check is-on" aria-label="Completed">
                                   ✓
                                 </span>
                               ) : (
-                                <span className="snap-week-dot" aria-hidden="true" />
+                                <span
+                                  className={`snap-week-dot is-${item.status || "in_progress"}`}
+                                  aria-hidden="true"
+                                />
                               )}
                             </span>
-                            <span>{item.body}</span>
+                            <span>
+                              <span className={`snap-week-status is-${item.status || "in_progress"}`}>
+                                {item.status === "scheduled"
+                                  ? "Scheduled"
+                                  : item.status === "completed" || item.completed
+                                    ? "Completed"
+                                    : "In progress"}
+                              </span>
+                              {item.body}
+                            </span>
                           </li>
                         ))}
                       </ul>
