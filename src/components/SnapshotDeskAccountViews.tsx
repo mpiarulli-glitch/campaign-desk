@@ -181,7 +181,11 @@ export function SnapshotDeskWeeklyWin({
   }
 
   return (
-    <div className="snap-desk-win">
+    <div className={`snap-desk-win ${done ? "is-in" : "is-needed"}`}>
+      <div className="snap-desk-win-head">
+        <strong>Wins</strong>
+        {done ? null : <span>Yours is still open</span>}
+      </div>
       {error ? <p className="error">{error}</p> : null}
       {wins.length > 0 ? (
         <ul className="snap-desk-win-list">
@@ -199,7 +203,7 @@ export function SnapshotDeskWeeklyWin({
         <input
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder={done ? "Add another win" : "Add your win"}
+          placeholder={done ? "Add another win for this account" : "What moved this account this week?"}
           aria-label={`Weekly win for ${clientName}`}
         />
         <button className="btn btn-sm" type="submit" disabled={saving || !body.trim()}>
