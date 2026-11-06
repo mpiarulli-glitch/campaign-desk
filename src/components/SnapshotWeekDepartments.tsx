@@ -610,21 +610,20 @@ export function SnapshotWeekDepartments({
         <p className="snap-suggest-note">Couldn&apos;t reach Basecamp, try Refresh</p>
       ) : null}
       {error ? <p className="error">{error}</p> : null}
-      {notes.map((note) => (
+      {notes.map((note) => {
+        const deptSuggestions = suggestions.filter((row) => row.department === note.department);
+        const empty = note.items.length === 0 && deptSuggestions.length === 0;
+        return (
         <section
           key={note.department}
-          className={`snap-dept${dropAt?.list === note.department && !dropAt.beforeId ? " is-drop" : ""}`}
+          className={`snap-dept${empty ? " is-empty" : ""}${dropAt?.list === note.department && !dropAt.beforeId ? " is-drop" : ""}`}
           onDragOver={(event) => allowDrop(event, note.department, null)}
           onDrop={(event) => finishDrop(event, note.department, null)}
         >
           <div className="snap-dept-head">
-            <strong>{note.label}</strong>
-            <span>What we did this week</span>
+            <strong>{note.label.replace(" Department", "")}</strong>
           </div>
-          {suggestionBlock(
-            suggestions.filter((row) => row.department === note.department),
-            note.department
-          )}
+          {suggestionBlock(deptSuggestions, note.department)}
           {note.items.length > 0 ? (
             <ul className="snap-dept-items">
               {note.items.map((item) => (
@@ -734,7 +733,8 @@ export function SnapshotWeekDepartments({
             </button>
           </form>
         </section>
-      ))}
+        );
+      })}
       {unsorted.length > 0 ? (
         <section
           className={`snap-dept${dropAt?.list === "unsorted" && !dropAt.beforeId ? " is-drop" : ""}`}

@@ -113,12 +113,9 @@ export default function SnapshotDeskPage() {
   }, [visibleAccounts, weekWins, viewerSlug]);
   const winNeeded = accountsMissingWin.size;
   const winLine =
-    winNeeded === 0
-      ? "Your weekly win is in on every account in this list."
-      : `${winNeeded} account${winNeeded === 1 ? "" : "s"} still need your win this week.`;
-  const scopeLabel = viewerReady
-    ? "Every department, on every account"
-    : "Loading your list";
+    winNeeded === 1
+      ? "1 account still needs your win."
+      : `${winNeeded} accounts still need your win.`;
 
   const canOpenServices =
     viewer.owner ||
@@ -147,12 +144,8 @@ export default function SnapshotDeskPage() {
         </div>
       ) : null}
 
-      <div className="ops-page-head">
-        <div>
-          <p className="ops-eyebrow">Weekly snapshots</p>
-          <h1 className="ops-title">This week</h1>
-          <p className="ops-sub">{scopeLabel}</p>
-        </div>
+      <div className="ops-page-head snap-desk-top">
+        <h1 className="ops-title">This week</h1>
         <div className="snap-desk-week">
           <button type="button" className="cal-nav-btn" aria-label="Previous week" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
           <span className="snap-desk-week-label">
@@ -165,40 +158,39 @@ export default function SnapshotDeskPage() {
 
       {error ? <p className="error">{error}</p> : null}
 
-      {winNeeded > 0 || accounts.length > 0 ? (
-        <div className={`ads-pass-banner ${winNeeded === 0 ? "is-clear" : "is-work"}`}>
-          <p className="ads-pass-banner-line">{winLine}</p>
+      {winNeeded > 0 ? <p className="snap-desk-need">{winLine}</p> : null}
+
+      {clients.length > 1 || accounts.length > 8 ? (
+        <div className="snap-desk-tools">
+          {clients.length > 1 ? (
+            <label className="snap-desk-search snap-desk-client">
+              <span>Client</span>
+              <select
+                value={clientId}
+                aria-label="Filter by client"
+                onChange={(e) => setClientId(e.target.value)}
+              >
+                <option value="all">Every client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {accounts.length > 8 ? (
+            <label className="snap-desk-search">
+              <span>Find</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Client or deliverable"
+              />
+            </label>
+          ) : null}
         </div>
-      ) : null}
-
-      {clients.length > 1 ? (
-        <label className="snap-desk-search snap-desk-client">
-          <span>Client</span>
-          <select
-            value={clientId}
-            aria-label="Filter by client"
-            onChange={(e) => setClientId(e.target.value)}
-          >
-            <option value="all">Every client</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-
-      {accounts.length > 8 ? (
-        <label className="snap-desk-search">
-          <span>Find</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Client, deliverable, or category"
-          />
-        </label>
       ) : null}
 
       {!viewerReady ? (
@@ -209,7 +201,7 @@ export default function SnapshotDeskPage() {
         <div className="empty">
           <p>No accounts on the snapshot roster yet.</p>
           <Link className="btn btn-sm" href="/admin/client-services">
-            Open deliverable setup
+            Open Client Services
           </Link>
         </div>
       ) : groups.length === 0 ? (
@@ -219,7 +211,7 @@ export default function SnapshotDeskPage() {
           </p>
         </div>
       ) : (
-        <div className="stack" style={{ gap: 18 }}>
+        <div className="snap-desk-accounts">
           {groups.map((group) => {
             const view = groupView[group.id] || "week";
             return (
