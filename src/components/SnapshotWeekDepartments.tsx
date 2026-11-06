@@ -561,9 +561,7 @@ export function SnapshotWeekDepartments({
                     Sent for approval
                   </span>
                 ) : (
-                  <span className="snap-check is-on" aria-label="Completed in Basecamp">
-                    ✓
-                  </span>
+                  <span className="snap-status is-completed">Completed</span>
                 )}
                 {editingThis ? (
                   <span className="snap-suggest-edit">
@@ -794,12 +792,6 @@ export function SnapshotWeekDepartments({
                     </span>
                   ) : null}
                   <label className="snap-status-wrap">
-                    {(item.status || (item.completed ? "completed" : "in_progress")) ===
-                    "completed" ? (
-                      <span className="snap-check is-on" aria-hidden="true">
-                        ✓
-                      </span>
-                    ) : null}
                     <select
                       className={`snap-status is-${item.status || (item.completed ? "completed" : "in_progress")}`}
                       aria-label={`Status for ${item.body}`}
