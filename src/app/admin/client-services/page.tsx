@@ -709,8 +709,7 @@ export default function ClientServicesPage() {
           <p className="eyebrow">Snapshots</p>
           <h1 className="h1">Weekly Snapshots</h1>
           <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Friday outreach and deliverable setup. Log the week for every
-            client from Fill this week.
+            Weekly snapshots. Send the Friday ask from here.
           </p>
         </div>
 
@@ -722,7 +721,7 @@ export default function ClientServicesPage() {
             className={`tab ${view === "accounts" ? "active" : ""}`}
             onClick={() => setTab("accounts")}
           >
-            Deliverable setup
+            Clients
             <span className="tab-count">{accounts.length}</span>
           </button>
           {fridayAsk ? (

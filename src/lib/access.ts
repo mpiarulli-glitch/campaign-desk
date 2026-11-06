@@ -171,7 +171,7 @@ export const PAGES: Capability[] = [
     label: "Client Services",
     group: "page",
     href: "/admin/client-services",
-    icon: "mail",
+    icon: "person",
     blurb: "Send a weekly snapshot by hand, and add a client to the roster.",
   },
   {
