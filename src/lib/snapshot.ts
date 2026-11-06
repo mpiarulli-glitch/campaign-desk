@@ -1473,6 +1473,40 @@ export function deleteWin(id: string): boolean {
   return getDb().prepare(`DELETE FROM snapshot_wins WHERE id = ?`).run(id).changes > 0;
 }
 
+/**
+ * Change a win that was already saved. The week stays put unless a new
+ * happened-on date is sent, which is filed the same way a new win is.
+ * Sent email and Basecamp posts are not rewritten.
+ */
+export function updateWin(
+  id: string,
+  input: { body: string; happenedOn?: string }
+): { ok: true; win: SnapshotWin } | { ok: false; error: "not_found" | "empty" } {
+  const db = getDb();
+  const existing = db.prepare(`SELECT * FROM snapshot_wins WHERE id = ?`).get(id) as
+    | SnapshotWin
+    | undefined;
+  if (!existing) return { ok: false, error: "not_found" };
+  const body = input.body.trim();
+  if (!body) return { ok: false, error: "empty" };
+  let happenedOn = existing.happened_on;
+  let weekStart = existing.week_start;
+  if (input.happenedOn !== undefined) {
+    happenedOn = input.happenedOn.trim();
+    if (happenedOn) weekStart = weekOfYmd(happenedOn);
+  }
+  db.prepare(`UPDATE snapshot_wins SET body = ?, happened_on = ?, week_start = ? WHERE id = ?`).run(
+    body,
+    happenedOn,
+    weekStart,
+    id
+  );
+  return {
+    ok: true,
+    win: db.prepare(`SELECT * FROM snapshot_wins WHERE id = ?`).get(id) as SnapshotWin,
+  };
+}
+
 /* --------------------------------------------------------------- leads */
 
 const LEAD_SOURCES: LeadSource[] = ["form", "call", "other"];

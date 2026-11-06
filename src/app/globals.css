@@ -20126,20 +20126,20 @@ article.snap-pick-card.lh-pick-card:hover {
 }
 
 .snap-desk-win {
-  margin: 10px 12px 12px;
-  padding: 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--bg-soft);
+  margin: 4px 12px 0;
+  padding: 8px 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .snap-desk-win.is-needed {
-  border-color: color-mix(in srgb, #d97706 45%, var(--border));
-  box-shadow: inset 3px 0 0 #d97706;
+  box-shadow: inset 2px 0 0 #d97706;
+  padding-left: 10px;
 }
 
 .snap-desk-win.is-in {
-  border-color: color-mix(in srgb, #3f7d4e 40%, var(--border));
+  box-shadow: none;
 }
 
 .snap-desk-win-head {
@@ -20170,8 +20170,36 @@ article.snap-pick-card.lh-pick-card:hover {
 }
 
 .snap-desk-win-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   font-size: 14px;
   line-height: 1.45;
+}
+
+.snap-desk-win-who {
+  flex: 0 0 108px;
+  padding-top: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.snap-desk-win-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snap-desk-win-line form,
+form.snap-desk-win-line {
+  flex: 1;
+}
+
+.snap-desk-win-line input:not([type="date"]) {
+  flex: 1;
+  min-width: 160px;
 }
 
 .snap-desk-win-others li {
@@ -20201,15 +20229,15 @@ article.snap-pick-card.lh-pick-card:hover {
 .snap-dept-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 0 12px 14px;
+  gap: 8px;
+  padding: 8px 12px 10px;
 }
 
 .snap-dept {
   display: block;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
   background: var(--bg);
 }
 
@@ -20223,8 +20251,7 @@ article.snap-pick-card.lh-pick-card:hover {
 }
 
 .snap-dept-head span {
-  color: var(--text-muted);
-  font-size: 12px;
+  display: none;
 }
 
 .snap-dept.is-drop {
@@ -20682,11 +20709,10 @@ button.snap-check {
 }
 
 .snap-n-db {
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   overflow: hidden;
   background: var(--bg-elevated);
-  box-shadow: var(--shadow);
 }
 
 .snap-n-cols {

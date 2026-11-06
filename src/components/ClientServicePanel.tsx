@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { EditableSnapshotWin } from "@/components/SnapshotDeskAccountViews";
 import { cell, mapColumns, parseCsv } from "@/lib/csv";
 
 // The per-client panel behind a client name in the Client Services Hub.
@@ -669,10 +670,15 @@ export function ClientServicePanel({
             <ul className="csp-list">
               {wins.slice(0, 5).map((w) => (
                 <li key={w.id}>
-                  <span className="csp-list-main">{w.body}</span>
-                  {w.happened_on ? (
-                    <span className="csp-list-sub">{fmtDay(w.happened_on)}</span>
-                  ) : null}
+                  <EditableSnapshotWin
+                    win={w}
+                    showDate
+                    onSaved={(saved) =>
+                      setWins((prev) =>
+                        prev.map((row) => (row.id === saved.id ? { ...row, ...saved } : row))
+                      )
+                    }
+                  />
                 </li>
               ))}
             </ul>
