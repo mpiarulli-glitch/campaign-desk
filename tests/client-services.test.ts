@@ -226,9 +226,13 @@ test("weekly snapshot outreach", async (t) => {
     });
     assert.equal(mail.subject, "Your New Weekly Snapshot is ready.");
     assert.match(mail.html, /Hi Tim,/);
-    assert.match(mail.html, /ready to review/);
-    assert.match(mail.html, /See what went on across your account this week/);
+    assert.match(mail.html, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.match(mail.html, /This will cover all the work across your account this week\./);
+    assert.match(mail.html, /Please view\./);
     assert.match(mail.html, /https:\/\/hub\.example\.com\/snapshot\/tok/);
+    assert.match(mail.text, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.match(mail.text, /This will cover all the work across your account this week\./);
+    assert.match(mail.text, /Please view\./);
     assert.match(mail.text, /Cassidy/);
     assert.doesNotMatch(mail.text, /lead/i);
     assert.doesNotMatch(mail.text, /revenue/i);
@@ -251,7 +255,9 @@ test("weekly snapshot outreach", async (t) => {
       ask: ask as never,
       link: "https://hub.example.com/snapshot/tok",
     });
-    assert.match(mail.text, /ready to review/);
+    assert.match(mail.text, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.doesNotMatch(mail.html, /ready to review/);
+    assert.doesNotMatch(mail.text, /ready to review/);
     assert.doesNotMatch(mail.text, /revenue/i);
     assert.doesNotMatch(mail.text, /lead/i);
 
@@ -273,6 +279,87 @@ test("weekly snapshot outreach", async (t) => {
     assert.doesNotMatch(card.body, /Thanks, Kyle Morris/);
     assert.doesNotMatch(card.body, /lead/i);
     assert.doesNotMatch(card.body, /revenue/i);
+  });
+
+  await t.test("the email is a short note and leaves wins and departments off", () => {
+    const client = revenue.getRevClient(acme.id)!;
+    const mail = cs.weeklyAskEmail({
+      client,
+      am: { slug: "cassidy", label: "Cassidy", email: "c@meg.test" },
+      ask: {
+        month: "2026-07",
+        monthLabel: "July 2026",
+        unansweredLeads: [],
+        revenueIn: false,
+        revenueAmount: null,
+      },
+      link: "https://hub.example.com/snapshot/tok",
+      work: {
+        wins: ["Booked the holiday shoot."],
+        departments: [
+          {
+            label: "Social Media Department",
+            items: [
+              { body: "Posted four Reels.", status: "completed" },
+              "Replied to comments.",
+            ],
+          },
+          {
+            label: "Ads Department",
+            items: [{ body: "Launched the retargeting set.", status: "in_progress" }],
+          },
+        ],
+      },
+    });
+    const lines = [
+      "Your Weekly Snapshot is ready to be viewed.",
+      "This will cover all the work across your account this week.",
+      "Please view.",
+    ];
+    const preheader = lines.join(" ");
+    assert.equal(mail.subject, "Your New Weekly Snapshot is ready.");
+    assert.match(mail.html, /Your weekly snapshot/);
+    assert.match(mail.html, /Hi Tim,/);
+    assert.match(mail.html, /Open your snapshot/);
+    assert.match(mail.html, /Thanks,<br>Cassidy/);
+    assert.match(mail.text, /Thanks,\nCassidy/);
+    for (const line of lines) {
+      assert.ok(mail.html.includes(line), line);
+      assert.ok(mail.text.includes(line), line);
+    }
+    assert.ok(mail.html.includes(preheader), "hidden preheader");
+    assert.equal(
+      mail.text,
+      [
+        "Hi Tim,",
+        "",
+        ...lines,
+        "",
+        "Open your snapshot: https://hub.example.com/snapshot/tok",
+        "",
+        "Thanks,",
+        "Cassidy",
+      ].join("\n")
+    );
+    for (const omitted of [
+      "Booked the holiday shoot.",
+      "Social Media Department",
+      "Posted four Reels.",
+      "Replied to comments.",
+      "Ads Department",
+      "Launched the retargeting set.",
+      "Win",
+      "Completed",
+      "In progress",
+      "1 update",
+      "2 updates",
+    ]) {
+      assert.equal(mail.html.includes(omitted), false, omitted);
+      assert.equal(mail.text.includes(omitted), false, omitted);
+    }
+    assert.doesNotMatch(mail.html, /<ul/);
+    assert.doesNotMatch(mail.html, /<li/);
+    assert.doesNotMatch(mail.html, /#c48a00/);
   });
 
   await t.test("weekly snapshot always CCs Sylvia's inbox", () => {

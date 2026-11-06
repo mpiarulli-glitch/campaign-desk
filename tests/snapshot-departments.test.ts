@@ -110,7 +110,7 @@ test("weekly snapshot department items", async (t) => {
     assert.equal(depts.departmentNotesForWeek(client.id, week).length, 7);
   });
 
-  await t.test("the Friday email and Basecamp post bullet only the filled departments", () => {
+  await t.test("the Friday email omits the week's work, and the Basecamp post bullets only the filled departments", () => {
     depts.addDepartmentItem({
       clientId: client.id,
       weekStart: week,
@@ -137,18 +137,27 @@ test("weekly snapshot department items", async (t) => {
       link: "https://hub.example.com/snapshot/tok",
       work,
     });
-    assert.match(mail.text, /Booked the holiday shoot/);
-    assert.match(mail.text, /Social Media Department/);
-    assert.match(mail.text, /- In progress · Posted four Reels\./);
-    assert.match(mail.text, /- In progress · Replied to comments\./);
-    assert.match(mail.html, /<ul/);
-    assert.match(mail.html, /<li/);
-    assert.match(mail.html, /Shipped the landing page/);
-    assert.match(mail.html, /2 updates/);
-    assert.match(mail.text, /Social Media Department · 2 updates/);
-    assert.match(mail.text, /Ads Department · 1 update/);
-    assert.match(mail.text, /- In progress · Launched the retargeting set\./);
-    assert.match(mail.html, /border-left:3px solid #c48a00/);
+    assert.match(mail.html, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.match(mail.html, /This will cover all the work across your account this week\./);
+    assert.match(mail.html, /Please view\./);
+    assert.match(mail.text, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.match(mail.text, /This will cover all the work across your account this week\./);
+    assert.match(mail.text, /Please view\./);
+    assert.doesNotMatch(mail.html, /Booked the holiday shoot/);
+    assert.doesNotMatch(mail.text, /Booked the holiday shoot/);
+    assert.doesNotMatch(mail.html, /Social Media Department/);
+    assert.doesNotMatch(mail.text, /Social Media Department/);
+    assert.doesNotMatch(mail.html, /Posted four Reels/);
+    assert.doesNotMatch(mail.text, /Posted four Reels/);
+    assert.doesNotMatch(mail.html, /Replied to comments/);
+    assert.doesNotMatch(mail.text, /Replied to comments/);
+    assert.doesNotMatch(mail.html, /Shipped the landing page/);
+    assert.doesNotMatch(mail.text, /Shipped the landing page/);
+    assert.doesNotMatch(mail.html, /Launched the retargeting set/);
+    assert.doesNotMatch(mail.text, /Launched the retargeting set/);
+    assert.doesNotMatch(mail.html, /<ul/);
+    assert.doesNotMatch(mail.html, /<li/);
+    assert.doesNotMatch(mail.html, /border-left:3px solid #c48a00/);
     assert.doesNotMatch(mail.text, /Lifecycle Department/);
     assert.doesNotMatch(mail.text, /Video Department/);
     assert.doesNotMatch(mail.text, /SEO Department/);
