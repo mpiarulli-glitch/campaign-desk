@@ -267,18 +267,102 @@ test("weekly snapshot outreach", async (t) => {
       mention: "@Tim",
       amMention: '<bc-attachment sgid="am-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
       amLabel: "Kyle Morris",
-      sylviaMention:
-        '<bc-attachment sgid="sylvia-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
     });
     assert.equal(card.title, "Your weekly snapshot is ready");
-    assert.match(card.body, /ready to review/);
-    assert.match(card.body, /See what went on across your account this week/);
+    assert.match(card.body, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.match(card.body, /This will cover all the work across your account this week\./);
+    assert.match(card.body, /Please view\./);
     assert.match(card.body, /am-sgid/);
-    assert.match(card.body, /sylvia-sgid/);
     assert.match(card.body, /CC:/);
-    assert.doesNotMatch(card.body, /Thanks, Kyle Morris/);
+    assert.doesNotMatch(card.body, /sylvia/i);
+    assert.doesNotMatch(card.body, /Thanks/);
+    assert.doesNotMatch(card.body, /ready to review/);
     assert.doesNotMatch(card.body, /lead/i);
     assert.doesNotMatch(card.body, /revenue/i);
+  });
+
+  await t.test("the Basecamp post is a short note that mentions the client and account manager only", () => {
+    const mention =
+      '<bc-attachment sgid="client-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>';
+    const amMention =
+      '<bc-attachment sgid="am-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>';
+    const link = "https://hub.example.com/snapshot/sample-week";
+    const card = cs.weeklyAskMessageContent({
+      ask: {
+        month: "2026-11",
+        monthLabel: "November 2026",
+        unansweredLeads: [],
+        revenueIn: false,
+        revenueAmount: null,
+      },
+      link,
+      mention,
+      amMention,
+      amLabel: "Cassidy",
+      work: {
+        wins: ["Booked the holiday shoot."],
+        departments: [
+          {
+            label: "Social Media Department",
+            items: [
+              { body: "Posted four Reels.", status: "completed" },
+              "Replied to comments.",
+            ],
+          },
+          {
+            label: "Ads Department",
+            items: [{ body: "Launched the retargeting set.", status: "in_progress" }],
+          },
+        ],
+      },
+    });
+    assert.equal(card.title, "Your weekly snapshot is ready");
+    assert.equal(
+      card.body,
+      `<div>${mention} Your Weekly Snapshot is ready to be viewed.</div>` +
+        `<div>This will cover all the work across your account this week.</div>` +
+        `<div>Please view.</div>` +
+        `<div><br><a href="${link}">Open your snapshot</a></div>` +
+        `<div><br>CC: ${amMention}</div>`
+    );
+    for (const omitted of [
+      "Booked the holiday shoot.",
+      "Social Media Department",
+      "Posted four Reels.",
+      "Replied to comments.",
+      "Ads Department",
+      "Launched the retargeting set.",
+      "Sylvia",
+      "Thanks",
+      "Win",
+      "Completed",
+      "In progress",
+    ]) {
+      assert.equal(card.body.includes(omitted), false, omitted);
+    }
+    assert.doesNotMatch(card.body, /<ul/);
+    assert.doesNotMatch(card.body, /<li/);
+  });
+
+  await t.test("an unresolved account manager is CC'd as plain text, not a guessed mention", () => {
+    const card = cs.weeklyAskMessageContent({
+      ask: {
+        month: "2026-11",
+        monthLabel: "November 2026",
+        unansweredLeads: [],
+        revenueIn: false,
+        revenueAmount: null,
+      },
+      link: "https://hub.example.com/snapshot/tok",
+      mention:
+        '<bc-attachment sgid="client-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
+      amLabel: "Cassidy",
+    });
+    assert.match(card.body, /CC: Cassidy/);
+    assert.doesNotMatch(card.body, /am-sgid/);
+    assert.equal((card.body.match(/<bc-attachment/g) || []).length, 1);
+    assert.doesNotMatch(card.body, /Sylvia/);
+    assert.doesNotMatch(card.body, /Thanks/);
   });
 
   await t.test("the email is a short note and leaves wins and departments off", () => {
@@ -547,11 +631,23 @@ test("weekly snapshot outreach", async (t) => {
       );
 
     const calls: string[] = [];
+    const messages: Array<{
+      subject: string;
+      content: string;
+      subscriptions?: number[];
+    }> = [];
+    const emails: Array<{ cc?: string[]; html?: string; text?: string }> = [];
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method || "GET";
       calls.push(`${method} ${url}`);
+      if (method === "POST" && url.includes("api.resend.com/emails") && init?.body) {
+        emails.push(JSON.parse(String(init.body)));
+      }
+      if (method === "POST" && url.includes("/message_boards/77/messages.json") && init?.body) {
+        messages.push(JSON.parse(String(init.body)));
+      }
       if (url.includes("api.resend.com/emails")) {
         return new Response(JSON.stringify({ id: "email-manual-1" }), {
           status: 200,
@@ -626,6 +722,23 @@ test("weekly snapshot outreach", async (t) => {
         ),
         true
       );
+      const messageBody = messages[0];
+      assert.ok(messageBody);
+      assert.equal(messageBody.subject, "Your weekly snapshot is ready");
+      assert.deepEqual(messageBody.subscriptions, [11, 22]);
+      assert.match(messageBody.content, /sgid-pat/);
+      assert.match(messageBody.content, /sgid-cassidy/);
+      assert.match(messageBody.content, /Your Weekly Snapshot is ready to be viewed\./);
+      assert.match(messageBody.content, /This will cover all the work across your account this week\./);
+      assert.match(messageBody.content, /Please view\./);
+      assert.doesNotMatch(messageBody.content, /sgid-sylvia/);
+      assert.doesNotMatch(messageBody.content, /Sylvia/);
+      assert.doesNotMatch(messageBody.content, /Thanks/);
+      const emailBody = emails[0];
+      assert.ok(emailBody);
+      assert.deepEqual(emailBody.cc, ["sartiga@marketingempiregroup.com"]);
+      assert.match(emailBody.html || "", /Your Weekly Snapshot is ready to be viewed\./);
+      assert.match(emailBody.text || "", /Thanks,\nCassidy/);
       const after = cs.outreachForWeek(weekStart);
       assert.equal(after.length, before + 2);
       assert.equal(

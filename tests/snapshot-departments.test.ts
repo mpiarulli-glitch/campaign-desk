@@ -110,7 +110,7 @@ test("weekly snapshot department items", async (t) => {
     assert.equal(depts.departmentNotesForWeek(client.id, week).length, 7);
   });
 
-  await t.test("the Friday email omits the week's work, and the Basecamp post bullets only the filled departments", () => {
+  await t.test("the Friday email and Basecamp post both omit the week's work", () => {
     depts.addDepartmentItem({
       clientId: client.id,
       weekStart: week,
@@ -173,18 +173,31 @@ test("weekly snapshot department items", async (t) => {
         revenueAmount: null,
       },
       link: "https://hub.example.com/snapshot/tok",
-      mention: "@Pat",
+      mention:
+        '<bc-attachment sgid="client-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
+      amMention:
+        '<bc-attachment sgid="am-sgid" content-type="application/vnd.basecamp.mention"></bc-attachment>',
       amLabel: "Cassidy",
       work,
     });
-    assert.match(card.body, /<ul>/);
-    assert.match(card.body, /<li>In progress · Posted four Reels\.<\/li>/);
-    assert.match(card.body, /Social Media Department/);
-    assert.match(card.body, /Ads Department/);
-    assert.match(card.body, /<li>In progress · Launched the retargeting set\.<\/li>/);
-    assert.match(card.body, /Web Department/);
+    assert.match(card.body, /Your Weekly Snapshot is ready to be viewed\./);
+    assert.match(card.body, /This will cover all the work across your account this week\./);
+    assert.match(card.body, /Please view\./);
+    assert.match(card.body, /client-sgid/);
+    assert.match(card.body, /am-sgid/);
+    assert.match(card.body, /Open your snapshot/);
+    assert.doesNotMatch(card.body, /<ul>/);
+    assert.doesNotMatch(card.body, /<li>/);
+    assert.doesNotMatch(card.body, /Booked the holiday shoot/);
+    assert.doesNotMatch(card.body, /Posted four Reels/);
+    assert.doesNotMatch(card.body, /Social Media Department/);
+    assert.doesNotMatch(card.body, /Ads Department/);
+    assert.doesNotMatch(card.body, /Launched the retargeting set/);
+    assert.doesNotMatch(card.body, /Web Department/);
     assert.doesNotMatch(card.body, /Lifecycle Department/);
     assert.doesNotMatch(card.body, /SEO Department/);
+    assert.doesNotMatch(card.body, /Sylvia/);
+    assert.doesNotMatch(card.body, /Thanks/);
   });
 
   await t.test("a completed Basecamp item is stored as Completed", () => {
@@ -253,7 +266,9 @@ test("weekly snapshot department items", async (t) => {
       },
     });
     assert.doesNotMatch(card.body, /&#10003;|✓/);
-    assert.match(card.body, /Completed · Film the testimonial/);
+    assert.doesNotMatch(card.body, /Film the testimonial/);
+    assert.doesNotMatch(card.body, /Completed/);
+    assert.match(card.body, /Your Weekly Snapshot is ready to be viewed\./);
 
     const reworded = depts.updateDepartmentItem({
       itemId: checked!.id,
