@@ -3,6 +3,7 @@ import { isTeam } from "./people";
 import { businessModelLabel, resolveClientLogoUrl } from "./revenue";
 import { deliverableVisibleTo, forcedDepartmentTeam, teamToStore } from "./snapshot-fill";
 import { enrolledClientIds, isSnapshotEnrolled } from "./snapshot-enrollment";
+import { migrateLegacyDepartmentNotes } from "./snapshot-departments";
 import { inferDeliverableCadenceLabel, inferDeliverableKind } from "./snapshot-kind";
 import {
   isSnapshotContractMet,
@@ -24,7 +25,7 @@ import {
   type SnapshotRevenueReport,
   type SnapshotWin,
 } from "./db";
-import { addWeeks, mondayOf } from "./week";
+import { addWeeks, currentWeek, mondayOf } from "./week";
 import { metricPeriodLabel, normalizeMetricPeriod } from "./metric-period";
 import {
   backfillWeekRange,
@@ -131,19 +132,17 @@ export function listAccounts(): SnapshotAccount[] {
   return rows.filter((row) => enrolled.has(row.id));
 }
 
-export type SnapshotPickerStatus = "active" | "behind";
-
 /** Card data for the weekly snapshot client picker grid. */
 export interface SnapshotAccountPickerCard {
   id: string;
   name: string;
-  deliverable_count: number;
-  behind_count: number;
-  status: SnapshotPickerStatus;
+  /** Department lines added on the current snapshot week. */
+  tasks_started: number;
+  /** Wins logged on the current snapshot week. */
+  wins: number;
   logo_url: string | null;
   website: string;
   category: string;
-  description: string;
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -162,38 +161,61 @@ function pickerCategory(account: SnapshotAccount): string {
   return businessModelLabel(account.business_model);
 }
 
-function pickerDescription(account: SnapshotAccount, behindCount: number): string {
-  const n = account.deliverable_count;
-  const deliverableLine =
-    n === 0
-      ? "No deliverables on the snapshot roster yet."
-      : n === 1
-        ? "One deliverable tracked on the weekly snapshot."
-        : `${n} deliverables tracked on the weekly snapshot.`;
-  if (behindCount > 0) {
-    const overdue =
-      behindCount === 1
-        ? "One item is overdue and needs attention."
-        : `${behindCount} items are overdue and need attention.`;
-    return `${deliverableLine} ${overdue}`;
-  }
-  return `${deliverableLine} All current periods are caught up.`;
+/**
+ * This week's snapshot activity for the client cards.
+ *
+ * Tasks are department lines added for the week (what the team logged). Wins
+ * are the weekly wins filed on that same Monday. Other weeks, and the
+ * deliverable roster, are not included.
+ */
+export function snapshotWeekActivity(
+  weekStart: string
+): Map<string, { tasks: number; wins: number }> {
+  migrateLegacyDepartmentNotes();
+  const db = getDb();
+  const tasks = db
+    .prepare(
+      `SELECT client_id, COUNT(*) AS n
+       FROM snapshot_department_items
+       WHERE week_start = ? AND TRIM(body) != ''
+       GROUP BY client_id`
+    )
+    .all(weekStart) as Array<{ client_id: string; n: number }>;
+  const wins = db
+    .prepare(
+      `SELECT client_id, COUNT(*) AS n
+       FROM snapshot_wins
+       WHERE week_start = ?
+       GROUP BY client_id`
+    )
+    .all(weekStart) as Array<{ client_id: string; n: number }>;
+  const out = new Map<string, { tasks: number; wins: number }>();
+  const slot = (id: string) => {
+    let row = out.get(id);
+    if (!row) {
+      row = { tasks: 0, wins: 0 };
+      out.set(id, row);
+    }
+    return row;
+  };
+  for (const row of tasks) slot(row.client_id).tasks = row.n;
+  for (const row of wins) slot(row.client_id).wins = row.n;
+  return out;
 }
 
 /** Allowlisted accounts enriched for the client-selection card grid. */
 export function listAccountPickerCards(): SnapshotAccountPickerCard[] {
+  const activity = snapshotWeekActivity(currentWeek());
   return listAccounts().map((account) => {
-    const behind_count = behindDeliverablesForClient(account.id).length;
+    const week = activity.get(account.id) || { tasks: 0, wins: 0 };
     return {
       id: account.id,
       name: account.name,
-      deliverable_count: account.deliverable_count,
-      behind_count,
-      status: behind_count > 0 ? "behind" : "active",
+      tasks_started: week.tasks,
+      wins: week.wins,
       logo_url: resolveClientLogoUrl(account),
       website: account.website,
       category: pickerCategory(account),
-      description: pickerDescription(account, behind_count),
     };
   });
 }

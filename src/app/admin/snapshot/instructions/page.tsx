@@ -17,9 +17,6 @@ export default function SnapshotInstructionsPage() {
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">
           All snapshots
         </Link>
-        <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/behind">
-          Behind report
-        </Link>
       </div>
 
       <div className="ops-page-head">

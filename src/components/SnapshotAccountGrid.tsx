@@ -6,13 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 export type SnapshotAccountCard = {
   id: string;
   name: string;
-  deliverable_count: number;
-  behind_count: number;
-  status: "active" | "behind";
+  tasks_started: number;
+  wins: number;
   logo_url: string | null;
   website: string;
   category: string;
-  description: string;
 };
 
 const FAVORITES_KEY = "snapshot-account-favorites";
@@ -196,10 +194,11 @@ function SnapshotAccountCard({
     }
   }
 
-  const metric =
-    account.deliverable_count === 1
-      ? "1 Deliverable"
-      : `${account.deliverable_count} Deliverables`;
+  const tasks =
+    account.tasks_started === 1
+      ? "1 task started"
+      : `${account.tasks_started} tasks started`;
+  const wins = account.wins === 1 ? "1 win" : `${account.wins} wins`;
 
   return (
     <Link href={`/admin/snapshot/${account.id}`} className="snap-pick-card">
@@ -227,14 +226,9 @@ function SnapshotAccountCard({
         </div>
         <StarButton active={favorited} name={account.name} onToggle={onToggleFavorite} />
       </div>
-      <p className="snap-pick-card-desc">{account.description}</p>
       <div className="snap-pick-card-foot">
-        <span className="snap-pick-metric">{metric}</span>
-        <span
-          className={`snap-pick-status ${account.status === "active" ? "is-active" : "is-behind"}`}
-        >
-          {account.status === "active" ? "Active" : "Needs attention"}
-        </span>
+        <span className="snap-pick-metric">{tasks}</span>
+        <span className="snap-pick-metric">{wins}</span>
       </div>
     </Link>
   );
