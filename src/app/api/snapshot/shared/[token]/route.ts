@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getAccountByToken,
-  listWins,
+  winsForClientWeek,
   metricsSeries,
   revenueAsk,
   snapshotLaunchDateFor,
@@ -41,7 +41,7 @@ export async function GET(request: Request, { params }: Params) {
       return row;
     }),
     // Full contract / deliverable overview is hidden from the client view for now.
-    wins: listWins(account.id),
+    wins: winsForClientWeek(account.id, week),
     departments: filledDepartmentNotes(account.id, week).map((note) => ({
       slug: note.department,
       label: note.label,

@@ -252,8 +252,8 @@ export default function SnapshotClientPage() {
       const pct = firstV !== 0 ? Math.round(((latest - firstV) / Math.abs(firstV)) * 100) : null;
       headlineText = pct !== null ? `${headline.metric} ${pct >= 0 ? "+" : ""}${pct}%` : headline.metric;
     }
-    return { wins: wins.length, headlineText };
-  }, [metrics, wins]);
+    return { wins: wins.filter((w) => w.week_start === week).length, headlineText };
+  }, [metrics, wins, week]);
 
   if (notFound) {
     return (
@@ -274,8 +274,6 @@ export default function SnapshotClientPage() {
 
   const hasMetrics = metrics.some((m) => m.points.length > 0);
   const weekWins = wins.filter((w) => w.week_start === week);
-  const showWeekCallout = departments.length > 0 && weekWins.length > 0;
-  const listedWins = showWeekCallout ? wins.filter((w) => w.week_start !== week) : wins;
 
   return (
     <div className="app-shell snap-client">
@@ -347,13 +345,13 @@ export default function SnapshotClientPage() {
             </header>
 
             {/* WINS — up top */}
-            {listedWins.length > 0 ? (
+            {weekWins.length > 0 ? (
               <section className="snap-panel t-wins">
                 <header className="snap-sec-head">
                   <h2>Wins</h2>
                 </header>
                 <div className="snap-wins2">
-                  {listedWins.map((w) => (
+                  {weekWins.map((w) => (
                     <div key={w.id} className="snap-win2">
                       <div className="snap-win2-mark" aria-hidden="true">★</div>
                       <div>
@@ -424,24 +422,6 @@ export default function SnapshotClientPage() {
                   <h2>This week</h2>
                   <span className="snap-week-range">{weekLabel(week)}</span>
                 </header>
-                {showWeekCallout ? (
-                  <div className="snap-week-callout">
-                    {weekWins.map((w) => (
-                      <div key={w.id} className="snap-week-win">
-                        <div className="snap-week-win-mark" aria-hidden="true">
-                          ★
-                        </div>
-                        <div>
-                          <p className="snap-week-kicker">Win</p>
-                          <p>{w.body}</p>
-                          {w.happened_on ? (
-                            <span className="snap-week-win-date">{formatClientWinDate(w.happened_on)}</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
                 <div className="snap-week-grid">
                   {departments.map((note) => (
                     <article
