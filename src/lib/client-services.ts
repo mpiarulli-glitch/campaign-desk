@@ -45,11 +45,7 @@ function listFridayAskClients(): RevClient[] {
 }
 import { slugForName, teamLabel } from "./team";
 import { basecampNameForManager } from "./people";
-import {
-  findSylviaOnRoster,
-  SYLVIA_CC_EMAIL,
-  sylviaCcHtml,
-} from "./review-cc";
+import { SYLVIA_CC_EMAIL } from "./review-cc";
 import { getUser } from "./users";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
@@ -376,25 +372,6 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
   return { html: html.join(""), text: text.join("\n") };
 }
 
-function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
-  const wins = (work?.wins || []).map((line) => line.trim()).filter(Boolean);
-  const departments = filledWeekDepartments(work);
-  if (!wins.length && !departments.length) return "";
-  let html = "";
-  if (wins.length) {
-    html += `<div><br><strong>Win</strong></div>`;
-    for (const line of wins) html += `<div>${esc(line)}</div>`;
-  }
-  for (const dept of departments) {
-    html += `<div><br><strong>${esc(dept.label)}</strong> · ${esc(updateCount(dept.items.length))}</div><ul>`;
-    for (const item of dept.items) {
-      html += `<li>${esc(snapshotItemStatusLabel(snapshotItemStatusFrom({ status: item.status, completed: item.completed })))} · ${esc(item.body)}</li>`;
-    }
-    html += `</ul>`;
-  }
-  return html;
-}
-
 export function weeklyAskEmail(args: {
   client: RevClient;
   am: AccountManager | null;
@@ -402,8 +379,8 @@ export function weeklyAskEmail(args: {
   link: string;
   work?: SnapshotWeekCopy;
 }): { subject: string; html: string; text: string } {
-  // Wins and department lists stay off this email. The snapshot page and the
-  // Basecamp post still carry them, so `work` is accepted and ignored.
+  // Wins and department lists stay off this email. They live on the snapshot
+  // page. `work` is accepted and ignored.
   const { client, am, link } = args;
   const first = (client.contact_name || "").trim().split(/\s+/)[0];
   const greeting = first ? `Hi ${esc(first)},` : "Hi there,";
@@ -550,27 +527,26 @@ export function resolveAccountManagerOnProject(
 export function weeklyAskMessageContent(args: {
   ask: WeeklyAsk;
   link: string;
+  /** Real Basecamp @mention HTML for the client contact. */
   mention: string;
   /** Real Basecamp @mention HTML for the account manager, when resolved. */
   amMention?: string;
+  /** Plain name used on the CC line when the manager is not on the project. */
   amLabel: string;
-  /** Real Basecamp @mention HTML for Sylvia's CC line, when resolved. */
-  sylviaMention?: string;
+  /** Accepted and ignored. Wins and department lists stay on the snapshot page. */
   work?: SnapshotWeekCopy;
 }): { title: string; body: string } {
   const { link, mention, amLabel } = args;
-  const workHtml = snapshotWeekBasecamp(args.work);
   const amMention = (args.amMention || "").trim();
-  const thanks = amMention
-    ? `Thanks, ${amMention}`
-    : `Thanks, ${esc(amLabel)}`;
+  // A missing roster match stays plain text. Guessing a mention would ping
+  // the wrong person, and the Thanks line is omitted so the manager is not named twice.
+  const cc = amMention || esc(amLabel);
   const body =
-    `<div>${mention} your weekly snapshot is ready to review.</div>` +
-    `<div>See what went on across your account this week.</div>` +
-    workHtml +
+    `<div>${mention} Your Weekly Snapshot is ready to be viewed.</div>` +
+    `<div>This will cover all the work across your account this week.</div>` +
+    `<div>Please view.</div>` +
     `<div><br><a href="${esc(link)}">Open your snapshot</a></div>` +
-    `<div><br>${thanks}</div>` +
-    sylviaCcHtml(args.sylviaMention);
+    `<div><br>CC: ${cc}</div>`;
   return { title: "Your weekly snapshot is ready", body };
 }
 
@@ -735,27 +711,19 @@ export async function sendWeeklyAsk(args: {
           client.account_manager || "",
           am
         );
-        const sylvia = findSylviaOnRoster(people);
         const { title, body } = weeklyAskMessageContent({
           ask,
           link,
           mention: mentionHtml(contact),
           amMention: manager ? mentionHtml(manager) : "",
           amLabel: am?.label || "Marketing Empire Group",
-          sylviaMention: sylvia ? mentionHtml(sylvia) : "",
           work,
         });
-        // Notify the same people the card used to assign. Omitting this list
-        // would ping everyone on the project.
+        // Notify the client and, when resolved, their account manager.
+        // Omitting this list would ping everyone on the project. Sylvia is
+        // not notified on this post.
         const subscriberIds = [contact.id];
         if (manager && manager.id !== contact.id) subscriberIds.push(manager.id);
-        if (
-          sylvia &&
-          sylvia.id !== contact.id &&
-          (!manager || sylvia.id !== manager.id)
-        ) {
-          subscriberIds.push(sylvia.id);
-        }
         const r = await createMessageBoardPost(
           client.basecamp_project_id,
           title,
