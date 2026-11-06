@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { SnapshotEditTextarea } from "@/components/SnapshotItemEditor";
 import { snapshotAuthorLabel } from "@/lib/people";
 import { winLoggedByMatches } from "@/lib/snapshot-fill";
 
@@ -136,11 +137,17 @@ export function EditableSnapshotWin({
   }
 
   return (
-    <form className="snap-desk-win-line" onSubmit={(event) => void save(event)}>
-      <input
+    <form className="snap-desk-win-edit" onSubmit={(event) => void save(event)}>
+      <SnapshotEditTextarea
         value={body}
         aria-label="Edit win"
         onChange={(event) => setBody(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setEditing(false);
+            setError("");
+          }
+        }}
       />
       {showDate ? (
         <input
@@ -150,19 +157,21 @@ export function EditableSnapshotWin({
           onChange={(event) => setHappenedOn(event.target.value)}
         />
       ) : null}
-      <button className="btn btn-sm" type="submit" disabled={saving || !body.trim()}>
-        {saving ? "Saving…" : "Save"}
-      </button>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() => {
-          setEditing(false);
-          setError("");
-        }}
-      >
-        Cancel
-      </button>
+      <div className="snap-edit-actions">
+        <button className="btn btn-sm" type="submit" disabled={saving || !body.trim()}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => {
+            setEditing(false);
+            setError("");
+          }}
+        >
+          Cancel
+        </button>
+      </div>
       {error ? <span className="error">{error}</span> : null}
     </form>
   );
