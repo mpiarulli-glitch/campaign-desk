@@ -178,7 +178,7 @@ test("weekly snapshot department items", async (t) => {
     assert.doesNotMatch(card.body, /SEO Department/);
   });
 
-  await t.test("a Basecamp item stays checked, and a typed item does not until marked done", () => {
+  await t.test("a completed Basecamp item is stored as Completed", () => {
     const checked = depts.addDepartmentItem({
       clientId: client.id,
       weekStart: week,
@@ -220,9 +220,9 @@ test("weekly snapshot department items", async (t) => {
         },
       ],
     });
-    assert.match(mail.html, /&#10003;/);
-    assert.match(mail.text, /✓ Completed · Film the testimonial/);
-    assert.match(mail.text, /✓ Completed · Rough cut notes/);
+    assert.doesNotMatch(mail.html, /&#10003;|✓/);
+    assert.match(mail.text, /- Completed · Film the testimonial/);
+    assert.match(mail.text, /- Completed · Rough cut notes/);
     const card = cs.weeklyAskMessageContent({
       ask: {
         month: "2026-10",
@@ -243,7 +243,8 @@ test("weekly snapshot department items", async (t) => {
         ],
       },
     });
-    assert.match(card.body, /&#10003; Completed · Film the testimonial/);
+    assert.doesNotMatch(card.body, /&#10003;|✓/);
+    assert.match(card.body, /Completed · Film the testimonial/);
 
     const reworded = depts.updateDepartmentItem({
       itemId: checked!.id,
@@ -268,7 +269,8 @@ test("weekly snapshot department items", async (t) => {
         },
       ],
     });
-    assert.match(clientCopy.text, /✓ Completed · Filmed the customer testimonial/);
+    assert.match(clientCopy.text, /- Completed · Filmed the customer testimonial/);
+    assert.doesNotMatch(clientCopy.text, /✓/);
     assert.doesNotMatch(clientCopy.text, /Film the testimonial/);
     assert.doesNotMatch(clientCopy.html, /todo:44/);
   });

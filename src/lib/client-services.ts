@@ -323,10 +323,6 @@ function filledWeekDepartments(
     .filter((dept) => dept.items.length > 0);
 }
 
-function completedMarkHtml(): string {
-  return `<span style="color:#188038;font-weight:bold;">&#10003;&nbsp;</span>`;
-}
-
 function updateCount(n: number): string {
   return n === 1 ? "1 update" : `${n} updates`;
 }
@@ -363,7 +359,7 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
         dept.items
           .map(
             (item) =>
-              `<li style="margin:0 0 4px;font-size:16px;line-height:1.5;color:#222222;">${item.completed ? completedMarkHtml() : ""}<span style="color:#666666;">${esc(snapshotItemStatusLabel(snapshotItemStatusFrom({ status: item.status, completed: item.completed })))}</span> · ${esc(item.body)}</li>`
+              `<li style="margin:0 0 4px;font-size:16px;line-height:1.5;color:#222222;"><span style="color:#666666;">${esc(snapshotItemStatusLabel(snapshotItemStatusFrom({ status: item.status, completed: item.completed })))}</span> · ${esc(item.body)}</li>`
           )
           .join("") +
         `</ul>`
@@ -372,7 +368,7 @@ export function snapshotWeekCopy(work?: SnapshotWeekCopy): { html: string; text:
       `${dept.label} · ${count}`,
       ...dept.items.map((item) => {
         const status = snapshotItemStatusFrom({ status: item.status, completed: item.completed });
-        return `${item.completed ? "✓" : "-"} ${snapshotItemStatusLabel(status)} · ${item.body}`;
+        return `- ${snapshotItemStatusLabel(status)} · ${item.body}`;
       }),
       ""
     );
@@ -392,7 +388,7 @@ function snapshotWeekBasecamp(work?: SnapshotWeekCopy): string {
   for (const dept of departments) {
     html += `<div><br><strong>${esc(dept.label)}</strong> · ${esc(updateCount(dept.items.length))}</div><ul>`;
     for (const item of dept.items) {
-      html += `<li>${item.completed ? "&#10003; " : ""}${esc(snapshotItemStatusLabel(snapshotItemStatusFrom({ status: item.status, completed: item.completed })))} · ${esc(item.body)}</li>`;
+      html += `<li>${esc(snapshotItemStatusLabel(snapshotItemStatusFrom({ status: item.status, completed: item.completed })))} · ${esc(item.body)}</li>`;
     }
     html += `</ul>`;
   }

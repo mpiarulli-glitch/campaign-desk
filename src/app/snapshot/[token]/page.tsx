@@ -456,18 +456,6 @@ export default function SnapshotClientPage() {
                       <ul className="snap-week-items">
                         {note.items.map((item, index) => (
                           <li key={`${note.slug}-${index}`}>
-                            <span className="snap-week-mark">
-                              {item.status === "completed" || item.completed ? (
-                                <span className="snap-check is-on" aria-label="Completed">
-                                  ✓
-                                </span>
-                              ) : (
-                                <span
-                                  className={`snap-week-dot is-${item.status || "in_progress"}`}
-                                  aria-hidden="true"
-                                />
-                              )}
-                            </span>
                             <span>
                               <span className={`snap-week-status is-${item.status || "in_progress"}`}>
                                 {item.status === "scheduled"
