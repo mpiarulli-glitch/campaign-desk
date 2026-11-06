@@ -9,6 +9,7 @@ import {
   type SnapshotItemStatus,
 } from "@/lib/snapshot-department-list";
 import { SnapshotDepartmentAdd, type SnapshotAddTodo } from "@/components/SnapshotDepartmentAdd";
+import { DepartmentItemEditor } from "@/components/SnapshotItemEditor";
 
 type Item = {
   id: string;
@@ -705,9 +706,14 @@ export function SnapshotWeekDepartments({
                 <li
                   key={item.id}
                   className={
-                    dropAt?.list === note.department && dropAt.beforeId === item.id
-                      ? "is-drop-before"
-                      : undefined
+                    [
+                      dropAt?.list === note.department && dropAt.beforeId === item.id
+                        ? "is-drop-before"
+                        : "",
+                      editing?.id === item.id ? "is-editing" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
                   }
                   onDragOver={(event) => allowDrop(event, note.department, item.id)}
                   onDrop={(event) => finishDrop(event, note.department, item.id)}
@@ -733,26 +739,13 @@ export function SnapshotWeekDepartments({
                     </select>
                   </label>
                   {editing?.id === item.id ? (
-                    <form
-                      className="snap-dept-add"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveEdit(item.id);
-                      }}
-                    >
-                      <input
-                        value={editing.body}
-                        aria-label={`Edit ${note.label} item`}
-                        autoFocus
-                        onChange={(event) => setEditing({ id: item.id, body: event.target.value })}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") setEditing(null);
-                        }}
-                      />
-                      <button className="btn btn-sm" type="submit">
-                        Save
-                      </button>
-                    </form>
+                    <DepartmentItemEditor
+                      label={note.label}
+                      value={editing.body}
+                      onChange={(body) => setEditing({ id: item.id, body })}
+                      onSave={() => void saveEdit(item.id)}
+                      onCancel={() => setEditing(null)}
+                    />
                   ) : (
                     <>
                       <span className="snap-dept-item-body">{item.body}</span>

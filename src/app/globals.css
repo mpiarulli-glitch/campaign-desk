@@ -20203,6 +20203,19 @@ form.snap-desk-win-line {
   min-width: 160px;
 }
 
+.snap-desk-win-list li:has(.snap-desk-win-edit) {
+  flex-wrap: wrap;
+}
+
+.snap-desk-win-edit {
+  flex: 1 1 18rem;
+  min-width: min(100%, 18rem);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .snap-desk-win-others li {
   font-size: 13px;
   color: var(--text-muted);
@@ -20368,6 +20381,49 @@ form.snap-desk-win-line {
   align-items: center;
   gap: 8px;
   justify-content: space-between;
+}
+
+.snap-dept-items li.is-editing {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.snap-dept-edit {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snap-edit-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.45;
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.snap-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .snap-dept-items li.is-editing {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .snap-dept-items li.is-editing .snap-drag,
+  .snap-dept-items li.is-editing .snap-status-wrap {
+    align-self: flex-start;
+  }
 }
 
 .snap-dept-item-body {
