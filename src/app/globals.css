@@ -20381,7 +20381,101 @@ form.snap-desk-win-line {
 .snap-suggest-refresh {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
 }
+
+.snap-todo-search {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.snap-todo-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.snap-todo-hits {
+  list-style: none;
+  margin: 8px 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snap-todo-hits li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.snap-todo-hits li > span:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.snap-todo-hits li > span:first-child span,
+.snap-todo-where {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.snap-status-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.snap-status {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.snap-status.is-in_progress {
+  color: #8a6200;
+}
+
+.snap-status.is-scheduled {
+  color: #1a6f9a;
+}
+
+.snap-status.is-completed {
+  color: #188038;
+}
+
+.snap-week-status {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.snap-week-status.is-in_progress { color: #8a6200; }
+.snap-week-status.is-scheduled { color: #1a6f9a; }
+.snap-week-status.is-completed { color: #188038; }
+
+.snap-week-dot.is-scheduled { background: #1a6f9a; }
+.snap-week-dot.is-in_progress { background: #8a6200; }
 
 .snap-suggest-note {
   margin: 0;

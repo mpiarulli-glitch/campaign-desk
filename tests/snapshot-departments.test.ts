@@ -139,15 +139,15 @@ test("weekly snapshot department items", async (t) => {
     });
     assert.match(mail.text, /Booked the holiday shoot/);
     assert.match(mail.text, /Social Media Department/);
-    assert.match(mail.text, /- Posted four Reels\./);
-    assert.match(mail.text, /- Replied to comments\./);
+    assert.match(mail.text, /- In progress · Posted four Reels\./);
+    assert.match(mail.text, /- In progress · Replied to comments\./);
     assert.match(mail.html, /<ul/);
     assert.match(mail.html, /<li/);
     assert.match(mail.html, /Shipped the landing page/);
     assert.match(mail.html, /2 updates/);
     assert.match(mail.text, /Social Media Department · 2 updates/);
     assert.match(mail.text, /Ads Department · 1 update/);
-    assert.match(mail.text, /- Launched the retargeting set\./);
+    assert.match(mail.text, /- In progress · Launched the retargeting set\./);
     assert.match(mail.html, /border-left:3px solid #c48a00/);
     assert.doesNotMatch(mail.text, /Lifecycle Department/);
     assert.doesNotMatch(mail.text, /Video Department/);
@@ -169,10 +169,10 @@ test("weekly snapshot department items", async (t) => {
       work,
     });
     assert.match(card.body, /<ul>/);
-    assert.match(card.body, /<li>Posted four Reels\.<\/li>/);
+    assert.match(card.body, /<li>In progress · Posted four Reels\.<\/li>/);
     assert.match(card.body, /Social Media Department/);
     assert.match(card.body, /Ads Department/);
-    assert.match(card.body, /<li>Launched the retargeting set\.<\/li>/);
+    assert.match(card.body, /<li>In progress · Launched the retargeting set\.<\/li>/);
     assert.match(card.body, /Web Department/);
     assert.doesNotMatch(card.body, /Lifecycle Department/);
     assert.doesNotMatch(card.body, /SEO Department/);
@@ -221,8 +221,8 @@ test("weekly snapshot department items", async (t) => {
       ],
     });
     assert.match(mail.html, /&#10003;/);
-    assert.match(mail.text, /✓ Film the testimonial/);
-    assert.match(mail.text, /✓ Rough cut notes/);
+    assert.match(mail.text, /✓ Completed · Film the testimonial/);
+    assert.match(mail.text, /✓ Completed · Rough cut notes/);
     const card = cs.weeklyAskMessageContent({
       ask: {
         month: "2026-10",
@@ -243,7 +243,7 @@ test("weekly snapshot department items", async (t) => {
         ],
       },
     });
-    assert.match(card.body, /&#10003; Film the testimonial/);
+    assert.match(card.body, /&#10003; Completed · Film the testimonial/);
 
     const reworded = depts.updateDepartmentItem({
       itemId: checked!.id,
@@ -268,7 +268,7 @@ test("weekly snapshot department items", async (t) => {
         },
       ],
     });
-    assert.match(clientCopy.text, /✓ Filmed the customer testimonial/);
+    assert.match(clientCopy.text, /✓ Completed · Filmed the customer testimonial/);
     assert.doesNotMatch(clientCopy.text, /Film the testimonial/);
     assert.doesNotMatch(clientCopy.html, /todo:44/);
   });

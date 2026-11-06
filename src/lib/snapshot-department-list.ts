@@ -22,3 +22,30 @@ export function isSnapshotDepartment(value: string): value is SnapshotDepartment
 export function departmentLabel(slug: string): string {
   return SNAPSHOT_DEPARTMENTS.find((dept) => dept.slug === slug)?.label || slug;
 }
+
+/** Work state on a weekly snapshot line. Completed keeps the green check. */
+export const SNAPSHOT_ITEM_STATUSES = ["in_progress", "scheduled", "completed"] as const;
+
+export type SnapshotItemStatus = (typeof SNAPSHOT_ITEM_STATUSES)[number];
+
+export function isSnapshotItemStatus(value: string): value is SnapshotItemStatus {
+  return (SNAPSHOT_ITEM_STATUSES as readonly string[]).includes(value);
+}
+
+export function snapshotItemStatusLabel(status: SnapshotItemStatus): string {
+  if (status === "completed") return "Completed";
+  if (status === "scheduled") return "Scheduled";
+  return "In progress";
+}
+
+/** Stored rows, new typed lines, and Basecamp imports share one default. */
+export function snapshotItemStatusFrom(input: {
+  status?: string;
+  completed?: boolean | number;
+  mark?: string;
+}): SnapshotItemStatus {
+  if (input.status && isSnapshotItemStatus(input.status)) return input.status;
+  if (input.completed) return "completed";
+  if (input.mark === "sent") return "scheduled";
+  return "in_progress";
+}

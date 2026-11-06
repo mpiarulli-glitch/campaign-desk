@@ -4,15 +4,26 @@ import Link from "next/link";
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   SNAPSHOT_DEPARTMENTS,
+  snapshotItemStatusLabel,
   type SnapshotDepartmentSlug,
+  type SnapshotItemStatus,
 } from "@/lib/snapshot-department-list";
 
 type Item = {
   id: string;
   body: string;
   completed?: boolean;
+  status?: SnapshotItemStatus;
   sourceKey?: string;
   mark?: "" | "sent";
+};
+
+type TodoHit = {
+  sourceKey: string;
+  title: string;
+  place: string;
+  department: SnapshotDepartmentSlug | "unsorted";
+  status: SnapshotItemStatus;
 };
 type Note = {
   department: SnapshotDepartmentSlug;
@@ -76,6 +87,11 @@ export function SnapshotWeekDepartments({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>("");
+  const [todoQuery, setTodoQuery] = useState("");
+  const [todoHits, setTodoHits] = useState<TodoHit[]>([]);
+  const [todoNote, setTodoNote] = useState("");
+  const [todoSearching, setTodoSearching] = useState(false);
+  const [todoDept, setTodoDept] = useState<Record<string, SnapshotDepartmentSlug>>({});
   const [inView, setInView] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const requestGen = useRef(0);
@@ -242,19 +258,20 @@ export function SnapshotWeekDepartments({
     }
   }
 
-  async function toggleDone(item: Item) {
-    const completed = !item.completed;
+  async function setItemStatus(item: Item, status: SnapshotItemStatus) {
     setNotes((cur) =>
       cur.map((note) => ({
         ...note,
-        items: note.items.map((row) => (row.id === item.id ? { ...row, completed } : row)),
+        items: note.items.map((row) =>
+          row.id === item.id ? { ...row, status, completed: status === "completed" } : row
+        ),
       }))
     );
     try {
       const res = await fetch("/api/snapshot/departments", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: item.id, completed }),
+        body: JSON.stringify({ itemId: item.id, status }),
       });
       if (!res.ok) throw new Error("save failed");
     } catch {
@@ -262,11 +279,78 @@ export function SnapshotWeekDepartments({
         cur.map((note) => ({
           ...note,
           items: note.items.map((row) =>
-            row.id === item.id ? { ...row, completed: item.completed } : row
+            row.id === item.id
+              ? { ...row, status: item.status, completed: item.completed }
+              : row
           ),
         }))
       );
-      setError("Could not update that check.");
+      setError("Could not update that status.");
+    }
+  }
+
+  async function searchTodos(event: FormEvent) {
+    event.preventDefault();
+    const q = todoQuery.trim();
+    setTodoNote("");
+    setTodoHits([]);
+    if (q.length < 2) {
+      setTodoNote("Type at least two letters.");
+      return;
+    }
+    setTodoSearching(true);
+    try {
+      const res = await fetch(
+        `/api/snapshot/departments/search?clientId=${encodeURIComponent(clientId)}&q=${encodeURIComponent(q)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status === "error") {
+        setTodoNote("Couldn't reach Basecamp, try again.");
+        return;
+      }
+      if (data.status === "no_project") {
+        setTodoNote("No Basecamp project linked.");
+        return;
+      }
+      const hits = (data.hits || []) as TodoHit[];
+      setTodoHits(hits);
+      if (!hits.length) setTodoNote("No to-dos matched in this project.");
+    } catch {
+      setTodoNote("Couldn't reach Basecamp, try again.");
+    } finally {
+      setTodoSearching(false);
+    }
+  }
+
+  async function addTodoHit(hit: TodoHit, department: string) {
+    if (!department) {
+      setTodoNote("Pick a department for that to-do.");
+      return;
+    }
+    setTodoNote("");
+    try {
+      const res = await fetch("/api/snapshot/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          weekStart,
+          department,
+          body: hit.title,
+          sourceKey: hit.sourceKey,
+          status: hit.status,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTodoNote("Could not add that to-do.");
+        return;
+      }
+      if (data.departments) setNotes(data.departments);
+      setTodoHits((cur) => cur.filter((row) => row.sourceKey !== hit.sourceKey));
+      setTodoNote(data.already ? "Already on this week." : "");
+    } catch {
+      setTodoNote("Could not add that to-do.");
     }
   }
 
@@ -280,7 +364,8 @@ export function SnapshotWeekDepartments({
           clientId,
           weekStart,
           department,
-          body: suggestion.title,
+          body: suggestionText(suggestion),
+          status: suggestion.mark === "sent" ? "scheduled" : "completed",
           completed: suggestion.mark !== "sent",
           sourceKey: suggestion.sourceKey,
           mark: suggestion.mark === "sent" ? "sent" : "",
@@ -591,6 +676,17 @@ export function SnapshotWeekDepartments({
   return (
     <div className="snap-dept-list" ref={rootRef}>
       <div className="snap-suggest-refresh">
+        <form className="snap-todo-search" onSubmit={(event) => void searchTodos(event)}>
+          <input
+            value={todoQuery}
+            onChange={(event) => setTodoQuery(event.target.value)}
+            placeholder="Search this project's to-dos"
+            aria-label="Search Basecamp to-dos"
+          />
+          <button className="btn btn-ghost btn-sm" type="submit" disabled={todoSearching}>
+            {todoSearching ? "Searching…" : "Search"}
+          </button>
+        </form>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -600,6 +696,59 @@ export function SnapshotWeekDepartments({
           {refreshing ? "Refreshing…" : "Refresh Basecamp"}
         </button>
       </div>
+      {todoNote ? <p className="snap-suggest-note">{todoNote}</p> : null}
+      {todoHits.length > 0 ? (
+        <ul className="snap-todo-hits">
+          {todoHits.map((hit) => {
+            const matched = hit.department !== "unsorted" ? hit.department : "";
+            const chosen = matched || todoDept[hit.sourceKey] || "";
+            return (
+              <li key={hit.sourceKey}>
+                <span>
+                  <strong>{hit.title}</strong>
+                  <span>
+                    {snapshotItemStatusLabel(hit.status)}
+                    {hit.place ? ` · ${hit.place}` : ""}
+                  </span>
+                </span>
+                {matched ? (
+                  <span className="snap-todo-where">
+                    {SNAPSHOT_DEPARTMENTS.find((dept) => dept.slug === matched)?.label.replace(
+                      " Department",
+                      ""
+                    )}
+                  </span>
+                ) : (
+                  <select
+                    aria-label={`Department for ${hit.title}`}
+                    value={chosen}
+                    onChange={(event) =>
+                      setTodoDept((cur) => ({
+                        ...cur,
+                        [hit.sourceKey]: event.target.value as SnapshotDepartmentSlug,
+                      }))
+                    }
+                  >
+                    <option value="">Pick a department</option>
+                    {SNAPSHOT_DEPARTMENTS.map((dept) => (
+                      <option key={dept.slug} value={dept.slug}>
+                        {dept.label.replace(" Department", "")}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void addTodoHit(hit, chosen)}
+                >
+                  Add
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
       {suggestStatus === "no_project" ? (
         <p className="snap-suggest-note">
           No Basecamp project linked.{" "}
@@ -644,15 +793,26 @@ export function SnapshotWeekDepartments({
                       Sent for approval
                     </span>
                   ) : null}
-                  <button
-                    type="button"
-                    className={`snap-check ${item.completed ? "is-on" : ""}`}
-                    aria-pressed={Boolean(item.completed)}
-                    aria-label={item.completed ? "Completed. Click to clear." : "Mark done"}
-                    onClick={() => void toggleDone(item)}
-                  >
-                    {item.completed ? "✓" : ""}
-                  </button>
+                  <label className="snap-status-wrap">
+                    {(item.status || (item.completed ? "completed" : "in_progress")) ===
+                    "completed" ? (
+                      <span className="snap-check is-on" aria-hidden="true">
+                        ✓
+                      </span>
+                    ) : null}
+                    <select
+                      className={`snap-status is-${item.status || (item.completed ? "completed" : "in_progress")}`}
+                      aria-label={`Status for ${item.body}`}
+                      value={item.status || (item.completed ? "completed" : "in_progress")}
+                      onChange={(event) =>
+                        void setItemStatus(item, event.target.value as SnapshotItemStatus)
+                      }
+                    >
+                      <option value="in_progress">{snapshotItemStatusLabel("in_progress")}</option>
+                      <option value="scheduled">{snapshotItemStatusLabel("scheduled")}</option>
+                      <option value="completed">{snapshotItemStatusLabel("completed")}</option>
+                    </select>
+                  </label>
                   {editing?.id === item.id ? (
                     <form
                       className="snap-dept-add"
