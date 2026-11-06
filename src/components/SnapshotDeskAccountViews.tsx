@@ -4,7 +4,15 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { snapshotAuthorLabel } from "@/lib/people";
 import { winLoggedByMatches } from "@/lib/snapshot-fill";
 
-type Win = { id: string; body: string; happened_on: string };
+type Win = { id: string; body: string; happened_on: string; week_start?: string };
+
+export type SavedWin = {
+  id: string;
+  body: string;
+  happened_on: string;
+  week_start: string;
+  logged_by: string;
+};
 
 export type DeskWeekWin = {
   id: string;
@@ -14,6 +22,110 @@ export type DeskWeekWin = {
   logged_by: string;
 };
 
+export function EditableSnapshotWin({
+  win,
+  showDate,
+  onSaved,
+  onRemove,
+}: {
+  win: { id: string; body: string; happened_on: string };
+  showDate?: boolean;
+  onSaved: (win: SavedWin) => void;
+  onRemove?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [body, setBody] = useState(win.body);
+  const [happenedOn, setHappenedOn] = useState(win.happened_on || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!body.trim() || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/snapshot/win/${win.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body,
+          ...(showDate ? { happenedOn } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not save that win.");
+        return;
+      }
+      const saved = data.win as SavedWin;
+      onSaved(saved);
+      setEditing(false);
+    } catch {
+      setError("Network error. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="snap-desk-win-line">
+        <span>{win.body}</span>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => {
+            setBody(win.body);
+            setHappenedOn(win.happened_on || "");
+            setError("");
+            setEditing(true);
+          }}
+        >
+          Edit
+        </button>
+        {onRemove ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
+            Remove
+          </button>
+        ) : null}
+      </span>
+    );
+  }
+
+  return (
+    <form className="snap-desk-win-line" onSubmit={(event) => void save(event)}>
+      <input
+        value={body}
+        aria-label="Edit win"
+        onChange={(event) => setBody(event.target.value)}
+      />
+      {showDate ? (
+        <input
+          type="date"
+          aria-label="Happened on"
+          value={happenedOn}
+          onChange={(event) => setHappenedOn(event.target.value)}
+        />
+      ) : null}
+      <button className="btn btn-sm" type="submit" disabled={saving || !body.trim()}>
+        {saving ? "Saving…" : "Save"}
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={() => {
+          setEditing(false);
+          setError("");
+        }}
+      >
+        Cancel
+      </button>
+      {error ? <span className="error">{error}</span> : null}
+    </form>
+  );
+}
+
 export function SnapshotDeskWeeklyWin({
   clientId,
   clientName,
@@ -21,6 +133,7 @@ export function SnapshotDeskWeeklyWin({
   viewerSlug,
   wins,
   onAdded,
+  onEdited,
 }: {
   clientId: string;
   clientName: string;
@@ -28,13 +141,12 @@ export function SnapshotDeskWeeklyWin({
   viewerSlug: string;
   wins: DeskWeekWin[];
   onAdded: (win: DeskWeekWin) => void;
+  onEdited: (win: SavedWin) => void;
 }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const mine = wins.filter((w) => winLoggedByMatches(w.logged_by, viewerSlug));
-  const others = wins.filter((w) => !winLoggedByMatches(w.logged_by, viewerSlug));
-  const done = mine.length > 0;
+  const done = wins.some((w) => winLoggedByMatches(w.logged_by, viewerSlug));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -71,27 +183,18 @@ export function SnapshotDeskWeeklyWin({
   return (
     <div className={`snap-desk-win ${done ? "is-in" : "is-needed"}`}>
       <div className="snap-desk-win-head">
-        <strong>{done ? "Your win this week" : "Add your weekly win"}</strong>
-        <span>
-          {done
-            ? "On the client snapshot"
-            : `Required for ${clientName} · this week`}
-        </span>
+        <strong>Wins</strong>
+        {done ? null : <span>Yours is still open</span>}
       </div>
       {error ? <p className="error">{error}</p> : null}
-      {mine.length > 0 ? (
+      {wins.length > 0 ? (
         <ul className="snap-desk-win-list">
-          {mine.map((w) => (
-            <li key={w.id}>{w.body}</li>
-          ))}
-        </ul>
-      ) : null}
-      {others.length > 0 ? (
-        <ul className="snap-desk-win-others">
-          {others.map((w) => (
+          {wins.map((w) => (
             <li key={w.id}>
-              <span>{snapshotAuthorLabel(w.logged_by) || "Teammate"}</span>
-              {w.body}
+              <span className="snap-desk-win-who">
+                {snapshotAuthorLabel(w.logged_by) || "Teammate"}
+              </span>
+              <EditableSnapshotWin win={w} onSaved={onEdited} />
             </li>
           ))}
         </ul>
@@ -176,15 +279,16 @@ export function SnapshotDeskWins({ clientId, weekStart }: { clientId: string; we
           {wins.map((w) => (
             <div key={w.id} className="snap-win-edit">
               <span aria-hidden="true">🏆</span>
-              <div style={{ flex: 1 }}>
-                <div>{w.body}</div>
-                {w.happened_on ? (
-                  <span className="muted" style={{ fontSize: 12 }}>{w.happened_on}</span>
-                ) : null}
-              </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => void removeWin(w.id)}>
-                Remove
-              </button>
+              <EditableSnapshotWin
+                win={w}
+                showDate
+                onSaved={(saved) =>
+                  setWins((cur) =>
+                    cur.map((row) => (row.id === saved.id ? { ...row, ...saved } : row))
+                  )
+                }
+                onRemove={() => void removeWin(w.id)}
+              />
             </div>
           ))}
         </div>

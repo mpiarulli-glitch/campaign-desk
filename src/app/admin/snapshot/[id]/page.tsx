@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
-import { SnapshotDeskWeeklyWin, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
+import { EditableSnapshotWin, SnapshotDeskWeeklyWin, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { TEAMS } from "@/lib/people";
@@ -455,6 +455,21 @@ export default function SnapshotEditorPage() {
                       ]
                 )
               }
+              onEdited={(win) =>
+                setWins((cur) =>
+                  cur.map((row) =>
+                    row.id === win.id
+                      ? {
+                          ...row,
+                          body: win.body,
+                          happened_on: win.happened_on,
+                          week_start: win.week_start,
+                          logged_by: win.logged_by,
+                        }
+                      : row
+                  )
+                )
+              }
             />
             <SnapshotWeekDepartments clientId={id} weekStart={week} />
           </div>
@@ -548,11 +563,16 @@ export default function SnapshotEditorPage() {
               {wins.map((w) => (
                 <div key={w.id} className="snap-win-edit">
                   <span aria-hidden="true">🏆</span>
-                  <div style={{ flex: 1 }}>
-                    <div>{w.body}</div>
-                    {w.happened_on ? <span className="muted" style={{ fontSize: 12 }}>{w.happened_on}</span> : null}
-                  </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => removeWin(w.id)}>Remove</button>
+                  <EditableSnapshotWin
+                    win={w}
+                    showDate
+                    onSaved={(saved) =>
+                      setWins((cur) =>
+                        cur.map((row) => (row.id === saved.id ? { ...row, ...saved } : row))
+                      )
+                    }
+                    onRemove={() => removeWin(w.id)}
+                  />
                 </div>
               ))}
             </div>

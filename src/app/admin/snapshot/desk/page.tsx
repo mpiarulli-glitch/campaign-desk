@@ -36,7 +36,6 @@ export default function SnapshotDeskPage() {
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
   const [weekWins, setWeekWins] = useState<DeskWeekWin[]>([]);
-  const [sendingId, setSendingId] = useState("");
 
   const fetchWeek = useCallback(
     async (w: string) => {
@@ -121,34 +120,11 @@ export default function SnapshotDeskPage() {
     ? "Every department, on every account"
     : "Loading your list";
 
-  const canSend = viewer.owner || viewer.role === "admin";
   const canOpenServices =
-    canSend || personTeam(viewer.person) === "client_services" || canSeeFridayAsk(viewer);
-
-  async function sendToClient(clientId: string, clientName: string, paused: boolean) {
-    if (!canSend || paused || sendingId) return;
-    const prompt = `Send this week's snapshot ask to ${clientName} now?`;
-    if (!window.confirm(prompt)) return;
-    setSendingId(clientId);
-    setError("");
-    try {
-      const res = await fetch("/api/client-services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send", clientId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || "Could not send that snapshot.");
-        return;
-      }
-      setError("");
-    } catch {
-      setError("Network error. Check your connection and try again.");
-    } finally {
-      setSendingId("");
-    }
-  }
+    viewer.owner ||
+    viewer.role === "admin" ||
+    personTeam(viewer.person) === "client_services" ||
+    canSeeFridayAsk(viewer);
 
   const groups = useMemo(
     () =>
@@ -175,8 +151,7 @@ export default function SnapshotDeskPage() {
         <div>
           <p className="ops-eyebrow">Weekly snapshots</p>
           <h1 className="ops-title">This week</h1>
-          <p className="snap-n-view">All accounts</p>
-          <p className="ops-sub">{scopeLabel}. Log your win on each account, then what each department did.</p>
+          <p className="ops-sub">{scopeLabel}</p>
         </div>
         <div className="snap-desk-week">
           <button type="button" className="cal-nav-btn" aria-label="Previous week" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
@@ -251,21 +226,6 @@ export default function SnapshotDeskPage() {
             <div key={group.id} className="snap-n-db">
               <div className="snap-n-group">
                 <Link href={`/admin/snapshot/${group.id}`}>{group.name}</Link>
-                {canSend ? (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={group.paused || sendingId === group.id}
-                    title={
-                      group.paused
-                        ? "Outreach is paused for this client."
-                        : "Send this week's snapshot. You confirm before it goes out."
-                    }
-                    onClick={() => void sendToClient(group.id, group.name, group.paused)}
-                  >
-                    {sendingId === group.id ? "Sending…" : "Send to client"}
-                  </button>
-                ) : null}
                 <label className="snap-n-group-view">
                   <select
                     value={view}
@@ -291,6 +251,17 @@ export default function SnapshotDeskPage() {
                 wins={weekWins.filter((w) => w.client_id === group.id)}
                 onAdded={(win) =>
                   setWeekWins((cur) => (cur.some((w) => w.id === win.id) ? cur : [...cur, win]))
+                }
+                onEdited={(win) =>
+                  setWeekWins((cur) =>
+                    cur.flatMap((row) =>
+                      row.id !== win.id
+                        ? [row]
+                        : win.week_start && win.week_start !== week
+                          ? []
+                          : [{ ...row, body: win.body, happened_on: win.happened_on, logged_by: win.logged_by }]
+                    )
+                  )
                 }
               />
               {view === "wins" ? (
