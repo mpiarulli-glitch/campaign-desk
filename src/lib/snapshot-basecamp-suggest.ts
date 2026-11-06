@@ -7,12 +7,21 @@
 // A missing project or a failed read is a status, not an empty cache entry.
 // Nothing here runs at process start.
 
-import { basecampGet, basecampNextPagePath, canonicalBasecampProjectId } from "./basecamp";
+import {
+  basecampConnected,
+  basecampGet,
+  basecampNextPagePath,
+  canonicalBasecampProjectId,
+  getBasecampProjectName,
+  listProjectSnapshotTodos,
+} from "./basecamp";
 import { getDb, nowIso } from "./db";
 import { nanoid } from "nanoid";
 import { getRevClient } from "./revenue";
 import { departmentNotesForWeek } from "./snapshot-departments";
+import { completedTodoScopeReason } from "./snapshot-completed-todo";
 import {
+  snapshotHitsForPicker,
   snapshotTodoHit,
   suggestionsForWeek,
   type BasecampActivity,
@@ -322,6 +331,56 @@ export async function searchClientBasecampTodos(
       status: "error",
       message: "Couldn't reach Basecamp",
     };
+  }
+}
+
+/**
+ * Every to-do in the client's linked Basecamp project, for the add picker.
+ * Open rows stay In progress unless a future start date makes them Scheduled.
+ * Finished rows are Completed. A missing project or a refused library project
+ * is a status, not an empty success.
+ */
+export async function listClientSnapshotTodos(clientId: string): Promise<{
+  todos: SnapshotTodoHit[];
+  status: SuggestionStatus;
+  message?: string;
+}> {
+  const projectId = projectIdForClient(clientId);
+  if (!projectId) {
+    return { todos: [], status: "no_project", message: "No Basecamp project linked" };
+  }
+  if (!basecampConnected()) {
+    return { todos: [], status: "error", message: "Basecamp isn't connected" };
+  }
+  try {
+    const client = getRevClient(clientId);
+    const projectName = await getBasecampProjectName(projectId);
+    const blocked = completedTodoScopeReason(projectName, client?.name || "");
+    if (blocked === "not-client-project") {
+      return {
+        todos: [],
+        status: "error",
+        message: "That Basecamp project is a shared library, not this client",
+      };
+    }
+    if (blocked === "project-mismatch") {
+      return {
+        todos: [],
+        status: "error",
+        message: "The linked Basecamp project doesn't look like this client",
+      };
+    }
+    const raw = await listProjectSnapshotTodos(projectId);
+    return {
+      todos: snapshotHitsForPicker(raw, pacificToday()),
+      status: "ok",
+    };
+  } catch (err) {
+    console.error("[basecamp] snapshot todos", {
+      projectId,
+      error: safeError(err),
+    });
+    return { todos: [], status: "error", message: "Couldn't reach Basecamp" };
   }
 }
 
