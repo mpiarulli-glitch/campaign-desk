@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { can, isAdminWithAccess, sessionActor } from "@/lib/auth";
+import { allows } from "@/lib/access";
+import { accessSubject, can, isAdminWithAccess, sessionActor } from "@/lib/auth";
+import { canSendFridaySnapshot } from "@/lib/people";
 import { basecampConnected, listProjects } from "@/lib/basecamp";
 import {
   enrollSnapshotClient,
@@ -89,9 +91,10 @@ export async function GET(request: Request) {
   });
 }
 
-// Send one client's ask now, or pause/resume their outreach. Both stay
-// admin-only. Send delivers email and a Basecamp post whether or not
-// CLIENT_SERVICES_SENDING is set. The scheduled sweep never sends.
+// Pause, resume, enroll, and add stay admin-only. Sending the Friday snapshot
+// is narrower: the same allowlist that shows the Send now button. A click
+// delivers email and a Basecamp post whether or not CLIENT_SERVICES_SENDING
+// is set. The scheduled sweep never sends.
 export async function POST(request: Request) {
   if (!(await isAdminWithAccess("page.client_services"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -170,6 +173,12 @@ export async function POST(request: Request) {
   }
 
   if (action === "send") {
+    const who = await accessSubject();
+    if (
+      !canSendFridaySnapshot(who, who ? allows(who, "page.client_services") : false)
+    ) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     if (client.outreach_paused) {
       return NextResponse.json(
         { error: "Outreach is paused for this client." },

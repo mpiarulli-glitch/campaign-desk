@@ -214,8 +214,21 @@ export const PERSON_TEAM: Record<string, Team> = {
 /** Cassidy and Kyle Morris: every deliverable, Client Services rows first. */
 export const SNAPSHOT_ACCOUNT_MANAGERS = ["cassidy", "kyle_morris"] as const;
 
-/** Michael, Kyle Morris, and Jerald — Friday outreach from the snapshot desk. */
-export const FRIDAY_ASK_PEOPLE = [OWNER_SLUG, "kyle_morris", "jerald"] as const;
+/**
+ * Who may open the Friday ask tab and send that week's snapshot by hand.
+ *
+ * Michael (the owner session), Morris Kyle (`kyle_morris`, not Kyle Onstott),
+ * Cassidy, Luis Romero, and Jerald. These are existing roster slugs. The
+ * Client Services send route uses the same list, so a visible Send now button
+ * is the decision the server enforces.
+ */
+export const FRIDAY_ASK_PEOPLE = [
+  OWNER_SLUG,
+  "kyle_morris",
+  "cassidy",
+  "luis_romero",
+  "jerald",
+] as const;
 
 export function canSeeFridayAsk(input: {
   person?: string | null;
@@ -224,6 +237,27 @@ export function canSeeFridayAsk(input: {
   if (input.owner) return true;
   const slug = input.person || "";
   return (FRIDAY_ASK_PEOPLE as readonly string[]).includes(slug);
+}
+
+/**
+ * Manual Friday snapshot send.
+ *
+ * An admin session that still holds Weekly Snapshots (`page.client_services`),
+ * and is on the Friday ask allowlist. The owner passes. A forecast session
+ * does not, even with a page grant. Pause, enroll, and add stay on the
+ * broader admin check and do not call this.
+ */
+export function canSendFridaySnapshot(
+  who: {
+    role: "admin" | "forecast" | null;
+    person: string | null;
+    owner: boolean;
+  } | null,
+  holdsWeeklySnapshots: boolean
+): boolean {
+  if (!who || !holdsWeeklySnapshots) return false;
+  if (who.role !== "admin") return false;
+  return canSeeFridayAsk({ person: who.person, owner: who.owner });
 }
 
 export function isSnapshotAccountManager(slug: string | null): boolean {

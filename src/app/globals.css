@@ -15928,6 +15928,7 @@ button.am-node:hover .am-edit-cue,
   font-family: inherit;
   font-size: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -20214,6 +20215,19 @@ form.snap-desk-win-line {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.snap-desk-win-empty {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.snap-win-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
 }
 
 .snap-desk-win-form {

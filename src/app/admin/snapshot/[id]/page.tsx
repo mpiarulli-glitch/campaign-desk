@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
 import { EditableSnapshotWin, SnapshotDeskWeeklyWin, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
-import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+import { fridayAskReturnHref } from "@/lib/friday-ask-nav";
+import { addWeeks, currentWeek, isCurrentWeek, parseWeekStart, weekLabel } from "@/lib/week";
 import { TEAMS } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
 import { fillViewerSlug, type FillViewer } from "@/lib/snapshot-fill";
@@ -84,12 +85,16 @@ type Deliverable = {
 export default function SnapshotEditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromFriday = searchParams.get("from") === "friday";
   const [name, setName] = useState("");
   const [launchDate, setLaunchDate] = useState<string | null>(null);
   const [contractEnd, setContractEnd] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
-  const [week, setWeek] = useState(currentWeek());
+  const [week, setWeek] = useState(
+    () => parseWeekStart(searchParams.get("week")) || currentWeek()
+  );
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [section, setSection] = useState<Section>("week");
@@ -272,8 +277,9 @@ export default function SnapshotEditorPage() {
     loadMeta();
   }
   async function removeWin(winId: string) {
-    await fetch(`/api/snapshot/win/${winId}`, { method: "DELETE" });
-    loadMeta();
+    const res = await fetch(`/api/snapshot/win/${winId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("delete");
+    setWins((cur) => cur.filter((row) => row.id !== winId));
   }
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
@@ -339,6 +345,11 @@ export default function SnapshotEditorPage() {
   return (
     <div className="ops-page snap-desk">
       <div className="page-actions">
+        {fromFriday ? (
+          <Link className="btn btn-ghost btn-sm" href={fridayAskReturnHref()}>
+            Friday ask
+          </Link>
+        ) : null}
         <Link className="btn btn-ghost btn-sm" href="/admin/snapshot/desk">All snapshots</Link>
         {isAdmin ? (
           <Link className="btn btn-secondary btn-sm" href={`/admin/snapshot/${id}/backfill`}>
@@ -470,6 +481,7 @@ export default function SnapshotEditorPage() {
                   )
                 )
               }
+              onRemoved={(winId) => setWins((cur) => cur.filter((row) => row.id !== winId))}
             />
             <SnapshotWeekDepartments clientId={id} weekStart={week} />
           </div>

@@ -34,10 +34,26 @@ export function EditableSnapshotWin({
   onRemove?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [body, setBody] = useState(win.body);
   const [happenedOn, setHappenedOn] = useState(win.happened_on || "");
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
+
+  async function confirmDelete() {
+    if (!onRemove || removing) return;
+    setRemoving(true);
+    setError("");
+    try {
+      await onRemove();
+      setConfirming(false);
+    } catch {
+      setError("Could not delete that win.");
+    } finally {
+      setRemoving(false);
+    }
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -85,10 +101,36 @@ export function EditableSnapshotWin({
           Edit
         </button>
         {onRemove ? (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
-            Remove
-          </button>
+          confirming ? (
+            <span className="snap-win-confirm">
+              <span>Delete this win?</span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={removing}
+                onClick={() => void confirmDelete()}
+              >
+                {removing ? "Deleting…" : "Delete"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setConfirming(true)}
+            >
+              Delete
+            </button>
+          )
         ) : null}
+        {error && !editing ? <span className="error">{error}</span> : null}
       </span>
     );
   }
@@ -134,6 +176,7 @@ export function SnapshotDeskWeeklyWin({
   wins,
   onAdded,
   onEdited,
+  onRemoved,
 }: {
   clientId: string;
   clientName: string;
@@ -142,6 +185,7 @@ export function SnapshotDeskWeeklyWin({
   wins: DeskWeekWin[];
   onAdded: (win: DeskWeekWin) => void;
   onEdited: (win: SavedWin) => void;
+  onRemoved: (winId: string) => void;
 }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
@@ -180,6 +224,12 @@ export function SnapshotDeskWeeklyWin({
     }
   }
 
+  async function removeWin(winId: string) {
+    const res = await fetch(`/api/snapshot/win/${winId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("delete");
+    onRemoved(winId);
+  }
+
   return (
     <div className={`snap-desk-win ${done ? "is-in" : "is-needed"}`}>
       <div className="snap-desk-win-head">
@@ -194,11 +244,17 @@ export function SnapshotDeskWeeklyWin({
               <span className="snap-desk-win-who">
                 {snapshotAuthorLabel(w.logged_by) || "Teammate"}
               </span>
-              <EditableSnapshotWin win={w} onSaved={onEdited} />
+              <EditableSnapshotWin
+                win={w}
+                onSaved={onEdited}
+                onRemove={() => removeWin(w.id)}
+              />
             </li>
           ))}
         </ul>
-      ) : null}
+      ) : (
+        <p className="snap-desk-win-empty">No wins logged for this week.</p>
+      )}
       <form className="snap-desk-win-form" onSubmit={(e) => void submit(e)}>
         <input
           value={body}
@@ -261,7 +317,8 @@ export function SnapshotDeskWins({ clientId, weekStart }: { clientId: string; we
   }
 
   async function removeWin(id: string) {
-    await fetch(`/api/snapshot/win/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/snapshot/win/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("delete");
     void load();
   }
 

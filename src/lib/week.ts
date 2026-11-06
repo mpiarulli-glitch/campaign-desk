@@ -25,6 +25,18 @@ export function currentWeek(): string {
   return mondayOf(new Date());
 }
 
+/** Monday key for a YYYY-MM-DD query value, or null when it is not a real date. */
+export function parseWeekStart(value: string | null | undefined): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const date = new Date(y, m - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+    return null;
+  }
+  return mondayOf(date);
+}
+
 export function addWeeks(weekStart: string, n: number): string {
   const d = parseYmd(weekStart);
   d.setDate(d.getDate() + n * 7);
