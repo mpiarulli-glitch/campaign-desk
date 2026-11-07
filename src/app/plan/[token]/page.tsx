@@ -45,13 +45,22 @@ const ASSET_TYPE_LABEL: Record<string, string> = {
   blog_post: "Blog post",
 };
 
-function fmtDate(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
+function fmtDate(ymdStr: string): string {
+  const [y, m, d] = ymdStr.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
+}
+function dateStamp(ymdStr: string): { weekday: string; day: string; month: string } {
+  const [y, m, d] = ymdStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return {
+    weekday: dt.toLocaleDateString("en-US", { weekday: "short" }),
+    day: String(d),
+    month: dt.toLocaleDateString("en-US", { month: "short" }),
+  };
 }
 function monthKey(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -217,51 +226,54 @@ export default function PlanClientPage() {
   const todayYmd = ymd(today.getFullYear(), today.getMonth(), today.getDate());
 
   return (
-    <div className="app-shell snap-client">
-      <header className="topbar">
+    <div className="plan-page">
+      <header className="plan-top">
         <Brand />
-        <span className="snap-topbar-tag">Editorial calendar</span>
+        <span className="plan-top-tag">Editorial calendar</span>
       </header>
 
-      <section className="snap-hero">
-        <div className="snap-hero-inner">
-          <div className="snap-hero-top">
-            <div>
-              <p className="snap-hero-eyebrow">Editorial plan for approval</p>
-              <h1 className="snap-hero-title">{name || "Editorial calendar"}</h1>
-              <p className="snap-hero-sub">
-                {range.start && range.end
-                  ? `${fmtDate(range.start)} – ${fmtDate(range.end)} · prepared by Marketing Empire Group`
-                  : "Prepared by Marketing Empire Group"}
-              </p>
-            </div>
-            {approvedAt ? (
-              <div className="plan-approved-badge">
-                ✓ Approved{approvedBy ? ` by ${approvedBy}` : ""}
-                <span>{fmtApproved(approvedAt)}</span>
-              </div>
-            ) : null}
+      <section className="plan-hero">
+        <div className="plan-hero-inner">
+          <div>
+            <p className="eyebrow">For your review</p>
+            <h1>{name || "Editorial calendar"}</h1>
+            <p className="plan-range">
+              {range.start && range.end
+                ? `${fmtDate(range.start)} – ${fmtDate(range.end)}`
+                : "Prepared by Marketing Empire Group"}
+            </p>
           </div>
+          {approvedAt ? (
+            <div className="plan-approved-badge">
+              Approved{approvedBy ? ` by ${approvedBy}` : ""}
+              <span>{fmtApproved(approvedAt)}</span>
+            </div>
+          ) : (
+            <div className="plan-waiting-badge">Waiting for your approval</div>
+          )}
         </div>
       </section>
 
-      <main className="container stack" style={{ gap: 26 }}>
+      <main className="plan-main">
         {loading ? (
           <p className="muted">Loading…</p>
         ) : error ? (
           <p className="error">{error}</p>
         ) : sends.length === 0 ? (
-          <div className="empty"><p>No campaigns planned in this window yet. Check back soon.</p></div>
+          <div className="card card-pad cal-empty">
+            <p className="cal-empty-title">Nothing planned in this window yet.</p>
+            <p className="muted">This link shows the next 90 days. Check back when the team adds campaigns.</p>
+          </div>
         ) : (
           <>
             <div className="plan-intro card card-pad">
-              <p style={{ margin: 0, lineHeight: 1.6 }}>
-                Here is the email plan we have mapped out. Look it over, leave a note on
-                anything you want changed, then approve it at the bottom when it looks good.
+              <p style={{ margin: 0, lineHeight: 1.55 }}>
+                Look through the plan as a calendar or a list. Leave a note on anything
+                you want changed, then approve it at the bottom.
               </p>
             </div>
 
-            <div className="row" style={{ justifyContent: "flex-end" }}>
+            <div className="plan-toolbar">
               <CalendarTypeFilter selected={typeFilter} onChange={setTypeFilter} />
               <CalendarViewToggle view={view} onChange={setView} />
             </div>
@@ -308,9 +320,14 @@ export default function PlanClientPage() {
                       return (
                         <div
                           key={date}
-                          className={`cal-cell ${date === todayYmd ? "cal-today" : ""}`}
+                          className={`cal-cell ${date === todayYmd ? "cal-today" : ""} ${items.length ? "has-items" : ""}`}
                         >
                           <div className="cal-daynum">{d}</div>
+                          <div className="cal-dots" aria-hidden="true">
+                            {items.slice(0, 3).map((s) => (
+                              <span key={s.id} className={`cal-chip-dot chip-${s.status}`} />
+                            ))}
+                          </div>
                           <div className="cal-events">
                             {items.map((s) => (
                               <button
@@ -320,8 +337,8 @@ export default function PlanClientPage() {
                               >
                                 <span className="cal-chip-dot" />
                                 <span className="cal-chip-name">
-                                  {s.send_time ? `${fmtTime(s.send_time)} · ` : ""}
-                                  {isProduction(s) ? "🎥 " : ""}{s.title}
+                                  {s.send_time ? <span className="cal-chip-time">{fmtTime(s.send_time)}</span> : null}
+                                  <span className="cal-chip-label">{isProduction(s) ? "🎥 " : ""}{s.title}</span>
                                 </span>
                                 {notes[s.id]?.trim() ? (
                                   <span className="cal-chip-note" title="You left a note">💬</span>
@@ -333,17 +350,54 @@ export default function PlanClientPage() {
                       );
                     })}
                   </div>
+                  <ol className="cal-agenda">
+                    {(byDay.size
+                      ? [...byDay.entries()]
+                          .filter(([date]) => date.startsWith(calMonth))
+                          .sort(([a], [b]) => a.localeCompare(b))
+                      : []
+                    ).map(([date, items]) => (
+                      <li key={date}>
+                        <div className="cal-agenda-date">{fmtDate(date)}</div>
+                        <div className="cal-agenda-items">
+                          {items.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              className={`cal-agenda-item chip-${s.status}`}
+                              onClick={() => setDetail(s)}
+                            >
+                              <span className="cal-chip-dot" />
+                              <span className="cal-agenda-copy">
+                                <span className="cal-agenda-title">{s.title}</span>
+                                <span className="cal-agenda-meta">
+                                  {[
+                                    s.send_time ? fmtTime(s.send_time) : "",
+                                    s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : "",
+                                  ].filter(Boolean).join(" · ")}
+                                </span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
                 </div>
               </div>
             ) : (
               groups.map(([month, items]) => (
                 <section key={month} className="stack" style={{ gap: 12 }}>
-                  <h2 className="snap-section-title">{month}</h2>
+                  <h2 className="plan-month-title">{month}</h2>
                   <div className="stack" style={{ gap: 12 }}>
-                    {items.map((s) => (
+                    {items.map((s) => {
+                      const stamp = dateStamp(s.send_date);
+                      return (
                       <div key={s.id} className={`plan-card ${isProduction(s) ? "is-production" : ""}`}>
                         <div className="plan-card-date">
-                          <span className="plan-card-dow">{fmtDate(s.send_date)}</span>
+                          <span className="plan-card-dow">{stamp.weekday}</span>
+                          <span className="plan-card-daynum">{stamp.day}</span>
+                          <span className="plan-card-mon">{stamp.month}</span>
                           {s.send_time ? <span className="plan-card-time">{fmtTime(s.send_time)}</span> : null}
                         </div>
                         <div className="plan-card-body">
@@ -389,7 +443,8 @@ export default function PlanClientPage() {
                           </label>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               ))
@@ -398,7 +453,7 @@ export default function PlanClientPage() {
             <section className="plan-approve card card-pad stack" style={{ gap: 12 }}>
               {approvedAt ? (
                 <>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Plan approved</h2>
+                  <h2 className="plan-month-title" style={{ margin: 0 }}>Plan approved</h2>
                   <p className="muted" style={{ margin: 0 }}>
                     Approved{approvedBy ? ` by ${approvedBy}` : ""} on {fmtApproved(approvedAt)}.
                     {noteCount > 0 ? " Your notes have been shared with the team." : ""}
@@ -418,7 +473,7 @@ export default function PlanClientPage() {
                 </>
               ) : (
                 <>
-                  <h2 className="snap-section-title" style={{ margin: 0 }}>Approve this plan</h2>
+                  <h2 className="plan-month-title" style={{ margin: 0 }}>Approve this plan</h2>
                   <p className="muted" style={{ margin: 0 }}>
                     {noteCount > 0
                       ? `You have left ${noteCount} note${noteCount === 1 ? "" : "s"}. Approving tells us the plan is good to build, notes included.`
@@ -439,7 +494,7 @@ export default function PlanClientPage() {
               )}
             </section>
 
-            <footer className="snap-footer">
+            <footer className="plan-footer">
               Prepared by Marketing Empire Group
             </footer>
           </>
