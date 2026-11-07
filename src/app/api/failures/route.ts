@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isProductionAuthenticated } from "@/lib/auth";
+import { failureContactNote, loadContactRoster } from "@/lib/client-contact-source";
 import { dismissFailure, listOpenFailures } from "@/lib/failures";
 
 // Everything the app tried and could not do. Staff only: the details name
@@ -8,7 +9,13 @@ export async function GET() {
   if (!(await isProductionAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json({ failures: listOpenFailures() });
+  const roster = loadContactRoster();
+  const failures = listOpenFailures().map((failure) => ({
+    ...failure,
+    // Logged detail stays as it was recorded. This line is the contact now.
+    current_contact_note: failureContactNote(failure, roster),
+  }));
+  return NextResponse.json({ failures });
 }
 
 // Dismissing is for failures that are handled or no longer relevant. Anything

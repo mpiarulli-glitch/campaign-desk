@@ -11,6 +11,7 @@ import type { RevClient, ScheduledSend } from "./db";
 import { sendEmail } from "./email";
 import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
 import { recordFailure } from "./failures";
+import { outreachContact } from "./client-contact-source";
 import {
   FIRST_PRODUCTION_EXPECTATIONS,
   isFirstProductionClient,
@@ -128,9 +129,13 @@ export async function sendProductionRequestReceived(
   send: ScheduledSend,
   opts?: { first?: boolean }
 ): Promise<boolean> {
-  const to = sendableContactEmail(client);
+  const addressed = outreachContact(client);
+  const to = sendableContactEmail({
+    ...addressed.client,
+    contact_email: addressed.contact.email || client.contact_email,
+  });
   if (!to) return false;
-  const name = client.contact_name?.trim();
+  const name = addressed.contact.name.trim();
   const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
   const first = Boolean(opts?.first) || isFirstProductionClient(client);
@@ -186,9 +191,13 @@ export async function sendProductionConfirmed(
   send: ScheduledSend,
   opts?: { first?: boolean }
 ): Promise<boolean> {
-  const to = sendableContactEmail(client);
+  const addressed = outreachContact(client);
+  const to = sendableContactEmail({
+    ...addressed.client,
+    contact_email: addressed.contact.email || client.contact_email,
+  });
   if (!to) return false;
-  const name = client.contact_name?.trim();
+  const name = addressed.contact.name.trim();
   const greeting = name ? `Hi ${esc(name)},` : "Hi there,";
   const when = `${fmtLongDate(send.send_date)}${send.send_time ? ` at ${slotLabel(send.send_time)}` : ""}`;
   const first =
