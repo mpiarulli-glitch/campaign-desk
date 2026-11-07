@@ -26,29 +26,27 @@ import {
   basecampConnected,
   commentOnCard,
   createScheduleCard,
-  findClientContact,
   getProjectPeopleForMention,
   mentionHtml,
   type BcPerson,
 } from "./basecamp";
+import { contactMissDetail, outreachContact } from "./client-contact-source";
 
 // The client's contact on a Basecamp project.
 //
-// Prefers the person picked by hand on the client record, matched by Basecamp
-// id, which cannot drift the way a typed name can. Falls back to the old
-// email-then-exact-name resolution for clients where nobody has been picked
-// yet, so existing accounts keep working untouched.
-function resolveContact(client: RevClient, people: BcPerson[]): BcPerson | null {
-  if (client.basecamp_contact_id) {
-    const picked = people.find(
-      (person) => person.id === client.basecamp_contact_id
-    );
-    if (picked) return picked;
-    // Picked once, gone now: removed from the project, or moved. Fall through
-    // to name matching rather than silently doing nothing, but this is worth
-    // surfacing, which the caller's contact_unresolved failure already does.
-  }
-  return findClientContact(people, client.contact_email, client.contact_name);
+// Uses the same current point of contact Friday ask shows. A saved Basecamp
+// id is used only when that person still agrees with the name or email.
+// Several matches tag nobody. This does not clear an old failure by itself.
+function resolveContact(
+  client: RevClient,
+  people: BcPerson[],
+  action: string
+): { person: BcPerson | null; detail: string } {
+  const found = contactMissDetail(client, people, action);
+  return {
+    person: found.person as BcPerson | null,
+    detail: found.detail,
+  };
 }
 
 // How far ahead of the window's first day the first reminder goes out.
@@ -618,7 +616,8 @@ export async function runReminders(opts?: {
           // Assigning is not the same as mentioning: only a mention pings, so
           // the contact is both assigned and tagged in the greeting.
           const people = await getProjectPeopleForMention(client.basecamp_project_id);
-          const contact = resolveContact(client, people);
+          const resolved = resolveContact(client, people, "no scheduling card was posted");
+          const contact = resolved.person;
           // No resolvable contact means we do not know who this card is
           // addressed to, so it does not go up. A card with no assignee and no
           // mention pings nobody, yet sits on the board looking like the client
@@ -627,27 +626,22 @@ export async function runReminders(opts?: {
           // This blocks the Basecamp channel only. The email still goes if we
           // have an address: not being findable on a Basecamp project is not
           // the same as not knowing where to reach somebody.
+          //
+          // An old "nobody to tag" row stays until a card actually posts.
+          // Finding a contact is not the same as having asked them.
           if (!contact) {
             recordFailure({
               kind: "contact_unresolved",
               subject: client.name,
-              detail: client.contact_name
-                ? `No Basecamp person matches "${client.contact_name}" on this project, so no scheduling card was posted.`
-                : "No contact name on this client, so no scheduling card was posted.",
+              detail: resolved.detail,
               hint:
                 "Check the contact name on the client matches their name in Basecamp exactly, then post a card with ?only=<client>&newCard=1.",
             });
-            noteBlocked(
-              client,
-              client.contact_name
-                ? `Not on the Basecamp project: "${client.contact_name}". No card posted.`
-                : "No contact name on this client. No card posted."
-            );
+            noteBlocked(client, resolved.detail);
             result.skipped.noContact++;
           } else {
-            clearFailure("contact_unresolved", client.name);
             const { title: cardTitle, body: cardBody } = scheduleCardContent(
-              client,
+              outreachContact(client).client,
               window,
               bcUrl,
               mentionHtml(contact)
@@ -665,6 +659,7 @@ export async function runReminders(opts?: {
             if (r.ok) {
               markBasecampCard(client.id, window.start, today, r.cardId);
               clearFailure("basecamp_card", client.name);
+              clearFailure("contact_unresolved", client.name);
               contacted = true;
               noteReachout(client, "basecamp_card", window, contact.name);
             } else {
@@ -698,28 +693,25 @@ export async function runReminders(opts?: {
       ) {
         try {
           const nudgePeople = await getProjectPeopleForMention(client.basecamp_project_id);
-          const nudgeContact = resolveContact(client, nudgePeople);
+          const nudgeResolved = resolveContact(
+            client,
+            nudgePeople,
+            "no follow-up comment was posted"
+          );
+          const nudgeContact = nudgeResolved.person;
           // Same rule as the card: an untagged follow-up pings nobody, so it is
           // a comment that only looks like a chase. Flag it instead.
           if (!nudgeContact) {
             recordFailure({
               kind: "contact_unresolved",
               subject: client.name,
-              detail: client.contact_name
-                ? `No Basecamp person matches "${client.contact_name}" on this project, so no follow-up comment was posted.`
-                : "No contact name on this client, so no follow-up comment was posted.",
+              detail: nudgeResolved.detail,
               hint:
                 "Check the contact name on the client matches their name in Basecamp exactly.",
             });
-            noteBlocked(
-              client,
-              client.contact_name
-                ? `Not on the Basecamp project: "${client.contact_name}". No follow-up posted.`
-                : "No contact name on this client. No follow-up posted."
-            );
+            noteBlocked(client, nudgeResolved.detail);
             result.skipped.noContact++;
           } else {
-            clearFailure("contact_unresolved", client.name);
             const body = scheduleNudgeContent(
               client,
               window,
@@ -735,6 +727,7 @@ export async function runReminders(opts?: {
             if (r.ok) {
               markBasecampNudge(existingCard.id, today);
               clearFailure("basecamp_comment", client.name);
+              clearFailure("contact_unresolved", client.name);
               contacted = true;
               noteReachout(client, "basecamp_comment", window, nudgeContact.name);
             } else {
@@ -779,11 +772,12 @@ export async function runReminders(opts?: {
     // No email address is the same refusal as no Basecamp contact: we do not
     // know where to send it, so it does not go, and somebody is told.
     // A configured scheduling text is the one exception. The text is the ask.
-    const rawEmail = (client.contact_email || "").trim();
+    const addressed = outreachContact(client).client;
+    const rawEmail = (addressed.contact_email || "").trim();
     const to = usableEmail(rawEmail);
     const hasEmail = Boolean(to);
     const canText =
-      scheduleSmsReady() && Boolean(normalizePhoneE164(client.contact_phone || ""));
+      scheduleSmsReady() && Boolean(normalizePhoneE164(addressed.contact_phone || ""));
     if (!hasEmail && !canText) {
       skip("noEmail");
       if (!contacted) {
@@ -820,13 +814,13 @@ export async function runReminders(opts?: {
 
     const token = getOrCreateScheduleToken(client.id);
     if (!token) {
-      result.failed.push({ client: client.name, email: client.contact_email });
+      result.failed.push({ client: client.name, email: addressed.contact_email });
       continue;
     }
     const url = scheduleUrl(token);
     let marked = false;
     if (hasEmail) {
-      const { subject, html, text } = reminderEmail(client, window, url);
+      const { subject, html, text } = reminderEmail(addressed, window, url);
       const ok = dryRun
         ? true
         : await sendEmail({ to, subject, html, text });
@@ -845,7 +839,7 @@ export async function runReminders(opts?: {
         contacted = true;
         noteReachout(client, "email", window, to);
       } else {
-        result.failed.push({ client: client.name, email: client.contact_email });
+        result.failed.push({ client: client.name, email: addressed.contact_email });
       }
     }
 
@@ -854,7 +848,7 @@ export async function runReminders(opts?: {
       try {
         sms = await sendScheduleNudgeSms({
           kind: "cadence_reminder",
-          client,
+          client: addressed,
           url,
           dedupeKey: `cadence:${client.id}:${window.start}:${today}`,
         });

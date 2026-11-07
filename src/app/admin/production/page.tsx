@@ -77,7 +77,29 @@ type Client = {
   outreach_paused: number;
   basecamp_project_id: string;
   videographer_id: string;
+  current_contact?: {
+    name: string;
+    email: string;
+    phone: string;
+    sourceClientId: string;
+    borrowed: boolean;
+    ambiguous: boolean;
+    basecampContactId: number;
+  };
 };
+
+function shownContact(c: Client) {
+  const current = c.current_contact;
+  return {
+    name: current?.name ?? c.contact_name,
+    email: current?.email ?? usableEmail(c.contact_email),
+    phone: current?.phone ?? c.contact_phone,
+    sourceId: current?.sourceClientId || c.id,
+    borrowed: Boolean(current?.borrowed),
+    ambiguous: Boolean(current?.ambiguous),
+    basecampContactId: current?.basecampContactId ?? c.basecamp_contact_id,
+  };
+}
 
 type Videographer = {
   id: string;
@@ -1483,10 +1505,12 @@ export default function ProductionPage() {
     type: "text" | "date" | "select",
     current: string,
     display: React.ReactNode,
-    options?: { value: string; label: string }[]
+    options?: { value: string; label: string }[],
+    editId?: string
   ) {
     if (!isAdmin) return display;
-    const active = edit?.id === r.client.id && edit?.field === field;
+    const id = editId || r.client.id;
+    const active = edit?.id === id && edit?.field === field;
     if (active) return <span className="cell-editing">{editor(field, type, options)}</span>;
     return (
       <span
@@ -1494,11 +1518,11 @@ export default function ProductionPage() {
         title="Click to edit"
         role="button"
         tabIndex={0}
-        onClick={() => beginEdit(r.client.id, field, current)}
+        onClick={() => beginEdit(id, field, current)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            beginEdit(r.client.id, field, current);
+            beginEdit(id, field, current);
           }
         }}
       >
@@ -2326,18 +2350,33 @@ export default function ProductionPage() {
                               client={c}
                               roster={people[c.id]}
                               onOpen={() => loadPeople(c.id)}
-                              onPick={(person) => pickContact(c.id, person)}
+                              onPick={(person) => pickContact(shownContact(c).sourceId, person)}
                             />
                           ) : (
-                            <span>{c.contact_name || "Not set"}</span>
+                            <span>{shownContact(c).name || "Not set"}</span>
                           )}
+                          {shownContact(c).borrowed ? (
+                            <div className="pcon-hint">From the Friday ask contact</div>
+                          ) : null}
+                          {shownContact(c).ambiguous ? (
+                            <div className="pcon-hint">
+                              More than one Friday ask client is on this Basecamp project, so this row&apos;s own contact is shown.
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                       <div>
                         <span className="k">Email</span>
                         <div className="v">
-                          {editableField(r, "contact_email", "text", usableEmail(c.contact_email),
-                            <span>{usableEmail(c.contact_email) || "Not set"}</span>)}
+                          {editableField(
+                            r,
+                            "contact_email",
+                            "text",
+                            shownContact(c).email,
+                            <span>{shownContact(c).email || "Not set"}</span>,
+                            undefined,
+                            shownContact(c).sourceId
+                          )}
                         </div>
                       </div>
                       <div>
@@ -2347,8 +2386,10 @@ export default function ProductionPage() {
                             r,
                             "contact_phone",
                             "text",
-                            c.contact_phone,
-                            <span>{c.contact_phone || "Not set"}</span>
+                            shownContact(c).phone,
+                            <span>{shownContact(c).phone || "Not set"}</span>,
+                            undefined,
+                            shownContact(c).sourceId
                           )}
                         </div>
                       </div>
@@ -2677,7 +2718,7 @@ export default function ProductionPage() {
                         <div className="pcon-who">
                           <h3>{c.name}</h3>
                           <p className="pcon-meta">
-                            {c.contact_name || "no contact"}
+                            {shownContact(c).name || "no contact"}
                             {" · "}
                             {c.color_week ? `${colorLabel(c.color_week).toLowerCase()} week` : "no colour week"}
                             {" · "}
@@ -2893,7 +2934,8 @@ function ContactPicker({
   const [editing, setEditing] = useState(false);
 
   if (!editing) {
-    const picked = client.basecamp_contact_id > 0;
+    const shown = shownContact(client);
+    const picked = shown.basecampContactId > 0;
     return (
       <span
         className="cell-clickable"
@@ -2916,8 +2958,8 @@ function ContactPicker({
           }
         }}
       >
-        {client.contact_name || "Not set"}
-        {client.contact_name && !picked ? (
+        {shown.name || "Not set"}
+        {shown.name && !picked ? (
           <span className="muted"> (typed)</span>
         ) : null}
       </span>
@@ -2946,7 +2988,7 @@ function ContactPicker({
     <span className="cell-editing">
       <select
         autoFocus
-        defaultValue={String(client.basecamp_contact_id || "")}
+        defaultValue={String(shownContact(client).basecampContactId || "")}
         onChange={(e) => {
           const id = Number(e.target.value);
           const person = (roster?.people || []).find((p) => p.id === id) || null;

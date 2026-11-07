@@ -6,7 +6,6 @@ import {
   basecampConnected,
   basecampCardAppUrl,
   commentOnCard,
-  findClientContact,
   getProjectPeopleForMention,
   hasConnection,
   mentionHtml,
@@ -21,6 +20,7 @@ import { approvalChannelForAssets, clientReviewFollowupHtml } from "@/lib/client
 import { recordFailure, clearFailure } from "@/lib/failures";
 import { markClientFollowUpSent } from "@/lib/lifecycle-board";
 import { resolveCampaignClient } from "@/lib/campaign-card-sync";
+import { contactMissDetail, outreachContact } from "@/lib/client-contact-source";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -60,24 +60,20 @@ export async function POST(_request: Request, { params }: Params) {
   const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
 
   const people = await getProjectPeopleForMention(client.basecamp_project_id, identity);
-  const recipient =
-    (client.basecamp_contact_id
-      ? people.find((person) => person.id === client.basecamp_contact_id)
-      : null) ||
-    findClientContact(people, client.contact_email, client.contact_name);
+  const found = contactMissDetail(client, people, "the follow-up would ping nobody");
+  const recipient = found.person;
+  const current = outreachContact(client);
   if (!recipient) {
     return NextResponse.json(
       {
-        error: client.contact_name
-          ? `Could not match "${client.contact_name}" to someone on the Basecamp project, so the follow-up would ping nobody.`
-          : "No client contact on this account, so the follow-up would ping nobody.",
+        error: found.detail || "No client contact on this account, so the follow-up would ping nobody.",
       },
       { status: 400 }
     );
   }
 
   const messageInput = {
-    clientContactName: recipient.name || client.contact_name || client.name,
+    clientContactName: recipient.name || current.contact.name || client.name,
     campaignTitle: campaign.title,
     previewUrl: reviewUrl(campaign.external_token),
     channel: approvalChannelForAssets(
@@ -112,7 +108,7 @@ export async function POST(_request: Request, { params }: Params) {
   const updated = recordBasecampFollowUp(campaign.id);
 
   const emailTo = resolveApprovalEmailTo({
-    contactEmail: client.contact_email,
+    contactEmail: current.contact.email || client.contact_email,
     rosterEmail: recipient.email_address,
   });
   const email = await sendApprovalFollowupEmail({

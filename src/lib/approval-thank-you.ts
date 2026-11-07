@@ -10,7 +10,6 @@ import {
   asPerson,
   basecampConnected,
   commentOnCard,
-  findClientContact,
   getProjectPeopleForMention,
   hasConnection,
   mentionHtml,
@@ -28,6 +27,7 @@ import type { Campaign } from "./db";
 import { clearFailure, recordFailure } from "./failures";
 import { OWNER_SLUG } from "./people";
 import { resolveCampaignClient } from "./campaign-card-sync";
+import { contactMissDetail, outreachContact } from "./client-contact-source";
 
 /** Minutes after client approval before the thank-you posts. */
 export const APPROVAL_THANK_YOU_DELAY_MS = 3 * 60 * 1000;
@@ -85,11 +85,7 @@ async function sendOne(campaign: Campaign): Promise<ApprovalThankYouResult> {
       client.basecamp_project_id,
       identity
     );
-    recipient =
-      (client.basecamp_contact_id
-        ? people.find((person) => person.id === client.basecamp_contact_id)
-        : null) ||
-      findClientContact(people, client.contact_email, client.contact_name);
+    recipient = contactMissDetail(client, people, "the thank-you was not posted").person;
   } catch (err) {
     return { ...base, error: (err as Error).message };
   }
@@ -105,7 +101,8 @@ async function sendOne(campaign: Campaign): Promise<ApprovalThankYouResult> {
 
   const html = clientApprovalThankYouHtml(
     {
-      clientContactName: recipient.name || client.contact_name || client.name,
+      clientContactName:
+        recipient.name || outreachContact(client).contact.name || client.name,
     },
     mentionHtml(recipient)
   );

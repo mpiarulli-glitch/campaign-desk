@@ -9,6 +9,7 @@ import { getAppUrl, scheduleUrl } from "./auth";
 import { getDb, nowIso, type RevClient } from "./db";
 import { emailConfigured, sendEmail } from "./email";
 import { clearFailure, recordFailure } from "./failures";
+import { outreachContact } from "./client-contact-source";
 import {
   sendLocationSms,
   upsertContactByPhone,
@@ -1002,7 +1003,8 @@ export async function sendScheduleNudgeSms(args: {
   dedupeKey: string;
   transport?: SmsTransport;
 }): Promise<ScheduleSmsResult> {
-  const name = args.client.name || "Client";
+  const addressed = outreachContact(args.client).client;
+  const name = addressed.name || "Client";
   if (!scheduleSmsEnabled()) return { status: "skipped", reason: "disabled" };
 
   const locationId = productionSmsLocationId();
@@ -1030,8 +1032,8 @@ export async function sendScheduleNudgeSms(args: {
     return { status: "skipped", reason: "no_link" };
   }
 
-  const phone = normalizePhoneE164(args.client.contact_phone || "");
-  if (!args.client.contact_phone?.trim()) {
+  const phone = normalizePhoneE164(addressed.contact_phone || "");
+  if (!addressed.contact_phone?.trim()) {
     logSkip(
       name,
       "No contact phone on this client, so no scheduling text was sent. The email still goes out.",
@@ -1042,7 +1044,7 @@ export async function sendScheduleNudgeSms(args: {
   if (!phone) {
     logSkip(
       name,
-      `The contact phone "${args.client.contact_phone}" is not a usable number, so no scheduling text was sent.`,
+      `The contact phone "${addressed.contact_phone}" is not a usable number, so no scheduling text was sent.`,
       "invalid_phone"
     );
     return { status: "skipped", reason: "invalid_phone" };
@@ -1054,7 +1056,7 @@ export async function sendScheduleNudgeSms(args: {
 
   const message = scheduleNudgeSmsBody({
     kind: args.kind,
-    contactName: args.client.contact_name,
+    contactName: addressed.contact_name,
     url,
   });
   try {
@@ -1063,15 +1065,15 @@ export async function sendScheduleNudgeSms(args: {
           transport: args.transport,
           locationId,
           phone,
-          name: args.client.contact_name?.trim() || name,
-          email: args.client.contact_email?.trim() || undefined,
+          name: addressed.contact_name?.trim() || name,
+          email: addressed.contact_email?.trim() || undefined,
           message,
         })
       : await liveDeliver({
           locationId,
           phone,
-          name: args.client.contact_name?.trim() || name,
-          email: args.client.contact_email?.trim() || undefined,
+          name: addressed.contact_name?.trim() || name,
+          email: addressed.contact_email?.trim() || undefined,
           message,
         });
     return rememberSmsSend({

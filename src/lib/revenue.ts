@@ -245,10 +245,18 @@ export function updateRevClient(
     updates.blackoutDates === undefined
       ? existing.blackout_dates
       : JSON.stringify(updates.blackoutDates),
-    updates.contactName?.trim() ?? existing.contact_name,
+    updates.contactName !== undefined
+      ? updates.contactName.trim()
+      : existing.contact_name,
     nextContactEmail(updates.contactEmail, existing.contact_email),
     storedContactPhone(updates.contactPhone, existing.contact_phone),
-    updates.poc?.trim() ?? existing.poc,
+    // A name edit on Friday ask or Production is the current point of contact.
+    // Keep `poc` with it unless this save sets `poc` on its own.
+    updates.poc !== undefined
+      ? updates.poc.trim()
+      : updates.contactName !== undefined
+        ? updates.contactName.trim()
+        : existing.poc,
     updates.accountManager?.trim() ?? existing.account_manager,
     updates.tier ?? existing.tier,
     updates.website?.trim() ?? existing.website,
