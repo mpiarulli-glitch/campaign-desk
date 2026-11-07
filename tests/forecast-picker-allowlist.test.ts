@@ -9,6 +9,10 @@ import {
   rankForecastPickerOptions,
 } from "../src/lib/forecast-picker-search";
 
+// Live Basecamp project. Company-wide announcements, not MEG Marketing HQ.
+const MARKETING_EMPIRE_GROUP_HQ_ID = "27062278";
+const MEG_MARKETING_HQ_ID = "40296792";
+
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // Partial text that is not merely the start of the full title, so a
@@ -188,6 +192,61 @@ test("allowlisted internal projects are returned and searchable when the service
   );
   assert.equal(rankForecastPickerOptions(choices, "harbor").some((hit) => /Harbor/.test(hit.name)), true);
   assert.equal(rankForecastPickerOptions(choices, "zzzz-not-a-project").length, 0);
+
+  const duplicateClients = [
+    { id: "8dqzYdBD6F3E", name: "Marketing Empire Group", basecamp_project_id: "", active: 1 },
+    {
+      id: "IEMSqvCekxKN",
+      name: "Marketing Empire Group",
+      basecamp_project_id: MARKETING_EMPIRE_GROUP_HQ_ID,
+      active: 1,
+    },
+    { id: "y3HGR9J5vsgD", name: "Marketing Empire Group", basecamp_project_id: "", active: 1 },
+  ];
+  const megPicker = buildForecastPicker(duplicateClients, [
+    { id: Number(MARKETING_EMPIRE_GROUP_HQ_ID), name: "Marketing Empire Group HQ" },
+    { id: Number(MEG_MARKETING_HQ_ID), name: "MEG Marketing HQ" },
+    { id: 1001, name: "Northwind Growth OS" },
+  ]);
+  const hq = megPicker.internals.find((project) => project.id === MARKETING_EMPIRE_GROUP_HQ_ID);
+  const megMarketing = megPicker.internals.find((project) => project.id === MEG_MARKETING_HQ_ID);
+  assert.ok(hq);
+  assert.equal(hq.name, "Marketing Empire Group HQ");
+  assert.ok(megMarketing);
+  assert.equal(megMarketing.name, "MEG Marketing HQ");
+  assert.equal(
+    megPicker.clients.filter((client) => client.name.startsWith("Marketing Empire Group")).length,
+    3
+  );
+  assert.equal(
+    megPicker.clients.some((client) => client.name === "Marketing Empire Group HQ"),
+    false
+  );
+  assert.equal(
+    megPicker.clients.some((client) => client.id === `project:${MARKETING_EMPIRE_GROUP_HQ_ID}`),
+    false
+  );
+
+  const markHits = rankForecastPickerOptions(
+    [
+      ...megPicker.clients.map((client) => ({ ...client, internal: false })),
+      ...megPicker.internals.map((project) => ({
+        id: `internal:${project.id}`,
+        name: project.name,
+        internal: true,
+      })),
+    ],
+    "mark"
+  );
+  const hqHit = markHits.find((hit) => hit.id === `internal:${MARKETING_EMPIRE_GROUP_HQ_ID}`);
+  assert.ok(hqHit);
+  assert.equal(hqHit.name, "Marketing Empire Group HQ");
+  assert.equal((hqHit as { internal?: boolean }).internal, true);
+  const megHit = markHits.find((hit) => hit.id === `internal:${MEG_MARKETING_HQ_ID}`);
+  assert.ok(megHit);
+  assert.equal(megHit.name, "MEG Marketing HQ");
+  assert.notEqual(hqHit.id, megHit.id);
+  assert.ok(markHits.indexOf(hqHit) < markHits.indexOf(megHit));
 
   // Service already has every allowlisted name: the person's other id is ignored.
   const complete: Array<{ id: number; name: string }> = FORECAST_INTERNAL_PROJECT_NAMES.map(

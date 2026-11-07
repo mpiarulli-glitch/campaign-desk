@@ -438,8 +438,10 @@ type PickerClientRow = {
  * is included, whether or not a client row exists and whether or not the person
  * picking is a member of it in Basecamp. Allowlisted internal workspaces and
  * extras such as Temecula Limos stay in the picker, labeled internal, and are
- * not imported as clients. A project an active client already points at is
- * not listed twice.
+ * not imported as clients. A client project an active client already points
+ * at is not listed twice. An allowlisted internal workspace still is: a
+ * client row can share its id and carry a different name, and the picker
+ * has to keep the Basecamp title.
  */
 export function buildForecastPicker(
   clients: PickerClientRow[],
@@ -459,7 +461,11 @@ export function buildForecastPicker(
   for (const project of projects) {
     const id = String(project.id ?? "").trim();
     const name = (project.name || "").trim();
-    if (!id || !name || seen.has(id) || linkedIds.has(id)) continue;
+    if (!id || !name || seen.has(id)) continue;
+    // A linked client project is already the client row. An internal
+    // workspace stays, under the Basecamp name, even when a client stores
+    // the same project id.
+    if (linkedIds.has(id) && !isInternalProject(name)) continue;
     seen.add(id);
     // Allowlisted workspaces stay in the picker. Link-all and the person-name
     // skip refuse to create clients for them; that skip must not hide them here.
