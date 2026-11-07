@@ -461,7 +461,7 @@ export default function CalendarPage() {
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!editing) return;
-    if (!editing.title.trim()) { setError("Email name is required."); return; }
+    if (!editing.title.trim()) { setError("A campaign name is required."); return; }
     setSaving(true);
     setError("");
     const payload = {
@@ -528,37 +528,43 @@ export default function CalendarPage() {
 
   const todayYmd = ymd(now.getFullYear(), now.getMonth(), now.getDate());
 
-  return (
-    <div className="app-shell">
-      <div className="page-actions">
-        {isAdmin ? (
-          <>
-            <button className="btn btn-secondary btn-sm" onClick={() => setImporting(true)}>
-              Import CSV
-            </button>
-            {filter !== "all" && summary && summary.total > 0 ? (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => void clearEditorial()}
-                disabled={clearing}
-              >
-                {clearing ? "Clearing…" : "Clear calendar"}
-              </button>
-            ) : null}
-            <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>
-              Add send
-            </button>
-          </>
-        ) : null}
-      </div>
+  const visibleCount = listGroups.reduce((n, [, items]) => n + items.length, 0);
 
+  return (
+    <div className="app-shell cal-desk">
       <main className="container container-wide stack">
-        <div className="cal-header">
-          <div>
-            <p className="eyebrow">Email department</p>
+        <header className="cal-header">
+          <div className="cal-header-copy">
+            <p className="eyebrow">Editorial calendar</p>
             <h1 className="h1">Campaign calendar</h1>
+            <p className="cal-lede">
+              Plan the emails, posts, and blogs. The client link shows the next 90 days.
+            </p>
           </div>
-          <div className="row">
+          {isAdmin ? (
+            <div className="cal-header-actions">
+              <button className="btn btn-secondary btn-sm" onClick={() => setImporting(true)}>
+                Import CSV
+              </button>
+              {filter !== "all" && summary && summary.total > 0 ? (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void clearEditorial()}
+                  disabled={clearing}
+                >
+                  {clearing ? "Clearing…" : "Clear calendar"}
+                </button>
+              ) : null}
+              <button className="btn btn-sm" onClick={() => openNew(todayYmd)}>
+                Add campaign
+              </button>
+            </div>
+          ) : null}
+        </header>
+
+        <div className="cal-controls">
+          <label className="cal-field">
+            <span>Client</span>
             <ClientCombobox
               className="cal-client-search"
               clients={clients}
@@ -568,6 +574,8 @@ export default function CalendarPage() {
               ariaLabel="Filter by client"
               placeholder="Search clients"
             />
+          </label>
+          <div className="cal-month-bar">
             <div className="cal-nav">
               <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>
               <span className="cal-month">{MONTHS[month]} {year}</span>
@@ -589,6 +597,14 @@ export default function CalendarPage() {
                 {showAll ? "Show my team's work" : "See all"}
               </button>
             ) : null}
+          </div>
+          <div className="cal-controls-view">
+            {visibleCount > 0 ? (
+              <span className="cal-toolbar-count">
+                {visibleCount} this month
+              </span>
+            ) : null}
+            <CalendarViewToggle view={view} onChange={setView} />
           </div>
         </div>
 
@@ -612,14 +628,6 @@ export default function CalendarPage() {
                 </button>
               ) : null}
             </div>
-          </div>
-          <div className="cal-toolbar-actions">
-            {hasVisibleSends ? (
-              <span className="cal-toolbar-count">
-                {listGroups.reduce((n, [, items]) => n + items.length, 0)}
-              </span>
-            ) : null}
-            <CalendarViewToggle view={view} onChange={setView} />
           </div>
         </div>
 
@@ -769,20 +777,21 @@ export default function CalendarPage() {
 
         {view === "list" ? (
           hasVisibleSends ? (
-            <div className="cal-list">
+            <div className={`cal-list ${isAdmin ? "is-editable" : ""}`}>
               <div className="cal-list-head" aria-hidden="true">
-                <span>Title</span>
+                <span>Campaign</span>
                 <span>Date</span>
                 <span>Time</span>
                 <span>Client</span>
                 <span>Type</span>
                 <span>Status</span>
+                {isAdmin ? <span> </span> : null}
               </div>
               {listGroups.flatMap(([, items]) => items).map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  className={`cal-list-row ${isProduction(s) ? "is-production" : ""} ${feedbackBySend.has(s.id) ? "has-note" : ""}`}
+                  className={`cal-list-row ${isProduction(s) ? "is-production" : ""} ${feedbackBySend.has(s.id) ? "has-note" : ""} ${isAdmin ? "" : "is-static"}`}
                   onClick={() => {
                     if (isAdmin) openEdit(s);
                   }}
@@ -803,14 +812,23 @@ export default function CalendarPage() {
                     {s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : "—"}
                   </span>
                   <span className={`cal-pop-status chip-${s.status}`}>{STATUS_LABEL[s.status]}</span>
+                  {isAdmin ? <span className="cal-list-edit">Edit</span> : null}
                 </button>
               ))}
             </div>
-          ) : !hasNoCalendar && !monthIsEmpty && typeFilter.length === 0 ? (
-            <div className="card card-pad">
-              <p className="muted" style={{ margin: 0 }}>
-                Nothing to list in {MONTHS[month]} {year}.
+          ) : !hasNoCalendar && !monthIsEmpty && typeFilter.length === 0 && statusFilter.length === 0 && !notesOnly ? (
+            <div className="card card-pad cal-empty">
+              <p className="cal-empty-title">Nothing planned in {MONTHS[month]} {year}.</p>
+              <p className="muted">
+                {isAdmin
+                  ? "Move to another month, or add a campaign on a day in this one."
+                  : "Move to another month to see what is planned."}
               </p>
+              {isAdmin ? (
+                <button className="btn btn-sm" onClick={() => openNew(firstDayInView())}>
+                  Add campaign
+                </button>
+              ) : null}
             </div>
           ) : null
         ) : (
@@ -827,7 +845,7 @@ export default function CalendarPage() {
             return (
               <div
                 key={date}
-                className={`cal-cell ${isToday ? "cal-today" : ""}`}
+                className={`cal-cell ${isToday ? "cal-today" : ""} ${items.length ? "has-items" : ""}`}
                 onClick={() => {
                   if (isAdmin) openNew(date);
                 }}
@@ -838,6 +856,12 @@ export default function CalendarPage() {
                     Basecamp and are picked up in Forecast instead. The event
                     cache is still synced, because the Forecast meeting picker
                     reads it. */}
+                <div className="cal-dots" aria-hidden="true">
+                  {items.slice(0, 3).map((s) => (
+                    <span key={s.id} className={`cal-chip-dot chip-${s.status}`} />
+                  ))}
+                  {items.length > 3 ? <span className="cal-dot-more">+{items.length - 3}</span> : null}
+                </div>
                 <div className="cal-events">
                   {items.map((s) => (
                     <button
@@ -852,8 +876,8 @@ export default function CalendarPage() {
                     >
                       <span className="cal-chip-dot" />
                       <span className="cal-chip-name">
-                        {s.send_time ? `${fmtTime(s.send_time)} · ` : ""}
-                        {isProduction(s) ? "🎥 " : ""}{s.title}
+                        {s.send_time ? <span className="cal-chip-time">{fmtTime(s.send_time)}</span> : null}
+                        <span className="cal-chip-label">{isProduction(s) ? "🎥 " : ""}{s.title}</span>
                       </span>
                       {feedbackBySend.has(s.id) ? (
                         <span className="cal-chip-note" title="Client left a note">💬</span>
@@ -865,6 +889,43 @@ export default function CalendarPage() {
             );
           })}
         </div>
+        {hasVisibleSends ? (
+          <ol className="cal-agenda">
+            {listGroups.map(([date, items]) => (
+              <li key={date}>
+                <div className="cal-agenda-date">{fmtListDay(date)}</div>
+                <div className="cal-agenda-items">
+                  {items.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`cal-agenda-item chip-${s.status} ${isProduction(s) ? "is-production" : ""}`}
+                      onClick={() => {
+                        if (isAdmin) openEdit(s);
+                      }}
+                    >
+                      <span className="cal-chip-dot" />
+                      <span className="cal-agenda-copy">
+                        <span className="cal-agenda-title">
+                          {isProduction(s) ? "🎥 " : ""}{s.title}
+                        </span>
+                        <span className="cal-agenda-meta">
+                          {[
+                            s.send_time ? fmtTime(s.send_time) : "",
+                            s.client_name,
+                            s.asset_type ? ASSET_TYPE_LABEL[s.asset_type] || s.asset_type : "",
+                            STATUS_LABEL[s.status],
+                          ].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                      {isAdmin ? <span className="cal-list-edit">Edit</span> : null}
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : null}
         </div>
         )}
       </main>
@@ -933,11 +994,11 @@ export default function CalendarPage() {
 
       {editing && isAdmin ? (
         <div className="modal-backdrop" onClick={() => setEditing(null)}>
-          <div className="modal card card-pad stack" onClick={(e) => e.stopPropagation()}>
-            <strong>{editing.id ? "Edit send" : "New send"}</strong>
+          <div className="modal cal-edit-modal card card-pad stack" onClick={(e) => e.stopPropagation()}>
+            <strong>{editing.id ? "Edit campaign" : "New campaign"}</strong>
             <form className="stack" onSubmit={save}>
               <div className="field">
-                <label>Email name</label>
+                <label>Campaign name</label>
                 <input
                   value={editing.title}
                   onChange={(e) => setEditing({ ...editing, title: e.target.value })}
