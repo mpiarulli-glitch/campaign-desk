@@ -1,3 +1,5 @@
+import { normalizeDocLinkMarkdown } from "@/lib/asset-kinds";
+
 /**
  * Pull a public Google Doc into the markdown subset the blog editor stores.
  *
@@ -108,7 +110,9 @@ export function googleDocHtmlToArticle(html: string): { markdown: string; title:
   const root = parseHtml(html);
   const ctx: Ctx = { classMap: classStyleMap(collectStyle(root)), title: "" };
   const body = findFirst(root, "body") ?? root;
-  let markdown = renderBlocks(body.children, ctx).replace(/\n{3,}/g, "\n\n").trim();
+  let markdown = normalizeDocLinkMarkdown(
+    renderBlocks(body.children, ctx).replace(/\n{3,}/g, "\n\n").trim()
+  );
   if (markdown) markdown += "\n";
   return { markdown, title: ctx.title || cleanedDocumentTitle(root) };
 }

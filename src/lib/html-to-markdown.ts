@@ -1,3 +1,5 @@
+import { normalizeDocLinkMarkdown } from "@/lib/asset-kinds";
+
 /**
  * Turn pasted HTML (Word, Docs, a live webpage) into the markdown subset the
  * blog editor understands: headings, lists, tables, bold, links, images.
@@ -136,5 +138,6 @@ export function htmlClipboardToMarkdown(html: string): string {
     .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return md ? `${md}\n` : "";
+  const normalized = normalizeDocLinkMarkdown(md);
+  return normalized ? `${normalized}\n` : "";
 }

@@ -3,7 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { mdToHtml, renderAssetDoc } from "../src/lib/asset-kinds";
+import { mdToHtml, normalizeDocLinkMarkdown, renderAssetDoc } from "../src/lib/asset-kinds";
 import {
   GOOGLE_DOC_SHARE_ERROR,
   googleDocHtmlToArticle,
@@ -114,6 +114,144 @@ test("google doc html becomes the blog markdown subset", () => {
   assert.match(html, /<th><strong>Step<\/strong><\/th>/);
   assert.equal(html.includes("<script"), false);
   assert.equal(html.includes("javascript:"), false);
+});
+
+function googleRedirect(url: string): string {
+  return `https://www.google.com/url?q=${encodeURIComponent(url)}&amp;sa=D&amp;source=editors&amp;ust=1700000000000000&amp;usg=AOvVaw0abcdefghijklmnop`;
+}
+
+// The paragraph and list from the imported Kentina preview. "its own guide" is a
+// normal anchor. The others are the two export shapes that glue the URL on:
+// the URL and the anchor text in one <a>, and a URL-only <a> immediately
+// followed by the anchor-text <a>. The space before those links is inside the
+// URL run.
+const KENTINA_LINKS = (() => {
+  const guide = "https://kentinahospitality.com/weddings/";
+  const holiday = "https://kentinahospitality.com/holiday-corporate-events/";
+  const retreats = "https://kentinahospitality.com/retreats-groups/";
+  const contact = "https://kentinahospitality.com/contact/";
+  const properties = "https://kentinahospitality.com/properties/";
+  return `<html><head><style>
+.c1{color:#000000;font-weight:400;text-decoration:none;font-style:normal}
+.c4{text-decoration-skip-ink:none;color:#1155cc;text-decoration:underline}
+.c14{color:inherit;text-decoration:inherit}
+.bold{font-weight:700}
+</style></head><body>
+<p class="c1"><span class="c1">Weddings, corporate retreats, and equestrian competitions are planned separately. Kentina covers weddings in </span><span class="c4"><a class="c14" href="${googleRedirect(guide)}">its own guide</a></span><span class="c1">, and corporate gatherings through its</span><span class="c4"><a class="c14" href="${googleRedirect(holiday)}"> https://kentinahospitality.com/holiday-corporate-events/holiday parties and corporate events</a></span><span class="c1"> page and</span><span class="c4"><a class="c14" href="${googleRedirect(retreats)}"> https://kentinahospitality.com/retreats-groups/</a></span><span class="c4"><a class="c14" href="${googleRedirect(retreats)}">retreats and groups</a></span><span class="c1"> options.</span></p>
+<h2><span class="c1">How to Book Your Private Party</span></h2>
+<ol>
+<li><span class="c1">Reach out with those details.</span><span class="c4"><a class="c14" href="${googleRedirect(contact)}"> https://kentinahospitality.com/contact/Contact Kentina Hospitality</a></span><span class="c1"> directly, or browse the</span><span class="c4"><a class="c14" href="${googleRedirect(properties)}">https://kentinahospitality.com/properties/full property list</a></span><span class="c1">.</span></li>
+<li><span class="c4"><a class="c14" href="${googleRedirect(contact)}"> https://kentinahospitality.com/contact/Contact Kentina Hospitality</a></span></li>
+</ol>
+<p><span class="c1">See </span><a href="${googleRedirect("https://example.com/guide")}">https://example.com/guide</a><span class="c1">.</span></p>
+<p><span class="c1">Read the </span><a href="${googleRedirect("https://example.com/notes/")}"><span class="bold">https://example.com/notes/full notes</span></a><span class="c1">.</span></p>
+</body></html>`;
+})();
+
+test("google doc links keep the anchor text and the space around it", () => {
+  const article = googleDocHtmlToArticle(KENTINA_LINKS);
+  const expected = [
+    "Weddings, corporate retreats, and equestrian competitions are planned separately. Kentina covers weddings in [its own guide](https://kentinahospitality.com/weddings/), and corporate gatherings through its [holiday parties and corporate events](https://kentinahospitality.com/holiday-corporate-events/) page and [retreats and groups](https://kentinahospitality.com/retreats-groups/) options.",
+    "",
+    "## How to Book Your Private Party",
+    "",
+    "1. Reach out with those details. [Contact Kentina Hospitality](https://kentinahospitality.com/contact/) directly, or browse the [full property list](https://kentinahospitality.com/properties/).",
+    "2. [Contact Kentina Hospitality](https://kentinahospitality.com/contact/)",
+    "",
+    "See [https://example.com/guide](https://example.com/guide).",
+    "",
+    "Read the [**full notes**](https://example.com/notes/).",
+    "",
+  ].join("\n");
+  assert.equal(article.markdown, expected);
+  assert.equal(normalizeDocLinkMarkdown(article.markdown), article.markdown);
+
+  const html = mdToHtml(article.markdown);
+  assert.match(html, /in <a href="https:\/\/kentinahospitality.com\/weddings\/">its own guide<\/a>,/);
+  assert.match(
+    html,
+    /its <a href="https:\/\/kentinahospitality.com\/holiday-corporate-events\/">holiday parties and corporate events<\/a> page/
+  );
+  assert.match(
+    html,
+    /and <a href="https:\/\/kentinahospitality.com\/retreats-groups\/">retreats and groups<\/a> options/
+  );
+  assert.match(
+    html,
+    /details\. <a href="https:\/\/kentinahospitality.com\/contact\/">Contact Kentina Hospitality<\/a> directly/
+  );
+  assert.match(
+    html,
+    /the <a href="https:\/\/kentinahospitality.com\/properties\/">full property list<\/a>\./
+  );
+  assert.match(
+    html,
+    /<ol><li>Reach out with those details\. <a href="https:\/\/kentinahospitality.com\/contact\/">Contact Kentina Hospitality<\/a> directly, or browse the <a href="https:\/\/kentinahospitality.com\/properties\/">full property list<\/a>\.<\/li><li><a href="https:\/\/kentinahospitality.com\/contact\/">Contact Kentina Hospitality<\/a><\/li><\/ol>/
+  );
+  assert.match(html, /<a href="https:\/\/example.com\/guide">https:\/\/example.com\/guide<\/a>/);
+  assert.match(html, /<a href="https:\/\/example.com\/notes\/"><strong>full notes<\/strong><\/a>/);
+  assert.equal(html.includes("itshttps://"), false);
+  assert.equal(html.includes("holiday-corporate-events/holiday"), false);
+  assert.equal(html.includes("retreats-groups/retreats"), false);
+  assert.equal(html.includes("contact/Contact"), false);
+  assert.equal(html.includes("properties/full"), false);
+
+  const preview = renderAssetDoc({
+    kind: "blog",
+    html_content: article.markdown,
+    body_format: "markdown",
+  });
+  assert.match(
+    preview.html,
+    /<a href="https:\/\/kentinahospitality.com\/holiday-corporate-events\/">holiday parties and corporate events<\/a>/
+  );
+  assert.equal(preview.html.includes("itshttps://"), false);
+});
+
+test("markdown already stored with the jammed urls renders the anchor text", () => {
+  const stored = [
+    "Weddings, corporate retreats, and equestrian competitions are planned separately. Kentina covers weddings in [its own guide](https://kentinahospitality.com/weddings/), and corporate gatherings through its[https://kentinahospitality.com/holiday-corporate-events/holiday parties and corporate events](https://kentinahospitality.com/holiday-corporate-events/) page and[https://kentinahospitality.com/retreats-groups/](https://kentinahospitality.com/retreats-groups/)[retreats and groups](https://kentinahospitality.com/retreats-groups/) options.",
+    "",
+    "1. Reach out with those details.[https://kentinahospitality.com/contact/Contact Kentina Hospitality](https://kentinahospitality.com/contact/) directly, or browse the[https://kentinahospitality.com/properties/full property list](https://kentinahospitality.com/properties/).",
+    "2. [https://kentinahospitality.com/contact/Contact Kentina Hospitality](https://kentinahospitality.com/contact/)",
+  ].join("\n");
+  const repaired = normalizeDocLinkMarkdown(stored);
+  assert.equal(normalizeDocLinkMarkdown(repaired), repaired);
+  assert.match(
+    repaired,
+    /its \[holiday parties and corporate events\]\(https:\/\/kentinahospitality.com\/holiday-corporate-events\/\) page and \[retreats and groups\]/
+  );
+  assert.match(repaired, /\[its own guide\]\(https:\/\/kentinahospitality.com\/weddings\/\)/);
+  assert.match(
+    repaired,
+    /details\. \[Contact Kentina Hospitality\]\(https:\/\/kentinahospitality.com\/contact\/\) directly/
+  );
+  assert.match(
+    repaired,
+    /the \[full property list\]\(https:\/\/kentinahospitality.com\/properties\/\)/
+  );
+  assert.match(
+    repaired,
+    /^2\. \[Contact Kentina Hospitality\]\(https:\/\/kentinahospitality.com\/contact\/\)$/m
+  );
+  const html = mdToHtml(stored);
+  assert.match(
+    html,
+    /<a href="https:\/\/kentinahospitality.com\/holiday-corporate-events\/">holiday parties and corporate events<\/a>/
+  );
+  assert.equal(html.includes("holiday-corporate-events/holiday"), false);
+  assert.equal(
+    normalizeDocLinkMarkdown("[https://example.com/foo/bar](https://example.com/foo)"),
+    "[https://example.com/foo/bar](https://example.com/foo)"
+  );
+  assert.equal(
+    normalizeDocLinkMarkdown("([https://example.com/x/inside words](https://example.com/x/))"),
+    "([inside words](https://example.com/x/))"
+  );
+  assert.equal(
+    normalizeDocLinkMarkdown("See `[https://example.com/x/inside words](https://example.com/x/)` later."),
+    "See `[https://example.com/x/inside words](https://example.com/x/)` later."
+  );
 });
 
 test("a private google doc tells the user how to share it", async () => {
