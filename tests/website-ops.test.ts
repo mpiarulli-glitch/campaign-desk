@@ -5,13 +5,14 @@ import path from "node:path";
 import test from "node:test";
 import { defaultAllowed, subjectFor } from "../src/lib/access";
 import { parseWebsiteCsv } from "../src/lib/website-ops-import";
-import { WEBSITE_OPS_SCHEMA_SQL } from "../src/lib/website-ops-schema";
+import { WEBSITE_OPS_SCHEMA_SQL, ensureWebsiteOpsSchema } from "../src/lib/website-ops-schema";
 import {
   inRestLane,
   inWeekLane,
   isClientWait,
   isOverdue,
   isWaiting,
+  canonicalStage,
   matchClientId,
   matchesPerson,
   ownerNames,
@@ -65,6 +66,13 @@ test("client links are exact, and internal work stays unlinked", () => {
   assert.equal(matchClientId("MEG Website", clients), null);
   assert.equal(matchClientId("EMPIRE Analytics", clients), null);
   assert.equal(matchClientId("InFrame App", clients), null);
+});
+
+test("retired stages fold into the shorter list", () => {
+  assert.equal(canonicalStage("website", "final_qa"), "qa");
+  assert.equal(canonicalStage("website", "discovery"), "briefing");
+  assert.equal(canonicalStage("landing", "unknown"), "needs_information");
+  assert.equal(canonicalStage("website", "design"), "design");
 });
 
 test("owners are people, and a late date says how many days", () => {
@@ -168,6 +176,13 @@ test("website desk storage", async (t) => {
       if (column) royColumns[column] += 1;
     }
     assert.deepEqual(royColumns, { overdue: 5, waiting: 2, week: 0, rest: 1 });
+    db.prepare(`UPDATE website_projects SET stage = 'final_qa' WHERE name = 'InFrame App'`).run();
+    ensureWebsiteOpsSchema(db);
+    const raw = db.prepare(`SELECT stage FROM website_projects WHERE name = 'InFrame App'`).get() as {
+      stage: string;
+    };
+    assert.equal(raw.stage, "qa");
+
     const seen = new Set<string>();
     for (const project of projects) {
       const column = todayColumn(project, TODAY);

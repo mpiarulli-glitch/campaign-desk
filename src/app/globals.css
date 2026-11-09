@@ -28167,3 +28167,243 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   }
   .webops-person { min-height: 44px; }
 }
+
+/* Calmer Website Ops table. The older board and stat styles above are unused. */
+
+.webops-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.webops-bar .webops-search { flex: 1; }
+
+.webops-owner-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.webops-owner-filter select {
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.webops-sheet { margin-top: 8px; }
+
+.webops-head,
+.webops-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) 130px 150px 120px minmax(160px, 1.3fr) 28px;
+  gap: 16px;
+  align-items: center;
+}
+
+.webops-head {
+  padding: 0 12px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.webops-group { margin-top: 28px; }
+
+.webops-group h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.webops-group h2 span { font-variant-numeric: tabular-nums; }
+
+.webops-line {
+  width: 100%;
+  padding: 14px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.webops-line:hover { background: var(--bg-soft); }
+
+.webops-project {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.webops-project strong {
+  display: block;
+  font-weight: 700;
+}
+
+.webops-project em {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 13px;
+}
+
+.webops-cell { color: var(--text-body); font-size: 14px; min-width: 0; }
+
+.webops-next {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.webops-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.webops-dot.is-overdue { background: var(--danger); }
+.webops-dot.is-waiting { background: var(--warning); }
+
+.webops-cell i {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.webops-cell i.is-overdue { color: var(--danger); }
+.webops-cell i.is-waiting { color: var(--warning); }
+
+.webops-bc {
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
+.webops-bc:hover { color: var(--text); }
+
+.webops-quiet { margin-top: 36px; }
+
+.webops-quiet-toggle,
+.webops-text-btn {
+  border: 0;
+  background: none;
+  padding: 8px 0;
+  color: var(--text-body);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.webops-quiet-toggle span { margin-left: 8px; color: var(--text-muted); }
+
+.webops-text-btn:hover,
+.webops-quiet-toggle:hover { color: var(--text); }
+
+.webops-panel-back {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.webops-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 91;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lift);
+}
+
+.webops-panel-head,
+.webops-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+}
+
+.webops-panel-head h2 { margin: 0; font-size: 22px; }
+
+.webops-panel-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.webops-panel-foot {
+  border-top: 1px solid var(--border);
+  justify-content: flex-start;
+}
+
+.webops-owners {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.webops-owners legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.webops-owners label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.webops-action-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 900px) {
+  .webops-head { display: none; }
+  .webops-line {
+    grid-template-columns: 1fr 28px;
+    gap: 4px 12px;
+    padding: 16px 4px;
+  }
+  .webops-project { grid-column: 1; }
+  .webops-bc { grid-column: 2; grid-row: 1; }
+  .webops-cell { grid-column: 1; }
+  .webops-bar { flex-wrap: wrap; }
+  .webops-bar .webops-search { flex-basis: 100%; }
+}

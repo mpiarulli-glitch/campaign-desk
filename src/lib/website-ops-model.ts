@@ -34,23 +34,28 @@ export const WEBSITE_OWNER_CHIPS = [
 
 export const WEBSITE_STAGES = [
   { key: "briefing", label: "Briefing" },
-  { key: "discovery", label: "Discovery" },
   { key: "design", label: "Design" },
   { key: "content_review", label: "Content Review" },
   { key: "development", label: "Development" },
   { key: "qa", label: "QA" },
-  { key: "final_qa", label: "Final QA" },
   { key: "launched", label: "Launched" },
 ] as const;
 
 export const LANDING_STAGES = [
-  { key: "needs_information", label: "Needs information" },
+  { key: "needs_information", label: "Needs info" },
   { key: "in_progress", label: "In progress" },
-  { key: "under_review", label: "Under Review" },
+  { key: "under_review", label: "Under review" },
   { key: "paused", label: "Paused" },
-  { key: "unknown", label: "Unknown" },
   { key: "done", label: "Done" },
 ] as const;
+
+/** Older sheet values fold into the shorter stage list. */
+export function canonicalStage(board: WebsiteBoard, stage: string): string {
+  if (stage === "final_qa") return "qa";
+  if (stage === "discovery") return "briefing";
+  if (stage === "unknown") return board === "landing" ? "needs_information" : "briefing";
+  return stage;
+}
 
 const TERMINAL_STAGES = new Set(["launched", "done"]);
 
@@ -810,6 +815,7 @@ export function applyDraftPatch(
     merged[key] = parsed;
   }
 
+  merged.stage = canonicalStage(merged.board, merged.stage);
   const reconciled = reconcileDraft(merged, base, touched, today);
   if (!stagesFor(reconciled.board).some((s) => s.key === reconciled.stage)) {
     return { ok: false, error: "That stage does not belong on this board." };

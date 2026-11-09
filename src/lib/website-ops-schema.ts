@@ -48,4 +48,12 @@ CREATE INDEX IF NOT EXISTS idx_website_projects_target
 
 export function ensureWebsiteOpsSchema(database: Database.Database): void {
   database.exec(WEBSITE_OPS_SCHEMA_SQL);
+  // Fold retired stage names into the shorter list. Safe to run every boot.
+  const columns = database.prepare(`PRAGMA table_info(website_projects)`).all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "stage")) return;
+  database.exec(`
+    UPDATE website_projects SET stage = 'qa' WHERE stage = 'final_qa';
+    UPDATE website_projects SET stage = 'briefing' WHERE stage = 'discovery';
+    UPDATE website_projects SET stage = 'needs_information' WHERE stage = 'unknown';
+  `);
 }

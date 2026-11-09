@@ -7,6 +7,7 @@ import { getDb, nowIso } from "./db";
 import {
   applyDraftPatch,
   blankDraft,
+  canonicalStage,
   deskToday,
   projectToDraft,
   type WebsiteDraft,
@@ -56,7 +57,7 @@ function rowToProject(row: ProjectRow): WebsiteProject {
     tier: row.tier,
     platform: row.platform,
     deliverables: row.deliverables,
-    stage: row.stage,
+    stage: canonicalStage(row.board === "landing" ? "landing" : "website", row.stage),
     disposition:
       row.disposition === "paused" ||
       row.disposition === "non_responsive" ||

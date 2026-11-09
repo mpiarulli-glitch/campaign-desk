@@ -23,12 +23,12 @@ export type WebsiteImportPreview = {
 
 const WEBSITE_STAGE_ALIASES: Record<string, string> = {
   briefing: "briefing",
-  discovery: "discovery",
+  discovery: "briefing",
   design: "design",
   "content review": "content_review",
   development: "development",
   qa: "qa",
-  "final qa": "final_qa",
+  "final qa": "qa",
   launched: "launched",
 };
 
@@ -38,7 +38,7 @@ const LANDING_STAGE_ALIASES: Record<string, string> = {
   "in progress": "in_progress",
   "under review": "under_review",
   paused: "paused",
-  unknown: "unknown",
+  unknown: "needs_information",
   done: "done",
 };
 
