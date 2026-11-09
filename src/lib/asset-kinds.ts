@@ -296,6 +296,189 @@ function safeUrl(escaped: string): string | null {
   return escapeHtml(url);
 }
 
+// Google's HTML export writes some hyperlinks as the raw URL jammed onto the
+// anchor text, inside one <a> or as a URL-only <a> immediately followed by the
+// real one. The space that belongs before the link is the first character of
+// that URL run, so trimming the label deletes it. A link made by selecting
+// text and attaching a URL only contains the anchor text, and is left alone.
+// A link whose visible text is the URL itself is also left alone.
+const DOC_LINK = /(?<!!)\[([^\]]+)\]\(([^()\s]*(?:\([^)]*\)[^()\s]*)*)\)/g;
+
+function destinationHref(href: string): string {
+  try {
+    const url = new URL(href);
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "google.com" && (url.pathname === "/url" || url.pathname === "/url/")) {
+      const target = url.searchParams.get("q") || url.searchParams.get("url") || "";
+      if (/^https?:\/\//i.test(target)) return target;
+    }
+  } catch {
+    return href;
+  }
+  return href;
+}
+
+function hrefPrefixes(href: string): string[] {
+  const seeds = [destinationHref(href)];
+  const decoded: string[] = [];
+  for (const seed of seeds) {
+    try {
+      const next = decodeURI(seed);
+      if (next !== seed) decoded.push(next);
+    } catch {
+      // Keep the href as it was written.
+    }
+  }
+  const all = new Set<string>();
+  for (const seed of [...seeds, ...decoded]) {
+    all.add(seed);
+    all.add(seed.endsWith("/") ? seed.replace(/\/+$/, "") : `${seed}/`);
+  }
+  all.delete("");
+  return [...all].sort((a, b) => b.length - a.length);
+}
+
+function peelEmphasis(label: string): { open: string; core: string; close: string } {
+  let open = "";
+  let close = "";
+  let core = label;
+  const wrappers = ["++", "***", "**", "*"];
+  for (let guard = 0; guard < 6; guard++) {
+    const wrap = wrappers.find((marker) => {
+      if (!core.startsWith(marker) || !core.endsWith(marker)) return false;
+      if (core.length <= marker.length * 2) return false;
+      if (marker === "*" && core.startsWith("**")) return false;
+      if (marker === "**" && core.startsWith("***")) return false;
+      return !core.slice(marker.length, -marker.length).includes(marker);
+    });
+    if (!wrap) break;
+    open += wrap;
+    close = wrap + close;
+    core = core.slice(wrap.length, -wrap.length);
+  }
+  return { open, core, close };
+}
+
+function labelIsOnlyUrl(label: string, href: string): boolean {
+  return hrefPrefixes(href).includes(peelEmphasis(label).core.trim());
+}
+
+// The leftover anchor has to be a phrase. A longer URL such as
+// example.com/foo/bar linked at example.com/foo must stay intact.
+function anchorFromJammedUrl(label: string, href: string): string | null {
+  const peeled = peelEmphasis(label);
+  for (const prefix of hrefPrefixes(href)) {
+    if (!peeled.core.startsWith(prefix)) continue;
+    const next = peeled.core.charAt(prefix.length);
+    if (!next || next === "/" || next === "?" || next === "#" || next === "&") continue;
+    const rest = peeled.core.slice(prefix.length).replace(/^\s+/, "");
+    if (!rest || !/\s/.test(rest)) continue;
+    return `${peeled.open}${rest}${peeled.close}`;
+  }
+  return null;
+}
+
+function needsSpaceBeforeLink(before: string): boolean {
+  let i = before.length - 1;
+  while (i >= 0 && (before[i] === "*" || before[i] === "+")) i -= 1;
+  if (i < 0) return false;
+  const ch = before[i];
+  if (/\s/u.test(ch)) return false;
+  return /[\p{L}\p{N}.,;:!?]/u.test(ch);
+}
+
+function normalizeLinkRun(text: string): string {
+  if (!text.includes("](")) return text;
+  const links: Array<{ start: number; end: number; label: string; href: string }> = [];
+  for (const match of text.matchAll(DOC_LINK)) {
+    links.push({
+      start: match.index ?? 0,
+      end: (match.index ?? 0) + match[0].length,
+      label: match[1],
+      href: match[2],
+    });
+  }
+  if (!links.length) return text;
+
+  const cleaned = links.map((link) => anchorFromJammedUrl(link.label, link.href) ?? link.label);
+  const drop = links.map(() => false);
+  for (let i = 0; i < links.length - 1; i++) {
+    const gap = text.slice(links[i].end, links[i + 1].start);
+    if (!/^\s*$/.test(gap)) continue;
+    if (!sameDestination(links[i].href, links[i + 1].href)) continue;
+    if (!labelIsOnlyUrl(cleaned[i], links[i].href)) continue;
+    if (labelIsOnlyUrl(cleaned[i + 1], links[i + 1].href)) continue;
+    drop[i] = true;
+  }
+
+  let out = "";
+  let cursor = 0;
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    if (drop[i]) {
+      out += text.slice(cursor, link.start);
+      const next = links[i + 1];
+      const gap = text.slice(link.end, next.start);
+      cursor = /^\s*$/.test(gap) ? next.start : link.end;
+      continue;
+    }
+    out += text.slice(cursor, link.start);
+    const label = cleaned[i];
+    if ((label !== link.label || (i > 0 && drop[i - 1])) && needsSpaceBeforeLink(out)) {
+      out += " ";
+    }
+    out += `[${label}](${link.href})`;
+    cursor = link.end;
+  }
+  return out + text.slice(cursor);
+}
+
+function sameDestination(a: string, b: string): boolean {
+  const fold = (value: string) => {
+    const dest = destinationHref(value);
+    try {
+      return decodeURI(dest).replace(/\/+$/, "");
+    } catch {
+      return dest.replace(/\/+$/, "");
+    }
+  };
+  return fold(a) === fold(b);
+}
+
+function normalizeLinkLine(line: string): string {
+  const parts: string[] = [];
+  const code = /`[^`]*`/g;
+  let last = 0;
+  for (const match of line.matchAll(code)) {
+    const at = match.index ?? 0;
+    parts.push(normalizeLinkRun(line.slice(last, at)));
+    parts.push(match[0]);
+    last = at + match[0].length;
+  }
+  parts.push(normalizeLinkRun(line.slice(last)));
+  return parts.join("");
+}
+
+// Repair imported link markdown. Safe to run more than once. Stored articles
+// that were imported before this fix still hold the jammed labels; rendering
+// passes through here, and the same function is what a one-off repair should
+// apply to campaign_emails.html_content before saving a new version.
+export function normalizeDocLinkMarkdown(markdown: string): string {
+  if (!markdown || !markdown.includes("](")) return markdown;
+  const lines = markdown.split("\n");
+  let fence = false;
+  return lines
+    .map((line) => {
+      if (line.trimStart().startsWith("```")) {
+        fence = !fence;
+        return line;
+      }
+      if (fence) return line;
+      return normalizeLinkLine(line);
+    })
+    .join("\n");
+}
+
 function inlineMd(raw: string): string {
   let text = escapeHtml(raw);
   const mdUrl = /!\[([^\]]*)\]\(([^()\s]*(?:\([^)]*\)[^()\s]*)*)\)/g;
@@ -415,7 +598,7 @@ function renderListBlock(items: ListLine[]): string {
 }
 
 export function mdToHtml(md: string): string {
-  const lines = (md || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeDocLinkMarkdown(md || "").replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let para: string[] = [];
   let quote: string[] = [];
