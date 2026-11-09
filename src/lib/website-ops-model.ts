@@ -437,6 +437,42 @@ export function waitingPhrase(waitingOn: string): string {
   return `Waiting on ${label}`;
 }
 
+const NOT_OWNERS = new Set(["client", "clients", "the client", "unassigned", "web team"]);
+
+/** People on the project. "Client" is never an owner; that belongs on Waiting on. */
+export function ownerNames(owners: string): string[] {
+  return splitPeople(owners).filter((name) => !NOT_OWNERS.has(name.toLowerCase()));
+}
+
+export function daysOverdue(target: string, today: string): number {
+  const start = ymdParts(target);
+  const end = ymdParts(today);
+  if (!start || !end) return 0;
+  const ms =
+    new Date(end.y, end.m - 1, end.d).getTime() - new Date(start.y, start.m - 1, start.d).getTime();
+  return Math.round(ms / 86400000);
+}
+
+export function overduePhrase(target: string, today: string): string {
+  const days = daysOverdue(target, today);
+  if (days <= 0) return "";
+  return days === 1 ? "1 day overdue" : `${days} days overdue`;
+}
+
+export type TodayColumn = "overdue" | "waiting" | "week" | "rest";
+
+/**
+ * One column on This week. Overdue wins, then waiting, then due this week,
+ * then everything else still open.
+ */
+export function todayColumn(project: WebsiteProject, today: string): TodayColumn | null {
+  if (!isActive(project)) return null;
+  if (isOverdue(project, today)) return "overdue";
+  if (isWaiting(project)) return "waiting";
+  if (isDueThisWeek(project, today) || project.coverage) return "week";
+  return "rest";
+}
+
 /** Due this week, and coverage items that are not already overdue. */
 export function inWeekLane(project: WebsiteProject, today: string): boolean {
   if (!isActive(project) || isOverdue(project, today)) return false;
@@ -460,7 +496,7 @@ export function ownedBy(project: WebsiteProject, name: string): boolean {
 /** "" is the whole team. "__none" is projects with nobody in Who. */
 export function matchesPerson(project: WebsiteProject, person: string): boolean {
   if (!person) return true;
-  if (person === "__none") return project.owners.trim().length === 0;
+  if (person === "__none") return ownerNames(project.owners).length === 0;
   return ownedBy(project, person);
 }
 

@@ -14,7 +14,10 @@ import {
   isWaiting,
   matchClientId,
   matchesPerson,
+  ownerNames,
+  overduePhrase,
   summarize,
+  todayColumn,
   waitingBreakdown,
   waitingKind,
   weekBounds,
@@ -62,6 +65,15 @@ test("client links are exact, and internal work stays unlinked", () => {
   assert.equal(matchClientId("MEG Website", clients), null);
   assert.equal(matchClientId("EMPIRE Analytics", clients), null);
   assert.equal(matchClientId("InFrame App", clients), null);
+});
+
+test("owners are people, and a late date says how many days", () => {
+  assert.deepEqual(ownerNames("Roy/Client"), ["Roy"]);
+  assert.deepEqual(ownerNames("Roy/Saqib/Morris"), ["Roy", "Saqib", "Morris"]);
+  assert.deepEqual(ownerNames("Client"), []);
+  assert.equal(overduePhrase("2026-10-30", "2026-11-09"), "10 days overdue");
+  assert.equal(overduePhrase("2026-11-06", "2026-11-09"), "3 days overdue");
+  assert.equal(overduePhrase("2026-11-08", "2026-11-09"), "1 day overdue");
 });
 
 test("waiting on a client is not the same as waiting on a teammate", () => {
@@ -149,6 +161,20 @@ test("website desk storage", async (t) => {
     assert.equal(roy.filter(isWaiting).length, 3);
     assert.equal(roy.filter(isClientWait).length, 3);
     assert.equal(roy.filter((project) => inRestLane(project, TODAY)).length, 1);
+    // This week shows each open project in one column: overdue, then waiting, then due, then the rest.
+    const royColumns = { overdue: 0, waiting: 0, week: 0, rest: 0 };
+    for (const project of roy) {
+      const column = todayColumn(project, TODAY);
+      if (column) royColumns[column] += 1;
+    }
+    assert.deepEqual(royColumns, { overdue: 5, waiting: 2, week: 0, rest: 1 });
+    const seen = new Set<string>();
+    for (const project of projects) {
+      const column = todayColumn(project, TODAY);
+      if (!column) continue;
+      assert.equal(seen.has(project.id), false);
+      seen.add(project.id);
+    }
 
     const saqib = projects.filter((project) => matchesPerson(project, "Saqib"));
     assert.equal(saqib.filter((project) => isOverdue(project, TODAY)).length, 3);

@@ -9,12 +9,14 @@ import {
   defaultStage,
   deskToday,
   formatDeskDate,
-  inRestLane,
   inWeekLane,
   isActive,
   isOverdue,
   isWaiting,
   matchesPerson,
+  ownerNames,
+  overduePhrase,
+  todayColumn,
   onBoard,
   projectToDraft,
   splitPeople,
@@ -91,13 +93,13 @@ function laneTitle(lane: Lane, person: string, meName: string | null): string {
 function emptyLane(lane: Lane, who: string): string {
   if (!who) {
     if (lane === "overdue") return "Nothing is overdue.";
-    if (lane === "week") return "Nothing is due this week.";
+    if (lane === "week") return "Nothing else is due this week.";
     if (lane === "waiting") return "Nobody is waiting on a person.";
     return "Nothing else is open.";
   }
   const name = who === "you" ? "you" : who;
   if (lane === "overdue") return who === "you" ? "Nothing of yours is overdue." : `Nothing for ${name} is overdue.`;
-  if (lane === "week") return who === "you" ? "Nothing of yours is due this week." : `Nothing for ${name} is due this week.`;
+  if (lane === "week") return "Nothing else is due this week.";
   if (lane === "waiting") return who === "you" ? "You're not waiting on anyone." : `${name} isn't waiting on anyone.`;
   return who === "you" ? "Nothing else is on you." : `Nothing else is on ${name}.`;
 }
@@ -162,41 +164,34 @@ export function WebsiteDesk() {
     const pool = scoped.filter(pass);
     const byDue = (a: WebsiteProject, b: WebsiteProject) =>
       (a.targetOn || "9999").localeCompare(b.targetOn || "9999") || compareProjects(a, b);
+    const inColumn = (project: WebsiteProject, lane: Lane) => todayColumn(project, today) === lane;
     return {
-      overdue: pool.filter((project) => isOverdue(project, today)).sort(byDue),
-      week: pool.filter((project) => inWeekLane(project, today)).sort(byDue),
+      overdue: pool.filter((project) => inColumn(project, "overdue")).sort(byDue),
       waiting: pool
-        .filter((project) => isWaiting(project))
+        .filter((project) => inColumn(project, "waiting"))
         .sort((a, b) => {
           const client = Number(waitingKind(b.waitingOn) === "client") - Number(waitingKind(a.waitingOn) === "client");
           return client || compareProjects(a, b);
         }),
-      rest: pool.filter((project) => inRestLane(project, today)).sort(compareProjects),
+      week: pool.filter((project) => inColumn(project, "week")).sort(byDue),
+      rest: pool.filter((project) => inColumn(project, "rest")).sort(compareProjects),
     };
   }, [scoped, query, today]);
 
   const teamLanes = useMemo(() => {
-    return {
-      overdue: projects.filter((project) => isOverdue(project, today)).length,
-      week: projects.filter((project) => inWeekLane(project, today)).length,
-      waiting: projects.filter((project) => isWaiting(project)).length,
-      rest: projects.filter((project) => inRestLane(project, today)).length,
-    };
+    const count = (lane: Lane) => projects.filter((project) => todayColumn(project, today) === lane).length;
+    return { overdue: count("overdue"), week: count("week"), waiting: count("waiting"), rest: count("rest") };
   }, [projects, today]);
 
   const yoursLanes = useMemo(() => {
     if (!meName) return null;
     const mineProjects = projects.filter((project) => matchesPerson(project, meName));
-    return {
-      overdue: mineProjects.filter((project) => isOverdue(project, today)).length,
-      week: mineProjects.filter((project) => inWeekLane(project, today)).length,
-      waiting: mineProjects.filter((project) => isWaiting(project)).length,
-      rest: mineProjects.filter((project) => inRestLane(project, today)).length,
-    };
+    const count = (lane: Lane) => mineProjects.filter((project) => todayColumn(project, today) === lane).length;
+    return { overdue: count("overdue"), week: count("week"), waiting: count("waiting"), rest: count("rest") };
   }, [projects, meName, today]);
 
   const unassigned = projects.filter(
-    (project) => isActive(project) && project.owners.trim() === ""
+    (project) => isActive(project) && ownerNames(project.owners).length === 0
   ).length;
 
   function replaceProject(project: WebsiteProject) {
@@ -399,10 +394,17 @@ export function WebsiteDesk() {
       ) : projects.length === 0 ? (
         <section className="webops-empty">
           <h2>No projects yet</h2>
-          <p>Add a website or a landing page. Overdue work, this week, and anything waiting will show up here.</p>
-          <button type="button" className="btn" onClick={openNew}>
-            Add a project
-          </button>
+          <p>
+            Add the first website or landing page, or bring in a spreadsheet. Overdue work, this week, and anything waiting will show up here.
+          </p>
+          <div className="webops-empty-actions">
+            <button type="button" className="btn" onClick={openNew}>
+              Add project
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => setImporter(true)}>
+              Import from spreadsheet
+            </button>
+          </div>
         </section>
       ) : view === "week" ? (
         <WeekView
@@ -505,6 +507,7 @@ function countHint(
     if (filtered && team !== visible) bits.push(`${team} on the team`);
     return bits.join(" · ");
   }
+  if (lane === "week" && visible === 0) return "Nothing else due";
   if (lane === "rest") return filtered ? "Not due this week" : "Not due or waiting";
   if (filtered) {
     if (visible === team) return "That's the whole team";
@@ -622,13 +625,14 @@ function ProjectCard({
   onOpen: (project: WebsiteProject) => void;
   onMove: (project: WebsiteProject, stage: string) => void;
 }) {
-  const shownDate = project.disposition === "launched" && project.launchOn ? project.launchOn : project.targetOn;
-  const late = Boolean(project.targetOn) && project.disposition === "active" && project.targetOn < today;
-  const dateLabel = !shownDate
-    ? "No date"
-    : project.disposition === "launched"
-      ? `Launched ${formatDeskDate(shownDate)}`
-      : `${late ? "Due " : ""}${formatDeskDate(shownDate)}`;
+  const launched = project.disposition === "launched" && project.launchOn;
+  const late = isOverdue(project, today);
+  const dateLabel = launched
+    ? `Launched ${formatDeskDate(project.launchOn)}`
+    : project.targetOn
+      ? formatDeskDate(project.targetOn)
+      : "No date";
+  const lateNote = late ? overduePhrase(project.targetOn, today) : "";
   return (
     <article className="webops-card">
       <div className="webops-card-top">
@@ -641,9 +645,12 @@ function ProjectCard({
       <div className="webops-card-meta">
         <span>{kindLabel(project)}</span>
         <StageSelect project={project} onMove={onMove} />
-        <span className={late ? "is-late" : ""}>{dateLabel}</span>
+        <span className={late ? "is-late" : ""}>
+          {late ? `Due ${dateLabel}` : dateLabel}
+          {lateNote ? <span className="webops-ago"> · {lateNote}</span> : null}
+        </span>
       </div>
-      <p className="webops-who">{project.owners || "No owner"}</p>
+      <OwnerLine owners={project.owners} />
       {project.waitingOn ? <p className="webops-wait">{waitingPhrase(project.waitingOn)}</p> : null}
       {project.nextStep ? <p className="webops-next">{project.nextStep}</p> : null}
       {project.basecampUrl ? (
@@ -753,8 +760,9 @@ function ListView({
               <StageSelect project={project} onMove={onMove} />
               <span className={isOverdue(project, today) ? "is-late" : ""}>
                 {project.targetOn ? formatDeskDate(project.targetOn) : "No date"}
+                {isOverdue(project, today) ? ` · ${overduePhrase(project.targetOn, today)}` : ""}
               </span>
-              <span>{project.owners || "No owner"}</span>
+              <OwnerLine owners={project.owners} />
               <span className="webops-wait">{project.waitingOn ? waitingPhrase(project.waitingOn) : project.nextStep}</span>
             </article>
           ))}
@@ -774,6 +782,20 @@ function inListBucket(project: WebsiteProject, bucket: WebsiteBucket, today: str
   if (bucket === "paused") return project.disposition === "paused";
   if (bucket === "non_responsive") return project.disposition === "non_responsive";
   return false;
+}
+
+function OwnerLine({ owners }: { owners: string }) {
+  const names = ownerNames(owners);
+  if (!names.length) return <p className="webops-who">No owner</p>;
+  return (
+    <p className="webops-who">
+      {names.map((name) => (
+        <span key={name} className="webops-owner">
+          {name}
+        </span>
+      ))}
+    </p>
+  );
 }
 
 function BoardView({
@@ -796,12 +818,40 @@ function BoardView({
   onMove: (project: WebsiteProject, stage: string) => void;
 }) {
   const columns = stagesFor(kind);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [canScroll, setCanScroll] = useState({ left: false, right: false });
   const cards = projects.filter((project) => {
     if (project.board !== kind || !onBoard(project)) return false;
     if (!matchesPerson(project, selected)) return false;
     if (query.trim() && !haystack(project).includes(query.trim().toLowerCase())) return false;
     return true;
   });
+
+  function measureBoard() {
+    const el = scroller.current;
+    if (!el) return;
+    setCanScroll({
+      left: el.scrollLeft > 12,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 12,
+    });
+  }
+
+  useEffect(() => {
+    measureBoard();
+    const el = scroller.current;
+    if (!el) return;
+    el.addEventListener("scroll", measureBoard);
+    window.addEventListener("resize", measureBoard);
+    return () => {
+      el.removeEventListener("scroll", measureBoard);
+      window.removeEventListener("resize", measureBoard);
+    };
+  }, [kind, cards.length]);
+
+  function nudge(direction: number) {
+    scroller.current?.scrollBy({ left: direction * 360, behavior: "smooth" });
+  }
+
   return (
     <section>
       <div className="webops-people" role="toolbar" aria-label="Board">
@@ -811,37 +861,49 @@ function BoardView({
         <button type="button" className="webops-person" aria-pressed={kind === "landing"} onClick={() => onKind("landing")}>
           Landing pages
         </button>
-        <p className="webops-hint">Drag a card to another column, or change the stage menu.</p>
+        <p className="webops-hint">Drag a card to another column, or change the stage menu. Empty stages stay narrow.</p>
       </div>
-      <div className="webops-board">
-        {columns.map((column) => {
-          const items = cards.filter((project) => boardColumn(project) === column.key);
-          return (
-            <div
-              key={column.key}
-              className="webops-column"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const id = event.dataTransfer.getData("text/plain");
-                const project = cards.find((item) => item.id === id);
-                if (project) onMove(project, column.key);
-              }}
-            >
-              <h2>
-                {column.label}
-                <span>{items.length}</span>
-              </h2>
-              {items.length === 0 ? <p className="webops-lane-empty">Nothing in {column.label}.</p> : null}
-              {items.map((project) => (
-                <div key={project.id} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", project.id)}>
-                  <ProjectCard project={project} today={today} onOpen={onOpen} onMove={onMove} />
-                  {isOverdue(project, today) ? <span className="sr-only">Overdue</span> : null}
-                </div>
-              ))}
-            </div>
-          );
-        })}
+      <div className={`webops-board-wrap${canScroll.right ? " can-right" : ""}${canScroll.left ? " can-left" : ""}`}>
+        {canScroll.left ? (
+          <button type="button" className="webops-board-nav is-left" onClick={() => nudge(-1)}>
+            Earlier stages
+          </button>
+        ) : null}
+        {canScroll.right ? (
+          <button type="button" className="webops-board-nav is-right" onClick={() => nudge(1)}>
+            Later stages
+          </button>
+        ) : null}
+        <div className="webops-board" ref={scroller}>
+          {columns.map((column) => {
+            const items = cards.filter((project) => boardColumn(project) === column.key);
+            const empty = items.length === 0;
+            return (
+              <div
+                key={column.key}
+                className={`webops-column${empty ? " is-empty" : ""}`}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const id = event.dataTransfer.getData("text/plain");
+                  const project = cards.find((item) => item.id === id);
+                  if (project) onMove(project, column.key);
+                }}
+              >
+                <h2>
+                  {column.label}
+                  <span>{items.length}</span>
+                </h2>
+                {empty ? <p className="sr-only">Nothing in {column.label}.</p> : null}
+                {items.map((project) => (
+                  <div key={project.id} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", project.id)}>
+                    <ProjectCard project={project} today={today} onOpen={onOpen} onMove={onMove} />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -907,6 +969,7 @@ function Editor({
             Close
           </button>
         </div>
+        <div className="webops-modal-body">
         <div className="webops-kind" role="group" aria-label="Project type">
           <button type="button" aria-pressed={draft.board === "website"} onClick={() => setBoard("website")}>
             Website
@@ -958,8 +1021,8 @@ function Editor({
                 key={name}
                 type="button"
                 className="webops-person"
-                aria-pressed={splitPeople(draft.owners).some((part) => part.toLowerCase() === name.toLowerCase())}
-                onClick={() => set("owners", toggleName(draft.owners, name))}
+                aria-pressed={ownerNames(draft.owners).some((part) => part.toLowerCase() === name.toLowerCase())}
+                onClick={() => set("owners", joinPeople(ownerNames(toggleName(draft.owners, name))))}
               >
                 {name}
               </button>
@@ -996,14 +1059,6 @@ function Editor({
             {editor.error}
           </p>
         ) : null}
-        <div className="webops-modal-actions">
-          <button type="submit" className="btn" disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onMore} aria-expanded={editor.more}>
-            {editor.more ? "Hide details" : "More details"}
-          </button>
-        </div>
         {editor.more ? (
           <div className="webops-more">
             <label className="field">
@@ -1100,25 +1155,37 @@ function Editor({
             <p className="webops-hint">Today is {formatDeskDate(today)}.</p>
           </div>
         ) : null}
-        {editor.id ? (
-          <div className="webops-status-actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("launched")}>
-              Mark launched
+        </div>
+        <div className="webops-modal-foot">
+          <div className="webops-modal-actions">
+            <button type="submit" className="btn" disabled={busy}>
+              {busy ? "Saving…" : "Save"}
             </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("paused")}>
-              Pause
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("non_responsive")}>
-              Not responding
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("archived")}>
-              Archive
-            </button>
-            <button type="button" className="btn btn-danger btn-sm" onClick={onDelete}>
-              Delete
+            <button type="button" className="btn btn-secondary" onClick={onMore} aria-expanded={editor.more}>
+              {editor.more ? "Hide details" : "More details"}
             </button>
           </div>
-        ) : null}
+          {editor.id ? (
+            <div className="webops-more-actions">
+              <span>More actions</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("launched")}>
+                Launched
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("paused")}>
+                Pause
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("non_responsive")}>
+                Not responding
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStatus("archived")}>
+                Archive
+              </button>
+              <button type="button" className="btn btn-danger btn-sm" onClick={onDelete}>
+                Delete
+              </button>
+            </div>
+          ) : null}
+        </div>
       </form>
     </div>
   );

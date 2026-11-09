@@ -27858,7 +27858,25 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
   line-height: 1.4;
 }
 
-.webops-who { color: var(--text-body); }
+.webops-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--text-body);
+}
+
+.webops-owner {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.webops-ago { font-weight: 750; }
 .webops-next { color: var(--text); }
 .webops-wait { color: var(--warning-ink); font-weight: 700; }
 .webops-card a { font-size: 13px; font-weight: 700; }
@@ -27911,6 +27929,7 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
 
 .webops-empty h2 { margin: 0 0 8px; font-size: 22px; }
 .webops-empty p { margin: 0 0 16px; color: var(--text-body); max-width: 46ch; }
+.webops-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .webops-table { display: flex; flex-direction: column; gap: 8px; }
 
@@ -27925,6 +27944,43 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
   background: var(--bg-elevated);
 }
 
+.webops-board-wrap { position: relative; }
+.webops-board-wrap.can-right::after,
+.webops-board-wrap.can-left::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 12px;
+  width: 48px;
+  pointer-events: none;
+  z-index: 1;
+}
+.webops-board-wrap.can-right::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg), transparent);
+}
+.webops-board-wrap.can-left::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg), transparent);
+}
+.webops-board-nav {
+  position: absolute;
+  top: 10px;
+  z-index: 2;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  box-shadow: var(--shadow);
+}
+.webops-board-nav.is-right { right: 8px; }
+.webops-board-nav.is-left { left: 8px; }
+
 .webops-board {
   display: flex;
   gap: 12px;
@@ -27934,10 +27990,27 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
 }
 
 .webops-column {
-  flex: 0 0 260px;
+  flex: 1 1 220px;
+  min-width: 200px;
   scroll-snap-align: start;
   max-height: calc(100vh - 280px);
   overflow: auto;
+}
+
+.webops-column.is-empty {
+  flex: 0 0 56px;
+  min-width: 56px;
+  max-width: 56px;
+  padding: 12px 6px;
+  overflow: hidden;
+}
+
+.webops-column.is-empty h2 {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  height: 160px;
+  margin: 0 auto;
+  justify-content: flex-start;
 }
 
 .webops-notice {
@@ -27959,7 +28032,7 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
 
 .webops-modal {
   width: min(560px, 100%);
-  max-height: min(92vh, 860px);
+  max-height: min(92vh, 100%);
   overflow: auto;
   background: var(--bg-elevated);
   color: var(--text);
@@ -27972,16 +28045,55 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
   gap: 14px;
 }
 
-.webops-modal-head,
-.webops-modal-actions,
-.webops-status-actions {
+form.webops-modal {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.webops-modal-body {
+  overflow: auto;
+  min-height: 0;
+  padding: 4px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.webops-modal-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.webops-more-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.webops-modal-head { justify-content: space-between; }
+.webops-more-actions > span {
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.webops-modal-head,
+.webops-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.webops-modal-head { justify-content: space-between; padding: 16px 20px 0; }
+form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 .webops-modal-head h2 { margin: 0; font-size: 22px; }
 .webops-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .webops-more { display: flex; flex-direction: column; gap: 12px; }
@@ -28039,7 +28151,13 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
   .webops-count strong { font-size: 32px; }
   .webops-column {
     flex-basis: 86vw;
+    min-width: 86vw;
     max-height: none;
+  }
+  .webops-column.is-empty {
+    flex-basis: 56px;
+    min-width: 56px;
+    max-width: 56px;
   }
   .webops-modal-back { padding: 0; align-items: stretch; }
   .webops-modal {
