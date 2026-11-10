@@ -339,6 +339,27 @@ export function hasProductionAccess(slug: string): boolean {
 }
 
 /**
+ * Website Ops. The people who already run the website sheet: Roy, Saqib,
+ * Luis, Carlos, Jerald, Sylvia, and Morris (Kyle Morris). Everyone else is
+ * off until the owner turns on page.website at /admin/access. The owner
+ * passes every check before this list is consulted.
+ */
+export const WEBSITE_OPS_ACCESS: readonly string[] = [
+  OWNER_SLUG,
+  "roy",
+  "saqib",
+  "luis_romero",
+  "carlos",
+  "jerald",
+  "sylvia",
+  "kyle_morris",
+];
+
+export function hasWebsiteOpsAccess(slug: string): boolean {
+  return (WEBSITE_OPS_ACCESS as readonly string[]).includes(slug);
+}
+
+/**
  * Campaign calendar is an owner-only tool. The owner session (null person) and
  * Michael's named admin login both pass; impersonating does not, so "view as
  * Cassidy" matches what Cassidy would see.

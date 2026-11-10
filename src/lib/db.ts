@@ -10,6 +10,7 @@ import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
 import { addWeeks, mondayOf } from "./week";
 import { ensureBotActivitySchema } from "./bot-activity-schema";
+import { ensureWebsiteOpsSchema } from "./website-ops-schema";
 import {
   accountManagerSlugFromOwner,
   accountManagerSlugFromReviewerName,
@@ -4386,6 +4387,8 @@ function migrate(database: Database.Database) {
   // EXISTS, and the seed refuses to run again or to overwrite rows already
   // there, so an existing production database boots the same way a new one does.
   ensureBotActivitySchema(database);
+  // Empty website-ops tables on existing databases. Does not import rows.
+  ensureWebsiteOpsSchema(database);
 }
 
 // Insert a login row for every person in the code roster who does not have one

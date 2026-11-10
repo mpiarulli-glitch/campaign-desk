@@ -57,6 +57,7 @@ const DECK_TARGETS: DeckTarget[] = [
   { label: "Training", section: "training", keys: ["training", "course", "courses"] },
   { label: "Team pulse", section: "sentiment", keys: ["pulse", "sentiment", "mood"] },
   { label: "Resources", section: "resources", keys: ["resources", "docs", "files"] },
+  { label: "Website Ops", href: "/admin/website", keys: ["website", "websites", "landing page", "landing pages"] },
 ];
 
 const QUICK = DECK_TARGETS.filter((t) => "href" in t).slice(0, 4);

@@ -38,6 +38,7 @@ import {
   doesCampaignWork,
   hasOwnerToolsAccess,
   hasProductionAccess,
+  hasWebsiteOpsAccess,
   hasSocialQaAccess,
   personLabel,
   personTeam,
@@ -149,6 +150,15 @@ export const PAGES: Capability[] = [
     href: "/admin/forecast",
     icon: "forecast",
     blurb: "Their own week of work and hours.",
+  },
+  {
+    key: "page.website",
+    label: "Website Ops",
+    group: "page",
+    href: "/admin/website",
+    icon: "globe",
+    blurb:
+      "Websites and landing pages: what's overdue, due this week, and waiting. On for the web team. Grant it here for anyone else.",
   },
   {
     key: "page.onboarding",
@@ -352,6 +362,11 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
 
     case "page.production":
       return Boolean(person) && hasProductionAccess(person!);
+
+    // Web team by name, not "every admin". Cassidy and Jack stay off until
+    // the owner grants page.website on /admin/access.
+    case "page.website":
+      return Boolean(person) && hasWebsiteOpsAccess(person!);
 
     case "page.social_qa":
       return hasSocialQaAccess(session);
