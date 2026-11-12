@@ -794,7 +794,12 @@ async function bcCollection<T>(
       break;
     }
     if (!res.ok) break;
-    const batch = await res.json();
+    let batch: unknown;
+    try {
+      batch = await res.json();
+    } catch {
+      break;
+    }
     if (!Array.isArray(batch)) break;
     out.push(...(batch as T[]));
     next = nextPagePath(res.headers.get("Link"));
@@ -812,6 +817,8 @@ export interface BcTodo {
   // Whether this todo is assigned to the person viewing the picker. Set by
   // listPersonProjectTodos, which knows who's asking.
   assigned?: boolean;
+  // Snapshot picker: a card table card, not a to-do. Omitted on to-dos.
+  sourceKind?: "todo" | "card";
   // "step" is a checklist subtask under a parent todo. Completing it uses the
   // step endpoint, not the parent todo's.
   kind?: "todo" | "step";
@@ -924,41 +931,47 @@ async function walkProjectTodos(
 
     const perList = await Promise.all(
       targets.map(async (target) => {
-        // No ?completed param means Basecamp returns only open todos.
-        // ?completed=true returns only completed ones (with completed_at).
-        // The two sets do not overlap, so "both" fetches each.
-        const paths = both
-          ? [
-              `/buckets/${projectId}/todolists/${target.id}/todos.json`,
-              `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`,
-            ]
-          : [
-              completed
-                ? `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`
-                : `/buckets/${projectId}/todolists/${target.id}/todos.json`,
-            ];
-        // Completed lists grow forever; keep the walk short so the snapshot
-        // picker stays responsive.
-        const pages = await Promise.all(
-          paths.map((path) =>
-            bcCollection<BcTodoRaw>(
-              path,
-              path.includes("completed=true") ? 1 : 2,
-              identity
+        try {
+          // No ?completed param means Basecamp returns only open todos.
+          // ?completed=true returns only completed ones (with completed_at).
+          // The two sets do not overlap, so "both" fetches each.
+          const paths = both
+            ? [
+                `/buckets/${projectId}/todolists/${target.id}/todos.json`,
+                `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`,
+              ]
+            : [
+                completed
+                  ? `/buckets/${projectId}/todolists/${target.id}/todos.json?completed=true`
+                  : `/buckets/${projectId}/todolists/${target.id}/todos.json`,
+              ];
+          // Completed lists grow forever; keep the walk short so the snapshot
+          // picker stays responsive. One list failing must not drop the rest.
+          const pages = await Promise.all(
+            paths.map((path) =>
+              bcCollection<BcTodoRaw>(
+                path,
+                path.includes("completed=true") ? 1 : 2,
+                identity
+              )
             )
-          )
-        );
-        const todos = pages.flat();
-        return todos.map((t) => ({
-          id: String(t.id),
-          title: (t.content || t.title || "").trim(),
-          list: target.title,
-          assigneeIds: (t.assignees || []).map((a) => a.id),
-          dueOn: t.due_on || null,
-          completedAt: t.completed_at || null,
-          startsOn: t.starts_on || null,
-          appUrl: t.app_url || undefined,
-        }));
+          );
+          const todos = pages.flat();
+          return todos.map((t) => ({
+            id: String(t.id),
+            title: (t.content || t.title || "").trim(),
+            list: target.title,
+            assigneeIds: Array.isArray(t.assignees)
+              ? t.assignees.flatMap((a) => (a && typeof a.id === "number" ? [a.id] : []))
+              : [],
+            dueOn: t.due_on || null,
+            completedAt: t.completed_at || null,
+            startsOn: t.starts_on || null,
+            appUrl: t.app_url || undefined,
+          }));
+        } catch {
+          return [];
+        }
       })
     );
     const seen = new Set<string>();
@@ -1023,6 +1036,111 @@ export async function listProjectSnapshotTodos(
   identity: BcIdentity = SERVICE
 ): Promise<BcTodo[]> {
   return walkProjectTodos(projectId, { identity, both: true });
+}
+
+type SnapshotCardColumn = {
+  id: number;
+  title?: string;
+  type?: string;
+  cards_count?: number;
+};
+
+type SnapshotCardRaw = {
+  id: number;
+  title?: string;
+  completed?: boolean;
+  completed_at?: string | null;
+  updated_at?: string | null;
+  due_on?: string | null;
+  starts_on?: string | null;
+};
+
+function snapshotColumnIsDone(column: SnapshotCardColumn): boolean {
+  if (column.type === "Kanban::DoneColumn") return true;
+  return /^(done|complete|completed)\b/i.test((column.title || "").trim());
+}
+
+/**
+ * Cards on boards the caller asks for (Ecoworkz video work lives on VIDEOS,
+ * not on a to-do list). Not-now and Done columns are skipped so an old
+ * archive does not flood the picker. Failures return [].
+ */
+export async function listProjectSnapshotCards(
+  projectId: string,
+  includeBoard: (title: string) => boolean,
+  identity: BcIdentity = SERVICE
+): Promise<BcTodo[]> {
+  if (!projectId) return [];
+  try {
+    const pr = await bc(`/projects/${projectId}.json`, undefined, identity);
+    if (!pr.ok) return [];
+    const project = await pr.json();
+    const dock: Array<{ id: number; name: string; title?: string; enabled?: boolean }> =
+      project.dock || [];
+    const boards = dock.filter(
+      (entry) =>
+        entry.name === "kanban_board" &&
+        entry.enabled !== false &&
+        includeBoard((entry.title || "").trim())
+    );
+    const perBoard = await Promise.all(
+      boards.map(async (board) => {
+        try {
+          const tableRes = await bc(
+            `/buckets/${projectId}/card_tables/${board.id}.json`,
+            undefined,
+            identity
+          );
+          if (!tableRes.ok) return [] as BcTodo[];
+          const table = await tableRes.json();
+          const columns: SnapshotCardColumn[] = Array.isArray(table?.lists) ? table.lists : [];
+          const boardTitle = (board.title || table?.title || "Cards").trim() || "Cards";
+          const perColumn = await Promise.all(
+            columns.map(async (column) => {
+              if (!column?.id || column.type === "Kanban::NotNowColumn") return [] as BcTodo[];
+              if (column.cards_count === 0 || snapshotColumnIsDone(column)) return [] as BcTodo[];
+              const cards = await bcCollection<SnapshotCardRaw>(
+                `/buckets/${projectId}/card_tables/lists/${column.id}/cards.json`,
+                2,
+                identity
+              );
+              const columnTitle = (column.title || "").trim();
+              const list = columnTitle ? `${boardTitle} › ${columnTitle}` : boardTitle;
+              return cards.flatMap((card) => {
+                const title = (card.title || "").trim();
+                if (!title || !card.id) return [];
+                const stamped = (card.completed_at || "").trim();
+                const finished = Boolean(stamped) || card.completed === true;
+                return [
+                  {
+                    id: String(card.id),
+                    title,
+                    list,
+                    assigneeIds: [],
+                    dueOn: card.due_on || null,
+                    completedAt: finished ? stamped || (card.updated_at || "").trim() || null : null,
+                    startsOn: card.starts_on || null,
+                    sourceKind: "card" as const,
+                  },
+                ];
+              });
+            })
+          );
+          return perColumn.flat();
+        } catch {
+          return [] as BcTodo[];
+        }
+      })
+    );
+    const seen = new Set<string>();
+    return perBoard.flat().filter((card) => {
+      if (seen.has(card.id)) return false;
+      seen.add(card.id);
+      return true;
+    });
+  } catch {
+    return [];
+  }
 }
 
 /** Project display name from Basecamp, or "" when unreachable. */

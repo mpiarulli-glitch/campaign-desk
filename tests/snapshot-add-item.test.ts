@@ -38,7 +38,7 @@ test("picker rows use the list name for the department and the start date for st
   assert.equal(hits[0]?.sourceKey, "todo:42");
   assert.equal(hits[0]?.place, "Email / SMS / LinkedIn / Automations");
 
-  assert.equal(hits[1]?.department, "unsorted");
+  assert.equal(hits[1]?.department, "video");
   assert.equal(hits[1]?.status, "scheduled");
   assert.equal(hits[1]?.place, "General");
 
@@ -56,7 +56,7 @@ test("a department add row offers its own lists and asks before an unmatched one
       },
       {
         id: "8",
-        title: "Film the testimonial",
+        title: "Call the vendor",
         list: "General",
         startsOn: "2026-11-20",
       },
@@ -77,7 +77,7 @@ test("a department add row offers its own lists and asks before an unmatched one
   );
   assert.deepEqual(
     lifecycle.unmatched.map((todo) => todo.title),
-    ["Film the testimonial"]
+    ["Call the vendor"]
   );
 
   const taken = pickerTodosForDepartment(hits, "lifecycle", ["todo:42"]);
