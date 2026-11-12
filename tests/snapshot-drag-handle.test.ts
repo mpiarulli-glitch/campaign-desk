@@ -11,6 +11,7 @@ test("only the grip handle is draggable in the snapshot editor", () => {
   assert.equal(handles.length, 1, "the grip is the only draggable control");
   assert.equal((source.match(/\bdraggable\b/g) || []).length, 1);
   assert.equal(/<li\b[^>]*\bdraggable\b/.test(source), false);
-  assert.match(source, /aria-label=\{`Edit \$\{suggestion\.title\}`\}/);
-  assert.match(source, /className="snap-suggest-edit"/);
+  assert.doesNotMatch(source, /snap-suggest-label/);
+  assert.doesNotMatch(source, /snap-suggest-edit/);
+  assert.doesNotMatch(source, /departments\/suggestions/);
 });

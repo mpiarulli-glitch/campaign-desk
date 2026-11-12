@@ -112,4 +112,8 @@ test("the fill page adds from Basecamp or by typing, without a project search ba
   assert.match(week, /value="scheduled"/);
   assert.match(week, /value="completed"/);
   assert.doesNotMatch(week, /type="checkbox"/);
+  assert.doesNotMatch(week, /departments\/suggestions/);
+  assert.doesNotMatch(week, /From Basecamp/);
+  assert.doesNotMatch(week, /<strong>Unsorted<\/strong>/);
+  assert.match(week, /sourceKey: todo\.sourceKey/);
 });
