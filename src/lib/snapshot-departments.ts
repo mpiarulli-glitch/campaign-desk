@@ -1,9 +1,10 @@
 // What each department did on a client's weekly snapshot.
 //
-// Every department section, always shown to the team. Each one is an ordered list
-// of items. The client, the Friday email, and the Basecamp post only receive
-// departments that have at least one item. Deliverable rows are a different
-// record and are not read or removed here.
+// departmentNotesForWeek returns every section. The team desk filters that
+// list for the signed-in person (see snapshot-department-access). The client,
+// the Friday email, and the Basecamp post only receive departments that have
+// at least one item. Deliverable rows are a different record and are not
+// read or removed here.
 //
 // Older builds stored one text blob in snapshot_department_notes. The first
 // read copies that blob into a single list item and marks the blob migrated,
@@ -102,7 +103,7 @@ export function migrateLegacyDepartmentNotes(): void {
   run();
 }
 
-/** All six sections, in display order. A department with no items has []. */
+/** Every section, in display order. A department with no items has []. */
 export function departmentNotesForWeek(
   clientId: string,
   weekStart: string
@@ -325,10 +326,28 @@ export function departmentHasSourceKey(
 }
 
 export function departmentItemClientId(itemId: string): string | null {
+  return departmentItemLocation(itemId)?.clientId || null;
+}
+
+export function departmentItemLocation(itemId: string): {
+  clientId: string;
+  weekStart: string;
+  department: string;
+} | null {
   const row = getDb()
-    .prepare(`SELECT client_id FROM snapshot_department_items WHERE id = ?`)
-    .get(itemId) as { client_id: string } | undefined;
-  return row?.client_id || null;
+    .prepare(
+      `SELECT client_id, week_start, department
+       FROM snapshot_department_items WHERE id = ?`
+    )
+    .get(itemId) as
+    | { client_id: string; week_start: string; department: string }
+    | undefined;
+  if (!row) return null;
+  return {
+    clientId: row.client_id,
+    weekStart: row.week_start,
+    department: row.department,
+  };
 }
 
 export function deleteDepartmentItem(itemId: string): boolean {

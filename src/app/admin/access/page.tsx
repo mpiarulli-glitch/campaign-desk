@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  SNAPSHOT_DEPARTMENTS,
+  shortDepartmentName,
+  type SnapshotDepartmentSlug,
+} from "@/lib/snapshot-department-list";
 
 type Account = {
   slug: string;
@@ -38,6 +43,11 @@ type Detail = {
     effective: "blog" | "interactive" | null;
     byDefault: "blog" | "interactive" | null;
     choices: Array<{ value: CampaignKindChoice; label: string; blurb: string }>;
+  };
+  snapshotDepartments: {
+    assigned: SnapshotDepartmentSlug[];
+    seesEveryDepartment: boolean;
+    exempt: boolean;
   };
 };
 
@@ -244,6 +254,13 @@ export default function AccessPage() {
               </div>
             ) : (
               <>
+                <SnapshotDepartmentPanel
+                  detail={detail}
+                  busy={busy === "dept"}
+                  onSet={(departments) =>
+                    post({ action: "set_snapshot_departments", departments }, "dept")
+                  }
+                />
                 <div className="ops-panel">
                   <div className="ops-panel-head">
                     <h2>Pages {account ? `· ${account.label}` : ""}</h2>
@@ -314,6 +331,69 @@ export default function AccessPage() {
           behind it, so a saved link stops working too. Their own forecast week
           is never taken away, since nothing is protected by hiding it. Campaign
           kind narrows the packages inside Campaigns once that page is visible.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------ weekly snapshot departments */
+
+function SnapshotDepartmentPanel({
+  detail,
+  busy,
+  onSet,
+}: {
+  detail: Detail;
+  busy: boolean;
+  onSet: (departments: SnapshotDepartmentSlug[]) => void;
+}) {
+  const assigned = detail.snapshotDepartments?.assigned || [];
+  const exempt = Boolean(detail.snapshotDepartments?.exempt);
+  const names = assigned.map((slug) => shortDepartmentName(slug));
+
+  function toggle(slug: SnapshotDepartmentSlug) {
+    const next = assigned.includes(slug)
+      ? assigned.filter((item) => item !== slug)
+      : [...assigned, slug];
+    onSet(next);
+  }
+
+  let note =
+    "With no department selected, the desk shows every department, so they can still fill the snapshot.";
+  if (exempt) {
+    note = names.length
+      ? `They are on ${names.join(", ")}. They send the Friday snapshot, so the desk shows every department.`
+      : "They send the Friday snapshot, so the desk shows every department.";
+  } else if (names.length > 0) {
+    note = `The weekly snapshot desk shows ${names.join(", ")}.`;
+  }
+
+  return (
+    <div className="ops-panel">
+      <div className="ops-panel-head">
+        <h2>Weekly snapshot department</h2>
+      </div>
+      <div className="ops-panel-body">
+        <div className="acc-chips" role="group" aria-label="Weekly snapshot departments">
+          {SNAPSHOT_DEPARTMENTS.map((dept) => {
+            const on = assigned.includes(dept.slug);
+            return (
+              <button
+                key={dept.slug}
+                type="button"
+                className={`acc-chip ${on ? "is-on" : ""}`}
+                aria-pressed={on}
+                disabled={busy}
+                onClick={() => toggle(dept.slug)}
+              >
+                {shortDepartmentName(dept.slug)}
+              </button>
+            );
+          })}
+        </div>
+        <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+          {note}
         </p>
       </div>
     </div>

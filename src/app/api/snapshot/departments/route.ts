@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
-import { can, sessionActor } from "@/lib/auth";
+import {
+  canWriteSnapshotDepartment,
+  filterDepartmentNotesForViewer,
+} from "@/lib/snapshot-department-access";
+import { accessSubject, can, sessionActor } from "@/lib/auth";
 import { getVisibleSnapshotAccount } from "@/lib/snapshot";
 import { isSnapshotItemStatus } from "@/lib/snapshot-department-list";
 import {
   addDepartmentItem,
   deleteDepartmentItem,
   departmentHasSourceKey,
-  departmentItemClientId,
+  departmentItemLocation,
   departmentNotesForWeek,
   isSnapshotDepartment,
   moveDepartmentItem,
   updateDepartmentItem,
+  type SnapshotDepartmentNote,
 } from "@/lib/snapshot-departments";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -18,6 +23,26 @@ const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 async function allowedClient(clientId: string): Promise<boolean> {
   if (!(await can("page.snapshot"))) return false;
   return Boolean(getVisibleSnapshotAccount(clientId));
+}
+
+async function editorNotes(clientId: string, week: string): Promise<SnapshotDepartmentNote[]> {
+  const notes = departmentNotesForWeek(clientId, week);
+  const who = await accessSubject();
+  if (!who) return notes;
+  return filterDepartmentNotesForViewer(notes, who);
+}
+
+/** 403 when a filtered person writes a department that is not theirs. Admins and Friday-send account managers pass. */
+async function rejectForeignDepartment(department: string): Promise<NextResponse | null> {
+  const who = await accessSubject();
+  if (!who) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canWriteSnapshotDepartment(who, department)) {
+    return NextResponse.json(
+      { error: "That department is not yours to edit." },
+      { status: 403 }
+    );
+  }
+  return null;
 }
 
 export async function GET(request: Request) {
@@ -39,7 +64,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     clientId,
     week,
-    departments: departmentNotesForWeek(clientId, week),
+    departments: await editorNotes(clientId, week),
   });
 }
 
@@ -61,12 +86,14 @@ export async function POST(request: Request) {
   if (!(await allowedClient(clientId))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const denied = await rejectForeignDepartment(department);
+  if (denied) return denied;
   const sourceKey = typeof body.sourceKey === "string" ? body.sourceKey : "";
   if (sourceKey && departmentHasSourceKey(clientId, weekStart, sourceKey)) {
     return NextResponse.json({
       ok: true,
       already: true,
-      departments: departmentNotesForWeek(clientId, weekStart),
+      departments: await editorNotes(clientId, weekStart),
     });
   }
   const status = typeof body.status === "string" && isSnapshotItemStatus(body.status) ? body.status : undefined;
@@ -87,7 +114,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     item,
-    departments: departmentNotesForWeek(clientId, weekStart),
+    departments: await editorNotes(clientId, weekStart),
   });
 }
 
@@ -105,11 +132,15 @@ export async function PATCH(request: Request) {
   if (!itemId || (!hasBody && !hasCompleted && !status && !moving)) {
     return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   }
-  const clientId = departmentItemClientId(itemId);
-  if (!clientId || !(await allowedClient(clientId))) {
+  const located = departmentItemLocation(itemId);
+  if (!located || !(await allowedClient(located.clientId))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const denied = await rejectForeignDepartment(located.department);
+  if (denied) return denied;
   if (moving) {
+    const moveDenied = await rejectForeignDepartment(moveTo);
+    if (moveDenied) return moveDenied;
     const beforeId = typeof body.beforeId === "string" ? body.beforeId : null;
     const moved = moveDepartmentItem({ itemId, department: moveTo, beforeId });
     if (!moved) {
@@ -117,7 +148,7 @@ export async function PATCH(request: Request) {
     }
     return NextResponse.json({
       ok: true,
-      departments: departmentNotesForWeek(moved.clientId, moved.weekStart),
+      departments: await editorNotes(moved.clientId, moved.weekStart),
     });
   }
   const item = updateDepartmentItem({
@@ -141,10 +172,12 @@ export async function DELETE(request: Request) {
   if (!itemId) {
     return NextResponse.json({ error: "itemId is required" }, { status: 400 });
   }
-  const clientId = departmentItemClientId(itemId);
-  if (!clientId || !(await allowedClient(clientId))) {
+  const located = departmentItemLocation(itemId);
+  if (!located || !(await allowedClient(located.clientId))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const denied = await rejectForeignDepartment(located.department);
+  if (denied) return denied;
   deleteDepartmentItem(itemId);
   return NextResponse.json({ ok: true });
 }

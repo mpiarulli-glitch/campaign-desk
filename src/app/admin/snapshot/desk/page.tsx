@@ -9,6 +9,10 @@ import { type SnapshotFillRowData } from "@/components/SnapshotFillRow";
 import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
 import { canSeeFridayAsk, personTeam } from "@/lib/people";
 import { fillViewerSlug, winLoggedByMatches, type FillViewer } from "@/lib/snapshot-fill";
+import {
+  snapshotScopeFromPayload,
+  type SnapshotDepartmentSlug,
+} from "@/lib/snapshot-department-list";
 
 type DeskRow = SnapshotFillRowData & {
   client_id: string;
@@ -35,6 +39,10 @@ export default function SnapshotDeskPage() {
   const [groupView, setGroupView] = useState<Record<string, "week" | "wins" | "client">>({});
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
   const [viewerReady, setViewerReady] = useState(false);
+  const [visibleDepartments, setVisibleDepartments] = useState<SnapshotDepartmentSlug[] | null>(
+    null
+  );
+  const [scopeLine, setScopeLine] = useState<string | null>(null);
   const [weekWins, setWeekWins] = useState<DeskWeekWin[]>([]);
 
   const fetchWeek = useCallback(
@@ -66,18 +74,21 @@ export default function SnapshotDeskPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.authenticated) return;
+        const scope = snapshotScopeFromPayload(data.snapshotDepartments);
         setViewer({
           role: data.role,
           person: data.person || null,
           owner: Boolean(data.owner),
         });
+        setScopeLine(scope.line);
+        setVisibleDepartments(scope.filtered ? scope.departments : null);
       })
       .catch(() => {})
       .finally(() => setViewerReady(true));
   }, []);
 
-  // Department sections follow the roster, not the viewer's team. A Lifecycle
-  // person and a Social person see the same sections on each account.
+  // Department sections follow the viewer's assignment. The owner, Friday-send
+  // account managers, and anyone with no department still see every section.
   const clients = useMemo(() => {
     return [...accounts].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
@@ -116,9 +127,9 @@ export default function SnapshotDeskPage() {
     winNeeded === 0
       ? "Your weekly win is in on every account in this list."
       : `${winNeeded} account${winNeeded === 1 ? "" : "s"} still need your win this week.`;
-  const scopeLabel = viewerReady
-    ? "Every department, on every account"
-    : "Loading your list";
+  const scopeLabel = !viewerReady
+    ? "Loading your list"
+    : scopeLine || "Every department, on every account";
 
   const canOpenServices =
     viewer.owner ||
@@ -270,7 +281,11 @@ export default function SnapshotDeskPage() {
               ) : view === "client" ? (
                 <SnapshotDeskClientView clientId={group.id} />
               ) : (
-                <SnapshotWeekDepartments clientId={group.id} weekStart={week} />
+                <SnapshotWeekDepartments
+                  clientId={group.id}
+                  weekStart={week}
+                  visibleDepartments={visibleDepartments}
+                />
               )}
             </div>
             );

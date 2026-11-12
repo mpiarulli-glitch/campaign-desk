@@ -20,7 +20,12 @@ import {
   subjectFor,
   type CampaignKindChoice,
 } from "@/lib/access";
-import { campaignKindFor } from "@/lib/people";
+import { campaignKindFor, canSeeFridayAsk } from "@/lib/people";
+import {
+  assignedSnapshotDepartments,
+  seesEverySnapshotDepartment,
+  setSnapshotDepartments,
+} from "@/lib/snapshot-department-access";
 import { getUser } from "@/lib/users";
 
 // Owner only, for the same reason /api/users is: anyone who can edit the access
@@ -57,6 +62,11 @@ function payloadFor(slug: string) {
       // Role default, so the Default button can say what it would do.
       byDefault: campaignKindFor(slug),
       choices: CAMPAIGN_KIND_CHOICES,
+    },
+    snapshotDepartments: {
+      assigned: assignedSnapshotDepartments(slug),
+      seesEveryDepartment: seesEverySnapshotDepartment(who),
+      exempt: canSeeFridayAsk({ person: who.person, owner: who.owner }),
     },
   };
 }
@@ -154,6 +164,14 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
+        break;
+      }
+
+      case "set_snapshot_departments": {
+        const departments: string[] = Array.isArray(body.departments)
+          ? body.departments.filter((department: unknown) => typeof department === "string")
+          : [];
+        setSnapshotDepartments(person, departments, by);
         break;
       }
 
