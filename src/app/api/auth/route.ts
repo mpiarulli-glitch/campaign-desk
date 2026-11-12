@@ -7,6 +7,7 @@ import {
   sessionForecastSubjects,
 } from "@/lib/auth";
 import { FORECAST_ALL, resolveAll, visiblePages, effectiveCampaignKind } from "@/lib/access";
+import { visibleSnapshotDepartments } from "@/lib/snapshot-department-access";
 import { forecastGoogleEnabled } from "@/lib/forecast-google";
 import { OWNER_SLUG, personLabel } from "@/lib/people";
 import { hasOwnPassword } from "@/lib/users";
@@ -40,6 +41,7 @@ export async function GET() {
       : forecastVisible.map((s) => ({ slug: s, label: personLabel(s) }));
 
   const campaignKind = who ? effectiveCampaignKind(who) : null;
+  const visibleDepartments = who ? visibleSnapshotDepartments(who) : null;
   return NextResponse.json({
     authenticated: Boolean(session),
     pages: pages.map((p) => {
@@ -61,6 +63,10 @@ export async function GET() {
     setupRemaining: setup ? setup.remaining : [],
     forecastGoogle: Boolean(own) && forecastGoogleEnabled(own),
     campaignKind,
+    snapshotDepartments: {
+      filtered: Boolean(visibleDepartments),
+      departments: visibleDepartments || [],
+    },
   });
 }
 

@@ -140,8 +140,10 @@ export function kindAllowedForCampaignScope(
    A team owns deliverables. Deliverable editors can show someone the portion
    their team is responsible for, which needs two halves: which team a person
    is on (below) and which team owns a deliverable (snapshot_deliverables.team).
-   The weekly snapshot desk still shows every department section on each
-   account, including Ads, no matter which team is signed in.
+   The weekly snapshot desk is a separate list: departments stored on
+   user_snapshot_departments. The owner and Friday-send account managers
+   (canSeeFridayAsk) still see every section. A person with no department
+   stored sees every section too. PERSON_TEAM does not drive that desk.
 
    Specialists (a slug in PERSON_TEAM) default to their own work. Account
    managers are an explicit list (SNAPSHOT_ACCOUNT_MANAGERS): they see every

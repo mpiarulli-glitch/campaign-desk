@@ -6,6 +6,10 @@ import type { AssetKind, AssetType, BodyFormat } from "./asset-kinds";
 import { ADMIN_PEOPLE } from "./admin-people";
 import { KNOWN_FORECAST_SYNC_EMAILS } from "./forecast-sync-mailboxes";
 import { PEOPLE, OWNER_SLUG } from "./people";
+import {
+  SNAPSHOT_DEPARTMENT_SEED,
+  SNAPSHOT_DEPARTMENT_SEED_KEY,
+} from "./snapshot-department-seed";
 import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-kind";
 import { addWeeks, mondayOf } from "./week";
@@ -2686,6 +2690,7 @@ export function getDb(): Database.Database {
     }
     migrate(database);
     seedUsers(database);
+    seedSnapshotDepartments(database);
   } catch (err) {
     database.close();
     throw err;
@@ -4383,6 +4388,19 @@ function migrate(database: Database.Database) {
     );
   }
 
+  // Which weekly-snapshot departments a person fills. Empty means the desk
+  // still shows every section. The owner sets these on /admin/access.
+  // Friday-send account managers see every section either way.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS user_snapshot_departments (
+      person TEXT NOT NULL,
+      department TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (person, department)
+    );
+  `);
+
   // Bot Activity tables and the one-time mockup seed. CREATE TABLE IF NOT
   // EXISTS, and the seed refuses to run again or to overwrite rows already
   // there, so an existing production database boots the same way a new one does.
@@ -4397,6 +4415,67 @@ function migrate(database: Database.Database) {
 // sylvia, jerald appear in both arrays) get the admin role, matching the "admin label
 // wins" rule in team.ts. INSERT ... ON CONFLICT DO NOTHING cannot change role,
 // so a later pass promotes leftover forecast rows for anyone now in ADMIN_PEOPLE.
+/**
+ * Assign known roster members to a weekly-snapshot department, once each.
+ * A person who is not in the users table yet is left for a later boot.
+ * A department Michael has already cleared is recorded in app_settings and
+ * is not put back. Rows already stored are left as they are.
+ */
+function seedSnapshotDepartments(database: Database.Database) {
+  if (!tableColumns(database, "app_settings").includes("key")) return;
+  if (!tableColumns(database, "user_snapshot_departments").length) return;
+
+  const row = database
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(SNAPSHOT_DEPARTMENT_SEED_KEY) as { value: string } | undefined;
+  const applied = new Set<string>();
+  if (row?.value) {
+    try {
+      const parsed = JSON.parse(row.value) as unknown;
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) {
+          if (typeof entry === "string") applied.add(entry);
+        }
+      }
+    } catch {
+      // A broken marker is treated as nothing applied yet. The insert ignores
+      // a department that is already stored, so a retry cannot duplicate it.
+    }
+  }
+
+  const pending = SNAPSHOT_DEPARTMENT_SEED.filter(
+    (entry) => !applied.has(`${entry.slug}:${entry.department}`)
+  );
+  if (!pending.length) return;
+
+  const userExists = database.prepare(`SELECT slug FROM users WHERE slug = ?`);
+  const insert = database.prepare(
+    `INSERT INTO user_snapshot_departments (person, department, updated_at, updated_by)
+     VALUES (?, ?, ?, 'seed')
+     ON CONFLICT(person, department) DO NOTHING`
+  );
+  const now = nowIso();
+  let added = false;
+  const run = database.transaction(() => {
+    for (const entry of pending) {
+      if (!userExists.get(entry.slug)) continue;
+      insert.run(entry.slug, entry.department, now);
+      applied.add(`${entry.slug}:${entry.department}`);
+      added = true;
+    }
+    if (!added) return;
+    database
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_at = excluded.updated_at`
+      )
+      .run(SNAPSHOT_DEPARTMENT_SEED_KEY, JSON.stringify([...applied]), now);
+  });
+  run();
+}
+
 export function seedUsers(database: Database.Database) {
   const now = nowIso();
   const insert = database.prepare(

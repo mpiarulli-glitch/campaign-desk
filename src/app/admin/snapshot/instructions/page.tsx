@@ -45,7 +45,9 @@ export default function SnapshotInstructionsPage() {
             <li>
               Open{" "}
               <Link href="/admin/snapshot/desk">This week</Link>. Each account
-              starts with the weekly win, then one box per department.
+              starts with the weekly win, then the departments you belong to.
+              Michael and the account managers see every department. With no
+              department assigned, you still see all of them.
             </li>
             <li>
               Use the week picker if you need last week. Log the win, then add

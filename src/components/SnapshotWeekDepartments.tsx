@@ -37,10 +37,14 @@ type SuggestStatus = "" | "ok" | "no_project" | "error";
 type DragKind = "item" | "suggestion";
 type DropList = SnapshotDepartmentSlug | "unsorted";
 
-function otherDepartments(current: DropList, includeUnsorted: boolean) {
-  const rows: { value: DropList; label: string }[] = SNAPSHOT_DEPARTMENTS.filter(
-    (dept) => dept.slug !== current
-  ).map((dept) => ({ value: dept.slug, label: dept.label.replace(" Department", "") }));
+function otherDepartments(
+  current: DropList,
+  includeUnsorted: boolean,
+  allowed: ReadonlyArray<{ slug: SnapshotDepartmentSlug; label: string }>
+) {
+  const rows: { value: DropList; label: string }[] = allowed
+    .filter((dept) => dept.slug !== current)
+    .map((dept) => ({ value: dept.slug, label: dept.label.replace(" Department", "") }));
   if (includeUnsorted && current !== "unsorted") rows.push({ value: "unsorted", label: "Unsorted" });
   return rows;
 }
@@ -56,16 +60,23 @@ function scrollParent(node: HTMLElement): Element | null {
 }
 
 /**
- * Every department list for one client-week. Every section is always on
- * screen here. A department with no items is omitted only on the client snapshot.
+ * Department lists for one client-week. Pass visibleDepartments to show one
+ * person's sections. Omit it and every section is on screen. A department
+ * with no items is omitted only on the client snapshot.
  */
 export function SnapshotWeekDepartments({
   clientId,
   weekStart,
+  visibleDepartments = null,
 }: {
   clientId: string;
   weekStart: string;
+  visibleDepartments?: readonly SnapshotDepartmentSlug[] | null;
 }) {
+  const allowed =
+    visibleDepartments && visibleDepartments.length > 0
+      ? SNAPSHOT_DEPARTMENTS.filter((dept) => visibleDepartments.includes(dept.slug))
+      : SNAPSHOT_DEPARTMENTS;
   const [notes, setNotes] = useState<Note[]>(
     SNAPSHOT_DEPARTMENTS.map((dept) => ({
       department: dept.slug,
@@ -524,8 +535,12 @@ export function SnapshotWeekDepartments({
         <p className="snap-suggest-label">From Basecamp</p>
         <ul>
           {rows.map((suggestion) => {
+            const fallback = allowed[0]?.slug || "lifecycle";
+            const picked = unsortedDept[suggestion.sourceKey];
             const target = picking
-              ? unsortedDept[suggestion.sourceKey] || "lifecycle"
+              ? picked && allowed.some((dept) => dept.slug === picked)
+                ? picked
+                : fallback
               : (department as SnapshotDepartmentSlug);
             const text = suggestionText(suggestion);
             const editingThis = editingSuggestion === suggestion.sourceKey;
@@ -597,7 +612,7 @@ export function SnapshotWeekDepartments({
                       }))
                     }
                   >
-                    {SNAPSHOT_DEPARTMENTS.map((dept) => (
+                    {allowed.map((dept) => (
                       <option key={dept.slug} value={dept.slug}>
                         {dept.label}
                       </option>
@@ -633,7 +648,7 @@ export function SnapshotWeekDepartments({
                 <details className="snap-move">
                   <summary>Move to…</summary>
                   <div className="snap-move-menu" role="menu">
-                    {otherDepartments(department, true).map((choice) => (
+                    {otherDepartments(department, true, allowed).map((choice) => (
                       <button
                         key={choice.value}
                         type="button"
@@ -653,6 +668,9 @@ export function SnapshotWeekDepartments({
     );
   }
 
+  const shown = notes.filter((note) =>
+    allowed.some((dept) => dept.slug === note.department)
+  );
   const unsorted = suggestions.filter((row) => row.department === "unsorted");
   const takenSourceKeys = notes.flatMap((note) =>
     note.items.map((item) => item.sourceKey || "").filter(Boolean)
@@ -685,7 +703,7 @@ export function SnapshotWeekDepartments({
         </p>
       ) : null}
       {error ? <p className="error">{error}</p> : null}
-      {notes.map((note) => (
+      {shown.map((note) => (
         <section
           key={note.department}
           className={`snap-dept${dropAt?.list === note.department && !dropAt.beforeId ? " is-drop" : ""}`}
@@ -764,27 +782,29 @@ export function SnapshotWeekDepartments({
                         >
                           Remove
                         </button>
-                        <details className="snap-move">
-                          <summary>Move to…</summary>
-                          <div className="snap-move-menu" role="menu">
-                            {otherDepartments(note.department, false).map((choice) => (
-                              <button
-                                key={choice.value}
-                                type="button"
-                                role="menuitem"
-                                onClick={() =>
-                                  void placeItem(
-                                    item.id,
-                                    choice.value as SnapshotDepartmentSlug,
-                                    null
-                                  )
-                                }
-                              >
-                                {choice.label}
-                              </button>
-                            ))}
-                          </div>
-                        </details>
+                        {otherDepartments(note.department, false, allowed).length > 0 ? (
+                          <details className="snap-move">
+                            <summary>Move to…</summary>
+                            <div className="snap-move-menu" role="menu">
+                              {otherDepartments(note.department, false, allowed).map((choice) => (
+                                <button
+                                  key={choice.value}
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() =>
+                                    void placeItem(
+                                      item.id,
+                                      choice.value as SnapshotDepartmentSlug,
+                                      null
+                                    )
+                                  }
+                                >
+                                  {choice.label}
+                                </button>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
                       </span>
                     </>
                   )}
@@ -799,7 +819,7 @@ export function SnapshotWeekDepartments({
             takenSourceKeys={takenSourceKeys}
             loading={todoLoading}
             projectStatus={projectStatus}
-            showRefresh={note.department === notes[0]?.department}
+            showRefresh={note.department === shown[0]?.department}
             refreshing={refreshing}
             onAddText={(body) => addText(note.department, body)}
             onAddTodo={addTodo}

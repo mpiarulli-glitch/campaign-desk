@@ -89,4 +89,47 @@ test("the desk shows every department to a specialist", async (t) => {
     }
     assert.match(html, /Ads Department: add an item/);
   });
+
+  await t.test("a video member's editor shows Video and leaves the other sections out", () => {
+    const html = renderToStaticMarkup(
+      createElement(SnapshotWeekDepartments, {
+        clientId: client.id,
+        weekStart: week,
+        visibleDepartments: ["video"],
+      })
+    );
+    assert.match(html, /Video Department/);
+    assert.match(html, /Video Department: add an item/);
+    for (const label of [
+      "Lifecycle Department",
+      "Social Media Department",
+      "Ads Department",
+      "Web Department",
+      "SEO Department",
+      "Strategy Department",
+    ]) {
+      assert.equal(html.includes(label), false, label);
+    }
+  });
+
+  await t.test("Abel and Carlos see Video and SEO, and no other section", () => {
+    const html = renderToStaticMarkup(
+      createElement(SnapshotWeekDepartments, {
+        clientId: client.id,
+        weekStart: week,
+        visibleDepartments: ["video", "seo"],
+      })
+    );
+    assert.match(html, /Video Department/);
+    assert.match(html, /SEO Department/);
+    for (const label of [
+      "Lifecycle Department",
+      "Social Media Department",
+      "Ads Department",
+      "Web Department",
+      "Strategy Department",
+    ]) {
+      assert.equal(html.includes(label), false, label);
+    }
+  });
 });

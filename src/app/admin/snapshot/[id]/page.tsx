@@ -11,6 +11,10 @@ import { addWeeks, currentWeek, isCurrentWeek, parseWeekStart, weekLabel } from 
 import { TEAMS } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
 import { fillViewerSlug, type FillViewer } from "@/lib/snapshot-fill";
+import {
+  snapshotScopeFromPayload,
+  type SnapshotDepartmentSlug,
+} from "@/lib/snapshot-department-list";
 
 type Section = "week" | "leads" | "wins" | "setup" | "client";
 
@@ -139,6 +143,11 @@ export default function SnapshotEditorPage() {
     notes: "",
   });
   const [viewer, setViewer] = useState<FillViewer>({ role: null, person: null, owner: false });
+  const [scopeReady, setScopeReady] = useState(false);
+  const [visibleDepartments, setVisibleDepartments] = useState<SnapshotDepartmentSlug[] | null>(
+    null
+  );
+  const [scopeLine, setScopeLine] = useState<string | null>(null);
   const isAdmin = viewer.role === "admin";
 
   const shareUrl =
@@ -289,13 +298,17 @@ export default function SnapshotEditorPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.authenticated) return;
+        const scope = snapshotScopeFromPayload(data.snapshotDepartments);
         setViewer({
           role: data.role,
           person: data.person || null,
           owner: Boolean(data.owner),
         });
+        setScopeLine(scope.line);
+        setVisibleDepartments(scope.filtered ? scope.departments : null);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setScopeReady(true));
   }, []);
 
   async function addDeliverable(e: FormEvent) {
@@ -378,6 +391,7 @@ export default function SnapshotEditorPage() {
             </select>
           </label>
           <p className="ops-sub">Log the weekly win, then what each department did.</p>
+          {scopeLine ? <p className="ops-sub">{scopeLine}</p> : null}
           <label className="snap-launch">
             <span>Launch</span>
             <input
@@ -483,7 +497,15 @@ export default function SnapshotEditorPage() {
               }
               onRemoved={(winId) => setWins((cur) => cur.filter((row) => row.id !== winId))}
             />
-            <SnapshotWeekDepartments clientId={id} weekStart={week} />
+            {scopeReady ? (
+              <SnapshotWeekDepartments
+                clientId={id}
+                weekStart={week}
+                visibleDepartments={visibleDepartments}
+              />
+            ) : (
+              <p className="muted">Loading this week&apos;s departments…</p>
+            )}
           </div>
         </>
       ) : null}
