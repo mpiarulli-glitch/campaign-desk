@@ -88,6 +88,8 @@ test("the desk shows every department to a specialist", async (t) => {
       assert.match(html, new RegExp(label));
     }
     assert.match(html, /Ads Department: add an item/);
+    assert.doesNotMatch(html, /From Basecamp/);
+    assert.doesNotMatch(html, /<strong>Unsorted<\/strong>/);
   });
 
   await t.test("a video member's editor shows Video and leaves the other sections out", () => {
@@ -100,6 +102,8 @@ test("the desk shows every department to a specialist", async (t) => {
     );
     assert.match(html, /Video Department/);
     assert.match(html, /Video Department: add an item/);
+    assert.doesNotMatch(html, /From Basecamp/);
+    assert.doesNotMatch(html, /<strong>Unsorted<\/strong>/);
     for (const label of [
       "Lifecycle Department",
       "Social Media Department",
