@@ -17,6 +17,7 @@ import {
   type SnapshotDepartmentSlug,
 } from "@/lib/snapshot-department-list";
 import { pickerTodosForDepartment } from "@/lib/snapshot-basecamp-suggestions";
+import { deskCustomItemLabel, deskTodoCountLine } from "@/lib/snapshot-desk-copy";
 import {
   snapPopPlacement,
   type SnapPopPlacement,
@@ -51,6 +52,7 @@ export function SnapshotDepartmentAdd({
   onAddText,
   onAddTodo,
   onRefresh,
+  variant,
 }: {
   department: SnapshotDepartmentSlug;
   label: string;
@@ -63,6 +65,8 @@ export function SnapshotDepartmentAdd({
   onAddText: (body: string) => Promise<string>;
   onAddTodo: (todo: SnapshotAddTodo, department: SnapshotDepartmentSlug) => Promise<string>;
   onRefresh: () => void;
+  /** This Week desk only. Other pages keep the original add row. */
+  variant?: "week";
 }) {
   const [preferType, setPreferType] = useState(false);
   const [selectedKey, setSelectedKey] = useState("");
@@ -90,15 +94,21 @@ export function SnapshotDepartmentAdd({
     }
   }, [selected, selectedKey]);
 
-  const hint = addHint({
-    usePicker,
-    preferType,
-    loading,
-    pickable,
-    projectStatus,
-    matched: matched.length,
-    unmatched: unmatched.length,
-  });
+  const weekCount =
+    variant === "week" && usePicker && !(loading && !pickable)
+      ? deskTodoCountLine(matched.length, unmatched.length)
+      : "";
+  const hint = weekCount
+    ? ""
+    : addHint({
+        usePicker,
+        preferType,
+        loading,
+        pickable,
+        projectStatus,
+        matched: matched.length,
+        unmatched: unmatched.length,
+      });
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -147,6 +157,19 @@ export function SnapshotDepartmentAdd({
             }}
             onRefresh={onRefresh}
             refreshing={refreshing}
+            menuClass={variant === "week" ? "snap-week-pop" : ""}
+            hidePopRefresh={variant === "week"}
+            onAddCustom={
+              variant === "week"
+                ? async (body) => {
+                    setBusy(true);
+                    setNote("");
+                    const message = await onAddText(body);
+                    setBusy(false);
+                    setNote(message);
+                  }
+                : undefined
+            }
           />
         ) : (
           <input
@@ -205,6 +228,7 @@ export function SnapshotDepartmentAdd({
           ) : (
             <span />
           )}
+          {weekCount ? <span className="snap-week-count">{weekCount}</span> : null}
           {showRefresh ? (
             <button
               type="button"
@@ -277,6 +301,9 @@ function SnapshotTodoPicker({
   onSelect,
   onRefresh,
   refreshing,
+  menuClass = "",
+  hidePopRefresh = false,
+  onAddCustom,
 }: {
   label: string;
   matched: SnapshotAddTodo[];
@@ -286,6 +313,9 @@ function SnapshotTodoPicker({
   onSelect: (todo: SnapshotAddTodo) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  menuClass?: string;
+  hidePopRefresh?: boolean;
+  onAddCustom?: (body: string) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -327,7 +357,6 @@ function SnapshotTodoPicker({
       const pop = popRef.current;
       if (!anchor || !pop) return;
       const list = pop.querySelector(".fc-combo-list");
-      const refresh = pop.querySelector(".snap-picker-refresh");
       const previousPop = pop.style.maxHeight;
       const previousWidth = pop.style.width;
       const previousList = list instanceof HTMLElement ? list.style.maxHeight : "";
@@ -336,7 +365,8 @@ function SnapshotTodoPicker({
       pop.style.maxHeight = "none";
       if (list instanceof HTMLElement) list.style.maxHeight = "none";
       const menuHeight = pop.offsetHeight;
-      const chromeHeight = refresh instanceof HTMLElement ? refresh.offsetHeight : 0;
+      const listHeight = list instanceof HTMLElement ? list.offsetHeight : 0;
+      const chromeHeight = Math.max(0, menuHeight - listHeight);
       pop.style.maxHeight = previousPop;
       pop.style.width = previousWidth;
       if (list instanceof HTMLElement) list.style.maxHeight = previousList;
@@ -414,7 +444,7 @@ function SnapshotTodoPicker({
       {open && typeof document !== "undefined"
         ? createPortal(
         <div
-          className={`fc-combo fc-combo-todos snap-add-pop${popPlace?.flip ? " is-flip" : ""}`}
+          className={`fc-combo fc-combo-todos snap-add-pop${menuClass ? ` ${menuClass}` : ""}${popPlace?.flip ? " is-flip" : ""}`}
           ref={popRef}
           style={
             popPlace
@@ -468,6 +498,22 @@ function SnapshotTodoPicker({
               ))
             )}
           </ul>
+          {onAddCustom && query.trim() ? (
+            <button
+              type="button"
+              className="snap-week-custom"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                const body = query.trim();
+                setOpen(false);
+                setQuery("");
+                void onAddCustom(body);
+              }}
+            >
+              + {deskCustomItemLabel(query)}
+            </button>
+          ) : null}
+          {hidePopRefresh ? null : (
           <button
             type="button"
             className="snap-picker-refresh"
@@ -477,6 +523,7 @@ function SnapshotTodoPicker({
           >
             {refreshing ? "Refreshing…" : "Refresh Basecamp"}
           </button>
+          )}
         </div>,
         document.body
       )

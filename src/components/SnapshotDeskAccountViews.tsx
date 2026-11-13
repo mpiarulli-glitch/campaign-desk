@@ -28,11 +28,14 @@ export function EditableSnapshotWin({
   showDate,
   onSaved,
   onRemove,
+  stacked = false,
 }: {
   win: { id: string; body: string; happened_on: string };
   showDate?: boolean;
   onSaved: (win: SavedWin) => void;
   onRemove?: () => void;
+  /** This Week desk stacks Edit and Remove under the win text. */
+  stacked?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -87,8 +90,9 @@ export function EditableSnapshotWin({
 
   if (!editing) {
     return (
-      <span className="snap-desk-win-line">
+      <span className={`snap-desk-win-line${stacked ? " is-stacked" : ""}`}>
         <span>{win.body}</span>
+        <span className={stacked ? "snap-week-win-actions" : undefined}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -104,14 +108,14 @@ export function EditableSnapshotWin({
         {onRemove ? (
           confirming ? (
             <span className="snap-win-confirm">
-              <span>Delete this win?</span>
+              <span>{stacked ? "Remove this win?" : "Delete this win?"}</span>
               <button
                 type="button"
                 className="btn btn-sm"
                 disabled={removing}
                 onClick={() => void confirmDelete()}
               >
-                {removing ? "Deleting…" : "Delete"}
+                {removing ? "Removing…" : stacked ? "Remove" : "Delete"}
               </button>
               <button
                 type="button"
@@ -127,10 +131,11 @@ export function EditableSnapshotWin({
               className="btn btn-ghost btn-sm"
               onClick={() => setConfirming(true)}
             >
-              Delete
+              {stacked ? "Remove" : "Delete"}
             </button>
           )
         ) : null}
+        </span>
         {error && !editing ? <span className="error">{error}</span> : null}
       </span>
     );
@@ -186,6 +191,7 @@ export function SnapshotDeskWeeklyWin({
   onAdded,
   onEdited,
   onRemoved,
+  variant,
 }: {
   clientId: string;
   clientName: string;
@@ -195,6 +201,8 @@ export function SnapshotDeskWeeklyWin({
   onAdded: (win: DeskWeekWin) => void;
   onEdited: (win: SavedWin) => void;
   onRemoved: (winId: string) => void;
+  /** This Week desk only. The account snapshot keeps the original win row. */
+  variant?: "week";
 }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
@@ -243,11 +251,15 @@ export function SnapshotDeskWeeklyWin({
     <div className={`snap-desk-win ${done ? "is-in" : "is-needed"}`}>
       <div className="snap-desk-win-head">
         <strong>Wins</strong>
-        {done ? null : <span>Yours is still open</span>}
+        {done ? null : (
+          <span className={variant === "week" ? "snap-week-win-badge" : undefined}>
+            {variant === "week" ? "Your win is still open" : "Yours is still open"}
+          </span>
+        )}
       </div>
       {error ? <p className="error">{error}</p> : null}
       {wins.length > 0 ? (
-        <ul className="snap-desk-win-list">
+        <ul className={`snap-desk-win-list${variant === "week" ? " snap-week-win-list" : ""}`}>
           {wins.map((w) => (
             <li key={w.id}>
               <span className="snap-desk-win-who">
@@ -255,6 +267,7 @@ export function SnapshotDeskWeeklyWin({
               </span>
               <EditableSnapshotWin
                 win={w}
+                stacked={variant === "week"}
                 onSaved={onEdited}
                 onRemove={() => removeWin(w.id)}
               />
