@@ -282,7 +282,7 @@ export default function SnapshotDeskPage() {
               {view === "wins" ? (
                 <SnapshotDeskWins clientId={group.id} weekStart={week} />
               ) : view === "client" ? (
-                <SnapshotDeskClientView clientId={group.id} />
+                <SnapshotDeskClientView clientId={group.id} weekStart={week} />
               ) : (
                 <SnapshotWeekDepartments
                   clientId={group.id}

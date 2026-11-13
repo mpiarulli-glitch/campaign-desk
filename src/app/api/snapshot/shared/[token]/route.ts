@@ -9,8 +9,8 @@ import {
   weekData,
 } from "@/lib/snapshot";
 import { filledDepartmentNotes } from "@/lib/snapshot-departments";
-
-const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
+import { clientSnapshotWeeks, resolveUnpinnedSnapshotWeek } from "@/lib/snapshot-week-pin";
+import { parseWeekStart } from "@/lib/week";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -22,11 +22,23 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const params_ = new URL(request.url).searchParams;
-  const week = params_.get("week") || "";
-  if (!WEEK_RE.test(week)) {
-    return NextResponse.json({ error: "week (YYYY-MM-DD) required" }, { status: 400 });
+  const rawWeek = params_.get("week");
+  // A missing week is an older link. A present week is pinned, even when the
+  // date falls on a Friday: it is read as that week's Monday.
+  let week: string;
+  let pinned = false;
+  if (rawWeek === null) {
+    week = resolveUnpinnedSnapshotWeek(account.id);
+  } else {
+    const parsed = parseWeekStart(rawWeek);
+    if (!parsed) {
+      return NextResponse.json({ error: "week (YYYY-MM-DD) required" }, { status: 400 });
+    }
+    week = parsed;
+    pinned = true;
   }
   // Not team-scoped: the client is shown their whole account, not one team's slice.
+  // Departments, wins, and rows are the ones saved for `week`, not this week's live fill.
   const rows = weekData(account.id, week);
   return NextResponse.json({
     account: {
@@ -34,6 +46,9 @@ export async function GET(request: Request, { params }: Params) {
       launchDate: snapshotLaunchDateFor(account),
     },
     week,
+    pinned,
+    // This client's weeks only. The page uses them for previous / next.
+    weeks: clientSnapshotWeeks(account.id, week),
     // Authorship stays internal. updated_at is kept so "this week's work" can
     // see monthly rows that were progressed this week but filed under the 1st.
     rows: rows.map(({ logged_by, ...row }) => {

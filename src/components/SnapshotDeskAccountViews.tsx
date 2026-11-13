@@ -4,6 +4,8 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { SnapshotEditTextarea } from "@/components/SnapshotItemEditor";
 import { snapshotAuthorLabel } from "@/lib/people";
 import { winLoggedByMatches } from "@/lib/snapshot-fill";
+import { snapshotSharePath } from "@/lib/snapshot-link";
+import { weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string; week_start?: string };
 
@@ -388,7 +390,13 @@ export function SnapshotDeskWins({ clientId, weekStart }: { clientId: string; we
   );
 }
 
-export function SnapshotDeskClientView({ clientId }: { clientId: string }) {
+export function SnapshotDeskClientView({
+  clientId,
+  weekStart,
+}: {
+  clientId: string;
+  weekStart: string;
+}) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -421,7 +429,7 @@ export function SnapshotDeskClientView({ clientId }: { clientId: string }) {
 
   const shareUrl =
     token && typeof window !== "undefined"
-      ? `${window.location.origin}/snapshot/${token}`
+      ? `${window.location.origin}${snapshotSharePath(token, weekStart)}`
       : "";
 
   async function copyShare() {
@@ -441,7 +449,7 @@ export function SnapshotDeskClientView({ clientId }: { clientId: string }) {
         <div>
           <strong>Client link</strong>
           <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
-            Read-only. Send this to the client — it always shows the latest.
+            Read-only. This link stays on the week of {weekLabel(weekStart)}.
           </p>
         </div>
         <div className="copy-box" style={{ flex: 1, minWidth: 220 }}>

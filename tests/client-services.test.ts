@@ -739,6 +739,20 @@ test("weekly snapshot outreach", async (t) => {
       assert.deepEqual(emailBody.cc, ["sartiga@marketingempiregroup.com"]);
       assert.match(emailBody.html || "", /Your Weekly Snapshot is ready to be viewed\./);
       assert.match(emailBody.text || "", /Thanks,\nCassidy/);
+      assert.match(
+        emailBody.html || "",
+        new RegExp(`href="https://hub\\.example\\.com/snapshot/[^"]+\\?week=${weekStart}"`)
+      );
+      assert.match(
+        emailBody.text || "",
+        new RegExp(
+          `Open your snapshot: https://hub\\.example\\.com/snapshot/\\S+\\?week=${weekStart}`
+        )
+      );
+      assert.match(
+        messageBody.content,
+        new RegExp(`href="https://hub\\.example\\.com/snapshot/[^"]+\\?week=${weekStart}"`)
+      );
       const after = cs.outreachForWeek(weekStart);
       assert.equal(after.length, before + 2);
       assert.equal(

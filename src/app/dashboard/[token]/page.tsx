@@ -6,7 +6,9 @@ import { Brand } from "@/components/Brand";
 import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
 import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
+import { snapshotSharePath } from "@/lib/snapshot-link";
 import { isSnapshotContractMet } from "@/lib/snapshot-status";
+import { currentWeek } from "@/lib/week";
 import { type Workboard } from "@/components/WorkTower";
 
 type CycleStatus =
@@ -353,7 +355,7 @@ export default function ClientDashboardPage() {
                     <div className="acct-section-head">
                       <h2 className="acct-section-title">Weekly snapshot</h2>
                       {data.snapshot.token ? (
-                        <a className="acct-section-link" href={`/snapshot/${data.snapshot.token}`}>
+                        <a className="acct-section-link" href={snapshotSharePath(data.snapshot.token, currentWeek())}>
                           View full snapshot →
                         </a>
                       ) : null}
