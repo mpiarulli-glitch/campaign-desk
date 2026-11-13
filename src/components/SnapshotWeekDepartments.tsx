@@ -10,6 +10,7 @@ import {
 } from "@/lib/snapshot-department-list";
 import { SnapshotDepartmentAdd, type SnapshotAddTodo } from "@/components/SnapshotDepartmentAdd";
 import { DepartmentItemEditor } from "@/components/SnapshotItemEditor";
+import { deskDepartmentHeading, deskItemParts } from "@/lib/snapshot-desk-copy";
 
 type Item = {
   id: string;
@@ -59,10 +60,13 @@ export function SnapshotWeekDepartments({
   clientId,
   weekStart,
   visibleDepartments = null,
+  variant,
 }: {
   clientId: string;
   weekStart: string;
   visibleDepartments?: readonly SnapshotDepartmentSlug[] | null;
+  /** This Week desk only. The account snapshot keeps the original rows. */
+  variant?: "week";
 }) {
   const allowed =
     visibleDepartments && visibleDepartments.length > 0
@@ -433,16 +437,19 @@ export function SnapshotWeekDepartments({
           onDrop={(event) => finishDrop(event, note.department, null)}
         >
           <div className="snap-dept-head">
-            <strong>{note.label}</strong>
+            <strong>{variant === "week" ? deskDepartmentHeading(note.label) : note.label}</strong>
             <span>What we did this week</span>
           </div>
           {note.items.length > 0 ? (
             <ul className="snap-dept-items">
-              {note.items.map((item) => (
+              {note.items.map((item) => {
+                const copy = variant === "week" ? deskItemParts(item.body) : null;
+                return (
                 <li
                   key={item.id}
                   className={
                     [
+                      variant === "week" ? "snap-week-item" : "",
                       dropAt?.list === note.department && dropAt.beforeId === item.id
                         ? "is-drop-before"
                         : "",
@@ -454,12 +461,14 @@ export function SnapshotWeekDepartments({
                   onDragOver={(event) => allowDrop(event, note.department, item.id)}
                   onDrop={(event) => finishDrop(event, note.department, item.id)}
                 >
-                  {dragGrip(item.id, item.body)}
-                  {item.mark === "sent" ? (
+                  {variant === "week" && editing?.id !== item.id ? dragGrip(item.id, item.body) : null}
+                  {variant === "week" ? null : dragGrip(item.id, item.body)}
+                  {variant === "week" ? null : item.mark === "sent" ? (
                     <span className="snap-sent" aria-label="Sent for approval">
                       Sent for approval
                     </span>
                   ) : null}
+                  {variant === "week" ? null : (
                   <label className="snap-status-wrap">
                     <select
                       className={`snap-status is-${item.status || (item.completed ? "completed" : "in_progress")}`}
@@ -474,6 +483,7 @@ export function SnapshotWeekDepartments({
                       <option value="completed">{snapshotItemStatusLabel("completed")}</option>
                     </select>
                   </label>
+                  )}
                   {editing?.id === item.id ? (
                     <DepartmentItemEditor
                       label={note.label}
@@ -482,6 +492,64 @@ export function SnapshotWeekDepartments({
                       onSave={() => void saveEdit(item.id)}
                       onCancel={() => setEditing(null)}
                     />
+                  ) : variant === "week" && copy ? (
+                    <>
+                      <div className="snap-week-item-copy">
+                        {item.mark === "sent" ? (
+                          <span className="snap-sent" aria-label="Sent for approval">
+                            Sent for approval
+                          </span>
+                        ) : null}
+                        <strong>{copy.title}</strong>
+                        {copy.description ? <p>{copy.description}</p> : null}
+                        <label className="snap-status-wrap">
+                          <select
+                            className={`snap-status is-${item.status || (item.completed ? "completed" : "in_progress")}`}
+                            aria-label={`Status for ${item.body}`}
+                            value={item.status || (item.completed ? "completed" : "in_progress")}
+                            onChange={(event) =>
+                              void setItemStatus(item, event.target.value as SnapshotItemStatus)
+                            }
+                          >
+                            <option value="in_progress">{snapshotItemStatusLabel("in_progress")}</option>
+                            <option value="scheduled">{snapshotItemStatusLabel("scheduled")}</option>
+                            <option value="completed">{snapshotItemStatusLabel("completed")}</option>
+                          </select>
+                        </label>
+                      </div>
+                      <span className="snap-week-item-actions">
+                        <button
+                          type="button"
+                          className="snap-week-hit"
+                          onClick={() => setEditing({ id: item.id, body: item.body })}
+                        >
+                          Edit
+                        </button>
+                        <details className="snap-week-more">
+                          <summary className="snap-week-hit" aria-label={`More actions for ${copy.title}`}>
+                            ···
+                          </summary>
+                          <div className="snap-week-more-menu" role="menu">
+                            <button type="button" role="menuitem" onClick={() => void removeItem(item.id)}>
+                              Remove
+                            </button>
+                            {otherDepartments(note.department, allowed).length > 0 ? (
+                              <p className="snap-week-more-label">Move to</p>
+                            ) : null}
+                            {otherDepartments(note.department, allowed).map((choice) => (
+                              <button
+                                key={choice.value}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => void placeItem(item.id, choice.value, null)}
+                              >
+                                {choice.label}
+                              </button>
+                            ))}
+                          </div>
+                        </details>
+                      </span>
+                    </>
                   ) : (
                     <>
                       <span className="snap-dept-item-body">{item.body}</span>
@@ -521,7 +589,8 @@ export function SnapshotWeekDepartments({
                     </>
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           ) : null}
           <SnapshotDepartmentAdd
@@ -531,11 +600,12 @@ export function SnapshotWeekDepartments({
             takenSourceKeys={takenSourceKeys}
             loading={todoLoading}
             projectStatus={todoStatus}
-            showRefresh={note.department === shown[0]?.department}
+            showRefresh={variant === "week" || note.department === shown[0]?.department}
             refreshing={refreshing}
             onAddText={(body) => addText(note.department, body)}
             onAddTodo={addTodo}
             onRefresh={() => void refreshBasecamp()}
+            variant={variant}
           />
         </section>
       ))}

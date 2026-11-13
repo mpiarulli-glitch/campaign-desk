@@ -28409,3 +28409,279 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   .webops-bar { flex-wrap: wrap; }
   .webops-bar .webops-search { flex-basis: 100%; }
 }
+
+/* This Week desk only. The account snapshot page does not use these classes. */
+.snap-week-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  margin: 0 0 18px;
+}
+
+.snap-week-desk .snap-week-filters .snap-desk-search {
+  margin: 0;
+  flex: 1 1 240px;
+  max-width: 420px;
+}
+
+.snap-week-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--bg-elevated);
+}
+
+.snap-week-banner.is-work { box-shadow: inset 3px 0 0 #d97706; }
+.snap-week-banner.is-clear { box-shadow: inset 3px 0 0 #059669; }
+
+.snap-week-banner p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.snap-week-banner-icon {
+  display: inline-flex;
+  color: #f5b942;
+}
+
+.snap-week-banner.is-clear .snap-week-banner-icon { color: #34d399; }
+
+.snap-week-desk .snap-n-group a {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.snap-week-desk .snap-n-group-view select {
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+.snap-week-desk .snap-dept {
+  margin: 0 12px 12px;
+  padding: 14px;
+  background: transparent;
+}
+
+.snap-week-desk .snap-dept-head strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.snap-week-desk .snap-add-row > .btn,
+.snap-week-desk .snap-desk-win-form .btn,
+.snap-week-desk .snap-add-switch .btn,
+.snap-week-desk .snap-desk-week .btn {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 650;
+  font-size: 14px;
+}
+
+.snap-week-desk .snap-add-switch {
+  align-items: center;
+}
+
+.snap-week-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.snap-week-desk .snap-desk-win-head {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.snap-week-win-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #3f2a12;
+  color: #f5b942;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.snap-week-desk .snap-week-win-list li {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.snap-week-desk .snap-desk-win-line.is-stacked {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.snap-week-win-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.snap-week-desk .snap-week-win-actions .btn {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 6px 2px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+}
+
+.snap-week-desk .snap-dept-items li.snap-week-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, #000);
+}
+
+.snap-week-desk .snap-week-item.is-editing {
+  display: block;
+}
+
+.snap-week-item-copy {
+  min-width: 0;
+}
+
+.snap-week-item-copy strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.snap-week-item-copy p {
+  margin: 4px 0 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.snap-week-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.snap-week-desk .snap-week-hit {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.snap-week-more { position: relative; }
+
+.snap-week-more summary {
+  list-style: none;
+}
+
+.snap-week-more summary::-webkit-details-marker { display: none; }
+
+.snap-week-more-menu {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lift);
+}
+
+.snap-week-more-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.snap-week-more-menu button:hover { background: var(--bg-soft); }
+
+.snap-week-more-label {
+  margin: 4px 10px 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snap-week-desk .snap-week-item .snap-status.is-completed {
+  background: #123d2a;
+  color: #4ade80;
+  border-color: transparent;
+  padding: 6px 12px;
+  font-weight: 650;
+}
+
+.snap-week-pop .fc-combo-item {
+  white-space: normal;
+}
+
+.snap-week-pop .fc-combo-item.is-active {
+  background: #0e3a42;
+  color: var(--text);
+}
+
+.snap-week-pop .fc-combo-todo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  width: 100%;
+}
+
+.snap-week-custom {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.snap-week-custom:hover { background: var(--bg-soft); }
+

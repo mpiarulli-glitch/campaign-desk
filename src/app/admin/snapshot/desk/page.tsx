@@ -6,9 +6,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { SnapshotDeskClientView, SnapshotDeskWeeklyWin, SnapshotDeskWins, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { type SnapshotFillRowData } from "@/components/SnapshotFillRow";
-import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+import { addWeeks, currentWeek, weekLabel } from "@/lib/week";
 import { canSeeFridayAsk, personTeam } from "@/lib/people";
 import { fillViewerSlug, winLoggedByMatches, type FillViewer } from "@/lib/snapshot-fill";
+import { deskWinNeededLine } from "@/lib/snapshot-desk-copy";
 import {
   snapshotScopeFromPayload,
   type SnapshotDepartmentSlug,
@@ -123,10 +124,7 @@ export default function SnapshotDeskPage() {
     return new Set(ids.filter((id) => !have.has(id)));
   }, [visibleAccounts, weekWins, viewerSlug]);
   const winNeeded = accountsMissingWin.size;
-  const winLine =
-    winNeeded === 0
-      ? "Your weekly win is in on every account in this list."
-      : `${winNeeded} account${winNeeded === 1 ? "" : "s"} still need your win this week.`;
+  const winLine = deskWinNeededLine(winNeeded);
   const scopeLabel = !viewerReady
     ? "Loading your list"
     : scopeLine || "Every department, on every account";
@@ -149,7 +147,7 @@ export default function SnapshotDeskPage() {
   );
 
   return (
-    <div className="ops-page snap-desk">
+    <div className="ops-page snap-desk snap-week-desk">
       {canOpenServices ? (
         <div className="page-actions">
           <Link className="btn btn-ghost btn-sm" href="/admin/client-services">
@@ -166,9 +164,7 @@ export default function SnapshotDeskPage() {
         </div>
         <div className="snap-desk-week">
           <button type="button" className="cal-nav-btn" aria-label="Previous week" onClick={() => setWeek((w) => addWeeks(w, -1))}>‹</button>
-          <span className="snap-desk-week-label">
-            {weekLabel(week)}{isCurrentWeek(week) ? " · This week" : ""}
-          </span>
+          <span className="snap-desk-week-label">{weekLabel(week)}</span>
           <button type="button" className="cal-nav-btn" aria-label="Next week" onClick={() => setWeek((w) => addWeeks(w, 1))}>›</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setWeek(currentWeek())}>This week</button>
         </div>
@@ -177,39 +173,45 @@ export default function SnapshotDeskPage() {
       {error ? <p className="error">{error}</p> : null}
 
       {winNeeded > 0 || accounts.length > 0 ? (
-        <div className={`ads-pass-banner ${winNeeded === 0 ? "is-clear" : "is-work"}`}>
-          <p className="ads-pass-banner-line">{winLine}</p>
+        <div className={`snap-week-banner ${winNeeded === 0 ? "is-clear" : "is-work"}`}>
+          <span className="snap-week-banner-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="18" height="18">
+              <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              <path d="M10 5.5v5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              <circle cx="10" cy="14" r="0.9" fill="currentColor" />
+            </svg>
+          </span>
+          <p>{winLine}</p>
         </div>
       ) : null}
 
-      {clients.length > 1 ? (
-        <label className="snap-desk-search snap-desk-client">
-          <span>Client</span>
-          <select
-            value={clientId}
-            aria-label="Filter by client"
-            onChange={(e) => setClientId(e.target.value)}
-          >
-            <option value="all">Every client</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-
-      {accounts.length > 8 ? (
-        <label className="snap-desk-search">
-          <span>Find</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Client, deliverable, or category"
-          />
-        </label>
+      {accounts.length > 0 ? (
+        <div className="snap-week-filters">
+          <label className="snap-desk-search snap-desk-client">
+            <span>Client</span>
+            <select
+              value={clientId}
+              aria-label="Filter by client"
+              onChange={(e) => setClientId(e.target.value)}
+            >
+              <option value="all">Every client</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="snap-desk-search">
+            <span>Find</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Client, deliverable, or category"
+            />
+          </label>
+        </div>
       ) : null}
 
       {!viewerReady ? (
@@ -259,6 +261,7 @@ export default function SnapshotDeskPage() {
                 clientName={group.name}
                 weekStart={week}
                 viewerSlug={viewerSlug}
+                variant="week"
                 wins={weekWins.filter((w) => w.client_id === group.id)}
                 onAdded={(win) =>
                   setWeekWins((cur) => (cur.some((w) => w.id === win.id) ? cur : [...cur, win]))
@@ -285,6 +288,7 @@ export default function SnapshotDeskPage() {
                   clientId={group.id}
                   weekStart={week}
                   visibleDepartments={visibleDepartments}
+                  variant="week"
                 />
               )}
             </div>
