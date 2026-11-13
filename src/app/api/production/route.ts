@@ -13,6 +13,7 @@ import { listVideographers } from "@/lib/videographers";
 import { listProductionSends, productionStatsByClient } from "@/lib/calendar";
 import { listOpenExtraRequests } from "@/lib/extra-requests";
 import { lastTextView, latestSmsByClient } from "@/lib/production-sms";
+import { loadContactRoster, outreachContact } from "@/lib/client-contact-source";
 
 export async function GET() {
   if (!(await isProductionAuthenticated())) {
@@ -21,7 +22,9 @@ export async function GET() {
   const today = todayYmd();
   const shootStats = productionStatsByClient(today);
   const latestSms = latestSmsByClient();
+  const contactRoster = loadContactRoster();
   const clients = listRevClients(true).map((client) => {
+    const current = outreachContact(client, contactRoster);
     const window = nextWindow(client, today);
     const { status, real: realStatus, overridden } = effectiveCycleStatus(
       client,
@@ -41,7 +44,7 @@ export async function GET() {
     const openExtraRequest = listOpenExtraRequests(client.id)[0] || null;
     const sms = latestSms.get(client.id);
     const lastText = lastTextView({
-      phone: client.contact_phone,
+      phone: current.contact.phone || client.contact_phone,
       status: sms?.status,
       errorCode: sms?.error_code,
       errorText: sms?.error_text,
@@ -65,6 +68,15 @@ export async function GET() {
         basecamp_project_id: client.basecamp_project_id,
         basecamp_contact_id: client.basecamp_contact_id,
         videographer_id: client.videographer_id,
+        current_contact: {
+          name: current.contact.name,
+          email: current.contact.email,
+          phone: current.contact.phone,
+          sourceClientId: current.sourceClientId,
+          borrowed: current.borrowed,
+          ambiguous: current.ambiguous,
+          basecampContactId: current.basecampContactId,
+        },
       },
       window,
       // `status` is what the row should display: the hand-set one if there is
