@@ -9,11 +9,13 @@ import {
   basecampGet,
   canonicalBasecampProjectId,
   getBasecampProjectName,
+  listProjectSnapshotCards,
   listProjectSnapshotTodos,
 } from "./basecamp";
 import { getRevClient } from "./revenue";
 import { completedTodoScopeReason } from "./snapshot-completed-todo";
 import {
+  matchSnapshotDepartment,
   snapshotHitsForPicker,
   snapshotTodoHit,
   type SnapshotTodoHit,
@@ -221,11 +223,43 @@ export async function listClientSnapshotTodos(clientId: string): Promise<{
         message: "The linked Basecamp project doesn't look like this client",
       };
     }
-    const raw = await listProjectSnapshotTodos(projectId);
-    return {
-      todos: snapshotHitsForPicker(raw, pacificToday()),
-      status: "ok",
-    };
+    const today = pacificToday();
+    const [raw, cards] = await Promise.all([
+      listProjectSnapshotTodos(projectId),
+      // Video and SEO deliverables often live on a board (Ecoworkz VIDEOS),
+      // not on a to-do list. Other boards stay out of this picker.
+      listProjectSnapshotCards(projectId, (title) => {
+        const dept = matchSnapshotDepartment({ title: "", place: title });
+        return dept === "video" || dept === "seo";
+      }),
+    ]);
+    const todos = snapshotHitsForPicker(
+      [
+        ...raw.map((row) => ({
+          id: row.id,
+          title: row.title,
+          list: row.list,
+          completedAt: row.completedAt,
+          startsOn: row.startsOn,
+          kind: "todo" as const,
+        })),
+        ...cards.map((row) => ({
+          id: row.id,
+          title: row.title,
+          list: row.list,
+          completedAt: row.completedAt,
+          startsOn: row.startsOn,
+          kind: "card" as const,
+        })),
+      ],
+      today
+    ).filter(
+      (hit) =>
+        !hit.sourceKey.startsWith("card:") ||
+        hit.department === "video" ||
+        hit.department === "seo"
+    );
+    return { todos, status: "ok" };
   } catch (err) {
     console.error("[basecamp] snapshot todos", {
       projectId,

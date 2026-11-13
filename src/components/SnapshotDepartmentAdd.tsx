@@ -5,16 +5,22 @@ import {
   type KeyboardEvent,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   SNAPSHOT_DEPARTMENTS,
   snapshotItemStatusLabel,
   type SnapshotDepartmentSlug,
 } from "@/lib/snapshot-department-list";
 import { pickerTodosForDepartment } from "@/lib/snapshot-basecamp-suggestions";
+import {
+  snapPopPlacement,
+  type SnapPopPlacement,
+} from "@/lib/snapshot-pop-placement";
 
 export type SnapshotAddTodo = {
   sourceKey: string;
@@ -285,7 +291,9 @@ function SnapshotTodoPicker({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const [popPlace, setPopPlace] = useState<SnapPopPlacement | null>(null);
 
   const groups = useMemo(
     () => groupPickerTodos(matched, unmatched, query),
@@ -300,14 +308,59 @@ function SnapshotTodoPicker({
   useEffect(() => {
     if (!open) return;
     function onDown(event: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
+      const target = event.target as Node;
+      if (wrapRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      setOpen(false);
+      setQuery("");
     }
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPopPlace(null);
+      return;
+    }
+    function place() {
+      const anchor = wrapRef.current?.getBoundingClientRect();
+      const pop = popRef.current;
+      if (!anchor || !pop) return;
+      const list = pop.querySelector(".fc-combo-list");
+      const refresh = pop.querySelector(".snap-picker-refresh");
+      const previousPop = pop.style.maxHeight;
+      const previousWidth = pop.style.width;
+      const previousList = list instanceof HTMLElement ? list.style.maxHeight : "";
+      const margin = 16;
+      pop.style.width = `${Math.min(anchor.width, Math.max(0, window.innerWidth - margin))}px`;
+      pop.style.maxHeight = "none";
+      if (list instanceof HTMLElement) list.style.maxHeight = "none";
+      const menuHeight = pop.offsetHeight;
+      const chromeHeight = refresh instanceof HTMLElement ? refresh.offsetHeight : 0;
+      pop.style.maxHeight = previousPop;
+      pop.style.width = previousWidth;
+      if (list instanceof HTMLElement) list.style.maxHeight = previousList;
+      setPopPlace(
+        snapPopPlacement({
+          anchorTop: anchor.top,
+          anchorBottom: anchor.bottom,
+          anchorLeft: anchor.left,
+          anchorWidth: anchor.width,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          menuHeight,
+          chromeHeight,
+        })
+      );
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, groups, query]);
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
@@ -358,9 +411,28 @@ function SnapshotTodoPicker({
         aria-label={`${label}: add an item`}
         autoComplete="off"
       />
-      {open ? (
-        <div className="snap-add-pop">
-          <ul className="fc-combo-list" id={listId} role="listbox">
+      {open && typeof document !== "undefined"
+        ? createPortal(
+        <div
+          className={`fc-combo fc-combo-todos snap-add-pop${popPlace?.flip ? " is-flip" : ""}`}
+          ref={popRef}
+          style={
+            popPlace
+              ? {
+                  top: popPlace.top,
+                  left: popPlace.left,
+                  width: popPlace.width,
+                  maxHeight: popPlace.maxHeight,
+                }
+              : { top: 0, left: 0, visibility: "hidden" }
+          }
+        >
+          <ul
+            className="fc-combo-list"
+            id={listId}
+            role="listbox"
+            style={popPlace ? { maxHeight: popPlace.listMaxHeight } : undefined}
+          >
             {groups.length === 0 ? (
               <li className="fc-combo-empty">{loading ? "Loading…" : "No matches"}</li>
             ) : (
@@ -405,8 +477,10 @@ function SnapshotTodoPicker({
           >
             {refreshing ? "Refreshing…" : "Refresh Basecamp"}
           </button>
-        </div>
-      ) : null}
+        </div>,
+        document.body
+      )
+        : null}
     </div>
   );
 }
