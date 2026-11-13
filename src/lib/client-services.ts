@@ -47,6 +47,7 @@ import { slugForName, teamLabel } from "./team";
 import { basecampNameForManager } from "./people";
 import { SYLVIA_CC_EMAIL } from "./review-cc";
 import { getUser } from "./users";
+import { snapshotShareUrl } from "./snapshot-link";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
 import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
@@ -615,7 +616,7 @@ export async function sendWeeklyAsk(args: {
     out.basecamp.skipped = "no snapshot link";
     return out;
   }
-  const link = `${appUrl.replace(/\/$/, "")}/snapshot/${token}`;
+  const link = snapshotShareUrl(appUrl, token, weekStart);
   const am = accountManagerFor(client);
   const work = {
     wins: weekWins(weekStart)
@@ -908,7 +909,7 @@ export function clientServiceRows(today?: string): ClientServiceRow[] {
       contactPhone: client.contact_phone || "",
       paused: Boolean(client.outreach_paused),
       hasBasecamp: Boolean(client.basecamp_project_id),
-      snapshotUrl: token && appUrl ? `${appUrl}/snapshot/${token}` : "",
+      snapshotUrl: token && appUrl ? snapshotShareUrl(appUrl, token, weekStart) : "",
       month: ask?.month || "",
       monthLabel: ask?.monthLabel || "",
       leadsWaiting,

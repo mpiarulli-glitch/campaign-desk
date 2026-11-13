@@ -1,11 +1,12 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { SNAPSHOT_DEPARTMENTS, isSnapshotDepartment } from "@/lib/snapshot-department-list";
-import { addWeeks, currentWeek, isCurrentWeek, weekLabel } from "@/lib/week";
+import { adjacentClientSnapshotWeek, weekFromSnapshotSearch } from "@/lib/snapshot-link";
+import { currentWeek, isCurrentWeek, parseWeekStart, weekLabel } from "@/lib/week";
 
 type Win = { id: string; body: string; happened_on: string; week_start?: string };
 
@@ -154,13 +155,12 @@ export default function SnapshotClientPage() {
   const [departments, setDepartments] = useState<DepartmentNote[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
   const [metrics, setMetrics] = useState<MetricSeries[]>([]);
-  const [week, setWeek] = useState(currentWeek());
-  // How far the week picker may move. Empty until the first load answers.
-  const [bounds, setBounds] = useState<{ earliest: string; latest: string }>({
-    earliest: "",
-    latest: "",
-  });
+  // null until the URL has been read. "" means an older link with no week.
+  const [week, setWeek] = useState<string | null>(null);
+  const [shownWeek, setShownWeek] = useState("");
+  const [weeks, setWeeks] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [revAsk, setRevAsk] = useState<RevenueAsk | null>(null);
@@ -174,15 +174,24 @@ export default function SnapshotClientPage() {
 
   const load = useCallback(
     async (w: string) => {
+      const id = ++requestId.current;
       setLoading(true);
       setError("");
       try {
-        const res = await fetch(`/api/snapshot/shared/${token}?week=${w}`);
+        const qs = w ? `?week=${encodeURIComponent(w)}` : "";
+        const res = await fetch(`/api/snapshot/shared/${token}${qs}`);
+        if (id !== requestId.current) return;
         if (res.status === 404) { setNotFound(true); return; }
         if (res.ok) {
           const data = await res.json();
           setAccountName(data.account.name);
           setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
+          setShownWeek(typeof data.week === "string" ? data.week : w);
+          setWeeks(
+            Array.isArray(data.weeks)
+              ? data.weeks.filter((item: unknown): item is string => typeof item === "string")
+              : []
+          );
           setDepartments(
             ((data.departments || []) as Array<{
               slug?: string;
@@ -215,19 +224,37 @@ export default function SnapshotClientPage() {
           );
           setWins(data.wins || []);
           setMetrics(data.metrics || []);
-          if (data.bounds) setBounds(data.bounds);
           setRevAsk(data.revenueAsk || null);
+        } else {
+          setError("Could not load this week.");
         }
       } catch {
+        if (id !== requestId.current) return;
         setError("Network error. Check your connection and try again.");
       } finally {
-        setLoading(false);
+        if (id === requestId.current) setLoading(false);
       }
     },
     [token]
   );
 
-  useEffect(() => { load(week); }, [week, load]);
+  useEffect(() => {
+    setWeek(weekFromSnapshotSearch(window.location.search) ?? "");
+  }, []);
+
+  useEffect(() => {
+    if (week === null) return;
+    void load(week);
+  }, [week, load]);
+
+  function openWeek(next: string) {
+    const parsed = parseWeekStart(next);
+    if (!parsed || parsed === week) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("week", parsed);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    setWeek(parsed);
+  }
 
   async function submitRevenue(e: React.FormEvent) {
     e.preventDefault();
@@ -267,8 +294,8 @@ export default function SnapshotClientPage() {
       const pct = firstV !== 0 ? Math.round(((latest - firstV) / Math.abs(firstV)) * 100) : null;
       headlineText = pct !== null ? `${headline.metric} ${pct >= 0 ? "+" : ""}${pct}%` : headline.metric;
     }
-    return { wins: wins.filter((w) => w.week_start === week).length, headlineText };
-  }, [metrics, wins, week]);
+    return { wins: wins.filter((w) => w.week_start === shownWeek).length, headlineText };
+  }, [metrics, wins, shownWeek]);
 
   if (notFound) {
     return (
@@ -281,14 +308,17 @@ export default function SnapshotClientPage() {
     );
   }
 
-  // Bounds are only enforced once the server has stated them, so the arrows are
-  // never dead on the first paint. An account with no entries at all reports no
-  // earliest week, which leaves back disabled because there is nothing behind.
-  const canGoBack = !bounds.earliest || week > bounds.earliest;
-  const canGoForward = !bounds.latest || week < bounds.latest;
+  // Arrows move through this client's saved and sent weeks, plus the current
+  // week. A future week stays reachable only when this link opened on it.
+  const cap = currentWeek();
+  const choices = [...new Set(
+    [...weeks.filter((item) => item <= cap || item === shownWeek), ...(shownWeek ? [shownWeek] : [])]
+  )].sort();
+  const prevWeek = adjacentClientSnapshotWeek(choices, shownWeek, -1);
+  const nextWeek = adjacentClientSnapshotWeek(choices, shownWeek, 1);
 
   const hasMetrics = metrics.some((m) => m.points.length > 0);
-  const weekWins = wins.filter((w) => w.week_start === week);
+  const weekWins = wins.filter((w) => w.week_start === shownWeek);
 
   return (
     <div className="app-shell snap-client">
@@ -302,13 +332,15 @@ export default function SnapshotClientPage() {
           <p className="muted">Loading...</p>
         ) : error && !accountName ? (
           <p className="error">{error}</p>
+        ) : !shownWeek ? (
+          <p className="muted">Loading...</p>
         ) : (
           <>
-            <header className="snap-hero">
+            <header className="snap-hero" data-week={shownWeek}>
               <div className="snap-hero-copy">
                 <p className="snap-kicker">
-                  Week of {weekLabel(week)}
-                  {isCurrentWeek(week) ? " · Current" : ""}
+                  Week of {weekLabel(shownWeek)}
+                  {isCurrentWeek(shownWeek) ? " · Current" : ""}
                   {launchDate ? ` · Launched ${ymdLabel(launchDate)}` : ""}
                 </p>
                 <h1>{accountName || "Weekly snapshot"}</h1>
@@ -330,28 +362,42 @@ export default function SnapshotClientPage() {
                   ) : null}
                 </p>
               </div>
-              <div className="snap-week-nav" role="group" aria-label="Week">
+              <div className="snap-week-nav" role="group" aria-label="Your snapshot weeks">
                 <button
                   type="button"
-                  onClick={() => setWeek((w) => addWeeks(w, -1))}
-                  disabled={!canGoBack}
-                  title={canGoBack ? "Previous week" : "This is the first week we logged"}
+                  onClick={() => { if (prevWeek) openWeek(prevWeek); }}
+                  disabled={!prevWeek || loading}
+                  title={prevWeek ? "Previous snapshot" : "This is the earliest snapshot"}
                   aria-label="Previous week"
                 >
                   ‹
                 </button>
+                <select
+                  aria-label="Choose a snapshot week"
+                  value={shownWeek}
+                  disabled={loading || choices.length === 0}
+                  onChange={(e) => openWeek(e.target.value)}
+                >
+                  {choices.map((item) => (
+                    <option key={item} value={item}>
+                      {weekLabel(item)}
+                      {isCurrentWeek(item) ? " · Current" : ""}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
-                  onClick={() => setWeek(currentWeek())}
+                  onClick={() => openWeek(currentWeek())}
                   className="snap-week-today"
+                  disabled={loading || isCurrentWeek(shownWeek)}
                 >
                   This week
                 </button>
                 <button
                   type="button"
-                  onClick={() => setWeek((w) => addWeeks(w, 1))}
-                  disabled={!canGoForward}
-                  title={canGoForward ? "Next week" : "This is the latest week"}
+                  onClick={() => { if (nextWeek) openWeek(nextWeek); }}
+                  disabled={!nextWeek || loading}
+                  title={nextWeek ? "Next snapshot" : "This is the latest snapshot"}
                   aria-label="Next week"
                 >
                   ›
@@ -434,8 +480,8 @@ export default function SnapshotClientPage() {
             {departments.length > 0 ? (
               <section className="snap-panel t-work" id="this-week">
                 <header className="snap-sec-head">
-                  <h2>This week</h2>
-                  <span className="snap-week-range">{weekLabel(week)}</span>
+                  <h2>{isCurrentWeek(shownWeek) ? "This week" : "Saved week"}</h2>
+                  <span className="snap-week-range">{weekLabel(shownWeek)}</span>
                 </header>
                 <div className="snap-week-grid">
                   {departments.map((note) => (
@@ -486,7 +532,7 @@ export default function SnapshotClientPage() {
             ) : null}
 
             <footer className="snap-footer">
-              Marketing Empire Group · Week of {weekLabel(week)}
+              Marketing Empire Group · Week of {weekLabel(shownWeek)}
             </footer>
           </>
         )}

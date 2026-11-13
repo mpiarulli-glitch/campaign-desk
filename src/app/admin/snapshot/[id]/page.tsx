@@ -7,6 +7,7 @@ import { ContractImportPanel } from "@/components/ContractImportPanel";
 import { EditableSnapshotWin, SnapshotDeskWeeklyWin, type DeskWeekWin } from "@/components/SnapshotDeskAccountViews";
 import { SnapshotWeekDepartments } from "@/components/SnapshotWeekDepartments";
 import { fridayAskReturnHref } from "@/lib/friday-ask-nav";
+import { snapshotSharePath } from "@/lib/snapshot-link";
 import { addWeeks, currentWeek, isCurrentWeek, parseWeekStart, weekLabel } from "@/lib/week";
 import { TEAMS } from "@/lib/people";
 import { metricPeriodLabel } from "@/lib/metric-period";
@@ -152,7 +153,7 @@ export default function SnapshotEditorPage() {
 
   const shareUrl =
     token && typeof window !== "undefined"
-      ? `${window.location.origin}/snapshot/${token}`
+      ? `${window.location.origin}${snapshotSharePath(token, week)}`
       : "";
 
   const loadMeta = useCallback(async () => {
@@ -749,7 +750,7 @@ export default function SnapshotEditorPage() {
               <div>
                 <strong>Client link</strong>
                 <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
-                  Read-only. Send this to the client — it always shows the latest.
+                  Read-only. This link stays on the week of {weekLabel(week)}.
                 </p>
               </div>
               <div className="copy-box" style={{ flex: 1, minWidth: 220 }}>
