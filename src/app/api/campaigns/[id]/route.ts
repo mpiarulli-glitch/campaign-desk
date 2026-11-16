@@ -46,6 +46,10 @@ import {
   coerceTriggerKind,
   coerceTriggerFormFormat,
 } from "@/lib/automation-map";
+import {
+  normalizeCampaignDescription,
+  normalizeCampaignTitle,
+} from "@/lib/campaign-copy";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -250,6 +254,28 @@ export async function PATCH(request: Request, { params }: Params) {
     });
   }
 
+  // Title and description use the same rules as PATCH /details. Reject a bad
+  // title before a status change in the same request can land.
+  let nextTitle: string | undefined;
+  if (typeof body.title === "string") {
+    const title = normalizeCampaignTitle(body.title, existing.title);
+    if (!title.ok) {
+      return NextResponse.json({ error: title.error }, { status: 400 });
+    }
+    nextTitle = title.title;
+  }
+  let nextDescription: string | undefined;
+  if (typeof body.description === "string") {
+    const description = normalizeCampaignDescription(
+      body.description,
+      existing.description
+    );
+    if (!description.ok) {
+      return NextResponse.json({ error: description.error }, { status: 400 });
+    }
+    nextDescription = description.description;
+  }
+
   const statusChoice =
     typeof body.status === "string" && isOperatorCampaignStatus(body.status)
       ? body.status
@@ -309,15 +335,14 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const campaign = updateCampaign(id, {
-    title: typeof body.title === "string" ? body.title : undefined,
+    title: nextTitle,
     clientName:
       typeof body.clientName === "string" ? body.clientName : undefined,
     clientId:
       body.clientId === null || typeof body.clientId === "string"
         ? body.clientId
         : undefined,
-    description:
-      typeof body.description === "string" ? body.description : undefined,
+    description: nextDescription,
     audience:
       typeof body.audience === "string" ? body.audience : undefined,
     htmlContent:

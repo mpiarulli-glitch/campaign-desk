@@ -1,5 +1,6 @@
 "use client";
 
+import { CampaignCopyFields } from "@/components/CampaignCopyFields";
 import { PushToGhl } from "@/components/PushToGhl";
 import { PushToKlaviyo } from "@/components/PushToKlaviyo";
 import Link from "next/link";
@@ -1993,7 +1994,24 @@ export default function AdminCampaignPage() {
               {isAutomation ? "Automation" : "Review package"}
               {campaign.archived_at ? " · Archived" : ""}
             </p>
-            <h1 className="h1">{campaign.title}</h1>
+            <CampaignCopyFields
+              campaignId={campaign.id}
+              title={campaign.title}
+              description={campaign.description}
+              disabled={saving}
+              onUpdated={(saved) =>
+                setCampaign((current) =>
+                  current
+                    ? {
+                        ...current,
+                        title: saved.title,
+                        description: saved.description,
+                        updated_at: saved.updated_at || current.updated_at,
+                      }
+                    : current
+                )
+              }
+            />
             <p className="muted" style={{ margin: "8px 0 0" }}>
               {packageItemCountLabel(
                 emails.map((e) => e.kind),
@@ -2041,11 +2059,6 @@ export default function AdminCampaignPage() {
                 </button>
               ) : null}
             </div>
-            {campaign.description ? (
-              <p className="body-text" style={{ marginTop: 10, lineHeight: 1.6 }}>
-                {campaign.description}
-              </p>
-            ) : null}
           </div>
           <div className="toolbar cd-pkg-tools">
             <select

@@ -2358,6 +2358,66 @@ button {
   line-height: 1.15;
 }
 
+.cd-pkg-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 42rem;
+}
+
+.cd-pkg-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.cd-pkg-title-row .h1 {
+  flex: 1;
+  min-width: 0;
+}
+
+.cd-pkg-edit {
+  flex-shrink: 0;
+}
+
+.cd-pkg-edit-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Same breaks the client review link shows. The description is stored as
+   text, so pre-wrap is the formatting: blank lines stay blank lines. */
+.cd-pkg-desc {
+  margin: 0;
+  max-width: 68ch;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cd-pkg-copy-form input,
+.cd-pkg-copy-form textarea {
+  width: 100%;
+}
+
+.cd-pkg-copy-form textarea {
+  min-height: 96px;
+  white-space: pre-wrap;
+}
+
+.cd-pkg-copy-count,
+.cd-pkg-copy-hint {
+  font-size: 12px;
+}
+
+.cd-pkg-copy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .cd-pkg-tools {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -12962,8 +13022,12 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   line-height: 1.65;
   color: var(--text-body);
   /* Client-written copy of any length lands here, so let the browser balance
-     the last line instead of leaving one word stranded on its own. */
+     the last line instead of leaving one word stranded on its own.
+     pre-wrap keeps the line breaks stored on the package description. Status
+     sentences that share this class have none, so they wrap as before. */
   text-wrap: pretty;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .rv-send-plan-list {

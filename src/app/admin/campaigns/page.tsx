@@ -755,16 +755,18 @@ export default function AdminPage() {
   }, [router]);
 
   async function renameCampaign(id: string, title: string) {
-    const res = await fetch(`/api/campaigns/${id}`, {
+    const res = await fetch(`/api/campaigns/${id}/details`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError("Could not rename that campaign.");
+      setError(data.error || "Could not rename that campaign.");
       return;
     }
-    setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
+    const saved = typeof data.campaign?.title === "string" ? data.campaign.title : title;
+    setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, title: saved } : c)));
   }
 
   async function setArchived(id: string, archived: boolean) {
