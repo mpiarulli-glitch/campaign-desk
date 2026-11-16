@@ -137,6 +137,14 @@ export function ClientCombobox({
           setOpen(true);
           setQuery("");
         }}
+        onClick={() => {
+          // A second click does not fire focus again. Open from the click so
+          // the list comes back after a choice while the field stays focused.
+          if (!open) {
+            setOpen(true);
+            setQuery("");
+          }
+        }}
         onKeyDown={onKeyDown}
         placeholder={selectedLabel || placeholder || "Search clients"}
         role="combobox"

@@ -40,10 +40,12 @@ import {
   hasProductionAccess,
   hasWebsiteOpsAccess,
   hasSocialQaAccess,
+  isSeoOnly,
   personLabel,
   personTeam,
   type CampaignKindScope,
 } from "./people";
+import { isCampaignAccountManagerSlug } from "./campaign-review-queue";
 
 export type CapabilityGroup = "page" | "tool";
 
@@ -103,6 +105,15 @@ export const PAGES: Capability[] = [
     icon: "campaign",
     blurb:
       "Review packages and their approvals. Narrow which kinds below once this is on.",
+  },
+  {
+    key: "page.email_board",
+    label: "Email Board",
+    group: "page",
+    href: "/admin/email-board",
+    icon: "frames",
+    blurb:
+      "A client's emails on one canvas, in campaign and flow order. For account managers and the email team.",
   },
   {
     key: "page.social_qa",
@@ -379,6 +390,16 @@ export function defaultAllowed(key: string, who: AccessSubject): boolean {
 
     case "page.campaigns":
       if (!ownsCampaignWork) return false;
+      return admin || focusedOnCampaigns;
+
+    // The canvas of stored email designs. Account managers and the email
+    // team, plus the same admins who already work campaigns. SEO-only
+    // writers stay on blogs until this is granted.
+    case "page.email_board":
+      if (person && personTeam(person) === "email") return true;
+      if (person && isCampaignAccountManagerSlug(person)) return true;
+      if (!ownsCampaignWork) return false;
+      if (person && isSeoOnly(person)) return false;
       return admin || focusedOnCampaigns;
 
     // Open to both roles today. Team Hub itself is page.home (always on).

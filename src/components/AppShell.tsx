@@ -56,6 +56,7 @@ const ICONS = {
   clients: <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />,
   mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></>,
   campaign: <><path d="m3 11 19-7v16L3 13v-2z" /><path d="M11.6 16.8a3.2 3.2 0 1 1-5.5-3.1" /></>,
+  frames: <><rect x="9" y="3" width="12" height="15" rx="1.5" /><rect x="3" y="6" width="12" height="15" rx="1.5" /></>,
   social: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="8.5" y="14" width="7" height="7" rx="1.5" /></>,
   calendar: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   video: <><path d="M4 11h16v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8z" /><path d="m4 11 2.4-6.2A2 2 0 0 1 8.3 3.5h7.4a2 2 0 0 1 1.9 1.3L20 11" /><path d="m10 3.5 2 7.5M15.5 3.5 14 11" /></>,

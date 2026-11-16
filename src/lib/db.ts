@@ -4407,6 +4407,33 @@ function migrate(database: Database.Database) {
   ensureBotActivitySchema(database);
   // Empty website-ops tables on existing databases. Does not import rows.
   ensureWebsiteOpsSchema(database);
+  // Email Board arrangement and sticky notes. Positions never write the
+  // campaign; deleting a client drops that client's board with them.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS email_board_positions (
+      client_id TEXT NOT NULL,
+      frame_key TEXT NOT NULL,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (client_id, frame_key),
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS email_board_notes (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT 'yellow',
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      author TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES rev_clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_board_notes_client
+      ON email_board_notes(client_id);
+  `);
 }
 
 // Insert a login row for every person in the code roster who does not have one

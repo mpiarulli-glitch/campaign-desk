@@ -17,6 +17,7 @@ type Hit = {
 const BASE_QUICK_LINKS: Hit[] = [
   { kind: "client", id: "nav-home", title: "MEG Team Hub", subtitle: "Home", href: "/admin/hub" },
   { kind: "client", id: "nav-campaigns", title: "Campaigns", subtitle: "All campaigns", href: "/admin/campaigns" },
+  { kind: "page", id: "nav-email-board", title: "Email Board", subtitle: "Client email canvas", href: "/admin/email-board" },
   { kind: "client", id: "nav-production", title: "Production", subtitle: "Scheduler", href: "/admin/production" },
   { kind: "client", id: "nav-forecast", title: "Forecast", subtitle: "Team allocation", href: "/admin/forecast" },
 ];
