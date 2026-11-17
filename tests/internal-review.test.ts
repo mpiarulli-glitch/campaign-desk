@@ -13,8 +13,12 @@ import {
   findMappedAccountManager,
   pickClientServicesTodolist,
   pickDefaultInternalReviewer,
+  pickInternalReviewTodolist,
   reviewersForInternalReview,
   scoreClientServicesTodolist,
+  scoreStrategyClientCommsTodolist,
+  STRATEGY_CLIENT_COMMS_LIST_DESCRIPTION,
+  STRATEGY_CLIENT_COMMS_LIST_NAME,
   teamPeopleForInternalReview,
   withInternalReviewGreeting,
 } from "../src/lib/internal-review";
@@ -48,6 +52,42 @@ test("Client Services list matching prefers the exact name and ignores Onboardin
     "2"
   );
   assert.equal(pickClientServicesTodolist([{ id: "1", title: "Onboarding" }]), null);
+});
+
+test("Strategy / Client Comms wins over Client Services and Onboarding", () => {
+  assert.equal(STRATEGY_CLIENT_COMMS_LIST_NAME, "Strategy / Client Comms");
+  assert.equal(
+    STRATEGY_CLIENT_COMMS_LIST_DESCRIPTION,
+    "Home for all strategy work and client communication tasks going forward..."
+  );
+  assert.equal(scoreStrategyClientCommsTodolist("Strategy / Client Comms"), 0);
+  assert.equal(scoreStrategyClientCommsTodolist("STRATEGY / CLIENT COMMS"), 0);
+  assert.equal(scoreStrategyClientCommsTodolist("Strategy/Client Comms"), 0);
+  assert.equal(scoreStrategyClientCommsTodolist("Strategy  /  Client Comms"), 0);
+  assert.equal(scoreStrategyClientCommsTodolist("Strategy - Client Comms"), 0);
+  assert.equal(scoreStrategyClientCommsTodolist("strategy-client comms"), 0);
+  assert.equal(scoreStrategyClientCommsTodolist("Strategy / Client Comms To-Do"), 1);
+  assert.equal(scoreStrategyClientCommsTodolist("Onboarding"), -1);
+  assert.equal(scoreStrategyClientCommsTodolist("Client Services"), -1);
+  assert.equal(scoreStrategyClientCommsTodolist("Campaign Review"), -1);
+  assert.equal(scoreStrategyClientCommsTodolist("Strategy"), -1);
+
+  const lists = [
+    { id: "11", title: "Onboarding" },
+    { id: "33", title: "Client Services" },
+    { id: "55", title: "Strategy/Client Comms" },
+    { id: "66", title: "Strategy - Client Comms To-Do" },
+  ];
+  assert.equal(pickInternalReviewTodolist(lists)?.id, "55");
+  assert.equal(
+    pickInternalReviewTodolist([
+      { id: "11", title: "Onboarding" },
+      { id: "22", title: "Client Services To-Do" },
+      { id: "33", title: "Client Services" },
+    ])?.id,
+    "33"
+  );
+  assert.equal(pickInternalReviewTodolist([{ id: "1", title: "Onboarding" }]), null);
 });
 
 test("internal review todo copy mentions the AM and only the review link", () => {
@@ -443,6 +483,7 @@ test("sending a campaign for internal review", async (t) => {
     assert.ok(deskTodo);
     assert.match(deskTodo.title, /April newsletter/);
     assert.equal(deskTodo.due_date, "2026-08-25");
+    assert.equal(deskTodo.list_name, "Campaign Review");
   });
 
   await t.test("opening the posted internal review link does not flip to Sent for approval", async () => {
@@ -605,6 +646,34 @@ https://desk.example/review/custom`,
     }
   });
 
+  await t.test("posts the internal review to-do on Strategy / Client Comms", async () => {
+    projectDock = [
+      { id: 1, name: "todoset", enabled: true, title: "Onboarding Checklist" },
+      { id: 2, name: "todoset", enabled: true, title: "To Dos" },
+    ];
+    listsBySet = {
+      "1": [{ id: 11, title: "Onboarding" }],
+      "2": [
+        { id: 22, title: "Client Services To-Do" },
+        { id: 55, title: "Strategy - Client Comms" },
+      ],
+    };
+    createdList = null;
+    lastTodoUrl = "";
+    const result = await internal.sendCampaignForInternalReview({
+      campaignId: created.id,
+      reviewerId: 2,
+      dueOn: "2026-08-30",
+    });
+    assert.equal(result.ok, true);
+    assert.match(lastTodoUrl, /todolists\/55\/todos\.json/);
+    assert.doesNotMatch(lastTodoUrl, /todolists\/22\/todos\.json/);
+    assert.doesNotMatch(lastTodoUrl, /todolists\/11\/todos\.json/);
+    assert.equal(createdList, null);
+    const desk = internal.deskInternalReviewTodo(created.id);
+    assert.equal(desk?.list_name, "Strategy - Client Comms");
+  });
+
   await t.test("posts the internal review to-do on Client Services, not Onboarding", async () => {
     projectDock = [
       { id: 1, name: "todoset", enabled: true, title: "Onboarding Checklist" },
@@ -625,6 +694,10 @@ https://desk.example/review/custom`,
     assert.match(lastTodoUrl, /todolists\/22\/todos\.json/);
     assert.doesNotMatch(lastTodoUrl, /todolists\/11\/todos\.json/);
     assert.equal(createdList, null);
+    const desk = internal.deskInternalReviewTodo(created.id);
+    assert.equal(desk?.list_name, "Client Services To-Do");
+    const earlier = todos.listTodos({ assignee: "cassidy" });
+    assert.ok(earlier.every((row) => row.list_name === "Client Services To-Do"));
   });
 
   await t.test("without a Client Services list, keeps the Campaign Review fallback", async () => {
@@ -648,6 +721,8 @@ https://desk.example/review/custom`,
     assert.match(createdList.url, /todosets\/1\/todolists\.json/);
     assert.match(lastTodoUrl, /todolists\/77\/todos\.json/);
     assert.doesNotMatch(lastTodoUrl, /todolists\/11\/todos\.json/);
+    const desk = internal.deskInternalReviewTodo(created.id);
+    assert.equal(desk?.list_name, "Campaign Review");
   });
 
   await t.test("a lost to-do link is recovered from Client Services", async () => {
@@ -673,6 +748,33 @@ https://desk.example/review/custom`,
     assert.match(todoGets[0] || "", /todolists\/33\/todos\.json/);
     assert.equal(
       todoGets.some((url) => url.includes("/todolists/11/")),
+      false
+    );
+  });
+
+  await t.test("a lost to-do link is recovered from Strategy / Client Comms first", async () => {
+    projectDock = [
+      { id: 1, name: "todoset", enabled: true, title: "Onboarding Checklist" },
+      { id: 2, name: "todoset", enabled: true, title: "To Dos" },
+    ];
+    listsBySet = {
+      "1": [{ id: 11, title: "Onboarding" }],
+      "2": [
+        { id: 33, title: "Client Services" },
+        { id: 55, title: "Strategy/Client Comms" },
+      ],
+    };
+    getDb()
+      .prepare(
+        `UPDATE campaigns SET internal_review_todo_id = NULL, internal_review_todo_url = NULL WHERE id = ?`
+      )
+      .run(created.id);
+    todoGets.length = 0;
+    const state = await internal.internalReviewState(created.id);
+    assert.ok(state?.todoUrl);
+    assert.match(todoGets[0] || "", /todolists\/55\/todos\.json/);
+    assert.equal(
+      todoGets.some((url) => url.includes("/todolists/33/")),
       false
     );
   });
