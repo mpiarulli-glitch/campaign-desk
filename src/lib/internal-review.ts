@@ -26,7 +26,7 @@ import {
 import { resolveCampaignClient } from "./campaign-card-sync";
 import { updateRevClient } from "./revenue";
 import { adminCampaignUrl, reviewUrl } from "./auth";
-import { getDb } from "./db";
+import { getDb, nowIso } from "./db";
 import { usableEmail } from "./email-address";
 import { basecampNameForManager } from "./people";
 import { slugForName, teamLabel } from "./team";
@@ -398,30 +398,87 @@ export function scoreClientServicesTodolist(title: string): number {
 export function pickClientServicesTodolist<T extends { title: string }>(
   lists: T[]
 ): T | null {
+  return pickBestTodolist(lists, scoreClientServicesTodolist);
+}
+
+// The list account managers use for strategy work and client communication.
+// Basecamp projects spell the slash several ways; folding ignores case and
+// the separator. The description is the one on that list in Basecamp. We
+// match an existing list and do not create one under this name.
+export const STRATEGY_CLIENT_COMMS_LIST_NAME = "Strategy / Client Comms";
+export const STRATEGY_CLIENT_COMMS_LIST_DESCRIPTION =
+  "Home for all strategy work and client communication tasks going forward...";
+
+const STRATEGY_CLIENT_COMMS_CORE = "strategy client comms";
+
+/**
+ * Lower is a closer Strategy / Client Comms list. -1 is not that list.
+ * "Strategy/Client Comms" and "Strategy - Client Comms" match the same list.
+ */
+export function scoreStrategyClientCommsTodolist(title: string): number {
+  const { core, peeled } = clientServicesCore(title);
+  if (core === STRATEGY_CLIENT_COMMS_CORE) return peeled ? 1 : 0;
+  return -1;
+}
+
+export function pickStrategyClientCommsTodolist<T extends { title: string }>(
+  lists: T[]
+): T | null {
+  return pickBestTodolist(lists, scoreStrategyClientCommsTodolist);
+}
+
+function pickBestTodolist<T extends { title: string }>(
+  lists: T[],
+  score: (title: string) => number
+): T | null {
   let best: T | null = null;
   let bestScore = Infinity;
   for (const list of lists) {
-    const score = scoreClientServicesTodolist(list.title);
-    if (score < 0 || score >= bestScore) continue;
+    const next = score(list.title);
+    if (next < 0 || next >= bestScore) continue;
     best = list;
-    bestScore = score;
+    bestScore = next;
   }
   return best;
 }
 
+/**
+ * Strategy / Client Comms first, then the Client Services list. Null when
+ * neither exists, so the caller can still create Campaign Review.
+ */
+export function pickInternalReviewTodolist<T extends { title: string }>(
+  lists: T[]
+): T | null {
+  return pickStrategyClientCommsTodolist(lists) || pickClientServicesTodolist(lists);
+}
+
 // Internal review used to ask for "Campaign Review". That lookup only reads
 // the first to-do set, and client projects put the Onboarding checklist first,
-// so the to-do was created on the Onboarding page. Search every set for
-// Client Services. When the project has no such list, keep the Campaign Review
-// get-or-create so the send still lands. Other flows name their own lists.
+// so the to-do was created on the Onboarding page. Prefer Strategy / Client
+// Comms, then Client Services. When the project has neither, keep the
+// Campaign Review get-or-create so the send still lands. Other flows name
+// their own lists.
 async function internalReviewTodolistTarget(
   projectId: string,
   identity: BcIdentity
-): Promise<{ listId: string } | { listName: string }> {
+): Promise<{ listId: string; listName: string } | { listName: string }> {
   const lists = await listProjectTodolists(projectId, identity);
-  const hit = pickClientServicesTodolist(lists);
-  if (hit) return { listId: hit.id };
+  const hit = pickInternalReviewTodolist(lists);
+  if (hit) return { listId: hit.id, listName: hit.title };
   return { listName: CAMPAIGN_REVIEW_TODOLIST_NAME };
+}
+
+function rankedInternalReviewLists(lists: BcTodolist[]): BcTodolist[] {
+  const rank = (score: (title: string) => number) =>
+    lists
+      .map((list) => ({ list, score: score(list.title) }))
+      .filter((row): row is { list: BcTodolist; score: number } => row.score >= 0)
+      .sort((a, b) => a.score - b.score)
+      .map((row) => row.list);
+  return [
+    ...rank(scoreStrategyClientCommsTodolist),
+    ...rank(scoreClientServicesTodolist),
+  ];
 }
 
 async function findPostedInternalReviewTodo(
@@ -430,12 +487,8 @@ async function findPostedInternalReviewTodo(
   identity: BcIdentity
 ): Promise<{ id: string; url: string } | null> {
   const lists = await listProjectTodolists(projectId, identity);
-  const ranked = lists
-    .map((list) => ({ list, score: scoreClientServicesTodolist(list.title) }))
-    .filter((row): row is { list: BcTodolist; score: number } => row.score >= 0)
-    .sort((a, b) => a.score - b.score);
-  for (const row of ranked) {
-    const found = await findOpenTodoOnList(projectId, row.list.id, title, identity);
+  for (const list of rankedInternalReviewLists(lists)) {
+    const found = await findOpenTodoOnList(projectId, list.id, title, identity);
     if (found) return found;
   }
   return findOpenTodoOnNamedList(
@@ -456,6 +509,19 @@ export function deskInternalReviewTodo(campaignId: string): TodoView | null {
     )
     .get(`%${needle}%`) as { id: string } | undefined;
   return row ? getTodo(row.id) : null;
+}
+
+// Re-sends insert another desk row. Earlier rows for the same campaign keep
+// the list this send actually used, so the workboard does not leave them on
+// Campaign Review after the Basecamp to-do moved.
+function syncDeskInternalReviewListName(campaignId: string, listName: string): void {
+  const needle = `%/admin/campaigns/${campaignId}%`;
+  getDb()
+    .prepare(
+      `UPDATE todos SET list_name = ?, updated_at = ?
+        WHERE source = 'internal_review' AND notes LIKE ?`
+    )
+    .run(listName, nowIso(), needle);
 }
 
 export async function sendCampaignForInternalReview(input: {
@@ -596,10 +662,11 @@ export async function sendCampaignForInternalReview(input: {
       assignee: assigneeSlug,
       dueDate: dueOn,
       source: "internal_review",
-      // Desk grouping for the workboard. The Basecamp list is chosen above.
-      listName: "Campaign Review",
+      // Same name as the Basecamp list this send landed on.
+      listName: target.listName,
     });
   }
+  syncDeskInternalReviewListName(input.campaignId, target.listName);
 
   return {
     ok: true,
