@@ -634,6 +634,49 @@ button {
   cursor: not-allowed;
 }
 
+/* Session hold inside a booking button. The action stays the uppercase
+   label; the countdown is sentence case so it reads as a status, not a
+   second shout. Expired is the same accent button — the hold never locks it. */
+.booking-hold {
+  display: inline-flex;
+  max-width: 100%;
+  position: relative;
+}
+.booking-hold-btn {
+  flex-direction: column;
+  gap: 3px;
+  line-height: 1.2;
+  text-align: center;
+  min-height: 44px;
+  max-width: 100%;
+}
+.booking-hold-status {
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.booking-hold-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .booking-hold,
+  .booking-hold-btn {
+    width: 100%;
+  }
+}
+
 .btn-secondary {
   background: var(--bg-elevated);
   border-color: var(--border-strong);

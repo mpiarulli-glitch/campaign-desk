@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { CalendarTypeFilter, CalendarViewToggle } from "@/components/CalendarTypeFilter";
+import { BookingHoldButton } from "@/components/BookingHoldButton";
 import { ScheduleBooking } from "@/components/ScheduleBooking";
 import { sendMatchesTypeFilter, type CalendarTypeKey } from "@/lib/calendar-type-filter";
 import { snapshotSharePath } from "@/lib/snapshot-link";
@@ -344,9 +345,12 @@ export default function ClientDashboardPage() {
                             </p>
                           ) : null}
                         </div>
-                        <button className="btn" onClick={() => setTab("schedule")}>
+                        <BookingHoldButton
+                          scope={`/api/dashboard/${token}/schedule`}
+                          onClick={() => setTab("schedule")}
+                        >
                           Schedule my production
-                        </button>
+                        </BookingHoldButton>
                       </div>
                     </div>
                   ) : null}

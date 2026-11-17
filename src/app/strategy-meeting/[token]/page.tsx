@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { BookingHoldButton } from "@/components/BookingHoldButton";
 
 type Data = { name: string; contactName: string; strategyMeetingAt: string | null };
 
@@ -114,9 +115,13 @@ export default function StrategyMeetingPage() {
               </div>
             </div>
             {error ? <p className="error">{error}</p> : null}
-            <button className="btn" disabled={saving || !date || !time} onClick={submit}>
+            <BookingHoldButton
+              scope={`strategy-meeting:${token}`}
+              disabled={saving || !date || !time}
+              onClick={submit}
+            >
               {saving ? "Booking..." : "Book my meeting"}
-            </button>
+            </BookingHoldButton>
           </div>
         )}
       </main>

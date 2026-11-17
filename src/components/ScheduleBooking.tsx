@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BookingHoldButton } from "@/components/BookingHoldButton";
 import { slotHasPassed } from "@/lib/scheduling-rules";
 
 type CycleStatus =
@@ -455,13 +456,13 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             <BriefFields brief={brief} set={set} />
 
             <div className="brief-submit">
-              <button
-                className="btn"
+              <BookingHoldButton
+                scope={apiPath}
                 disabled={saving || !extraDate || !extraTime}
                 onClick={submit}
               >
                 {saving ? "Requesting..." : "Send request"}
-              </button>
+              </BookingHoldButton>
             </div>
           </div>
         )}
@@ -561,9 +562,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           {data.extraWindow.note ? ` ${data.extraWindow.note}` : ""}
         </p>
         <div style={{ marginTop: 16 }}>
-          <button className="btn" onClick={startExtraRequest}>
+          <BookingHoldButton scope={apiPath} onClick={startExtraRequest}>
             Pick a day
-          </button>
+          </BookingHoldButton>
         </div>
         {canBook && data.window ? (
           <p className="sched-hint muted" style={{ marginTop: 16 }}>
@@ -597,9 +598,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         <h1 className="h1">Your production window has passed</h1>
         <MissedWindowNote window={data.missedWindow} />
         <div style={{ marginTop: 16 }}>
-          <button className="btn" onClick={startExtraRequest}>
+          <BookingHoldButton scope={apiPath} onClick={startExtraRequest}>
             Pick a new day
-          </button>
+          </BookingHoldButton>
         </div>
         {canBook && data.window ? (
           <p className="sched-hint muted" style={{ marginTop: 16 }}>
@@ -778,9 +779,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           <BriefFields brief={brief} set={set} />
 
           <div className="brief-submit">
-            <button className="btn" disabled={saving} onClick={submit}>
+            <BookingHoldButton scope={apiPath} disabled={saving} onClick={submit}>
               {saving ? "Requesting..." : "Request this slot"}
-            </button>
+            </BookingHoldButton>
             <span className="muted">
               {longDate(pick.date)} · {slotLabel(pick.time)}
             </span>
