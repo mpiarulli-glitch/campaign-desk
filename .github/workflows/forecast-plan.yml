@@ -1,6 +1,6 @@
 name: Weekly forecast plan
 
-# Fills Michael's forecast calendar from his Basecamp to-dos every Monday:
+# Fills Michael's forecast calendar from his Basecamp to-dos when run by hand:
 # work a day before each due date, leadership meetings Mon/Wed/Fri at 10am,
 # 3 hours of MEG outreach, and a daily hour held for campaign audits.
 #
@@ -8,9 +8,6 @@ name: Weekly forecast plan
 # CRON_SECRET environment variable set on the Railway service.
 
 on:
-  schedule:
-    # 16:00 UTC Mondays (~9am Pacific).
-    - cron: "0 16 * * 1"
   workflow_dispatch:
     inputs:
       dryRun:
