@@ -3,6 +3,28 @@ import test from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { cadenceWindowBookedEarly, nextWindow } from "../src/lib/cadence";
+import type { RevClient } from "../src/lib/db";
+
+function addDays(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+test("a shoot within 14 days of the next cadence window counts toward it", () => {
+  const client = {
+    color_week: "blue",
+    production_cadence: "monthly",
+    last_production_date: null,
+  } as RevClient;
+  const today = "2026-11-19";
+  assert.equal(nextWindow(client, today)?.start, "2026-12-07");
+  assert.equal(cadenceWindowBookedEarly(client, "2026-11-23", today)?.start, "2026-12-07");
+  assert.equal(cadenceWindowBookedEarly(client, "2026-11-30", today)?.start, "2026-12-07");
+  assert.equal(cadenceWindowBookedEarly(client, "2026-11-22", today), null);
+  assert.equal(cadenceWindowBookedEarly(client, "2026-12-09", today), null);
+  assert.equal(cadenceWindowBookedEarly(client, "2026-07-30", today), null);
+});
 
 // db.ts resolves its file from process.cwd() when it is first imported, so this
 // suite chdirs to a throwaway directory and imports dynamically, the same way
@@ -150,5 +172,70 @@ test("the window an override names", async (t) => {
     });
     assert.equal(res.ok, false);
     assert.equal(res.ok === false && res.httpStatus, 400);
+  });
+
+  await t.test("an early shoot with no window counts toward the next one", async () => {
+    const { appDateTime, nextWindow: next, productionWindowForDate } = await import(
+      "../src/lib/cadence"
+    );
+    const today = appDateTime().date;
+    const upcoming = next(client, today);
+    assert.ok(upcoming);
+    const early = addDays(upcoming.start, -7);
+    assert.equal(productionWindowForDate("blue", early), null);
+    const res = await log({ date: early });
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.send.cadence_window_start, upcoming.start);
+    if (res.ok) deleteSend(res.send.id);
+  });
+
+  await t.test("a shoot more than 14 days before the next window is still refused", async () => {
+    const { appDateTime, nextWindow: next, productionWindowForDate } = await import(
+      "../src/lib/cadence"
+    );
+    const upcoming = next(client, appDateTime().date);
+    assert.ok(upcoming);
+    let far = "";
+    for (let days = 15; days <= 27; days++) {
+      const candidate = addDays(upcoming.start, -days);
+      if (!productionWindowForDate("blue", candidate)) {
+        far = candidate;
+        break;
+      }
+    }
+    assert.ok(far);
+    const res = await log({ date: far });
+    assert.equal(res.ok, false);
+    assert.equal(res.ok === false && res.httpStatus, 400);
+  });
+
+  await t.test("an explicit window still wins, and out-of-cycle stays unlinked", async () => {
+    assert.equal(
+      await logThenClear({
+        date: "2026-07-30",
+        cadenceWindowStart: "2026-08-10",
+      }),
+      "2026-08-10"
+    );
+    const refused = await log({ date: "2026-07-30" });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.ok === false && refused.httpStatus, 400);
+
+    const { recordOutOfCycleProduction } = await import("../src/lib/scheduling");
+    const { appDateTime, nextWindow: next, productionWindowForDate } = await import(
+      "../src/lib/cadence"
+    );
+    const upcoming = next(client, appDateTime().date);
+    assert.ok(upcoming);
+    const early = addDays(upcoming.start, -7);
+    assert.equal(productionWindowForDate("blue", early), null);
+    const res = await recordOutOfCycleProduction(client, {
+      date: early,
+      time: "09:00",
+      status: "scheduled",
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.send.cadence_window_start, null);
+    if (res.ok) deleteSend(res.send.id);
   });
 });

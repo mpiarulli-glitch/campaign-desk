@@ -90,6 +90,198 @@ export function isTimeOffTitle(title: string): boolean {
   return /(?:^|[^a-z0-9])off(?:[^a-z0-9]|$)/i.test(stripped);
 }
 
+// Words that show up in hand-typed schedule titles and are not part of a
+// client name: "Confirmed: Pipe It Right Production".
+const TITLE_NOISE = new Set([
+  "confirmed",
+  "confirm",
+  "tentative",
+  "hold",
+  "holds",
+  "pending",
+  "production",
+  "productions",
+  "shoot",
+  "shoots",
+  "video",
+  "videography",
+  "filming",
+  "film",
+  "half",
+  "full",
+  "day",
+  "days",
+  "am",
+  "pm",
+  "with",
+  "and",
+  "the",
+  "for",
+  "out",
+  "of",
+  "office",
+  "ooo",
+  "pto",
+  "off",
+  "vacation",
+  "unavailable",
+]);
+
+// A trailing trade or legal word people drop when they type the schedule by
+// hand. "Pipe It Right Plumbing" is written "Pipe It Right". Location words
+// (Corporate, Oceanside) are not in here, so those accounts stay distinct.
+const GENERIC_NAME_TAILS = new Set([
+  "llc",
+  "inc",
+  "incorporated",
+  "ltd",
+  "limited",
+  "corp",
+  "corporation",
+  "co",
+  "company",
+  "pllc",
+  "llp",
+  "pc",
+  "dba",
+  "services",
+  "service",
+  "group",
+  "solutions",
+  "enterprises",
+  "associates",
+  "plumbing",
+  "plumber",
+  "plumbers",
+  "heating",
+  "hvac",
+  "air",
+  "electrical",
+  "electric",
+  "roofing",
+  "landscaping",
+  "cleaning",
+  "construction",
+  "restoration",
+  "remodeling",
+  "contractors",
+  "contractor",
+]);
+
+function addClientPhrase(
+  phrases: string[][],
+  seen: Set<string>,
+  tokens: string[],
+  allowShort: boolean
+): void {
+  if (!tokens.length) return;
+  if (tokens.length === 1) {
+    const token = tokens[0];
+    if (TITLE_NOISE.has(token)) return;
+    if (token.length < (allowShort ? 3 : 4)) return;
+  }
+  const key = tokens.join(" ");
+  if (seen.has(key)) return;
+  seen.add(key);
+  phrases.push(tokens);
+}
+
+function shortenClientTokens(tokens: string[]): string[] {
+  const trimmed = [...tokens];
+  while (trimmed.length >= 3 && GENERIC_NAME_TAILS.has(trimmed[trimmed.length - 1])) {
+    trimmed.pop();
+  }
+  return trimmed;
+}
+
+/**
+ * Names to look for in a schedule title.
+ *
+ * The client name itself, text in parentheses, the name with parentheses
+ * removed, and the name with a trailing trade or legal word removed
+ * ("Plumbing", "LLC"). A leading "the" is dropped from those shorter forms.
+ * Each phrase is at least two words unless the client's own name is one word.
+ */
+export function clientTitlePhrases(clientName: string, aliases: string[] = []): string[][] {
+  const phrases: string[][] = [];
+  const seen = new Set<string>();
+  const add = (value: string, allowShort: boolean) =>
+    addClientPhrase(phrases, seen, nameTokens(value), allowShort);
+
+  add(clientName, true);
+  for (const alias of aliases) add(alias, false);
+
+  for (const match of clientName.matchAll(/\(([^)]+)\)/g)) add(match[1], false);
+  const withoutParens = clientName.replace(/\([^)]*\)/g, " ");
+  if (withoutParens.trim() && withoutParens.trim() !== clientName.trim()) {
+    add(withoutParens, false);
+  }
+
+  for (const base of [nameTokens(withoutParens), nameTokens(clientName)]) {
+    const shortened = shortenClientTokens(base);
+    if (shortened.length >= 2 && shortened.length < base.length) {
+      addClientPhrase(phrases, seen, shortened, false);
+      if (shortened[0] === "the" && shortened.length >= 3) {
+        addClientPhrase(phrases, seen, shortened.slice(1), false);
+      }
+    }
+    if (base[0] === "the" && base.length >= 3) {
+      addClientPhrase(phrases, seen, base.slice(1), false);
+    }
+  }
+  return phrases;
+}
+
+function containsContiguous(haystack: string[], needle: string[]): boolean {
+  if (!needle.length || needle.length > haystack.length) return false;
+  for (let i = 0; i <= haystack.length - needle.length; i++) {
+    let matches = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a schedule title is this client.
+ *
+ * Case and punctuation are ignored. The title matches when it contains the
+ * client name or an alias (see `clientTitlePhrases`) as whole words in order.
+ */
+export function scheduleTitleNamesClient(
+  title: string,
+  clientName: string,
+  aliases: string[] = []
+): boolean {
+  const haystack = nameTokens(title);
+  if (!haystack.length || !clientName.trim()) return false;
+  return clientTitlePhrases(clientName, aliases).some((phrase) =>
+    containsContiguous(haystack, phrase)
+  );
+}
+
+/**
+ * A one-off schedule entry written for this client, not time off and not a
+ * repeating series.
+ *
+ * A series is left alone: adopting it would replace the whole series with one
+ * shoot. Time off stays a conflict even when the title also mentions a client.
+ */
+export function handMadeClientShoot(
+  entry: ProductionScheduleEntry,
+  clientName: string,
+  aliases: string[] = []
+): boolean {
+  if (entry.recurrence) return false;
+  if (isTimeOffTitle(entry.summary)) return false;
+  return scheduleTitleNamesClient(entry.summary, clientName, aliases);
+}
+
 /**
  * Whether a time-off summary names this videographer.
  *
@@ -426,6 +618,18 @@ export function occurrenceRanges(
   return ranges;
 }
 
+/** True when one occurrence of the entry overlaps this calendar date. */
+export function entryCoversDate(
+  entry: ProductionScheduleEntry,
+  date: string,
+  timeZone = SCHEDULE_TIME_ZONE
+): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const day = allDayRange(date, date, timeZone);
+  if (!day) return false;
+  return occurrenceRanges(entry, date, date, timeZone).some((range) => rangesOverlap(range, day));
+}
+
 export function productionSlotRange(
   date: string,
   time: string,
@@ -438,6 +642,19 @@ export function productionSlotRange(
   if (!start) return null;
   const hours = full ? FULL_DAY_HOURS : HALF_DAY_HOURS;
   return { startMs: start.getTime(), endMs: start.getTime() + hours * 3_600_000 };
+}
+
+/** True when the entry overlaps the shoot being logged on that date. */
+export function entryOverlapsProductionSlot(
+  entry: ProductionScheduleEntry,
+  date: string,
+  time: string,
+  duration: "half" | "full",
+  timeZone = SCHEDULE_TIME_ZONE
+): boolean {
+  const slot = productionSlotRange(date, time, duration, timeZone);
+  if (!slot) return false;
+  return occurrenceRanges(entry, date, date, timeZone).some((range) => rangesOverlap(range, slot));
 }
 
 export function datesBetween(start: string, end: string): string[] {
@@ -465,6 +682,7 @@ export function blockedSlotsForVideographer(input: {
   allVideographerNames: string[];
   dates: string[];
   excludeEntryId?: string;
+  excludeEntryIds?: string[];
   timeZone?: string;
 }): ScheduleBlocks {
   const timeZone = input.timeZone || SCHEDULE_TIME_ZONE;
@@ -472,9 +690,14 @@ export function blockedSlotsForVideographer(input: {
   if (!dates.length || !input.videographerName.trim()) {
     return { blockedHalfSlots: [], blockedFullDays: [] };
   }
+  const excluded = new Set<string>();
+  if (input.excludeEntryId) excluded.add(input.excludeEntryId);
+  for (const id of input.excludeEntryIds || []) {
+    if (id) excluded.add(id);
+  }
   const relevant = input.entries.filter(
     (entry) =>
-      entry.id !== (input.excludeEntryId || "") &&
+      !excluded.has(entry.id) &&
       entryAppliesToVideographer(
         entry,
         input.videographerName,

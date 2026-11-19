@@ -8,8 +8,10 @@ import {
   SCHEDULE_TIME_ZONE,
   blockedSlotsForVideographer,
   buildProductionScheduleContent,
+  handMadeClientShoot,
   isTimeOffTitle,
   parseScheduleEntry,
+  scheduleTitleNamesClient,
   type ProductionScheduleEntry,
   type ScheduleRecurrence,
 } from "../src/lib/production-schedule";
@@ -139,6 +141,82 @@ test("time-off titles name the videographer and ignore off-site shoots", () => {
   assert.equal(on("Chris Millon OOO", "Chris Other"), false);
   assert.equal(on("Chris OOO", "Chris Millon"), true);
   assert.equal(on("Chris OOO", "Chris Other"), true);
+});
+
+test("a schedule title names the client or a short alias, not a different client", () => {
+  assert.equal(
+    scheduleTitleNamesClient("Confirmed: Pipe It Right Production", "Pipe It Right Plumbing"),
+    true
+  );
+  assert.equal(
+    scheduleTitleNamesClient("confirmed: pipe it right production", "Pipe It Right Plumbing"),
+    true
+  );
+  assert.equal(
+    scheduleTitleNamesClient("Pipe It Right Plumbing — Half day", "Pipe It Right Plumbing"),
+    true
+  );
+  assert.equal(
+    scheduleTitleNamesClient("Confirmed: Top Notch Auto Production", "Pipe It Right Plumbing"),
+    false
+  );
+  assert.equal(
+    scheduleTitleNamesClient("Krak Boba Corporate Production", "Krak Boba Corporate"),
+    true
+  );
+  assert.equal(
+    scheduleTitleNamesClient("Krak Boba Corporate Production", "Krak Boba Oceanside"),
+    false
+  );
+  assert.equal(scheduleTitleNamesClient("Krak Boba Production", "Krak Boba Corporate"), false);
+
+  const pipe = entry({
+    id: "pipe",
+    summary: "Confirmed: Pipe It Right Production",
+    participantIds: [77],
+  });
+  assert.equal(handMadeClientShoot(pipe, "Pipe It Right Plumbing"), true);
+  assert.equal(handMadeClientShoot(allDay("Pipe It Right OOO"), "Pipe It Right Plumbing"), false);
+  assert.equal(
+    handMadeClientShoot(
+      allDay("Confirmed: Pipe It Right Production", DATE, {
+        frequency: "every_week",
+        days: [2],
+        hour: null,
+        minute: null,
+        weekInstance: null,
+        weekInterval: null,
+        monthInterval: null,
+        startDate: DATE,
+        endDate: null,
+      }),
+      "Pipe It Right Plumbing"
+    ),
+    false
+  );
+
+  const other = entry({ id: "other", summary: "Top Notch Auto", participantIds: [77] });
+  const ooo = allDay("Paula OOO");
+  const stillBusy = blockedSlotsForVideographer({
+    entries: [pipe, other, ooo],
+    videographerName: "Paula Loomis",
+    personId: 77,
+    allVideographerNames: ["Paula Loomis"],
+    dates: [DATE],
+    excludeEntryIds: ["pipe"],
+  });
+  assert.equal(stillBusy.blockedFullDays.includes(DATE), true);
+
+  const onlyTheirs = blockedSlotsForVideographer({
+    entries: [pipe],
+    videographerName: "Paula Loomis",
+    personId: 77,
+    allVideographerNames: ["Paula Loomis"],
+    dates: [DATE],
+    excludeEntryIds: ["pipe"],
+  });
+  assert.deepEqual(onlyTheirs.blockedHalfSlots, []);
+  assert.deepEqual(onlyTheirs.blockedFullDays, []);
 });
 
 test("a weekly series blocks later occurrences, including a custom weekday set", () => {
@@ -279,8 +357,8 @@ test("schedule sync creates, updates, trashes, and refuses a busy or unread cale
   const { createVideographer } = await import("../src/lib/videographers");
   const revenue = await import("../src/lib/revenue");
   const calendar = await import("../src/lib/calendar");
-  const { recordOutOfCycleProduction } = await import("../src/lib/scheduling");
-  const { appDateTime } = await import("../src/lib/cadence");
+  const { recordManualProduction, recordOutOfCycleProduction } = await import("../src/lib/scheduling");
+  const { appDateTime, productionWindowForDate } = await import("../src/lib/cadence");
   const failures = await import("../src/lib/failures");
 
   t.after(() => {
@@ -595,6 +673,191 @@ test("schedule sync creates, updates, trashes, and refuses a busy or unread cale
   });
   assert.equal(offSite.ok, true);
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+
+  const paula = createVideographer("Paula Loomis");
+  const pipe = revenue.updateRevClient(
+    revenue.createRevClient({ name: "Pipe It Right Plumbing", businessModel: "home_service" }).id,
+    {
+      videographerId: paula.id,
+      colorWeek: "blue",
+      productionCadence: "monthly",
+      productionEnrolled: true,
+    }
+  );
+  assert.ok(pipe);
+
+  function firstBlueDate(from: string, inside: boolean): string {
+    let date = from;
+    for (let i = 0; i < 90; i++) {
+      if (date > today && Boolean(productionWindowForDate("blue", date)) === inside) return date;
+      date = addDays(date, 1);
+    }
+    throw new Error(inside ? "no blue production date" : "no date outside a blue week");
+  }
+
+  function shootEntry(
+    id: number,
+    summary: string,
+    date: string,
+    options?: { allDay?: boolean; participants?: { id: number; name: string }[] }
+  ) {
+    return options?.allDay
+      ? {
+          id,
+          summary,
+          starts_at: date,
+          ends_at: date,
+          all_day: true,
+          participants: options.participants || [],
+        }
+      : {
+          id,
+          summary,
+          starts_at: at(date, "09:00"),
+          ends_at: at(date, "14:00"),
+          all_day: false,
+          participants: options?.participants || [{ id: 77, name: "Paula Loomis" }],
+        };
+  }
+
+  async function flushSchedule() {
+    for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  function usePaulaGateway() {
+    sync.setProductionScheduleGatewayForTests({
+      connected: () => true,
+      listEntries: async () => ({ ok: true, entries, totalCount: entries.length }),
+      listPeople: async () => [
+        { id: 42, name: "Alex Rivera" },
+        { id: 77, name: "Paula Loomis" },
+      ],
+      create: async (body) => {
+        const id = String(nextId++);
+        created.push({ id, body });
+        return { ok: true, id };
+      },
+      update: async (id, body) => {
+        updated.push({ id, body });
+        return { ok: true, id };
+      },
+      trash: async (id) => {
+        trashed.push(id);
+        return { ok: true };
+      },
+    });
+  }
+
+  const sameDay = firstBlueDate(addDays(today, 1), false);
+  entries = [shootEntry(901, "Confirmed: Pipe It Right Production", sameDay)];
+  usePaulaGateway();
+  const createsBeforeSameClient = created.length;
+  const sendsBeforeSameClient = (
+    getDb().prepare(`SELECT count(*) c FROM scheduled_sends`).get() as { c: number }
+  ).c;
+  const sameClient = await recordOutOfCycleProduction(pipe, {
+    date: sameDay,
+    time: "09:00",
+    duration: "half",
+  });
+  assert.equal(sameClient.ok, true);
+  await flushSchedule();
+  assert.equal(created.length, createsBeforeSameClient);
+  if (sameClient.ok) {
+    assert.equal(calendar.getSend(sameClient.send.id)?.basecamp_schedule_entry_id, "901");
+  }
+  assert.equal(updated.some((row) => row.id === "901"), true);
+  assert.equal(
+    (getDb().prepare(`SELECT count(*) c FROM scheduled_sends`).get() as { c: number }).c,
+    sendsBeforeSameClient + 1
+  );
+
+  const otherDay = firstBlueDate(addDays(sameDay, 1), false);
+  entries = [shootEntry(902, "Confirmed: Top Notch Auto Production", otherDay)];
+  usePaulaGateway();
+  const createsBeforeOther = created.length;
+  const sendsBeforeOther = (
+    getDb().prepare(`SELECT count(*) c FROM scheduled_sends`).get() as { c: number }
+  ).c;
+  const otherClient = await recordOutOfCycleProduction(pipe, {
+    date: otherDay,
+    time: "09:00",
+    duration: "half",
+  });
+  assert.equal(otherClient.ok, false);
+  if (!otherClient.ok) assert.equal(otherClient.httpStatus, 409);
+  assert.equal(created.length, createsBeforeOther);
+  assert.equal(
+    (getDb().prepare(`SELECT count(*) c FROM scheduled_sends`).get() as { c: number }).c,
+    sendsBeforeOther
+  );
+
+  const oooDay = firstBlueDate(addDays(otherDay, 1), false);
+  entries = [shootEntry(903, "Paula Loomis OOO", oooDay, { allDay: true, participants: [] })];
+  usePaulaGateway();
+  const ooo = await recordOutOfCycleProduction(pipe, {
+    date: oooDay,
+    time: "09:00",
+    duration: "half",
+  });
+  assert.equal(ooo.ok, false);
+  if (!ooo.ok) assert.equal(ooo.httpStatus, 409);
+
+  const linkedDay = firstBlueDate(addDays(oooDay, 1), false);
+  entries = [shootEntry(904, "Confirmed: Pipe It Right Production", linkedDay)];
+  usePaulaGateway();
+  const already = calendar.createSend({
+    clientId: pipe.id,
+    title: "Already linked",
+    sendDate: linkedDay,
+    sendTime: "10:00",
+    requestedByClient: true,
+  });
+  getDb()
+    .prepare(`UPDATE scheduled_sends SET basecamp_schedule_entry_id = ?, updated_at = ? WHERE id = ?`)
+    .run("904", nowIso(), already.id);
+  const linkedConflict = await recordOutOfCycleProduction(pipe, {
+    date: linkedDay,
+    time: "09:00",
+    duration: "half",
+  });
+  assert.equal(linkedConflict.ok, false);
+  if (!linkedConflict.ok) assert.equal(linkedConflict.httpStatus, 409);
+
+  const manualDay = firstBlueDate(addDays(today, 1), true);
+  entries = [shootEntry(905, "confirmed: pipe it right production", manualDay)];
+  usePaulaGateway();
+  const createsBeforeManual = created.length;
+  const manual = await recordManualProduction(pipe, {
+    date: manualDay,
+    time: "09:00",
+    duration: "half",
+    status: "scheduled",
+  });
+  assert.equal(manual.ok, true);
+  await flushSchedule();
+  assert.equal(created.length, createsBeforeManual);
+  if (manual.ok) {
+    assert.equal(calendar.getSend(manual.send.id)?.basecamp_schedule_entry_id, "905");
+    assert.equal(manual.send.cadence_window_start, productionWindowForDate("blue", manualDay)?.start);
+  }
+  assert.equal(updated.some((row) => row.id === "905"), true);
+
+  const bothDay = firstBlueDate(addDays(manualDay, 1), false);
+  entries = [
+    shootEntry(906, "Confirmed: Pipe It Right Production", bothDay),
+    shootEntry(907, "Paula OOO", bothDay, { allDay: true, participants: [] }),
+  ];
+  usePaulaGateway();
+  const createsBeforeBoth = created.length;
+  const both = await recordOutOfCycleProduction(pipe, {
+    date: bothDay,
+    time: "09:00",
+    duration: "half",
+  });
+  assert.equal(both.ok, false);
+  if (!both.ok) assert.equal(both.httpStatus, 409);
+  assert.equal(created.length, createsBeforeBoth);
 });
 
 function addDays(ymd: string, days: number): string {
