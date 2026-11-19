@@ -241,6 +241,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
   const pinLayerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const frozenHeightRef = useRef<number | null>(null);
   const lastFitRef = useRef(1);
   const onSelectPinRef = useRef(onSelectPin);
@@ -252,8 +253,18 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
   const [ready, setReady] = useState(false);
   const [hoverHref, setHoverHref] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [frameWidth, setFrameWidth] = useState(0);
+  const devicePicked = useRef(false);
   const [fitScale, setFitScale] = useState(1);
   const [fitContentWidth, setFitContentWidth] = useState(MOBILE_PREVIEW_WIDTH);
+  // A 390px phone frame is wider than the column on a 375px phone once the
+  // page gutters are in. Scale to the column we actually have.
+  const fitFrame =
+    frameWidth > 0 && frameWidth < MOBILE_PREVIEW_WIDTH
+      ? frameWidth
+      : MOBILE_PREVIEW_WIDTH;
+  const fitFrameRef = useRef(fitFrame);
+  fitFrameRef.current = fitFrame;
   const [compose, setCompose] = useState<ComposeState | null>(null);
   const [composeBody, setComposeBody] = useState("");
   const [composeError, setComposeError] = useState("");
@@ -298,7 +309,10 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       // a real phone. Interactive quizzes keep native width so clicks line up.
       if (!interactive && device === "mobile") {
         const contentWidth = measureEmailContentWidth(doc);
-        const scale = fitScaleForPreview(contentWidth, MOBILE_PREVIEW_WIDTH);
+        const scale = fitScaleForPreview(
+          contentWidth,
+          fitFrameRef.current || MOBILE_PREVIEW_WIDTH
+        );
         setFitScale((prev) => (Math.abs(prev - scale) < 0.001 ? prev : scale));
         setFitContentWidth((prev) => {
           const next =
@@ -812,6 +826,40 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     return () => window.removeEventListener("message", onMessage);
   }, [interactive]);
 
+  // The review page hides the Desktop/Mobile toggle under 900px, so a phone
+  // would otherwise stay on the desktop layout and clip a 600px email.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const apply = () => {
+      if (!devicePicked.current && mq.matches) setDevice("mobile");
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const read = () => {
+      const next = Math.round(el.clientWidth);
+      setFrameWidth((prev) => (Math.abs(prev - next) < 2 ? prev : next));
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // The column width arrives after the first measure. Fit again so a 375px
+  // phone scales the email to the gutter, not to a hardcoded 390px frame.
+  useEffect(() => {
+    if (device !== "mobile" || !ready) return;
+    if (iframeRef.current?.contentDocument?.readyState === "complete") {
+      void freezeHeight();
+    }
+  }, [fitFrame, device, ready, freezeHeight]);
+
   // Re-measure height when switching device width: the email reflows (mobile
   // is usually taller), so the frozen height must be recomputed. Reset scale
   // first so we measure at the new iframe width, not a leftover 600px layout.
@@ -937,7 +985,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     activePackageIndex >= 0 ? packageItems[activePackageIndex]?.title : "";
 
   return (
-    <div className="preview-frame-wrap">
+    <div className="preview-frame-wrap" ref={frameRef}>
       <div
         className={`preview-devicebar${showPackageNav ? " has-package" : ""}`}
       >
@@ -972,14 +1020,20 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
           <button
             type="button"
             className={`preview-device-btn ${device === "desktop" ? "active" : ""}`}
-            onClick={() => setDevice("desktop")}
+            onClick={() => {
+              devicePicked.current = true;
+              setDevice("desktop");
+            }}
           >
             Desktop
           </button>
           <button
             type="button"
             className={`preview-device-btn ${device === "mobile" ? "active" : ""}`}
-            onClick={() => setDevice("mobile")}
+            onClick={() => {
+              devicePicked.current = true;
+              setDevice("mobile");
+            }}
           >
             Mobile
           </button>
@@ -1016,7 +1070,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
         }`}
         style={{
           height: device === "mobile" ? Math.round(height * fitScale) : height,
-          width: device === "mobile" ? MOBILE_PREVIEW_WIDTH : undefined,
+          width: device === "mobile" ? fitFrame : undefined,
           maxWidth: device === "mobile" ? "100%" : undefined,
           margin: device === "mobile" ? "0 auto" : undefined,
         }}
@@ -1036,6 +1090,9 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
               device === "mobile" && fitScale !== 1
                 ? fitContentWidth
                 : "100%",
+            // max-width:100% on the iframe would clamp the 600px layout before
+            // the scale, and the email would shrink twice.
+            maxWidth: device === "mobile" && fitScale !== 1 ? "none" : undefined,
             transform: fitScale !== 1 ? `scale(${fitScale})` : undefined,
             transformOrigin: "top left",
             pointerEvents: passThrough ? "auto" : "none",

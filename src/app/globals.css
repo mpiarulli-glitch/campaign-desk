@@ -213,6 +213,7 @@ button {
   width: 100%;
   max-width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   /* `hidden` computes the other axis to `auto`, so this shell becomes a scroll
      container. The campaign review column is sticky inside the real scroller
      (.app-content). A scroll container in between swallows that stickiness and
@@ -1180,6 +1181,7 @@ button {
 
 .login-wrap {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -1206,7 +1208,7 @@ button {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   overflow: auto;
-  max-height: calc(100vh - 180px);
+  max-height: calc(100dvh - 180px);
   max-width: 100%;
   min-width: 0;
   box-shadow: var(--shadow);
@@ -2630,7 +2632,7 @@ button {
      16px below that, and short enough that the column ends above the bottom
      of the pane instead of hiding the last button. */
   top: 16px;
-  max-height: calc(100vh - 92px);
+  max-height: calc(100dvh - 92px);
   overflow-x: clip;
   overflow-y: auto;
   padding-bottom: 8px;
@@ -7683,7 +7685,7 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   border: 1px solid var(--ops-border);
   border-radius: 12px;
   background: var(--bg-elevated);
@@ -7923,8 +7925,8 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
 .fc-timer-docks {
   position: fixed;
   z-index: 70;
-  right: 18px;
-  bottom: 18px;
+  right: max(18px, env(safe-area-inset-right, 0px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -12118,9 +12120,9 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 /* The whole app is fixed to the viewport; only .app-content scrolls. This
    makes leftover dead-scroll space structurally impossible regardless of a
    page's own min-height. */
-.cd-shell { display: flex; height: 100vh; overflow: hidden; }
+.cd-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 .side {
-  width: 208px; flex: none; height: 100vh;
+  width: 208px; flex: none; height: 100vh; height: 100dvh;
   background: #0c0c0e; color: #b2b2b8; display: flex; flex-direction: column; z-index: 30;
   transition: width .16s ease;
 }
@@ -12166,7 +12168,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .side.is-collapsed .side-toggle { justify-content: center; gap: 0; }
 .side.is-collapsed .side-viewas { display: none; }
 
-.app-body { flex: 1; min-width: 0; height: 100vh; display: flex; flex-direction: column; }
+.app-body { flex: 1; min-width: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 .app-top {
   height: 60px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 22px;
   border-bottom: 1px solid var(--border); background: var(--surface-veil); backdrop-filter: blur(8px);
@@ -12191,7 +12193,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 /* The only scroll region. Its single page child fills it (min-height:100%)
    and scrolls internally when taller — the page's own min-height:100vh is
    neutralized here so it can't overflow the fixed shell. */
-.app-content { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+.app-content { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom, 0px); }
 .app-content > * { min-height: 100%; }
 /* Lifecycle Deliverables fills the pane and only scrolls sideways. */
 .app-content:has(.hud-fill) { overflow: hidden; }
@@ -12498,10 +12500,27 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 
   /* The search field's placeholder wraps to two lines at this width, so it
      becomes a compact control and the ⌘K hint (irrelevant on a phone) goes. */
-  .app-search { max-width: none; margin: 0; font-size: 14px; padding: 9px 12px; }
+  .app-search {
+    max-width: none;
+    margin: 0;
+    min-width: 0;
+    font-size: 14px;
+    padding: 9px 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .app-search kbd { display: none; }
 
-  .app-top { height: 56px; padding: 0 14px; gap: 10px; }
+  .app-top {
+    height: calc(56px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 14px 0;
+    gap: 10px;
+  }
+
+  .side {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 @keyframes side-scrim-in {
@@ -13358,7 +13377,7 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-height: calc(100vh - 120px);
+  max-height: calc(100dvh - 120px);
   overflow: auto;
   /* Hide the rail's own scrollbar gutter so the cards keep clean edges. */
   scrollbar-width: thin;
@@ -13676,12 +13695,24 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   .preview-device-btn,
   .preview-package-btn,
   .cal-nav-btn,
-  .hub-nav-btn {
+  .hub-nav-btn,
+  .rv-step {
     min-height: 44px;
     /* Padding stays as authored; this only guarantees the floor. */
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+  .preview-package-btn,
+  .rv-step,
+  .feedback-compose-x {
+    min-width: 44px;
+  }
+  .review-page .email-tab,
+  .review-page .rv-segment button,
+  .review-page .rv-filepick,
+  .review-page .subject-option {
+    min-height: 44px;
   }
   .nav-i { min-height: 44px; }
   /* Two more that sit outside the button classes above. */
@@ -13700,9 +13731,19 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   /* Native controls: 16px also stops iOS zooming the page on focus. */
   input,
   select,
-  textarea {
+  textarea,
+  .reply-form input,
+  .feedback-compose-name,
+  .feedback-compose-body,
+  .cd-send-plan-row .field input,
+  .subject-editor-fields input {
     min-height: 44px;
     font-size: 16px;
+  }
+  .feedback-compose-body,
+  .field textarea,
+  .review-page textarea {
+    min-height: 100px;
   }
   /* Inputs that sit inside a row of their own, where 44px would look bloated,
      still need to be tappable — the compromise is a slightly smaller floor. */
@@ -29220,33 +29261,74 @@ summary:focus-visible,
     display: none;
   }
 
+  /* One column, in document order. The previous phone layout locked the
+     preview and the feedback form into a 78dvh grid. The subject card was
+     clipped by that box and the approval block, which sits after it, painted
+     on top of the comment field. */
   .review-page .split-review {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(240px, 1fr) minmax(220px, 0.85fr);
-    height: min(78dvh, 860px);
-    gap: 12px;
-    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    gap: 18px;
   }
 
   .review-page .split-review > .stack,
   .review-page .rv-rail {
     min-height: 0;
-    overflow: auto;
+    max-height: none;
+    overflow: visible;
+    position: static;
   }
 
-  .review-page .rv-rail {
+  .review-page .preview-frame-wrap,
+  .review-page .preview-canvas {
+    max-width: 100%;
+  }
+
+  .review-page .rv-switch {
+    align-items: flex-start;
+  }
+
+  .review-page .rv-switch-tabs {
+    flex: 1 1 100%;
+  }
+
+  .review-page .email-tab,
+  .review-page .email-tab-label {
+    max-width: 100%;
+  }
+
+  .rv-approve {
     position: static;
-    max-height: none;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .rv-approve-actions {
     align-items: stretch;
     width: 100%;
+    min-width: 0;
+  }
+
+  .rv-approve-actions .btn {
+    width: 100%;
   }
 
   .rv-approve-hint {
     text-align: left;
+  }
+
+  .review-page .topbar {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .review-page .container {
+    width: min(1400px, calc(100% - 32px));
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
 }
 
