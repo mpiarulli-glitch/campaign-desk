@@ -8,6 +8,7 @@ import {
 } from "@/components/CompletedTodoPicker";
 import { LoggedForRange, loggedRangeLabel } from "@/components/LoggedForRange";
 import { weekLabel } from "@/lib/week";
+import { formatAppDay } from "@/lib/format-time";
 import { catchUpPeriodLabel } from "@/lib/snapshot-catchup";
 import {
   defaultLoggedForDate,
@@ -91,7 +92,7 @@ function relativeTime(iso: string): string {
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   const days = Math.round(hours / 24);
   if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatAppDay(iso);
 }
 
 function fmtDate(ymd: string): string {

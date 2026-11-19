@@ -16,7 +16,8 @@
   --border: #e6e9ef;
   --border-strong: #d4d9e2;
   --text: #0e1116;
-  --text-muted: #737b89;
+  /* Dark enough for 4.5:1 on the page and on white. #737b89 missed that. */
+  --text-muted: #5c6574;
   --text-body: #4a5262;
   --accent: #00d4e8;
   --accent-hover: #00bfd1;
@@ -632,6 +633,20 @@ button {
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .btn:hover,
+  .btn:active {
+    transition: none;
+    transform: none;
+  }
 }
 
 .btn-secondary {
@@ -4977,6 +4992,29 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
     width: calc(100% - 32px);
     padding-top: 20px;
   }
+  /* Keep previous, the week, and next on one row. Wrapping pushed Next
+     onto its own line, flush right, away from the control it belongs to. */
+  .snap-client .snap-week-nav {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "prev select next"
+      "today today today";
+    width: 100%;
+    margin-left: 0;
+    justify-content: stretch;
+    gap: 6px;
+  }
+  .snap-client .snap-week-nav > button:first-child { grid-area: prev; }
+  .snap-client .snap-week-nav > select {
+    grid-area: select;
+    max-width: none;
+    width: 100%;
+    height: 44px;
+  }
+  .snap-client .snap-week-today { grid-area: today; height: 44px; }
+  .snap-client .snap-week-nav > button:last-child { grid-area: next; }
+  .snap-client .snap-week-nav > button { height: 44px; }
   .snap-client .snap-hero {
     padding-bottom: 22px;
   }
@@ -12113,8 +12151,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .nav-i.on { background: linear-gradient(90deg, rgba(0,212,232,.18), rgba(0,212,232,.04)); color: #fff; box-shadow: inset 2px 0 0 #00d4e8; }
 .nav-i.on svg { opacity: 1; color: #00d4e8; }
 .side-foot { margin-top: auto; padding: 10px; border-top: 1px solid rgba(255,255,255,.06); }
-.side-viewas { font-size: 12px; color: #71717a; padding: 4px 10px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.side-toggle { display: flex; align-items: center; gap: 11px; width: 100%; border: none; background: none; color: #71717a; padding: 8px 9px; border-radius: 9px; cursor: pointer; font-family: var(--font); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.side-viewas { font-size: 12px; color: #a1a1aa; padding: 4px 10px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-toggle { display: flex; align-items: center; gap: 11px; width: 100%; border: none; background: none; color: #a1a1aa; padding: 8px 9px; border-radius: 9px; cursor: pointer; font-family: var(--font); font-size: 13px; font-weight: 500; white-space: nowrap; }
 .side-toggle:hover { background: #1b1b1f; color: #ededee; }
 .side-toggle-icon { width: 18px; text-align: center; flex: none; font-size: 15px; }
 
@@ -12704,7 +12742,8 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
   --bg-soft: #eef1f5;
   --border: #e6e9ef;
   --text: #0e1116;
-  --text-muted: #737b89;
+  /* Dark enough for 4.5:1 on the page and on white. #737b89 missed that. */
+  --text-muted: #5c6574;
   --text-body: #4a5262;
 }
 /* This scope exists to cancel .acct-scope's warm cream back to the app default,
@@ -25408,6 +25447,10 @@ a.snap-todo-linked-title {
 }
 
 .clist-cols-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-elevated);
   padding-top: 10px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
@@ -25416,6 +25459,36 @@ a.snap-todo-linked-title {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.clist-sort {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clist-sort:hover {
+  color: var(--text);
+}
+
+.clist-cols-head [aria-sort="ascending"] .clist-sort::after {
+  content: "↑";
+}
+
+.clist-cols-head [aria-sort="descending"] .clist-sort::after {
+  content: "↓";
 }
 
 .clist-row {
@@ -28768,4 +28841,125 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 }
 
 .snap-week-custom:hover { background: var(--bg-soft); }
+
+/* Keyboard focus for controls that do not already draw their own ring.
+   Mouse clicks stay quiet because this is :focus-visible only. */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 80;
+  transform: translateY(-160%);
+  background: var(--ink);
+  color: var(--on-ink);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.crumbs {
+  margin: 0 0 10px;
+}
+
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crumbs li:not(:last-child)::after {
+  content: "/";
+  color: var(--text-muted);
+}
+
+.crumbs a {
+  color: var(--accent-ink);
+  font-weight: 650;
+}
+
+.crumbs a:hover {
+  text-decoration: underline;
+}
+
+.crumbs [aria-current="page"] {
+  color: var(--text);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-toast {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--success-wash);
+  color: var(--success-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.field input[aria-invalid="true"],
+.field textarea[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.snap-rev-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.16);
+}
+
+/* Light-only badge fills and teal text go muddy on a dark surface. */
+:root[data-theme="dark"] .badge-due,
+:root[data-theme="dark"] .badge-needs_changes,
+:root[data-theme="dark"] .badge-needs_revisions_internal {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+}
+
+:root[data-theme="dark"] .badge-in_review,
+:root[data-theme="dark"] .badge-approved-internal,
+:root[data-theme="dark"] .badge-scheduled,
+:root[data-theme="dark"] .tab.active,
+:root[data-theme="dark"] .tab.active .tab-count,
+:root[data-theme="dark"] .email-tab.active,
+:root[data-theme="dark"] .comment-channel-tag.internal {
+  color: var(--accent-ink);
+}
+
+:root[data-theme="dark"] .badge-live {
+  color: var(--success-ink);
+}
 

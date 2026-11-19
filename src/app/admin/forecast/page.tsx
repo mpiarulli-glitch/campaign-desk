@@ -111,12 +111,12 @@ export default function ForecastDashboardPage() {
             </p>
           </div>
           <div className="ops-weeknav">
-            <button onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
+            <button type="button" onClick={() => setWeek((w) => addWeeks(w, -1))} aria-label="Previous week">‹</button>
             <strong>{weekLabel(week)}</strong>
             {loading && people.length > 0 ? <span className="ops-weeknav-busy">Updating…</span> : null}
-            <button onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
+            <button type="button" onClick={() => setWeek((w) => addWeeks(w, 1))} aria-label="Next week">›</button>
             {!isCurrentWeek(week) ? (
-              <button className="ops-weeknav-reset" onClick={() => setWeek(currentWeek())}>
+              <button type="button" className="ops-weeknav-reset" onClick={() => setWeek(currentWeek())}>
                 This week
               </button>
             ) : null}
@@ -180,10 +180,10 @@ export default function ForecastDashboardPage() {
           </div>
         </div>
 
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <p className="error" role="alert">{error}</p> : null}
 
         {loading && people.length === 0 ? (
-          <p className="muted">Loading...</p>
+          <p className="muted" role="status">Loading...</p>
         ) : !loading && people.length === 0 ? (
           <div className="empty"><p>No forecasted hours for this week yet.</p></div>
         ) : (

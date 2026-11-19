@@ -1,6 +1,7 @@
 "use client";
 
 import { CampaignCopyFields } from "@/components/CampaignCopyFields";
+import { Crumbs } from "@/components/Crumbs";
 import { PushToGhl } from "@/components/PushToGhl";
 import { PushToKlaviyo } from "@/components/PushToKlaviyo";
 import Link from "next/link";
@@ -22,6 +23,7 @@ import {
 import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
 import { countsForMonth } from "@/lib/campaign-month-desk";
 import { APP_TIME_ZONE, currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
+import { formatAppDateTime } from "@/lib/format-time";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
 
 function countMonthOptions(createdAt?: string, selected?: string | null): string[] {
@@ -1901,6 +1903,12 @@ export default function AdminCampaignPage() {
   async function toggleArchived() {
     if (!campaign) return;
     const archived = !campaign.archived_at;
+    if (
+      archived &&
+      !confirm(`Archive “${campaign.title}”? You can restore it from Archived.`)
+    ) {
+      return;
+    }
     setSaving(true);
     setMessage("");
     setError("");
@@ -1990,6 +1998,12 @@ export default function AdminCampaignPage() {
       <main className="container container-wide stack cd-pkg">
         <div className="cd-pkg-hero">
           <div>
+            <Crumbs
+              items={[
+                { href: "/admin/campaigns", label: "Campaigns" },
+                { label: campaign.title },
+              ]}
+            />
             <p className="eyebrow">
               {isAutomation ? "Automation" : "Review package"}
               {campaign.archived_at ? " · Archived" : ""}
@@ -2017,7 +2031,7 @@ export default function AdminCampaignPage() {
                 emails.map((e) => e.kind),
                 { automation: isAutomation }
               )}{" "}
-              · Updated {new Date(campaign.updated_at).toLocaleString()}
+              · Updated {formatAppDateTime(campaign.updated_at)}
             </p>
             <div
               className="row"
@@ -2481,7 +2495,7 @@ export default function AdminCampaignPage() {
 
         <div className="cd-pkg-work">
           <div className="cd-pkg-editor">
-        {message ? <p className="success">{message}</p> : null}
+        {message ? <p className="success" role="status">{message}</p> : null}
         {error ? <p className="error">{error}</p> : null}
 
         {aiChat ? (
@@ -2913,7 +2927,7 @@ export default function AdminCampaignPage() {
                             {c.channel === "external" ? "External" : "Internal"}
                           </span>
                         </span>
-                        <span>{new Date(c.created_at).toLocaleString()}</span>
+                        <span>{formatAppDateTime(c.created_at)}</span>
                       </div>
                       {isCopyQuote(c) ? (
                         <blockquote className="comment-quote">
@@ -2968,7 +2982,7 @@ export default function AdminCampaignPage() {
                               <div className="reply-head">
                                 {r.author_name}
                                 {r.is_admin ? " · Team" : " · Client"} ·{" "}
-                                {new Date(r.created_at).toLocaleString()}
+                                {formatAppDateTime(r.created_at)}
                               </div>
                               <div className="reply-body">{r.body}</div>
                             </div>
@@ -3242,7 +3256,7 @@ export default function AdminCampaignPage() {
                         {emailForVersion ? emailForVersion.title + " — " : ""}
                         {v.note || "Update"}
                       </span>
-                      <span>{new Date(v.created_at).toLocaleString()}</span>
+                      <span>{formatAppDateTime(v.created_at)}</span>
                     </div>
                   </div>
                 );
@@ -3859,16 +3873,14 @@ export default function AdminCampaignPage() {
                 {basecampApproval.lastSentAt ? (
                   <p className="bc-fact">
                     Last sent{" "}
-                    {new Date(basecampApproval.lastSentAt).toLocaleString()}.
+                    {formatAppDateTime(basecampApproval.lastSentAt)}.
                   </p>
                 ) : null}
                 {basecampApproval.followupCount > 0 ? (
                   <p className="bc-fact am-followup-status">
                     Followed up {basecampApproval.followupCount}×
                     {basecampApproval.followupLastAt
-                      ? ` · last ${new Date(
-                          basecampApproval.followupLastAt
-                        ).toLocaleString()}`
+                      ? ` · last ${formatAppDateTime(basecampApproval.followupLastAt)}`
                       : ""}
                   </p>
                 ) : basecampApproval.cardUrl ? (

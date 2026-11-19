@@ -96,6 +96,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   const [brief, setBrief] = useState<Brief>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<BriefFieldErrors>({});
   const [extraSent, setExtraSent] = useState(false);
   // Set when a client with both an invited window and an open cadence window
   // chooses to go book the cadence one instead. The invitation leads by
@@ -103,8 +104,15 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
   const [viewCadence, setViewCadence] = useState(false);
   const briefRef = useRef<HTMLDivElement | null>(null);
 
-  const set = (key: string, value: string) =>
+  const set = (key: string, value: string) => {
     setBrief((b) => ({ ...b, [key]: value }));
+    setFieldErrors((current) => {
+      if (!current[key as keyof BriefFieldErrors]) return current;
+      const next = { ...current };
+      delete next[key as keyof BriefFieldErrors];
+      return next;
+    });
+  };
 
   async function load() {
     try {
@@ -194,6 +202,23 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
       setError("That time isn't available. Please pick another.");
       return;
     }
+    const missing: BriefFieldErrors = {};
+    if (!(brief.locations || "").trim()) {
+      missing.locations = "Add the production location so the crew knows where to go.";
+    }
+    if (!(brief.onsiteContactName || "").trim()) {
+      missing.onsiteContactName = "Add an on-site contact name.";
+    }
+    if (!(brief.onsiteContactPhone || "").trim()) {
+      missing.onsiteContactPhone = "Add a phone number the crew can reach.";
+    }
+    if (missing.locations || missing.onsiteContactName || missing.onsiteContactPhone) {
+      setFieldErrors(missing);
+      setError("Add the location and on-site contact before booking.");
+      briefRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setFieldErrors({});
     setSaving(true);
     setError("");
     const res = await fetch(apiPath, {
@@ -372,8 +397,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             ) : (
               <div className="rev-form-grid">
                 <div className="field">
-                  <label>Date</label>
+                  <label htmlFor="sched-extra-date">Date</label>
                   <input
+                    id="sched-extra-date"
                     type="date"
                     min={data.today}
                     value={extraDate}
@@ -381,8 +407,9 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
                   />
                 </div>
                 <div className="field">
-                  <label>Start time</label>
+                  <label htmlFor="sched-extra-time">Start time</label>
                   <select
+                    id="sched-extra-time"
                     className="select-clean"
                     value={extraTime}
                     onChange={(e) => setExtraTime(e.target.value)}
@@ -450,12 +477,13 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
               helps us plan the production.
             </p>
 
-            {error ? <p className="error">{error}</p> : null}
+            {error ? <p className="error" role="alert">{error}</p> : null}
 
-            <BriefFields brief={brief} set={set} />
+            <BriefFields brief={brief} set={set} errors={fieldErrors} />
 
             <div className="brief-submit">
               <button
+                type="button"
                 className="btn"
                 disabled={saving || !extraDate || !extraTime}
                 onClick={submit}
@@ -773,12 +801,12 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             helps us plan the production.
           </p>
 
-          {error ? <p className="error">{error}</p> : null}
+          {error ? <p className="error" role="alert">{error}</p> : null}
 
-          <BriefFields brief={brief} set={set} />
+          <BriefFields brief={brief} set={set} errors={fieldErrors} />
 
           <div className="brief-submit">
-            <button className="btn" disabled={saving} onClick={submit}>
+            <button type="button" className="btn" disabled={saving} onClick={submit}>
               {saving ? "Requesting..." : "Request this slot"}
             </button>
             <span className="muted">
@@ -810,40 +838,73 @@ function TestLinkNote({ show }: { show?: boolean }) {
 // The five sections every production booking form asks for, shared by the
 // regular window-booking flow and the out-of-cycle request flow so the two
 // never drift apart.
+type BriefFieldErrors = Partial<
+  Record<"locations" | "onsiteContactName" | "onsiteContactPhone", string>
+>;
+
 function BriefFields({
   brief,
   set,
+  errors,
 }: {
   brief: Brief;
   set: (key: string, value: string) => void;
+  errors: BriefFieldErrors;
 }) {
   return (
     <>
       <BriefSection num="01" title="Essential details">
         <div className="field">
-          <label>Production location(s) <span className="req">required</span></label>
+          <label htmlFor="brief-locations">Production location(s) <span className="req">required</span></label>
           <textarea
+            id="brief-locations"
+            required
+            aria-required="true"
+            aria-invalid={Boolean(errors.locations)}
+            aria-describedby={errors.locations ? "brief-locations-error" : undefined}
             value={brief.locations || ""}
             onChange={(e) => set("locations", e.target.value)}
             placeholder="Full address (business or residential). List every location, in order, if there's more than one."
           />
+          {errors.locations ? (
+            <p id="brief-locations-error" className="field-error" role="alert">{errors.locations}</p>
+          ) : null}
         </div>
         <div className="rev-form-grid">
           <div className="field">
-            <label>On-site contact name <span className="req">required</span></label>
+            <label htmlFor="brief-contact-name">On-site contact name <span className="req">required</span></label>
             <input
+              id="brief-contact-name"
+              required
+              aria-required="true"
+              aria-invalid={Boolean(errors.onsiteContactName)}
+              aria-describedby={errors.onsiteContactName ? "brief-contact-name-error" : undefined}
               value={brief.onsiteContactName || ""}
               onChange={(e) => set("onsiteContactName", e.target.value)}
               placeholder="Who the crew asks for"
             />
+            {errors.onsiteContactName ? (
+              <p id="brief-contact-name-error" className="field-error" role="alert">{errors.onsiteContactName}</p>
+            ) : null}
           </div>
           <div className="field">
-            <label>On-site contact phone <span className="req">required</span></label>
+            <label htmlFor="brief-contact-phone">On-site contact phone <span className="req">required</span></label>
             <input
+              id="brief-contact-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              required
+              aria-required="true"
+              aria-invalid={Boolean(errors.onsiteContactPhone)}
+              aria-describedby={errors.onsiteContactPhone ? "brief-contact-phone-error" : undefined}
               value={brief.onsiteContactPhone || ""}
               onChange={(e) => set("onsiteContactPhone", e.target.value)}
               placeholder="Reachable on production day"
             />
+            {errors.onsiteContactPhone ? (
+              <p id="brief-contact-phone-error" className="field-error" role="alert">{errors.onsiteContactPhone}</p>
+            ) : null}
           </div>
         </div>
       </BriefSection>

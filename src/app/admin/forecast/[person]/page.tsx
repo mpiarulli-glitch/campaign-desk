@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Crumbs } from "@/components/Crumbs";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ForecastCalendar } from "@/components/ForecastCalendar";
@@ -3448,6 +3449,14 @@ export default function PersonForecastPage() {
         <SilentBasecampClientMatch onLinked={refreshLinkedClients} />
         <div className="ops-page-head">
           <div>
+            {canSeeTeamBoard ? (
+              <Crumbs
+                items={[
+                  { href: "/admin/forecast", label: "Forecast" },
+                  { label: data?.label || person },
+                ]}
+              />
+            ) : null}
             <h1 className="ops-title">{data?.label || person}</h1>
             {switcherPeople.length > 1 ? (
               <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Crumbs } from "@/components/Crumbs";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ContractImportPanel } from "@/components/ContractImportPanel";
@@ -374,6 +375,12 @@ export default function SnapshotEditorPage() {
 
       <div className="ops-page-head">
         <div>
+          <Crumbs
+            items={[
+              { href: "/admin/snapshot/desk", label: "Snapshots" },
+              { label: name || "Account" },
+            ]}
+          />
           <p className="ops-eyebrow">Account snapshot</p>
           <h1 className="ops-title">{name || "Account"}</h1>
           <label className="snap-section-nav">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { approvalActivityParts, followupActivityParts } from "@/lib/activity-copy";
+import { formatAppDateTime, formatAppDay } from "@/lib/format-time";
 
 type ActivityItem = {
   kind: "feedback" | "approved" | "followup";
@@ -36,7 +37,7 @@ function relativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatAppDay(iso);
 }
 
 export default function ActivityPage() {
@@ -239,7 +240,7 @@ export default function ActivityPage() {
                     <span
                       className="muted"
                       style={{ fontSize: 12, whiteSpace: "nowrap" }}
-                      title={new Date(item.at).toLocaleString()}
+                      title={formatAppDateTime(item.at)}
                     >
                       {relativeTime(item.at)}
                     </span>
