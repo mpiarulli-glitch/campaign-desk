@@ -8,6 +8,8 @@ import {
   EmailPreview,
   type InlineFeedbackPayload,
 } from "@/components/EmailPreview";
+import { EmbedPreviewSwitch } from "@/components/WebsiteEmbedPreview";
+import { assetShowsWebsitePreview } from "@/lib/website-embed-preview";
 import { EmailLinks } from "@/components/EmailLinks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AutomationMap } from "@/components/AutomationMap";
@@ -896,6 +898,15 @@ export default function ReviewPage() {
               </div>
             ) : null}
 
+            <EmbedPreviewSwitch
+              key={activeEmail.id}
+              enabled={assetShowsWebsitePreview({
+                kind: activeEmail.kind,
+                body_format: activeEmail.body_format,
+                html_content: activeDoc.html,
+              })}
+              html={activeDoc.html}
+            >
             <EmailPreview
               html={activeDoc.html}
               interactive={activeDoc.interactive}
@@ -921,6 +932,7 @@ export default function ReviewPage() {
                   : undefined
               }
             />
+            </EmbedPreviewSwitch>
 
             {kindUsesSubjects(activeEmail.kind ?? "email") &&
             activeEmail.subjects &&
