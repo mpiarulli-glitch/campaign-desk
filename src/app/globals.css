@@ -1514,6 +1514,137 @@ button {
   border-color: #0d0d0d;
 }
 
+/* Mock-website preview for pop-up and form/quiz embeds. */
+.wep {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wep-modes,
+.wep-toolbar,
+.wep-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.wep-toolbar {
+  justify-content: space-between;
+}
+
+.wep-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.wep-card,
+.wep-stage,
+.wep-toolbar,
+.wep-note {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wep-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.wep-sizer {
+  grid-row: 1;
+  grid-column: 1;
+  height: 0;
+  width: 100%;
+}
+
+.wep-browser {
+  grid-row: 2;
+  grid-column: 1;
+  justify-self: center;
+}
+
+.wep-note {
+  white-space: normal;
+}
+
+.wep-stage.is-mobile {
+  justify-items: center;
+}
+
+.wep-browser {
+  max-width: 100%;
+}
+
+.wep-chrome {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: #eceae6;
+  border: 1px solid #d9d4cc;
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+}
+
+.wep-dots {
+  width: 42px;
+  height: 10px;
+  flex: 0 0 42px;
+  background:
+    radial-gradient(circle at 5px 5px, #e07a5f 4px, transparent 4.5px),
+    radial-gradient(circle at 21px 5px, #e9c46a 4px, transparent 4.5px),
+    radial-gradient(circle at 37px 5px, #81b29a 4px, transparent 4.5px);
+}
+
+.wep-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #6b6560;
+}
+
+.wep-frame {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  box-sizing: content-box;
+}
+
+.wep-frame.is-desktop {
+  border: 1px solid #d9d4cc;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+}
+
+.wep-frame.is-mobile {
+  border: 12px solid #1c1b19;
+  border-radius: 36px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+}
+
+.wep-frame iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  display: block;
+  background: #fff;
+}
+
 /* Dashboard two-column layout: campaigns + recent activity sidebar. */
 .dashboard-grid {
   display: grid;

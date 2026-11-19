@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmailPreview, type EmailEditHandle, type PendingEdit } from "@/components/EmailPreview";
+import { EmbedPreviewSwitch } from "@/components/WebsiteEmbedPreview";
+import { assetShowsWebsitePreview } from "@/lib/website-embed-preview";
 import { applyTextEdits } from "@/lib/inline-edit";
 import { usableEmail } from "@/lib/email-address";
 import { EmailLinks } from "@/components/EmailLinks";
@@ -2756,6 +2758,15 @@ export default function AdminCampaignPage() {
                   </p>
                 )
               ) : null}
+              <EmbedPreviewSwitch
+                key={`${activeEmail.id}:${previewVariant}`}
+                enabled={assetShowsWebsitePreview({
+                  kind: activeEmail.kind,
+                  body_format: activeEmail.body_format,
+                  html_content: activeDoc.html,
+                })}
+                html={activeDoc.html}
+              >
               <EmailPreview
                 ref={emailEditRef}
                 key={`${activeDoc.html.length}-${previewNonce}`}
@@ -2792,6 +2803,7 @@ export default function AdminCampaignPage() {
                     : undefined
                 }
               />
+              </EmbedPreviewSwitch>
               <EmailLinks
                 html={activeDoc.html}
                 itemNoun={kindNoun(activeEmail.kind ?? "email")}
