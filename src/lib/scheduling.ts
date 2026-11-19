@@ -2,6 +2,7 @@ import {
   BOOKING_SLOTS,
   advanceLastProduction,
   appDateTime,
+  cadenceWindowBookedEarly,
   computeCycleStatus,
   findSendForWindow,
   isBlackout,
@@ -62,7 +63,7 @@ async function rejectIfVideographerBusy(
   time: string,
   duration: "half" | "full",
   audience: "admin" | "client",
-  excludeEntryId?: string
+  options?: { excludeEntryId?: string; matchClient?: boolean }
 ): Promise<BookingResult | null> {
   const result = await videographerScheduleConflict({
     videographerId: client.videographer_id,
@@ -72,7 +73,10 @@ async function rejectIfVideographerBusy(
     duration: time ? duration : "full",
     today: appDateTime().date,
     audience,
-    excludeEntryId,
+    excludeEntryId: options?.excludeEntryId,
+    // A hand-made entry for this same client is the shoot being logged, not a
+    // second booking. Other clients and time off still conflict.
+    clientName: options?.matchClient ? client.name : "",
   });
   if (result.ok) return null;
   return { ok: false, httpStatus: result.httpStatus, error: result.error };
@@ -922,7 +926,15 @@ export async function recordManualProduction(
     resolvedOverride = overrideWindow.start;
   }
   const derived = productionWindowForDate(client.color_week, date);
-  const windowStart = resolvedOverride || derived?.start || "";
+  // No window was named, and the date is not inside a production week. If the
+  // shoot is within 14 days before the client's next cadence window, count it
+  // toward that window so an early booking stops the reminders. Anything
+  // further out still has to name a window.
+  const early =
+    !resolvedOverride && !derived
+      ? cadenceWindowBookedEarly(client, date, appDateTime().date)
+      : null;
+  const windowStart = resolvedOverride || derived?.start || early?.start || "";
   if (!windowStart) {
     return {
       ok: false,
@@ -953,7 +965,9 @@ export async function recordManualProduction(
     };
   }
 
-  const busy = await rejectIfVideographerBusy(client, date, time, duration, "admin");
+  const busy = await rejectIfVideographerBusy(client, date, time, duration, "admin", {
+    matchClient: true,
+  });
   if (busy) return busy;
 
   // Serialize the duplicate check with the insert so two people logging the
@@ -1084,7 +1098,9 @@ export async function recordOutOfCycleProduction(
     };
   }
 
-  const busy = await rejectIfVideographerBusy(client, date, time, duration, "admin");
+  const busy = await rejectIfVideographerBusy(client, date, time, duration, "admin", {
+    matchClient: true,
+  });
   if (busy) return busy;
 
   const reserve = getDb().transaction((): BookingResult => {

@@ -27,6 +27,10 @@ import {
   VIDEO_EDITING_PROJECT_ID,
   blockedSlotsForVideographer,
   buildProductionScheduleContent,
+  entryAppliesToVideographer,
+  entryCoversDate,
+  entryOverlapsProductionSlot,
+  handMadeClientShoot,
   namesMatch,
   parseScheduleEntry,
   slotIsBlocked,
@@ -208,6 +212,7 @@ export async function readVideographerBlocks(input: {
   videographerId: string;
   dates: string[];
   excludeEntryId?: string;
+  excludeEntryIds?: string[];
 }): Promise<{ ok: true; blocks: ScheduleBlocks } | { ok: false; error: string; blocks: ScheduleBlocks }> {
   const dates = [...new Set(input.dates)].filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
   const name = videographerName(input.videographerId);
@@ -228,10 +233,90 @@ export async function readVideographerBlocks(input: {
     allVideographerNames: allVideographerNames(),
     dates,
     excludeEntryId: input.excludeEntryId,
+    excludeEntryIds: input.excludeEntryIds,
     timeZone: APP_TIME_ZONE,
   });
   clearFailure(FAILURE_KIND, FAILURE_SUBJECT);
   return { ok: true, blocks };
+}
+
+function scheduleEntryOwner(entryId: string): string {
+  const id = entryId.trim();
+  if (!id) return "";
+  const row = getDb()
+    .prepare(
+      `SELECT id FROM scheduled_sends WHERE basecamp_schedule_entry_id = ? LIMIT 1`
+    )
+    .get(id) as { id: string } | undefined;
+  return row?.id || "";
+}
+
+function scheduleEntryIsFree(entryId: string, sendId?: string): boolean {
+  const owner = scheduleEntryOwner(entryId);
+  return !owner || (!!sendId && owner === sendId);
+}
+
+function claimFreeScheduleEntry(sendId: string, entryId: string): boolean {
+  const claim = getDb().transaction((): boolean => {
+    const owner = scheduleEntryOwner(entryId);
+    if (owner === sendId) return true;
+    if (owner) return false;
+    return claimEntryId(sendId, entryId);
+  });
+  return claim.immediate();
+}
+
+async function unclaimedSameClientEntryIds(input: {
+  clientName: string;
+  aliases?: string[];
+  date: string;
+  sendId?: string;
+}): Promise<string[]> {
+  const loaded = await loadEntries();
+  if (!loaded.ok) return [];
+  return loaded.entries
+    .filter(
+      (entry) =>
+        handMadeClientShoot(entry, input.clientName, input.aliases || []) &&
+        entryCoversDate(entry, input.date) &&
+        scheduleEntryIsFree(entry.id, input.sendId)
+    )
+    .map((entry) => entry.id);
+}
+
+async function findHandMadeEntryToAdopt(send: ScheduledSend): Promise<string | null> {
+  const client = send.client_id ? getRevClient(send.client_id) : null;
+  const clientName = (client?.name || send.client_name || "").trim();
+  if (!clientName || !/^\d{4}-\d{2}-\d{2}$/.test(send.send_date || "")) return null;
+  const loaded = await loadEntries();
+  if (!loaded.ok) return null;
+  const matches = loaded.entries.filter(
+    (entry) =>
+      handMadeClientShoot(entry, clientName) &&
+      entryCoversDate(entry, send.send_date) &&
+      scheduleEntryIsFree(entry.id, send.id)
+  );
+  if (!matches.length) return null;
+  const name = videographerName(client?.videographer_id || "");
+  const roster = name ? await loadPeople() : [];
+  const personId = name ? matchPersonId(name, roster) : null;
+  const everyone = allVideographerNames();
+  const duration = send.duration === "full" ? "full" : "half";
+  const score = (entry: ProductionScheduleEntry): number => {
+    const overlaps = entryOverlapsProductionSlot(
+      entry,
+      send.send_date,
+      send.send_time,
+      duration
+    )
+      ? 2
+      : 0;
+    const assigned =
+      name && entryAppliesToVideographer(entry, name, personId, everyone) ? 1 : 0;
+    return overlaps + assigned;
+  };
+  matches.sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
+  return matches[0].id;
 }
 
 export async function videographerScheduleConflict(input: {
@@ -242,12 +327,24 @@ export async function videographerScheduleConflict(input: {
   today: string;
   audience: "admin" | "client";
   excludeEntryId?: string;
+  // When set, an unclaimed one-off entry on this date whose title names this
+  // client (or an alias) is not a conflict. Time off and other clients still are.
+  clientName?: string;
+  clientAliases?: string[];
 }): Promise<{ ok: true } | { ok: false; httpStatus: number; error: string }> {
   if (!input.videographerId || !input.date || input.date < input.today) return { ok: true };
+  const sameClientIds = input.clientName?.trim()
+    ? await unclaimedSameClientEntryIds({
+        clientName: input.clientName,
+        aliases: input.clientAliases,
+        date: input.date,
+      })
+    : [];
   const read = await readVideographerBlocks({
     videographerId: input.videographerId,
     dates: [input.date],
     excludeEntryId: input.excludeEntryId,
+    excludeEntryIds: sameClientIds,
   });
   if (!read.ok) {
     return {
@@ -395,6 +492,30 @@ export async function syncProductionScheduleEntry(sendId: string): Promise<Sched
   }
 
   if (send.send_date < today) return { ok: true, skipped: true };
+
+  // A hand-made entry for this client on this date is the same shoot. Link it
+  // and update it instead of adding a second one.
+  const fresh = getSend(send.id) || send;
+  const adopted = (fresh.basecamp_schedule_entry_id || "").trim()
+    ? ""
+    : await findHandMadeEntryToAdopt(fresh);
+  if (adopted && claimFreeScheduleEntry(fresh.id, adopted)) {
+    const updated = await gw.update(adopted, body);
+    if (updated.ok) {
+      clearFailure(FAILURE_KIND, subject);
+      return { ok: true, entryId: adopted };
+    }
+    if (!updated.missing) {
+      noteFailure(
+        updated.error || `Couldn't update the Basecamp entry for ${subject}.`,
+        "Open the production schedule in Basecamp and update the entry, or sync again.",
+        subject
+      );
+      return { ok: false, error: updated.error, entryId: adopted };
+    }
+    clearEntryId(fresh.id, adopted);
+  }
+
   const created = await gw.create(body);
   if (!created.ok) {
     noteFailure(

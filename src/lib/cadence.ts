@@ -164,6 +164,42 @@ export function productionWindowForDate(
   return null;
 }
 
+function daysBetweenYmd(start: string, end: string): number {
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  return Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / MS_PER_DAY);
+}
+
+// How early a logged shoot can still belong to the next cadence window.
+// Farther out stays unlinked so a backfill is not filed under whatever window
+// happens to be coming up.
+export const EARLY_CADENCE_DAYS = 14;
+
+/**
+ * The next cadence window, when `date` falls in the 14 days before it and not
+ * inside a production week.
+ *
+ * A date that already sits in this color's week is left to
+ * `productionWindowForDate`. A date further than 14 days out, or before a
+ * window that has already ended, is not counted here.
+ */
+export function cadenceWindowBookedEarly(
+  client: RevClient,
+  date: string,
+  today: string,
+  withinDays = EARLY_CADENCE_DAYS
+): Window | null {
+  if (!client.color_week || !client.production_cadence) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return null;
+  if (productionWindowForDate(client.color_week, date)) return null;
+  const reference = date > today ? date : today;
+  const upcoming = nextWindow(client, reference);
+  if (!upcoming || upcoming.end < today || date >= upcoming.start) return null;
+  const gap = daysBetweenYmd(date, upcoming.start);
+  if (gap < 1 || gap > withinDays) return null;
+  return upcoming;
+}
+
 export function isBlackout(date: string, client: RevClient): boolean {
   if (client.contract_start && date < client.contract_start) return true;
   if (client.contract_end && date > client.contract_end) return true;
