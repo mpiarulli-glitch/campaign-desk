@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
+import { SkipLink } from "@/components/SkipLink";
 import { PerfCharts, type MetricSeries } from "@/components/PerfCharts";
 import { SNAPSHOT_DEPARTMENTS, isSnapshotDepartment } from "@/lib/snapshot-department-list";
 import { adjacentClientSnapshotWeek, weekFromSnapshotSearch } from "@/lib/snapshot-link";
@@ -322,16 +323,17 @@ export default function SnapshotClientPage() {
 
   return (
     <div className="app-shell snap-client">
+      <SkipLink />
       <header className="topbar">
         <Brand />
         <span className="snap-topbar-tag">Client snapshot</span>
       </header>
 
-      <main className="snap-wrap">
+      <main id="main" className="snap-wrap">
         {loading && !accountName ? (
-          <p className="muted">Loading...</p>
+          <p className="muted" role="status">Loading...</p>
         ) : error && !accountName ? (
-          <p className="error">{error}</p>
+          <p className="error" role="alert">{error}</p>
         ) : !shownWeek ? (
           <p className="muted">Loading...</p>
         ) : (
@@ -435,10 +437,11 @@ export default function SnapshotClientPage() {
                 </header>
                 {revAsk.amount !== null && !revEditing ? (
                   <div className="snap-rev-done">
-                    <p>
+                    <p role="status">
                       Thanks. You told us <b>{money(revAsk.amount)}</b> for {revAsk.label}.
                     </p>
                     <button
+                      type="button"
                       className="snap-toggle"
                       onClick={() => {
                         setRevInput(String(revAsk.amount ?? ""));
@@ -458,6 +461,8 @@ export default function SnapshotClientPage() {
                         onChange={(e) => setRevInput(e.target.value)}
                         placeholder="48,200"
                         aria-label={`Total revenue for ${revAsk.label}`}
+                        aria-invalid={Boolean(revError)}
+                        aria-describedby={revError ? "snap-rev-error" : undefined}
                       />
                     </label>
                     <label className="snap-rev-field">
@@ -473,7 +478,7 @@ export default function SnapshotClientPage() {
                     </button>
                   </form>
                 )}
-                {revError ? <p className="error" style={{ marginBottom: 0 }}>{revError}</p> : null}
+                {revError ? <p id="snap-rev-error" className="error" style={{ marginBottom: 0 }} role="alert">{revError}</p> : null}
               </section>
             ) : null}
 

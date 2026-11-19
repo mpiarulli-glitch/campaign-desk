@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ADMIN_PEOPLE } from "@/lib/admin-people";
 import { entryLevelPeople, isValidPerson, personLabel as forecastPersonLabel } from "@/lib/people";
 import { CommandPalette } from "./CommandPalette";
+import { SkipLink } from "./SkipLink";
 import { TimerDock } from "./TimerDock";
 import { ActivityBell } from "./ActivityBell";
 import {
@@ -202,8 +203,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     function onDoc(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   // Forecast is the one page whose href depends on who is looking. People who
@@ -272,6 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="cd-shell">
+      <SkipLink />
       <CommandPalette />
       {/* Tapping the page behind an open drawer closes it. Rendered only while
           open so it cannot swallow clicks on desktop. */}
@@ -300,9 +309,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="side-tagline empire-mark nav-label">BUILD YOUR EMPIRE</span>
           </span>
         </Link>
-        <nav className="side-nav">
+        <nav className="side-nav" aria-label="Primary">
           {items.map((it) => (
-            <Link key={it.href} href={it.href} title={it.label} className={`nav-i ${isActive(it.href) ? "on" : ""}`}>
+            <Link key={it.href} href={it.href} title={it.label} aria-current={isActive(it.href) ? "page" : undefined} className={`nav-i ${isActive(it.href) ? "on" : ""}`}>
               <Svg name={it.icon} />
               <span className="nav-label">{it.label}</span>
             </Link>
@@ -324,6 +333,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Shown only under the mobile breakpoint, where the sidebar is a
               drawer rather than a rail. */}
           <button
+            type="button"
             className="app-hamburger"
             onClick={() => setNavOpen((v) => !v)}
             aria-label={navOpen ? "Close menu" : "Open menu"}
@@ -332,7 +342,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Svg name="menu" />
           </button>
           {pathname === "/admin/campaigns" || pathname === "/admin/campaigns/done" ? null : (
-            <button className="app-search" onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}>
+            <button type="button" className="app-search" onClick={() => document.dispatchEvent(new CustomEvent("cmdk:open"))}>
               <span aria-hidden="true">⌕</span> Search clients, campaigns…
               <kbd>⌘K</kbd>
             </button>
@@ -341,7 +351,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="app-top-right">
             {session.role === "admin" ? <ActivityBell /> : null}
             <div ref={menuRef} style={{ position: "relative" }}>
-              <button className="app-avatarbtn" onClick={() => setMenuOpen((v) => !v)}>
+              <button
+                type="button"
+                className="app-avatarbtn"
+                aria-label={`Account menu for ${meLabel}`}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
+              >
                 <span className="app-ava">{initials(meLabel)}</span>
                 <span className="app-caret" aria-hidden="true">▾</span>
               </button>
@@ -455,7 +472,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <main className="app-content">{children}</main>
+        <main id="main" className="app-content">{children}</main>
       </div>
       {/* Global: a running forecast timer has to stay visible on every signed-in
           page, not only /admin/forecast/[person]. Last in the shell so it sits

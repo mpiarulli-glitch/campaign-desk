@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { SkipLink } from "@/components/SkipLink";
 import { SendPlanDisclosure } from "@/components/SendPlanDisclosure";
 import {
   EmailPreview,
@@ -24,6 +25,7 @@ import {
 import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
 import { isCopyQuote } from "@/lib/copy-quote";
 import { formatPacificSend } from "@/lib/period";
+import { formatAppDateTime } from "@/lib/format-time";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
 
 type Attachment = {
@@ -482,6 +484,7 @@ export default function ReviewPage() {
   }
 
   async function deleteFeedback(commentId: string) {
+    if (!confirm("Delete this note? This cannot be undone.")) return;
     setFormError("");
     const res = await fetch(`/api/review/${token}`, {
       method: "POST",
@@ -547,7 +550,7 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div className="login-wrap">
-        <p className="muted">Loading campaign...</p>
+        <p className="muted" role="status">Loading campaign...</p>
       </div>
     );
   }
@@ -557,7 +560,7 @@ export default function ReviewPage() {
       <div className="login-wrap">
         <div className="card login-card">
           <h1>Link not found</h1>
-          <p className="muted">{error}</p>
+          <p className="muted" role="alert">{error}</p>
         </div>
       </div>
     );
@@ -581,6 +584,7 @@ export default function ReviewPage() {
 
   return (
     <div className="app-shell review-page">
+      <SkipLink />
       <header className="topbar">
         <Brand />
         <StatusBadge
@@ -595,7 +599,7 @@ export default function ReviewPage() {
         />
       </header>
 
-      <main className="container container-wide stack">
+      <main id="main" className="container container-wide stack">
         <div className="rv-hero">
           <div>
             <p className="eyebrow">{isAutomation ? "Automation review" : "Review"}</p>
@@ -611,7 +615,7 @@ export default function ReviewPage() {
             <span>{packageCountLabel}</span>
             <span className="rv-meta-dot" aria-hidden />
             <span>
-              Updated {new Date(campaign.updated_at).toLocaleString()}
+              Updated {formatAppDateTime(campaign.updated_at)}
             </span>
           </p>
           {campaign.description ? (
@@ -993,6 +997,8 @@ export default function ReviewPage() {
                   <textarea
                     id="body"
                     value={body}
+                    aria-invalid={formError === "Add a comment or attach an image." || undefined}
+                    aria-describedby={formError ? "review-form-error" : undefined}
                     onChange={(e) => setBody(e.target.value)}
                     placeholder={
                       isBlogReview
@@ -1051,10 +1057,10 @@ export default function ReviewPage() {
                 </div>
 
                 {formError ? (
-                  <p className="rv-notice rv-notice-bad">{formError}</p>
+                  <p id="review-form-error" className="rv-notice rv-notice-bad" role="alert">{formError}</p>
                 ) : null}
                 {formMessage ? (
-                  <p className="rv-notice rv-notice-ok">{formMessage}</p>
+                  <p className="rv-notice rv-notice-ok" role="status">{formMessage}</p>
                 ) : null}
 
                 <button
@@ -1101,7 +1107,7 @@ export default function ReviewPage() {
                               {c.author_name}
                             </span>
                             <span className="rv-comment-when">
-                              {new Date(c.created_at).toLocaleString()}
+                              {formatAppDateTime(c.created_at)}
                             </span>
                           </span>
                           {c.resolved ? (
@@ -1159,7 +1165,7 @@ export default function ReviewPage() {
                                 <div className="reply-head">
                                   {r.author_name}
                                   {r.is_admin ? " · Team" : ""} ·{" "}
-                                  {new Date(r.created_at).toLocaleString()}
+                                  {formatAppDateTime(r.created_at)}
                                 </div>
                                 <div className="reply-body">{r.body}</div>
                               </div>
@@ -1173,6 +1179,7 @@ export default function ReviewPage() {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
+                              aria-label={`Reply to ${c.author_name}`}
                               value={replyDrafts[c.id] || ""}
                               onChange={(e) =>
                                 setReplyDrafts((prev) => ({

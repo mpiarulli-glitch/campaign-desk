@@ -161,6 +161,70 @@ function formatSend(iso: string): string {
   return SEND_FORMAT.format(d);
 }
 
+type SortKey = "client" | "title" | "status" | "owner" | "send";
+type SortState = { key: SortKey; dir: "asc" | "desc" };
+
+function sortValue(c: CampaignRow, key: SortKey): string {
+  if (key === "client") return (c.client_name.trim() || "No client").toLowerCase();
+  if (key === "title") return c.title.toLowerCase();
+  if (key === "status") return c.status;
+  if (key === "owner") return (c.owner || "Unassigned").toLowerCase();
+  return c.next_send_at || c.scheduled_send_at || "\uffff";
+}
+
+function sortRows(rows: CampaignRow[], sort: SortState | null): CampaignRow[] {
+  if (!sort) return rows;
+  const dir = sort.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = sortValue(a, sort.key);
+    const bv = sortValue(b, sort.key);
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return a.title.localeCompare(b.title);
+  });
+}
+
+function SortHead({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: SortState | null;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort?.key === sortKey ? sort.dir : null;
+  return (
+    <span aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"}>
+      <button type="button" className="clist-sort" onClick={() => onSort(sortKey)}>
+        {label}
+      </button>
+    </span>
+  );
+}
+
+function ListColumns({
+  sort,
+  onSort,
+}: {
+  sort: SortState | null;
+  onSort: (key: SortKey) => void;
+}) {
+  return (
+    <div className="clist-cols clist-cols-head">
+      <SortHead label="Client" sortKey="client" sort={sort} onSort={onSort} />
+      <SortHead label="Campaign" sortKey="title" sort={sort} onSort={onSort} />
+      <SortHead label="Status" sortKey="status" sort={sort} onSort={onSort} />
+      <SortHead label="Owner" sortKey="owner" sort={sort} onSort={onSort} />
+      <SortHead label="Next send" sortKey="send" sort={sort} onSort={onSort} />
+      <span>Items</span>
+      <span />
+    </div>
+  );
+}
+
 function KindGlyph({ kind }: { kind: AssetKind }) {
   const common = {
     width: 14,
@@ -406,7 +470,7 @@ function CampaignRowView({
 
   return (
     <Link href={href || `/admin/campaigns/${c.id}`} className="clist-row">
-      <span className="clist-client">
+      <span className="clist-client" title={c.client_name.trim() || "No client"}>
         {c.client_name.trim() || "No client"}
       </span>
       <span className="clist-name-wrap">
@@ -455,7 +519,7 @@ function CampaignRowView({
             </button>
           </span>
         ) : (
-          <span className="clist-name">{c.title}</span>
+          <span className="clist-name" title={c.title}>{c.title}</span>
         )}
         {notes.length ? <span className="clist-note">{notes.join(" · ")}</span> : null}
       </span>
@@ -463,7 +527,7 @@ function CampaignRowView({
         <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
         {queueNote ? <span className="clist-status-note">{queueNote}</span> : null}
       </span>
-      <span className="clist-owner">{c.owner || "Unassigned"}</span>
+      <span className="clist-owner" title={c.owner || "Unassigned"}>{c.owner || "Unassigned"}</span>
       <span className="clist-send">
         {sendAt ? (
           <>
@@ -512,7 +576,16 @@ function CampaignRowView({
                   onClick={(e) => {
                     swallow(e);
                     setMenuOpen(false);
-                    onArchive(c.id, filter === "active");
+                    const archiving = filter === "active";
+                    if (
+                      archiving &&
+                      !confirm(
+                        `Archive “${c.title}”? You can restore it from Archived.`
+                      )
+                    ) {
+                      return;
+                    }
+                    onArchive(c.id, archiving);
                   }}
                 >
                   {busyId === c.id ? "..." : filter === "active" ? "Archive" : "Restore"}
@@ -531,6 +604,8 @@ export default function AdminPage() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [sort, setSort] = useState<SortState | null>(null);
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<ListStatusFilter>("all");
   const [view, setView] = useState<CampaignView>("list");
@@ -767,6 +842,7 @@ export default function AdminPage() {
     }
     const saved = typeof data.campaign?.title === "string" ? data.campaign.title : title;
     setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, title: saved } : c)));
+    setNotice("Campaign renamed.");
   }
 
   async function setArchived(id: string, archived: boolean) {
@@ -781,7 +857,22 @@ export default function AdminPage() {
       setError(archived ? "Could not archive." : "Could not restore.");
       return;
     }
+    setNotice(archived ? "Campaign archived." : "Campaign restored.");
     load(filter, scope, { silent: true });
+  }
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  function toggleSort(key: SortKey) {
+    setSort((current) => {
+      if (!current || current.key !== key) return { key, dir: "asc" };
+      if (current.dir === "asc") return { key, dir: "desc" };
+      return null;
+    });
   }
 
   useEffect(() => {
@@ -879,7 +970,9 @@ export default function AdminPage() {
     });
   }, [loading, view, viewerIsAccountManager]);
 
-  const board = groupCampaignsByBoard(visible);
+  const shown = sortRows(visible, sort);
+  const reviewShown = sortRows(reviewVisible, sort);
+  const board = groupCampaignsByBoard(shown);
 
   return (
     <div className="app-shell">
@@ -949,7 +1042,8 @@ export default function AdminPage() {
             </Link>
           </div>
 
-          {error ? <p className="error">{error}</p> : null}
+          {error ? <p className="error" role="alert">{error}</p> : null}
+          {notice ? <p className="save-toast" role="status">{notice}</p> : null}
 
           {listingView === "clients" ? null : (
           <div className="clist-bar">
@@ -1116,7 +1210,7 @@ export default function AdminPage() {
                           statusFilter
                         )
                     ).map((section) => {
-                      const items = reviewVisible.filter(
+                      const items = reviewShown.filter(
                         (c) => c.status === section.status
                       );
                       return (
@@ -1134,15 +1228,7 @@ export default function AdminPage() {
                             <p className="clist-queue-empty">None</p>
                           ) : (
                             <div className="clist-table">
-                              <div className="clist-cols clist-cols-head" aria-hidden="true">
-                                <span>Client</span>
-                                <span>Campaign</span>
-                                <span>Status</span>
-                                <span>Owner</span>
-                                <span>Next send</span>
-                                <span>Items</span>
-                                <span />
-                              </div>
+                              <ListColumns sort={sort} onSort={toggleSort} />
                               {items.map((c) => (
                                 <CampaignRowView
                                   key={c.id}
@@ -1195,16 +1281,8 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <div className="clist-table">
-                  <div className="clist-cols clist-cols-head" aria-hidden="true">
-                    <span>Client</span>
-                    <span>Campaign</span>
-                    <span>Status</span>
-                    <span>Owner</span>
-                    <span>Next send</span>
-                    <span>Items</span>
-                    <span />
-                  </div>
-                  {visible.map((c) => (
+                  <ListColumns sort={sort} onSort={toggleSort} />
+                  {shown.map((c) => (
                     <CampaignRowView
                       key={c.id}
                       c={c}

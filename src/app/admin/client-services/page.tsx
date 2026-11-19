@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { teamSnapshotHref } from "@/lib/friday-ask-nav";
+import { formatAppDay } from "@/lib/format-time";
 import { teamLabel } from "@/lib/team";
 import { canSeeFridayAsk } from "@/lib/people";
 import { ClientServicePanel } from "@/components/ClientServicePanel";
@@ -119,9 +120,7 @@ const ACCOUNT_MANAGER_OPTIONS = [
 type EditField = "contactEmail" | "contactName" | "contactPhone" | "accountManager";
 
 function fmtWhen(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return formatAppDay(iso);
 }
 
 function fmtMoney(n: number | null): string {

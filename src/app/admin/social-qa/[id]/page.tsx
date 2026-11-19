@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { actorLabel } from "@/lib/people";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-time";
 import {
   SOCIAL_QA_CHECKLIST,
   SOCIAL_QA_STATUS_LABELS,
@@ -296,7 +297,7 @@ export default function SocialBatchPage() {
             {batch.approved_by
               ? ` · Approved by ${batch.approved_by}${
                   batch.approved_at
-                    ? ` on ${new Date(batch.approved_at).toLocaleDateString()}`
+                    ? ` on ${formatAppDate(batch.approved_at)}`
                     : ""
                 }`
               : ""}
@@ -380,7 +381,7 @@ export default function SocialBatchPage() {
             <p style={{ margin: 0 }}>
               Approved by {batch.approved_by}
               {batch.approved_at
-                ? ` on ${new Date(batch.approved_at).toLocaleDateString()}`
+                ? ` on ${formatAppDate(batch.approved_at)}`
                 : ""}
               .
             </p>
@@ -462,7 +463,7 @@ export default function SocialBatchPage() {
                   <strong>
                     {review.decision === "approved" ? "Approved" : "Sent back"}
                   </strong>
-                  {` · ${review.author_name} · ${new Date(review.created_at).toLocaleString()}`}
+                  {` · ${review.author_name} · ${formatAppDateTime(review.created_at)}`}
                   {review.feedback ? (
                     <p style={{ margin: "6px 0 0", color: "inherit" }}>{review.feedback}</p>
                   ) : null}

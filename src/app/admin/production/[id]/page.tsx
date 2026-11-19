@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Crumbs } from "@/components/Crumbs";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
@@ -265,11 +265,12 @@ export default function ProductionDetailPage() {
   return (
     <div className="app-shell">
       <main className="container stack">
-        <div>
-          <Link href="/admin/production" className="muted">
-            ← Back to production
-          </Link>
-        </div>
+        <Crumbs
+          items={[
+            { href: "/admin/production", label: "Production" },
+            { label: data?.client?.name || data?.send.client_name || "Request" },
+          ]}
+        />
 
         {loading ? <p className="muted">Loading production details...</p> : null}
         {!loading && !data ? <p className="error">{message}</p> : null}
@@ -414,7 +415,14 @@ export default function ProductionDetailPage() {
                         Edit details
                       </button>
                     )}
-                    {message ? <span className="muted">{message}</span> : null}
+                    {message ? (
+                      <span
+                        className={/could not|must be/i.test(message) ? "error" : "success"}
+                        role={/could not|must be/i.test(message) ? "alert" : "status"}
+                      >
+                        {message}
+                      </span>
+                    ) : null}
                   </div>
                   {status === "sent" && status !== data.send.status ? (
                     <p className="muted" style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.6 }}>
