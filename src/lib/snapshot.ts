@@ -125,6 +125,7 @@ export function listAccounts(): SnapshotAccount[] {
           WHERE d.client_id = c.id AND d.active = 1) AS deliverable_count
        FROM rev_clients c
        WHERE c.active = 1
+         AND c.archived_at IS NULL
        ORDER BY c.name COLLATE NOCASE`
     )
     .all() as SnapshotAccount[];
@@ -1396,7 +1397,7 @@ export function clearSnapshotFillProgress(opts?: {
     ? [clientId]
     : (
         db
-          .prepare(`SELECT id FROM rev_clients WHERE active = 1`)
+          .prepare(`SELECT id FROM rev_clients WHERE active = 1 AND archived_at IS NULL`)
           .all() as Array<{ id: string }>
       ).map((row) => row.id);
 
@@ -2336,7 +2337,9 @@ export interface ClientBehindReport {
 // cross-account behind report.
 export function behindReportAllClients(): ClientBehindReport[] {
   const clients = getDb()
-    .prepare(`SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name COLLATE NOCASE`)
+    .prepare(
+      `SELECT id, name FROM rev_clients WHERE active = 1 AND archived_at IS NULL ORDER BY name COLLATE NOCASE`
+    )
     .all() as Array<{ id: string; name: string }>;
   const enrolled = enrolledClientIds();
   const out: ClientBehindReport[] = [];
@@ -2380,7 +2383,8 @@ export function resetSnapshotProgress(opts?: {
     const placeholders = opts.clientIds.map(() => "?").join(", ");
     clients = db
       .prepare(
-        `SELECT id, name FROM rev_clients WHERE active = 1 AND id IN (${placeholders})
+        `SELECT id, name FROM rev_clients
+          WHERE active = 1 AND archived_at IS NULL AND id IN (${placeholders})
          ORDER BY name COLLATE NOCASE`
       )
       .all(...opts.clientIds) as Array<{ id: string; name: string }>;
@@ -2391,6 +2395,7 @@ export function resetSnapshotProgress(opts?: {
       .prepare(
         `SELECT c.id, c.name FROM rev_clients c
          WHERE c.active = 1
+           AND c.archived_at IS NULL
            AND EXISTS (
              SELECT 1 FROM snapshot_deliverables d
              WHERE d.client_id = c.id AND d.active = 1

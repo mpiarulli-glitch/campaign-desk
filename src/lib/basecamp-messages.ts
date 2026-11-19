@@ -173,7 +173,13 @@ export async function syncClientMessages(): Promise<MessageSyncResult> {
 export function listCachedClientMessages(): BasecampClientMessage[] {
   return getDb()
     .prepare(
-      `SELECT * FROM basecamp_client_messages ORDER BY last_client_at DESC`
+      `SELECT m.* FROM basecamp_client_messages m
+        WHERE m.client_id IS NULL
+           OR m.client_id = ''
+           OR m.client_id NOT IN (
+             SELECT id FROM rev_clients WHERE archived_at IS NOT NULL
+           )
+        ORDER BY m.last_client_at DESC`
     )
     .all() as BasecampClientMessage[];
 }

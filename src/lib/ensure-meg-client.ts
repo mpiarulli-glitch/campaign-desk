@@ -50,7 +50,20 @@ async function resolveMegLocationId(): Promise<string> {
 
 export async function ensureMegLifecycleClient(): Promise<EnsureMegResult> {
   const locationId = await resolveMegLocationId();
-  const existing = listRevClients(true).find((c) => looksLikeMeg(c.name));
+  const existing = listRevClients(true, { includeArchived: true }).find((c) =>
+    looksLikeMeg(c.name)
+  );
+  if (existing?.archived_at) {
+    return {
+      clientId: existing.id,
+      clientName: existing.name,
+      locationId,
+      created: false,
+      locationUpdated: false,
+      hubAdded: false,
+      hubError: null,
+    };
+  }
 
   let clientId: string;
   let clientName: string;

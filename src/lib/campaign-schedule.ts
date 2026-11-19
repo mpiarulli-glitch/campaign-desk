@@ -5,6 +5,7 @@
 // matching calendar send is reused when one already exists so the two views
 // do not invent a second send.
 
+import { hiddenClientKeys, recordShowsClient } from "./active-clients";
 import { APP_TIME_ZONE, appDateTime } from "./cadence";
 import { EDITORIAL_PREDICATE, getSend, updateSend } from "./calendar";
 import {
@@ -327,7 +328,12 @@ export function listDueScheduledCampaigns(asOf = nowIso()): Campaign[] {
        ORDER BY scheduled_send_at ASC, created_at ASC`
     )
     .all() as Campaign[];
-  return rows.filter((campaign) => campaignScheduleIsDue(campaign, asOf));
+  const hidden = hiddenClientKeys();
+  return rows.filter(
+    (campaign) =>
+      recordShowsClient(campaign.client_id, campaign.client_name, hidden) &&
+      campaignScheduleIsDue(campaign, asOf)
+  );
 }
 
 export function markScheduledCampaignSent(campaignId: string): Campaign | null {

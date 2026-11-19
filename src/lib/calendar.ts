@@ -1,3 +1,4 @@
+import { rowOmitsArchivedClient } from "./active-clients";
 import { nanoid } from "nanoid";
 import {
   HAS_PRODUCTION_BRIEF_SQL,
@@ -199,6 +200,7 @@ export function listSends(
        FROM scheduled_sends s
        LEFT JOIN rev_clients c ON c.id = s.client_id
        WHERE s.send_date >= ? AND s.send_date <= ? ${filter}
+         AND ${rowOmitsArchivedClient("s.client_id", "s.client_name")}
        ORDER BY s.send_date ASC, s.created_at ASC`
     )
     .all(...params) as SendWithClient[];
@@ -218,6 +220,7 @@ export function listProductionSends(includeCancelled = false): ProductionSend[] 
        LEFT JOIN videographers v ON v.id = c.videographer_id
        WHERE s.requested_by_client = 1
          AND (? = 1 OR s.cancelled_at IS NULL)
+         AND ${rowOmitsArchivedClient("s.client_id", "s.client_name")}
        ORDER BY
          CASE WHEN s.status = 'requested' THEN 0 ELSE 1 END,
          s.send_date ASC,

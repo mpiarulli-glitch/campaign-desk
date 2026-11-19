@@ -20,10 +20,14 @@ type DeskPayload = {
   period: string;
   nextPeriod: string;
   canSetTarget: boolean;
+  canArchive?: boolean;
+  archived?: boolean;
   rules: { thisMonth: string; nextMonth: string };
   clients?: SummaryCard[];
   client?: MonthDeskCard;
 };
+
+type ClientListing = "attention" | "name" | "archived";
 
 const AVATAR_COLORS = [
   "#0ea5e9",
@@ -143,7 +147,12 @@ export function CampaignMonthDesk() {
   const [clientKey, setClientKey] = useState("");
   const [month, setMonth] = useState("");
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<"name" | "attention">("attention");
+  const [listing, setListing] = useState<ClientListing>("attention");
+  const [canArchive, setCanArchive] = useState(false);
+  const [clientArchived, setClientArchived] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmUnarchiveId, setConfirmUnarchiveId] = useState("");
+  const [archiving, setArchiving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
@@ -159,7 +168,10 @@ export function CampaignMonthDesk() {
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const loadSummary = useCallback(async () => {
-    const res = await fetch("/api/campaigns/month-desk");
+    const archived = listing === "archived";
+    const res = await fetch(
+      archived ? "/api/campaigns/month-desk?archived=1" : "/api/campaigns/month-desk"
+    );
     if (res.status === 401) {
       window.location.href = "/login";
       return;
@@ -172,8 +184,9 @@ export function CampaignMonthDesk() {
     const data = (await res.json()) as DeskPayload;
     setCards(data.clients || []);
     setCanSetTarget(Boolean(data.canSetTarget));
+    setCanArchive(Boolean(data.canArchive));
     setLoading(false);
-  }, []);
+  }, [listing]);
 
   const loadDetail = useCallback(async (key: string) => {
     const res = await fetch(`/api/campaigns/month-desk?client=${encodeURIComponent(key)}`);
@@ -188,7 +201,10 @@ export function CampaignMonthDesk() {
     }
     const data = (await res.json()) as DeskPayload;
     setDetail(data.client || null);
+    setClientArchived(Boolean(data.archived));
+    setConfirmArchive(false);
     setCanSetTarget(Boolean(data.canSetTarget));
+    setCanArchive(Boolean(data.canArchive));
     setTargetDraft(String(data.client?.target || ""));
     setWebsiteDraft(data.client?.website || "");
     setEditingWebsite(false);
@@ -216,8 +232,8 @@ export function CampaignMonthDesk() {
   const visibleCards = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matched = q ? cards.filter((card) => card.name.toLowerCase().includes(q)) : cards;
-    return sortDeskCards(matched, sort);
-  }, [cards, query, sort]);
+    return sortDeskCards(matched, listing === "name" ? "name" : "attention");
+  }, [cards, query, listing]);
 
   function openClient(key: string) {
     setClientKey(key);
@@ -331,6 +347,33 @@ export function CampaignMonthDesk() {
     await loadDetail(detail.key);
   }
 
+  async function setArchived(id: string, archived: boolean) {
+    setArchiving(true);
+    setError("");
+    const res = await fetch(`/api/revenue/clients/${id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    });
+    setArchiving(false);
+    if (res.status === 401) {
+      setError("Only an admin can archive a client.");
+      return;
+    }
+    if (!res.ok) {
+      setError(archived ? "Could not archive that client." : "Could not unarchive that client.");
+      return;
+    }
+    setConfirmArchive(false);
+    setConfirmUnarchiveId("");
+    if (archived) closeClient();
+    await loadSummary();
+    if (!archived && clientKey === id) {
+      setClientArchived(false);
+      await loadDetail(id);
+    }
+  }
+
   async function refreshLogo() {
     if (!detail?.id) return;
     setSavingLogo(true);
@@ -375,11 +418,14 @@ export function CampaignMonthDesk() {
             <div className="cmd-detail-title">
               <ClientMark name={detail.name} logoUrl={detail.logoUrl} />
               <div>
-                <h2 className="h2">{detail.name}</h2>
+                <h2 className="h2">
+                  {detail.name}
+                  {clientArchived ? <span className="archived-mark">Archived</span> : null}
+                </h2>
                 <p className="cmd-rule">
                   {MONTH_DESK_NEXT_MONTH_RULE}. {MONTH_DESK_THIS_MONTH_RULE}.
                 </p>
-                {detail.id && canSetTarget ? (
+                {detail.id && canSetTarget && !clientArchived ? (
                   <div className="cmd-logo-actions">
                     <input
                       ref={logoInputRef}
@@ -415,7 +461,24 @@ export function CampaignMonthDesk() {
           ) : (
             <h2 className="h2">Client</h2>
           )}
-          {detail?.id && canSetTarget ? (
+          {detail?.id && canArchive && !clientArchived ? (
+            confirmArchive ? (
+              <div className="cmd-archive-confirm" role="dialog" aria-label={`Archive ${detail.name}`}>
+                <p>Archive {detail.name}? They drop out of active lists. Nothing is deleted.</p>
+                <button type="button" className="btn btn-sm" disabled={archiving} onClick={() => void setArchived(detail.id!, true)}>
+                  {archiving ? "Archiving…" : "Archive"}
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={archiving} onClick={() => setConfirmArchive(false)}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirmArchive(true)}>
+                Archive
+              </button>
+            )
+          ) : null}
+          {detail?.id && canSetTarget && !clientArchived ? (
             <label className="cmd-target">
               <span>Monthly deliverables</span>
               <input
@@ -441,7 +504,7 @@ export function CampaignMonthDesk() {
               />
             </label>
           ) : null}
-          {detail?.id && canSetTarget ? (
+          {detail?.id && canSetTarget && !clientArchived ? (
             <label className="cmd-target cmd-website">
               <span>Website</span>
               <input
@@ -586,15 +649,22 @@ export function CampaignMonthDesk() {
           />
         </label>
         <label className="clist-field">
-          <span>Sort</span>
+          <span>Show</span>
           <select
             className="campaign-filter-select"
-            aria-label="Sort clients"
-            value={sort}
-            onChange={(e) => setSort(e.target.value === "name" ? "name" : "attention")}
+            aria-label="Show clients"
+            value={listing}
+            onChange={(e) => {
+              const next = e.target.value;
+              setListing(
+                next === "name" || next === "archived" ? next : "attention"
+              );
+              setConfirmUnarchiveId("");
+            }}
           >
             <option value="attention">Needs attention first</option>
             <option value="name">Name</option>
+            {canArchive ? <option value="archived">Archived</option> : null}
           </select>
         </label>
       </div>
@@ -603,7 +673,9 @@ export function CampaignMonthDesk() {
       {loading ? (
         <p className="muted">Loading…</p>
       ) : visibleCards.length === 0 ? (
-        <p className="lh-empty">No clients match.</p>
+        <p className="lh-empty">
+          {listing === "archived" ? "No archived clients." : "No clients match."}
+        </p>
       ) : (
         <div className="snap-pick-grid">
           {visibleCards.map((card) => {
@@ -659,7 +731,40 @@ export function CampaignMonthDesk() {
                     </p>
                   ) : null}
                 </div>
-                {canSetTarget && card.id && card.target <= 0 ? (
+                {listing === "archived" && canArchive && card.id ? (
+                  <div className="snap-pick-card-foot">
+                    {confirmUnarchiveId === card.id ? (
+                      <div className="cmd-archive-confirm">
+                        <p>Unarchive {card.name}?</p>
+                        <button
+                          type="button"
+                          className="cmd-set-target"
+                          disabled={archiving}
+                          onClick={() => void setArchived(card.id!, false)}
+                        >
+                          {archiving ? "Restoring…" : "Unarchive"}
+                        </button>
+                        <button
+                          type="button"
+                          className="cmd-set-target"
+                          disabled={archiving}
+                          onClick={() => setConfirmUnarchiveId("")}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="cmd-set-target"
+                        onClick={() => setConfirmUnarchiveId(card.id!)}
+                      >
+                        Unarchive
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+                {listing !== "archived" && canSetTarget && card.id && card.target <= 0 ? (
                   <div className="snap-pick-card-foot">
                     {cardTargetKey === card.key ? (
                       <form

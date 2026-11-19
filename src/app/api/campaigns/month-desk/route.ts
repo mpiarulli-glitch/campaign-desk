@@ -1,7 +1,16 @@
 import { after, NextResponse } from "next/server";
-import { can, getSession, isCampaignsReadAuthenticated, sessionCampaignKind } from "@/lib/auth";
+import {
+  can,
+  getSession,
+  isAdminAuthenticated,
+  isCampaignsReadAuthenticated,
+  sessionCampaignKind,
+} from "@/lib/auth";
 import { accountManagerViewerSlug } from "@/lib/campaign-review-queue";
-import { loadCampaignMonthDesk } from "@/lib/campaign-month-desk-load";
+import {
+  loadArchivedClientDesk,
+  loadCampaignMonthDesk,
+} from "@/lib/campaign-month-desk-load";
 import { scheduleMissingClientLogos } from "@/lib/client-logo-fetch";
 import {
   MONTH_DESK_NEXT_MONTH_RULE,
@@ -29,13 +38,26 @@ export async function GET(request: Request) {
 
   const session = await getSession();
   const kindScope = await sessionCampaignKind();
-  const desk = loadCampaignMonthDesk(session, kindScope);
+  const canArchive = await isAdminAuthenticated();
   const canSetTarget =
     !accountManagerViewerSlug(session) && (await can("tool.client_edit"));
-  const clientKey = new URL(request.url).searchParams.get("client");
+  const params = new URL(request.url).searchParams;
+  const clientKey = params.get("client");
+  const archivedOnly = params.get("archived") === "1";
+  if (archivedOnly && !canArchive) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const desk = loadCampaignMonthDesk(session, archivedOnly ? null : kindScope, new Date(), {
+    archivedOnly,
+  });
 
   if (clientKey) {
-    const client = desk.clients.find((card) => card.key === clientKey);
+    let client = desk.clients.find((card) => card.key === clientKey) || null;
+    let archived = archivedOnly;
+    if (!client) {
+      client = loadArchivedClientDesk(session, clientKey)?.clients[0] || null;
+      archived = Boolean(client);
+    }
     if (!client) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -43,6 +65,8 @@ export async function GET(request: Request) {
       period: desk.period,
       nextPeriod: desk.nextPeriod,
       canSetTarget,
+      canArchive,
+      archived,
       rules: {
         thisMonth: MONTH_DESK_THIS_MONTH_RULE,
         nextMonth: MONTH_DESK_NEXT_MONTH_RULE,
@@ -51,13 +75,17 @@ export async function GET(request: Request) {
     });
   }
 
-  const ids = desk.clients.map((card) => card.id).filter((id): id is string => Boolean(id));
-  after(() => scheduleMissingClientLogos(ids));
+  if (!archivedOnly) {
+    const ids = desk.clients.map((card) => card.id).filter((id): id is string => Boolean(id));
+    after(() => scheduleMissingClientLogos(ids));
+  }
 
   return NextResponse.json({
     period: desk.period,
     nextPeriod: desk.nextPeriod,
     canSetTarget,
+    canArchive,
+    archived: archivedOnly,
     rules: {
       thisMonth: MONTH_DESK_THIS_MONTH_RULE,
       nextMonth: MONTH_DESK_NEXT_MONTH_RULE,

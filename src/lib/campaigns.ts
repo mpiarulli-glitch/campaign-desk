@@ -1,3 +1,4 @@
+import { rowOmitsArchivedClient } from "./active-clients";
 import { nanoid } from "nanoid";
 import {
   getDb,
@@ -181,10 +182,18 @@ export function createCampaign(input: {
   return getCampaignById(id)!;
 }
 
-export function listCampaigns(includeArchived = false): Campaign[] {
-  const where = includeArchived ? "" : "WHERE archived_at IS NULL";
+export function listCampaigns(
+  includeArchived = false,
+  opts?: { includeArchivedClients?: boolean }
+): Campaign[] {
+  const archived = includeArchived ? "" : "archived_at IS NULL";
+  const clients = opts?.includeArchivedClients
+    ? ""
+    : rowOmitsArchivedClient("client_id", "client_name");
+  const where = [archived, clients].filter(Boolean).join(" AND ");
+  const clause = where ? `WHERE ${where}` : "";
   return getDb()
-    .prepare(`SELECT * FROM campaigns ${where} ORDER BY updated_at DESC`)
+    .prepare(`SELECT * FROM campaigns ${clause} ORDER BY updated_at DESC`)
     .all() as Campaign[];
 }
 
@@ -210,7 +219,10 @@ export function listPendingApprovalCampaigns(clientId: string): PendingApproval[
 export function listArchivedCampaigns(): Campaign[] {
   return getDb()
     .prepare(
-      `SELECT * FROM campaigns WHERE archived_at IS NOT NULL ORDER BY archived_at DESC`
+      `SELECT * FROM campaigns
+        WHERE archived_at IS NOT NULL
+          AND ${rowOmitsArchivedClient("client_id", "client_name")}
+        ORDER BY archived_at DESC`
     )
     .all() as Campaign[];
 }
@@ -234,6 +246,7 @@ export function listCampaignsWithKind(
     .prepare(
       `SELECT c.* FROM campaigns c
        WHERE ${archived}
+         AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
          AND EXISTS (
            SELECT 1 FROM campaign_emails e
            WHERE e.campaign_id = c.id AND e.kind = ?
@@ -259,6 +272,7 @@ export function listCampaignsExcludingKind(
     .prepare(
       `SELECT c.* FROM campaigns c
        WHERE ${archived}
+         AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
          AND NOT EXISTS (
            SELECT 1 FROM campaign_emails e
            WHERE e.campaign_id = c.id AND e.kind = ?
@@ -369,6 +383,7 @@ export function listOpenApprovalCampaigns(): Campaign[] {
       `SELECT * FROM campaigns
         WHERE archived_at IS NULL
           AND status IN ('internal_review', 'in_review')
+          AND ${rowOmitsArchivedClient("client_id", "client_name")}
         ORDER BY updated_at ASC`
     )
     .all() as Campaign[];
@@ -1662,7 +1677,8 @@ export function listDueApprovalThankYous(asOfIso?: string): Campaign[] {
          AND approval_thank_you_due_at IS NOT NULL
          AND approval_thank_you_due_at <= ?
          AND approval_thank_you_sent_at IS NULL
-         AND basecamp_card_id IS NOT NULL`
+         AND basecamp_card_id IS NOT NULL
+         AND ${rowOmitsArchivedClient("client_id", "client_name")}`
     )
     .all(asOf) as Campaign[];
 }

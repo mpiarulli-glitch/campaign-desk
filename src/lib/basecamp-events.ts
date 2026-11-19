@@ -54,7 +54,7 @@ export async function syncBasecampEvents(): Promise<EventSyncResult> {
   }
 
   const byProject = new Map<string, { id: string; name: string }>();
-  for (const c of listRevClients(true)) {
+  for (const c of listRevClients(true, { includeArchived: true })) {
     if (c.basecamp_project_id) byProject.set(String(c.basecamp_project_id), { id: c.id, name: c.name });
   }
 
@@ -128,6 +128,10 @@ export function listEventsBetween(
     .prepare(
       `SELECT * FROM basecamp_events
        WHERE event_date >= ? AND event_date <= ? ${where}
+         AND (
+           client_id IS NULL OR client_id = ''
+           OR client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
+         )
        ORDER BY event_date ASC, all_day DESC, starts_at ASC`
     )
     .all(start, end) as BasecampEvent[];
@@ -183,6 +187,10 @@ export function listEventsForDay(
     .prepare(
       `SELECT * FROM basecamp_events
        WHERE event_date = ?
+         AND (
+           client_id IS NULL OR client_id = ''
+           OR client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
+         )
        ORDER BY all_day DESC, starts_at ASC`
     )
     .all(date) as BasecampEvent[];

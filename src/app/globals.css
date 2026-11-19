@@ -27376,6 +27376,35 @@ a.ba-desk-name:hover { color: var(--accent-ink); }
   .ba-desk { flex: 0 0 112px; scroll-snap-align: start; }
 }
 
+/* Small mark on an archived client's own page. */
+.archived-mark {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line, #d7d2c8);
+  color: var(--muted, #6b6560);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.cmd-archive-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+}
+
+.cmd-archive-confirm p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 /* Campaigns → Clients. Same card shell as the lifecycle client grid. */
 .cmd-desk {
   display: flex;

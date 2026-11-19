@@ -57,13 +57,18 @@ async function loadAssignments(person: string): Promise<{
 
   const rows = await listMyAssignments(asPerson(person));
   const byProject = new Map<string, string>();
-  for (const c of listRevClients(true)) {
+  const archivedProjects = new Set<string>();
+  for (const c of listRevClients(true, { includeArchived: true })) {
     const pid = (c.basecamp_project_id || "").trim();
-    if (pid) byProject.set(pid, c.name);
+    if (!pid) continue;
+    if (c.archived_at) archivedProjects.add(pid);
+    else byProject.set(pid, c.name);
   }
 
   return {
-    assignments: rows.map((r) => ({
+    assignments: rows
+      .filter((r) => !archivedProjects.has(r.projectId))
+      .map((r) => ({
       id: r.id,
       title: r.title,
       kind: r.kind,

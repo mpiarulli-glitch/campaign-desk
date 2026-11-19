@@ -87,7 +87,7 @@ export function locationIsHipaaBlocked(
   const loc = locationId.trim();
   if (!loc) return false;
   try {
-    return listRevClients(true).some(
+    return listRevClients(true, { includeArchived: true }).some(
       (client) =>
         (client.ghl_location_id || "").trim() === loc &&
         isHipaaBlockedAccount(client.name)

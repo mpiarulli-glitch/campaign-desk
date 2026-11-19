@@ -33,6 +33,7 @@ export async function GET(_request: Request, { params }: Params) {
     account: {
       id: account.id,
       name: account.name,
+      archived: Boolean(account.archived_at),
       launchDate: snapshotLaunchDateFor(account),
       contractStart: account.contract_start || null,
       contractEnd: account.contract_end || null,

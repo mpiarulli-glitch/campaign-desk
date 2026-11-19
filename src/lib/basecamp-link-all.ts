@@ -526,7 +526,7 @@ function emptyReport(partial: Partial<LinkAllReport> & Pick<LinkAllReport, "ok" 
 }
 
 function readClients(): ClientRow[] {
-  return listRevClients(true).map((client) => ({
+  return listRevClients(true, { includeArchived: true }).map((client) => ({
     id: client.id,
     name: client.name,
     basecampProjectId: (client.basecamp_project_id || "").trim(),
@@ -543,7 +543,9 @@ export function replaceProjectIdIfUnchanged(
   const from = (fromProjectId || "").trim();
   const to = canonicalBasecampProjectId(toProjectId);
   if (!clientId || !from || !to || from === to) return false;
-  const row = listRevClients(true).find((client) => client.id === clientId);
+  const row = listRevClients(true, { includeArchived: true }).find(
+    (client) => client.id === clientId
+  );
   if (!row || (row.basecamp_project_id || "").trim() !== from) return false;
   updateRevClient(clientId, { basecampProjectId: to });
   return true;

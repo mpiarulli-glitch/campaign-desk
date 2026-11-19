@@ -6,6 +6,7 @@
  * so opening this page stays fast.
  */
 
+import { rowOmitsArchivedClient } from "./active-clients";
 import { getDb, nowIso, type BusinessModel } from "./db";
 import {
   EMAIL_LAUNCH_LIST,
@@ -411,6 +412,7 @@ function campaignsByClient(
                 WHERE e.campaign_id = c.id AND e.kind = 'email') AS email_count
          FROM campaigns c
         WHERE c.archived_at IS NULL
+          AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
           AND (
             c.board_period = ?
             OR (

@@ -470,6 +470,11 @@ export interface RevClient {
   lifecycle_launch_date: string | null;
   // ESP they send from: ghl | klaviyo | mailchimp | hubspot | instantly.
   lifecycle_email_platform: string;
+  // Set when the account stops working with Marketing Empire Group.
+  // Null means the client is on every active list. Unarchive clears both
+  // columns; nothing else on the row is touched.
+  archived_at: string | null;
+  archived_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -1508,6 +1513,8 @@ export function getDb(): Database.Database {
       monthly_email_quota INTEGER NOT NULL DEFAULT 0,
       lifecycle_launch_date TEXT,
       lifecycle_email_platform TEXT NOT NULL DEFAULT '',
+      archived_at TEXT,
+      archived_by TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -3536,6 +3543,19 @@ function migrate(database: Database.Database) {
       `ALTER TABLE rev_clients ADD COLUMN onboarding_stage TEXT NOT NULL DEFAULT ''`
     );
   }
+  // Archive hides a client who stopped working with the agency. Additive and
+  // reversible: unarchive sets archived_at back to NULL. Rows are never deleted.
+  if (revClientCols.length && !revClientCols.includes("archived_at")) {
+    database.exec(`ALTER TABLE rev_clients ADD COLUMN archived_at TEXT`);
+  }
+  if (revClientCols.length && !revClientCols.includes("archived_by")) {
+    database.exec(
+      `ALTER TABLE rev_clients ADD COLUMN archived_by TEXT NOT NULL DEFAULT ''`
+    );
+  }
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_rev_clients_archived ON rev_clients(archived_at)`
+  );
 
   // Track the Basecamp "time to schedule" card per reminder window (dedupe),
   // plus the card id and last follow-up so team nudges can comment on it.

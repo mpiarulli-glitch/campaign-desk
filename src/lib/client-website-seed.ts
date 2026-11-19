@@ -250,7 +250,10 @@ function logRow(row: ClientWebsiteSeedRow): void {
 
 function loadClients(): ClientWebsiteSeedClient[] {
   return getDb()
-    .prepare(`SELECT id, name, IFNULL(website, '') AS website FROM rev_clients`)
+    .prepare(
+      `SELECT id, name, IFNULL(website, '') AS website FROM rev_clients
+        WHERE archived_at IS NULL`
+    )
     .all() as ClientWebsiteSeedClient[];
 }
 

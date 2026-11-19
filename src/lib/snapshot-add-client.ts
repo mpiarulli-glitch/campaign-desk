@@ -76,7 +76,7 @@ export async function addSnapshotClient(
   const looked = await lookupSnapshotProject(input.basecampProjectId, projectName);
   if (!looked.ok) return { ok: false, field: "basecampProjectId", error: looked.error };
 
-  const clients = listRevClients(true);
+  const clients = listRevClients(true, { includeArchived: true });
   const byProject = clients.find(
     (client) => (client.basecamp_project_id || "").trim() === looked.projectId
   );
@@ -89,6 +89,13 @@ export async function addSnapshotClient(
     };
   }
   const existing = byProject || byName;
+  if (existing?.archived_at) {
+    return {
+      ok: false,
+      field: "name",
+      error: `${existing.name} is archived. Unarchive them instead of adding a new client.`,
+    };
+  }
   if (existing) {
     const storedProject = (existing.basecamp_project_id || "").trim();
     if (storedProject && storedProject !== looked.projectId) {

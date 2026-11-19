@@ -50,6 +50,8 @@ import {
   normalizeCampaignDescription,
   normalizeCampaignTitle,
 } from "@/lib/campaign-copy";
+import { getRevClient } from "@/lib/revenue";
+import { isArchivedClient, recordShowsClient } from "@/lib/active-clients";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -115,6 +117,9 @@ export async function GET(_request: Request, { params }: Params) {
       external_review_url: reviewUrl(campaign.external_token),
       email_count: emails.length,
       suggested_send: suggestedSendForCampaign(campaign),
+      client_archived: campaign.client_id
+        ? isArchivedClient(getRevClient(campaign.client_id))
+        : !recordShowsClient(null, campaign.client_name),
     },
     emails,
     flow,

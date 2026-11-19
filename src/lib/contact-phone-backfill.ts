@@ -259,10 +259,13 @@ export function backfillKnownContactPhones(
   if (!table) return [];
   const cols = database.prepare(`PRAGMA table_info(rev_clients)`).all() as SqliteColumn[];
   if (!cols.some((col) => col.name === "contact_phone")) return [];
+  const archivedSql = cols.some((col) => col.name === "archived_at")
+    ? "WHERE archived_at IS NULL"
+    : "";
   const clients = (
     database
       .prepare(
-        `SELECT id, name, basecamp_project_id, contact_phone FROM rev_clients`
+        `SELECT id, name, basecamp_project_id, contact_phone FROM rev_clients ${archivedSql}`
       )
       .all() as Array<ClientPhoneRow & { basecamp_project_id: unknown }>
   ).map((client) => ({

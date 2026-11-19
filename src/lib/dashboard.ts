@@ -178,7 +178,7 @@ interface DashboardKpi {
 }
 
 export interface ClientDashboardData {
-  client: { id: string; name: string; accountManager: string };
+  client: { id: string; name: string; accountManager: string; archived: boolean };
   production: ProductionStatus;
   snapshot: { token: string | null; overview: ReturnType<typeof deliverableOverview> };
   accountData: { kpis: DashboardKpi[] };
@@ -436,7 +436,12 @@ export function getClientDashboardData(clientId: string): ClientDashboardData | 
   const deliverablesDone = overview.filter((d) => isSnapshotContractMet(d.status)).length;
 
   return {
-    client: { id: client.id, name: client.name, accountManager: client.account_manager },
+    client: {
+      id: client.id,
+      name: client.name,
+      accountManager: client.account_manager,
+      archived: Boolean(client.archived_at),
+    },
     production: productionStatus(client),
     snapshot: {
       token: getOrCreateSnapshotToken(client.id),

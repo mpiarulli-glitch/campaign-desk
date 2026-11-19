@@ -94,6 +94,7 @@ export default function SnapshotEditorPage() {
   const searchParams = useSearchParams();
   const fromFriday = searchParams.get("from") === "friday";
   const [name, setName] = useState("");
+  const [accountArchived, setAccountArchived] = useState(false);
   const [launchDate, setLaunchDate] = useState<string | null>(null);
   const [contractEnd, setContractEnd] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -164,6 +165,7 @@ export default function SnapshotEditorPage() {
       if (!res.ok) { setError("Account not found."); return; }
       const data = await res.json();
       setName(data.account.name);
+      setAccountArchived(Boolean(data.account.archived));
       setLaunchDate(typeof data.account.launchDate === "string" ? data.account.launchDate : null);
       setContractEnd(typeof data.account.contractEnd === "string" ? data.account.contractEnd : null);
       setDeliverables(data.deliverables || []);
@@ -382,7 +384,10 @@ export default function SnapshotEditorPage() {
             ]}
           />
           <p className="ops-eyebrow">Account snapshot</p>
-          <h1 className="ops-title">{name || "Account"}</h1>
+          <h1 className="ops-title">
+            {name || "Account"}
+            {accountArchived ? <span className="archived-mark">Archived</span> : null}
+          </h1>
           <label className="snap-section-nav">
             <span>View</span>
             <select
