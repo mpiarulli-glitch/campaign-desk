@@ -35,6 +35,7 @@ import { ASSET_KINDS, isAssetKind, packageItemCountLabel, type AssetKind } from 
 import type { CampaignKindScope } from "@/lib/people";
 import { isCampaignKindScope } from "@/lib/people";
 import { CampaignMonthDesk } from "@/components/CampaignMonthDesk";
+import { waitingParty, waitingPartyLabel, type WaitingParty } from "@/lib/review-flow";
 
 type CampaignRow = {
   id: string;
@@ -525,6 +526,10 @@ function CampaignRowView({
       </span>
       <span className="clist-status">
         <StatusBadge status={c.status} approvedChannel={c.approved_channel} />
+        <span className={`clist-waiting is-${waitingParty(c.status, c.approved_channel)}`}>
+          {waitingPartyLabel(waitingParty(c.status, c.approved_channel))}
+          {c.open_comments > 0 ? ` · ${c.open_comments} open` : ""}
+        </span>
         {queueNote ? <span className="clist-status-note">{queueNote}</span> : null}
       </span>
       <span className="clist-owner" title={c.owner || "Unassigned"}>{c.owner || "Unassigned"}</span>
@@ -606,6 +611,7 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [sort, setSort] = useState<SortState | null>(null);
+  const [waitingFilter, setWaitingFilter] = useState<"all" | WaitingParty>("all");
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [statusFilter, setStatusFilter] = useState<ListStatusFilter>("all");
   const [view, setView] = useState<CampaignView>("list");
@@ -970,7 +976,13 @@ export default function AdminPage() {
     });
   }, [loading, view, viewerIsAccountManager]);
 
-  const shown = sortRows(visible, sort);
+  const waited =
+    waitingFilter === "all"
+      ? visible
+      : visible.filter(
+          (c) => waitingParty(c.status, c.approved_channel) === waitingFilter
+        );
+  const shown = sortRows(waited, sort);
   const reviewShown = sortRows(reviewVisible, sort);
   const board = groupCampaignsByBoard(shown);
 
@@ -1075,6 +1087,20 @@ export default function AdminPage() {
                     {item.label}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="clist-field">
+              <span>Waiting</span>
+              <select
+                className="campaign-filter-select"
+                aria-label="Filter by who is waiting"
+                value={waitingFilter}
+                onChange={(e) => setWaitingFilter(e.target.value as "all" | WaitingParty)}
+              >
+                <option value="all">Anyone</option>
+                <option value="us">Waiting on us</option>
+                <option value="client">Waiting on client</option>
+                <option value="ready">Ready to send</option>
               </select>
             </label>
             <label className="clist-field">
@@ -1248,12 +1274,14 @@ export default function AdminPage() {
                     })}
                   </div>
                 )
-              ) : visible.length === 0 ? (
+              ) : shown.length === 0 ? (
                 <div className="empty">
                   <p>
                     {q
                       ? `No campaigns match “${query.trim()}”.`
-                      : "No campaigns match these filters."}
+                      : waitingFilter !== "all"
+                        ? "Nothing in this waiting view."
+                        : "No campaigns match these filters."}
                   </p>
                 </div>
               ) : listingView === "board" ? (
