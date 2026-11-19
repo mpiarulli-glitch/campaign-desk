@@ -449,6 +449,8 @@ export interface ScheduleSyncResult {
 export async function syncProductionScheduleEntry(sendId: string): Promise<ScheduleSyncResult> {
   const send = getSend(sendId);
   if (!send || !isProductionRow(send)) return { ok: true, skipped: true };
+  const booked = send.client_id ? getRevClient(send.client_id) : null;
+  if (booked?.archived_at) return { ok: true, skipped: true };
   const subject = send.client_name || "Production";
   if (send.cancelled_at) return trashStoredEntry(send, subject);
 

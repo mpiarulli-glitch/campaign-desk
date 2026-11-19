@@ -7,6 +7,7 @@
 //
 // Reports are read-only aggregations over existing tables. Nothing here writes.
 
+import { rowOmitsArchivedClient } from "./active-clients";
 import { getDb } from "./db";
 import { SNAPSHOT_MET_STATUSES } from "./snapshot-status";
 import {
@@ -165,9 +166,16 @@ export interface Report {
 
 function clientNames(): Map<string, string> {
   const rows = getDb()
-    .prepare(`SELECT id, name FROM rev_clients`)
+    .prepare(`SELECT id, name FROM rev_clients WHERE archived_at IS NULL`)
     .all() as Array<{ id: string; name: string }>;
   return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+function archivedClientNames(): Set<string> {
+  const rows = getDb()
+    .prepare(`SELECT name FROM rev_clients WHERE archived_at IS NOT NULL`)
+    .all() as Array<{ name: string }>;
+  return new Set(rows.map((row) => row.name.trim().toLowerCase()).filter(Boolean));
 }
 
 function hrs(n: number): string {
@@ -224,7 +232,9 @@ function accountHealth(): ReportSection[] {
   const now = Date.now();
 
   const clients = db
-    .prepare(`SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name`)
+    .prepare(
+      `SELECT id, name FROM rev_clients WHERE active = 1 AND archived_at IS NULL ORDER BY name`
+    )
     .all() as Array<{ id: string; name: string }>;
 
   const openFlags = new Map<string, { n: number; worst: string }>();
@@ -243,6 +253,13 @@ function accountHealth(): ReportSection[] {
       `SELECT client_id, COALESCE(NULLIF(basecamp_approval_sent_at, ''), updated_at) AS since
          FROM campaigns
         WHERE archived_at IS NULL AND status IN ('in_review', 'needs_changes')
+          AND client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
+          AND NOT (
+            (client_id IS NULL OR client_id = '')
+            AND LOWER(TRIM(client_name)) IN (
+              SELECT LOWER(TRIM(name)) FROM rev_clients WHERE archived_at IS NOT NULL
+            )
+          )
           AND client_id IS NOT NULL`
     )
     .all() as Array<{ client_id: string; since: string }>) {
@@ -425,6 +442,7 @@ function deliveryVsContract(start: string, end: string): ReportSection[] {
                 WHERE e.deliverable_id = d.id) AS last_week
          FROM snapshot_deliverables d
         WHERE d.active = 1
+          AND d.client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
         ORDER BY d.client_id, d.sort_order`
     )
     .all(start, end, start, end) as DeliverableRow[];
@@ -548,7 +566,7 @@ function contractRunway(): ReportSection[] {
     .prepare(
       `SELECT name, contract_start, contract_end, retainer, tier, account_manager
          FROM rev_clients
-        WHERE active = 1`
+        WHERE active = 1 AND archived_at IS NULL`
     )
     .all() as Array<{
     name: string;
@@ -830,6 +848,7 @@ function approvalsAgeing(start: string, end: string): ReportSection[] {
                 WHERE cm.campaign_id = c.id AND cm.resolved = 0) AS open_comments
          FROM campaigns c
         WHERE c.archived_at IS NULL
+          AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
           AND c.status IN ('in_review', 'needs_changes')`
     )
     .all() as Array<{
@@ -856,6 +875,7 @@ function approvalsAgeing(start: string, end: string): ReportSection[] {
       `SELECT client_name, created_at, approved_at
          FROM campaigns
         WHERE approved_at IS NOT NULL
+          AND ${rowOmitsArchivedClient("client_id", "client_name")}
           AND date(approved_at) >= date(?)
           AND date(approved_at) <= date(?)`
     )
@@ -1181,6 +1201,7 @@ function timeTracking(start: string, end: string): ReportSection[] {
     basecamp_time_entry_id: string;
   }>;
 
+  const hiddenNames = archivedClientNames();
   const forecast = rows.reduce((s, r) => s + r.hours, 0);
   const actual = rows.reduce((s, r) => s + r.actual_hours, 0);
   const logged = rows.filter((r) => r.basecamp_time_entry_id).length;
@@ -1200,6 +1221,7 @@ function timeTracking(start: string, end: string): ReportSection[] {
 
   const byClient = new Map<string, { f: number; a: number; n: number }>();
   for (const r of rows) {
+    if (hiddenNames.has((r.client || "").trim().toLowerCase())) continue;
     const key = r.client.trim() || "No client (internal)";
     const e = byClient.get(key) || { f: 0, a: 0, n: 0 };
     e.f += r.hours;
@@ -1258,6 +1280,7 @@ function okrs(): ReportSection[] {
     .prepare(
       `SELECT client_id, objective, key_results, target_date, status
        FROM client_okrs WHERE active = 1
+         AND client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
        ORDER BY client_id, sort_order`
     )
     .all() as Array<{
@@ -1333,6 +1356,7 @@ function weeklySnapshots(start: string, end: string): ReportSection[] {
        FROM snapshot_entries e
        LEFT JOIN snapshot_deliverables d ON d.id = e.deliverable_id
        WHERE e.week_start >= ? AND e.week_start <= ?
+         AND e.client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
        ORDER BY e.week_start DESC, e.client_id`
     )
     .all(start, end) as Array<{
@@ -1405,6 +1429,7 @@ function deliverables(): ReportSection[] {
               (SELECT COUNT(*) FROM snapshot_entries e WHERE e.deliverable_id = d.id) AS entries,
               (SELECT MAX(e.week_start) FROM snapshot_entries e WHERE e.deliverable_id = d.id) AS last_week
        FROM snapshot_deliverables d
+       WHERE d.client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
        ORDER BY d.client_id, d.sort_order`
     )
     .all() as Array<{
@@ -1550,6 +1575,7 @@ function clientSentiment(start: string, end: string): ReportSection[] {
               resolved_at, created_at
        FROM client_flags
        WHERE date(created_at) >= ? AND date(created_at) <= ?
+         AND client_id NOT IN (SELECT id FROM rev_clients WHERE archived_at IS NOT NULL)
        ORDER BY created_at DESC`
     )
     .all(start, end) as Array<{

@@ -28,6 +28,7 @@ import {
   sameLifecycleAccount,
 } from "./email-launch";
 import { APP_TIME_ZONE, currentPeriod, shiftPeriod } from "./period";
+import { rowOmitsArchivedClient } from "./active-clients";
 import { listRevClients, updateRevClient } from "./revenue";
 
 export interface BoardColumn {
@@ -212,7 +213,8 @@ function ensureCardsForPeriod(period: string): void {
       db
         .prepare(
           `SELECT id FROM rev_clients
-            WHERE lifecycle_launch_date IS NOT NULL AND lifecycle_launch_date != ''`
+            WHERE archived_at IS NULL
+              AND lifecycle_launch_date IS NOT NULL AND lifecycle_launch_date != ''`
         )
         .all() as Array<{ id: string }>
     ).map((r) => r.id)
@@ -269,6 +271,7 @@ export function listBoardCards(period: string): BoardCard[] {
          JOIN campaign_emails e
            ON e.campaign_id = c.id AND e.kind IN ('email', 'sms')
         WHERE c.archived_at IS NULL
+          AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
           AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
           AND NOT (c.status = 'approved' AND ifnull(c.approved_channel, '') = 'internal')
           AND (
@@ -469,6 +472,7 @@ export function listAssignableCampaigns(cardId: string): AssignableCampaign[] {
          JOIN campaign_emails e
            ON e.campaign_id = c.id AND e.kind IN ('email', 'sms')
         WHERE c.archived_at IS NULL
+          AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
           AND c.status IN (${DELIVERED_STATUSES.map(() => "?").join(",")})
           AND NOT (c.status = 'approved' AND ifnull(c.approved_channel, '') = 'internal')
         GROUP BY c.id

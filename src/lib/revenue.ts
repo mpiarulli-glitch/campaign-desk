@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { clientLogoPublicUrl } from "./client-logos";
 import { normalizePhoneE164 } from "./phone";
 import { nextContactEmail } from "./email-address";
+import { queryClients } from "./active-clients";
 import {
   getDb,
   nowIso,
@@ -24,11 +25,22 @@ export function businessModelLabel(model: BusinessModel): string {
 
 /* ------------------------------------------------------------------ clients */
 
-export function listRevClients(includeInactive = false): RevClient[] {
-  const where = includeInactive ? "" : "WHERE active = 1";
-  return getDb()
-    .prepare(`SELECT * FROM rev_clients ${where} ORDER BY name COLLATE NOCASE`)
-    .all() as RevClient[];
+/**
+ * Clients for a list, picker, or job.
+ *
+ * Archived clients are left out unless `includeArchived` is set. Pass that
+ * only when matching an existing row so a sync cannot create a duplicate.
+ * Inactive clients stay out unless `includeInactive` is set. getRevClient
+ * still returns an archived row by id.
+ */
+export function listRevClients(
+  includeInactive = false,
+  opts?: { includeArchived?: boolean }
+): RevClient[] {
+  return queryClients({
+    includeInactive,
+    includeArchived: opts?.includeArchived === true,
+  });
 }
 
 /* ------------------------------------------------- logos + account health */

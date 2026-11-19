@@ -367,7 +367,8 @@ export function getClientByScheduleToken(token: string): RevClient | null {
     (getDb()
       .prepare(
         `SELECT * FROM rev_clients
-         WHERE schedule_token = ? AND production_enrolled = 1`
+         WHERE schedule_token = ? AND production_enrolled = 1
+           AND archived_at IS NULL`
       )
       .get(token) as RevClient | undefined) || null
   );

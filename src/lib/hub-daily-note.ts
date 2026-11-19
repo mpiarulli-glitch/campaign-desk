@@ -5,6 +5,7 @@
 // report, not at the top of the hub. Pings are fetched live in the API route
 // because they are per-person and cannot be shared.
 
+import { rowOmitsArchivedClient } from "./active-clients";
 import { looksLikeAdsLaunch } from "./ads-launch";
 import { approvalActivitySummary } from "./activity-copy";
 import { asPerson, hasConnection, listMyReadings, type BcReading } from "./basecamp";
@@ -185,7 +186,8 @@ export function buildDailyNote(now: Date = new Date()): DailyNote {
       `SELECT id, title, client_name, approved_by, approved_channel,
               approved_at, basecamp_card_url
          FROM campaigns
-        WHERE approved_at IS NOT NULL`
+        WHERE approved_at IS NOT NULL
+          AND ${rowOmitsArchivedClient("client_id", "client_name")}`
     )
     .all() as Array<{
     id: string;

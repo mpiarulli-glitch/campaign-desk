@@ -70,6 +70,10 @@ async function sendOne(campaign: Campaign): Promise<ApprovalThankYouResult> {
   }
 
   const client = resolveCampaignClient(fresh);
+  if (client?.archived_at) {
+    cancelPendingApprovalThankYou(fresh.id);
+    return { ...base, ok: true, skipped: "client is archived" };
+  }
   if (!client?.basecamp_project_id) {
     markApprovalThankYouSent(fresh.id);
     return { ...base, ok: true, skipped: "no Basecamp project" };

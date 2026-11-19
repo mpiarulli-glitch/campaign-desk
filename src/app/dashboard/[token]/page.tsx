@@ -49,7 +49,7 @@ type GoalStatus = "on_track" | "at_risk" | "off_track" | "achieved";
 type Goal = { id: string; objective: string; targetDate: string | null; status: GoalStatus };
 
 type DashboardData = {
-  client: { id: string; name: string; accountManager: string };
+  client: { id: string; name: string; accountManager: string; archived?: boolean };
   production: {
     window: { start: string; end: string } | null;
     status: CycleStatus;
@@ -254,7 +254,10 @@ export default function ClientDashboardPage() {
       <section className="snap-hero">
         <div className="snap-hero-inner">
           <p className="snap-hero-eyebrow">Account standing</p>
-          <h1 className="snap-hero-title">{data?.client.name || "Dashboard"}</h1>
+          <h1 className="snap-hero-title">
+            {data?.client.name || "Dashboard"}
+            {data?.client.archived ? <span className="archived-mark">Archived</span> : null}
+          </h1>
           <p className="snap-hero-sub">Prepared by Marketing Empire Group</p>
 
           {data ? (

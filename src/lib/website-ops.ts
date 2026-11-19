@@ -105,7 +105,7 @@ export type WebsiteClientOption = { id: string; name: string };
 export function listWebsiteClients(): WebsiteClientOption[] {
   return getDb()
     .prepare(
-      `SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name COLLATE NOCASE`
+      `SELECT id, name FROM rev_clients WHERE active = 1 AND archived_at IS NULL ORDER BY name COLLATE NOCASE`
     )
     .all() as WebsiteClientOption[];
 }

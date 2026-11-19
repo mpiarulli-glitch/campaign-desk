@@ -236,7 +236,7 @@ export function listForecastSyncPeople(): ForecastSyncPerson[] {
 export function listForecastSyncClients(): Array<{ id: string; name: string }> {
   return getDb()
     .prepare(
-      `SELECT id, name FROM rev_clients WHERE active = 1 ORDER BY name COLLATE NOCASE, id`
+      `SELECT id, name FROM rev_clients WHERE active = 1 AND archived_at IS NULL ORDER BY name COLLATE NOCASE, id`
     )
     .all() as Array<{ id: string; name: string }>;
 }

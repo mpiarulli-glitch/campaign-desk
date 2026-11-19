@@ -7,6 +7,7 @@
  */
 
 import { getDb } from "./db";
+import { rowOmitsArchivedClient } from "./active-clients";
 import { listRevClients } from "./revenue";
 import { listSops } from "./hub";
 import {
@@ -60,6 +61,7 @@ export function listAllPendingApprovals(): ApprovalRow[] {
                 WHERE cm.campaign_id = c.id AND cm.resolved = 0) AS open_comments
          FROM campaigns c
         WHERE c.archived_at IS NULL
+          AND ${rowOmitsArchivedClient("c.client_id", "c.client_name")}
           AND c.status IN ('in_review', 'needs_changes')
         ORDER BY c.updated_at ASC`
     )

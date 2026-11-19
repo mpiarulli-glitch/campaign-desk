@@ -629,7 +629,11 @@ export async function pullMissingClientLogos(options?: {
   const transport = options?.transport;
   const only = (options?.clientId || "").trim();
   const rows = getDb()
-    .prepare(`SELECT id, name, website, logo_path FROM rev_clients ORDER BY name COLLATE NOCASE`)
+    .prepare(
+      `SELECT id, name, website, logo_path FROM rev_clients
+        WHERE archived_at IS NULL
+        ORDER BY name COLLATE NOCASE`
+    )
     .all() as ClientLogoRow[];
   const { loadLifecycleLogoDomains } = await import("./client-logo-domain");
   const domains = loadLifecycleLogoDomains(rows);
@@ -763,7 +767,8 @@ async function resolveMissingClientLogos(
   const rows = getDb()
     .prepare(
       `SELECT id, name, website, logo_path FROM rev_clients
-        WHERE id IN (${ordered.map(() => "?").join(",")})`
+        WHERE archived_at IS NULL
+          AND id IN (${ordered.map(() => "?").join(",")})`
     )
     .all(...ordered) as ClientLogoRow[];
   const byId = new Map(rows.map((row) => [row.id, row]));

@@ -57,7 +57,9 @@ export function resolveCampaignClient(campaign: Campaign): RevClient | null {
 
   const nameKey = clientNameKey(campaign.client_name || linked?.name || "");
   const byName = nameKey
-    ? listRevClients(true).filter((c) => clientNameKey(c.name) === nameKey)
+    ? listRevClients(true, { includeArchived: true }).filter(
+        (c) => clientNameKey(c.name) === nameKey
+      )
     : [];
   const best = pickBestClient(byName);
 
@@ -96,6 +98,7 @@ export async function syncCampaignDeliverablesCard(
   if (!campaign.basecamp_card_id) return;
 
   const client = resolveCampaignClient(campaign);
+  if (client?.archived_at) return;
   const subject = client?.name || campaign.client_name || campaign.title;
   const wanted = columnLabel(column);
 

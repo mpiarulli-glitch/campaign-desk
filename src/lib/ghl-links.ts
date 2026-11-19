@@ -9,17 +9,16 @@ import { listRevClients, updateRevClient } from "./revenue";
 
 /** Write the exact pairs Find matches would have pre-ticked. */
 export function applyExactLinkPlan(plan: LinkPlan): { linked: number; names: string[] } {
+  const everyone = listRevClients(true, { includeArchived: true });
   const taken = new Set(
-    listRevClients(true)
-      .map((c) => (c.ghl_location_id || "").trim())
-      .filter(Boolean)
+    everyone.map((c) => (c.ghl_location_id || "").trim()).filter(Boolean)
   );
   const names: string[] = [];
 
   for (const p of plan.proposals) {
     if (p.confidence !== "exact") continue;
-    const client = listRevClients(true).find((c) => c.id === p.clientId);
-    if (!client) continue;
+    const client = everyone.find((c) => c.id === p.clientId);
+    if (!client || client.archived_at) continue;
     if ((client.ghl_location_id || "").trim()) continue;
     if (taken.has(p.locationId)) continue;
     updateRevClient(client.id, { ghlLocationId: p.locationId });
@@ -31,7 +30,9 @@ export function applyExactLinkPlan(plan: LinkPlan): { linked: number; names: str
 }
 
 export async function applyExactGhlLinks(): Promise<{ linked: number; names: string[] }> {
-  const clients = listRevClients(true).map((c) => ({
+  const clients = listRevClients(true, { includeArchived: true })
+    .filter((c) => !c.archived_at)
+    .map((c) => ({
     id: c.id,
     name: c.name,
     ghl_location_id: c.ghl_location_id || "",

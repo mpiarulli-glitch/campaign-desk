@@ -83,7 +83,9 @@ export function listForecastClientsMissingBasecamp(): ForecastClientRef[] {
   const rows = getDb()
     .prepare(
       `SELECT id, name FROM rev_clients
-        WHERE active = 1 AND TRIM(IFNULL(basecamp_project_id, '')) = ''
+        WHERE active = 1
+          AND archived_at IS NULL
+          AND TRIM(IFNULL(basecamp_project_id, '')) = ''
         ORDER BY name COLLATE NOCASE`
     )
     .all() as ForecastClientRef[];

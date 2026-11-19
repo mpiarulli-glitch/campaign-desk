@@ -205,6 +205,7 @@ type Campaign = {
   title: string;
   client_name: string;
   client_id: string | null;
+  client_archived?: boolean;
   description: string;
   audience: string;
   status: string;
@@ -2103,6 +2104,7 @@ export default function AdminCampaignPage() {
             >
               <label className="muted" style={{ fontSize: 13 }} htmlFor="campaign-client">
                 Client
+                {campaign.client_archived ? <span className="archived-mark">Archived</span> : null}
               </label>
               <input
                 id="campaign-client"
@@ -2126,7 +2128,7 @@ export default function AdminCampaignPage() {
                   <option key={c.id} value={c.name} />
                 ))}
               </datalist>
-              {clientQuery.trim() && !clientQueryMatch ? (
+              {clientQuery.trim() && !clientQueryMatch && !campaign.client_archived ? (
                 <button
                   type="button"
                   className="btn btn-sm btn-secondary"

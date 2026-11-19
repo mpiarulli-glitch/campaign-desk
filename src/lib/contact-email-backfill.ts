@@ -286,10 +286,16 @@ export function backfillKnownContactEmails(
     )
     .get();
   if (!table) return [];
+  const cols = database.prepare(`PRAGMA table_info(rev_clients)`).all() as Array<{
+    name: string;
+  }>;
+  const archivedSql = cols.some((col) => col.name === "archived_at")
+    ? "WHERE archived_at IS NULL"
+    : "";
   const clients = (
     database
       .prepare(
-        `SELECT id, name, basecamp_project_id, contact_email FROM rev_clients`
+        `SELECT id, name, basecamp_project_id, contact_email FROM rev_clients ${archivedSql}`
       )
       .all() as Array<ClientEmailRow & { basecamp_project_id: unknown }>
   ).map((client) => ({

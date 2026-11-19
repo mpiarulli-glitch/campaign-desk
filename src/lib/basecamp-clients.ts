@@ -243,14 +243,16 @@ export function bindForecastClientToExactProject(
 } {
   const pid = String(project.id).trim();
   const name = canonicalName.trim();
-  const clients = listRevClients(true);
+  const clients = listRevClients(true, { includeArchived: true });
   const byProject = clients.find((c) => (c.basecamp_project_id || "").trim() === pid);
   if (byProject) {
-    if (byProject.name.trim() !== name) {
-      updateRevClient(byProject.id, { name });
-    }
-    if (!byProject.active) {
-      updateRevClient(byProject.id, { active: true });
+    if (!byProject.archived_at) {
+      if (byProject.name.trim() !== name) {
+        updateRevClient(byProject.id, { name });
+      }
+      if (!byProject.active) {
+        updateRevClient(byProject.id, { active: true });
+      }
     }
     return {
       clientId: byProject.id,
@@ -261,6 +263,14 @@ export function bindForecastClientToExactProject(
   }
   const byName = clients.find((c) => norm(c.name) === norm(name));
   if (byName) {
+    if (byName.archived_at) {
+      return {
+        clientId: byName.id,
+        clientName: byName.name,
+        created: false,
+        linked: false,
+      };
+    }
     if (!(byName.basecamp_project_id || "").trim()) {
       updateRevClient(byName.id, {
         name,
@@ -529,10 +539,10 @@ export function ensureForecastClientForProject(project: {
     return empty({ internal: true, clientName: projectName });
   }
 
-  const all = listRevClients(true);
+  const all = listRevClients(true, { includeArchived: true });
   const existing = all.find((c) => (c.basecamp_project_id || "").trim() === projectId);
   if (existing) {
-    if (!existing.active) updateRevClient(existing.id, { active: true });
+    if (!existing.active && !existing.archived_at) updateRevClient(existing.id, { active: true });
     return empty({
       clientId: existing.id,
       clientName: existing.name,
@@ -566,7 +576,7 @@ export function ensureForecastClientForProject(project: {
     }
   }
 
-  const takenAgain = listRevClients(true).find(
+  const takenAgain = listRevClients(true, { includeArchived: true }).find(
     (c) => (c.basecamp_project_id || "").trim() === projectId
   );
   if (takenAgain) {
@@ -780,12 +790,13 @@ export async function reconcileClients(opts?: {
   // is left blank so an admin can pick it, instead of guessing.
   const people = forecastPersonNames();
   const plan = matchUnlinkedClients(
-    listRevClients(true).map((c) => ({
+    listRevClients(true, { includeArchived: true }).map((c) => ({
       id: c.id,
       name: c.name,
       basecampProjectId: (c.basecamp_project_id || "").trim(),
-      active: c.active === 1,
-      eligible: !isPersonOrInternalClientName(c.name, people, isInternalProject),
+      active: c.active === 1 && !c.archived_at,
+      eligible:
+        !c.archived_at && !isPersonOrInternalClientName(c.name, people, isInternalProject),
     })),
     projects,
     { aliases: PROJECT_ALIASES, isInternal: isInternalProject }
@@ -802,7 +813,7 @@ export async function reconcileClients(opts?: {
   // ---- create pass: projects with no client at all
   if (createMissing) {
     // Recomputed after the link pass so newly linked ids count as taken.
-    const clients = listRevClients(true);
+    const clients = listRevClients(true, { includeArchived: true });
     const takenIds = new Set(
       clients.map((c) => c.basecamp_project_id).filter(Boolean).map(String)
     );
@@ -1091,7 +1102,9 @@ export async function ensureCoronasDeOroClient(): Promise<void> {
 
     const project = { id: CORONAS_DE_ORO_PROJECT_ID, name: CORONAS_DE_ORO_CLIENT_NAME };
     const result = bindForecastClientToExactProject(project, CORONAS_DE_ORO_CLIENT_NAME);
-    const row = listRevClients(true).find((c) => c.id === result.clientId);
+    const row = listRevClients(true, { includeArchived: true }).find(
+      (c) => c.id === result.clientId
+    );
     if ((row?.basecamp_project_id || "").trim() !== CORONAS_DE_ORO_PROJECT_ID) {
       console.log(
         `[forecast-client] Coronas De Oro is linked to ${row?.basecamp_project_id || "nothing"}; will retry next boot`
