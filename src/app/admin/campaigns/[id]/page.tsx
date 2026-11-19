@@ -24,6 +24,10 @@ import { formatTimeLabel, zonedLocalToUtc } from "@/lib/forecast-time";
 import { countsForMonth } from "@/lib/campaign-month-desk";
 import { APP_TIME_ZONE, currentPeriod, periodLabel, shiftPeriod } from "@/lib/period";
 import { formatAppDateTime } from "@/lib/format-time";
+import {
+  campaignNextAction,
+  clientVisibleStatusNote,
+} from "@/lib/review-flow";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
 
 function countMonthOptions(createdAt?: string, selected?: string | null): string[] {
@@ -396,6 +400,9 @@ export default function AdminCampaignPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [statusConfirm, setStatusConfirm] = useState<string | null>(null);
+  const [replyNoteId, setReplyNoteId] = useState<string | null>(null);
   const [copiedExternal, setCopiedExternal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addingEmail, setAddingEmail] = useState(false);
@@ -516,6 +523,8 @@ export default function AdminCampaignPage() {
       return;
     }
     setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
+    setReplyNoteId(commentId);
+    setMessage("Reply sent.");
     load(activeEmailId);
   }
 
@@ -1399,6 +1408,21 @@ export default function AdminCampaignPage() {
   }
 
   function onStatusChoice(next: string) {
+    if (clientVisibleStatusNote(next)) {
+      setStatusConfirm(next);
+      return;
+    }
+    if (next === "scheduled") {
+      openSchedulePrompt();
+      return;
+    }
+    void saveStatus(next);
+  }
+
+  function confirmStatusChoice() {
+    const next = statusConfirm;
+    setStatusConfirm(null);
+    if (!next) return;
     if (next === "scheduled") {
       openSchedulePrompt();
       return;
@@ -1980,10 +2004,31 @@ export default function AdminCampaignPage() {
     const noun = `${count} email${count === 1 ? "" : "s"}`;
     return spanMs > 0 ? `${noun} over ${delayLabel(spanMs)}` : `${noun} · same day`;
   })();
+  const nextAction = campaignNextAction({
+    status,
+    approvedChannel: campaign.approved_channel,
+    openComments: openCount,
+  });
 
   return (
     <div className="app-shell">
-      <div className="page-actions">
+      {statusConfirm ? (
+        <div className="cd-confirm" role="dialog" aria-modal="true" aria-labelledby="status-confirm-title">
+          <div className="cd-confirm-card">
+            <h2 id="status-confirm-title">Mark this {operatorStatusLabel(statusConfirm)}?</h2>
+            <p>{clientVisibleStatusNote(statusConfirm)}</p>
+            <div className="cd-confirm-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setStatusConfirm(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn" onClick={confirmStatusChoice}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <div className="page-actions cd-desk-actions">
         <StatusBadge
           status={status}
           approvedChannel={campaign.approved_channel}
@@ -2004,6 +2049,25 @@ export default function AdminCampaignPage() {
                 { label: campaign.title },
               ]}
             />
+            <div className="cd-next">
+              <div>
+                <p className="cd-next-kicker">{nextAction.waiting}</p>
+                <p className="cd-next-detail">{nextAction.detail}</p>
+              </div>
+              {nextAction.action === "mark_revision" ? (
+                <button type="button" className="btn" onClick={markRevisionDone} disabled={saving}>
+                  {saving ? "Saving..." : nextAction.actionLabel}
+                </button>
+              ) : nextAction.action === "copy_client_link" ? (
+                <button type="button" className="btn" onClick={copyExternalLink}>
+                  {copiedExternal ? "Copied" : nextAction.actionLabel}
+                </button>
+              ) : nextAction.action === "schedule" ? (
+                <button type="button" className="btn" onClick={openSchedulePrompt} disabled={saving}>
+                  {nextAction.actionLabel}
+                </button>
+              ) : null}
+            </div>
             <p className="eyebrow">
               {isAutomation ? "Automation" : "Review package"}
               {campaign.archived_at ? " · Archived" : ""}
@@ -2089,7 +2153,7 @@ export default function AdminCampaignPage() {
               ))}
             </select>
             <select
-              className="select-clean"
+              className="select-clean cd-tool-month"
               aria-label="Counts for month"
               disabled={saving}
               value={countsForMonth({
@@ -2140,16 +2204,57 @@ export default function AdminCampaignPage() {
                 </button>
               </span>
             ) : null}
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={toggleArchived}
-              disabled={saving}
-            >
-              {campaign.archived_at ? "Restore" : "Archive"}
-            </button>
-            <button className="btn btn-danger btn-sm" onClick={removeCampaign}>
-              Delete
-            </button>
+            <div className="cd-more">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                aria-expanded={moreOpen}
+                aria-haspopup="menu"
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                More
+              </button>
+              {moreOpen ? (
+                <div className="cd-more-menu" role="menu">
+                  <label className="cd-more-month">
+                    Counts for month
+                    <select
+                      aria-label="Counts for month"
+                      disabled={saving}
+                      value={countsForMonth({
+                        board_period: campaign.board_period,
+                        scheduled_send_at: campaign.scheduled_send_at,
+                        created_at: campaign.created_at,
+                        due_on: campaign.basecamp_due_on,
+                        email_sends: emails.map((email) => email.scheduled_send_at),
+                      })}
+                      onChange={(e) => void saveCountMonth(e.target.value)}
+                    >
+                      {countMonthOptions(
+                        campaign.created_at,
+                        countsForMonth({
+                          board_period: campaign.board_period,
+                          scheduled_send_at: campaign.scheduled_send_at,
+                          created_at: campaign.created_at,
+                          due_on: campaign.basecamp_due_on,
+                          email_sends: emails.map((email) => email.scheduled_send_at),
+                        })
+                      ).map((period) => (
+                        <option key={period} value={period}>
+                          {periodLabel(period)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" role="menuitem" onClick={toggleArchived} disabled={saving}>
+                    {campaign.archived_at ? "Restore" : "Archive"}
+                  </button>
+                  <button type="button" role="menuitem" className="is-danger" onClick={removeCampaign}>
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -2770,6 +2875,7 @@ export default function AdminCampaignPage() {
                   </p>
                 )
               ) : null}
+              <div id="campaign-preview">
               <EmailPreview
                 ref={emailEditRef}
                 key={`${activeDoc.html.length}-${previewNonce}`}
@@ -2810,6 +2916,7 @@ export default function AdminCampaignPage() {
                 html={activeDoc.html}
                 itemNoun={kindNoun(activeEmail.kind ?? "email")}
               />
+              </div>
 
               <div className="card card-pad stack">
                 <h2 className="h2" style={{ margin: 0 }}>
@@ -2934,6 +3041,22 @@ export default function AdminCampaignPage() {
                           {c.quote_text}
                         </blockquote>
                       ) : null}
+                      {c.type === "inline" || isCopyQuote(c) ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm cd-show-email"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActivePinId(c.id);
+                            document.getElementById("campaign-preview")?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "center",
+                            });
+                          }}
+                        >
+                          Show in email
+                        </button>
+                      ) : null}
                       {c.body ? (
                         <div className="comment-body">{c.body}</div>
                       ) : null}
@@ -3021,6 +3144,9 @@ export default function AdminCampaignPage() {
                         >
                           {replyingId === c.id ? "..." : "Reply"}
                         </button>
+                        {replyNoteId === c.id ? (
+                          <span className="rv-reply-sent" role="status">Reply sent</span>
+                        ) : null}
                       </div>
 
                       <div className="row" style={{ marginTop: 10 }}>

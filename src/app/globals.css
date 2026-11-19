@@ -28963,3 +28963,312 @@ summary:focus-visible,
   color: var(--success-ink);
 }
 
+/* Campaign desk + client review polish. Brand colors stay; the page just
+   reads in a clearer order. */
+
+.cd-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 4px 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.cd-next-kicker {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.cd-next-detail {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.cd-more {
+  position: relative;
+}
+
+.cd-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 8;
+  min-width: 220px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lift);
+}
+
+.cd-more-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cd-more-menu button:hover {
+  background: var(--bg-soft);
+}
+
+.cd-more-menu button.is-danger {
+  color: var(--danger);
+}
+
+.cd-more-month {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cd-more-month select {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.cd-more-month {
+  display: none;
+}
+
+.clist-waiting {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-body);
+}
+
+.clist-waiting.is-client {
+  color: var(--accent-ink);
+}
+
+.clist-waiting.is-ready {
+  color: var(--success);
+}
+
+.review-page .preview-frame-wrap {
+  border-radius: 16px;
+  background: #fff;
+}
+
+.review-page .comment-card {
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+
+.review-page .empty {
+  border-radius: 12px;
+}
+
+.rv-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.rv-status.is-you {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.rv-status.is-team {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  border-color: transparent;
+}
+
+.rv-status.is-done {
+  background: var(--success-wash);
+  color: var(--success-ink);
+  border-color: transparent;
+}
+
+.rv-approve-summary {
+  align-items: flex-start;
+}
+
+.rv-approve-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: min(100%, 240px);
+}
+
+.rv-approve-hint {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-body);
+  text-align: right;
+}
+
+.rv-approve-subjects {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rv-approve-subjects li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.rv-approve-subjects span {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rv-reply-sent {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.cd-show-email {
+  margin: 4px 0 8px;
+}
+
+.cd-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(14, 17, 22, 0.45);
+}
+
+.cd-confirm-card {
+  width: min(440px, 100%);
+  padding: 22px;
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lift);
+}
+
+.cd-confirm-card h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.cd-confirm-card p {
+  margin: 0;
+  color: var(--text-body);
+  line-height: 1.5;
+}
+
+.cd-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 900px) {
+  .review-page .preview-devices {
+    display: none;
+  }
+
+  .review-page .split-review {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(240px, 1fr) minmax(220px, 0.85fr);
+    height: min(78dvh, 860px);
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .review-page .split-review > .stack,
+  .review-page .rv-rail {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .review-page .rv-rail {
+    position: static;
+    max-height: none;
+  }
+
+  .rv-approve-actions {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .rv-approve-hint {
+    text-align: left;
+  }
+}
+
+@media (max-width: 760px) {
+  .cd-desk-actions > :not(.badge) {
+    display: none;
+  }
+
+  .cd-tool-month {
+    display: none;
+  }
+
+  .cd-more-month {
+    display: flex;
+  }
+
+  .cd-pkg-tools {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--bg);
+    padding: 8px 0;
+  }
+}
+

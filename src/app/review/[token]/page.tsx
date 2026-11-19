@@ -10,7 +10,6 @@ import {
   type InlineFeedbackPayload,
 } from "@/components/EmailPreview";
 import { EmailLinks } from "@/components/EmailLinks";
-import { StatusBadge } from "@/components/StatusBadge";
 import { AutomationMap } from "@/components/AutomationMap";
 import {
   approvalChannelForAssets,
@@ -26,6 +25,11 @@ import { coercePresentation, type FlowStepRecord } from "@/lib/automation-map";
 import { isCopyQuote } from "@/lib/copy-quote";
 import { formatPacificSend } from "@/lib/period";
 import { formatAppDateTime } from "@/lib/format-time";
+import {
+  clientReviewCopy,
+  finalApproveGate,
+  isFullName,
+} from "@/lib/review-flow";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
 
 type Attachment = {
@@ -166,18 +170,14 @@ type Campaign = {
   internally_approved?: boolean;
 };
 
-// A typed first + last name is what makes an approval a paper trail rather
-// than an anonymous click from the magic link.
-function isFullName(name: string): boolean {
-  return name.trim().split(/\s+/).filter(Boolean).length >= 2;
-}
-
 export default function ReviewPage() {
   const { token } = useParams<{ token: string }>();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [flow, setFlow] = useState<FlowStepRecord[]>([]);
   const [activeEmailId, setActiveEmailId] = useState<string | null>(null);
+  const [openedIds, setOpenedIds] = useState<string[]>([]);
+  const [replyNoteId, setReplyNoteId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [authorName, setAuthorName] = useState("");
   const [body, setBody] = useState("");
@@ -218,6 +218,7 @@ export default function ReviewPage() {
     }
     setFormError("");
     setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
+    setReplyNoteId(commentId);
     load(activeEmailId, { silent: true });
   }
 
@@ -282,6 +283,10 @@ export default function ReviewPage() {
             ? activeEmailId
             : data.emails?.[0]?.id || null;
       setActiveEmailId(nextId);
+      const hiddenUntilClick = data.campaign?.presentation === "automation";
+      if (nextId && !hiddenUntilClick) {
+        setOpenedIds((prev) => (prev.includes(nextId) ? prev : [...prev, nextId]));
+      }
     } catch {
       setError("Network error. Check your connection and try again.");
     } finally {
@@ -330,6 +335,7 @@ export default function ReviewPage() {
 
   function selectEmail(emailId: string) {
     setActiveEmailId(emailId);
+    setOpenedIds((prev) => (prev.includes(emailId) ? prev : [...prev, emailId]));
     setActivePinId(null);
     setMode("general");
   }
@@ -479,6 +485,7 @@ export default function ReviewPage() {
     }
 
     setFormMessage("Feedback sent. Thank you.");
+    setReplyNoteId(null);
     load(activeEmail.id, { silent: true });
     return true;
   }
@@ -502,8 +509,18 @@ export default function ReviewPage() {
 
   async function approveEmail() {
     const name = authorName.trim();
-    if (!isFullName(name)) {
-      setError("Enter your first and last name above to approve.");
+    const gate = finalApproveGate({
+      items: emails.map((email) => ({
+        id: email.id,
+        title: email.title,
+        subjects: email.subjects,
+        chosenSubjectId: email.chosen_subject_id,
+      })),
+      openedIds,
+      approverName: name,
+    });
+    if (!gate.ok) {
+      setError(gate.reason);
       return;
     }
     const channel = approvalChannelForAssets(emails.map((e) => e.kind));
@@ -581,22 +598,27 @@ export default function ReviewPage() {
     emails.map((e) => e.kind),
     { automation: isAutomation }
   );
+  const facing = clientReviewCopy(
+    campaign.status,
+    Boolean(campaign.internally_approved)
+  );
+  const approveGate = finalApproveGate({
+    items: emails.map((email) => ({
+      id: email.id,
+      title: email.title,
+      subjects: email.subjects,
+      chosenSubjectId: email.chosen_subject_id,
+    })),
+    openedIds,
+    approverName: authorName,
+  });
 
   return (
     <div className="app-shell review-page">
       <SkipLink />
       <header className="topbar">
         <Brand />
-        <StatusBadge
-          status={campaign.status}
-          approvedChannel={
-            campaign.internally_approved
-              ? "internal"
-              : campaign.status === "approved"
-                ? "client"
-                : null
-          }
-        />
+        <span className={`rv-status is-${facing.tone}`}>{facing.label}</span>
       </header>
 
       <main id="main" className="container container-wide stack">
@@ -618,28 +640,9 @@ export default function ReviewPage() {
               Updated {formatAppDateTime(campaign.updated_at)}
             </span>
           </p>
+          <p className="rv-hero-desc">{facing.detail}</p>
           {campaign.description ? (
             <p className="rv-hero-desc">{campaign.description}</p>
-          ) : isAutomation ? (
-            <p className="rv-hero-desc">
-              Follow the path from the trigger through each wait and email.
-              Click an email to preview it.
-            </p>
-          ) : null}
-          {campaign.status === "internal_review" ? (
-            <p className="rv-hero-desc">
-              Leave a comment for anything that should change. Sending feedback hands this back as Needs revisions (internal).
-            </p>
-          ) : null}
-          {campaign.status === "revisions_made" ? (
-            <p className="rv-hero-desc">
-              Revisions made. Approve it, or send another round of feedback.
-            </p>
-          ) : null}
-          {campaign.status === "needs_revisions_internal" ? (
-            <p className="rv-hero-desc">
-              Revisions left. Waiting on Michael.
-            </p>
           ) : null}
         </div>
 
@@ -747,64 +750,6 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {locked ? (
-          <div className="rv-approve is-approved">
-            <div className="rv-approve-with-check">
-              <span className="rv-approve-check" aria-hidden>
-                ✓
-              </span>
-              <div className="rv-approve-copy">
-                <span className="rv-approve-title">This campaign is approved.</span>
-                <p className="rv-approve-sub">
-                  {campaign.approved_by
-                    ? `Approved by ${campaign.approved_by}. `
-                    : ""}
-                  {isBlogReview
-                    ? "The team has been notified and feedback is now closed. You can still read every post and all prior comments."
-                    : "The email team has been notified and feedback is now closed. You can still read every item and all prior comments."}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="rv-approve">
-            <div className="rv-approve-copy">
-              <span className="rv-approve-title">
-                {campaign.internally_approved
-                  ? "Approved internally, waiting for your approval"
-                  : "Ready to approve?"}
-              </span>
-              <p className="rv-approve-sub">
-                {campaign.internally_approved
-                  ? "The team has signed off internally. This still needs your approval before it is client-approved."
-                  : isBlogReview
-                    ? emails.length === 1
-                      ? "Read the post, leave comments if anything needs a change, then type your full name to confirm it is you."
-                      : "This covers every blog post in the package. Type your full name to confirm it is you."
-                    : `This covers every ${isAutomation ? "email in the automation" : "item in the package"}. Type your full name to confirm it is you.`}
-              </p>
-            </div>
-            <div className="row" style={{ gap: 8 }}>
-              <input
-                className="plan-name-input"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                placeholder="Your full name"
-              />
-              <button
-                className="btn btn-approve"
-                onClick={approveEmail}
-                disabled={approving || !isFullName(authorName)}
-              >
-                {approving ? "Sending..." : approveCta}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {message ? <p className="rv-notice rv-notice-ok">{message}</p> : null}
-        {error ? <p className="rv-notice rv-notice-bad">{error}</p> : null}
-
         {isAutomation && !previewOpen ? null : (
         <div
           className={isAutomation ? "modal-backdrop" : undefined}
@@ -865,7 +810,7 @@ export default function ReviewPage() {
                     title={
                       isFullName(authorName)
                         ? undefined
-                        : "Type your full name in the approve box above first."
+                        : "Add your first and last name to approve."
                     }
                   >
                     Approve this {itemNoun}
@@ -988,8 +933,10 @@ export default function ReviewPage() {
                     id="name"
                     value={authorName}
                     onChange={(e) => setAuthorName(e.target.value)}
-                    placeholder="Boss / Client name"
+                    placeholder="First and last name"
+                    autoComplete="name"
                   />
+                  <span className="rv-label-note">Used to sign comments and approval.</span>
                 </div>
 
                 <div className="field">
@@ -1206,6 +1153,18 @@ export default function ReviewPage() {
                             >
                               {replyingId === c.id ? "..." : "Reply"}
                             </button>
+                            {c.type === "inline" || isCopyQuote(c) ? (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setActivePinId(c.id)}
+                              >
+                                Show in email
+                              </button>
+                            ) : null}
+                            {replyNoteId === c.id ? (
+                              <span className="rv-reply-sent" role="status">Reply sent</span>
+                            ) : null}
                             {c.type === "inline" ? (
                               <button
                                 type="button"
@@ -1228,6 +1187,50 @@ export default function ReviewPage() {
           </div>
         </div>
         )}
+
+        <section className="rv-approve rv-approve-summary" id="approve" aria-label="Approval">
+          <div className="rv-approve-copy">
+            <span className="rv-approve-title">
+              {locked ? facing.label : emails.length > 1 ? "Approve the package" : "Approve"}
+            </span>
+            <p className="rv-approve-sub">
+              {locked
+                ? `${campaign.approved_by ? `Approved by ${campaign.approved_by}. ` : ""}${facing.detail}`
+                : isBlogReview && emails.length === 1
+                  ? "Read the post, leave comments if anything needs a change, then approve."
+                  : emails.length > 1
+                    ? `This covers all ${emails.length} items. Open each one, then approve.`
+                    : facing.detail}
+            </p>
+            {approveGate.ok && approveGate.subjects.length > 0 ? (
+              <ul className="rv-approve-subjects">
+                {approveGate.subjects.map((row) => (
+                  <li key={row.title}>
+                    <span>{emails.length > 1 ? row.title : "Subject"}</span>
+                    {row.subject}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+          {locked ? null : (
+            <div className="rv-approve-actions">
+              {!approveGate.ok ? (
+                <p className="rv-approve-hint" role="status">{approveGate.reason}</p>
+              ) : null}
+              <button
+                className="btn btn-approve"
+                type="button"
+                onClick={approveEmail}
+                disabled={approving || !approveGate.ok}
+              >
+                {approving ? "Sending..." : approveCta}
+              </button>
+            </div>
+          )}
+        </section>
+        {message ? <p className="rv-notice rv-notice-ok" role="status">{message}</p> : null}
+        {error ? <p className="rv-notice rv-notice-bad" role="alert">{error}</p> : null}
       </main>
     </div>
   );
