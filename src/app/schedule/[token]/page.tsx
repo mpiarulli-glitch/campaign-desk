@@ -12,7 +12,10 @@ export default function SchedulePage() {
         <Brand href="/" />
       </header>
       <main className="container stack sched-main">
-        <ScheduleBooking apiPath={`/api/schedule/${token}`} />
+        <ScheduleBooking
+          apiPath={`/api/schedule/${token}`}
+          urgencyTimer
+        />
       </main>
     </div>
   );

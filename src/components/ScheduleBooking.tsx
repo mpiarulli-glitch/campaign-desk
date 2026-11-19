@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BookingCountdown } from "@/components/BookingCountdown";
+import { SCHEDULE_BOOKING_HOLD_KEY } from "@/lib/booking-countdown";
 import { slotHasPassed } from "@/lib/scheduling-rules";
 
 type CycleStatus =
@@ -81,10 +83,39 @@ const STATUS_HEADLINE: Record<string, string> = {
   sent: "This production has shipped",
 };
 
+function BookingUrgency({
+  enabled,
+  deadline,
+  polite = true,
+}: {
+  enabled: boolean;
+  deadline?: string | number | null;
+  polite?: boolean;
+}) {
+  if (!enabled) return null;
+  return (
+    <BookingCountdown
+      storageKey={SCHEDULE_BOOKING_HOLD_KEY}
+      deadline={deadline}
+      polite={polite}
+    />
+  );
+}
+
 // Booking UI for a production slot, parameterized by which API resolves the
 // caller's client (schedule_token or dashboard_token — same booking rules
 // either way, see src/lib/scheduling.ts).
-export function ScheduleBooking({ apiPath }: { apiPath: string }) {
+export function ScheduleBooking({
+  apiPath,
+  urgencyTimer = false,
+  bookingDeadline = null,
+}: {
+  apiPath: string;
+  /** Off by default so a second page that embeds this form stays unchanged. */
+  urgencyTimer?: boolean;
+  /** ISO time or epoch ms. When set, the timer counts to this instead of the hold. */
+  bookingDeadline?: string | number | null;
+}) {
   const [data, setData] = useState<Data | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -282,6 +313,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           >
             ← Back
           </button>
+          <BookingUrgency enabled={urgencyTimer} deadline={bookingDeadline} />
         </div>
 
         <ProductionSchedulingReminder />
@@ -455,6 +487,11 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
             <BriefFields brief={brief} set={set} />
 
             <div className="brief-submit">
+              <BookingUrgency
+                enabled={urgencyTimer}
+                deadline={bookingDeadline}
+                polite={false}
+              />
               <button
                 className="btn"
                 disabled={saving || !extraDate || !extraTime}
@@ -561,6 +598,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           {data.extraWindow.note ? ` ${data.extraWindow.note}` : ""}
         </p>
         <div style={{ marginTop: 16 }}>
+          <BookingUrgency enabled={urgencyTimer} deadline={bookingDeadline} />
           <button className="btn" onClick={startExtraRequest}>
             Pick a day
           </button>
@@ -597,6 +635,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
         <h1 className="h1">Your production window has passed</h1>
         <MissedWindowNote window={data.missedWindow} />
         <div style={{ marginTop: 16 }}>
+          <BookingUrgency enabled={urgencyTimer} deadline={bookingDeadline} />
           <button className="btn" onClick={startExtraRequest}>
             Pick a new day
           </button>
@@ -662,6 +701,7 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           </strong>
           , with four-hour start times from 9 AM to 1 PM.
         </p>
+        <BookingUrgency enabled={urgencyTimer} deadline={bookingDeadline} />
       </div>
 
       <ProductionSchedulingReminder />
@@ -778,6 +818,11 @@ export function ScheduleBooking({ apiPath }: { apiPath: string }) {
           <BriefFields brief={brief} set={set} />
 
           <div className="brief-submit">
+            <BookingUrgency
+              enabled={urgencyTimer}
+              deadline={bookingDeadline}
+              polite={false}
+            />
             <button className="btn" disabled={saving} onClick={submit}>
               {saving ? "Requesting..." : "Request this slot"}
             </button>

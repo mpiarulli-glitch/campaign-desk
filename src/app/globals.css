@@ -5606,6 +5606,81 @@ select.snap-status-select.status-canceled { background: #e9ecef; }
   padding-top: 4px;
 }
 
+/* Countdown on a booking button. The clock uses the readout face so the
+   seconds don't shift the line. Expired is the same box, quieter, and the
+   button beside it stays enabled. */
+.booking-hold {
+  flex: 1 0 100%;
+  min-height: 48px;
+  margin: 0 0 2px;
+  padding: 12px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  max-width: 100%;
+}
+.booking-hold.is-expired {
+  background: var(--bg-soft);
+  border-color: var(--border);
+  border-left-color: var(--border-strong);
+  box-shadow: none;
+}
+.booking-hold-clock {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-body);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.booking-hold-time {
+  font-family: var(--font-readout), var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.booking-hold-expired-text {
+  margin: 0;
+  color: var(--text-body);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.booking-hold-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sched-hero .booking-hold {
+  margin-top: 14px;
+}
+@media (max-width: 640px) {
+  .booking-hold {
+    padding: 12px;
+  }
+  .booking-hold-clock {
+    font-size: 15px;
+  }
+  .booking-hold-time {
+    font-size: 24px;
+  }
+  .brief-submit:has(.booking-hold) .btn {
+    width: 100%;
+  }
+}
+
 /* Read-only production brief inside the admin send modal */
 .cal-brief {
   border: 1px solid var(--border);
