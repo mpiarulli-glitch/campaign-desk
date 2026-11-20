@@ -32,6 +32,12 @@ export async function register() {
       );
       await runClientWebsiteSeedOnStartup();
     });
+    enqueueDeferredStartupJob("trash-pipe-it-right-nudges", async () => {
+      const { runTrashPipeItRightNudgesOnStartup } = await import(
+        "./src/lib/trash-pipe-it-right-nudges"
+      );
+      await runTrashPipeItRightNudgesOnStartup();
+    });
     console.log(`[boot] ready to listen in ${Math.round(process.uptime() * 1000)}ms`);
   }
 
