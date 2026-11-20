@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  LAPTOP_PREVIEW_WIDTH,
   MOBILE_PREVIEW_WIDTH,
   buildPreviewSrcDoc,
   fitScaleForPreview,
+  isLandingPageAsset,
+  landingPreviewUrl,
+  laptopScaleForWidth,
   looksLikeFullDocument,
 } from "../src/lib/email-preview";
 
@@ -74,6 +78,77 @@ test("interactive full documents keep their markup and append the height script"
   assert.equal((src.match(/<html/gi) || []).length, 1);
   assert.match(src, /window\.__cd=1/);
   assert.match(src, /<\/script><\/body>/);
+});
+
+test("landing pages are detected from kind, title, or a page URL", () => {
+  assert.equal(
+    isLandingPageAsset({ kind: "landing_page", title: "Spring offer" }),
+    true
+  );
+  assert.equal(
+    isLandingPageAsset({
+      kind: "email",
+      title: "Landing Page - Flooring Refresh Guide",
+    }),
+    true
+  );
+  assert.equal(
+    isLandingPageAsset({ kind: "email", title: "Spring flooring offer" }),
+    false
+  );
+  assert.equal(
+    isLandingPageAsset({
+      kind: "email",
+      title: "Welcome",
+      html_content: "https://harbor.example/floors",
+    }),
+    true
+  );
+  assert.equal(
+    isLandingPageAsset({
+      kind: "mockup",
+      title: "Homepage",
+      media_url: "https://harbor.example/floors",
+    }),
+    true
+  );
+  assert.equal(
+    isLandingPageAsset({
+      kind: "mockup",
+      title: "Homepage",
+      body_format: "image",
+      media_url: "https://cdn.example/hero.png",
+    }),
+    false
+  );
+  assert.equal(
+    isLandingPageAsset({
+      kind: "email",
+      title: "Welcome",
+      html_content: "<table width='600'><tr><td>Hi</td></tr></table>",
+    }),
+    false
+  );
+  assert.equal(
+    landingPreviewUrl({ html_content: "https://harbor.example/floors" }),
+    "https://harbor.example/floors"
+  );
+  assert.equal(
+    landingPreviewUrl({
+      kind: "email",
+      media_url: "https://harbor.example/floors",
+      html_content: "<p>Hi</p>",
+    }),
+    null
+  );
+});
+
+test("laptopScaleForWidth fits a 1440 layout into the column without scaling up", () => {
+  assert.equal(laptopScaleForWidth(0), 1);
+  assert.equal(laptopScaleForWidth(LAPTOP_PREVIEW_WIDTH), 1);
+  assert.equal(laptopScaleForWidth(1600), 1);
+  assert.equal(laptopScaleForWidth(1280), 1279 / LAPTOP_PREVIEW_WIDTH);
+  assert.equal(laptopScaleForWidth(390), 389 / LAPTOP_PREVIEW_WIDTH);
 });
 
 test("fitScaleForPreview fills the phone frame without blowing up tiny leftovers", () => {

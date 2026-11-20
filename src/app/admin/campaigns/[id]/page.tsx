@@ -29,6 +29,7 @@ import {
   clientVisibleStatusNote,
 } from "@/lib/review-flow";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
+import { isLandingPageAsset, landingPreviewUrl } from "@/lib/email-preview";
 
 function countMonthOptions(createdAt?: string, selected?: string | null): string[] {
   const keys = new Set<string>();
@@ -829,6 +830,8 @@ export default function AdminCampaignPage() {
     () => (previewEmail ? renderAssetDoc(previewEmail) : { html: "", interactive: false }),
     [previewEmail]
   );
+  const landingPreview = previewEmail ? isLandingPageAsset(previewEmail) : false;
+  const landingUrl = previewEmail && landingPreview ? landingPreviewUrl(previewEmail) : null;
 
   // The AI reviser rewrites HTML, so it only applies to HTML-backed assets
   // (emails and HTML blogs/decks), never interactive forms, markdown docs, or
@@ -2600,7 +2603,7 @@ export default function AdminCampaignPage() {
           </div>
         </SendPlanDisclosure>
 
-        <div className="cd-pkg-work">
+        <div className={`cd-pkg-work${landingPreview ? " is-landing" : ""}`}>
           <div className="cd-pkg-editor">
         {message ? <p className="success" role="status">{message}</p> : null}
         {error ? <p className="error">{error}</p> : null}
@@ -2659,6 +2662,8 @@ export default function AdminCampaignPage() {
                 <EmailPreview
                   html={activeDoc.html}
                   interactive={activeDoc.interactive}
+                  landing={landingPreview}
+                  pageUrl={landingUrl}
                 />
               </div>
               <div className="stack">
@@ -2666,6 +2671,7 @@ export default function AdminCampaignPage() {
                 <EmailPreview
                   html={aiChat.currentHtml}
                   interactive={activeDoc.interactive}
+                  landing={landingPreview}
                 />
               </div>
             </div>
@@ -2882,6 +2888,8 @@ export default function AdminCampaignPage() {
                 ref={emailEditRef}
                 key={`${activeDoc.html.length}-${previewNonce}`}
                 html={activeDoc.html}
+                landing={landingPreview}
+                pageUrl={landingUrl}
                 pins={emailComments}
                 activePinId={activePinId}
                 onSelectPin={setActivePinId}
