@@ -1943,6 +1943,38 @@ export async function updateTodoStep(
 }
 
 /**
+ * Fetch one comment without logging the body. Callers verify the payload
+ * before they trash anything. A non-2xx response is only a status code.
+ */
+export async function getCommentJson(
+  projectId: string,
+  commentId: string,
+  identity: BcIdentity = SERVICE
+): Promise<{ ok: true; body: unknown } | { ok: false; error: string }> {
+  if (!projectId || !commentId) {
+    return { ok: false, error: "missing project or comment id" };
+  }
+  try {
+    const res = await bc(
+      `/buckets/${projectId}/comments/${commentId}.json`,
+      undefined,
+      identity
+    );
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      return { ok: false, error: `comment ${res.status}` };
+    }
+    try {
+      return { ok: true, body: await res.json() };
+    } catch {
+      return { ok: false, error: "comment payload was not json" };
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/**
  * Remove a recording from the Basecamp UI (recoverable trash, not a hard
  * delete). Used when a forecast step is removed so the matching to-do
  * subtask does not linger as an open checklist item.
