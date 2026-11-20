@@ -25,6 +25,7 @@ import {
   doingTitle,
 } from "../src/lib/bot-activity-live";
 import { countFloor, finishedBots, floorSummary, groupByPacificDay, propForTask, timelineStamp } from "../src/lib/bot-activity-office";
+import { cardStatusLabel, centerCounts, centerSubline, greeting, orbLabel } from "../src/lib/bot-activity-center";
 
 type Timer = { fn: () => void; ms: number };
 
@@ -433,10 +434,45 @@ test("untouched seed rows are not live, and a fresh bot write is", () => {
   );
 });
 
-test("the page wires a quiet refresh and the team layout without a second filter", () => {
+test("command center counts come from live rows, not the untouched seed", () => {
+  const now = Date.parse("2026-10-24T22:10:00.000Z");
+  const old = "2026-10-22T19:00:00.000Z";
+  const fresh = "2026-10-24T22:00:00.000Z";
+  const counts = centerCounts(
+    ["David", "Jerry", "Rachel", "Emily"],
+    [
+      { id: "seed-w-1", bot: "Jerry", at: old, updatedAt: old },
+      { id: "w-live", bot: "Jerry", at: fresh, updatedAt: fresh },
+    ],
+    [
+      { id: "seed-k-5", bot: "David", state: "progress", at: old, updatedAt: fresh },
+      { id: "seed-k-8", bot: "Rachel", state: "progress", at: old, updatedAt: "2026-10-23T01:40:00.000Z" },
+      { id: "seed-k-11", bot: "Emily", state: "progress", at: old, updatedAt: old },
+      { id: "seed-k-3", bot: "Jerry", state: "blocked", at: old, updatedAt: old },
+    ],
+    [],
+    now
+  );
+  assert.equal(counts.running, 1);
+  assert.equal(counts.pending, 1);
+  assert.equal(counts.paused, 1);
+  assert.equal(orbLabel(0), "All quiet");
+  assert.equal(orbLabel(1), "Bot Running");
+  assert.equal(orbLabel(8), "Bots Running");
+  assert.equal(centerSubline({ running: 0, pending: 0, paused: 0 }), "Your AI team is standing by");
+  assert.equal(centerSubline(counts), "1 item needs you");
+  assert.equal(cardStatusLabel("Working"), "Running");
+  assert.equal(cardStatusLabel("Waiting on you"), "Needs you");
+  assert.equal(cardStatusLabel("Stalled"), "Stalled");
+  assert.match(greeting(Date.parse("2026-10-25T15:00:00.000Z")), /^Good morning, Michael\.$/);
+  assert.match(greeting(Date.parse("2026-10-25T20:30:00.000Z")), /^Good afternoon, Michael\.$/);
+});
+
+test("the page wires a quiet refresh and the command center without a second filter", () => {
   const page = [
     fs.readFileSync(path.join("src/app/admin/bot-activity/page.tsx"), "utf8"),
-    fs.readFileSync(path.join("src/app/admin/bot-activity/office-floor.tsx"), "utf8"),
+    fs.readFileSync(path.join("src/app/admin/bot-activity/command-center.tsx"), "utf8"),
+    fs.readFileSync(path.join("src/lib/bot-activity-center.ts"), "utf8"),
   ].join("\n");
   const css = fs.readFileSync(path.join("src/app/globals.css"), "utf8");
   const live = fs.readFileSync(path.join("src/lib/bot-activity-live.ts"), "utf8");
@@ -469,30 +505,41 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(page, /id="ba-bot"/);
   assert.match(page, /grokBotHref/);
   assert.match(page, /Open chat/);
-  assert.match(page, /doing:/);
+  assert.match(page, /All quiet/);
+  assert.match(page, /Bots Running/);
+  assert.match(page, /Pending/);
+  assert.match(page, /Paused/);
+  assert.match(page, /Active Bots/);
+  assert.match(page, /View all/);
   assert.match(live, /Last heard/);
   assert.match(page, /Not updated since/);
   assert.match(page, /Old request/);
-  assert.match(page, /ba-floor/);
+  assert.doesNotMatch(page, /ba-floor/);
   assert.match(page, /Michael/);
   assert.match(page, /is-\$\{tone\}/);
   assert.match(page, /ba-bubble/);
-  assert.match(page, /onMouseEnter=/);
-  assert.match(page, /onFocus=\{\(\) => setOpen\(bot\.name\)\}/);
+  assert.match(page, /ba-say/);
   const icons = fs.readFileSync(path.join("src/lib/bot-activity-icons.ts"), "utf8");
   assert.match(icons, /grokbot:\/\/app\/v1\/agent\?id=/);
   assert.match(icons, /Jerry: "74308129-2f1d-43a1-973e-029bc428d239"/);
   assert.match(icons, /Cody: "5e4e3635-7589-4b3e-9782-6a00d07b53e0"/);
   assert.doesNotMatch(icons, /Emily:/);
   assert.doesNotMatch(icons, /Wes:/);
-  assert.match(css, /ba-glow-amber/);
-  assert.match(css, /ba-bob/);
+  assert.match(css, /ba-orb-pulse/);
+  assert.match(css, /ba-attention/);
+  assert.match(css, /ba-badge/);
+  assert.match(css, /\.ba-botcard \{[^}]*height: 188px/);
+  assert.match(css, /\.ba-pop \{[^}]*position: fixed/);
+  assert.match(css, /\.ba-pop \{[^}]*right: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.match(page, /role="tooltip"/);
-  assert.doesNotMatch(page, /createPortal/);
-  assert.match(css, /\.ba-pop \{[^}]*position: absolute/);
-  assert.doesNotMatch(css, /\.ba-pop \{[^}]*position: fixed/);
-  assert.match(css, /\.ba-board \{[^}]*1\.55fr/);
+  assert.match(page, /createPortal/);
+  assert.match(page, /onMouseEnter=/);
+  assert.match(page, /onFocus=/);
+  assert.match(page, /hover: none/);
+  assert.match(page, /"dialog" : "tooltip"/);
+  assert.doesNotMatch(page, /textarea/);
+  assert.match(css, /\.ba-board \{[^}]*display: block/);
+  assert.match(page, /ba-tabs/);
   assert.doesNotMatch(css, /ba-send/);
   assert.doesNotMatch(css, /ba-reply-form/);
   assert.match(css, /\.ba-open-chat \{[^}]*min-height: 44px/);
@@ -501,9 +548,9 @@ test("the page wires a quiet refresh and the team layout without a second filter
   assert.match(live, /BOT_ACTIVITY_POLL_MS = 5_000/);
   assert.doesNotMatch(page, /new BotActivityRefresh[\s\S]{0,400}30_000/);
   assert.match(css, /ba-needs/);
-  assert.match(css, /ba-desks/);
-  assert.match(css, /ba-floor/);
-  assert.match(css, /ba-pulse/);
+  assert.doesNotMatch(css, /ba-desks/);
+  assert.doesNotMatch(css, /ba-floor/);
+  assert.match(css, /ba-orb/);
   assert.match(css, /@media \(max-width: 800px\)/);
 
   const boardFn = lib.slice(

@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { grokBotHref, type BotIcon } from "@/lib/bot-activity-icons";
-import { OfficeFloor, staleWaiting } from "./office-floor";
+import { CommandCenter, type CenterLens } from "./command-center";
 import {
   BotActivityRefresh,
   authRedirectForStatus,
   fetchedLabel,
   isUntouchedSeed,
   nextBoardState,
-  statusForBot,
+  rowCountsLive,
 } from "@/lib/bot-activity-live";
-import { finishedBots, needsAttention, timelineStamp } from "@/lib/bot-activity-office";
+import { finishedBots, timelineStamp } from "@/lib/bot-activity-office";
 
 type Waiting = {
   id: string;
@@ -180,7 +180,7 @@ function WaitingColumn({
               </div>
               <p className="ba-title">{item.title}</p>
               {item.detail ? <p className="ba-detail">{item.detail}</p> : null}
-              {staleWaiting(item) ? (
+              {isUntouchedSeed(item) && !rowCountsLive(item, now) ? (
                 <p className="ba-old">Old request · Not updated since {timelineStamp(item.at, now)}</p>
               ) : null}
               <div className="ba-wait-actions">
@@ -233,16 +233,17 @@ export default function BotActivityPage() {
   const [stamp, setStamp] = useState("Live · Updated …");
   const [botFilter, setBotFilter] = useState("All bots");
   const [workView, setWorkView] = useState<"All" | "In progress" | "Finished">("All");
+  const [lens, setLens] = useState<CenterLens>("all");
+  const [tab, setTab] = useState<"needs" | "timeline" | "work">("needs");
+  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [celebrating, setCelebrating] = useState<string[]>([]);
-  const [returning, setReturning] = useState<string[]>([]);
-  const [heldAway, setHeldAway] = useState<string[]>([]);
   const busyRef = useRef(busy);
   const epochRef = useRef(0);
   const prevBoard = useRef<Board | null>(null);
   const celebrateTimer = useRef<number | null>(null);
-  const returnTimer = useRef<number | null>(null);
+  const listRef = useRef<HTMLElement | null>(null);
   busyRef.current = busy;
 
   useEffect(() => {
@@ -336,39 +337,11 @@ export default function BotActivityPage() {
       { work: board.work, lines },
       Date.now()
     );
-    const awayBefore = new Set<string>();
-    if (prev) {
-      const priorLines = prev.timeline.flatMap((day) => day.entries);
-      for (const bot of prev.bots) {
-        if (needsAttention(statusForBot(bot.name, prev.waiting, prev.work, priorLines, Date.now()))) {
-          awayBefore.add(bot.name);
-        }
-      }
-    }
     prevBoard.current = board;
     if (!names.length) return;
-    const hold = names.filter((name) => awayBefore.has(name));
-    setHeldAway(hold);
     setCelebrating(names);
-    setReturning([]);
     if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
-    if (returnTimer.current) window.clearTimeout(returnTimer.current);
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      celebrateTimer.current = window.setTimeout(() => {
-        setCelebrating([]);
-        setHeldAway([]);
-      }, 1200);
-      return;
-    }
-    celebrateTimer.current = window.setTimeout(() => {
-      setCelebrating([]);
-      setReturning(names);
-    }, 1600);
-    returnTimer.current = window.setTimeout(() => {
-      setReturning([]);
-      setHeldAway([]);
-    }, 2500);
+    celebrateTimer.current = window.setTimeout(() => setCelebrating([]), 1600);
   }, [board]);
 
   const onDismiss = useCallback(
@@ -440,66 +413,75 @@ export default function BotActivityPage() {
   const showProgress = workView === "All" || workView === "In progress";
   const showDone = workView === "All" || workView === "Finished";
 
-  const fly = useMemo(() => {
-    const names = new Set<string>();
-    if (!board) return names;
-    const rows = board.timeline.flatMap((day) => day.entries);
-    for (const bot of board.bots) {
-      if (needsAttention(statusForBot(bot.name, board.waiting, board.work, rows, now))) names.add(bot.name);
-    }
-    for (const name of celebrating) {
-      if (heldAway.includes(name)) names.add(name);
-    }
-    return names;
-  }, [board, now, celebrating, heldAway]);
+  function focusLens(next: CenterLens) {
+    const resolved = lens === next ? "all" : next;
+    setLens(resolved);
+    if (resolved === "pending") setTab("needs");
+    if (resolved === "paused") setTab("work");
+    const target = resolved === "running" ? "ba-cards" : resolved === "all" ? "" : "ba-lists";
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   useEffect(() => {
     return () => {
       if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
-      if (returnTimer.current) window.clearTimeout(returnTimer.current);
     };
   }, []);
 
   return (
     <main className="container container-wide ba-page stark">
-      <div className="ba-head">
-        <div className="ba-title-block">
-          <h1 className="h1">Bot Activity</h1>
-          <p className="muted ba-updated" aria-live="off">
-            <span className="ba-live-dot" aria-hidden="true" />
-            <span>{stamp}</span>
-            {refreshFailed ? <span className="ba-refresh-note">{" · Couldn't refresh"}</span> : null}
-          </p>
-        </div>
-        <div className="field ba-filter">
-          <label htmlFor="ba-bot">Bot</label>
-          <select id="ba-bot" value={botFilter} onChange={(event) => setBotFilter(event.target.value)}>
-            {botNames.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       {error ? <p className="error">{error}</p> : null}
       {!board && !error ? <p className="muted">Loading…</p> : null}
 
       {board ? (
         <>
-          <OfficeFloor
+          <CommandCenter
             bots={board.bots}
             waiting={board.waiting}
             work={board.work}
             lines={board.timeline.flatMap((day) => day.entries)}
             now={now}
-            fly={fly}
+            stamp={stamp}
+            refreshFailed={refreshFailed}
+            botFilter={botFilter}
+            botNames={botNames}
+            lens={lens}
             celebrating={new Set(celebrating)}
-            returning={new Set(returning)}
+            busy={busy}
+            expanded={expanded}
+            onFilter={setBotFilter}
+            onLens={focusLens}
+            onExpanded={setExpanded}
+            onDismiss={onDismiss}
           />
-          <div className="ba-board">
-            <WaitingColumn board={board} botFilter={botFilter} busy={busy} now={now} onDismiss={onDismiss} />
+          <section id="ba-lists" ref={listRef} className="ba-lower ba-board">
+            <div className="ba-tabs" role="tablist" aria-label="Activity lists">
+              {(
+                [
+                  ["needs", "Needs you"],
+                  ["timeline", "Timeline"],
+                  ["work", "Work"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  className={`ba-tab ${tab === id ? "is-on" : ""}`}
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tab === "needs" ? (
+              <WaitingColumn board={board} botFilter={botFilter} busy={busy} now={now} onDismiss={onDismiss} />
+            ) : null}
+            {tab === "timeline" ? (
             <section className="ba-col ba-timeline">
               <div className="ba-col-head">
                 <h2 className="h2">Timeline</h2>
@@ -531,7 +513,8 @@ export default function BotActivityPage() {
                 </div>
               ))}
             </section>
-
+            ) : null}
+            {tab === "work" ? (
             <section className="ba-col ba-work">
               <div className="ba-col-head">
                 <h2 className="h2">In progress and finished</h2>
@@ -569,7 +552,8 @@ export default function BotActivityPage() {
                 </div>
               ) : null}
             </section>
-          </div>
+            ) : null}
+          </section>
         </>
       ) : null}
     </main>
