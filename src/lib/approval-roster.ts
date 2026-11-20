@@ -13,7 +13,6 @@ import {
   SERVICE,
   asPerson,
   canonicalBasecampProjectId,
-  findClientContact,
   getServiceIdentity,
   hasConnection,
   listProjectCatalog,
@@ -22,6 +21,8 @@ import {
   type BcPerson,
   type ProjectRosterProblem,
 } from "./basecamp";
+import { matchRosterContact } from "./client-contact";
+import { usableEmail } from "./email-address";
 import { relinkUnresolvedClient, replaceProjectIdIfUnchanged } from "./basecamp-link-all";
 import { personLabel } from "./people";
 
@@ -128,13 +129,26 @@ export function pickApprovalRecipient(input: {
   projectDescription?: string;
 }): BcPerson | null {
   const people = input.people || [];
-  if (input.contactId && people.some((person) => person.id === input.contactId)) {
-    return people.find((person) => person.id === input.contactId) || null;
+  const contact = {
+    name: (input.contactName || "").trim(),
+    email: usableEmail(input.contactEmail),
+    phone: "",
+  };
+  const saved = matchRosterContact(contact, people, input.contactId || 0);
+  if (saved.status === "matched") {
+    return people.find((person) => person.id === saved.person.id) || null;
   }
-  const saved = findClientContact(people, input.contactEmail || "", input.contactName || "");
-  if (saved) return saved;
+  // A Friday ask contact that does not match is not replaced by the project
+  // description. That description is only the fallback when no contact is set.
+  if (contact.name || contact.email) return null;
   const poc = pocFromProjectDescription(input.projectDescription || "");
-  return findClientContact(people, poc.email, poc.name);
+  const described = matchRosterContact(
+    { name: poc.name, email: usableEmail(poc.email), phone: "" },
+    people,
+    0
+  );
+  if (described.status !== "matched") return null;
+  return people.find((person) => person.id === described.person.id) || null;
 }
 
 export async function sendRosterIdentities(): Promise<RosterAccount[]> {

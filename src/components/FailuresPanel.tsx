@@ -20,6 +20,7 @@ type Failure = {
   detail: string;
   hint: string;
   raw_detail?: string;
+  current_contact_note?: string;
   last_seen_at: string;
   seen_count: number;
 };
@@ -100,6 +101,9 @@ export function FailuresPanel() {
                 ) : null}
               </p>
               <p className="ops-item-sub">{f.detail}</p>
+              {f.current_contact_note ? (
+                <p className="fail-current">{f.current_contact_note}</p>
+              ) : null}
               {f.raw_detail ? (
                 <details className="fail-raw">
                   <summary>Raw detail</summary>

@@ -31,10 +31,10 @@ import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
 import {
   basecampConnected,
   createScheduleCard,
-  findClientContact,
   getProjectPeopleForMention,
   mentionHtml,
 } from "./basecamp";
+import { contactMissDetail, outreachContact } from "./client-contact-source";
 import { recordFailure, clearFailure } from "./failures";
 import {
   FIRST_PRODUCTION_EXPECTATIONS,
@@ -408,30 +408,28 @@ export async function sendExtraRequestOutreach(
 
   const token = getOrCreateScheduleToken(client.id);
   const url = token ? scheduleUrl(token) : "";
+  const addressed = outreachContact(client).client;
 
   if (client.basecamp_project_id && basecampConnected()) {
     try {
       const people = await getProjectPeopleForMention(client.basecamp_project_id);
-      const contact = findClientContact(
+      const found = contactMissDetail(
+        client,
         people,
-        client.contact_email,
-        client.contact_name
+        "the extra-production card was not assigned or tagged"
       );
+      const contact = found.person;
       if (!contact) {
         recordFailure({
           kind: "contact_unresolved",
           subject: client.name,
-          detail: client.contact_name
-            ? `No Basecamp person matches "${client.contact_name}" on this project, so the extra-production card was not assigned or tagged.`
-            : "No contact name on this client, so the extra-production card was not assigned or tagged.",
+          detail: found.detail,
           hint:
             "Check the contact name on the client matches their name in Basecamp exactly, then resend.",
         });
-      } else {
-        clearFailure("contact_unresolved", client.name);
       }
       const { title, body } = extraRequestCardContent(
-        client,
+        addressed,
         request,
         url,
         contact ? mentionHtml(contact) : undefined
@@ -447,6 +445,7 @@ export async function sendExtraRequestOutreach(
       if (r.ok) {
         markCard(request.id, r.cardId);
         clearFailure("basecamp_card", client.name);
+        if (contact) clearFailure("contact_unresolved", client.name);
       } else {
         recordFailure({
           kind: "basecamp_card",
@@ -467,13 +466,13 @@ export async function sendExtraRequestOutreach(
     }
   }
 
-  const to = usableEmail(client.contact_email);
+  const to = usableEmail(addressed.contact_email);
   if (to && url) {
-    const { subject, html, text } = extraRequestEmail(client, request, url);
+    const { subject, html, text } = extraRequestEmail(addressed, request, url);
     const ok = await sendEmail({ to, subject, html, text });
     result.email = { ok };
     if (ok) markEmailed(request.id);
-  } else if ((client.contact_email || "").trim() && url) {
+  } else if ((client.contact_email || addressed.contact_email || "").trim() && url) {
     recordFailure({
       kind: "contact_unresolved",
       subject: client.name,
@@ -487,7 +486,7 @@ export async function sendExtraRequestOutreach(
   try {
     result.sms = await sendScheduleNudgeSms({
       kind: request.kind === "first" ? "first_invite" : "extra_invite",
-      client,
+      client: addressed,
       url,
       dedupeKey: `extra:${request.id}:${todayYmd()}`,
     });

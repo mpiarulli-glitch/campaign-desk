@@ -50,7 +50,12 @@ import { getUser } from "./users";
 import { snapshotShareUrl } from "./snapshot-link";
 import { mondayOf } from "./week";
 import { sendEmailWithId } from "./email";
-import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
+import { NO_CONTACT_EMAIL } from "./email-address";
+import {
+  currentPointOfContact,
+  matchRosterContact,
+  unmatchedContactDetail,
+} from "./client-contact";
 import { recordReachout } from "./reachouts";
 import { clearFailure, recordFailure } from "./failures";
 import {
@@ -383,7 +388,7 @@ export function weeklyAskEmail(args: {
   // Wins and department lists stay off this email. They live on the snapshot
   // page. `work` is accepted and ignored.
   const { client, am, link } = args;
-  const first = (client.contact_name || "").trim().split(/\s+/)[0];
+  const first = currentPointOfContact(client).name.split(/\s+/)[0] || "";
   const greeting = first ? `Hi ${esc(first)},` : "Hi there,";
   const signer = am?.label || "Marketing Empire Group";
   const subject = "Your New Weekly Snapshot is ready.";
@@ -479,16 +484,6 @@ export function weeklyAskEmail(args: {
 
 function mentionHtml(person: BcPerson): string {
   return `<bc-attachment sgid="${person.attachable_sgid}" content-type="application/vnd.basecamp.mention"></bc-attachment>`;
-}
-
-function resolveContact(client: RevClient, people: BcPerson[]): BcPerson | null {
-  const want = (client.poc || client.contact_name || "").trim().toLowerCase();
-  if (!want) return null;
-  return (
-    people.find((p) => p.name.trim().toLowerCase() === want) ||
-    people.find((p) => p.name.trim().toLowerCase().startsWith(want)) ||
-    null
-  );
 }
 
 /**
@@ -634,7 +629,8 @@ export async function sendWeeklyAsk(args: {
   const { from, replyTo } = senderFor(am);
 
   // ---- email
-  const to = usableEmail(client.contact_email);
+  const currentContact = currentPointOfContact(client);
+  const to = currentContact.email;
   if (!to) {
     out.email.skipped = "no contact email";
     if ((client.contact_email || "").trim()) {
@@ -692,7 +688,16 @@ export async function sendWeeklyAsk(args: {
   } else {
     try {
       const people = await getProjectPeopleForMention(client.basecamp_project_id);
-      const contact = resolveContact(client, people);
+      const sought = currentPointOfContact(client);
+      const mentionMatch = matchRosterContact(
+        sought,
+        people,
+        client.basecamp_contact_id || 0
+      );
+      const contact =
+        mentionMatch.status === "matched"
+          ? people.find((person) => person.id === mentionMatch.person.id) || null
+          : null;
       // An unmentioned message pings nobody, so it would sit on the board
       // looking like the client was asked when they were not. Same rule the
       // production sweep uses for cards.
@@ -701,9 +706,11 @@ export async function sendWeeklyAsk(args: {
         recordFailure({
           kind: "contact_unresolved",
           subject: client.name,
-          detail: client.contact_name
-            ? `No Basecamp person matches "${client.contact_name}", so no weekly snapshot message was posted.`
-            : "No contact name on this client, so no weekly snapshot message was posted.",
+          detail: unmatchedContactDetail({
+            match: mentionMatch,
+            contact: sought,
+            action: "no weekly snapshot message was posted",
+          }),
           hint: "Check the contact name matches their name in Basecamp exactly.",
         });
       } else {
@@ -904,9 +911,9 @@ export function clientServiceRows(today?: string): ClientServiceRow[] {
       name: client.name,
       accountManager: am?.label || (client.account_manager || "").trim(),
       accountManagerEmail: am?.email || "",
-      contactName: client.contact_name || "",
-      contactEmail: client.contact_email || "",
-      contactPhone: client.contact_phone || "",
+      contactName: currentPointOfContact(client).name,
+      contactEmail: currentPointOfContact(client).email,
+      contactPhone: currentPointOfContact(client).phone,
       paused: Boolean(client.outreach_paused),
       hasBasecamp: Boolean(client.basecamp_project_id),
       snapshotUrl: token && appUrl ? snapshotShareUrl(appUrl, token, weekStart) : "",

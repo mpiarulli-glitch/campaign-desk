@@ -41,6 +41,8 @@ import {
   clientApprovalMessageText,
 } from "@/lib/client-approval";
 import { resolveCampaignClient } from "@/lib/campaign-card-sync";
+import { matchClientOnRoster, outreachContact } from "@/lib/client-contact-source";
+import { unmatchedContactDetail } from "@/lib/client-contact";
 import { reconcileClients } from "@/lib/basecamp-clients";
 import { emailConfigured } from "@/lib/email";
 
@@ -49,7 +51,9 @@ type Params = { params: Promise<{ id: string }> };
 function approvalState(id: string) {
   const campaign = getCampaignById(id);
   if (!campaign) return null;
-  const client = resolveCampaignClient(campaign);
+  const linked = resolveCampaignClient(campaign);
+  const current = linked ? outreachContact(linked) : null;
+  const client = current?.client || null;
   const emails = listEmails(id);
   const revision = campaignApprovalRevisionKey(
     campaign,
@@ -305,6 +309,33 @@ export async function POST(request: Request, { params }: Params) {
   const sender = await sessionUserSlug();
   const identity = sender && hasConnection(sender) ? asPerson(sender) : SERVICE;
 
+  // A form pick is the recipient. Otherwise resolve the Friday ask contact.
+  // An ambiguous roster match does not send and does not pick the first person.
+  let resolvedRecipientId = recipientId || undefined;
+  if (!resolvedRecipientId && client.basecamp_project_id && basecampConnected()) {
+    try {
+      const people = await getProjectPeopleForMention(client.basecamp_project_id, identity);
+      const found = matchClientOnRoster(client, people);
+      if (found.match.status === "ambiguous") {
+        const detail = unmatchedContactDetail({
+          match: found.match,
+          contact: found.contact,
+          action: "the approval was not posted",
+        });
+        recordFailure({
+          kind: "contact_unresolved",
+          subject: client.name,
+          detail,
+          hint: "Pick the recipient on the approval, or make the Friday ask contact match one person.",
+        });
+        return NextResponse.json({ error: detail }, { status: 400 });
+      }
+      if (found.person) resolvedRecipientId = found.person.id;
+    } catch {
+      // The send below reports a Basecamp failure on its own.
+    }
+  }
+
   const result = await sendApprovalToDeliverables({
     identity,
     projectId: client.basecamp_project_id,
@@ -320,7 +351,7 @@ export async function POST(request: Request, { params }: Params) {
       client.contact_email,
       client.contact_name,
     ].filter(Boolean),
-    recipientId: recipientId || undefined,
+    recipientId: resolvedRecipientId,
     extraAssigneeIds,
     dueOn,
     existingCardId: state.campaign.basecamp_card_id,
