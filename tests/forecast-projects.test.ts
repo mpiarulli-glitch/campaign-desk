@@ -116,6 +116,19 @@ test("forecast picker offers every Basecamp project", async (t) => {
   assert.equal(again.clientId, created.clientId);
   assert.equal(listRevClients(true).length, before + 1);
 
+  const groupHq = clientsLib.ensureForecastClientForProject({
+    id: 27062278,
+    name: "Marketing Empire Group HQ",
+  });
+  assert.equal(groupHq.internal, true);
+  assert.equal(groupHq.created, false);
+  assert.equal(groupHq.clientId, "");
+  assert.equal(groupHq.projectId, "27062278");
+  assert.equal(
+    listRevClients(true).some((c) => c.name === "Marketing Empire Group HQ"),
+    false
+  );
+
   const internal = clientsLib.ensureForecastClientForProject({
     id: 1004,
     name: "Empire Leadership HQ",
