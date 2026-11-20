@@ -27,6 +27,7 @@ import {
   VIDEO_EDITING_PROJECT_ID,
   blockedSlotsForVideographer,
   buildProductionScheduleContent,
+  datesBetween,
   entryAppliesToVideographer,
   entryCoversDate,
   entryOverlapsProductionSlot,
@@ -264,6 +265,47 @@ function claimFreeScheduleEntry(sendId: string, entryId: string): boolean {
     return claimEntryId(sendId, entryId);
   });
   return claim.immediate();
+}
+
+/**
+ * A one-off schedule entry written by hand for this client on any day from
+ * `start` through `end`.
+ *
+ * Days already past are included: a shoot on the 19th still covers a window
+ * that opens on the 23rd. Matching is `handMadeClientShoot` (client name or
+ * alias, case-insensitive; time off and repeating series do not count) plus
+ * `entryCoversDate`. A failed read is returned, not treated as "nobody is
+ * booked", and nothing is posted about it.
+ */
+export async function handMadeClientShootCovering(input: {
+  clientName: string;
+  aliases?: string[];
+  start: string;
+  end: string;
+}): Promise<{ ok: true; found: boolean } | { ok: false; error: string }> {
+  const clientName = input.clientName.trim();
+  if (!clientName) return { ok: true, found: false };
+  const dates = datesBetween(input.start, input.end);
+  if (!dates.length) return { ok: true, found: false };
+  let loaded: Awaited<ReturnType<typeof loadEntries>>;
+  try {
+    loaded = await loadEntries();
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Couldn't read the production schedule.",
+    };
+  }
+  if (!loaded.ok) {
+    return { ok: false, error: "Basecamp did not return the production schedule." };
+  }
+  const aliases = input.aliases || [];
+  const found = loaded.entries.some(
+    (entry) =>
+      handMadeClientShoot(entry, clientName, aliases) &&
+      dates.some((date) => entryCoversDate(entry, date))
+  );
+  return { ok: true, found };
 }
 
 async function unclaimedSameClientEntryIds(input: {
