@@ -222,7 +222,7 @@ export default function SnapshotDeskPage() {
         <div className="empty">
           <p>No accounts on the snapshot roster yet.</p>
           <Link className="btn btn-sm" href="/admin/client-services">
-            Open deliverable setup
+            Open Client Services
           </Link>
         </div>
       ) : groups.length === 0 ? (
