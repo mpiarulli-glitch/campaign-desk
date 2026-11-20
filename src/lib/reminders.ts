@@ -9,6 +9,7 @@ import {
 } from "./db";
 import { recordReachout } from "./reachouts";
 import {
+  EARLY_CADENCE_DAYS,
   findSendForWindow,
   getOrCreateScheduleToken,
   nextWindow,
@@ -16,6 +17,7 @@ import {
   todayYmd,
   type Window,
 } from "./cadence";
+import { handMadeClientShootCovering } from "./production-schedule-sync";
 import { listRevClients } from "./revenue";
 import { sendEmail } from "./email";
 import { NO_CONTACT_EMAIL, usableEmail } from "./email-address";
@@ -428,6 +430,9 @@ export interface ReminderRunResult {
     notConfigured: number;
     notInWindow: number;
     alreadyBooked: number;
+    // Hand-made Basecamp production-schedule entry covers this window. Not an
+    // admin failure: nobody has to fix a row that was never going to be created.
+    bookedInBasecamp: number;
     noEmail: number;
     alreadySentToday: number;
     notAFollowupDay: number;
@@ -493,6 +498,7 @@ export async function runReminders(opts?: {
       notConfigured: 0,
       notInWindow: 0,
       alreadyBooked: 0,
+      bookedInBasecamp: 0,
       noEmail: 0,
       alreadySentToday: 0,
       notAFollowupDay: 0,
@@ -532,6 +538,17 @@ export async function runReminders(opts?: {
 
   const noteBlocked = (client: RevClient, reason: string) => {
     result.blocked.push({ client: client.name, clientId: client.id, reason });
+  };
+
+  // One warning per run. A down schedule is the same failure for every client,
+  // and logging it once keeps the sweep's log readable.
+  let warnedScheduleRead = false;
+  const noteScheduleReadFailed = (error: string) => {
+    if (warnedScheduleRead) return;
+    warnedScheduleRead = true;
+    console.warn(
+      `[reminders] Couldn't read the Basecamp production schedule, so this run will not treat hand-made entries as bookings. ${error}`
+    );
   };
 
   for (const client of listRevClients(false)) {
@@ -582,10 +599,34 @@ export async function runReminders(opts?: {
       result.skipped.notInWindow++;
       continue;
     }
-    // Booked already? Stop reminding.
-    if (findSendForWindow(client.id, window.start)) {
+    // Booked already? Stop reminding. Pass the sweep's today so an early shoot
+    // is judged against this run's date, not the wall clock.
+    if (findSendForWindow(client.id, window.start, today)) {
       result.skipped.alreadyBooked++;
       continue;
+    }
+
+    // A shoot typed onto the Basecamp production schedule is not copied back
+    // into scheduled_sends. The same span as an early app booking counts: 14
+    // days before the window through its last day, including days already
+    // past. A failed read leaves this client on the old path. No banner — the
+    // sweep should keep going, not ask somebody to repair the schedule.
+    try {
+      const covering = await handMadeClientShootCovering({
+        clientName: client.name,
+        start: subDays(window.start, EARLY_CADENCE_DAYS),
+        end: window.end,
+      });
+      if (!covering.ok) {
+        noteScheduleReadFailed(covering.error);
+      } else if (covering.found) {
+        result.skipped.bookedInBasecamp++;
+        continue;
+      }
+    } catch (err) {
+      noteScheduleReadFailed(
+        err instanceof Error ? err.message : "The schedule read threw."
+      );
     }
 
     // Whether this client has already been contacted on some channel in this

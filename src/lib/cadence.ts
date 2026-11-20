@@ -213,20 +213,30 @@ export function isBlackout(date: string, client: RevClient): boolean {
 
 // The existing send (if any) that fulfills a given cadence window.
 //
-// A row linked by cadence_window_start is the normal case. An out-of-cycle
+// A row linked to this window by cadence_window_start is the normal case and
+// is preferred when another row also falls in range. An out-of-cycle
 // production is stored with that column null so it does not move the cadence
 // anchor, but if its date falls on a day of this window it is still the shoot
 // for that week. Leaving those out made the reminder sweep email clients who
 // had already booked (Pipe It Right on 2026-09-30, Top Notch Auto on 2026-10-08).
-// Email-calendar rows share the table and often land on the same dates, so
-// only untitled-channel rows whose title is a production count.
+//
+// A shoot dated from EARLY_CADENCE_DAYS before the window through the window's
+// Friday counts too, whether it was filed under a different window or left
+// unfiled. The early half reuses cadenceWindowBookedEarly, so a date that
+// belongs to some other upcoming window is not borrowed. A row that is still
+// the only booking for its own window is left there while that window has not
+// ended. Cancelled rows never count. Email-calendar rows share the table, so
+// anything that is not already linked to this exact window still has to be an
+// untitled production.
 export function findSendForWindow(
   clientId: string,
-  windowStart: string
+  windowStart: string,
+  today = todayYmd()
 ): ScheduledSend | null {
   const windowEnd = formatDate(addDays(new Date(`${windowStart}T00:00:00.000Z`), 4));
-  return (
-    (getDb()
+  const db = getDb();
+  const exact =
+    (db
       .prepare(
         // Cancelled rows are excluded on purpose: cancelling a production has
         // to hand the window back, otherwise the client stays "booked" forever
@@ -248,8 +258,73 @@ export function findSendForWindow(
          LIMIT 1`
       )
       .get(clientId, windowStart, windowStart, windowEnd) as ScheduledSend | undefined) ||
-    null
+    null;
+  if (exact) return exact;
+
+  const earlyStart = formatDate(
+    addDays(new Date(`${windowStart}T00:00:00.000Z`), -EARLY_CADENCE_DAYS)
   );
+  const candidates = db
+    .prepare(
+      `SELECT * FROM scheduled_sends
+       WHERE client_id = ? AND cancelled_at IS NULL
+         AND asset_type = ''
+         AND title LIKE '%production%'
+         AND send_date >= ? AND send_date <= ?
+         AND (cadence_window_start IS NULL OR cadence_window_start != ?)
+       ORDER BY CASE WHEN cadence_window_start IS NOT NULL THEN 0 ELSE 1 END,
+                created_at DESC`
+    )
+    .all(clientId, earlyStart, windowEnd, windowStart) as ScheduledSend[];
+  if (!candidates.length) return null;
+
+  const client = db
+    .prepare(`SELECT * FROM rev_clients WHERE id = ?`)
+    .get(clientId) as RevClient | undefined;
+  for (const send of candidates) {
+    if (!sendCoversWindow(client, send, windowStart, windowEnd, today)) continue;
+    if (stillOnlyCoverageOfOpenWindow(send, today)) continue;
+    return send;
+  }
+  return null;
+}
+
+function sendCoversWindow(
+  client: RevClient | undefined,
+  send: ScheduledSend,
+  windowStart: string,
+  windowEnd: string,
+  today: string
+): boolean {
+  if (send.send_date >= windowStart && send.send_date <= windowEnd) return true;
+  if (!client) return false;
+  return cadenceWindowBookedEarly(client, send.send_date, today)?.start === windowStart;
+}
+
+// True when this row is the only non-cancelled booking filed on its own
+// window, and that window has not ended yet. It still has a job there, so it
+// must not also satisfy a later window.
+function stillOnlyCoverageOfOpenWindow(send: ScheduledSend, today: string): boolean {
+  const filed = (send.cadence_window_start || "").trim();
+  if (!filed || !send.client_id || !/^\d{4}-\d{2}-\d{2}$/.test(filed)) return false;
+  const filedEnd = formatDate(addDays(new Date(`${filed}T00:00:00.000Z`), 4));
+  if (filedEnd < today) return false;
+  const others = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM scheduled_sends
+       WHERE client_id = ? AND id != ? AND cancelled_at IS NULL
+         AND (
+           cadence_window_start = ?
+           OR (
+             cadence_window_start IS NULL
+             AND asset_type = ''
+             AND title LIKE '%production%'
+             AND send_date >= ? AND send_date <= ?
+           )
+         )`
+    )
+    .get(send.client_id, send.id, filed, filed, filedEnd) as { n: number };
+  return others.n === 0;
 }
 
 export function computeCycleStatus(
@@ -259,7 +334,7 @@ export function computeCycleStatus(
 ): CycleStatus {
   if (!client.active) return "inactive";
   if (!window) return "not_configured";
-  const existing = findSendForWindow(client.id, window.start);
+  const existing = findSendForWindow(client.id, window.start, today);
   if (existing) {
     if (existing.status === "sent") return "sent";
     if (existing.status === "scheduled" || existing.status === "planned")

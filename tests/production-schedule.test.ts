@@ -358,7 +358,9 @@ test("schedule sync creates, updates, trashes, and refuses a busy or unread cale
   const revenue = await import("../src/lib/revenue");
   const calendar = await import("../src/lib/calendar");
   const { recordManualProduction, recordOutOfCycleProduction } = await import("../src/lib/scheduling");
-  const { appDateTime, productionWindowForDate } = await import("../src/lib/cadence");
+  const { appDateTime, cadenceWindowBookedEarly, productionWindowForDate } = await import(
+    "../src/lib/cadence"
+  );
   const failures = await import("../src/lib/failures");
 
   t.after(() => {
@@ -824,7 +826,19 @@ test("schedule sync creates, updates, trashes, and refuses a busy or unread cale
   assert.equal(linkedConflict.ok, false);
   if (!linkedConflict.ok) assert.equal(linkedConflict.httpStatus, 409);
 
-  const manualDay = firstBlueDate(addDays(today, 1), true);
+  // The out-of-cycle shoot on sameDay can fall inside the 14 days before the
+  // next blue week. That shoot is the booking for that week, so the manual
+  // log — which is here to prove a hand-made entry gets adopted — uses the
+  // following blue week when the nearer one is already covered.
+  let manualDay = firstBlueDate(addDays(today, 1), true);
+  const nearer = productionWindowForDate("blue", manualDay);
+  if (
+    pipe &&
+    nearer &&
+    cadenceWindowBookedEarly(pipe, sameDay, today)?.start === nearer.start
+  ) {
+    manualDay = firstBlueDate(addDays(nearer.end, 1), true);
+  }
   entries = [shootEntry(905, "confirmed: pipe it right production", manualDay)];
   usePaulaGateway();
   const createsBeforeManual = created.length;
