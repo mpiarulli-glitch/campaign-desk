@@ -31,6 +31,7 @@ import {
   isFullName,
 } from "@/lib/review-flow";
 import { sendPlanSummary } from "@/lib/send-plan-summary";
+import { isLandingPageAsset, landingPreviewUrl } from "@/lib/email-preview";
 
 type Attachment = {
   id: string;
@@ -589,6 +590,8 @@ export default function ReviewPage() {
   const activeIndex = emails.findIndex((e) => e.id === activeEmail.id);
   // Copy adapts per item so a blog/deck/mock-up isn't called an "email".
   const activeDoc = renderAssetDoc(activeEmail);
+  const landingPreview = isLandingPageAsset(activeEmail);
+  const landingUrl = landingPreview ? landingPreviewUrl(activeEmail) : null;
   const itemNoun = kindNoun(activeEmail.kind ?? "email");
   const isAutomation = coercePresentation(campaign.presentation) === "automation";
   const approvalChannel = approvalChannelForAssets(emails.map((e) => e.kind));
@@ -614,7 +617,7 @@ export default function ReviewPage() {
   });
 
   return (
-    <div className="app-shell review-page">
+    <div className={`app-shell review-page${landingPreview ? " is-landing-preview" : ""}`}>
       <SkipLink />
       <header className="topbar">
         <Brand />
@@ -782,7 +785,7 @@ export default function ReviewPage() {
               </div>
             ) : null}
 
-        <div className="split-review">
+        <div className={`split-review${landingPreview ? " is-landing" : ""}`}>
           <div className="stack">
             <div className="rv-asset-head">
               <h2 className="h2">{activeEmail.title}</h2>
@@ -848,6 +851,8 @@ export default function ReviewPage() {
             <EmailPreview
               html={activeDoc.html}
               interactive={activeDoc.interactive}
+              landing={landingPreview}
+              pageUrl={landingUrl}
               pins={emailComments}
               activePinId={activePinId}
               pinMode={mode === "pin" && !locked}

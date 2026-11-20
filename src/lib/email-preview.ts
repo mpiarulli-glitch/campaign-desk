@@ -12,6 +12,78 @@
 
 export const MOBILE_PREVIEW_WIDTH = 390;
 
+// Desktop landing pages are laid out at a laptop width, then CSS-scaled down
+// to the preview column. 1440 is a common laptop viewport (1366–1440).
+export const LAPTOP_PREVIEW_WIDTH = 1440;
+
+// Visible height of a cross-origin page we cannot measure. The iframe scrolls
+// internally, the way a browser window does.
+export const LAPTOP_VIEWPORT_HEIGHT = 900;
+
+const LANDING_KIND = /^(landing(?:[_-]page)?|webpage|web[_-]page|web)$/i;
+const LANDING_TITLE = /\blanding[\s-]+pages?\b/i;
+const HTTP_URL = /^https?:\/\/\S+$/i;
+const MESSAGE_KINDS = new Set(["email", "cold_email", "linkedin", "sms"]);
+
+export type LandingPageSignal = {
+  kind?: string | null;
+  title?: string | null;
+  html_content?: string | null;
+  media_url?: string | null;
+  body_format?: string | null;
+};
+
+function isRasterUrl(value: string): boolean {
+  return (
+    /^data:image\//i.test(value) ||
+    /\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i.test(value)
+  );
+}
+
+// A stored page address: the HTML body is only a URL, or a non-message asset
+// points at a hosted page (not an image export and not a Figma file).
+export function landingPreviewUrl(asset: LandingPageSignal): string | null {
+  const html = (asset.html_content || "").trim();
+  if (HTTP_URL.test(html)) return html;
+
+  const media = (asset.media_url || "").trim();
+  if (!HTTP_URL.test(media) || isRasterUrl(media) || /figma\.com/i.test(media)) {
+    return null;
+  }
+  const kind = (asset.kind || "").trim().toLowerCase();
+  if (
+    MESSAGE_KINDS.has(kind) ||
+    kind === "blog" ||
+    kind === "copydeck" ||
+    kind === "interactive"
+  ) {
+    return null;
+  }
+  return media;
+}
+
+// Landing pages use the laptop frame. Emails stay on the 600px column.
+// Prefer an explicit kind when one is stored; otherwise a title that says
+// "landing page", or a URL / web asset.
+export function isLandingPageAsset(asset: LandingPageSignal): boolean {
+  const kind = (asset.kind || "").trim();
+  if (LANDING_KIND.test(kind)) return true;
+  if (LANDING_TITLE.test(asset.title || "")) return true;
+  if (landingPreviewUrl(asset)) return true;
+  return false;
+}
+
+// Scale a 1440px layout down to the preview column. Never scale up.
+// One pixel of slack so a rounded device pixel cannot open a second scrollbar.
+export function laptopScaleForWidth(
+  frameWidth: number,
+  laptopWidth = LAPTOP_PREVIEW_WIDTH
+): number {
+  if (!(frameWidth > 0) || !(laptopWidth > 0)) return 1;
+  if (frameWidth + 1 >= laptopWidth) return 1;
+  return (frameWidth - 1) / laptopWidth;
+}
+
 const VIEWPORT_META =
   '<meta name="viewport" content="width=device-width,initial-scale=1">';
 const BASE_TARGET = '<base target="_blank">';

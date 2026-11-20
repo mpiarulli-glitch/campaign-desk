@@ -1268,6 +1268,63 @@ button {
   pointer-events: auto;
 }
 
+/* Laptop frame for landing pages. The page is laid out at 1440px inside the
+   clip and scaled to the column, so the clip — not the iframe — is what
+   takes up space. Three dots are the only chrome. */
+.preview-frame-wrap.is-laptop {
+  overflow-x: hidden;
+  background: var(--bg-soft);
+}
+
+.preview-frame-wrap.is-laptop.is-viewport {
+  max-height: none;
+  overflow: visible;
+}
+
+.preview-laptop-chrome {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.preview-laptop-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.preview-laptop-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b7c0cc;
+  display: block;
+}
+
+.preview-scale-clip {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  background: #fff;
+  line-height: 0;
+}
+
+/* Out of flow so a 1440px layout cannot stretch the column. The clip is the
+   visible screen; the iframe paints at laptop width and is scaled into it. */
+.preview-canvas .preview-scale-clip iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+}
+
+.preview-canvas.is-laptop {
+  background: #fff;
+}
+
 .pin-layer {
   position: absolute;
   top: 0;
@@ -1497,6 +1554,7 @@ button {
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .preview-package-title {
@@ -1511,6 +1569,18 @@ button {
 @media (max-width: 760px) {
   .preview-package-title {
     display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .preview-devicebar {
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .preview-device-btn {
+    padding: 5px 8px;
+    font-size: 12px;
   }
 }
 
@@ -2710,6 +2780,26 @@ button {
   }
 
   .cd-pkg-review {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    z-index: auto;
+  }
+}
+
+/* A landing page needs the column. Keep a slim feedback rail beside it on a
+   wide screen, and let the rail drop under the preview when it would squeeze
+   the laptop frame. */
+.cd-pkg-work.is-landing {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+}
+
+@media (max-width: 1360px) {
+  .cd-pkg-work.is-landing {
+    grid-template-columns: 1fr;
+  }
+
+  .cd-pkg-work.is-landing .cd-pkg-review {
     position: static;
     max-height: none;
     overflow: visible;
@@ -13386,6 +13476,14 @@ a.fc-tasks-title:hover { color: var(--accent-ink); }
 .review-page .split-review {
   align-items: start;
   gap: 20px;
+}
+
+.review-page.is-landing-preview .container {
+  width: min(1680px, calc(100% - 40px));
+}
+
+.review-page .split-review.is-landing {
+  grid-template-columns: minmax(0, 1fr) 340px;
 }
 
 /* .h2 carries no bottom margin, so this sub-line needs a small gap of its own
@@ -29285,9 +29383,30 @@ summary:focus-visible,
   margin-top: 18px;
 }
 
+@media (max-width: 1320px) {
+  .review-page .split-review.is-landing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-page .split-review.is-landing > .stack,
+  .review-page .split-review.is-landing > .rv-rail {
+    min-width: 0;
+    max-width: 100%;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
 @media (max-width: 900px) {
   .review-page .preview-devices {
     display: none;
+  }
+
+  /* Landing pages keep Desktop / Mobile. Desktop on a phone is the 1440
+     layout scaled to the screen, not a cropped email column. */
+  .review-page.is-landing-preview .preview-devices {
+    display: flex;
   }
 
   /* One column, in document order. The previous phone layout locked the

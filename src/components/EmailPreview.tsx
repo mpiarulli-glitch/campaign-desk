@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { adjacentPackageId } from "@/lib/email-package";
 import {
+  LAPTOP_PREVIEW_WIDTH,
+  LAPTOP_VIEWPORT_HEIGHT,
   MOBILE_PREVIEW_WIDTH,
   buildPreviewSrcDoc,
   fitScaleForPreview,
+  laptopScaleForWidth,
   measureEmailContentWidth,
   measurePreviewDocumentHeight,
 } from "@/lib/email-preview";
@@ -80,6 +83,12 @@ type Props = {
   onDeleteComment?: (id: string) => void;
   // Fired whenever the live editor has unsaved text or image changes.
   onDirtyChange?: (dirty: boolean) => void;
+  // Desktop preview lays the document out at laptop width and scales it to
+  // the column. Mobile stays a ~390px frame. Emails leave this unset.
+  landing?: boolean;
+  // When the asset is a hosted page, the iframe loads this URL and scrolls
+  // inside the laptop frame. Same-origin HTML uses srcDoc instead.
+  pageUrl?: string | null;
 };
 
 /** Imperative save API for the live email editor on the campaign desk. */
@@ -235,6 +244,8 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
   onSubmitInline,
   onDeleteComment,
   onDirtyChange,
+  landing = false,
+  pageUrl = null,
 },
   ref
 ) {
@@ -265,6 +276,17 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       : MOBILE_PREVIEW_WIDTH;
   const fitFrameRef = useRef(fitFrame);
   fitFrameRef.current = fitFrame;
+  // Landing pages in Desktop mode are a 1440px laptop viewport, scaled to the
+  // column. The scale is derived from the column width so a resize does not
+  // have to re-layout the page. Emails leave this at 1 and keep fitScale.
+  const laptopLayout = landing && device === "desktop";
+  const displayScale = laptopLayout
+    ? laptopScaleForWidth(frameWidth)
+    : device === "mobile"
+      ? fitScale
+      : 1;
+  const displayScaleRef = useRef(displayScale);
+  displayScaleRef.current = displayScale;
   const [compose, setCompose] = useState<ComposeState | null>(null);
   const [composeBody, setComposeBody] = useState("");
   const [composeError, setComposeError] = useState("");
@@ -299,6 +321,21 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
         requestAnimationFrame(() => resolve())
       );
 
+      // A landing page's own `height: 100%` would scroll inside the iframe
+      // and fight the column scrollbar. Let the document grow to its content
+      // so one scrollbar (the preview frame) moves the whole page.
+      if (landing && device === "desktop") {
+        if (doc.head && !doc.getElementById("cd-landing-fit")) {
+          const fit = doc.createElement("style");
+          fit.id = "cd-landing-fit";
+          fit.textContent =
+            "html,body{height:auto !important;min-height:0 !important;overflow:visible !important;}";
+          doc.head.appendChild(fit);
+        }
+      } else {
+        doc.getElementById("cd-landing-fit")?.remove();
+      }
+
       const measured = measurePreviewDocumentHeight(doc, iframe);
       // Freeze once per HTML load so pins never drift from remeasurement
       frozenHeightRef.current = measured;
@@ -307,6 +344,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       // Phone frame is 390px. A 600px table (or a 320px table left-aligned on
       // a white body) has to be scaled to fill it — that's what Gmail does on
       // a real phone. Interactive quizzes keep native width so clicks line up.
+      // Landing-page desktop scale is derived from the column, not from this.
       if (!interactive && device === "mobile") {
         const contentWidth = measureEmailContentWidth(doc);
         const scale = fitScaleForPreview(
@@ -330,7 +368,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     } catch {
       setReady(true);
     }
-  }, [device, interactive]);
+  }, [device, interactive, landing]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -339,10 +377,18 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     frozenHeightRef.current = null;
     lastFitRef.current = 1;
     setReady(false);
-    setHeight(700);
+    setHeight(pageUrl ? LAPTOP_VIEWPORT_HEIGHT : 700);
     setHoverHref(null);
     setFitScale(1);
     setFitContentWidth(MOBILE_PREVIEW_WIDTH);
+
+    // A hosted page is cross-origin, so we cannot measure it. Give it a
+    // laptop (or phone) viewport and let that document scroll inside.
+    if (pageUrl) {
+      const onLoadPage = () => setReady(true);
+      iframe.addEventListener("load", onLoadPage);
+      return () => iframe.removeEventListener("load", onLoadPage);
+    }
 
     // Interactive frames report their height via postMessage. Show the frame
     // as soon as it loads rather than trying to measure its document here.
@@ -400,7 +446,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
         // ignore
       }
     };
-  }, [srcDoc, freezeHeight, interactive]);
+  }, [srcDoc, freezeHeight, interactive, pageUrl]);
 
   // Copy + image editing. Text can be rewritten in place; Enter inserts a
   // real <br> (so lines actually break in the email); images open a file
@@ -674,7 +720,9 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       if (!iframe || !canvas) return null;
       const iframeBox = iframe.getBoundingClientRect();
       const canvasBox = canvas.getBoundingClientRect();
-      const scale = fitScale !== 1 ? fitScale : 1;
+      // rect is in the iframe document's CSS pixels. A transform scale does
+      // not change those, so multiply through to land on the canvas.
+      const scale = displayScaleRef.current || 1;
       return {
         top: iframeBox.top - canvasBox.top + (rect.bottom + 8) * scale,
         left: Math.max(
@@ -736,7 +784,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       doc.removeEventListener("mouseover", onMarkOver);
       doc.removeEventListener("mouseout", onMarkOut);
     };
-  }, [quoteSignature, ready, editing, srcDoc, fitScale]);
+  }, [quoteSignature, ready, editing, srcDoc, displayScale]);
 
   const canCompose = Boolean(onSubmitInline) && !editing;
 
@@ -756,7 +804,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     function openQuoteCompose(quote: CopyQuote, rect: DOMRect) {
       const iframeBox = iframe.getBoundingClientRect();
       const canvasBox = canvas.getBoundingClientRect();
-      const scale = fitScale !== 1 ? fitScale : 1;
+      const scale = displayScaleRef.current || 1;
       const cardH = 220;
       const preferred =
         iframeBox.top - canvasBox.top + (rect.bottom + 10) * scale;
@@ -805,7 +853,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       doc.removeEventListener("touchend", onMouseUp);
       doc.removeEventListener("keyup", onKeyUp);
     };
-  }, [ready, canCompose, pinMode, srcDoc, fitScale]);
+  }, [ready, canCompose, pinMode, srcDoc, displayScale]);
 
   // Interactive frames report their own height via postMessage. Match the
   // message to this instance's iframe so multiple previews on one page (e.g.
@@ -838,7 +886,23 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     return () => mq.removeEventListener("change", apply);
   }, []);
 
+  // Wheel events over an iframe do not reach the preview frame. The landing
+  // page itself does not scroll (it is as tall as its content), so forward
+  // the wheel to the one scrollbar on the frame.
   useEffect(() => {
+    if (!laptopLayout || pageUrl || !ready) return;
+    const doc = iframeRef.current?.contentDocument;
+    const wrap = frameRef.current;
+    if (!doc || !wrap) return;
+    const onWheel = (event: WheelEvent) => {
+      if (wrap.scrollHeight <= wrap.clientHeight + 1) return;
+      wrap.scrollBy({ top: event.deltaY });
+    };
+    doc.addEventListener("wheel", onWheel, { passive: true });
+    return () => doc.removeEventListener("wheel", onWheel);
+  }, [laptopLayout, pageUrl, ready, srcDoc]);
+
+  useLayoutEffect(() => {
     const el = frameRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const read = () => {
@@ -854,11 +918,11 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
   // The column width arrives after the first measure. Fit again so a 375px
   // phone scales the email to the gutter, not to a hardcoded 390px frame.
   useEffect(() => {
-    if (device !== "mobile" || !ready) return;
+    if (pageUrl || device !== "mobile" || !ready) return;
     if (iframeRef.current?.contentDocument?.readyState === "complete") {
       void freezeHeight();
     }
-  }, [fitFrame, device, ready, freezeHeight]);
+  }, [fitFrame, device, ready, freezeHeight, pageUrl]);
 
   // Re-measure height when switching device width: the email reflows (mobile
   // is usually taller), so the frozen height must be recomputed. Reset scale
@@ -867,22 +931,23 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
     lastFitRef.current = 1;
     setFitScale(1);
     setFitContentWidth(MOBILE_PREVIEW_WIDTH);
+    if (pageUrl) return;
     if (iframeRef.current?.contentDocument?.readyState === "complete") {
       void freezeHeight();
     }
-  }, [device, freezeHeight]);
+  }, [device, freezeHeight, pageUrl]);
 
   // After a fit scale is applied the iframe is as wide as the email (e.g.
   // 600px), then CSS-scaled down to the phone frame. Height at that layout
   // can differ from the 390px pass, so measure once more.
   useEffect(() => {
-    if (interactive || device !== "mobile" || fitScale === 1) return;
+    if (pageUrl || interactive || device !== "mobile" || fitScale === 1) return;
     if (Math.abs(lastFitRef.current - fitScale) < 0.001) return;
     lastFitRef.current = fitScale;
     if (iframeRef.current?.contentDocument?.readyState === "complete") {
       void freezeHeight();
     }
-  }, [fitScale, fitContentWidth, device, interactive, freezeHeight]);
+  }, [fitScale, fitContentWidth, device, interactive, freezeHeight, pageUrl]);
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!pinMode || !ready) return;
@@ -984,8 +1049,20 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
   const activePackageTitle =
     activePackageIndex >= 0 ? packageItems[activePackageIndex]?.title : "";
 
+  const visualHeight =
+    laptopLayout || (device === "mobile" && displayScale !== 1)
+      ? Math.round(height * displayScale)
+      : height;
+  const screenWidth =
+    laptopLayout && displayScale === 1 ? LAPTOP_PREVIEW_WIDTH : undefined;
+
   return (
-    <div className="preview-frame-wrap" ref={frameRef}>
+    <div
+      className={`preview-frame-wrap${laptopLayout ? " is-laptop" : ""}${
+        pageUrl && laptopLayout ? " is-viewport" : ""
+      }`}
+      ref={frameRef}
+    >
       <div
         className={`preview-devicebar${showPackageNav ? " has-package" : ""}`}
       >
@@ -1058,7 +1135,24 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
       </div>
       {!ready ? (
         <div className="preview-loading">
-          {interactive ? "Loading preview..." : "Loading email preview..."}
+          {interactive || landing ? "Loading preview..." : "Loading email preview..."}
+        </div>
+      ) : null}
+      <div
+        className="preview-laptop-stage"
+        style={
+          screenWidth
+            ? { width: screenWidth, maxWidth: "100%", margin: "0 auto" }
+            : undefined
+        }
+      >
+      {laptopLayout ? (
+        <div className="preview-laptop-chrome" aria-hidden="true">
+          <span className="preview-laptop-dots">
+            <i />
+            <i />
+            <i />
+          </span>
         </div>
       ) : null}
       <div
@@ -1066,44 +1160,62 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
         className={`preview-canvas ${interactive ? "interactive" : ""} ${
           ready ? "is-ready" : "is-loading"
         }${device === "mobile" ? " is-mobile" : ""}${
-          compose || tip ? " has-overlay" : ""
-        }`}
+          laptopLayout ? " is-laptop" : ""
+        }${compose || tip ? " has-overlay" : ""}`}
         style={{
-          height: device === "mobile" ? Math.round(height * fitScale) : height,
-          width: device === "mobile" ? fitFrame : undefined,
-          maxWidth: device === "mobile" ? "100%" : undefined,
+          height: visualHeight,
+          width: device === "mobile" ? fitFrame : screenWidth ? screenWidth : undefined,
+          maxWidth: device === "mobile" || laptopLayout ? "100%" : undefined,
           margin: device === "mobile" ? "0 auto" : undefined,
         }}
       >
+        <div
+          className={laptopLayout ? "preview-scale-clip" : undefined}
+          style={laptopLayout ? { height: visualHeight } : undefined}
+        >
         <iframe
           ref={iframeRef}
-          title={interactive ? "Interactive preview" : "Email preview"}
-          srcDoc={srcDoc}
+          title={
+            landing
+              ? "Landing page preview"
+              : interactive
+                ? "Interactive preview"
+                : "Email preview"
+          }
+          src={pageUrl || undefined}
+          srcDoc={pageUrl ? undefined : srcDoc}
+          scrolling={laptopLayout && !pageUrl ? "no" : undefined}
           sandbox={
-            interactive
+            interactive || pageUrl
               ? "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
               : "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
           }
           style={{
-            height,
-            width:
-              device === "mobile" && fitScale !== 1
+            height: pageUrl ? LAPTOP_VIEWPORT_HEIGHT : height,
+            width: laptopLayout
+              ? LAPTOP_PREVIEW_WIDTH
+              : device === "mobile" && fitScale !== 1
                 ? fitContentWidth
                 : "100%",
-            // max-width:100% on the iframe would clamp the 600px layout before
-            // the scale, and the email would shrink twice.
-            maxWidth: device === "mobile" && fitScale !== 1 ? "none" : undefined,
-            transform: fitScale !== 1 ? `scale(${fitScale})` : undefined,
+            // max-width:100% on the iframe would clamp the layout before
+            // the scale, and the page would shrink twice.
+            maxWidth:
+              laptopLayout || (device === "mobile" && fitScale !== 1)
+                ? "none"
+                : undefined,
+            transform: displayScale !== 1 ? `scale(${displayScale})` : undefined,
             transformOrigin: "top left",
             pointerEvents: passThrough ? "auto" : "none",
+            overflow: laptopLayout && !pageUrl ? "hidden" : undefined,
           }}
         />
+        </div>
         <div
           ref={pinLayerRef}
           className={`pin-layer ${pinMode && ready ? "clickable" : ""}`}
           onClick={handleClick}
           style={{
-            height: device === "mobile" ? Math.round(height * fitScale) : height,
+            height: visualHeight,
             width: "100%",
             pointerEvents: passThrough ? "none" : "auto",
           }}
@@ -1258,6 +1370,7 @@ export const EmailPreview = forwardRef<EmailEditHandle, Props>(function EmailPre
             ) : null}
           </div>
         ) : null}
+      </div>
       </div>
       {hoverHref ? (
         <div className="link-hover-bar" title={hoverHref}>
