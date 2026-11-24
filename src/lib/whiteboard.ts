@@ -228,12 +228,22 @@ function memberRole(boardId: string, slug: string): MemberRole | null {
   return null;
 }
 
+function isAdminSlug(slug: string): boolean {
+  const user = getUser(slug);
+  return Boolean(user && user.active && (user.role === "owner" || user.role === "admin"));
+}
+
 export function accessFor(boardId: string, slug: string | null | undefined): BoardRole | null {
   if (!slug || !boardId) return null;
   const board = getBoard(boardId);
   if (!board) return null;
   if (board.owner_slug === slug) return "owner";
-  return memberRole(boardId, slug);
+  const member = memberRole(boardId, slug);
+  if (member) return member;
+  // A legacy board with no derivable creator is visible to admins only.
+  // They get owner rights so the board can be shared or removed.
+  if (!board.owner_slug && isAdminSlug(slug)) return "owner";
+  return null;
 }
 
 /** Non-members look the same as a missing board. Viewers cannot write. */
@@ -257,7 +267,7 @@ function summary(board: WhiteboardBoard, role: BoardRole, unseen: boolean): Boar
     title: board.title,
     role,
     ownerSlug: board.owner_slug,
-    ownerLabel: personLabel(board.owner_slug),
+    ownerLabel: board.owner_slug ? personLabel(board.owner_slug) : "Unassigned",
     updatedAt: board.updated_at,
     unseen,
   };
@@ -283,9 +293,22 @@ export function listBoardsFor(slug: string): BoardSummary[] {
         ORDER BY b.updated_at DESC`
     )
     .all(slug, slug) as Array<WhiteboardBoard & { member_role: string; member_seen: string | null }>;
+  const sharedIds = new Set(shared.map((board) => board.id));
+  const unowned = isAdminSlug(slug)
+    ? (db
+        .prepare(
+          `SELECT ${BOARD_COLUMNS} FROM whiteboard_boards
+            WHERE owner_slug = ''
+            ORDER BY updated_at DESC`
+        )
+        .all() as WhiteboardBoard[])
+    : [];
 
   return [
     ...owned.map((board) => summary(board, "owner", false)),
+    ...unowned
+      .filter((board) => !sharedIds.has(board.id))
+      .map((board) => summary(board, "owner", false)),
     ...shared
       .filter((board) => board.member_role === "editor" || board.member_role === "viewer")
       .map((board) =>

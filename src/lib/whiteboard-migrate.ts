@@ -3,6 +3,10 @@ import { ADMIN_PEOPLE } from "./admin-people";
 import { OWNER_SLUG, PEOPLE } from "./people";
 
 const BACKFILL_KEY = "wb_private_scene_v1";
+// The first backfill handed every unmatched board to the owner account.
+// This pass gives those boards back, once, so they are not sitting in one
+// person's private list.
+const ORPHAN_KEY = "wb_orphan_owner_v2";
 
 /**
  * Private boards + one scene JSON document per board.
@@ -12,10 +16,18 @@ const BACKFILL_KEY = "wb_private_scene_v1";
  * the member and presence tables, and the one-time copy of per-element rows
  * into scene_json live here, next to the other ALTER migrations.
  */
-export function ensureWhiteboardSharingSchema(database: Database.Database): void {
+/**
+ * Add whiteboard columns that the bootstrap blob indexes.
+ *
+ * Call this before that blob. CREATE TABLE IF NOT EXISTS does not add columns
+ * to a table that already exists, and the next statement in the blob is
+ * CREATE INDEX ... (owner_slug). On a database from before private boards
+ * that index throws, and better-sqlite3 then skips every later statement in
+ * the same exec — lifecycle, users, social QA, personal notes, and the rest.
+ */
+export function ensureWhiteboardColumns(database: Database.Database): void {
   const cols = tableColumns(database, "whiteboard_boards");
   if (!cols.length) return;
-
   if (!cols.includes("owner_slug")) {
     database.exec(
       `ALTER TABLE whiteboard_boards ADD COLUMN owner_slug TEXT NOT NULL DEFAULT ''`
@@ -26,6 +38,12 @@ export function ensureWhiteboardSharingSchema(database: Database.Database): void
       `ALTER TABLE whiteboard_boards ADD COLUMN scene_json TEXT NOT NULL DEFAULT ''`
     );
   }
+}
+
+export function ensureWhiteboardSharingSchema(database: Database.Database): void {
+  ensureWhiteboardColumns(database);
+  const cols = tableColumns(database, "whiteboard_boards");
+  if (!cols.length) return;
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS whiteboard_members (
@@ -61,7 +79,6 @@ export function ensureWhiteboardSharingSchema(database: Database.Database): void
   const done = database
     .prepare(`SELECT value FROM app_settings WHERE key = ?`)
     .get(BACKFILL_KEY) as { value: string } | undefined;
-  if (done?.value) return;
 
   const boards = database
     .prepare(`SELECT id, created_by, owner_slug, scene_json FROM whiteboard_boards`)
@@ -93,20 +110,62 @@ export function ensureWhiteboardSharingSchema(database: Database.Database): void
       )
     : null;
 
-  const apply = database.transaction(() => {
-    for (const board of boards) {
-      if (!board.owner_slug) {
-        setOwner.run(legacyOwnerSlug(board.created_by), board.id);
-      }
-      if (!board.scene_json && readRecords) {
-        const rows = readRecords.all(board.id) as Array<{ record_json: string }>;
-        const elements = rows
-          .map((row) => parseExcalidrawElement(row.record_json))
-          .filter((el): el is Record<string, unknown> => !!el);
-        if (elements.length) {
-          setScene.run(JSON.stringify({ elements, files: {} }), board.id);
+  if (!done?.value) {
+    const apply = database.transaction(() => {
+      for (const board of boards) {
+        if (!board.owner_slug) {
+          const owner = legacyOwnerSlug(board.created_by);
+          if (owner) setOwner.run(owner, board.id);
+        }
+        if (!board.scene_json && readRecords) {
+          const rows = readRecords.all(board.id) as Array<{ record_json: string }>;
+          const elements = rows
+            .map((row) => parseExcalidrawElement(row.record_json))
+            .filter((el): el is Record<string, unknown> => !!el);
+          if (elements.length) {
+            setScene.run(JSON.stringify({ elements, files: {} }), board.id);
+          }
         }
       }
+      const stamp = new Date().toISOString();
+      database
+        .prepare(
+          `INSERT INTO app_settings (key, value, updated_at) VALUES (?, '1', ?)
+           ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at`
+        )
+        .run(BACKFILL_KEY, stamp);
+    });
+    apply();
+  }
+
+  reclaimOrphanedOwnerBoards(database);
+}
+
+/**
+ * Undo the first backfill's fallback, which stored the owner account on every
+ * board whose created_by did not match a person.
+ *
+ * A board whose created_by really is that person stays theirs. Anything else
+ * that was parked on the owner account becomes unowned: admins can open it,
+ * and nobody else can.
+ */
+function reclaimOrphanedOwnerBoards(database: Database.Database): void {
+  const done = database
+    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .get(ORPHAN_KEY) as { value: string } | undefined;
+  if (done?.value) return;
+
+  const boards = database
+    .prepare(`SELECT id, created_by, owner_slug FROM whiteboard_boards`)
+    .all() as Array<{ id: string; created_by: string; owner_slug: string }>;
+  const clear = database.prepare(
+    `UPDATE whiteboard_boards SET owner_slug = '' WHERE id = ? AND owner_slug = ?`
+  );
+  const apply = database.transaction(() => {
+    for (const board of boards) {
+      if (board.owner_slug !== OWNER_SLUG) continue;
+      if (legacyOwnerSlug(board.created_by) === OWNER_SLUG) continue;
+      clear.run(board.id, OWNER_SLUG);
     }
     const stamp = new Date().toISOString();
     database
@@ -114,7 +173,7 @@ export function ensureWhiteboardSharingSchema(database: Database.Database): void
         `INSERT INTO app_settings (key, value, updated_at) VALUES (?, '1', ?)
          ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at`
       )
-      .run(BACKFILL_KEY, stamp);
+      .run(ORPHAN_KEY, stamp);
   });
   apply();
 }
@@ -124,19 +183,19 @@ export function ensureWhiteboardSharingSchema(database: Database.Database): void
  *
  * created_by was a display name ("Roy", "Lana Verrecchio") or the fallback
  * "Team" when the session had no person. A matched name becomes that person's
- * private board. Anything we cannot match stays with the owner so the drawing
- * is not orphaned.
+ * private board. Null means there is no creator to assign: the board stays
+ * unowned and only an admin can open it.
  */
-export function legacyOwnerSlug(createdBy: string): string {
+export function legacyOwnerSlug(createdBy: string): string | null {
   const value = createdBy.trim().toLowerCase();
-  if (!value || value === "team") return OWNER_SLUG;
+  if (!value || value === "team") return null;
   const people = [...PEOPLE, ...ADMIN_PEOPLE];
   for (const person of people) {
     if (person.slug === value || person.label.toLowerCase() === value) {
       return person.slug;
     }
   }
-  return OWNER_SLUG;
+  return null;
 }
 
 function parseExcalidrawElement(raw: string): Record<string, unknown> | null {

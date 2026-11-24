@@ -24,9 +24,10 @@ function png(id: string, dataURL = "data:image/png;base64,aaaa"): Record<string,
 test("legacy boards become private and keep excalidraw elements", () => {
   assert.equal(legacyOwnerSlug("Roy"), "roy");
   assert.equal(legacyOwnerSlug("Lana Verrecchio"), "lana");
-  assert.equal(legacyOwnerSlug("Team"), "michael");
-  assert.equal(legacyOwnerSlug(""), "michael");
-  assert.equal(legacyOwnerSlug("not a person"), "michael");
+  assert.equal(legacyOwnerSlug("Michael"), "michael");
+  assert.equal(legacyOwnerSlug("Team"), null);
+  assert.equal(legacyOwnerSlug(""), null);
+  assert.equal(legacyOwnerSlug("not a person"), null);
 
   const db = new Database(":memory:");
   db.exec(`
@@ -74,6 +75,58 @@ test("legacy boards become private and keep excalidraw elements", () => {
     owner_slug: string;
   };
   assert.equal(again.owner_slug, "jack");
+  db.close();
+});
+
+test("boards the first backfill parked on the owner account are unowned again", () => {
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE whiteboard_boards (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      created_by TEXT NOT NULL DEFAULT '',
+      owner_slug TEXT NOT NULL DEFAULT '',
+      scene_json TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES ('wb_private_scene_v1', '1', '2026-01-01T00:00:00.000Z');
+  `);
+  const insert = db.prepare(
+    `INSERT INTO whiteboard_boards
+      (id, title, created_by, owner_slug, scene_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`
+  );
+  insert.run("team", "Shared sketch", "Team", "michael");
+  insert.run("mystery", "No name", "Someone Else", "michael");
+  insert.run("mine", "Michael's", "Michael", "michael");
+  insert.run("roys", "Roy's", "Roy", "roy");
+
+  ensureWhiteboardSharingSchema(db);
+
+  const owners = Object.fromEntries(
+    (db.prepare(`SELECT id, owner_slug FROM whiteboard_boards`).all() as Array<{
+      id: string;
+      owner_slug: string;
+    }>).map((row) => [row.id, row.owner_slug])
+  );
+  assert.equal(owners.team, "");
+  assert.equal(owners.mystery, "");
+  assert.equal(owners.mine, "michael");
+  assert.equal(owners.roys, "roy");
+
+  db.prepare(`UPDATE whiteboard_boards SET owner_slug = 'michael' WHERE id = 'team'`).run();
+  ensureWhiteboardSharingSchema(db);
+  const again = db.prepare(`SELECT owner_slug FROM whiteboard_boards WHERE id = 'team'`).get() as {
+    owner_slug: string;
+  };
+  assert.equal(again.owner_slug, "michael");
   db.close();
 });
 
