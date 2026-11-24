@@ -1,188 +1,265 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type {
-  ExcalidrawImperativeAPI,
-  ExcalidrawProps,
-} from "@excalidraw/excalidraw/types";
-import type {
-  ExcalidrawElement,
-  OrderedExcalidrawElement,
-} from "@excalidraw/excalidraw/element/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 
-// Excalidraw is MIT-licensed with no production gate, and touches the DOM at
-// import time, so load it client-side only.
 const Excalidraw = dynamic(
-  () => import("@excalidraw/excalidraw").then((m) => m.Excalidraw),
+  () => import("@excalidraw/excalidraw").then((mod) => mod.Excalidraw),
   {
     ssr: false,
-    loading: () => (
-      <div style={{ padding: 24, color: "var(--muted, #888)" }}>
-        Loading board…
-      </div>
-    ),
+    loading: () => <div className="wb-loading">Loading board…</div>,
   }
 );
 
-const POLL_MS = 2000;
-const SAVE_MS: number = 500;
+const POLL_MS = 3000;
+const SAVE_MS = 700;
 
-type Wire = { id: string; data: OrderedExcalidrawElement };
+type SceneElement = OrderedExcalidrawElement;
+type Viewer = { slug: string; label: string };
 
-export function WhiteboardCanvas({ boardId }: { boardId: string }) {
+type Props = {
+  boardId: string;
+  canEdit: boolean;
+  initialElements: readonly SceneElement[];
+  initialFiles: BinaryFiles;
+  initialUpdatedAt: string;
+  onViewers?: (viewers: Viewer[]) => void;
+  onAccessLost?: () => void;
+};
+
+function useAppTheme(): "light" | "dark" {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  useEffect(() => {
+    const read = () => {
+      setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
+    };
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}
+
+export function WhiteboardCanvas({
+  boardId,
+  canEdit,
+  initialElements,
+  initialFiles,
+  initialUpdatedAt,
+  onViewers,
+  onAccessLost,
+}: Props) {
+  const theme = useAppTheme();
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
-  // ISO cursor: timestamp of the last change we pulled.
-  const sinceRef = useRef<string>("1970-01-01T00:00:00.000Z");
-  // Highest element version we've already sent to the server, per element id.
+  const sinceRef = useRef(initialUpdatedAt);
   const sentVersions = useRef<Map<string, number>>(new Map());
-  // Elements changed locally and waiting to be pushed.
-  const outgoing = useRef<Map<string, OrderedExcalidrawElement>>(new Map());
+  const sentFiles = useRef<Map<string, string>>(new Map());
+  const outgoing = useRef<Map<string, SceneElement>>(new Map());
+  const outgoingFiles = useRef<Map<string, BinaryFileData>>(new Map());
+  const hydrated = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const onViewersRef = useRef(onViewers);
+  const onAccessLostRef = useRef(onAccessLost);
+  onViewersRef.current = onViewers;
+  onAccessLostRef.current = onAccessLost;
 
-  const save = useCallback(async () => {
-    saveTimer.current = null;
-    if (!outgoing.current.size) return;
-    const put: Wire[] = Array.from(outgoing.current.values()).map((e) => ({
-      id: e.id,
-      data: e,
-    }));
+  const remember = useCallback((elements: readonly SceneElement[]) => {
+    for (const element of elements) sentVersions.current.set(element.id, element.version);
+  }, []);
+
+  const applyRemote = useCallback(
+    async (api: ExcalidrawImperativeAPI, remote: SceneElement[], files?: BinaryFiles) => {
+      if (files && Object.keys(files).length) {
+        const list: BinaryFileData[] = [];
+        for (const file of Object.values(files)) {
+          if (!file?.dataURL) continue;
+          list.push(file);
+          sentFiles.current.set(file.id, file.dataURL);
+        }
+        if (list.length) api.addFiles(list);
+      }
+      if (!remote.length) return;
+      const local = api.getSceneElementsIncludingDeleted();
+      const localVersion = new Map(local.map((element) => [element.id, element.version]));
+      const differs = remote.some((element) => localVersion.get(element.id) !== element.version);
+      if (!differs) {
+        remember(remote);
+        return;
+      }
+      const { reconcileElements } = await import("@excalidraw/excalidraw");
+      const reconciled = reconcileElements(local, remote as never, api.getAppState());
+      remember(reconciled);
+      api.updateScene({ elements: reconciled });
+    },
+    [remember]
+  );
+
+  const saveOnce = useCallback(async () => {
+    if (!canEdit) return;
+    if (!outgoing.current.size && !outgoingFiles.current.size) return;
+    const elements = Array.from(outgoing.current.values());
+    const files: Record<string, BinaryFileData> = {};
+    for (const [id, file] of outgoingFiles.current) files[id] = file;
     outgoing.current.clear();
+    outgoingFiles.current.clear();
+    for (const [id, file] of Object.entries(files)) sentFiles.current.set(id, file.dataURL);
+
     try {
-      await fetch(`/api/whiteboard/${boardId}/sync`, {
+      const res = await fetch(`/api/whiteboard/${boardId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ put, remove: [] }),
+        body: JSON.stringify({ elements, files }),
       });
+      if (res.status === 404 || res.status === 403) {
+        onAccessLostRef.current?.();
+        return;
+      }
+      if (!res.ok) {
+        for (const element of elements) outgoing.current.set(element.id, element);
+        for (const [id, file] of Object.entries(files)) outgoingFiles.current.set(id, file);
+        return;
+      }
+      const data = (await res.json()) as {
+        elements?: SceneElement[];
+        files?: BinaryFiles;
+        updatedAt?: string;
+        viewers?: Viewer[];
+      };
+      const api = apiRef.current;
+      if (api && data.elements) await applyRemote(api, data.elements, data.files);
+      if (data.updatedAt) sinceRef.current = data.updatedAt;
+      if (data.viewers) onViewersRef.current?.(data.viewers);
     } catch {
-      // Network blip: later edits re-push; pollers converge from what landed.
+      for (const element of elements) outgoing.current.set(element.id, element);
+      for (const [id, file] of Object.entries(files)) outgoingFiles.current.set(id, file);
     }
-  }, [boardId]);
+  }, [applyRemote, boardId, canEdit]);
+
+  const enqueueSave = useCallback(() => {
+    chain.current = chain.current.then(() => saveOnce()).catch(() => undefined);
+    return chain.current;
+  }, [saveOnce]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) return;
-    saveTimer.current = setTimeout(save, SAVE_MS);
-  }, [save]);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      void enqueueSave();
+    }, SAVE_MS);
+  }, [enqueueSave]);
 
-  // Fired by Excalidraw on every change. Deletions arrive as elements flagged
-  // isDeleted with a bumped version, so version-tracking captures them too.
   const onChange = useCallback(
-    (elements: readonly OrderedExcalidrawElement[]) => {
+    (elements: readonly SceneElement[], _appState: unknown, files: BinaryFiles) => {
+      if (!hydrated.current || !canEdit) return;
       let changed = false;
-      for (const e of elements) {
-        const sent = sentVersions.current.get(e.id);
-        if (sent === undefined || e.version > sent) {
-          outgoing.current.set(e.id, e);
-          sentVersions.current.set(e.id, e.version);
+      for (const element of elements) {
+        const sent = sentVersions.current.get(element.id);
+        if (sent === undefined || element.version > sent) {
+          outgoing.current.set(element.id, element);
+          sentVersions.current.set(element.id, element.version);
+          changed = true;
+        }
+      }
+      for (const file of Object.values(files)) {
+        if (!file?.id || !file.dataURL) continue;
+        if (sentFiles.current.get(file.id) !== file.dataURL) {
+          outgoingFiles.current.set(file.id, file);
           changed = true;
         }
       }
       if (changed) scheduleSave();
     },
-    [scheduleSave]
-  );
-
-  const applyRemote = useCallback(
-    async (api: ExcalidrawImperativeAPI, remote: OrderedExcalidrawElement[]) => {
-      if (!remote.length) return;
-      const { reconcileElements } = await import("@excalidraw/excalidraw");
-      const local = api.getSceneElements();
-      // reconcileElements does version-aware merging and respects whatever the
-      // local user is actively editing — Excalidraw's own collab logic.
-      const reconciled = reconcileElements(
-        local,
-        remote as never,
-        api.getAppState()
-      );
-      // Mark these versions as already-known so onChange doesn't rebroadcast them.
-      for (const e of reconciled) sentVersions.current.set(e.id, e.version);
-      api.updateScene({ elements: reconciled });
-    },
-    []
+    [canEdit, scheduleSave]
   );
 
   const poll = useCallback(async () => {
     const api = apiRef.current;
     if (!api) return;
+    if (outgoing.current.size || outgoingFiles.current.size) await enqueueSave();
     try {
       const res = await fetch(
-        `/api/whiteboard/${boardId}/changes?since=${encodeURIComponent(
-          sinceRef.current
-        )}`
+        `/api/whiteboard/${boardId}/changes?since=${encodeURIComponent(sinceRef.current)}`
       );
+      if (res.status === 404) {
+        onAccessLostRef.current?.();
+        return;
+      }
       if (!res.ok) return;
-      const data = (await res.json()) as { put: Wire[]; now: string };
-      const remote = (data.put || [])
-        .map((r) => r.data)
-        .filter((e): e is OrderedExcalidrawElement => !!e && !!e.id);
-      await applyRemote(api, remote);
-      if (data.now) sinceRef.current = data.now;
+      const data = (await res.json()) as {
+        elements?: SceneElement[];
+        files?: BinaryFiles;
+        updatedAt?: string;
+        viewers?: Viewer[];
+      };
+      if (data.elements?.length || (data.files && Object.keys(data.files).length)) {
+        await applyRemote(api, data.elements || [], data.files);
+      }
+      if (data.updatedAt) sinceRef.current = data.updatedAt;
+      if (data.viewers) onViewersRef.current?.(data.viewers);
     } catch {
-      // try again next tick
+      // The next poll retries.
     }
-  }, [boardId, applyRemote]);
+  }, [applyRemote, boardId, enqueueSave]);
 
-  const handleApi = useCallback(
-    (api: ExcalidrawImperativeAPI) => {
-      apiRef.current = api;
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void poll();
+    }, POLL_MS);
+    return () => {
+      clearInterval(timer);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      void enqueueSave();
+    };
+  }, [enqueueSave, poll]);
 
-      (async () => {
-        // Initial load: restore the server's elements into the scene.
-        try {
-          const res = await fetch(`/api/whiteboard/${boardId}`);
-          if (res.ok) {
-            const { records, now } = (await res.json()) as {
-              records: Wire[];
-              now?: string;
-            };
-            const raw = (records || []).map((r) => r.data);
-            if (raw.length) {
-              const { restoreElements } = await import("@excalidraw/excalidraw");
-              const elements = restoreElements(
-                raw as ExcalidrawElement[],
-                null
-              );
-              for (const e of elements) {
-                sentVersions.current.set(
-                  e.id,
-                  (e as OrderedExcalidrawElement).version
-                );
-              }
-              api.updateScene({ elements });
-            }
-            if (now) sinceRef.current = now;
-          }
-        } catch {
-          // empty board is fine
-        }
+  const handleApi = useCallback((api: ExcalidrawImperativeAPI) => {
+    apiRef.current = api;
+    // Seed from the scene we were given, not from the still-empty editor.
+    // Excalidraw calls this during construction, before initialData is restored,
+    // and the restore that follows must not look like a brand-new edit.
+    for (const element of initialElements) {
+      if (element?.id && typeof element.version === "number") {
+        sentVersions.current.set(element.id, element.version);
+      }
+    }
+    for (const file of Object.values(initialFiles)) {
+      if (file?.id && file.dataURL) sentFiles.current.set(file.id, file.dataURL);
+    }
+    hydrated.current = true;
+  }, [initialElements, initialFiles]);
 
-        pollTimer.current = setInterval(poll, POLL_MS);
-      })();
-    },
-    [boardId, poll]
-  );
-
-  // Clean up timers when the board unmounts.
-  const cleanup = useCallback(() => {
-    if (pollTimer.current) clearInterval(pollTimer.current);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-  }, []);
-
-  const props: ExcalidrawProps = {
-    excalidrawAPI: handleApi,
-    onChange: onChange as ExcalidrawProps["onChange"],
-  };
+  const background = theme === "dark" ? "#141416" : "#ffffff";
+  const filesForEditor: BinaryFiles = {};
+  for (const file of Object.values(initialFiles)) {
+    if (!file?.id || !file.dataURL) continue;
+    filesForEditor[file.id] = { ...file, created: file.created || 1 };
+  }
 
   return (
-    <div
-      style={{ position: "absolute", inset: 0 }}
-      ref={(node) => {
-        if (!node) cleanup();
-      }}
-    >
-      <Excalidraw {...props} />
+    <div className="wb-stage" data-testid="wb-canvas" data-view-only={canEdit ? "false" : "true"}>
+      <Excalidraw
+        excalidrawAPI={handleApi}
+        onChange={onChange}
+        theme={theme}
+        viewModeEnabled={!canEdit}
+        initialData={{
+          elements: initialElements as SceneElement[],
+          files: filesForEditor,
+          appState: {
+            viewBackgroundColor: background,
+            theme,
+          },
+        }}
+      />
     </div>
   );
 }

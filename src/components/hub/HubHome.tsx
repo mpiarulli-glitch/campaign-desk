@@ -51,7 +51,7 @@ const DECK_TARGETS: DeckTarget[] = [
   { label: "Campaigns", href: "/admin/campaigns", keys: ["campaign", "campaigns", "reviews"] },
   { label: "Onboarding", href: "/admin/onboarding", keys: ["onboarding", "new client"] },
   { label: "Calendar", href: "/admin/calendar", keys: ["calendar", "sends"] },
-  { label: "Whiteboard", href: "/admin/whiteboard", keys: ["whiteboard", "board"] },
+  { label: "Whiteboards", href: "/admin/whiteboard", keys: ["whiteboard", "board", "whiteboards"] },
   { label: "Weekly Snapshots", href: "/admin/snapshot/desk", keys: ["snapshot", "snapshots", "weekly"] },
   { label: "SOPs", section: "sops", keys: ["sop", "sops"] },
   { label: "Training", section: "training", keys: ["training", "course", "courses"] },

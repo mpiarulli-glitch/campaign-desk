@@ -1,23 +1,25 @@
 import { NextResponse } from "next/server";
-import { can, getSession } from "@/lib/auth";
-import { createBoard, listBoards } from "@/lib/whiteboard";
-import { teamLabel } from "@/lib/team";
+import { createBoard, listBoardsFor } from "@/lib/whiteboard";
+import { unauthorized, whiteboardActor } from "./guard";
 
 export async function GET() {
-  if (!(await can("page.whiteboard"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  return NextResponse.json({ boards: listBoards() });
+  const slug = await whiteboardActor();
+  if (!slug) return unauthorized();
+  return NextResponse.json({ boards: listBoardsFor(slug) });
 }
 
 export async function POST(request: Request) {
-  if (!(await can("page.whiteboard"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const session = await getSession();
+  const slug = await whiteboardActor();
+  if (!slug) return unauthorized();
   const body = await request.json().catch(() => ({}));
   const title = typeof body.title === "string" ? body.title : "";
-  const createdBy = session?.person ? teamLabel(session.person) : "Team";
-  const board = createBoard({ title, createdBy });
-  return NextResponse.json({ board });
+  const board = createBoard({ title, ownerSlug: slug });
+  return NextResponse.json({
+    board: {
+      id: board.id,
+      title: board.title,
+      role: "owner",
+      updatedAt: board.updated_at,
+    },
+  });
 }

@@ -1,4 +1,5 @@
 import { requirePage } from "@/lib/page-gate";
+import "./whiteboard.css";
 
 // Covers this page and everything nested under it. See src/lib/page-gate.ts for
 // why a refusal goes to Home rather than to the login page.

@@ -1,48 +1,41 @@
 import { NextResponse } from "next/server";
-import { can } from "@/lib/auth";
-import { deleteBoard, getAllRecords, getBoard, moveBoardToFolder } from "@/lib/whiteboard";
+import { deleteBoard, readBoard, renameBoard } from "@/lib/whiteboard";
+import { forbidden, isResponse, notFound, requireBoard } from "../guard";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Initial load: the board plus its full live record set and a sync cursor.
 export async function GET(_request: Request, { params }: Params) {
-  if (!(await can("page.whiteboard"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   const { id } = await params;
-  const board = getBoard(id);
-  if (!board) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  const { records, now } = getAllRecords(id);
-  return NextResponse.json({ board, records, now });
+  const gate = await requireBoard(id, "read");
+  if (isResponse(gate)) return gate;
+  const loaded = readBoard(id, gate.slug);
+  if (!loaded) return notFound();
+  return NextResponse.json({
+    board: loaded.board,
+    scene: loaded.scene,
+    viewers: loaded.viewers,
+    updatedAt: loaded.board.updatedAt,
+  });
 }
 
-// Move a board into a folder, or clear it back to unfiled with folderId: null.
 export async function PATCH(request: Request, { params }: Params) {
-  if (!(await can("page.whiteboard"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   const { id } = await params;
-  if (!getBoard(id)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const gate = await requireBoard(id, "rename");
+  if (isResponse(gate)) return gate;
   const body = await request.json().catch(() => ({}));
-  if ("folderId" in body) {
-    const folderId = typeof body.folderId === "string" ? body.folderId : null;
-    moveBoardToFolder(id, folderId);
+  if (typeof body.title !== "string") {
+    return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
-  return NextResponse.json({ board: getBoard(id) });
+  const result = renameBoard(id, gate.slug, body.title);
+  if (!result.ok) return result.error === "forbidden" ? forbidden() : notFound();
+  return NextResponse.json({ board: result.board });
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!(await can("page.whiteboard"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   const { id } = await params;
-  if (!getBoard(id)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  deleteBoard(id);
+  const gate = await requireBoard(id, "delete");
+  if (isResponse(gate)) return gate;
+  const result = deleteBoard(id, gate.slug);
+  if (!result.ok) return result.error === "forbidden" ? forbidden() : notFound();
   return NextResponse.json({ ok: true });
 }
