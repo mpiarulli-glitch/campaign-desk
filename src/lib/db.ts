@@ -15,7 +15,10 @@ import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-
 import { addWeeks, mondayOf } from "./week";
 import { ensureBotActivitySchema } from "./bot-activity-schema";
 import { ensureWebsiteOpsSchema } from "./website-ops-schema";
-import { ensureWhiteboardSharingSchema } from "./whiteboard-migrate";
+import {
+  ensureWhiteboardColumns,
+  ensureWhiteboardSharingSchema,
+} from "./whiteboard-migrate";
 import {
   accountManagerSlugFromOwner,
   accountManagerSlugFromReviewerName,
@@ -1410,6 +1413,12 @@ export function getDb(): Database.Database {
     // Those belong in migrate() below. If a bootstrap statement fails (usually
     // an index on a column migrate has not added yet), keep going: otherwise
     // later ALTERs never run and the connection is cached half-initialized.
+    //
+    // owner_slug is the case that already fired in production: the blob
+    // indexes that column, and an older whiteboard_boards has no such column.
+    // Add it before the blob so the index is a no-op instead of an abort that
+    // skips every CREATE after it.
+    ensureWhiteboardColumns(database);
     try {
       database.exec(`
     CREATE TABLE IF NOT EXISTS campaigns (
