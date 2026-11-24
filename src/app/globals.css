@@ -20713,7 +20713,7 @@ article.snap-pick-card.lh-pick-card:hover {
 }
 
 .snap-desk-win.is-needed {
-  box-shadow: inset 2px 0 0 #d97706;
+  box-shadow: inset 3px 0 0 var(--warning);
   padding-left: 10px;
 }
 
@@ -20860,13 +20860,13 @@ form.snap-desk-win-line {
 }
 
 .snap-dept.is-drop {
-  outline: 2px solid #0e7490;
+  outline: 2px solid var(--accent-ink);
   outline-offset: 2px;
 }
 
 .snap-dept-items li.is-drop-before,
 .snap-suggest li.is-drop-before {
-  box-shadow: inset 0 2px 0 #0e7490;
+  box-shadow: inset 0 2px 0 var(--accent-ink);
 }
 
 .snap-drag {
@@ -21166,15 +21166,15 @@ form.snap-desk-win-line {
 }
 
 .snap-status.is-in_progress {
-  color: #8a6200;
+  color: var(--warning-ink);
 }
 
 .snap-status.is-scheduled {
-  color: #1a6f9a;
+  color: var(--accent-ink);
 }
 
 .snap-status.is-completed {
-  color: #188038;
+  color: var(--success-ink);
 }
 
 .snap-week-status {
@@ -21186,12 +21186,12 @@ form.snap-desk-win-line {
   margin-bottom: 2px;
 }
 
-.snap-week-status.is-in_progress { color: #8a6200; }
-.snap-week-status.is-scheduled { color: #1a6f9a; }
-.snap-week-status.is-completed { color: #188038; }
+.snap-week-status.is-in_progress { color: var(--warning-ink); }
+.snap-week-status.is-scheduled { color: var(--accent-ink); }
+.snap-week-status.is-completed { color: var(--success-ink); }
 
-.snap-week-dot.is-scheduled { background: #1a6f9a; }
-.snap-week-dot.is-in_progress { background: #8a6200; }
+.snap-week-dot.is-scheduled { background: var(--accent-ink); }
+.snap-week-dot.is-in_progress { background: var(--warning); }
 
 .snap-suggest-note {
   margin: 0;
@@ -28761,21 +28761,32 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   background: var(--bg-elevated);
 }
 
-.snap-week-banner.is-work { box-shadow: inset 3px 0 0 #d97706; }
-.snap-week-banner.is-clear { box-shadow: inset 3px 0 0 #059669; }
+.snap-week-banner.is-work {
+  background: var(--warning-wash);
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
+  color: var(--warning-ink);
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+.snap-week-banner.is-clear {
+  background: var(--success-wash);
+  border-color: color-mix(in srgb, var(--success) 34%, var(--border));
+  color: var(--success-ink);
+  box-shadow: inset 3px 0 0 var(--success);
+}
 
 .snap-week-banner p {
   margin: 0;
   font-size: 15px;
   font-weight: 650;
+  color: inherit;
 }
 
 .snap-week-banner-icon {
   display: inline-flex;
-  color: #f5b942;
+  color: var(--warning);
 }
 
-.snap-week-banner.is-clear .snap-week-banner-icon { color: #34d399; }
+.snap-week-banner.is-clear .snap-week-banner-icon { color: var(--success); }
 
 .snap-week-desk .snap-n-group a {
   font-size: 20px;
@@ -28785,13 +28796,33 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 
 .snap-week-desk .snap-n-group-view select {
   border-radius: 999px;
-  padding: 6px 14px;
+  padding: 6px 28px 6px 12px;
+  background-color: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-weight: 650;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 55%, calc(100% - 9px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.snap-week-desk .snap-n-group-view select:focus {
+  border-color: var(--accent-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: none;
 }
 
 .snap-week-desk .snap-dept {
-  margin: 0 12px 12px;
+  margin: 0;
   padding: 14px;
-  background: transparent;
+  /* A step down from the account card in both themes: gray on white in light
+     mode, a darker well in dark mode, so the item cards can sit on top. */
+  background: color-mix(in srgb, var(--bg) 42%, var(--bg-elevated));
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
 }
 
 .snap-week-desk .snap-dept-head strong {
@@ -28815,8 +28846,9 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 
 .snap-week-count {
   margin-left: auto;
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-body);
 }
 
 .snap-week-desk .snap-desk-win-head {
@@ -28824,16 +28856,17 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   align-items: center;
 }
 
-.snap-week-win-badge {
+.snap-week-desk .snap-desk-win-head .snap-week-win-badge {
   display: inline-flex;
   align-items: center;
   margin-left: 8px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: #3f2a12;
-  color: #f5b942;
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .snap-week-desk .snap-week-win-list li {
@@ -28877,7 +28910,7 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, #000);
+  background: var(--bg-elevated);
 }
 
 .snap-week-desk .snap-week-item.is-editing {
@@ -28896,7 +28929,7 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 
 .snap-week-item-copy p {
   margin: 4px 0 8px;
-  color: var(--text-muted);
+  color: var(--text-body);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -28969,12 +29002,25 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   color: var(--text-muted);
 }
 
-.snap-week-desk .snap-week-item .snap-status.is-completed {
-  background: #123d2a;
-  color: #4ade80;
-  border-color: transparent;
-  padding: 6px 12px;
+.snap-week-desk .snap-week-item .snap-status {
+  padding: 4px 10px;
   font-weight: 650;
+  background: var(--bg-soft);
+}
+.snap-week-desk .snap-week-item .snap-status.is-in_progress {
+  background: var(--warning-wash);
+  color: var(--warning-ink);
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+}
+.snap-week-desk .snap-week-item .snap-status.is-scheduled {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.snap-week-desk .snap-week-item .snap-status.is-completed {
+  background: var(--success-wash);
+  color: var(--success-ink);
+  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
 }
 
 .snap-week-pop .fc-combo-item {
@@ -28982,7 +29028,7 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 }
 
 .snap-week-pop .fc-combo-item.is-active {
-  background: #0e3a42;
+  background: var(--accent-wash);
   color: var(--text);
 }
 
@@ -29001,7 +29047,7 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
   border: 0;
   border-top: 1px solid var(--border);
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-ink);
   font: inherit;
   font-size: 14px;
   padding: 12px 14px;
@@ -29009,6 +29055,220 @@ form.webops-modal .webops-modal-head { padding: 16px 20px 8px; }
 }
 
 .snap-week-custom:hover { background: var(--bg-soft); }
+
+/* This Week desk, light and dark. Shared tokens so a pale cyan button,
+   a dark warning chip, or a heavy browser border does not survive a theme. */
+.snap-week-desk .snap-n-db {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.snap-week-desk .snap-n-group {
+  padding: 14px 16px 12px;
+  background: transparent;
+}
+
+.snap-week-desk .snap-dept-list {
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+
+.snap-week-desk .snap-desk-win.is-needed {
+  margin: 12px 16px 0;
+  padding: 12px 14px 12px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning-wash) 78%, var(--bg-elevated));
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.snap-week-desk .snap-desk-win.is-in {
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--success-wash) 70%, var(--bg-elevated));
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.snap-week-desk .snap-desk-win-empty,
+.snap-week-desk .snap-desk-win-who {
+  color: var(--text-body);
+}
+
+.snap-week-desk .snap-desk-week {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  gap: 2px;
+  padding: 4px;
+}
+
+.snap-week-desk .snap-desk-week-label {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.snap-week-desk .snap-desk-week .cal-nav-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+}
+
+.snap-week-desk .snap-desk-week .cal-nav-btn:hover {
+  background: var(--bg-soft);
+}
+
+.snap-week-desk .snap-desk-week .btn-secondary {
+  background: var(--bg-soft);
+  border-color: transparent;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.snap-week-desk .snap-desk-week .btn-secondary:hover {
+  background: color-mix(in srgb, var(--bg-soft) 70%, var(--border-strong));
+  color: var(--text);
+}
+
+.snap-week-desk .snap-desk-search input,
+.snap-week-desk .snap-desk-search select,
+.snap-week-desk .snap-desk-win-form input,
+.snap-week-desk .snap-add-row > input,
+.snap-week-desk .snap-add-row > select,
+.snap-week-desk .snap-add-combo > input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text);
+  box-shadow: none;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.snap-week-desk .snap-desk-win-form input {
+  padding: 8px 12px;
+  font-size: 14px;
+  min-height: 40px;
+}
+
+.snap-week-desk .snap-desk-search input:focus,
+.snap-week-desk .snap-desk-search select:focus,
+.snap-week-desk .snap-desk-win-form input:focus,
+.snap-week-desk .snap-add-row > input:focus,
+.snap-week-desk .snap-add-row > select:focus,
+.snap-week-desk .snap-add-combo > input:focus {
+  border-color: var(--accent-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  outline: none;
+}
+
+.snap-week-desk .snap-desk-win-form .btn:not(.btn-ghost):not(.btn-secondary):not(:disabled),
+.snap-week-desk .snap-add-row > .btn:not(.btn-ghost):not(.btn-secondary):not(:disabled) {
+  background: var(--accent-ink);
+  color: var(--on-ink);
+  border-color: transparent;
+  box-shadow: none;
+  font-weight: 700;
+  min-height: 40px;
+}
+
+.snap-week-desk .snap-desk-win-form .btn:not(.btn-ghost):not(.btn-secondary):hover:not(:disabled),
+.snap-week-desk .snap-add-row > .btn:not(.btn-ghost):not(.btn-secondary):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-ink) 84%, var(--text));
+  color: var(--on-ink);
+  transform: none;
+  box-shadow: none;
+}
+
+.snap-week-desk .snap-desk-win-form .btn:disabled,
+.snap-week-desk .snap-add-row > .btn:disabled {
+  background: var(--bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  opacity: 1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.snap-week-desk .snap-add-hint {
+  color: var(--text-body);
+  font-size: 13px;
+}
+
+.snap-week-desk .snap-add-switch .linklike {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent-ink);
+  text-underline-offset: 3px;
+}
+
+.snap-week-desk .snap-add-switch .btn.btn-ghost {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.snap-week-desk .snap-add-switch .btn.btn-ghost:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .snap-week-desk .snap-desk-win-form,
+  .snap-week-desk .snap-add-row {
+    flex-wrap: wrap;
+  }
+
+  .snap-week-desk .snap-desk-win-form input,
+  .snap-week-desk .snap-add-row > .fc-combo,
+  .snap-week-desk .snap-add-row > input {
+    flex: 1 1 100%;
+  }
+
+  .snap-week-desk .snap-week-win-list li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .snap-week-desk .snap-dept-items li.snap-week-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .snap-week-desk .snap-week-item-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .snap-week-desk .snap-desk-win-form .btn,
+  .snap-week-desk .snap-add-row > .btn {
+    margin-left: auto;
+  }
+
+  .snap-week-desk .snap-add-switch {
+    align-items: center;
+  }
+
+  .snap-week-desk .snap-add-switch .linklike { order: 1; }
+  .snap-week-desk .snap-add-switch .btn.btn-ghost {
+    order: 2;
+    margin-left: auto;
+  }
+  .snap-week-desk .snap-add-switch .snap-week-count {
+    order: 3;
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
+}
 
 /* Keyboard focus for controls that do not already draw their own ring.
    Mouse clicks stay quiet because this is :focus-visible only. */
