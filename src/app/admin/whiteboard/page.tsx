@@ -7,41 +7,43 @@ import { useRouter } from "next/navigation";
 type Board = {
   id: string;
   title: string;
-  folder_id: string | null;
-  created_by: string;
-  updated_at: string;
-};
-
-type Folder = {
-  id: string;
-  title: string;
+  role: "owner" | "editor" | "viewer";
+  ownerLabel: string;
+  updatedAt: string;
+  unseen: boolean;
 };
 
 export default function WhiteboardListPage() {
   const router = useRouter();
   const [boards, setBoards] = useState<Board[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [folderTitle, setFolderTitle] = useState("");
-  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  function load() {
+    return fetch("/api/whiteboard").then((res) => {
+      if (res.status === 401) {
+        router.push("/login");
+        return null;
+      }
+      return res.ok ? res.json() : null;
+    });
+  }
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/whiteboard").then((r) => {
-        if (r.status === 401) {
-          router.push("/login");
-          return null;
-        }
-        return r.ok ? r.json() : null;
-      }),
-      fetch("/api/whiteboard/folders").then((r) => (r.ok ? r.json() : null)),
-    ]).then(([boardData, folderData]) => {
-      if (boardData) setBoards(boardData.boards);
-      if (folderData) setFolders(folderData.folders);
+    let live = true;
+    load().then((data) => {
+      if (!live) return;
+      if (data?.boards) setBoards(data.boards);
       setLoading(false);
     });
+    return () => {
+      live = false;
+    };
+    // load closes over router; the list is fetched once when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   async function createBoard() {
@@ -50,7 +52,7 @@ export default function WhiteboardListPage() {
     const res = await fetch("/api/whiteboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim() }),
+      body: JSON.stringify({ title: "" }),
     });
     setCreating(false);
     if (res.ok) {
@@ -59,218 +61,128 @@ export default function WhiteboardListPage() {
     }
   }
 
-  async function createFolder() {
-    if (creatingFolder || !folderTitle.trim()) return;
-    setCreatingFolder(true);
-    const res = await fetch("/api/whiteboard/folders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: folderTitle.trim() }),
-    });
-    setCreatingFolder(false);
-    if (res.ok) {
-      const { folder } = await res.json();
-      setFolders((prev) => [...prev, folder]);
-      setFolderTitle("");
-    }
+  function startRename(board: Board) {
+    setConfirming(null);
+    setRenaming(board.id);
+    setDraft(board.title);
   }
 
-  async function deleteBoard(board: Board) {
-    if (!confirm(`Delete "${board.title}"? This cannot be undone.`)) return;
-    const res = await fetch(`/api/whiteboard/${board.id}`, { method: "DELETE" });
-    if (res.ok) {
-      setBoards((prev) => prev.filter((b) => b.id !== board.id));
-    }
-  }
-
-  async function moveBoard(board: Board, folderId: string) {
-    const nextFolderId = folderId || null;
-    setBoards((prev) =>
-      prev.map((b) => (b.id === board.id ? { ...b, folder_id: nextFolderId } : b))
+  async function commitRename(board: Board) {
+    const title = draft.trim();
+    setRenaming(null);
+    if (!title || title === board.title) return;
+    setBoards((current) =>
+      current.map((item) => (item.id === board.id ? { ...item, title } : item))
     );
     await fetch(`/api/whiteboard/${board.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folderId: nextFolderId }),
+      body: JSON.stringify({ title }),
     });
   }
 
-  async function deleteFolder(folder: Folder) {
-    if (
-      !confirm(
-        `Delete the "${folder.title}" folder? Its boards will move back to Unfiled.`
-      )
-    )
-      return;
-    const res = await fetch(`/api/whiteboard/folders/${folder.id}`, {
-      method: "DELETE",
-    });
+  async function remove(board: Board) {
+    const res = await fetch(`/api/whiteboard/${board.id}`, { method: "DELETE" });
     if (res.ok) {
-      setFolders((prev) => prev.filter((f) => f.id !== folder.id));
-      setBoards((prev) =>
-        prev.map((b) => (b.folder_id === folder.id ? { ...b, folder_id: null } : b))
-      );
+      setBoards((current) => current.filter((item) => item.id !== board.id));
+      setConfirming(null);
     }
   }
 
-  function BoardRow({ board }: { board: Board }) {
+  const mine = boards.filter((board) => board.role === "owner");
+  const shared = boards.filter((board) => board.role !== "owner");
+
+  function Row({ board }: { board: Board }) {
+    const owner = board.role === "owner";
     return (
-      <div className="campaign-item" style={{ color: "inherit" }}>
-        <Link
-          href={`/admin/whiteboard/${board.id}`}
-          style={{ display: "flex", flexDirection: "column", flex: 1, color: "inherit" }}
-        >
-          <span style={{ fontWeight: 600 }}>{board.title}</span>
-          <span className="muted" style={{ fontSize: 13 }}>
-            {board.created_by ? `by ${board.created_by}` : ""}
-          </span>
-        </Link>
-        <select
-          className="select-clean"
-          value={board.folder_id || ""}
-          onChange={(e) => moveBoard(board, e.target.value)}
-          onClick={(e) => e.stopPropagation()}
-          style={{ fontSize: 12, padding: "6px 8px" }}
-        >
-          <option value="">Unfiled</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.title}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="btn btn-danger btn-sm"
-          onClick={(e) => {
-            e.preventDefault();
-            deleteBoard(board);
-          }}
-        >
-          Delete
-        </button>
+      <div className="wb-row" data-testid="wb-row">
+        {renaming === board.id ? (
+          <input
+            className="wb-rename"
+            value={draft}
+            autoFocus
+            aria-label="Board name"
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => commitRename(board)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void commitRename(board);
+              }
+              if (event.key === "Escape") setRenaming(null);
+            }}
+          />
+        ) : (
+          <Link className="wb-row-main" href={`/admin/whiteboard/${board.id}`}>
+            <span className="wb-row-title">
+              <span>{board.title}</span>
+              {board.unseen ? <span className="wb-new">New</span> : null}
+              <span className="wb-role">{owner ? "Owner" : board.role === "editor" ? "Editor" : "Viewer"}</span>
+            </span>
+            {!owner ? <span className="wb-row-meta">From {board.ownerLabel}</span> : null}
+          </Link>
+        )}
+        {owner ? (
+          <div className="wb-row-actions">
+            {confirming === board.id ? (
+              <>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => remove(board)}>
+                  Delete board
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(null)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => startRename(board)}>
+                  Rename
+                </button>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => setConfirming(board.id)}>
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
     );
   }
 
-  const boardsByFolder = new Map<string, Board[]>();
-  const unfiled: Board[] = [];
-  for (const b of boards) {
-    if (b.folder_id) {
-      const list = boardsByFolder.get(b.folder_id) || [];
-      list.push(b);
-      boardsByFolder.set(b.folder_id, list);
-    } else {
-      unfiled.push(b);
-    }
-  }
-
   return (
-    <div>
-      <div className="page-actions">
-        <input
-          type="text"
-          placeholder="New folder name"
-          value={folderTitle}
-          onChange={(e) => setFolderTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") createFolder();
-          }}
-          className="input"
-          style={{ maxWidth: 180 }}
-        />
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={createFolder}
-          disabled={creatingFolder || !folderTitle.trim()}
-        >
-          {creatingFolder ? "Creating…" : "New folder"}
-        </button>
-        <input
-          type="text"
-          placeholder="New board name"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") createBoard();
-          }}
-          className="input"
-          style={{ maxWidth: 220 }}
-        />
-        <button
-          className="btn btn-sm"
-          onClick={createBoard}
-          disabled={creating}
-        >
+    <div className="wb-list">
+      <div className="wb-list-bar">
+        <div>
+          <h1>Whiteboards</h1>
+          <p className="wb-note">Private until you share them.</p>
+        </div>
+        <button type="button" className="btn btn-sm" onClick={createBoard} disabled={creating} data-testid="wb-new">
           {creating ? "Creating…" : "New board"}
         </button>
       </div>
 
-      <main className="container stack">
-        <div className="page-hero">
-          <p className="eyebrow">Team workspace</p>
-          <h1 className="h1">Whiteboards</h1>
-          <p className="muted" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-            Shared, live canvases for sketching campaigns, mapping flows, and
-            planning together. Everyone on a board sees changes within a couple
-            of seconds.
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="muted">Loading boards…</p>
-        ) : boards.length === 0 && folders.length === 0 ? (
-          <p className="muted">No boards yet. Name one above to get started.</p>
-        ) : (
-          <div className="stack" style={{ gap: 28 }}>
-            {folders.map((folder) => {
-              const list = boardsByFolder.get(folder.id) || [];
-              return (
-                <div key={folder.id} className="stack" style={{ gap: 8 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <h2 className="h2" style={{ margin: 0, fontSize: 15 }}>
-                      {folder.title}
-                    </h2>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => deleteFolder(folder)}
-                    >
-                      Delete folder
-                    </button>
-                  </div>
-                  {list.length === 0 ? (
-                    <p className="muted" style={{ fontSize: 13 }}>
-                      No boards in this folder yet.
-                    </p>
-                  ) : (
-                    list.map((b) => <BoardRow key={b.id} board={b} />)
-                  )}
-                </div>
-              );
-            })}
-
-            {(unfiled.length > 0 || folders.length === 0) && (
-              <div className="stack" style={{ gap: 8 }}>
-                {folders.length > 0 && (
-                  <h2 className="h2" style={{ margin: 0, fontSize: 15 }}>
-                    Unfiled
-                  </h2>
-                )}
-                {unfiled.map((b) => (
-                  <BoardRow key={b.id} board={b} />
-                ))}
-              </div>
+      {loading ? (
+        <p className="wb-empty">Loading boards…</p>
+      ) : (
+        <>
+          <section className="wb-section" aria-label="Your boards">
+            <h2>Yours</h2>
+            {mine.length === 0 ? (
+              <p className="wb-empty">No boards yet.</p>
+            ) : (
+              mine.map((board) => <Row key={board.id} board={board} />)
             )}
-          </div>
-        )}
-      </main>
+          </section>
+          {shared.length > 0 ? (
+            <section className="wb-section" aria-label="Boards shared with you">
+              <h2>Shared with you</h2>
+              {shared.map((board) => (
+                <Row key={board.id} board={board} />
+              ))}
+            </section>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

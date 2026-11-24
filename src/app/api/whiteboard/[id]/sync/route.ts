@@ -1,30 +1,31 @@
 import { NextResponse } from "next/server";
-import { can } from "@/lib/auth";
-import { applyChanges, getBoard, type WireRecord } from "@/lib/whiteboard";
+import { saveScene, touchPresence } from "@/lib/whiteboard";
+import { forbidden, isResponse, notFound, requireBoard } from "../../guard";
 
 type Params = { params: Promise<{ id: string }> };
 
-// A client pushes only the records it changed (and ids it removed).
 export async function POST(request: Request, { params }: Params) {
-  if (!(await can("page.whiteboard"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   const { id } = await params;
-  if (!getBoard(id)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const gate = await requireBoard(id, "save");
+  if (isResponse(gate)) return gate;
   const body = await request.json().catch(() => ({}));
-  const put: WireRecord[] = Array.isArray(body.put)
-    ? body.put.filter(
-        (r: unknown): r is WireRecord =>
-          !!r && typeof (r as WireRecord).id === "string"
-      )
-    : [];
-  const remove: string[] = Array.isArray(body.remove)
-    ? body.remove.filter((x: unknown): x is string => typeof x === "string")
-    : [];
-  if (put.length || remove.length) {
-    applyChanges(id, { put, remove });
+  const result = saveScene(id, gate.slug, {
+    elements: body.elements,
+    files: body.files,
+  });
+  if (!result.ok) {
+    if (result.error === "too_large") {
+      return NextResponse.json({ error: "Board is too large" }, { status: 413 });
+    }
+    if (result.error === "forbidden") return forbidden();
+    return notFound();
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    elements: result.scene.elements,
+    files: result.scene.files,
+    updatedAt: result.updatedAt,
+    changed: result.changed,
+    viewers: touchPresence(id, gate.slug),
+  });
 }

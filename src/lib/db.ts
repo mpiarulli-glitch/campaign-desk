@@ -15,6 +15,7 @@ import { inferDeliverableCadenceLabel, isExplicitlyRecurring } from "./snapshot-
 import { addWeeks, mondayOf } from "./week";
 import { ensureBotActivitySchema } from "./bot-activity-schema";
 import { ensureWebsiteOpsSchema } from "./website-ops-schema";
+import { ensureWhiteboardSharingSchema } from "./whiteboard-migrate";
 import {
   accountManagerSlugFromOwner,
   accountManagerSlugFromReviewerName,
@@ -1066,6 +1067,19 @@ export interface WhiteboardBoard {
   // DB-level FK so deleting a folder can never cascade into deleting boards.
   folder_id: string | null;
   created_by: string;
+  // Slug of the only person who can see the board until they invite someone.
+  owner_slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhiteboardMember {
+  board_id: string;
+  user_slug: string;
+  // 'editor' | 'viewer'. The owner is not a row here.
+  role: string;
+  // Null until the invited person opens the board.
+  seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2225,6 +2239,8 @@ export function getDb(): Database.Database {
       title TEXT NOT NULL DEFAULT 'Untitled board',
       folder_id TEXT,
       created_by TEXT NOT NULL DEFAULT '',
+      owner_slug TEXT NOT NULL DEFAULT '',
+      scene_json TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2240,6 +2256,29 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_wb_records_changes ON whiteboard_records(board_id, updated_at);
+
+    CREATE TABLE IF NOT EXISTS whiteboard_members (
+      board_id TEXT NOT NULL,
+      user_slug TEXT NOT NULL,
+      role TEXT NOT NULL,
+      seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (board_id, user_slug),
+      FOREIGN KEY (board_id) REFERENCES whiteboard_boards(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wb_members_user ON whiteboard_members(user_slug);
+
+    CREATE TABLE IF NOT EXISTS whiteboard_presence (
+      board_id TEXT NOT NULL,
+      user_slug TEXT NOT NULL,
+      seen_at TEXT NOT NULL,
+      PRIMARY KEY (board_id, user_slug),
+      FOREIGN KEY (board_id) REFERENCES whiteboard_boards(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wb_boards_owner ON whiteboard_boards(owner_slug);
 
     -- Lifecycle department: registry of every automation we run for a client,
     -- across platforms we have no API into.
@@ -4060,6 +4099,7 @@ function migrate(database: Database.Database) {
       `CREATE INDEX IF NOT EXISTS idx_wb_boards_folder ON whiteboard_boards(folder_id)`
     );
   }
+  ensureWhiteboardSharingSchema(database);
 
   // Move legacy single-html campaigns into campaign_emails
   const campaigns = database

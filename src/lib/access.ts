@@ -170,11 +170,11 @@ export const PAGES: Capability[] = [
   },
   {
     key: "page.whiteboard",
-    label: "Whiteboard",
+    label: "Whiteboards",
     group: "page",
     href: "/admin/whiteboard",
     icon: "board",
-    blurb: "Shared canvases and their revisions.",
+    blurb: "Private boards you own, and boards a teammate has shared with you.",
   },
   {
     key: "page.client_services_hub",
